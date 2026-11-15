@@ -44,20 +44,20 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
   const images: PromptAttachment[] = [];
   const prepared: NonNullable<import('@gugu/session-core/acp/client').PromptInput['files']> = [];
   for (const file of files) {
-    let saved: Parameters<typeof turnAttachmentText>[1];
+    let local: { localPath: string; readOnly?: boolean } | null = null;
     try {
       if (!agent) throw new Error('This task has no agent identity to read its attachments as');
-      saved = await localPathOf(file, agent, sessionId);
+      const { localPath, readOnly } = await localPathOf(file, agent, sessionId);
+      local = { localPath, readOnly };
     } catch (error) {
-      saved = { failure: attachmentFailureReason(error) };
-      log.warn('Task attachment could not be saved', { sessionId, itemId: file.itemId, reason: saved.failure });
+      log.warn('Task attachment could not be saved', { sessionId, itemId: file.itemId, reason: attachmentFailureReason(error) });
     }
-    const promptText = turnAttachmentText(file, saved);
+    const promptText = turnAttachmentText(file, local);
     parts.push(promptText);
     prepared.push({ ...file, promptText });
     const inline = attachmentMimeTypeSchema.safeParse(file.mimeType);
-    if (inlineImages && 'localPath' in saved && inline.success && !replayImages.some(image => image.name === file.name)) {
-      images.push({ type: 'local-file', originalPath: saved.localPath, mimeType: inline.data, name: file.name });
+    if (inlineImages && local && inline.success && !replayImages.some(image => image.name === file.name)) {
+      images.push({ type: 'local-file', originalPath: local.localPath, mimeType: inline.data, name: file.name });
     }
   }
   return { text: parts.join('\n\n'), images, files: prepared };

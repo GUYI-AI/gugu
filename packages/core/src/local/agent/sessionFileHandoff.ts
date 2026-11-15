@@ -1,11 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile, rmdir, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { uploadAttachmentBytes, type AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { commitSessionAttachment, revokeSessionAttachment, type SessionFileInput } from '../../cloud/sessionAttachments'
 import { resolveAttachmentMimeType } from '../../shared/imageMime.mjs'
-import { userIdFromSupabaseAccessToken } from '../../cloud/runtimeAuthProvider'
-import { createNodeFileResolver, saveFileHandle } from '../files/fileSnapshots'
 import { requireAgentFileAccess } from '../state/agentFileBoundary'
 
 const MAX_BYTES = 25 * 1024 * 1024
@@ -41,18 +39,6 @@ export async function uploadSessionFile(endpoint: AttachmentsEndpoint, file: Ses
     throw new Error('Uploaded session attachment differs from the original bytes')
   }
   return receipt
-}
-
-export async function downloadSessionFile(endpoint: AttachmentsEndpoint, id: string, actor: string, directory: string, signal?: AbortSignal, store = false) {
-  const accountId = userIdFromSupabaseAccessToken(endpoint.token)
-  if (!accountId) throw new Error('Session attachment reader is not signed in')
-  const staging = join(directory, '.staging')
-  try {
-    const file = await createNodeFileResolver(staging, async () => endpoint)({ attachment_id: id }, { accountId, actorId: actor }, { signal })
-    if (file.status !== 'ready') throw new Error('Session attachment is no longer readable')
-    if (file.revision.size_bytes > MAX_BYTES) { await file.dispose(); throw new Error('Session attachment exceeds 25 MiB') }
-    return { ...await saveFileHandle(file, directory, undefined, store), attachment_id: id }
-  } finally { await rmdir(staging).catch(error => { if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error }) }
 }
 
 /** No recipient is admitted yet. Revoke only references created by this failed preparation. */

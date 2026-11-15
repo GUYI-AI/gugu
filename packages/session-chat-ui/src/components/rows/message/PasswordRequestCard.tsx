@@ -66,6 +66,7 @@ export function passwordRequest(item: ChatMessage): PasswordRequestView | null {
       && typeof value.sessionId === 'string' && typeof value.agent === 'string' ? value : null
   } catch { return null }
 }
+const requester = (request: PasswordRequestView) => [...new Set([request.agentName || '此智能体', request.sessionTitle].filter(Boolean))].join(' / ')
 function host(origin: string) { try { return new URL(origin).host } catch { return origin } }
 const clip = { overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap', 'min-width': 0 } as const
 const tint = (percent: number) => `color-mix(in srgb, ${vars.fg} ${percent}%, transparent)`
@@ -245,13 +246,13 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
         <span style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center', width: '28px', height: '28px', 'border-radius': '8px', background: tint(5), color: vars.fgMuted, 'flex-shrink': 0 }}><IconKey /></span>
         <div style={{ display: 'flex', 'flex-direction': 'column', 'min-width': 0, flex: '1 1 0' }}>
           <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{`${changing ? '修改' : '保存'} ${site} 的${inputs.some(entry => entry.key === 'password') ? '密码' : ` ${inputs.map(entry => entry.name).join('、')}`}`}</span>
-          <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{request.agentName || '此智能体'} · {request.sessionTitle || '当前会话'}</span>
+          <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(request)}</span>
         </div>
       </div>
       <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>存进保险箱后，保密的值智能体只能代填，看不到。</p>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${INPUT_GAP}px`, 'flex-shrink': 0 }}>
         {inputs.map(entry => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
-          <span style={label}>{entry.name}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}>· 保密</span></Show></span>
+          <span style={label}>{entry.name}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}> 保密</span></Show></span>
           <CardField value={values()[entry.key] ?? ''} label={entry.name} secret={secretOf(entry)} lockable={entry.key !== 'password'} disabled={!current() || busy()}
             autocomplete={entry.key === 'password' ? 'new-password' : 'off'} placeholder={stored(entry.key) ? '已保存，留空不改' : entry.key === 'account' ? '邮箱或用户名' : ''}
             onInput={value => setValues(list => ({ ...list, [entry.key]: value }))} onSecret={secret => setSecrets(list => ({ ...list, [entry.key]: secret }))} onEnter={submit} />
@@ -332,7 +333,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       <span style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center', width: '28px', height: '28px', 'border-radius': '8px', background: tint(5), color: vars.fgMuted, 'flex-shrink': 0 }}><IconKey /></span>
       <div style={{ display: 'flex', 'flex-direction': 'column', 'min-width': 0 }}>
         <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{title}</span>
-        <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{view().agentName || '此智能体'} · {view().sessionTitle || '当前会话'}</span>
+        <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(view())}</span>
       </div>
     </div>
     <Show when={fills(props.request).length}>
@@ -342,9 +343,9 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
             which replaces it for this use only. */}
         {fills(props.request).map((entry, index) => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
           <span style={label}><span style={clip}>{entry.input || entry.value}</span>
-            <Show when={entry.input && entry.input !== entry.value}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}>· {entry.value}</span></Show>
-            <Show when={entry.plain}><span style={{ 'flex-shrink': 0, color: vars.fgPermission }}>· 明文</span></Show>
-            <Show when={entry.source !== 'saved' && storing && remember() && secretOf(entry, index)}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}>· 保密</span></Show></span>
+            <Show when={entry.input && entry.input !== entry.value}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> {entry.value}</span></Show>
+            <Show when={entry.plain}><span style={{ 'flex-shrink': 0, color: vars.fgPermission }}> 明文</span></Show>
+            <Show when={entry.source !== 'saved' && storing && remember() && secretOf(entry, index)}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> 保密</span></Show></span>
           {/* A value to keep can be looked at and marked 保密 or not, as in Settings; a saved one is only shown. */}
           <CardField value={text(entry, index)} label={entry.input || entry.value} secret={entry.source === 'saved' ? !!entry.secret : secretOf(entry, index)}
             lockable={entry.source !== 'saved' && storing && !!use?.remember && remember() && entry.key !== 'password'} readOnly={!storing} disabled={!current() || busy()}

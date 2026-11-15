@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { Unknown } from '@/components/ui/Unknown';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
@@ -699,7 +700,7 @@ function ConnectionOption({
             modelsLine(connection.models, translate)
           ]
             .filter(Boolean)
-            .join(' · ')
+            .join(metadataSeparator())
         : status?.kind === 'unauthenticated'
           ? translate(
               status.reason === 'expired'
@@ -821,7 +822,7 @@ function remainingLine(
       (window) =>
         `${translate('subscriptions.remaining', { window: windowLabel(window, translate) })} ${percent.format(100 - Math.min(100, Math.max(0, window.usedPercent)))}%`
     )
-    .join(' · ')
+    .join(metadataSeparator())
 }
 
 function ConnectionForm({

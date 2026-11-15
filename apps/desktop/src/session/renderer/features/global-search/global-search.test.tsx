@@ -399,7 +399,7 @@ describe('global search panel', () => {
     await render('回滚')
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: null, p_query: '回滚', p_limit: 100 })
     expect(remote.turns).toHaveBeenCalledWith({ query: '回滚', limit: 100 })
-    expect(headers()).toEqual(['搜索测试群甲', '发布排查· globalSearch.task', '设计组'])
+    expect(headers()).toEqual(['搜索测试群甲', '发布排查 globalSearch.task', '设计组'])
     expect(options().map((option) => option.querySelector('mark')?.textContent)).toEqual(['回滚', '回滚', '回滚'])
     expect(tab('globalSearch.facet.all').textContent).toBe('globalSearch.facet.all3')
     expect(tab('globalSearch.facet.message').textContent).toBe('globalSearch.facet.message2')
@@ -456,7 +456,7 @@ describe('global search panel', () => {
     await act(async () => elsewhere.click())
     await settle()
     expect(host.querySelector('[data-testid=global-search-elsewhere]')).toBeNull()
-    expect(headers()).toEqual(['搜索测试群甲', '发布排查· globalSearch.task', '设计组'])
+    expect(headers()).toEqual(['搜索测试群甲', '发布排查 globalSearch.task', '设计组'])
   })
 
   it('with nothing typed in one conversation it offers the quick filters; a kind of message is a search with no words', async () => {

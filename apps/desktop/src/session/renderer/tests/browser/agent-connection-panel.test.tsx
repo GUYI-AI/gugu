@@ -928,7 +928,7 @@ it('manage models changes a saved key’s models in place and the row lists them
   await expect.element(connection).toBeEnabled()
   await userEvent.click(connection)
   await until('the key row is listed', () => !!document.querySelector('[data-testid="connection-key"]'))
-  expect(document.querySelector('[data-testid="connection-key"]')?.textContent).toContain('relay.example · glm-5')
+  expect(document.querySelector('[data-testid="connection-key"]')?.textContent).toContain('relay.example, glm-5')
   await userEvent.click(page.getByRole('button', { name: 'Options for Relay', exact: true }))
   await userEvent.click(page.getByRole('menuitem', { name: 'Manage models', exact: true }))
   const dialog = page.getByRole('dialog', { name: 'Models of Relay', exact: true })
@@ -951,5 +951,5 @@ it('manage models changes a saved key’s models in place and the row lists them
   await until('the dialog closes', () => !document.querySelector('[data-testid="connection-models-form"]'))
   await userEvent.click(detail.getByRole('combobox', { name: 'Current connection', exact: true }))
   await until('the row lists the new models', () =>
-    document.querySelector('[data-testid="connection-key"]')?.textContent?.includes('relay.example · glm-5 +2') === true)
+    document.querySelector('[data-testid="connection-key"]')?.textContent?.includes('relay.example, glm-5 +2') === true)
 })

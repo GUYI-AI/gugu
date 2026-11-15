@@ -84,7 +84,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
       cardType={card.type}
       // 卡上记着接手的是哪种 agent(贴卡时写下的),谁看都画这一枚;没记的老卡画通用的星 —— ❌ 去查这个 agent 现在看不看得到。
       mark={task ? (task.agentType ? <EngineIcon engine={task.agentType} size={13} /> : <Sparkles size={13} />) : <Clock size={13} />}
-      title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')} · ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
+      title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')}: ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
       time={time}
       text={card.text}
       onOpen={openable ? () => (onOpenTopic ? onOpenTopic() : openTaskCardSession(task, place.local)) : undefined}
@@ -108,7 +108,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
           agentName={agentName}
           agentAvatar={identity?.avatar ?? task.agentAvatar ?? null}
           agentUserId={task.agentUserId}
-          note={join === 'pending' ? `· ${t('message.taskCard.awaitingApproval')}` : join === 'rejected' ? `· ${t('message.taskCard.rejected')}` : place.label ? `· ${place.label}` : ''}
+          note={join === 'pending' ? ` ${t('message.taskCard.awaitingApproval')}` : join === 'rejected' ? ` ${t('message.taskCard.rejected')}` : place.label ? ` ${place.label}` : ''}
           mark={join ? null : <TaskStatusMark status={status} />}
         />
       )}

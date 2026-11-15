@@ -294,8 +294,8 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
       machine: { os: 'Linux', arch: 'aarch64', distro: 'Ubuntu 22.04.4 LTS', libc: 'glibc 2.35', hostname: 'box', user: 'alice', installedVersion: null, others: ['colleague@lab.edu'], alreadySignedIn: false },
       log: ['Authenticated to box', '正在下载咕咕 server 0.2.99 …'],
     }))
-    expect(body()).toContain('Ubuntu 22.04.4 LTS · arm64 · glibc 2.35')
-    expect(body()).toContain('版本 0.2.99 · 正在传到那台机器 50.0 MB / 100 MB · 50%')
+    expect(body()).toContain('Ubuntu 22.04.4 LTS，arm64，glibc 2.35')
+    expect(body()).toContain('版本 0.2.99，正在传到那台机器 50.0 MB / 100 MB (50%)')
     expect(body()).toContain('改由这台电脑传过去')
     expect(body()).toContain('添加你的账号（已登录：colleague@lab.edu）')
     expect(document.querySelector('progress')?.getAttribute('value')).toBe('52428800')
@@ -500,7 +500,7 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
     }))
     await act(async () => undefined)
     expect(onAdded).not.toHaveBeenCalled()
-    expect(body()).toContain('已经装过 · 版本 0.2.50')
+    expect(body()).toContain('已经装过，版本 0.2.50')
     expect(body()).toContain('sudo loginctl enable-linger alice')
     expect(body()).toContain('box 已登录 me@x.y')
     expect(body()).toContain('已上线。')
@@ -782,10 +782,10 @@ describe('addServerFormat', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(1536)).toBe('1.5 KB')
     expect(formatBytes(110443427)).toBe('105 MB')
-    expect(progressText({ phase: 'download', done: 1048576, total: 4194304 })).toBe('1.0 MB / 4.0 MB · 25%')
+    expect(progressText({ phase: 'download', done: 1048576, total: 4194304 })).toBe('1.0 MB / 4.0 MB (25%)')
     expect(progressText({ phase: 'download', done: 1048576, total: null })).toBe('1.0 MB')
-    expect(machineSummary({ os: 'Linux', distro: '', arch: 'x86_64', libc: 'glibc 2.31' })).toBe('Linux · x64 · glibc 2.31')
-    expect(machineSummary({ os: 'Darwin', distro: 'macOS 14.5', arch: 'arm64', libc: '' })).toBe('macOS 14.5 · arm64')
+    expect(machineSummary({ os: 'Linux', distro: '', arch: 'x86_64', libc: 'glibc 2.31' })).toBe('Linux，x64，glibc 2.31')
+    expect(machineSummary({ os: 'Darwin', distro: 'macOS 14.5', arch: 'arm64', libc: '' })).toBe('macOS 14.5，arm64')
   })
 
   it('要复制给别人执行的命令都引好号(zsh 会把 [ ] 当通配)', () => {

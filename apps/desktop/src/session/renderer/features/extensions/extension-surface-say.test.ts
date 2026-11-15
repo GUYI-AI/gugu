@@ -15,7 +15,7 @@ describe('object titles shared by every tab host', () => {
   it('keeps the file name first and the App semantic title in its hint and tooltip', () => {
     const surface = { title: 'Attention Is All You Need', badge: null, error: null };
     expect(extensionTabTitle(surface, 'Reader', { name: 'paper.pdf', path: 'papers/paper.pdf', hint: 'papers' })).toEqual({
-      label: 'paper.pdf', hint: 'papers · Attention Is All You Need', tooltip: 'papers/paper.pdf · Attention Is All You Need',
+      label: 'paper.pdf', hint: 'papers, Attention Is All You Need', tooltip: 'papers/paper.pdf, Attention Is All You Need',
     });
   });
 
@@ -36,7 +36,7 @@ describe('object titles shared by every tab host', () => {
     extensionSurfaceStore.say(null, 'title-file-b', { title: 'Changed elsewhere' });
     expect(read().hint).toBe('First semantic title');
     extensionSurfaceStore.say(null, 'title-file-a', { title: 'Changed here' });
-    expect(read()).toEqual({ label: 'first', hint: 'Changed here', tooltip: 'first.md · Changed here' });
+    expect(read()).toEqual({ label: 'first', hint: 'Changed here', tooltip: 'first.md, Changed here' });
     extensionSurfaceStore.forget(null, 'title-file-a');
     extensionSurfaceStore.forget(null, 'title-file-b');
   });

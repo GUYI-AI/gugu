@@ -130,7 +130,7 @@ describe('inbox recovery without another incoming message', () => {
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ injected: 1, verdict: 'accepted' })
     expect(Date.now() - started).toBeLessThan(3000)
     expect(inject).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Please explain the screenshot') }))
-    expect(inject.mock.calls[0]![0].text).toContain('[Image not saved: download HTTP 503]')
+    expect(inject.mock.calls[0]![0].text).toContain(`[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:${MESSAGE}"}]`)
     expect(inject.mock.calls[0]![0].text).toContain('gugu-file://image-item?v=2')
     expect(inject.mock.calls[0]![0].attachments).toBeUndefined()
     expect(deps.downloadAttachment).toHaveBeenCalledTimes(1)

@@ -1,5 +1,5 @@
 export const enUSAnnotationMessages = {
-  'annotations.active': 'Annotating · {count}',
+  'annotations.active': 'Annotating ({count})',
   'annotations.count': '{count} annotations',
   'annotations.comment': 'Comment',
   'annotations.placeholder': 'Add a comment…',
@@ -33,7 +33,7 @@ export const enUSAnnotationMessages = {
 } as const;
 
 export const zhCNAnnotationMessages: Record<keyof typeof enUSAnnotationMessages, string> = {
-  'annotations.active': '批注中 · {count}',
+  'annotations.active': '正在批注（{count} 条）',
   'annotations.count': '{count} 条批注',
   'annotations.comment': '评论',
   'annotations.placeholder': '添加评论…',

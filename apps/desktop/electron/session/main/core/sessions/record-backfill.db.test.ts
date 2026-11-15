@@ -35,7 +35,9 @@ vi.mock('./session-process', () => ({ sessionProcess: () => state.process,
 import { events } from '@main/lib/events';
 import { onActivitySignal } from '../activity/signals';
 import { syncStoredHistoryFromRecord } from './record-backfill';
-import { getStoredToolImage, withStoredTurns } from './session-turn-store';
+import { appendRecordTurnNow, getStoredToolImage, withStoredTurns } from './session-turn-store';
+import { pluginRegistry } from '@gugu/session-plugins/agents';
+import { promptInputItems } from '../../../../runtime/codex-app-server-prompt.mjs';
 import { nativeConversationUnread } from './session-conversation-read';
 import { nativeConversationActivity } from './session-conversation-activity';
 
@@ -341,4 +343,30 @@ it('stores filled-in pictures as their place in the record and reads them back, 
   // A record that no longer has the picture: only its size, as before.
   await writeFile(`${record}.zst`, zstdCompressSync(Buffer.from(line('session_meta', { id: THREAD }) + '\n')));
   expect(await opened()).toEqual(Array(5).fill('no_such_image'));
+});
+
+it('recognizes a stored image turn in the record by its native prompt receipt, after a restart', async () => {
+  expect(await sync()).toEqual({ inserted: 2, status: 'complete' });
+  // What the host sends Codex for a turn with a picture: the image, the person's words, the host's attachment lines.
+  const words = 'What two colors are in this picture?';
+  const blocks = [
+    { type: 'image' as const, data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+    { type: 'text' as const, text: words },
+    { type: 'text' as const, text: '[Image attached: two-color.png]\n[Image attached at local path: /home/u/.gugu/attachments/a/two-color.png]' },
+  ];
+  const meta = pluginRegistry.get('codex')?.behavior.acp?.historyRecovery?.promptMeta?.(blocks);
+  // The store keeps the person's words, as the live turn wrote them.
+  await withStoredTurns('c1', () => appendRecordTurnNow('c1', { id: 'live-2', seq: 2, startedAt: 1, endedAt: 2, outcome: { kind: 'done' },
+    items: [{ kind: 'message', id: 'live-2:user', role: 'user', text: words, ...(meta ? { _meta: meta } : {}) },
+      { kind: 'message', id: 'live-2:answer', role: 'assistant', text: 'Red and blue' }] } as unknown as TranscriptTurn));
+  // Codex records the native input its bridge sent.
+  const content = promptInputItems(blocks).map(item => item.type === 'text' ? { type: 'input_text', text: item.text } : { type: 'input_image', image_url: item.url });
+  await appendRecord([
+    line('event_msg', { type: 'task_started' }),
+    line('response_item', { type: 'message', role: 'user', content }),
+    line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Red and blue' }] }),
+    line('event_msg', { type: 'task_complete' }),
+  ]);
+  expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+  expect(texts()).toEqual(['question 0 / answer 0', 'question 1 / answer 1', `${words} / Red and blue`]);
 });

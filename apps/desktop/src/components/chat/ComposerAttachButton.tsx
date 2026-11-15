@@ -42,6 +42,7 @@ export function ComposerAttachButton({
       <DropdownMenu.Trigger
         disabled={disabled}
         data-testid="chat-composer-attach-menu"
+          data-phone-attachment=""
         data-slot="icon-button"
         data-size="md"
         data-shape="pill"

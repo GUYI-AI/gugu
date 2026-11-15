@@ -316,7 +316,7 @@ export default {
       "saveFailed": "形象没保存上，请稍后再试",
       "saving": "保存中…",
       "stageLabel": "{{name}} 的形象预览",
-      "summary": "{{color}} · {{face}}",
+      "summary": "{{color}} {{face}}",
       "tabColor": "颜色",
       "tabFace": "表情",
       "takenBy": "{{names}} 在用这个颜色",

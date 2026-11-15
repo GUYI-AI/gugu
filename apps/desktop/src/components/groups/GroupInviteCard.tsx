@@ -87,8 +87,8 @@ export function GroupInviteCard({
         <div style={{ color: 'var(--text-primary)', fontSize: 'var(--font-body)', fontWeight: 600, lineHeight: 'var(--lh-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {name}
         </div>
-        <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', marginTop: 2 }}>
-          {t('groupInvite.groupSummary', { number: group.public_id, count: group.member_count })}
+        <div data-group-invite-meta="" className="flex flex-wrap gap-x-2" style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', marginTop: 2 }}>
+          <span>{t('groupInvite.groupNumber', { number: group.public_id })}</span>{' '}<span>{t('groupInvite.memberCount', { count: group.member_count })}</span>
         </div>
         {group.creator_name ? (
           <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('groupInvite.creator', { name: group.creator_name })}</div>

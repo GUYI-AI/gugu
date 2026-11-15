@@ -22,7 +22,7 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file-meta { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-muted); }
 .file-meta { display: flex; gap: 0; min-width: 0; }
 .file-cell { flex: none; }
-.file-cell + .file-cell::before { content: '·'; margin-inline: 5px; opacity: .6; }
+.file-cell + .file-cell { margin-inline-start: 10px; }
 .file-cell:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .file-meta > .file-path { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-inline-end: 8px; }
 

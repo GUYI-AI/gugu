@@ -1,3 +1,4 @@
+import { nativeIOSAccountClosure } from './iosAccountClosure'
 import { saveToDevice } from './capacitorShare'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import { LocalNotifications } from '@capacitor/local-notifications'
@@ -20,6 +21,7 @@ const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error
 /** Foreground client only. Missing Android plugins never become advertised iOS capabilities. */
 export const iosPlatform: AppPlatform = {
   ...base,
+  accountClosure: nativeIOSAccountClosure,
   capabilities: { ...base.capabilities, appVersion: true, clipboard: true, get notifications() { return Capacitor.isPluginAvailable('GuguPushNotifications') },
     get phoneAgentHost() { return nativePhoneAgentHostAvailable('ios') },
     get calendarSettings() { return iosCalendarPermissionsAvailable() },

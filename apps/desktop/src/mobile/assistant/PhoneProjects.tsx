@@ -47,7 +47,7 @@ export const PhoneProjects = observer(function PhoneProjects({ detail = false,on
     <PageHead title={t('library.workspace')} />
     <ReadView read={read} failedTitle={t('library.failed')}>{() => projects.length
       ? <AssistantSection>{projects.map(project => <AssistantRow key={project.id} leading={<Folder />} title={project.label}
-        detail={project.stale ? <>{project.rootPath ? `${project.rootPath} · ` : null}<Stale /></> : project.rootPath ?? undefined}
+        detail={project.stale ? <>{project.rootPath ? `${project.rootPath} ` : null}<Stale /></> : project.rootPath ?? undefined}
         testId={`assistant-project-${project.id}`} onClick={() => setSelected(project.id)} />)}</AssistantSection>
       : <AssistantEmpty>{t('library.noGuguProjects')}</AssistantEmpty>}</ReadView>
   </div>
@@ -60,7 +60,7 @@ function PhoneProjectIndex({ project,onBack }: { project: PhoneProjectEntry; onB
     <PageHead title={project.label} action={<Button variant="ghost" onClick={onBack}>{t('library.backToIndex')}</Button>} />
     {project.folders.length ? <AssistantSection>{project.folders.map((folder,index) => <AssistantRow key={`${folder.workspaceId}:${index}`}
       leading={<Folder />} title={folder.path.split(/[/\\]/).filter(Boolean).at(-1) ?? folder.path}
-      detail={folder.stale ? <>{`${folder.path} · `}<Stale /></> : folder.path} />)}</AssistantSection>
+      detail={folder.stale ? <>{`${folder.path} `}<Stale /></> : folder.path} />)}</AssistantSection>
       : <AssistantEmpty>{t('library.emptyContent')}</AssistantEmpty>}
   </div>
 }

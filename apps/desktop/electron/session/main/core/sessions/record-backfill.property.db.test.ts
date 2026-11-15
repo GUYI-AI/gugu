@@ -411,7 +411,7 @@ async function oracleFill(sessionId: string): Promise<void> {
     let missing: TranscriptTurn[] | null = null;
     for (const limit of identity === 'content' ? [10, 50, 200, Number.MAX_SAFE_INTEGER] : [10, 50, 200]) {
       const tail = await readStoredTailNow(sessionId, limit);
-      missing = recordTurnsAfterStore(record, tail, identity, { hasOlderStoredTurns: tail.length === limit, hermesPromptReceipts: row.provider === 'hermes' });
+      missing = recordTurnsAfterStore(record, tail, identity, { hasOlderStoredTurns: tail.length === limit });
       if (missing !== null || tail.length < limit) break;
     }
     if (missing === null) return;

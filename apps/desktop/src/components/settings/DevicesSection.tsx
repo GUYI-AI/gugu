@@ -72,7 +72,7 @@ const log = rendererLogger('devices')
 /** 行内元信息之间的分隔点:画在样式里,❌ 拼进译文(各语言的标点与间距不同)。 */
 // 每一项前面一个 16px 的「·」格;整行往左挪 16px、外层裁掉 ⇒ 换行后落在行首的那一项,它的点在裁掉的那 16px 里,
 // ❌ 出现「· 咕咕 0.2.51」那种孤零零挂在行首的分隔符。第一项(状态)用同宽的左内边距占位。
-const META_SEP = "before:inline-block before:w-4 before:text-center before:content-['·']"
+const META_SEP = "ml-2"
 
 const DEVICE_LIST_CLASS = 'flex flex-col rounded-[var(--radius-document)] bg-foreground/[0.025] p-1 dark:bg-foreground/[0.04]'
 

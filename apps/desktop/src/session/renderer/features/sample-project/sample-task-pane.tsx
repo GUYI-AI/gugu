@@ -33,7 +33,7 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
           agentName={content.agent.name}
           agentAvatar={null}
           agentUserId={SAMPLE_AGENT_SEED}
-          note={`· ${translate('projects.sample.taskDone')} · ${content.task.startedAt}–${content.task.endedAt}`}
+          note={`${translate('projects.sample.taskDone')} ${content.task.startedAt}–${content.task.endedAt}`}
           mark={<TaskStatusMark status="idle" />}
         />
         {content.task.steps.length > 0 ? (

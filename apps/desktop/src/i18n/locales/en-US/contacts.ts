@@ -93,9 +93,9 @@ export default {
     "invitesFailed_one": "Group created, but {{count}} invitation failed. Retry it from the group members panel.",
     "invitesFailed_other": "Group created, but {{count}} invitations failed. Retry them from the group members panel.",
     "create": "Create group chat",
-    "createWithCount": "Create group chat · {{count}} members",
-    "createWithCount_one": "Create group chat · {{count}} member",
-    "createWithCount_other": "Create group chat · {{count}} members",
+    "createWithCount": "Create group ({{count}} members)",
+    "createWithCount_one": "Create group ({{count}} member)",
+    "createWithCount_other": "Create group ({{count}} members)",
     "creating": "Creating…",
     "emptyContacts": "No contacts",
     "failed": "Could not create the group chat",
@@ -110,7 +110,7 @@ export default {
     "selectionUnavailable": "A selected member is unavailable or cannot be invited to this group.",
     "allProjects": "All",
     "allResults": "All results",
-    "localDevice": "{{name}} · This device",
+    "localDevice": "{{name}} (this device)",
     "recent": "Recent"
   },
   "errors": {
@@ -188,9 +188,9 @@ export default {
     "creator": "Created by {{name}}",
     "groupNumber": "Group ID {{number}}",
     "groupNumberHash": "Group ID #{{number}}",
-    "groupSummary": "Group ID {{number}} · {{count}} members",
-    "groupSummary_one": "Group ID {{number}} · {{count}} member",
-    "groupSummary_other": "Group ID {{number}} · {{count}} members",
+    "groupSummary": "Group ID {{number}}, {{count}} members",
+    "groupSummary_one": "Group ID {{number}}, {{count}} member",
+    "groupSummary_other": "Group ID {{number}}, {{count}} members",
     "inviteOnly": "Invite only",
     "inviteOnlyError": "This group is invite only",
     "inviteLinkClosed": "Invite link closed",
@@ -255,8 +255,8 @@ export default {
     "requestFailedFallback": "Request failed. Try again.",
     "requested": "Request sent \u2014 waiting for the group owner to approve",
     "searchPlaceholder": "Enter group ID",
-    "summary_one": "Group ID {{number}} \u00b7 {{count}} member",
-    "summary_other": "Group ID {{number}} \u00b7 {{count}} members",
+    "summary_one": "Group ID {{number}}, {{count}} member",
+    "summary_other": "Group ID {{number}}, {{count}} members",
     "title": "Join a group"
   },
   "panel": {
@@ -390,9 +390,9 @@ export default {
     "namePlaceholder": "Tag name",
     "rename": "Rename {{name}}",
     "title": "Tags",
-    "titleWithCount": "Tag · {{count}} entries",
-    "titleWithCount_one": "Tag · {{count}} entry",
-    "titleWithCount_other": "Tag · {{count}} entries"
+    "titleWithCount": "Tag ({{count}} entries)",
+    "titleWithCount_one": "Tag ({{count}} entry)",
+    "titleWithCount_other": "Tag ({{count}} entries)"
   },
   "toast": {
     "deleteAgentFailed": "Could not archive task",

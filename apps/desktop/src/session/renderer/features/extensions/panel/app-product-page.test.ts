@@ -125,7 +125,7 @@ describe('App 的产品页 (#7059)', () => {
       const page = await render(subject({ source: { ...source, path } }), async (document) => {
         const button = document.querySelector('[data-testid="app-product-review"] button')!;
         expect(button.textContent).toBe('extensions.viewSource');
-        expect(button.getAttribute('title')).toBe(`shuxueshuxue/promo-skills @ 6f46446${path === '.' ? '' : ' · app'}`);
+        expect(button.getAttribute('title')).toBe(`shuxueshuxue/promo-skills @ 6f46446${path === '.' ? '' : ': app'}`);
         expect(button.classList.contains('mk-mono')).toBe(false);
       });
       expect(page.text).not.toContain('shuxueshuxue/promo-skills');

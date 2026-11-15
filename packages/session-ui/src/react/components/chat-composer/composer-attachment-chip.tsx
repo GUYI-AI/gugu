@@ -23,6 +23,7 @@ import { LoadingIndicator } from '../loading-indicator/LoadingIndicator';
  * 其余几何一个不改,颜色换成本仓 token(见 chat-composer.css.ts)。
  */
 import { Archive, Check, FileImage, FileText, Folder, X } from '../../../icons';
+import { metadataSeparator } from '@gugu/session-shared/format';
 import { useMessages } from '../../localization/message-provider';
 import { attachmentPreviewKind } from './composer-attachment-preview';
 import type { ComposerAttachment, ComposerAttachmentState } from './composer-options';
@@ -56,7 +57,7 @@ export interface ComposerAttachmentChipProps {
 }
 
 export function ComposerAttachmentChip({ attachment: att, onView, onRemove, onRetry, onQualityChange, qualityLocked }: ComposerAttachmentChipProps) {
-  const { translate } = useMessages();
+  const { translate, locale } = useMessages();
   const state: ComposerAttachmentState = att.state ?? 'done';
   const KindIcon = attachmentKindIcon(att);
   const previewKind = onView ? attachmentPreviewKind(att) : null;
@@ -79,7 +80,7 @@ export function ComposerAttachmentChip({ attachment: att, onView, onRemove, onRe
       tabIndex={previewKind ? 0 : undefined}
       aria-label={previewKind ? translate('composer.viewAttachment', { name: att.name }) : undefined}
       aria-description={att.meta}
-      title={[att.name, att.meta].filter(Boolean).join(' · ')}
+      title={[att.name, att.meta].filter(Boolean).join(metadataSeparator(locale))}
       onClick={previewKind ? () => onView?.(att) : undefined}
       // 键盘照上游:Enter 立刻触发,Space 按下时吃掉默认滚动、抬起时才触发。
       onKeyDown={
@@ -107,7 +108,7 @@ export function ComposerAttachmentChip({ attachment: att, onView, onRemove, onRe
             {att.meta}
             {canRetry && (
               <>
-                {att.meta ? ' · ' : null}
+                {att.meta ? metadataSeparator(locale) : null}
                 <button
                   type="button"
                   className={styles.attachmentRetry}
@@ -122,7 +123,7 @@ export function ComposerAttachmentChip({ attachment: att, onView, onRemove, onRe
               </>
             )}
             {att.imageQuality && onQualityChange && <>
-              {att.meta || canRetry ? ' · ' : null}
+              {att.meta || canRetry ? metadataSeparator(locale) : null}
               <button type="button" className={styles.attachmentRetry} disabled={qualityLocked}
                 onClick={event => { event.stopPropagation(); onQualityChange(att.id); }}>
                 {translate(att.imageQuality === 'compressed' ? 'composer.sendOriginal' : 'composer.useCompressed')}

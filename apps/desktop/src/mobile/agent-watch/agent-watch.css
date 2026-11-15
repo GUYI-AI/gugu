@@ -406,8 +406,7 @@
   white-space: nowrap;
 }
 .gg-aw .gg-aw-item-sep { opacity: 0.5; flex: none; margin: 0 0.35em; }
-/* 任务行的分隔符跟着下一段走:换行时「·」落在新行行首那段前面,❌ 挂在上一行末尾。 */
-.gg-aw .gg-aw-item-part + .gg-aw-item-part::before { content: '·'; opacity: 0.5; margin: 0 0.35em 0 0; font-weight: normal; }
+/* Metadata parts use the container gap, including at the start of a wrapped line. */
 /* 这个任务给自己排了定时(schedule-meta.tsx):时钟 + 下一个几点回来;没送到的换 ⚠ 与警示色。 */
 .gg-aw .gg-aw-item-meta > .gg-aw-item-schedule { display: inline-flex; align-items: center; gap: 0.25em; color: var(--fg); }
 .gg-aw .gg-aw-item-schedule svg { width: 0.9em; height: 0.9em; flex: none; color: var(--muted-fg); }

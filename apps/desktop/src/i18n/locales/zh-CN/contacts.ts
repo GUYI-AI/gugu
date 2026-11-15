@@ -93,9 +93,9 @@ export default {
     "invitesFailed_one": "群已创建，但 {{count}} 个邀请未发出。请在群成员面板重试邀请。",
     "invitesFailed_other": "群已创建，但 {{count}} 个邀请未发出。请在群成员面板重试邀请。",
     "create": "创建群聊",
-    "createWithCount": "创建群聊 · {{count}} 位成员",
-    "createWithCount_one": "创建群聊 · {{count}} 位成员",
-    "createWithCount_other": "创建群聊 · {{count}} 位成员",
+    "createWithCount": "创建群聊（{{count}} 位成员）",
+    "createWithCount_one": "创建群聊（{{count}} 位成员）",
+    "createWithCount_other": "创建群聊（{{count}} 位成员）",
     "creating": "创建中…",
     "emptyContacts": "暂无联系人",
     "failed": "创建群聊失败",
@@ -110,7 +110,7 @@ export default {
     "selectionUnavailable": "所选成员不可用或无法邀请加入此群。",
     "allProjects": "全部",
     "allResults": "全部结果",
-    "localDevice": "{{name}} · 本机",
+    "localDevice": "{{name}}（本机）",
     "recent": "最近"
   },
   "errors": {
@@ -188,9 +188,9 @@ export default {
     "creator": "创建者 {{name}}",
     "groupNumber": "群号 {{number}}",
     "groupNumberHash": "群号 #{{number}}",
-    "groupSummary": "群号 {{number}} · {{count}} 名成员",
-    "groupSummary_one": "群号 {{number}} · {{count}} 名成员",
-    "groupSummary_other": "群号 {{number}} · {{count}} 名成员",
+    "groupSummary": "群号 {{number}}，{{count}} 名成员",
+    "groupSummary_one": "群号 {{number}}，{{count}} 名成员",
+    "groupSummary_other": "群号 {{number}}，{{count}} 名成员",
     "inviteOnly": "仅邀请加入",
     "inviteOnlyError": "该群仅限邀请加入",
     "inviteLinkClosed": "邀请链接已关闭",
@@ -255,8 +255,8 @@ export default {
     "requestFailedFallback": "申请失败，请重试",
     "requested": "已发送加群申请，等群主通过",
     "searchPlaceholder": "输入群号",
-    "summary_one": "群号 {{number}} · {{count}} 名成员",
-    "summary_other": "群号 {{number}} · {{count}} 名成员",
+    "summary_one": "群号 {{number}}，{{count}} 名成员",
+    "summary_other": "群号 {{number}}，{{count}} 名成员",
     "title": "加入群聊"
   },
   "panel": {
@@ -390,9 +390,9 @@ export default {
     "namePlaceholder": "标签名称",
     "rename": "重命名{{name}}",
     "title": "标签",
-    "titleWithCount": "标签 · {{count}} 个对象",
-    "titleWithCount_one": "标签 · {{count}} 个对象",
-    "titleWithCount_other": "标签 · {{count}} 个对象"
+    "titleWithCount": "标签（{{count}} 个对象）",
+    "titleWithCount_one": "标签（{{count}} 个对象）",
+    "titleWithCount_other": "标签（{{count}} 个对象）"
   },
   "toast": {
     "deleteAgentFailed": "归档任务失败",

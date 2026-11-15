@@ -539,7 +539,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                   {state.folders ? meta : null}
                   {running > 0 ? (
                     <>
-                      {state.folders ? ' · ' : null}
+                      {state.folders ? ' ' : null}
                       <span className="is-running">{translate('projects.folders.running', { count: running })}</span>
                     </>
                   ) : null}
