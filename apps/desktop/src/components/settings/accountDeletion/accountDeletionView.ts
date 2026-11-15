@@ -9,7 +9,7 @@ export interface AccountDeletionImpact {
   remainingCredits: number
 }
 
-export const ACCOUNT_DELETION_CONFIRMATION = '删除账号'
+export const ACCOUNT_DELETION_CONFIRMATION = '注销账号'
 
 /** A UI guard only. The service must independently authorize and reverify every deletion. */
 export function accountDeletionConfirmed(confirmation: string, remainingCredits: number, waived: boolean): boolean {

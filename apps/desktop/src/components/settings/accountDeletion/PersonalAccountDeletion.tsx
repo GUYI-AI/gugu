@@ -46,7 +46,7 @@ export function PersonalAccountDeletion({ view, onCancel }: { view: AccountDelet
   </SettingsPage>
   if (view.stage === 'impact') return <SettingsPage>
     {title('impact')}<SettingsNote>{t('accountDeletion.impactNote')}</SettingsNote>
-    {consequences(view.impact)}<SettingsNote>{t('accountDeletion.irreversible')}</SettingsNote>
+    {consequences(view.impact)}<SettingsNote>{t('accountDeletion.dataPolicy')}</SettingsNote><SettingsNote>{t('accountDeletion.irreversible')}</SettingsNote>
     <SettingsNote>{t('accountDeletion.subscriptionNote')}</SettingsNote>
     <label className="gg-account-deletion-consent"><input type="checkbox" checked={view.acknowledged} onChange={event => view.onAcknowledge(event.target.checked)} />{t('accountDeletion.acknowledge')}</label>
     {actions(<Button variant="primary" disabled={!view.acknowledged} onClick={view.onContinue}>{t('accountDeletion.continue')}</Button>)}
@@ -62,7 +62,7 @@ export function PersonalAccountDeletion({ view, onCancel }: { view: AccountDelet
   const allowed = accountDeletionConfirmed(view.confirmation, view.impact.remainingCredits, view.waived) && !view.busy
   return <SettingsPage>
     {title('confirm')}<SettingsNote>{view.impact.email}</SettingsNote><SettingsNote>{t('accountDeletion.irreversible')}</SettingsNote>
-    {consequences(view.impact)}
+    {consequences(view.impact)}<SettingsNote>{t('accountDeletion.dataPolicy')}</SettingsNote>
     <form className="gg-account-deletion-form" onSubmit={event => { event.preventDefault(); if (allowed) view.onDelete() }}>
       {view.impact.remainingCredits > 0 && <label className="gg-account-deletion-consent"><input type="checkbox" checked={view.waived} onChange={event => view.onWaive(event.target.checked)} disabled={view.busy} />{t('accountDeletion.waive', { amount: number(view.impact.remainingCredits) })}</label>}
       <Field.Root invalid={!!view.error}><Field.Label>{t('accountDeletion.confirmPhrase')}</Field.Label><Field.Input value={view.confirmation} onValueChange={view.onConfirmation} autoComplete="off" disabled={view.busy} />{view.error && <Field.Error match>{view.error}</Field.Error>}</Field.Root>

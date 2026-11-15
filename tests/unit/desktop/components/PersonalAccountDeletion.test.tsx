@@ -15,13 +15,13 @@ const submit = () => act(async () => { harness.container.querySelector('form')!.
 
 describe('personal account deletion presentation', () => {
   it('requires the exact phrase and an explicit positive-credit waiver', () => {
-    expect(accountDeletionConfirmed('删除账号', 1280, false)).toBe(false)
-    expect(accountDeletionConfirmed('删除账号 ', 1280, true)).toBe(false)
-    expect(accountDeletionConfirmed(' 删除账号', 0, true)).toBe(false)
-    expect(accountDeletionConfirmed('删除账号', Number.NaN, true)).toBe(false)
-    expect(accountDeletionConfirmed('删除账号', -1, true)).toBe(false)
-    expect(accountDeletionConfirmed('删除账号', 1280, true)).toBe(true)
-    expect(accountDeletionConfirmed('删除账号', 0, false)).toBe(true)
+    expect(accountDeletionConfirmed('注销账号', 1280, false)).toBe(false)
+    expect(accountDeletionConfirmed('注销账号 ', 1280, true)).toBe(false)
+    expect(accountDeletionConfirmed(' 注销账号', 0, true)).toBe(false)
+    expect(accountDeletionConfirmed('注销账号', Number.NaN, true)).toBe(false)
+    expect(accountDeletionConfirmed('注销账号', -1, true)).toBe(false)
+    expect(accountDeletionConfirmed('注销账号', 1280, true)).toBe(true)
+    expect(accountDeletionConfirmed('注销账号', 0, false)).toBe(true)
   })
 
   it('shows all consequences and retains group history under the deleted identity', async () => {
@@ -34,7 +34,7 @@ describe('personal account deletion presentation', () => {
 
   it('refuses form submission before credit waiver, then permits explicit confirmation', async () => {
     const onDelete = vi.fn()
-    const view: AccountDeletionView = { stage: 'confirm', impact, confirmation: '删除账号', waived: false, busy: false, onConfirmation: vi.fn(), onWaive: vi.fn(), onDelete }
+    const view: AccountDeletionView = { stage: 'confirm', impact, confirmation: '注销账号', waived: false, busy: false, onConfirmation: vi.fn(), onWaive: vi.fn(), onDelete }
     await render(view)
     await submit()
     expect(onDelete).not.toHaveBeenCalled()
@@ -45,11 +45,11 @@ describe('personal account deletion presentation', () => {
 
   it('keeps a pending request separate from a completed deletion', async () => {
     const onDelete = vi.fn()
-    await render({ stage: 'confirm', impact, confirmation: '删除账号', waived: true, busy: true, onConfirmation: vi.fn(), onWaive: vi.fn(), onDelete })
+    await render({ stage: 'confirm', impact, confirmation: '注销账号', waived: true, busy: true, onConfirmation: vi.fn(), onWaive: vi.fn(), onDelete })
     await submit()
     expect(onDelete).not.toHaveBeenCalled()
-    expect(harness.container.querySelector('[role="status"]')?.textContent).toBe('正在删除账号…')
-    expect(harness.container.querySelector('h2')?.textContent).toBe('确认删除账号？')
+    expect(harness.container.querySelector('[role="status"]')?.textContent).toBe('正在注销账号…')
+    expect(harness.container.querySelector('h2')?.textContent).toBe('确认注销账号？')
   })
 
   it('does not accept a nonnumeric six-character email code', async () => {
@@ -66,14 +66,14 @@ describe('personal account deletion presentation', () => {
   it('shows a single actionable blocker without claiming deletion succeeded', async () => {
     const onAction = vi.fn()
     await render({ stage: 'blocked', reason: '有一笔退款正在处理。', items: [{ id: 'refund', label: '退款处理中', actionLabel: '查看退款进度', onAction }], onRetry: vi.fn() })
-    expect(harness.container.textContent).toContain('你的账号和数据尚未删除。')
+    expect(harness.container.textContent).toContain('账号尚未注销，数据未受影响。')
     await clickElement([...harness.container.querySelectorAll('button')].find(button => button.textContent === '查看退款进度')!)
     expect(onAction).toHaveBeenCalledTimes(1)
   })
 
   it('reports an unavailable review without inventing empty account quantities', async () => {
     await render({ stage: 'unavailable', onRetry: vi.fn() })
-    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('请重试。你的账号和数据尚未删除。')
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('请重试。账号尚未注销，数据未受影响。')
     expect(harness.container.querySelectorAll('.gg-settings-row')).toHaveLength(0)
   })
 })
