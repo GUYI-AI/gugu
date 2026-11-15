@@ -8,6 +8,7 @@ import { findLiveWindowConversation } from './use-live-window-conversation';
 import type { LiveWindowConversation } from './conversation';
 import { getSessionView } from '../sessions/stores/session-selectors';
 import type { SessionTabContext } from '../tabs/core/session-tab-context';
+import { useLiveWindowLabels } from './desktop-labels';
 
 export type LiveWindowTabState = { conversationKey: string; sourceId: string; chatTabId: string };
 export class LiveWindowTabResource implements TabResource {
@@ -39,15 +40,17 @@ export const liveWindowTabProvider: TabProvider<'live-window', LiveWindowTabStat
   },
   dispose: (_entry, resource) => resource.dispose(),
   TabBarItem: ({ tab, host, ctx }) => {
+    const t = useLiveWindowLabels();
     const { conversation, state } = tab.resource;
     const snapshot = useSyncExternalStore(conversation.model.subscribe, conversation.model.getSnapshot, conversation.model.getSnapshot);
     const source = snapshot.sources.find(source => source.id === state.sourceId);
-    return <GenericTabItem tab={tab} host={host} ctx={ctx} label={source?.title ?? ''}
+    return <GenericTabItem tab={tab} host={host} ctx={ctx} label={source?.kind === 'computer' ? t('computer') : source?.title || t('web')}
       closeDisabled={host.resolvedTabs.some(tab => tab.tabId === state.chatTabId && tab.isActive)} preSlot={source?.kind === 'computer' ? <Monitor className="size-3" /> : <Globe className="size-3" />} />;
   },
   TabBarItemDragPreview: ({ tab }) => {
+    const t = useLiveWindowLabels();
     const source = tab.resource.conversation.model.getSnapshot().sources.find(source => source.id === tab.resource.state.sourceId);
-    return <GenericTabDragPreview label={source?.title ?? ''} />;
+    return <GenericTabDragPreview label={source?.kind === 'computer' ? t('computer') : source?.title || t('web')} />;
   },
   TabContent: registeredTabView('live-window'),
 });

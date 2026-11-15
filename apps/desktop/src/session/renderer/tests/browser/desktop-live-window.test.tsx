@@ -47,3 +47,33 @@ it('only reveals desktop controls on hover, keeps the full portrait source, and 
   await vi.waitFor(() => expect(host!.querySelector('[data-live-window="floating"]')).not.toBeNull());
   proportional();
 });
+
+it('keeps the small picture clear and switches complete Web and Computer sources only after enlarging', async () => {
+  await page.viewport(1440, 960);
+  const model = new LiveWindowModel('desktop');
+  const context = { conversationId: 'chat', deviceId: 'device', sessionId: 'session', agentId: 'agent', privateAgentChat: true, shown: true };
+  const sources = [
+    { ...context, id: 'web', kind: 'browser' as const, title: 'Actual page title', size: { width: 1280, height: 900 }, status: 'operating' as const },
+    { ...context, id: 'computer', kind: 'computer' as const, title: 'Computer Use', size: { width: 723, height: 960 }, status: 'operating' as const },
+  ];
+  model.activate(context); model.observe(context, sources);
+  function Harness() {
+    const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
+    return <DesktopLiveWindow source={{ ...snapshot.source!, picture: <div>Picture</div> }} sources={snapshot.sources}
+      state={snapshot.presentation!} dispatch={action => model.dispatch(action)} />;
+  }
+  host = document.createElement('div'); host.className = 'gugu-skin emlight'; host.style.cssText = 'position:relative;width:1000px;height:800px';
+  document.body.append(host); root = createRoot(host); root.render(<Harness />);
+  await vi.waitFor(() => expect(host!.querySelector('[data-live-window-picture]')).not.toBeNull());
+  expect(host.querySelector('[role="tablist"]')).toBeNull();
+  model.dispatch({ type: 'enlarge' });
+  await vi.waitFor(() => expect(host!.querySelectorAll('[role="tab"]')).toHaveLength(2));
+  const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  expect(tabs.map(tab => tab.textContent)).toEqual(expect.arrayContaining([expect.stringMatching(/^(Web|网页)$/), expect.stringMatching(/^(Computer|电脑)$/)]));
+  for (const tab of tabs) {
+    await page.elementLocator(tab).click();
+    await vi.waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
+    const box = host.querySelector('[data-live-window-picture]')!.getBoundingClientRect(), size = model.getSnapshot().source!.size!;
+    expect(Math.abs(box.width - box.height * size.width / size.height)).toBeLessThan(1 / 32);
+  }
+});

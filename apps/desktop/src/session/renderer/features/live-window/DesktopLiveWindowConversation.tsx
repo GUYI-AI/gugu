@@ -94,6 +94,6 @@ const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projec
   }, [surface, shown, live.conversation]);
   return <div data-live-window-chat={chatTabId} className="contents">
     {live.visible && live.source && live.presentation && mode !== 'tabbed' && <DesktopLiveWindow
-      source={live.sources.find(source => source.id === live.source?.id)!} state={live.presentation} dispatch={live.dispatch} onWidth={onWidth} />}
+      source={live.sources.find(source => source.id === live.source?.id)!} sources={live.sources} state={live.presentation} dispatch={live.dispatch} onWidth={onWidth} />}
   </div>;
 });
