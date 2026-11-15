@@ -31,7 +31,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "./tool-group.aui";
-import { ComposerAboveExtras, ComposerExtras, ThreadTailExtras, useComposerPlaceholder, useComposerStop } from "./composer-extras";
+import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerPlaceholder, useComposerStop } from "./composer-extras";
 import { useAuiCopy } from "./copy";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { Button } from "./ui/button";
@@ -427,7 +427,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
           onFilesDropped={capabilities.attachments ? addFiles : undefined} onImageFilesDropped={capabilities.attachments ? addFiles : undefined}
           attachments={chips} onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
           onRetryAttachment={(id) => { const file = attachments.find((attachment) => attachment.id === id)?.file; if (file) void composer.attachment({ id }).remove().then(() => composer.addAttachment(file)); }}
-          toolbarExtra={<ComposerExtras />} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
+          toolbarExtra={<ComposerExtras />} inputHeader={<ComposerInputHeader />} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
           dataDropTypes={dataDropTypes} onDataDropped={onDataDropped} />
       </MessageProvider>
     </SessionUiTheme>

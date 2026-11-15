@@ -406,6 +406,8 @@ export interface ChatComposerProps {
    */
   tone?: 'task';
   leading?: React.ReactNode;
+  /** Host-owned context chips inside the input, without replacing the mounted editor. */
+  inputHeader?: React.ReactNode;
   className?: string;
 }
 
@@ -492,6 +494,7 @@ export function ChatComposer({
   getPromptHistory,
   tone,
   leading,
+  inputHeader,
   className,
 }: ChatComposerProps) {
   const { translate } = useMessages();
@@ -852,6 +855,7 @@ export function ChatComposer({
               editorRef.current?.focus();
             }}
           >
+            {inputHeader}
             {leading ? (
               <div className={styles.editorLeadRow}>
                 <span className={styles.editorLead}>{leading}</span>

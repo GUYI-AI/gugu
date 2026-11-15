@@ -340,7 +340,7 @@ function ChoiceList({
  * 模型那一页:第一行永远是「默认(让 harness 自己定)」,然后 harness 自家一组、咕咕平台一组
  * (与桌面下拉同序)。哪一组缺席就在组名下写机器报来的原因,❌ 不藏:空列表说不出「为什么空」。
  */
-function ModelChoices({
+export function ModelChoices({
   models,
   platformOnly = false,
   harnessName,

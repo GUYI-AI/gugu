@@ -19,7 +19,7 @@ vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
   useAuth: () => ({ user: { id: state.owner } }),
 }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useMachineLabel', () => ({
-  useMachineLabel: () => ({ label: () => 'Mac', isHome: () => false }),
+  useMachineLabel: () => ({ label: (device: Device) => device.label, isHome: () => false }),
 }))
 // 新建页从设备目录里挑机器(DESIGN 4a):每一格把要测的那台放进目录。
 const store = vi.hoisted(() => ({ devices: [] as import('@gugu/core/shared/types/chat').Device[] }))
@@ -41,6 +41,11 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   fetchPhoneCreateModels: rpc.models,
   createSession: rpc.create,
   createPhoneSession: rpc.create,
+  machineRpc: () => ({ extensions: {
+    list: async () => ({ success: true, data: { extensions: [{ id: 'meeting-app', name: 'Meeting App', permissions: { capabilities: ['agents:tools'] }, contributes: { skills: 'skills' } }], disabled: [], appIcons: {} } }),
+    appPlaces: async () => ({ success: true, data: [{ id: 'here:all', enabled: true }] }),
+    agentSkills: async () => ({ success: true, data: ['meeting-notes'], entries: [{ name: 'meeting-notes', description: 'Record decisions and next steps' }] }),
+  } }),
 }))
 vi.mock('../../../apps/desktop/src/components/assistant-ui/thread.aui', async () => {
   const { useAui } = await import('../../../apps/desktop/node_modules/@assistant-ui/react')
@@ -106,8 +111,38 @@ describe('creation keeps its navigation and draft ownership', () => {
     const stoppedPhone = { ...device, platform: 'android', capabilities: { host_kind: 'phone', host_runtime_capability: 0, terminals: [], runtimes: [] } } as Device
     await harness.render(pageOn(stoppedPhone, { onBack: vi.fn(), onCreated: vi.fn() }))
     expect(rpc.options).not.toHaveBeenCalled()
-    const machine = harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-target-row"][data-dimension="machine"]')!
-    expect(machine.disabled).toBe(true)
+    await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!.click() })
+    expect(document.querySelector('[data-dimension="machine"][data-option-id]')).toBeNull()
+  })
+
+  it('keeps the composing draft while replacing device catalogs, without exposing or submitting old options', async () => {
+    const next = deferred<SessionpageSessionCreateOptions>()
+    rpc.options.mockImplementation((id: string) => id === 'second-device' ? next.promise : Promise.resolve(options))
+    store.devices = [device, { ...device, device_id: 'second-device', label: 'Second Mac' }]
+    await harness.render(createNode(CreateSessionPage, { onCreated: vi.fn() }))
+    const composer = state.composer!
+    await act(async () => { composer.setText('正在输入的草稿'); harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!.click() })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-option-id="second-device"]')!.click() })
+    expect(state.composer).toBe(composer)
+    expect(composer.getState().text).toBe('正在输入的草稿')
+    expect(document.querySelector<HTMLButtonElement>('[data-dimension="harness"][data-testid="agent-watch-create-options-drill"]')!.disabled).toBe(true)
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-options-loading"]')).not.toBeNull()
+    expect(rpc.models).not.toHaveBeenCalledWith('second-device', expect.anything(), expect.anything(), expect.anything())
+    await act(async () => { composer.send() })
+    expect(rpc.create).not.toHaveBeenCalled()
+    await act(async () => { next.resolve(options); await next.promise })
+    expect(rpc.models).toHaveBeenLastCalledWith('second-device', 'codex', null, null)
+    expect(composer.getState().text).toBe('正在输入的草稿')
+  })
+
+  it('delivers a selected real skill with the first task and clears its tag only after success', async () => {
+    rpc.create.mockResolvedValue(result)
+    await harness.render(pageOn(device, { onCreated: vi.fn() }))
+    await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skills"]')!.click() })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skill"]')!.click() })
+    await act(async () => { state.composer!.setText('整理今天的会议'); state.composer!.send() })
+    expect(rpc.create).toHaveBeenCalledWith(device.device_id, expect.objectContaining({ prompt: '请使用以下技能：meeting-notes。\n\n整理今天的会议' }))
+    expect(composerDrafts.get(mobileCreationDraftKey(state.owner))).toBe('')
   })
 
   // DESIGN 点击路径 4a:进来就有「不选项目 · 默认机器」;点项目行选 work,机器按默认规则换到有它文件夹的那台,发送带那台上的本地项目。
@@ -121,13 +156,15 @@ describe('creation keeps its navigation and draft ownership', () => {
     // The project list is the account project list (accountProjectsStore); its folder path is gpu's published record.
     runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-work', name: 'work', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-work' }] }] })
     await harness.render(createNode(CreateSessionPage, { onBack: vi.fn(), onCreated }))
-    const row = (dimension: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="agent-watch-create-target-row"][data-dimension="${dimension}"]`)!
-    expect(row('project').textContent).toContain('不选项目')
+    const row = (dimension: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="agent-watch-create-${dimension}"]`)!
+    expect(row('project').textContent).toContain('选择项目')
     expect(rpc.options).toHaveBeenLastCalledWith('mac')
+    const originalComposer = state.composer
     await act(async () => { row('project').click() })
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-target-choice"][data-option-id="chat-work"]')!.click() })
     expect(row('project').textContent).toContain('work')
     expect(rpc.options).toHaveBeenLastCalledWith('gpu')
+    expect(state.composer).toBe(originalComposer)
     await sendFirst()
     expect(rpc.create).toHaveBeenCalledWith('gpu', expect.objectContaining({ projectId: 'gpu-work', prompt: '原来的任务' }))
     expect(onCreated).toHaveBeenCalledWith(gpu, expect.objectContaining({ conversationId: 'created-task' }), expect.anything(), result)
