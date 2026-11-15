@@ -41,6 +41,19 @@ describe('devices kept across restarts', () => {
     expect(rows.map((device) => [device.device_id, device.session_digest])).toEqual([['a', undefined], ['b', undefined]])
   })
 
+  it('a small account keeps its digests (they fit)', async () => {
+    let rm = await import('../../../../apps/desktop/src/lib/replica')
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let cache = await import('../../../../apps/desktop/src/store/devicesCache')
+    const small = { ...row('a'), session_digest: digest.slice(0, 2) } as unknown as Device
+    cache.devicesModel.set([], [small])
+    vi.resetModules()
+    rm = await import('../../../../apps/desktop/src/lib/replica')
+    cache = await import('../../../../apps/desktop/src/store/devicesCache')
+    const restored = cache.devicesModel.peek()
+    expect(restored.state === 'value' ? restored.value[0]!.session_digest : null).toHaveLength(2)
+  })
+
   it('a restored row (no digest) lists its sessions as still loading, ❌ as none', () => {
     const { session_digest: _digest, ...restored } = row('a')
     expect(deviceSessionsOf(restored as Device, {})).toMatchObject({ sessions: [], loading: true })

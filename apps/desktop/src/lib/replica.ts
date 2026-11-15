@@ -208,32 +208,54 @@ const accountSnapshot = () => account
 
 /** `at`: when the value was read (decides `fresh`). `used`: when a surface last showed it (decides which entries stay). */
 type SnapshotEntry = { key: QueryKey; value: unknown; at: number; used?: number }
+type Snapshot = Record<string, SnapshotEntry>
 type Limits = NonNullable<Definition<unknown[], unknown>['persist']>
 
-/** An entry a surface shows right now counts as used now; otherwise when one last showed it (or when it was first kept). */
+/**
+ * When a surface last showed an entry. A surface showing it right now counts as now; one never shown is 0 (a key read in
+ * the background must not push out one a surface showed). Uses are noted in memory as surfaces mount and written with
+ * the block once the renderer is idle (`flushUses`), ❌ a whole-block rewrite per mounting key on the first frame.
+ */
 function lastUse(entry: SnapshotEntry, now: number): number {
   const shown = (queryClient.getQueryCache().find({ queryKey: entry.key, exact: true })?.getObserversCount() ?? 0) > 0
-  return shown ? now : entry.used ?? entry.at
+  return shown ? now : Math.max(entry.used ?? 0, usesNoted.get(hashKey(entry.key)) ?? 0)
 }
 
-const USE_NOTED_EVERY_MS = 60_000
-const usesNoted = new Map<string, number>()
+/** Least recently used last; among never-shown entries, the least recently read last. */
+const byUse = (now: number) => (x: SnapshotEntry, y: SnapshotEntry) => lastUse(y, now) - lastUse(x, now) || y.at - x.at
 
-/** A surface started showing a kept entry: record it, so eviction keeps what is used, ❌ what was read last. */
+const usesNoted = new Map<string, number>()
+let usesFlush: ReturnType<typeof setTimeout> | null = null
+
 function noteUse(key: QueryKey): void {
   const owner = String(key[1])
   if (owner !== DEVICE && owner !== account.id) return
-  const hash = hashKey(key)
-  const now = Date.now()
-  if (now - (usesNoted.get(hash) ?? 0) < USE_NOTED_EVERY_MS) return
-  usesNoted.set(hash, now)
-  const snapshot = readSnapshot(owner)
-  const entry = snapshot[hash]
-  if (!entry) return
-  entry.used = now
-  try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* a use not recorded only weakens the next eviction */ }
+  usesNoted.set(hashKey(key), Date.now())
+  if (usesFlush) return
+  const later = (globalThis as { requestIdleCallback?: (run: () => void, options: { timeout: number }) => unknown }).requestIdleCallback
+  usesFlush = setTimeout(() => {
+    if (later) later(flushUses, { timeout: 5_000 })
+    else flushUses()
+  }, USES_FLUSH_AFTER_MS)
 }
-type Snapshot = Record<string, SnapshotEntry>
+
+const USES_FLUSH_AFTER_MS = 2_000
+
+/** Write the noted uses into the blocks they belong to, one write per block. */
+export function flushUses(): void {
+  usesFlush = null
+  const noted = new Map(usesNoted)
+  for (const owner of new Set([DEVICE, ...(account.id ? [account.id] : [])])) {
+    const snapshot = readSnapshot(owner)
+    let changed = false
+    for (const [hash, used] of noted) {
+      const entry = snapshot[hash]
+      if (entry && (entry.used ?? 0) < used) { entry.used = used; changed = true }
+    }
+    if (!changed) continue
+    try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* a use not recorded only weakens the next eviction */ }
+  }
+}
 
 function readSnapshot(owner: string): Snapshot {
   try {
@@ -265,7 +287,8 @@ function writeSnapshotEntry(key: QueryKey, read: unknown, at: number, limits: Li
     if (!(entry?.at > Date.now() - SNAPSHOT_MAX_AGE_MS)) delete snapshot[hash]
   }
   const now = Date.now()
-  const entry: SnapshotEntry = { key, value, at, used: snapshot[hash]?.used ?? now }
+  const used = Math.max(snapshot[hash]?.used ?? 0, usesNoted.get(hash) ?? 0)
+  const entry: SnapshotEntry = { key, value, at, ...(used ? { used } : {}) }
   const bytes = JSON.stringify(entry).length
   if (bytes > limits.maxBytes) {
     // Over its declared size: the older copy is not kept either, so the next start reads it as unknown.
@@ -275,7 +298,7 @@ function writeSnapshotEntry(key: QueryKey, read: unknown, at: number, limits: Li
     snapshot[hash] = entry
     // The least recently used leave (❌ the least recently read: a row read in the background must not push out one a
     // surface shows at every start).
-    const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => lastUse(y, now) - lastUse(x, now))
+    const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => byUse(now)(x, y))
     for (const [evicted] of own.slice(limits.maxEntries)) delete snapshot[evicted]
   }
   try {
@@ -294,11 +317,16 @@ function admitted(definition: Definition<unknown[], unknown>, entries: SnapshotE
   if (!definition.persist) return []
   const { maxBytes, maxEntries, carry } = definition.persist
   const now = Date.now()
-  return entries
-    .filter((entry) => !carry || carry(entry.value, ...entry.key.slice(2)) !== undefined)
-    .filter((entry) => JSON.stringify(entry).length <= maxBytes)
-    .sort((x, y) => lastUse(y, now) - lastUse(x, now))
+  // What this definition carries of each kept value (an older build may have kept fields it no longer carries).
+  const carried = entries.flatMap((entry) => {
+    const value = carry ? carry(entry.value, ...entry.key.slice(2)) : entry.value
+    return value === undefined ? [] : [{ entry, as: value === entry.value ? entry : { ...entry, value } }]
+  })
+  return carried
+    .filter(({ as }) => JSON.stringify(as).length <= maxBytes)
+    .sort((x, y) => byUse(now)(x.as, y.as))
     .slice(0, maxEntries)
+    .map(({ as }) => as)
 }
 
 function ownEntries(snapshot: Snapshot, owner: string): Map<string, SnapshotEntry[]> {
@@ -317,38 +345,57 @@ function ownEntries(snapshot: Snapshot, owner: string): Map<string, SnapshotEntr
  */
 function hydrateSnapshot(owner: string): void {
   const snapshot = readSnapshot(owner)
-  const dropped: SnapshotEntry[] = []
+  const settled: Settled = { dropped: [], carried: [] }
   for (const [name, entries] of ownEntries(snapshot, owner)) {
     const definition = definitions.get(name)
-    const keep = definition ? admitted(definition, entries) : entries
-    dropped.push(...entries.filter((entry) => !keep.includes(entry)))
+    const keep = definition ? judge(definition, entries, settled) : entries
     for (const entry of keep) {
       if (queryClient.getQueryData(entry.key) === undefined) putEntry(entry.key, entry.value, entry.at)
     }
   }
-  dropFromSnapshot(owner, snapshot, dropped)
+  settleSnapshot(owner, snapshot, settled)
 }
 
-/** A model registering for the first time: its kept entries it does not admit leave the cache and the snapshot. */
+/**
+ * A model registering for the first time: its kept entries it does not admit leave the cache and the snapshot; the
+ * ones it carries differently (fields an older build kept) are seeded again as carried.
+ */
 function pruneSnapshot(definition: Definition<unknown[], unknown>): void {
   for (const owner of definition.scope === DEVICE ? [DEVICE] : account.id ? [account.id] : []) {
     const snapshot = readSnapshot(owner)
-    const entries = ownEntries(snapshot, owner).get(definition.name) ?? []
-    const keep = admitted(definition, entries)
-    const dropped = entries.filter((entry) => !keep.includes(entry))
+    const settled: Settled = { dropped: [], carried: [] }
+    judge(definition, ownEntries(snapshot, owner).get(definition.name) ?? [], settled)
     // Seeded from the snapshot: nothing of this model was read before it was defined.
-    for (const entry of dropped) queryClient.removeQueries({ queryKey: entry.key, exact: true })
-    dropFromSnapshot(owner, snapshot, dropped)
+    for (const entry of settled.dropped) queryClient.removeQueries({ queryKey: entry.key, exact: true })
+    for (const entry of settled.carried) {
+      if (queryClient.getQueryState(entry.key)?.dataUpdatedAt === entry.at) putEntry(entry.key, entry.value, entry.at)
+    }
+    settleSnapshot(owner, snapshot, settled)
   }
 }
 
-function dropFromSnapshot(owner: string, snapshot: Snapshot, dropped: SnapshotEntry[]): void {
-  if (dropped.length === 0) return
+type Settled = { dropped: SnapshotEntry[]; carried: SnapshotEntry[] }
+
+/** What a definition keeps of a model's entries: admitted ones (as carried), the rest noted as dropped. */
+function judge(definition: Definition<unknown[], unknown>, entries: SnapshotEntry[], settled: Settled): SnapshotEntry[] {
+  const keep = admitted(definition, entries)
+  const kept = new Map(keep.map((entry) => [hashKey(entry.key), entry]))
+  for (const entry of entries) {
+    const as = kept.get(hashKey(entry.key))
+    if (!as) settled.dropped.push(entry)
+    else if (as !== entry) settled.carried.push(as)
+  }
+  return keep
+}
+
+function settleSnapshot(owner: string, snapshot: Snapshot, { dropped, carried }: Settled): void {
+  if (dropped.length === 0 && carried.length === 0) return
   for (const entry of dropped) delete snapshot[hashKey(entry.key)]
+  for (const entry of carried) snapshot[hashKey(entry.key)] = entry
   try {
     localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
   } catch (error) {
-    refuseSnapshotWrite(String(dropped[0]!.key[0]), `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
+    refuseSnapshotWrite(String([...dropped, ...carried][0]!.key[0]), `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
   }
 }
 

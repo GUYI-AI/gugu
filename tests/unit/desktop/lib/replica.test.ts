@@ -242,15 +242,19 @@ describe('snapshot limits (@@@client-state-model, persistence)', () => {
 
 describe('PR 3 additions', () => {
   const entriesOf = (owner: string, name: string) => Object.values(JSON.parse(snapshotOf(owner) ?? '{}') as Record<string, { key: unknown[]; value: unknown }>).filter((e) => e.key[0] === name)
+  // Time is the fake clock's: ❌ wall-clock sleeps to order writes or count polls.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] }) })
+  afterEach(() => { vi.useRealTimers() })
+  const tick = async (ms: number) => { await vi.advanceTimersByTimeAsync(ms) }
 
   it('reads again at an interval the shown value decides, and stops when it says false', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     let n = 0
-    const model = rm.replica({ name: 'test-poll', scope: 'account', read: async () => ++n, refreshEvery: (value) => (value !== undefined && value < 3 ? 5 : false) })
+    const model = rm.replica({ name: 'test-poll', scope: 'account', read: async () => ++n, refreshEvery: (value) => (value !== undefined && value < 3 ? 1_000 : false) })
     function Probe() { rm.useReplica(model, []); return null }
     const harness = createReactHarness()
     await harness.render(createElement(Probe))
-    await new Promise((resolve) => setTimeout(resolve, 120))
+    await tick(10_000)
     expect(n).toBe(3)
     harness.cleanup()
   })
@@ -258,16 +262,16 @@ describe('PR 3 additions', () => {
   it('says a failed refresh while it is still retried, keeping the value', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     let fail = false
-    const model = rm.replica({ name: 'test-retrying', scope: 'account', read: async () => { if (fail) throw new Error('offline'); return 1 }, retry: 3, retryDelay: () => 1_000 })
+    const model = rm.replica({ name: 'test-retrying', scope: 'account', read: async () => { if (fail) throw new Error('offline'); return 1 }, retry: 3, retryDelay: () => 60_000 })
     await model.prefetch()
     fail = true
     void model.refresh(); void model.prefetch()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await tick(1)
     expect(model.peek()).toMatchObject({ state: 'value', value: 1, error: { message: 'offline' } })
     await rm.queryClient.cancelQueries()
   })
 
-  it('carries only what the definition says: a field left out, or a key not kept at all (no refusal)', async () => {
+  it('carries only what the definition says: a field left out, or a key not kept at all (no refusal, no slot taken)', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const before = (await (await import('../../../../apps/desktop/src/lib/perfCounters')).readPerfCounters()).snapshotRefusals
@@ -275,24 +279,55 @@ describe('PR 3 additions', () => {
     const model = rm.replica({
       name: 'test-carry', scope: 'account',
       read: async (_owner: string, id: string): Promise<Row> => ({ name: id, digest: 'd'.repeat(5_000) }),
-      persist: { maxBytes: 256, maxEntries: 4, carry: ({ name }: Row, id: string) => (id === 'skip' ? undefined : { name }) },
+      persist: { maxBytes: 256, maxEntries: 1, carry: ({ name }: Row, id: string) => (id.startsWith('skip') ? undefined : { name }) },
     })
-    await model.prefetch('kept'); await model.prefetch('skip')
+    await model.prefetch('kept')
+    for (const id of ['skip-1', 'skip-2', 'skip-3']) { await tick(10); await model.prefetch(id) }
+    // The single slot is still the kept key's: keys not carried never competed for it.
     expect(entriesOf('alice', 'test-carry').map((e) => e.value)).toEqual([{ name: 'kept' }])
     expect((await (await import('../../../../apps/desktop/src/lib/perfCounters')).readPerfCounters()).snapshotRefusals).toBe(before)
     expect(errors).not.toHaveBeenCalled()
     errors.mockRestore()
   })
 
-  it('evicts the least recently used key, not the least recently read: one a surface shows stays', async () => {
+  it('restores an older build\'s entry as the definition now carries it (a field no longer carried is not shown as known)', async () => {
+    localStorage.setItem('gugu.readModel.v1.account', 'alice')
+    localStorage.setItem('gugu.readModel.v1:alice', JSON.stringify({
+      '["test-old","alice"]': { key: ['test-old', 'alice'], value: { name: 'n', digest: ['old'] }, at: Date.now() },
+    }))
+    rm = await freshStart()
+    type Row = { name: string; digest?: string[] }
+    const model = rm.replica({ name: 'test-old', scope: 'account', read: async (): Promise<Row> => ({ name: 'n', digest: [] }), persist: { maxBytes: 1024, maxEntries: 1, carry: ({ name }: Row) => ({ name }) } })
+    expect(model.peek()).toMatchObject({ state: 'value', value: { name: 'n' } })
+    expect((model.peek() as { value: Row }).value.digest).toBeUndefined()
+    expect(entriesOf('alice', 'test-old').map((e) => e.value)).toEqual([{ name: 'n' }])
+  })
+
+  it('a surface showing a kept entry is noted in memory and written once later, ❌ a block rewrite on the first frame', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
-    const model = rm.replica({ name: 'test-lru', scope: 'account', read: async (_owner: string, key: string) => key, persist: { maxBytes: 4096, maxEntries: 2 } })
-    function Probe() { rm.useReplica(model, ['user']); return null }
+    const model = rm.replica({ name: 'test-use', scope: 'account', read: async (_owner: string, key: string) => key, persist: { maxBytes: 4096, maxEntries: 8 } })
+    for (const key of ['a', 'b', 'c']) await model.prefetch(key)
+    const setItem = vi.spyOn(localStorage, 'setItem')
+    function Probe() { rm.useReplica(model, ['a'], { read: false }); rm.useReplica(model, ['b'], { read: false }); rm.useReplica(model, ['c'], { read: false }); return null }
     const harness = createReactHarness()
     await harness.render(createElement(Probe))
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    for (const chat of ['chat:1', 'chat:2', 'chat:3']) { await model.prefetch(chat); await new Promise((resolve) => setTimeout(resolve, 2)) }
-    expect(entriesOf('alice', 'test-lru').map((e) => e.key[2]).sort()).toEqual(['chat:3', 'user'])
+    expect(setItem).not.toHaveBeenCalled()
+    await tick(10_000)
+    expect(setItem.mock.calls.filter(([key]) => String(key) === 'gugu.readModel.v1:alice')).toHaveLength(1)
+    setItem.mockRestore()
     harness.cleanup()
+  })
+
+  it('evicts the least recently shown key: one read in the background never pushes out one a surface showed', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const model = rm.replica({ name: 'test-lru', scope: 'account', read: async (_owner: string, key: string) => key, persist: { maxBytes: 4096, maxEntries: 2 } })
+    function Probe() { rm.useReplica(model, ['shown']); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    await tick(10)
+    harness.cleanup({ keepReads: true })
+    // Shown earlier, not mounted now; three keys are then read in the background.
+    for (const key of ['bg-1', 'bg-2', 'bg-3']) { await tick(10); await model.prefetch(key) }
+    expect(entriesOf('alice', 'test-lru').map((e) => e.key[2]).sort()).toEqual(['bg-3', 'shown'])
   })
 })

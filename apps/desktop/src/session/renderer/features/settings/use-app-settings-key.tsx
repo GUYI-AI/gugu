@@ -56,14 +56,18 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
     },
   }, queryClient);
 
-  const resetMutation = useMutation<void, Error, void>({
+  // Every write of this window holds the key against its own broadcast until its own read settles it.
+  const holdWrite = () => ({ done: host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {} });
+  const resetMutation = useMutation<void, Error, void, { done: () => void }>({
     mutationFn: () => api.reset(key) as Promise<void>,
-    onSuccess: () => invalidateAppSettingsKey(key, host.key),
+    onMutate: holdWrite,
+    onSettled: (_data, _err, _vars, ctx) => { ctx?.done(); invalidateAppSettingsKey(key, host.key); },
   }, queryClient);
 
-  const resetFieldMutation = useMutation<void, Error, keyof AppSettings[K]>({
+  const resetFieldMutation = useMutation<void, Error, keyof AppSettings[K], { done: () => void }>({
     mutationFn: (field) => api.resetField(key, field as string) as Promise<void>,
-    onSuccess: () => invalidateAppSettingsKey(key, host.key),
+    onMutate: holdWrite,
+    onSettled: (_data, _err, _vars, ctx) => { ctx?.done(); invalidateAppSettingsKey(key, host.key); },
   }, queryClient);
 
   return {

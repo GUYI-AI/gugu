@@ -27,7 +27,6 @@ vi.mock('@/lib/errorSummaryReporting', () => ({ reportHandledError: vi.fn() }))
 type Client = typeof import('../../../../apps/desktop/src/session/renderer/features/settings/app-settings-client')
 let client: Client
 const broadcast = (key: string) => { for (const listener of ipc.listeners) listener({ key }) }
-const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
 
 beforeEach(async () => {
   notifyManager.setScheduler((callback) => { callback() })
@@ -44,16 +43,17 @@ describe('appSettings changes made elsewhere', () => {
   it('a key another window changed is read again', async () => {
     ipc.stored.interface = { hideContextBar: true }
     broadcast('interface')
-    await settle()
-    expect(client.getAppSettingValueSnapshot('interface')).toEqual({ hideContextBar: true })
+    await vi.waitFor(() => expect(client.getAppSettingValueSnapshot('interface')).toEqual({ hideContextBar: true }))
   })
 
   it('a key this window is writing is not read back over the edit; its own write settles it', async () => {
     const done = client.beginAppSettingsWrite('interface')
     client.setAppSettingsValueInCache('interface', { hideContextBar: true } as never)
     // The main process answered an earlier write: its broadcast arrives while the newer edit is still on its way.
+    const reads = ipc.getWithMeta.mock.calls.length
     broadcast('interface')
-    await settle()
+    await Promise.resolve()
+    expect(ipc.getWithMeta.mock.calls.length).toBe(reads)
     expect(client.getAppSettingValueSnapshot('interface')).toEqual({ hideContextBar: true })
     done()
   })

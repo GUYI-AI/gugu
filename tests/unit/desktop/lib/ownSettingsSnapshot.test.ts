@@ -25,11 +25,14 @@ describe('own settings across restarts', () => {
     const rm = await import('../../../../apps/desktop/src/lib/replica')
     rm.followRendererSession('SIGNED_IN', 'alice')
     const settings = await import('../../../../apps/desktop/src/lib/ownSettings')
+    // The order of reads is the fake clock's, ❌ wall-clock sleeps.
+    vi.useFakeTimers({ toFake: ['Date'] })
     await settings.readOwnSettings('alice', 'user')
     for (let n = 1; n <= 6; n += 1) {
+      vi.advanceTimersByTime(10)
       await settings.readOwnSettings('alice', `chat:${n}`)
-      await new Promise((resolve) => setTimeout(resolve, 2))
     }
+    vi.useRealTimers()
     const kept = Object.values(JSON.parse(localStorage.getItem('gugu.readModel.v1:alice') ?? '{}') as Record<string, { key: string[] }>)
       .map((entry) => entry.key[2]).sort()
     expect(kept).toEqual(['chat:3', 'chat:4', 'chat:5', 'chat:6', 'user'])
