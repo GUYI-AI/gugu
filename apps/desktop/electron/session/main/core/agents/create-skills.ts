@@ -39,8 +39,8 @@ export async function readNativeCreationSkills(roots: readonly string[]): Promis
 /** Same registered harness and spawn environment as a real new task; no App catalog or process launch. */
 export async function createSkills(input: { harness: string; projectId?: string }) {
   try {
-    const { getPlugin } = await import('../agents/plugin-registry');
-    const { resolveLocalAgentSpawnEnv } = await import('../agents/agent-run-context');
+    const { getPlugin } = await import('./plugin-registry');
+    const { resolveLocalAgentSpawnEnv } = await import('./agent-run-context');
     const { readProjects } = await import('../projects/operations/getProjects');
     const bundle = getPlugin(input.harness).capabilities.sessionBundle;
     const project = input.projectId ? readProjects().find((one) => one.id === input.projectId) : null;

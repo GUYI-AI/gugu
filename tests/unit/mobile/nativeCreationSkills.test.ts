@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { readNativeCreationSkills } from '../../../apps/desktop/electron/session/main/core/session-timeline/create-skills'
+import { readNativeCreationSkills } from '../../../apps/desktop/electron/session/main/core/agents/create-skills'
 const dirs: string[] = []
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))) })
 async function root() { const dir = await fs.mkdtemp(join(tmpdir(), 'native-skills-')); dirs.push(dir); return dir }

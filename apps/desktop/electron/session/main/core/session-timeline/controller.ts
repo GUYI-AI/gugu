@@ -29,7 +29,7 @@ import {
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
-import { createSkills } from './create-skills';
+import { createSkills } from '../agents/create-skills';
 import * as service from './service';
 import { prefetchFiles } from './turn-files';
 import { markNativeConversationVisible, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
