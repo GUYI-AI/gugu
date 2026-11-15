@@ -67,6 +67,7 @@ vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({
 const localOfChat = (chatId: string) => [...state.projectChats].find(([, chat]) => chat === chatId)?.[0];
 vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   accountProjectsStore: {
+    get projects() { return [...state.projectChats].map(([, chatId]) => ({ chatId, archived: false })); },
     projectOfLocal: (projectId: string) => (state.projectChats.has(projectId) ? { chatId: state.projectChats.get(projectId) } : undefined),
     membersOf: (chatId: string) => { const local = localOfChat(chatId); return local ? [local] : []; },
     representativeOf: (chatId: string) => localOfChat(chatId),
