@@ -166,7 +166,7 @@ describe('workspace App: what the old workspace panel did', () => {
     contextChanged({ ...context, locale: 'en', file: { chat: 'chat-1', id: entry.id } })
     await vi.waitFor(() => expect(app().shown).toBe('plan.md'))
     const activity = $('doc-info').querySelector<HTMLElement>('.file-activity')!
-    expect(activity.textContent).toBe('Created by 张三 at 1 hour ago, Edited at 1 minute ago')
+    expect(activity.textContent).toBe('Created by 张三 1 hour ago, Edited 1 minute ago')
     expect(activity.title).toBe(activity.textContent)
     expect($('doc-info').querySelectorAll('.file-activity')).toHaveLength(1)
     contextChanged({ ...context })
@@ -175,8 +175,8 @@ describe('workspace App: what the old workspace panel did', () => {
 
   test.each([
     { locale: 'zh-CN', name: '李四', kind: 'human', at: ago(60), expected: '李四 于 1分钟前 编辑' },
-    { locale: 'en', name: 'Helper', kind: 'agent', at: ago(60), expected: 'Edited by Helper (agent) at 1 minute ago' },
-    { locale: 'en', name: 'Jane', kind: 'human', at: ago(3600), expected: 'Edited by Jane at 1 hour ago' },
+    { locale: 'en', name: 'Helper', kind: 'agent', at: ago(60), expected: 'Edited by Helper (agent) 1 minute ago' },
+    { locale: 'en', name: 'Jane', kind: 'human', at: ago(3600), expected: 'Edited by Jane 1 hour ago' },
   ])('a known $kind editor appears in the list and open header ($locale, $at)', async ({ locale, name, kind, at, expected }) => {
     const entry = { ...entries[0], updatedAt: at, updatedBy: { id: 'editor', name, kind } }
     contextChanged({ ...context, locale })

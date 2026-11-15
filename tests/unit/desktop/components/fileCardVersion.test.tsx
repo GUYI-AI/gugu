@@ -30,7 +30,7 @@ afterEach(() => { ui.cleanup(); attachmentQueryClient.clear(); vi.restoreAllMock
 describe('a file card names the version it pins', () => {
   it('version 3: 第 3 版 before the size; version 1: just the size', async () => {
     await ui.render(createNode(MediaAttachmentBubble, { meta: meta(3), messageId: 'm1', isMine: false }))
-    expect(ui.container.textContent).toContain('第 3 版 · 2.0 KB')
+    expect(ui.container.textContent).toContain('第 3 版, 2.0 KB')
     await ui.render(createNode(MediaAttachmentBubble, { meta: meta(1), messageId: 'm1', isMine: false }))
     expect(ui.container.textContent).not.toContain('版')
     expect(ui.container.textContent).toContain('deck.pptx')

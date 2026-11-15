@@ -56,7 +56,7 @@ export function TurnFailureCard({ reason, displayName: name, agentId, avatar, cr
             {createdAt ? <time className="tfc-time" dateTime={createdAt}>{formatCalendarDay(createdAt, { withTime: true })}</time> : null}
           </div>
           <Button variant="ghost" size="sm" className="tfc-reason block h-auto min-h-0 max-[719px]:min-h-0 p-0" aria-label={cause} onClick={() => setDetailOpen(true)}>
-            {cause}{placement === 'stream' && presentation.nextMessageKey ? `: ${t(presentation.nextMessageKey)}` : ''}
+            {cause}{placement === 'stream' && presentation.nextMessageKey ? <>{' '}<span>{t(presentation.nextMessageKey)}</span></> : null}
           </Button>
           {placement === 'composer' ? (
             <div className="tfc-actions">

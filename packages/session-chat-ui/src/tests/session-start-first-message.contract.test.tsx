@@ -123,7 +123,7 @@ describe('ordinary sending stays in the transcript', () => {
     state.session.setPendingPrompt({ id: 'owned', text: FIRST, held: true,
       delivery: { state: 'waiting', reason: 'Send interrupted', error: 'SSH transport closed', retryable: false } })
     await until('automatic custody status is visible', () => !!host.querySelector('[data-send-state="waiting"]'))
-    expect(host.textContent).toContain('Waiting to send · Send interrupted')
+    expect(host.textContent).toContain('Waiting to send: Send interrupted')
     expect(host.querySelector('[data-send-state="waiting"]')?.getAttribute('title')).toBe('SSH transport closed')
     expect(host.querySelector('[data-send-state="waiting"] button')).toBeNull()
     expect(host.querySelector('[data-live="true"]')).toBeNull()
@@ -267,7 +267,7 @@ describe('session start with a first message', () => {
     const { state, host } = mount('double', { agentConversation: true })
     const sentAt = Date.now() - 3000
     state.session.setPendingPrompt({ id: 'row', text: FIRST, sentAt, starting: 'starting', held: true })
-    await until('the state line says Starting with seconds', () => /Starting · [3-9]s/.test(host.textContent ?? ''))
+    await until('the state line says Starting with seconds', () => /Starting [3-9]s/.test(host.textContent ?? ''))
 
     state.transcript.history.seed([])
     await until('a later render', () => state.session.state.pendingPrompt?.id === 'row')

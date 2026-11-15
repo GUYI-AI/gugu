@@ -267,7 +267,7 @@ describe('the phone refuses a verb outside the gesture it needs, in the same sen
     window.removeEventListener(APP_COMPOSE_EVENT, take)
     expect(composed).toEqual([
       { chatId: CHAT, text: '> picked\n' },
-      { chatId: CHAT, text: '', refs: [{ label: 'deck.pptx · 第 2 页', link: `gugu-file://${DECK}?v=3#slide=2` }] },
+      { chatId: CHAT, text: '', refs: [{ label: 'deck.pptx (第 2 页)', link: `gugu-file://${DECK}?v=3#slide=2` }] },
     ])
   })
 })
