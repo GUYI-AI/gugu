@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { pluginRegistry } from '@gugu/session-plugins/agents'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
@@ -21,7 +22,7 @@ let current: HarnessCatalogState | undefined
 let offered: boolean | undefined
 function Probe({ model, provider = 'codex', leg = 'acp' }: { model: string; provider?: string; leg?: SessionpageLeg }) {
   current = useTargetModelCatalog(provider, leg, model)
-  offered = draftFastMode({ enabled: false, providerId: provider, modelId: model, platformModel: null, catalog: current ?? { kind: 'unknown' } })
+  offered = draftFastMode({ enabled: false, capabilities: pluginRegistry.get(provider)?.capabilities, modelId: model, platformModel: null, catalog: current ?? { kind: 'unknown' } })
   return <div>{String(offered)}</div>
 }
 function tree(model: string, device = 'device-a', provider = 'codex', leg: SessionpageLeg = 'acp') {
