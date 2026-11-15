@@ -449,6 +449,8 @@ export default defineConfig({
         plugins: [solidPlugin()],
         optimizeDeps: {
           include: [
+            'libsodium-wrappers',
+            '@supabase/supabase-js',
             // The first-arrival contract uses the shared desktop/mobile host projector.
             // Its error localization imports React; prebundle it before the browser starts.
             'react/jsx-dev-runtime',
