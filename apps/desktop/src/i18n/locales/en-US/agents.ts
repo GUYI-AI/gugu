@@ -444,6 +444,7 @@ export default {
       "presetHour": "Hourly",
       "presetWeek": "Weekly",
       "soon": "Starting soon",
+      "titleLabel": "Scheduled tasks",
       "title": "Scheduled tasks ({{count}})",
       "title_one": "Scheduled task ({{count}})",
       "title_other": "Scheduled tasks ({{count}})",

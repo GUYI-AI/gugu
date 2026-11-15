@@ -2,6 +2,7 @@
 // 给 agent 配周期 prompt（间隔 + 内容），到点经设备运行时 tick → ACP deliver 触发 agent 回合（owner↔agent 私聊里）。
 import { useCallback, useMemo, useState } from 'react'
 import { readModel, useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useAuth } from '../../store/auth'
@@ -109,7 +110,8 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   return (
     <div className={agentSettingsPaneClass(true)} data-pane="tasks">
       <div className={asClass.tasksHead}>
-        <div className={asClass.tasksHeading}>{t('settings.tasks.title', { count: tasks.length })}</div>
+        {/* Not read yet: the count's place is a placeholder, ❌「（0）」. */}
+        <div className={asClass.tasksHeading}>{reading.state === 'value' ? t('settings.tasks.title', { count: tasks.length }) : <>{t('settings.tasks.titleLabel')} <Unknown className="w-[2ch]" /></>}</div>
         <button className={asClass.tasksAddButton} onClick={() => setShowForm((v) => !v)} data-testid="agent-task-add">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24">
             <g fill="none" stroke="currentColor" strokeWidth="1.5">
