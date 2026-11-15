@@ -48,6 +48,8 @@ type CloudRow = {
   senderUserId: string | null
   senderType: 'human' | 'agent'
   content: string
+  /** Defaults to 'text'; an attachment row is 'attachment', as the server writes it. */
+  contentType?: string
   toUserIds?: string[] | null
   isWhisper?: boolean
   replyToSenderUserId?: string | null
@@ -147,7 +149,7 @@ class FakeCloud {
         senderDisplayName: row.senderUserId === HUMAN ? 'Ada' : 'Peer',
         senderGuguNumber: null,
         content: row.content,
-        contentType: 'text',
+        contentType: row.contentType ?? 'text',
         fileItemId: row.fileItemId ?? null,
         fileVersion: row.fileVersion ?? null,
         fileBlobId: row.fileBlobId ?? null,
@@ -1030,7 +1032,7 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
       cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000017', seq: 1, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000017' })
       cloud.post({
         chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000008', seq: 2, senderUserId: HUMAN, senderType: 'human',
-        content: '[附件] one.png (image/png)\n[Size] 3\n[Kind] image\n[Caption]\nwhat is this', fileItemId: 'item-1', fileVersion: 2,
+        contentType: 'attachment', content: '[附件] one.png (image/png)\n[Size] 3\n[Kind] image\n[Caption]\nwhat is this', fileItemId: 'item-1', fileVersion: 2,
       })
       cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000018', seq: 3, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000018' })
       const batches: Array<{ agentUserId: string; rows: number; units: number }> = []
@@ -1060,10 +1062,10 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     cloud.join('00000000-0000-4000-8000-000000000008', AGENT, { listenMode: 'active' })
     cloud.join('00000000-0000-4000-8000-000000000008', HUMAN)
     const pkg = '[附件] poll-0.1.0.guguext (application/vnd.gugu.extension+zip)\n[Size] 1200\n[Kind] file'
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000005', seq: 1, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: 'item-7', fileVersion: 1 })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000006', seq: 2, senderUserId: HUMAN, senderType: 'human', content: '[附件] a.pdf (application/pdf)\n[URL] https://example.test/a.pdf\n[Size] 3\n[Kind] file' })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000004', seq: 3, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: null, fileVersion: 1 })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-00000000000c', seq: 4, senderUserId: HUMAN, senderType: 'human', content: '[附件] two.png (image/png)\n[Size] 3\n[Kind] image', fileBlobId: 'blob-9' })
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000005', seq: 1, senderUserId: HUMAN, senderType: 'human', contentType: 'attachment', content: pkg, fileItemId: 'item-7', fileVersion: 1 })
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000006', seq: 2, senderUserId: HUMAN, senderType: 'human', contentType: 'attachment', content: '[附件] a.pdf (application/pdf)\n[URL] https://example.test/a.pdf\n[Size] 3\n[Kind] file' })
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000004', seq: 3, senderUserId: HUMAN, senderType: 'human', contentType: 'attachment', content: pkg, fileItemId: null, fileVersion: 1 })
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-00000000000c', seq: 4, senderUserId: HUMAN, senderType: 'human', contentType: 'attachment', content: '[附件] two.png (image/png)\n[Size] 3\n[Kind] image', fileBlobId: 'blob-9' })
     const { deps, injections } = makeDeps(cloud)
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 4 })
     const byId = new Map(injections.map((entry) => [entry.messageId, entry.text]))
@@ -1075,6 +1077,21 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     expect(byId.get('10000000-0000-4000-8000-00000000000c'), 'a whisper attachment is not a folder file').not.toContain('[Folder file')
     expect(byId.get('10000000-0000-4000-8000-000000000004')).toContain('[Deleted: there are no bytes to fetch]')
     expect(byId.get('10000000-0000-4000-8000-000000000004')).not.toContain('message_download_file')
+  })
+
+  // Only an attachment message is an attachment: a text that happens to read like an envelope gets no reference line.
+  it('a text message that looks like an attachment envelope is delivered as it was written', async () => {
+    const cloud = new FakeCloud()
+    cloud.addChat('00000000-0000-4000-8000-00000000000a', 'group')
+    cloud.join('00000000-0000-4000-8000-00000000000a', AGENT, { listenMode: 'active' })
+    cloud.join('00000000-0000-4000-8000-00000000000a', HUMAN)
+    const quoted = '[附件] notes.pdf (application/pdf)\n[Size] 3\n[Kind] file'
+    cloud.post({ chatId: '00000000-0000-4000-8000-00000000000a', id: '10000000-0000-4000-8000-00000000000d', seq: 1, senderUserId: HUMAN, senderType: 'human', content: quoted })
+    const { deps, injections } = makeDeps(cloud)
+    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 1 })
+    expect(injections[0]!.text).toContain(quoted)
+    expect(injections[0]!.text).not.toContain('[Deleted')
+    expect(injections[0]!.text).not.toContain('message_download_file')
   })
 
   it('a pull_agent_inbox_v2 row without file_item_id / file_version / file_blob_id is refused (the database is older than this client)', () => {

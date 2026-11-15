@@ -985,7 +985,9 @@ async function prepareMessage(
       if (threadContext !== null) bootstrapKey = key
     }
   }
-  const attachment = parseAttachmentContent(row.content, { id: row.id, file_item_id: row.fileItemId, file_version: row.fileVersion, file_blob_id: row.fileBlobId })
+  // Only an attachment message is one: a text that reads like an envelope is delivered as written.
+  const attachment = row.contentType === 'attachment'
+    ? parseAttachmentContent(row.content, { id: row.id, file_item_id: row.fileItemId, file_version: row.fileVersion, file_blob_id: row.fileBlobId }) : null
   // An attachment reaches its agent as a reference: what it is, then how to fetch it. Bytes move only when the agent calls
   // message_download_file, on the machine it runs on; a deleted item says there are none.
   const where: AttachmentWhere | null = !attachment ? null

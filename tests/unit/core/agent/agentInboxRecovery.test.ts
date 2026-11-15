@@ -123,7 +123,7 @@ describe('inbox recovery without another incoming message', () => {
   it('admits an image row as text, its folder link and the call that fetches it, without a disclosure', async () => {
     const { deps, inject, postDisclosure } = inbox({
       content: '[附件] screen.png (image/png)\n[Size] 3\n[Kind] image\n[Caption]\nPlease explain the screenshot',
-      contentType: 'image', fileItemId: 'image-item', fileVersion: 2,
+      contentType: 'attachment', fileItemId: 'image-item', fileVersion: 2,
     })
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ injected: 1, verdict: 'accepted' })
     expect(inject).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Please explain the screenshot') }))
