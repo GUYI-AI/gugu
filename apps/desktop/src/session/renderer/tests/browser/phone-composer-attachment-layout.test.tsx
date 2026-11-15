@@ -22,10 +22,29 @@ async function mount() {
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   return { editor, composer, attach, input, blur, end }
 }
+type ComposerEngine = {
+  isEmpty: boolean
+  commands: { clearContent: (emitUpdate: boolean) => boolean }
+  on: (event: 'update', callback: () => void) => unknown
+  off: (event: 'update', callback: () => void) => unknown
+}
+async function clearComposer(editor: HTMLElement) {
+  const engine = (editor as HTMLElement & { editor: ComposerEngine }).editor
+  let committed = false
+  const updated = () => { if (engine.isEmpty) committed = true }
+  engine.on('update', updated)
+  try {
+    // The App clears this same way after send. fill('') instead selects only
+    // the DOM and presses Delete, before ProseMirror must know that selection.
+    engine.commands.clearContent(true)
+    await until('empty editor transaction committed', () => committed && engine.isEmpty && !editor.textContent?.trim())
+  } finally { engine.off('update', updated) }
+}
 it('keeps empty attachments left, hides them on one text line, and returns without a layout flash', async () => {
   const { editor, composer, attach, input, blur } = await mount()
   const emptyLeft = editor.getBoundingClientRect().left
   expect(getComputedStyle(attach).display).not.toBe('none')
+  expect(getComputedStyle(input).paddingLeft).toBe('48px')
   await page.getByTestId('chat-composer').fill('一行文字')
   await until('one-line attachment hidden', () => composer.hasAttribute('data-phone-has-text') && getComputedStyle(attach).display === 'none')
   expect(editor.getBoundingClientRect().left).toBeLessThan(emptyLeft)
@@ -40,7 +59,7 @@ it('keeps empty attachments left, hides them on one text line, and returns witho
   await until('single line restored', () => !composer.hasAttribute('data-phone-multiline') && getComputedStyle(attach).display === 'none')
   const height = input.getBoundingClientRect().height
   for (let i = 0; i < 6; i++) { await frames(1); expect(input.getBoundingClientRect().height).toBe(height); expect(composer.hasAttribute('data-phone-multiline')).toBe(false) }
-  await page.getByTestId('chat-composer').fill('')
+  await clearComposer(editor)
   await until('empty attachment restored', () => !composer.hasAttribute('data-phone-has-text') && getComputedStyle(attach).display !== 'none')
   expect(editor.getBoundingClientRect().left).toBe(emptyLeft)
   expect(host!.querySelector('[contenteditable]')).toBe(editor); expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled()
@@ -71,4 +90,20 @@ it('keeps a composing line-break in the original editor and preserves its caret 
   await until('committed multi-line layout', () => composer.hasAttribute('data-phone-multiline'))
   expect(host!.querySelector('[contenteditable]')).toBe(editor); expect(selection.anchorNode).toBe(node); expect(selection.anchorOffset).toBe(2)
   expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).toHaveBeenCalledTimes(1)
+})
+
+it('restores empty attachments when DOM selectionchange has not reached the editor', async () => {
+  const { editor, composer, attach, blur } = await mount()
+  await page.getByTestId('chat-composer').fill('删回一行')
+  await until('one-line text committed', () => composer.hasAttribute('data-phone-has-text'))
+  const defer = (event: Event) => event.stopImmediatePropagation()
+  document.addEventListener('selectionchange', defer, true)
+  try {
+    const selection = getSelection()!, range = document.createRange()
+    range.selectNodeContents(editor); selection.removeAllRanges(); selection.addRange(range)
+    await clearComposer(editor)
+    await until('empty attachment restored after delayed selection', () => !composer.hasAttribute('data-phone-has-text') && getComputedStyle(attach).display !== 'none')
+    expect(host!.querySelector('[contenteditable]')).toBe(editor)
+    expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled()
+  } finally { document.removeEventListener('selectionchange', defer, true) }
 })
