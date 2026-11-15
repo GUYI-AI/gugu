@@ -58,8 +58,11 @@ export const appSettingsModel = replica({
   // grows with profiles (1,246 at 8). One entry per carried key.
   persist: {
     maxBytes: 1536,
-    maxEntries: 11,
-    carry: (meta: SettingsMeta<AppSettingsKey>, key: AppSettingsKey, host: string) => (host === LOCAL_SETTINGS_HOST_KEY && CARRIED_KEYS.has(key) ? meta : undefined),
+    maxEntries: 12,
+    // Where preload hands nothing over (web: the connected server's settings), `interface` keeps its first frame from
+    // the snapshot as before.
+    carry: (meta: SettingsMeta<AppSettingsKey>, key: AppSettingsKey, host: string) =>
+      (host === LOCAL_SETTINGS_HOST_KEY && (CARRIED_KEYS.has(key) || (!handover && key === 'interface')) ? meta : undefined),
   },
 });
 
