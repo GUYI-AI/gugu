@@ -23,6 +23,7 @@ import { UpdateBanner } from '../components/UpdateBanner'
 import { WindowControls } from '../components/WindowControls'
 import { MOBILE_TABS, SIDEBAR_TABS, type SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { AgentWatchPage, AgentWatchRoot } from '@/mobile/agent-watch/AgentWatchPage'
+import { usePhoneAgentCreation } from '@/mobile/agent-watch/phone-agent-creation'
 import { PhoneDeviceRoot } from '@/mobile/phone-device/PhoneDeviceRoot'
 import { useAppShowSession } from '@/mobile/agent-watch/useAppShowSession'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
@@ -403,6 +404,7 @@ function InnerLayout({
     setActiveTab('tasks')
     appState.navigation.navigate('new-session')
   }, [setActiveTab, mobile])
+  usePhoneAgentCreation(openAgentCreateDraftFromContacts, mobile)
   const sessionSlotRef = useRef<HTMLDivElement>(null)
   const composerSlotRef = useRef<HTMLDivElement>(null)
   const emdashFrameHomeRef = useRef<HTMLDivElement>(null)

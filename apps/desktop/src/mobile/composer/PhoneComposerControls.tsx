@@ -26,8 +26,8 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
   return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined} inert={editing || undefined} aria-hidden={editing || undefined}>{children}</div>
 }
 
-export function PhoneComposerControl({ label, icon, active, dot, disabled, onClick, testId, buttonRef }: {
-  label: string; icon?: ReactNode; active?: boolean; dot?: boolean; disabled?: boolean
+export function PhoneComposerControl({ label, icon, active, dot, badge, disabled, onClick, testId, buttonRef }: {
+  label: string; icon?: ReactNode; active?: boolean; dot?: boolean; badge?: ReactNode; disabled?: boolean
   onClick: () => void; testId: string; buttonRef?: RefObject<HTMLButtonElement | null>
 }) {
   return <Button ref={buttonRef} variant="ghost" className="gg-phone-composer-control gap-1" disabled={disabled}
@@ -35,6 +35,7 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
     onMouseDown={preserveComposerFocus} onClick={onClick}>
     {icon}<span className="gg-phone-composer-control-label">{label}</span>
     {dot && <span className="gg-phone-composer-control-dot" />}
+    {badge && <span className="gg-phone-composer-control-badge">{badge}</span>}
   </Button>
 }
 

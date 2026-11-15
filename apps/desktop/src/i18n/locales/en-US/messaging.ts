@@ -265,6 +265,7 @@ export default {
     }
   },
   "chatList": {
+    "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
     "create": "New",

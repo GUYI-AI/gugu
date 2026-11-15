@@ -121,6 +121,7 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     topicRows = { t1: { unread_count: 9, unread_locator: locator(9, 0) }, t2: { unread_count: 27, unread_locator: locator(27, 2) } }
     try {
       await render('g1')
+      expect(q('[data-testid="phone-room-topics"] [aria-label="36 条未读"]')?.textContent).toBe('36')
       await openTopics()
       expect(choice('t2')?.textContent).toContain('27')
       expect(choice('t1')?.textContent).toContain('9')
@@ -132,11 +133,15 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     await render('g1')
     await pickTopic('t1')
     expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t1')
+    expect(q('[data-chat-area-header]')?.textContent).toContain(TOPICS[0]!.name)
+    expect(q('[data-testid="phone-topic-source-name"]')?.textContent).toBe('登录改版')
+    expect(q('[data-testid="phone-room-topics"]')?.textContent).toBe('话题')
     expect(q('[data-testid="topic-split-back"]')).toBeNull()
     await openTopics()
     expect(choice('t1')?.getAttribute('aria-checked')).toBe('true')
     await act(async () => { mainChoice()!.click() })
     await vi.waitFor(() => expect(q('[data-testid="topic-split-pane"]')).toBeNull())
+    expect(q('[data-testid="phone-topic-source-name"]')).toBeNull()
     expect(q('[data-testid="phone-room-topics"]')?.textContent).toContain('话题')
   })
 

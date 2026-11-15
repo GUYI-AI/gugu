@@ -8,12 +8,15 @@ import type { MemberProfileOpener } from '@/components/memberProfileModels'
 import { Button } from '@/components/ui/Button'
 import { Chip } from '@/components/ui/Chip'
 import { Popover } from '@/components/ui/Popover'
-import { Check, ChevronRight, Hash, MessageCircle, Users } from '@/lib/icons'
+import { ChevronRight, Hash, Users } from '@/lib/icons'
 import { agentDisplayStatusText } from '@/lib/agentStatusText'
 import { useChatStore } from '@/store/chatContext'
 import { useAgentSessionRow } from '../agent-watch/useAgentSessionRow'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
+import { PhoneCreateAgentAction } from '../composer/PhoneCreateAgentAction'
+import { requestPhoneAgentCreation } from '../agent-watch/phone-agent-creation'
+import { PhoneTopicChoice } from './PhoneTopicChoice'
 import { roomAgentEntry, roomTopicChoices } from './room-composer-models'
 import '../agent-watch/create-controls-catalog'
 import './room-composer-catalog'
@@ -41,23 +44,24 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
-  const selectedName = topics.find(topic => topic.chat_id === current?.chatId)?.name ?? current?.name
   const choose = (topic: TopicSummary | null) => {
     setView(null)
     if ((topic?.chat_id ?? null) !== (current?.chatId ?? null)) onPick(topic)
   }
   return <div className="gg-phone-room-controls" data-testid="phone-room-composer-controls">
     <PhoneComposerControlRow>
-      <PhoneComposerControl label={selectedName ?? t('topics')} icon={<Hash />} active={!!current} dot={choices.hasUnread}
+      <PhoneComposerControl label={t('topics')} icon={<Hash />} active={!!current}
+        badge={choices.unreadCount > 0 ? <Chip shape="count" tone="danger" aria-label={t('unread', { count: choices.unreadCount })}>{choices.unreadCount.toLocaleString()}</Chip> : undefined}
         testId="phone-room-topics" onClick={() => setView('topics')} />
       <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />
     </PhoneComposerControlRow>
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'topics' ? <div role="radiogroup" aria-label={t('topics')}>
-        <TopicChoice name={t('main')} unread={choices.mainUnread} selected={!current} main onClick={() => choose(null)} />
-        {choices.topics.map(topic => <TopicChoice key={topic.chat_id} name={topic.name} unread={topic.unread}
+        <PhoneTopicChoice name={t('main')} unread={choices.mainUnread} selected={!current} main onClick={() => choose(null)} />
+        {choices.topics.map(topic => <PhoneTopicChoice key={topic.chat_id} name={topic.name} unread={topic.unread}
           selected={topic.chat_id === current?.chatId} id={topic.chat_id} onClick={() => choose(topic)} />)}
       </div> : view === 'agents' ? <>
+        <PhoneCreateAgentAction onCreate={() => { setView(null); requestPhoneAgentCreation(chatId) }} />
         {agents.map(profile => <RoomAgentChoice key={profile.id} profile={profile} userId={userId} opener={profileOpener}
           onOpen={onOpenAgent ? target => { setView(null); if (!target.session || !openPhoneSidebarSession(target.session.sessionId, `chat:${chatId}`)) onOpenAgent(target) } : undefined} />)}
         {roster.failed ? <div role="alert" className="gg-phone-room-empty">{t('failed')} <Button variant="ghost" size="sm" onClick={roster.retry}>{t('retry')}</Button></div>
@@ -66,20 +70,6 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
       </> : null}
     </PhoneComposerSheet>
   </div>
-}
-
-function TopicChoice({ name, unread, selected, onClick, main = false, id }: {
-  name: string; unread: number; selected: boolean; onClick: () => void; main?: boolean; id?: string
-}) {
-  const { t } = useTranslation('mobileRoomControls')
-  return <Button variant="ghost" className="gg-phone-room-choice" role="radio" aria-checked={selected}
-    data-testid={main ? 'phone-room-main' : 'phone-room-topic'} data-topic-id={id}
-    onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClick}>
-    {main ? <MessageCircle aria-hidden /> : <Hash aria-hidden />}
-    <span className="gg-phone-room-choice-name">{name}</span>
-    {unread > 0 && <Chip shape="count" aria-label={t('unread', { count: unread })}>{unread.toLocaleString()}</Chip>}
-    {selected && <Check className="gg-phone-room-check" aria-hidden />}
-  </Button>
 }
 
 function RoomAgentChoice({ profile, userId, opener, onOpen }: {

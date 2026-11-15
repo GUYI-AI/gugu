@@ -8,6 +8,7 @@ import { creationSkills } from './create-skills-read'
 import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
+import { PhoneCreateAgentAction } from '../composer/PhoneCreateAgentAction'
 import type { CreationSkill } from './create-skills'
 import { ComposerThinking, type ChatComposerProps, type ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
@@ -32,7 +33,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   machines: readonly CreateMachine[]; machine: CreateMachine | undefined; onMachine: (deviceId: string) => void
   machineLabel: (device: CreateMachine['device']) => string; busy: boolean
   configuration?: CreationConfiguration; scopeChatId?: string | null
-  existingSession?: { agentName: string; model?: ExistingSessionModel }
+  existingSession?: { agentName: string; model?: ExistingSessionModel; onCreateAgent?: () => void }
   controlsExtra?: ReactNode
   /** An in-place project task already owns its project; its folder determines the run device. */
   projectTask?: { onFolder: () => void }
@@ -73,6 +74,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
       footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
       {view && compact && view !== 'device' && view !== 'skills' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
       {view === 'device' && <>
+        {existingSession?.onCreateAgent && <PhoneCreateAgentAction onCreate={() => { setView(null); existingSession.onCreateAgent?.() }} />}
         {existingSession ? <Summary dimension="machine" title={t('device')} value={machine ? label(machine.device) : tf('noMachine')} readOnly onClick={() => {}} /> : <>
         <div className="gg-phone-composer-section-label">{t('device')}</div>
         {machines.map((row) => <Choice key={row.device.device_id} id={row.device.device_id} dimension="machine" name={label(row.device)}

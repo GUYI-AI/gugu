@@ -13,6 +13,7 @@ import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import '@/i18n/registerMessagingCatalog'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
@@ -73,8 +74,8 @@ it('opens the existing profile card for another person’s Agent without enterin
  expect(onOpen).not.toHaveBeenCalled()
 })
 
-it('shows the current topic name and does not toggle it closed when selected again',async()=>{
- await mount('dark','ready',topics[0]);await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('设计讨论')
+it('keeps the Topics label while selecting the current topic does not toggle it closed',async()=>{
+ await mount('dark','ready',topics[0]);await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('话题')
  await page.getByTestId('phone-room-topics').click();await page.getByRole('radio',{name:/设计讨论/}).click()
  expect(onPick).not.toHaveBeenCalled();await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
  await page.getByTestId('phone-room-topics').click();await page.getByRole('radio',{name:'群聊',exact:true}).click()
@@ -102,8 +103,20 @@ it('closes a retained room sheet when the host switches to another topic',async(
  await mount();await page.getByTestId('phone-room-topics').click()
  await expect.element(page.getByRole('heading',{name:'话题',exact:true})).toBeVisible()
  showTopicExternally?.(topics[1]!)
- await until('external topic name',()=>document.querySelector('[data-testid="phone-room-topics"]')?.textContent?.includes(topics[1]!.name)===true)
+ await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('话题')
  await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+})
+
+it('shows a numeric unread badge and puts scoped Agent creation before resident Agents',async()=>{
+ await mount()
+ await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('4')
+ await page.getByTestId('phone-room-agents').click()
+ const panel=document.querySelector('[data-testid="phone-room-controls-sheet"]')!
+ expect(panel.querySelector('.gg-phone-composer-sheet-list')?.firstElementChild?.getAttribute('data-testid')).toBe('phone-create-agent')
+ const create=vi.fn();window.addEventListener(UI_EVENTS.createAgentInGroup,create)
+ try {await page.getByTestId('phone-create-agent').click();expect(create).toHaveBeenCalledOnce();expect((create.mock.calls[0]![0] as CustomEvent).detail).toEqual({chatId:'room'})}
+ finally {window.removeEventListener(UI_EVENTS.createAgentInGroup,create)}
+ await until('creation closes its panel',()=>!document.querySelector('[data-testid="phone-room-controls-sheet"]'))
 })
 
 it.each(['light','dark'] as const)('%s: the room sheet covers the editor at every opening frame',async theme=>{

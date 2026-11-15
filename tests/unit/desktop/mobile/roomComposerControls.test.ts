@@ -10,6 +10,7 @@ describe('phone room topic choices', () => {
   it('reads main and topic unread counts from the existing chat projection', () => {
     const result=roomTopicChoices('room',[topic('a'),topic('b')],[chat({id:'room',kind:'group',unread_count:7}),chat({id:'a',kind:'topic',unread_count:4})])
     expect(result.mainUnread).toBe(7)
+    expect(result.unreadCount).toBe(11)
     expect(result.topics.map(t=>[t.chat_id,t.unread])).toEqual([['a',4],['b',0]])
     expect(result.hasUnread).toBe(true)
   })
@@ -18,6 +19,7 @@ describe('phone room topic choices', () => {
     const result=roomTopicChoices('room',topics,[])
     expect(result.topics.map(t=>t.chat_id)).toEqual(['a','b'])
     expect(result.hasUnread).toBe(false)
+    expect(result.unreadCount).toBe(0)
     expect(topics).toEqual([topic('a'),topic('b')])
   })
   it('keeps unread counts for muted topics without promoting their calls', () => {
@@ -31,7 +33,7 @@ describe('phone room topic choices', () => {
     expect(roomTopicChoices('room',topics,[chat({id:'a',kind:'topic',unread_count:0})]).hasUnread).toBe(false)
   })
   it('keeps the main-room unread marker when there are no topics', () => {
-    expect(roomTopicChoices('room',[],[chat({id:'room',kind:'group',unread_count:1})])).toEqual({mainUnread:1,topics:[],hasUnread:true})
+    expect(roomTopicChoices('room',[],[chat({id:'room',kind:'group',unread_count:1})])).toEqual({mainUnread:1,unreadCount:1,topics:[],hasUnread:true})
   })
 })
 

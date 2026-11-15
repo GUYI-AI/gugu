@@ -8,6 +8,7 @@ export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[]
   const calls = (id: string) => { const chat = byId.get(id); return chat ? chatAttention(chat).askingYou : 0 }
   return {
     mainUnread: unread(chatId),
+    unreadCount: unread(chatId) + topics.reduce((total, topic) => total + unread(topic.chat_id), 0),
     topics: [...topics].sort((a, b) => Number(calls(b.chat_id) > 0) - Number(calls(a.chat_id) > 0))
       .map(topic => ({ ...topic, unread: unread(topic.chat_id) })),
     hasUnread: unread(chatId) > 0 || topics.some(topic => unread(topic.chat_id) > 0),

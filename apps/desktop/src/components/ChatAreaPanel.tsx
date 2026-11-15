@@ -627,9 +627,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             <ChevronLeft />
           </IconButton>
         ) : null}
-        /* @@@5856 这里曾有一支「话题全宽打开时顶栏画面包屑」。owner 2026-09-19 把全宽形态整个拿掉之后,
-           主区永远不会是一条话题(chats_topic_source_chk 保证话题必有来源,收口会把它换成来源线 + 分栏),
-           那一支就永远走不到了 ⇒ 删。面包屑本身搬进了分栏的标题块。 */
         title={(
           <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {/* @@@1146 对话头按设计稿(.top 仅 标题+状态行,无头像;单聊点
@@ -650,9 +647,10 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
                 aria-label={t('chatArea.conversationProfile')}
                 style={{ color: 'var(--fg)', fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, cursor: 'pointer' }}
               >
-                {shownActiveChatName}
+                {mobile && topicSurface.splitTopic ? topicSurface.splitTopic.name : shownActiveChatName}
               </span>
             </span>
+            {mobile && topicSurface.splitTopic && <span data-testid="phone-topic-source-name" style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shownActiveChatName}</span>}
           </div>
         )}
         actions={headerActions}

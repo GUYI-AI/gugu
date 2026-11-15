@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
+import { runInAction } from 'mobx'
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarControls'
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
@@ -66,7 +69,7 @@ async function mount(sessionId:string,entry:string|null,full=false){
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'16px'})
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
-afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);accountProjectsStore.clear();document.documentElement.removeAttribute('data-phone-shell')})
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
  await mount('room-task','chat:room');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
@@ -78,6 +81,29 @@ it('a standalone Agent offers only its children and no Topics button',async()=>{
  await mount('solo',null);await until('standalone anchor',()=>!!document.querySelector('[data-anchor-kind="agent"]'))
  expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('排版子智能体');expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
+})
+
+it('a group session puts Create agent before its resident Agents and preserves the group destination',async()=>{
+ await mount('room-task','chat:room')
+ await page.getByTestId('phone-room-agents').click()
+ const list=document.querySelector('[data-testid="phone-room-controls-sheet"] .gg-phone-composer-sheet-list')!
+ expect(list.firstElementChild?.getAttribute('data-testid')).toBe('phone-create-agent')
+ const create=vi.fn();window.addEventListener(UI_EVENTS.createAgentInGroup,create)
+ try {await page.getByTestId('phone-create-agent').click();expect((create.mock.calls[0]![0] as CustomEvent).detail).toEqual({chatId:'room'})}
+ finally {window.removeEventListener(UI_EVENTS.createAgentInGroup,create)}
+})
+
+it('a project session puts Create agent first in Work instead of duplicating it in Agents',async()=>{
+ runInAction(()=>{accountProjectsStore.list=[{chatId:'room',name:'Project',archived:false,activeAt:'2026-01-01T00:00:00.000Z',bindings:[{deviceId:'qa-device',localProjectId:'workspace'}]}]})
+ await mount('room-task','chat:room',true)
+ expect(document.querySelector('[data-anchor-kind="project"]')).not.toBeNull()
+ await page.getByTestId('agent-watch-create-model-device').click()
+ const list=document.querySelector('[data-testid="agent-watch-create-controls-sheet"] .gg-phone-composer-sheet-list')!
+ expect(list.firstElementChild?.getAttribute('data-testid')).toBe('phone-create-agent')
+ await page.getByRole('button',{name:'关闭',exact:true}).click()
+ await until('Work closes',()=>!document.querySelector('[data-testid="agent-watch-create-controls-sheet"]'))
+ await page.getByTestId('phone-room-agents').click()
+ expect(document.querySelector('[data-testid="phone-room-controls-sheet"] [data-testid="phone-create-agent"]')).toBeNull()
 })
 it('an unrelated task has neither control',async()=>{
  await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-session-sidebar-controls"]')).toBeNull()
