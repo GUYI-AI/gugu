@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { readInterface, takeLegacyLocalStorage, writeInterface } from '@/lib/viewStateTable';
 
 /**
  * #1925 Whether an App's panel beside its bound conversation is collapsed: per App, kept on this computer the way the
@@ -9,12 +10,15 @@ const panelKey = (extensionId: string) => `gugu.app.${extensionId}.panel`;
 const collapsedNow = new Map<string, boolean>();
 const listeners = new Set<() => void>();
 
+// These are view state of the device (lib/viewStateTable): an App's panel, the built-in page's panel and last tab. Kept in
+// localStorage before; moved over once.
+takeLegacyLocalStorage(
+  (key) => /^gugu\.app\..+\.panel$/.test(key) || key === 'gugu.assistant.panel' || key === 'gugu.assistant.lastTab',
+  (key, raw) => writeInterface(key, raw || undefined),
+);
+
 function stored(extensionId: string): boolean {
-  try {
-    return localStorage.getItem(panelKey(extensionId)) === 'closed';
-  } catch {
-    return false;
-  }
+  return readInterface<string>(panelKey(extensionId)) === 'closed';
 }
 
 export function appConversationPanelCollapsed(extensionId: string): boolean {
@@ -29,11 +33,7 @@ export function appConversationPanelCollapsed(extensionId: string): boolean {
 export function setAppConversationPanelCollapsed(extensionId: string, collapsed: boolean): void {
   if (appConversationPanelCollapsed(extensionId) === collapsed) return;
   collapsedNow.set(extensionId, collapsed);
-  try {
-    localStorage.setItem(panelKey(extensionId), collapsed ? 'closed' : 'open');
-  } catch {
-    // 记不住就算了:这次照样收起 / 展开,下次打开回到默认(展开)。
-  }
+  writeInterface(panelKey(extensionId), collapsed ? 'closed' : 'open');
   for (const listener of listeners) listener();
 }
 
@@ -44,22 +44,13 @@ export function setAppConversationPanelCollapsed(extensionId: string, collapsed:
  */
 export const BUILT_IN_ASSISTANT_PANEL_KEY = 'gugu.assistant.panel';
 export function carryBuiltInPanelOnce(extensionId: string): boolean {
-  let builtIn: string | null;
-  try {
-    if (localStorage.getItem(panelKey(extensionId)) !== null) return false;
-    builtIn = localStorage.getItem(BUILT_IN_ASSISTANT_PANEL_KEY);
-  } catch {
-    return false;
-  }
+  if (readInterface<string>(panelKey(extensionId)) !== undefined) return false;
+  const builtIn = readInterface<string>(BUILT_IN_ASSISTANT_PANEL_KEY);
   if (builtIn !== 'open' && builtIn !== 'closed') return false;
   // Written even when equal to what is cached, so it is the App's own from now on.
   collapsedNow.delete(extensionId);
   setAppConversationPanelCollapsed(extensionId, builtIn === 'closed');
-  try {
-    localStorage.setItem(panelKey(extensionId), builtIn);
-  } catch {
-    // 记不住:这一次照样按内置页的摆法。
-  }
+  writeInterface(panelKey(extensionId), builtIn);
   return true;
 }
 
@@ -93,18 +84,10 @@ const KEPT_LAST_TAB_KEY = 'gugu.assistant.lastTab';
 export function keepBuiltInAssistantLastTab(params: { tab?: unknown } | null | undefined): void {
   const tab = builtInAssistantLastTab(params);
   if (!tab) return;
-  try {
-    localStorage.setItem(KEPT_LAST_TAB_KEY, tab);
-  } catch {
-    // 记不住:App 从动态开。
-  }
+  writeInterface(KEPT_LAST_TAB_KEY, tab);
 }
 export function keptBuiltInAssistantLastTab(): 'tasks' | 'memory' | 'profile' | null {
-  try {
-    return builtInAssistantLastTab({ tab: localStorage.getItem(KEPT_LAST_TAB_KEY) });
-  } catch {
-    return null;
-  }
+  return builtInAssistantLastTab({ tab: readInterface<string>(KEPT_LAST_TAB_KEY) });
 }
 
 const handedOverKey = (ownerId: string) => `gugu.assistant.handedOver:${ownerId}`;

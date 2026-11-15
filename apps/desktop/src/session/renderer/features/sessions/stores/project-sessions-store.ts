@@ -105,17 +105,9 @@ export function provisionWorkspaceFailure(error: ProvisionWorkspaceError): Sessi
 
 const sessionLog = rendererLogger('session-manager');
 
-/**
- * provision 时要恢复的视图状态:聚合快照 `session:<id>` 与页签布局 `session:<id>:tabs` 都经主进程取(#6799)。
- * 挂起时两个键都从渲染侧缓存里清掉了,而 paneLayout.hydrate 只同步读缓存 —— 只取聚合键,同一场里
- * 再打开的会话(闲置回收后)页签就没人读。
- */
-async function loadSavedSessionView(sessionId: string): Promise<SessionViewSnapshot | undefined> {
-  const [snapshot] = await Promise.all([
-    viewStateCache.get(`session:${sessionId}`),
-    viewStateCache.get(`session:${sessionId}:tabs`),
-  ]);
-  return snapshot as SessionViewSnapshot | undefined;
+/** provision 时要恢复的视图状态(聚合快照 `session:<id>`);页签布局 `session:<id>:tabs` 由 paneLayout.hydrate 同步读同一份缓存。 */
+function loadSavedSessionView(sessionId: string): SessionViewSnapshot | undefined {
+  return viewStateCache.read(`session:${sessionId}`) as SessionViewSnapshot | undefined;
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -551,7 +543,7 @@ export class ProjectSessionsStore {
     path: string,
     workspaceId: string
   ): Promise<void> {
-    const savedSnapshot = await loadSavedSessionView(sessionId);
+    const savedSnapshot = loadSavedSessionView(sessionId);
     runInAction(() => {
       const current = this.sessions.get(sessionId);
       if (current && isUnprovisioned(current)) {

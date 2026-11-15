@@ -71,9 +71,11 @@ function host(id: string, over: Partial<RemoteHostDevice> = {}): RemoteHostDevic
   };
 }
 
-function memoryStorage() {
-  const map = new Map<string, string>();
-  return { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
+/** A module's choice as it starts in a fresh run (the choice is a memory-only view-state entry, shared within one run). */
+function freshScope(key: string): DeviceScopeStore {
+  const store = new DeviceScopeStore(key);
+  store.select(LOCAL_DEVICE_SCOPE);
+  return store;
 }
 
 describe('机器选择器:一个组件、一个位置(#6264)', () => {
@@ -222,8 +224,8 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
 
   it('模块层挂一份:模块里每一页的标题右边都是同一个选择器、同一份选择', async () => {
     mocks.hosts.set('d22', { device: host('d22', { hostKind: 'server', directTerminal: true }) });
-    const library = new DeviceScopeStore('gugu.library.device', memoryStorage());
-    const automations = new DeviceScopeStore('gugu.automations.device', memoryStorage());
+    const library = freshScope('gugu.library.device');
+    const automations = freshScope('gugu.automations.device');
     await render(
       React.createElement(
         DeviceScopeProvider,
@@ -271,7 +273,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
 
   it('资源库:模块层一个选择器在左栏列头下,子页标题旁不画,切换机器仍然生效', async () => {
     mocks.hosts.set('d22', { device: host('d22') });
-    const library = new DeviceScopeStore('gugu.library.device', memoryStorage());
+    const library = freshScope('gugu.library.device');
     const { PageSidebarMenu } = await import('@renderer/lib/components/page-layout');
     const { DeviceScopePicker } = await import('./device-scope-picker');
     await render(
@@ -307,7 +309,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
   it('#2301 Q5:离线那句只在标题里说(「只读缓存」),正文不再画;连不上 / 读取失败照旧带「再试一次」', async () => {
     mocks.hosts.set('d22', { device: host('d22', { isOnline: false, lastSeenAt: new Date(Date.now() - 120_000).toISOString() }) });
     mocks.states.set('d22', 'offline');
-    const store = new DeviceScopeStore('gugu.automations.device', memoryStorage());
+    const store = freshScope('gugu.automations.device');
     store.select('d22');
     const { DeviceScopeNoticeLine } = await import('./device-scope-picker');
     const base = { retry: false, readOnly: true, inHeading: true };

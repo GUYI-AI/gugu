@@ -21,9 +21,9 @@ for (const kind of ['app', 'chat-app', 'session-app', 'project', 'fresh', 'legac
     if (kind === 'chat-app') saved.show({ kind: 'chat', chatId: 'shown-chat' })
     if (kind === 'app' || kind === 'chat-app' || kind === 'session-app') saved.showBeside({ kind: 'app', tabKind: 'notes.main' })
     if (kind === 'project') saved.show({ kind: 'project', projectId: 'shown-project' })
-    if (saved.snapshot) localStorage.setItem('gugu.screen-layout.v1', JSON.stringify(saved.snapshot))
+    const { ensureScreenLayoutSync, writeSavedScreen } = await import('../../../../apps/desktop/src/session/renderer/app/screen-layout-actions')
+    if (saved.snapshot) writeSavedScreen(saved.snapshot)
 
-    const { ensureScreenLayoutSync } = await import('../../../../apps/desktop/src/session/renderer/app/screen-layout-actions')
     ensureScreenLayoutSync()
 
     if (kind === 'legacy-chat') expect(screenLayout.snapshot?.blocks).toEqual(expect.objectContaining({ [screenLayout.focusedBlockId!]: { kind: 'chat', chatId: 'old-chat' } }))

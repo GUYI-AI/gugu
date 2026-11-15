@@ -12,6 +12,7 @@ import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupat
 import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
 import { useReadModel } from '../../lib/readModel'
+import { clearViewState, useViewState } from '../../lib/viewStateTable'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import '../../i18n/registerMainCatalog'
@@ -32,13 +33,21 @@ interface AccountSectionProps {
   logout: () => Promise<{ success: boolean }>
 }
 
+type AccountEdit = { nickname?: string; bio?: string; occupation?: { draft: Occupation | null } }
+const ACCOUNT_EDIT = { conversation: '', panel: 'settings/account', persist: false }
+
 export function AccountSection({ user, updateUser, logout, mobile = false }: AccountSectionProps) {
   const { t } = useTranslation('settings')
   const { t: tMain } = useTranslation('main')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [nickname, setNickname] = useState(user?.nickname ?? '')
-  const [bio, setBio] = useState(user?.bio ?? '')
+  // Edits not saved yet live in the view-state table (memory only): closing Settings and opening it again keeps them;
+  // a restart does not (by design). A field equal to the saved value again is no edit (another device may have saved it).
+  const [edit, setEdit] = useViewState<AccountEdit>(ACCOUNT_EDIT, {})
+  const nickname = edit.nickname ?? user?.nickname ?? ''
+  const bio = edit.bio ?? user?.bio ?? ''
+  const setNickname = (value: string) => setEdit({ nickname: value })
+  const setBio = (value: string) => setEdit({ bio: value })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -55,8 +64,19 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   const settingsRow = useReadModel(ownSettings, user?.id ? ['user'] : null)
   useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
   const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
-  // 改了但还没存的那一份;null = 没动过,显示存着的。
-  const [occupationEdit, setOccupationEdit] = useState<{ draft: Occupation | null } | null>(null)
+  // 改了但还没存的那一份;没有 = 没动过,显示存着的。
+  const occupationEdit = edit.occupation ?? null
+  const setOccupationEdit = (next: { draft: Occupation | null } | null) => setEdit({ occupation: next ?? undefined })
+  const savedOccupation = occupationReading.state === 'value' ? JSON.stringify(occupationReading.value) : null
+  const editedOccupation = edit.occupation ? JSON.stringify(edit.occupation.draft) : null
+  useEffect(() => {
+    const same = {
+      nickname: edit.nickname !== undefined && edit.nickname === (user?.nickname ?? ''),
+      bio: edit.bio !== undefined && edit.bio === (user?.bio ?? ''),
+      occupation: editedOccupation !== null && editedOccupation === savedOccupation,
+    }
+    if (same.nickname || same.bio || same.occupation) setEdit({ ...(same.nickname ? { nickname: undefined } : {}), ...(same.bio ? { bio: undefined } : {}), ...(same.occupation ? { occupation: undefined } : {}) })
+  }, [edit.nickname, edit.bio, editedOccupation, savedOccupation, user?.nickname, user?.bio, setEdit])
   const occupation = occupationReading.state === 'value'
     ? { kind: 'ready' as const, saved: occupationReading.value, draft: occupationEdit ? occupationEdit.draft : occupationReading.value }
     : occupationReading.state === 'error'
@@ -96,12 +116,10 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
         log.error({ error: e }, 'write occupation failed')
         setSaving(false); setSaveError(messageForUser(e)); return
       }
-      setOccupationEdit(null)
     }
     updateUser(next)
-    // 同步本地输入到持久值(去空白)→ dirty 归零、显示「已保存」、避免空格 bio 残留脏态
-    setNickname(next.nickname)
-    setBio(next.bio ?? '')
+    // 存好了:没存的那一份不要了 → 显示持久值(去空白)、dirty 归零、显示「已保存」
+    clearViewState(ACCOUNT_EDIT)
     setSaving(false)
     setSaved(true)
   }

@@ -1,19 +1,20 @@
-import { getRendererSession } from '@/lib/sessionPublication';
-import { browserStorage } from '@renderer/features/remote-hosts/browser-storage';
+import { readModelAccount } from '@/lib/readModel';
+import { readViewState, takeLegacyLocalStorage, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 
-const key = (owner: string) => `gugu:recent-tasks:${owner}`;
-export function recentTaskIds(owner = getRendererSession()?.user.id ?? null): string[] {
-  if (!owner) return [];
-  try {
-    const ids: unknown = JSON.parse(browserStorage()?.getItem(key(owner)) ?? '[]');
-    return Array.isArray(ids) ? [...new Set(ids.filter((id): id is string => typeof id === 'string'))].slice(0, 20) : [];
-  } catch { return []; }
+// Desktop-local navigation history per account: view state (lib/viewStateTable). Kept in localStorage before
+// (`gugu:recent-tasks:<account>`); moved over once.
+const LEGACY_PREFIX = 'gugu:recent-tasks:';
+const recentOf = (owner: string): ViewPanel => ({ conversation: '', panel: 'recent-tasks', account: owner });
+const tidy = (ids: unknown): string[] => Array.isArray(ids) ? [...new Set(ids.filter((id): id is string => typeof id === 'string'))].slice(0, 20) : [];
+takeLegacyLocalStorage((key) => key.startsWith(LEGACY_PREFIX), (key, raw) => writeViewState(recentOf(key.slice(LEGACY_PREFIX.length)), { ids: tidy(JSON.parse(raw)) }));
+
+export function recentTaskIds(owner = readModelAccount().id): string[] {
+  return owner ? tidy(readViewState<{ ids: string[] }>(recentOf(owner)).ids) : [];
 }
 
 /** Desktop-local navigation history; never changes a task's shared interaction time. */
-export function rememberTask(id: string, archived = false, owner = getRendererSession()?.user.id ?? null): void {
+export function rememberTask(id: string, archived = false, owner = readModelAccount().id): void {
   if (!owner) return;
   const rest = recentTaskIds(owner).filter((item) => item !== id);
-  try { browserStorage()?.setItem(key(owner), JSON.stringify((archived ? rest : [id, ...rest]).slice(0, 20))); }
-  catch { /* Unavailable storage must not prevent opening or archiving a task. */ }
+  writeViewState(recentOf(owner), { ids: (archived ? rest : [id, ...rest]).slice(0, 20) });
 }

@@ -117,6 +117,7 @@ export class ScreenLayoutStore {
       focusedSession: computed,
       joinedGroups: computed,
       show: action,
+      replaceWith: action,
       showRoot: action,
       showBeside: action,
       placeAt: action,
@@ -138,6 +139,13 @@ export class ScreenLayoutStore {
     if (!this.layout) return parked.length > 0 ? { ...parked[0], parked: parked.slice(1) } : null;
     const current = this.currentGroup()!;
     return parked.length > 0 ? { ...current, parked } : current;
+  }
+
+  /** Another account's screen takes this one's place: its own saved one, or an empty screen when it has none. */
+  replaceWith(snapshot: ScreenLayoutSnapshot | null): void {
+    this.clearScreen();
+    this.parked.clear();
+    if (snapshot) this.restore(snapshot);
   }
 
   /**

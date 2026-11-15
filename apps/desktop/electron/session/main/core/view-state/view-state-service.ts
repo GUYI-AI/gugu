@@ -1,10 +1,82 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq, like, sql } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { KV } from '@main/db/kv';
-import { projects, sessions } from '@main/db/schema';
+import { kv, projects, sessions } from '@main/db/schema';
+import { log } from '@main/lib/logger';
 import { sanitizeNavigationSnapshotForRestore, type RestoredSessionState } from './navigation-restore';
 
-const viewStateKV = new KV<Record<string, unknown>>('view-state');
+const NAMESPACE = 'view-state:';
+const FLUSH_DELAY_MS = 1000;
+
+/**
+ * View state (③) is written behind: a save lands in `pending` at once, so every read here already sees it, and reaches
+ * the database within FLUSH_DELAY_MS in one transaction (typing a search word is one row write, not one per key). The
+ * ways out run `flushViewState` first — the cleanup's database phase, a signal (signal-exit) and a crash (process-exit) —
+ * so a word typed just before a quit or a SIGTERM is on disk. A lost installation lock does not: the database is another
+ * process's by then. SQL that rewrites view-state rows flushes right before its transaction. `value === null` = delete. `at` orders rows by last write:
+ * the renderer evicts the oldest of a model over its cap, and the snapshot hands them over in that order.
+ */
+const pending = new Map<string, { value: string | null; at: number }>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let clock = 0;
+const stamp = () => (clock = Math.max(clock + 1, Date.now()));
+
+function stage(key: string, value: string | null): void {
+  pending.delete(key);
+  pending.set(key, { value, at: stamp() });
+  flushTimer ??= setTimeout(() => {
+    try {
+      flushViewState();
+    } catch (error) {
+      log.error('view state flush failed; kept for the next try', { error: String(error) });
+    }
+  }, FLUSH_DELAY_MS);
+  flushTimer.unref?.();
+}
+
+export function flushViewState(): void {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+  if (!pending.size) return;
+  const writes = [...pending];
+  db.transaction((tx) => {
+    for (const [key, { value, at }] of writes) {
+      if (value === null) tx.delete(kv).where(eq(kv.key, NAMESPACE + key)).run();
+      else tx.insert(kv).values({ key: NAMESPACE + key, value, updatedAt: at }).onConflictDoUpdate({ target: kv.key, set: { value, updatedAt: at } }).run();
+    }
+  });
+  // Only what was written leaves: a save that arrived meanwhile has a newer stamp and stays.
+  for (const [key, write] of writes) if (pending.get(key) === write) pending.delete(key);
+}
+
+const parse = (key: string, raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    log.error('view state row is malformed; not restored', { key });
+    return undefined;
+  }
+};
+
+/**
+ * Every stored entry, oldest write first, for the renderer's first frame (preload asks for it synchronously). Read
+ * straight from the database: better-sqlite3 is synchronous. A database that has no kv table yet (the first start,
+ * before its migrations) has nothing stored.
+ */
+export function viewStateSnapshot(): Record<string, unknown> {
+  const hasTable = db.all(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'kv'`).length > 0;
+  const result: Record<string, unknown> = {};
+  if (hasTable) {
+    const rows = db.select().from(kv).where(like(kv.key, `${NAMESPACE}%`)).orderBy(asc(kv.updatedAt)).all();
+    for (const row of rows) {
+      const key = row.key.slice(NAMESPACE.length);
+      if (pending.has(key)) continue;
+      const value = parse(key, row.value);
+      if (value !== undefined) result[key] = value;
+    }
+  }
+  for (const [key, { value }] of pending) if (value !== null) result[key] = parse(key, value);
+  return result;
+}
 
 /**
  * 这条会话在这台机器眼里是什么状态 —— 「确知已删除」只认一种:它的项目在这台机器上,会话行却没了
@@ -23,11 +95,18 @@ async function restoredSessionState(sessionId: string, projectId: string): Promi
   return project ? 'deleted' : 'elsewhere';
 }
 
+function read(key: string): unknown {
+  const staged = pending.get(key);
+  if (staged) return staged.value === null ? null : parse(key, staged.value);
+  const [row] = db.select({ value: kv.value }).from(kv).where(eq(kv.key, NAMESPACE + key)).limit(1).all();
+  return row ? parse(key, row.value) ?? null : null;
+}
+
 export const viewStateService = {
-  save: (key: string, snapshot: unknown): Promise<void> => viewStateKV.set(key, snapshot),
+  save: async (key: string, snapshot: unknown): Promise<void> => stage(key, JSON.stringify(snapshot)),
 
   get: async (key: string): Promise<unknown> => {
-    const snapshot = await viewStateKV.get(key);
+    const snapshot = read(key);
     if (key !== 'navigation') return snapshot;
     // #4277 开机不能默认落到已归档 / 已删除的会话上(见 navigation-restore.ts)。DB 查询一次,同步判。
     const session = (snapshot as { viewParams?: { session?: { sessionId?: unknown; projectId?: unknown } } } | null)
@@ -38,10 +117,14 @@ export const viewStateService = {
     return sanitizeNavigationSnapshotForRestore(snapshot, () => state);
   },
 
-  getAll: (): Promise<Record<string, unknown>> =>
-    viewStateKV.getAll() as Promise<Record<string, unknown>>,
+  getAll: async (): Promise<Record<string, unknown>> => viewStateSnapshot(),
 
-  del: (key: string): Promise<void> => viewStateKV.del(key),
+  del: async (key: string): Promise<void> => stage(key, null),
 
-  reset: (): Promise<void> => viewStateKV.clear(),
+  reset: async (): Promise<void> => {
+    pending.clear();
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = null;
+    db.delete(kv).where(like(kv.key, `${NAMESPACE}%`)).run();
+  },
 };
