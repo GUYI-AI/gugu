@@ -168,23 +168,22 @@ describe('pages beside the chat start at one declared width (side-width.ts, owne
   it('the side page width is 360px', () => expect(SIDE_PAGE_WIDTH_PX).toBe(360));
   it.each([1280, 1920, 2560])('group info opens at the side page width beside a %ipx chat, not half', (width) => {
     const id = `side-width-${width}`;
-    chatLayoutOf(id).focusedPane.setDimensions(width, 900);
+    chatLayoutOf(id).setDimensions(width, 900);
     openInfoTab(id, 'members');
     expect(sideWidth(id, width)).toBe(SIDE_PAGE_WIDTH_PX);
   });
   it('never more than half; a file beside the chat stays its peer', () => {
-    chatLayoutOf('side-width-narrow').focusedPane.setDimensions(600, 900);
+    chatLayoutOf('side-width-narrow').setDimensions(600, 900);
     openInfoTab('side-width-narrow', 'members');
     expect(sideWidth('side-width-narrow', 600)).toBe(300);
-    chatLayoutOf('side-width-file').focusedPane.setDimensions(1600, 900);
+    chatLayoutOf('side-width-file').setDimensions(1600, 900);
     openPanelItem('side-width-file', file('README'));
     expect(chatLayoutOf('side-width-file').paneSizes).toEqual([50, 50]);
   });
   it('a dragged width stays while open; double-click and reopening come back to the declared width', () => {
     const id = 'side-width-drag'; const layout = chatLayoutOf(id);
-    layout.focusedPane.setDimensions(2000, 900);
+    layout.setDimensions(2000, 900);
     openInfoTab(id, 'members');
-    layout.groups.forEach(({ pane }, at) => pane.setDimensions(at === 0 ? 1640 : 360, 900));
     const cut = layout.layout.type === 'split' ? layout.layout.id : '';
     layout.setSplitSizes(cut, [40, 60]);
     openInfoTab(id, 'announcement');
@@ -194,7 +193,6 @@ describe('pages beside the chat start at one declared width (side-width.ts, owne
     layout.setSplitSizes(cut, [40, 60]);
     closeInfoTab(id);
     expect(infoTabOf(id)).toBeNull();
-    layout.focusedPane.setDimensions(2000, 900);
     openInfoTab(id, 'members');
     expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
   });
