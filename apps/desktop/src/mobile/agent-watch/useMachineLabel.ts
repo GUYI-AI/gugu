@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/store/auth'
-import { thisPhoneDeviceId } from '../phone-device/phoneDeviceSettings'
+import { usePhoneHostIdentity } from '../local-agent/usePhoneHostIdentity'
 import '@/i18n/registerMobileWorkspaceCatalog'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { useAssistantName } from '@/hooks/useAssistantHomeLabel'
@@ -17,7 +17,7 @@ type Row = Pick<Device, 'device_id' | 'cloud_computer' | 'label' | 'capabilities
 export function useMachineLabel(): { label: (device: Row) => string; isHome: (device: AssistantHomeRow) => boolean } {
   const { cloudComputer } = useDevicesStore()
   const ownerId = useAuth().user?.id ?? null
-  const localId = ownerId ? thisPhoneDeviceId(ownerId) : null
+  const { deviceId: localId } = usePhoneHostIdentity(ownerId)
   const { t } = useTranslation('mobileWorkspace')
   const homeId = cloudComputer?.snapshot?.deviceId ?? null
   const name = useAssistantName()

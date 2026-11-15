@@ -5,7 +5,8 @@ import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { isLocalDeviceUnidentified } from '../lib/localDeviceIdentity'
 import { rendererLogger } from '../lib/log'
 import { partitionPhones, sortDevices } from '../lib/devicesSort'
-import { thisPhoneDeviceId } from '../mobile/phone-device/phoneDeviceSettings'
+import { usePhoneHostIdentity } from '../mobile/local-agent/usePhoneHostIdentity'
+import { isPhoneDevice } from '@gugu/core/cloud/devices'
 import { useAuth } from './auth'
 import { useChatStore } from './chatContext'
 import { DevicesContext } from './devicesContext'
@@ -253,8 +254,8 @@ export function DevicesProvider({ children, active = true }: { children: React.R
 
   // #7199 手机(只被调动作,不是运行位置)单独一份:设置 → 设备列它,「在哪跑」、侧栏、各处机器选择只读 machines。
   // 在手机上,这台手机自己那一行标成本机。
-  const thisPhoneId = useMemo(() => (platform.kind === 'capacitor' && userId ? thisPhoneDeviceId(userId) : null), [userId])
-  const { machines, phones } = useMemo(() => partitionPhones(listedHere, thisPhoneId), [listedHere, thisPhoneId])
+  const { ios, deviceId: thisPhoneId } = usePhoneHostIdentity(userId)
+  const { machines, phones } = useMemo(() => partitionPhones(ios ? listedHere.map(row => isPhoneDevice(row) ? { ...row, is_current_device: row.device_id === thisPhoneId } : row) : listedHere, thisPhoneId), [listedHere, thisPhoneId, ios])
   const directoryDevices = useMemo(() => [...machines, ...phones], [machines, phones])
   // 布局期发布:头像角标、收回着与否从这份读,首帧就要是这份,❌ 先画一帧旧的再翻。
   useLayoutEffect(() => { publishDirectoryDevices(directoryDevices) }, [directoryDevices])

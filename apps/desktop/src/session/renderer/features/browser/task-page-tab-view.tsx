@@ -1,3 +1,5 @@
+import { BrowserPictureFrame } from './browser-picture-frame';
+import { useBrowserAnnotations } from './browser-annotations';
 import { observer } from 'mobx-react-lite';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
@@ -42,6 +44,9 @@ function taskPageHost(deviceId: string, sessionId: string, watching: { asked(wat
 const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: { resource: TaskPageResource; visible: boolean }) {
   const { translate } = useSessionMessages();
   const root = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const [pictureSize, setPictureSize] = useState({ width: 0, height: 0 });
+  const [frame, setFrame] = useState<{ width: number; height: number } | null>(null);
   const [state, setState] = useState<ProjectionViewState>('connecting');
   const [watchId, setWatchId] = useState<string | null>(null);
   // Watched only while on screen: a hidden tab costs that machine nothing.
@@ -60,7 +65,8 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
       if (id === current) resource.setPage(page);
     });
     void mountProjection(host, root.current, `${resource.deviceId}:${resource.sessionId}`, {
-      state: (next) => setState(next),
+      state: (next) => { if (!gone) setState(next); },
+      painted: (next) => { if (!gone) setFrame(next); },
       error: () => setState('closed'),
     }).then((view) => { if (gone) void view.close(); else mounted = view; }, () => setState('closed'));
     return () => { gone = true; offState(); setWatchId(null); void mounted?.close(); };
@@ -71,11 +77,12 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
   };
   // The page there takes this tab's size (CSS pixels, at this screen's density, as a page here would).
   useEffect(() => {
-    const element = root.current;
+    const element = viewport.current;
     if (!watchId || !element) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const resize = () => {
       const { width, height } = element.getBoundingClientRect();
+      setPictureSize({ width, height });
       if (width < 100 || height < 100) return;
       void rpc.browser.controlTaskPage({ watchId, control: { action: 'resize', width: Math.round(width), height: Math.round(height),
         scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)) } }).catch(() => undefined);
@@ -86,6 +93,13 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
   }, [watchId]);
 
+  const annotations = useBrowserAnnotations({ sessionId: resource.sessionId, browserId: `task-page:${resource.deviceId}:${resource.sessionId}`, visible, available: !!watchId && state === 'live',
+    inspect: async (query, capture) => {
+      if (!watchId) throw new Error('This page is not watched');
+      const result = await rpc.browser.controlTaskPage({ watchId, control: { action: 'annotate', query, capture } });
+      if (!result.inspection) throw new Error('The page annotation could not be read');
+      return result.inspection;
+    } });
   const session = resource.session;
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -94,6 +108,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
           session={session}
           adapter={null}
           remote
+          annotationAction={annotations.toolbar}
           onNavigate={(url) => { control({ action: 'navigate', url }); return true; }}
           onGoBack={() => control({ action: 'back' })}
           onGoForward={() => control({ action: 'forward' })}
@@ -101,8 +116,11 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
           onForceReload={() => control({ action: 'reload' })}
         />
       )}
-      <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
-        <div ref={root} className="absolute inset-0" />
+      <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+        <BrowserPictureFrame viewport={pictureSize} frame={frame}>
+          <div ref={root} className="absolute inset-0" />
+          {annotations.overlay}
+        </BrowserPictureFrame>
         {state !== 'live' && state !== 'input-paused' && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-foreground-muted">
             {translate(state === 'closed' ? 'browser.sessionUnavailable' : 'browser.preparingSession')}

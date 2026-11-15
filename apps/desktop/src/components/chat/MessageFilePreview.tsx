@@ -23,6 +23,7 @@ import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { useFilePlace } from '../preview/file-place'
+import type { FileTextComment } from '../preview/file-text-range'
 
 const fileOpenLog = rendererLogger('chat/file-open')
 
@@ -40,6 +41,7 @@ export interface HostedPreviewSource {
   read: () => Promise<Blob>
   registerHtml: (documentHtml: string) => Promise<HtmlPreviewRegistration>
   quote: (selection: FileViewerSelection | null) => Promise<void>
+  annotate?: (comment: FileTextComment) => void | Promise<void>
   /** The folders it is in, top first: one with `open` goes there. */
   folders?: readonly { name: string; open?: () => void }[]
   /** This file's source can be edited: the preview's Edit opens it there. */
@@ -229,5 +231,5 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const connection = besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
   const shown = read?.binary ? 'unsupported' : kind
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, onAnnotate: readOnly ? undefined : file.source.annotate, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

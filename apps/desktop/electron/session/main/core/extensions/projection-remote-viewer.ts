@@ -3,7 +3,7 @@ import type { DeviceRpcResponse } from '@gugu/core/cloud/deviceRpcProtocol';
 import { unwrapPayload } from '@gugu/core/cloud/payload';
 import type { ProjectionHostPacket, ProjectionInputOutcome } from '@shared/extensions/projection-protocol';
 import { ProjectionInputFailure } from './extension-projections';
-import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
+import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE_STATE, PROJECTION_REMOTE_RPC, type ProjectionRemotePacketEvent, type ProjectionRemotePageStateEvent } from './projection-remote-host';
 
 /**
@@ -54,7 +54,7 @@ export async function watchRemoteProjection(
   deliver: (packet: ProjectionHostPacket) => void,
   /** A task page's toolbar state, as it changes there. */
   state?: (state: TaskPageState) => void,
-): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<void>; close(): void }> {
+): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }> {
   const watch = randomUUID();
   let closed = false;
   // Registered before asking: the first picture can arrive before the answer.
@@ -75,7 +75,8 @@ export async function watchRemoteProjection(
     },
     async control(control) {
       if (closed) throw new Error('Projection viewer is closed');
-      await ask(deviceId, PROJECTION_REMOTE_RPC.control, { watch, control }, 30_000);
+      const result = await ask(deviceId, PROJECTION_REMOTE_RPC.control, { watch, control }, 30_000);
+      return result.inspection as TaskPageControlResult;
     },
     close() {
       if (closed) return;

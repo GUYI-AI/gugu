@@ -276,10 +276,14 @@ export function useChatStoreReader(): () => ChatStoreValue {
   return useContext(ChatContext).get
 }
 
-/** 当前会话还在不在会话列表里,给外壳的手机会话层直接读(lib/shellTab @@@phone-chat-layer),不经谁转手。 */
+/** 当前会话(还在会话列表里时)与某条会话在不在列表里,给外壳的手机会话层直接读(lib/shellTab @@@phone-chat-layer / -trail),不经谁转手。 */
 export function useActiveChatListedSource(): ShellChatList {
   const handle = useContext(ChatContext)
-  return useMemo(() => ({ activeListed: () => handle.get().activeChat !== null, subscribe: handle.subscribe }), [handle])
+  return useMemo(() => ({
+    activeId: () => handle.get().activeChat?.id ?? null,
+    listed: (chatId: string) => handle.get().chats.some((chat) => chat.id === chatId),
+    subscribe: handle.subscribe,
+  }), [handle])
 }
 
 /** 只订阅从 store 里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的会话来消息也不重渲。 */

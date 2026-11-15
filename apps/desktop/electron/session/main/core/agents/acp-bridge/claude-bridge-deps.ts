@@ -63,7 +63,7 @@ export const realClaudeBridgeDeps: ClaudeBridgeDeps = {
   },
   async fetchLatestCompat(env) {
     // 走随包的 npm:用户的 registry / 镜像 / 代理配置(.npmrc、npm_config_*)照常生效。
-    const npm = resolveBundledNpmInvocation({ ...process.env, ...env }, app.getAppPath());
+    const npm = await resolveBundledNpmInvocation({ ...process.env, ...env }, app.getAppPath());
     const out = await execText(npm.command, [...npm.args, 'view', `${COMPAT_PACKAGE}@latest`, 'version', 'gugu', '--json'], npm.env as Record<string, string>, 60_000);
     return compatFromPackageJson(JSON.parse(out) as { version?: unknown; gugu?: { compat?: unknown } });
   },
@@ -90,7 +90,7 @@ export const realClaudeBridgeDeps: ClaudeBridgeDeps = {
     mkdirSync(staging, { recursive: true });
     const npmCache = join(staging, '.npm-cache');
     try {
-      const npm = resolveBundledNpmInvocation({ ...process.env, ...env }, app.getAppPath());
+      const npm = await resolveBundledNpmInvocation({ ...process.env, ...env }, app.getAppPath());
       // --omit=optional:不要 SDK 自带的那份原生 claude(~200MB)—— 桥接跑的是用户自己那份。
       await execWithStallWatch(
         npm.command,

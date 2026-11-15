@@ -7,7 +7,7 @@ import { formatCredits, quotaWindowViews, useSpendingPower } from '@/lib/billing
 import { compareCreditAmounts } from '@gugu/core/billing/creditAmount';
 import { creditRatio } from '@/lib/billing/creditGeometry';
 import { platform } from '@/platform';
-import { GUGU_BILLING_URL, GUGU_TOPUP_URL } from '@/lib/appLinks';
+import { billingLinksAvailable, GUGU_BILLING_URL, GUGU_TOPUP_URL } from '@/lib/appLinks';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@/components/ui/Button';
 import { SubscriptionServiceRow } from './SubscriptionServiceRow';
@@ -52,12 +52,12 @@ export function GuguSubscriptionRow() {
       identity={identity}
       scope={<span className="subscription-credit-scope">{translate('subscriptions.gugu.shared')}</span>}
       testId="subscription-row-gugu"
-      action={
+      action={billingLinksAvailable() ? (
         <Button variant="ghost" size="sm" nativeButton={false} render={<a href={GUGU_BILLING_URL} target="_blank" rel="noreferrer" />}>
           {translate('subscriptions.gugu.manage')}
           <ArrowUpRight className="ml-1 size-3" />
         </Button>
-      }
+      ) : undefined}
     >
       <div className="subscription-credit-summary">
         <span className="subscription-credit-label">{translate('subscriptions.gugu.available')}</span>
@@ -110,14 +110,14 @@ export function GuguSubscriptionRow() {
       {deviceFull && !accountError && plan?.tier === 'free' && (
         <p className="subscription-note">{t('usage.na.deviceFull')}</p>
       )}
-      <div className="subscription-credit-actions">
+      {billingLinksAvailable() && <div className="subscription-credit-actions">
         <Button variant="secondary" size="sm" nativeButton={false}
           render={<a href={GUGU_TOPUP_URL} target="_blank" rel="noreferrer" />}
           data-testid="membership-open-web">
           {t('usage.na.openWebBilling')}
           <ArrowUpRight className="ml-1 size-3" />
         </Button>
-      </div>
+      </div>}
     </SubscriptionServiceRow>
   );
 }

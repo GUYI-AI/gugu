@@ -2,6 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { HostedPreviewFile } from '@/components/chat/MessageFilePreview';
+import { sessionAnnotations } from '../annotations/session-annotations';
 
 // owner 2026-11-09: a PDF overwritten on a Gugu server kept showing the old pages until its tab was closed.
 const h = vi.hoisted(() => {
@@ -10,6 +12,7 @@ const h = vi.hoisted(() => {
     listeners,
     watchDirectory: vi.fn(async () => ({ success: true, data: { leaseId: 'lease-1' } })),
     releaseDirectoryWatch: vi.fn(async () => {}),
+    source: null as HostedPreviewFile['source'] | null,
   };
 });
 
@@ -19,7 +22,7 @@ vi.mock('../workspace-backend/workspace-backend', () => ({
   workspaceRpc: () => ({ files: { watchDirectory: h.watchDirectory, releaseDirectoryWatch: h.releaseDirectoryWatch } }),
 }));
 vi.mock('@/components/chat/MessageFilePreview', () => ({
-  MessageFilePreview: ({ file }: { file: { source: { key: string } } }) => <div data-key={file.source.key} />,
+  MessageFilePreview: ({ file }: { file: HostedPreviewFile }) => { h.source = file.source; return <div data-key={file.source.key} />; },
 }));
 vi.mock('../stores/open-file-in-file-editor', () => ({ openPathWithFailureToast: vi.fn() }));
 vi.mock('../stores/session-selectors', () => ({ getSessionView: vi.fn() }));
@@ -70,4 +73,17 @@ it('watches nothing for a file outside the workspace: no change feed carries it'
 it('watches the folder of a Windows path, not the path cut by one character', async () => {
   await draw(true, 'C:\\Users\\me\\task\\hw1.pdf');
   expect(h.watchDirectory.mock.calls).toEqual([['p', 'w', 'C:\\Users\\me\\task']]);
+});
+
+it('puts the original file path and selected lines on the owning session annotation queue', async () => {
+  const sessionId = 'file-annotations-owner';
+  await act(async () => root.render(<WorkspaceFileView projectId="p" workspaceId="w" sessionId={sessionId}
+    path="src/example.ts" absolutePath="/home/task/src/example.ts" inWorkspace onClose={() => {}} />));
+  const comment = { startLine: 2, endLine: 4, text: 'selected source', annotation: 'Please simplify' };
+  expect(h.source?.annotate).toBeDefined();
+  await h.source!.annotate!(comment);
+  const queue = sessionAnnotations.forSession(sessionId);
+  expect(queue.items).toEqual([expect.objectContaining({ kind: 'file', path: 'src/example.ts', ...comment })]);
+  expect(sessionAnnotations.forSession('another-session').items).toHaveLength(0);
+  queue.remove(queue.items[0].id);
 });

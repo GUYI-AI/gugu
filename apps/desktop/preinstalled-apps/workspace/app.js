@@ -1,3 +1,4 @@
+import { selectionComment, annotationLineNumbers, previewSelectionLines } from './comments.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
 // markdown source editor with a preview, and JSON files as editable text. Several people and agents edit the same
@@ -11,10 +12,10 @@
 // Where it runs is read from the context, never assumed: with a chat it shows that chat's
 // workspace; with a file (ctx.file) it opens the file it was handed; with neither there is nothing to show.
 
-import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
+import { findIn, linesText, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -151,6 +152,7 @@ const STRINGS = {
     copy: '复制',
     copied: '已复制',
     cite: '引用',
+    addToChat: '添加到对话', comment: '评论', commentPlaceholder: '添加可选评论…', commentFailed: '未能保存评论，请重试',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -196,6 +198,11 @@ const STRINGS = {
     clearsAt: '{time} 清除云端副本',
     sent: '聊天附件',
     expired: '已过期',
+    deleted: '已删除',
+    unavailable: '暂不可用',
+    unavailableReason: '暂时无法读取，可以联系上传的人',
+    d_status: '状态',
+    cloudDeleted: '云端已删除，可以让上传的人重新发',
     expiredAt: '{time} 到期，云端副本已清除',
     keep: '保留方式',
     keepTemporary: '临时',
@@ -389,6 +396,7 @@ const STRINGS = {
     copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
+    addToChat: 'Add to chat', comment: 'Comment', commentPlaceholder: 'Add an optional comment…', commentFailed: 'Could not save the comment. Try again.',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -434,6 +442,11 @@ const STRINGS = {
     clearsAt: 'Cloud copy cleared {time}',
     sent: 'Chat attachments',
     expired: 'Expired',
+    deleted: 'Deleted',
+    unavailable: 'Unavailable',
+    unavailableReason: 'Temporarily unreadable. Contact the uploader.',
+    d_status: 'Status',
+    cloudDeleted: 'The cloud copy was deleted. Ask the uploader to send it again.',
     expiredAt: 'Expired {time}: the cloud copy was cleared',
     keep: 'Keep',
     keepTemporary: 'Temporary',
@@ -793,6 +806,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
+  $('annotate-sel').textContent = t.addToChat
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -985,11 +999,11 @@ function heard(change) {
 // A change is read one file at a time, with what only a list says (`keep` — how long its cloud copy is kept —, `expiredAt`,
 // `childCount`: the host reads them with the file). One it came without keeps the list's answer; a file new to the list
 // with none is read again with its own folder — never the whole tree. Says those folders ('' the top).
-const listed = ({ keep, expiredAt, childCount }) => ({ keep, expiredAt, childCount })
+const listed = ({ keep, availability, expiredAt, childCount }) => ({ keep, availability, expiredAt, childCount })
 function take(change) {
   const before = new Map(state.entries.map((entry) => [entry.id, entry]))
   const listsKeep = state.entries.some((entry) => 'keep' in entry)
-  const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...entry, ...listed(before.get(entry.id)) }]))
+  const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...listed(before.get(entry.id)), ...entry }]))
   state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id) && !change.gone.includes(entry.id)), ...fresh.values()]
   if (!listsKeep) return []
   // An item come into, moved in or out of, or gone from a folder not read yet changes the count its row says
@@ -1162,9 +1176,9 @@ function renderList() {
   const filtering = Object.values(state.filters).some(Boolean)
   const folders = state.kind === 'all' && !filtering ? shown.filter(isFolder).sort(folderOrder) : []
   const picked = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
-  // Files whose cloud copy expired no longer open (owner 11-12): one folded section under the rest, closed until pressed.
-  const files = picked.filter((e) => !e.expiredAt)
-  const expired = picked.filter((e) => e.expiredAt)
+  // Unreadable files stay in folded sections under the rest, each named by the service's evidenced reason.
+  const files = picked.filter((e) => !fileUnavailable(e))
+  const expired = picked.filter(fileUnavailable)
   // At the top, the files placed there and the ones sent in the chat (「附件」) are two blocks under their own headings (owner 11-12).
   const sentIds = new Set(!needle && !state.folder ? sentEntries().map((e) => e.id) : [])
   const sent = files.filter((e) => sentIds.has(e.id))
@@ -1208,11 +1222,12 @@ function renderList() {
     if (folders.length && files.length) rows.push(sectionRow(t.files))
     draw(files)
   }
-  // The only block that folds: closed until pressed.
-  if (expired.length) {
-    const open = state.openSections.has(EXPIRED.key)
-    rows.push(sectionToggle(EXPIRED, expired.length, !open, state.openSections))
-    if (open) draw(expired)
+  for (const block of UNAVAILABLE_BLOCKS) {
+    const entries = expired.filter((entry) => unavailableState(entry) === block.key)
+    if (!entries.length) continue
+    const open = state.openSections.has(block.key)
+    rows.push(sectionToggle(block, entries.length, !open, state.openSections))
+    if (open) draw(entries)
   }
   list.replaceChildren(...rows)
   // 多选: what is picked stays picked while it is on screen; the order a range runs along is the order drawn (a folded
@@ -1247,7 +1262,7 @@ const SECTION_ROWS = 20
  */
 const HERE = { key: 'here', kind: 'files' }
 const SENT = { key: 'sent', kind: 'sent' }
-const EXPIRED = { key: 'expired', kind: 'expired' }
+const UNAVAILABLE_BLOCKS = ['expired', 'deleted', 'unavailable'].map((key) => ({ key, kind: key }))
 
 /** A block's heading: its name and how many files are in it, with a hairline above. */
 function blockRow(block, count) {
@@ -1264,7 +1279,7 @@ function blockRow(block, count) {
 function sectionToggle(section, count, closed, flips = state.closedSections) {
   const li = sectionRow('')
   li.classList.add('list-section-toggle')
-  if (section === EXPIRED) li.dataset.block = section.key
+  if (UNAVAILABLE_BLOCKS.includes(section)) li.dataset.block = section.key
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'section-toggle' })
   button.setAttribute('aria-expanded', String(!closed))
   const chevron = document.createElement('gugu-icon')
@@ -1819,7 +1834,7 @@ function fileMark(entry) {
   mark.setAttribute('aria-hidden', 'true')
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
-  if (wantsThumb(entry)) thumbInto(mark, entry)
+  if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
   return mark
 }
 
@@ -1952,12 +1967,16 @@ function keepMark(entry, now) {
   return mark
 }
 
-// A file whose cloud copy expired: said on its row, the day it was cleared on hover.
+const unavailableReason = (entry) => unavailableState(entry) === 'unavailable' ? state.t.unavailableReason : state.t.cloudDeleted
+
+// Say only the reason the service established. An unknown missing source is never called deleted or expired.
 function expiredMark(entry) {
-  if (!entry.expiredAt) return null
-  const mark = Object.assign(document.createElement('span'), { className: 'file-keep', textContent: state.t.expired })
+  if (!fileUnavailable(entry)) return null
+  const mark = Object.assign(document.createElement('span'), { className: 'file-keep', textContent: state.t[unavailableState(entry)] })
   mark.dataset.expired = ''
-  mark.title = fmt(state.t.expiredAt, { time: new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.expiredAt)) })
+  mark.title = Number.isFinite(Date.parse(entry.expiredAt ?? '')) && unavailableState(entry) === 'expired'
+    ? fmt(state.t.expiredAt, { time: new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.expiredAt)) })
+    : unavailableReason(entry)
   return mark
 }
 
@@ -2005,7 +2024,7 @@ function readAgain(entry, into) {
   return into !== undefined && state.listed.has(into) ? listFolder(into, true) : undefined
 }
 
-const fileTip = (entry) => [
+const fileTip = (entry) => fileUnavailable(entry) ? `${pathOf(entry)}\n${unavailableReason(entry)}` : [
   pathOf(entry), ...activityOf(entry), sizeOf(entry.size), entry.storedOn ? machineOf(entry.storedOn) : '',
   entry.keep ? entry.keep.expiresAt ? state.t.keepTemporary : state.t.keepPermanent : '',
 ].filter(Boolean).join(' · ')
@@ -2049,7 +2068,7 @@ function listItem(entry, now = new Date(Date.now())) {
     span.dataset.cell = cell
     meta.append(span)
   }
-  if (!folder) meta.title = activityOf(entry).join(' · ')
+  if (!folder) meta.title = fileUnavailable(entry) ? unavailableReason(entry) : activityOf(entry).join(' · ')
   open.append(title)
   const where = state.filter.trim() && entry.parentId ? pathOf(entry).split('/').slice(0, -1).join('/') : ''
   if (where) meta.prepend(Object.assign(document.createElement('span'), { className: 'file-path', textContent: where }))
@@ -2058,7 +2077,7 @@ function listItem(entry, now = new Date(Date.now())) {
   open.onauxclick = (event) => { if (!folder && event.button === 1) { event.preventDefault(); pressFile(entry, event) } }
   if (!folder) pickable(li, entry)
   if (offline(entry)) li.dataset.offline = ''
-  if (entry.expiredAt) li.dataset.expired = ''
+  if (fileUnavailable(entry)) li.dataset.expired = ''
   // Files carry the same resource link outside this App; folder moves stay inside it.
   const drag = (text, isLink) => {
     if (touchPane?.matches) return
@@ -2087,7 +2106,7 @@ function listItem(entry, now = new Date(Date.now())) {
   if (folder) dropOnto(li, entry.id)
   // At the row's end: how long its cloud copy has left, and the machine it stays on.
   li.append(open)
-  const marks = [expiredMark(entry), keepMark(entry, now), entry.storedOn ? storedOnMark(entry.storedOn) : null].filter(Boolean)
+  const marks = [expiredMark(entry) ?? keepMark(entry, now), entry.storedOn ? storedOnMark(entry.storedOn) : null].filter(Boolean)
   if (marks.length) {
     const box = Object.assign(document.createElement('span'), { className: 'file-marks' })
     box.append(...marks)
@@ -2106,7 +2125,7 @@ function gridItem(entry, now) {
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', 'false')
   if (offline(entry)) li.dataset.offline = ''
-  if (entry.expiredAt) li.dataset.expired = ''
+  if (fileUnavailable(entry)) li.dataset.expired = ''
   const open = document.createElement('button')
   open.type = 'button'
   open.className = 'file-open'
@@ -2359,6 +2378,7 @@ async function forwardEntries(entries, then) {
 }
 
 async function downloadEntry(entry) {
+  if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   hideBanner()
   const row = inCopy(entry) ? transferRow(state.t.downloading, entry.name) : null
   try {
@@ -2416,6 +2436,7 @@ async function copyLink(entry, at) {
 // the host hands the file back as context.file and applyContext opens it; nothing opens inline on a click.
 // `ask`: "Open with another App" — the host's picker, every App that opens this file, this one included.
 async function openInHost(entry, ask = false, intent = 'navigate') {
+  if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
     await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
@@ -2750,6 +2771,7 @@ function closeCurrent() {
 }
 
 function clearShownFile() {
+  comment.close()
   syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
@@ -3023,6 +3045,7 @@ async function showWhole(current) {
       extensions: [
         cm.EditorView.editorAttributes.of({ class: 'code-view' }),
         cm.view.highlightActiveLine(),
+        annotationLineNumbers(cm),
         cm.commands.history(),
         cm.keymap.of(cm.commands.historyKeymap),
         cm.code.editing({ language, dark: state.ctx.themeMode === 'dark', editable: !file.readOnly }),
@@ -3202,9 +3225,12 @@ async function mountPlain(current) {
 // (gugu.clipboard.writeText). Read at click time from here, because pressing a button may already have collapsed it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
+const comment = selectionComment({ document, labels: () => state.t, save: (file, selection) => gugu.files.annotateSelection(file, selection) })
 
 function showSelection(picks, end, inPreview = false) {
   state.picks = picks
+  $('annotate-sel').hidden = !state.ctx?.workspace?.sessionId || !state.current?.entry?.workspace
+  $('annotate-sel').disabled = picks.length !== 1 || !picks[0]?.lines
   selectionEnd = picks.length ? end : null
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
@@ -4360,6 +4386,7 @@ function showDetails(entry) {
     facts.append(Object.assign(document.createElement('dt'), { textContent: term }), Object.assign(document.createElement('dd'), { textContent: text, ...(title ? { title } : {}) }))
   }
   const dated = (iso) => (iso ? new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : '')
+  if (fileUnavailable(entry)) fact(t.d_status, t[unavailableState(entry)], unavailableReason(entry))
   fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(' · '))
   // A working copy's file was made there, not uploaded.
   fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(' · '))
@@ -4371,7 +4398,7 @@ function showDetails(entry) {
   fact(t.d_where, [inCopy(entry) ? t.workingCopy : t.chatFolder, ...folders].join(' / '))
   if (entry.storedOn) fact(t.d_stored, `${machineOf(entry.storedOn)}${entry.storedOn.online === undefined ? '' : ` · ${entry.storedOn.online ? t.machineOnline : t.machineOffline}`}`, storedOnText(entry.storedOn))
   const left = entry.keep?.expiresAt ? fmt(t.clearsAt, { time: dated(entry.keep.expiresAt) }) : null
-  if (entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} · ${left}` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
+  if (!fileUnavailable(entry) && entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} · ${left}` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
   const versions = document.createElement('ol')
   versions.className = 'details-versions'
   const versionsHead = Object.assign(document.createElement('h3'), { className: 'details-sub', textContent: t.d_versions, hidden: true })
@@ -4393,9 +4420,13 @@ function showDetails(entry) {
     gugu.files.versions(entry).then((kept) => {
       if (state.details?.id !== entry.id) return
       versionsHead.hidden = kept.length === 0
-      versions.replaceChildren(...kept.map((v) => Object.assign(document.createElement('li'), {
-        textContent: [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size)].filter(Boolean).join(' · '),
-      })))
+      versions.replaceChildren(...kept.map((v) => {
+        const li = document.createElement('li')
+        const status = unavailableState(v)
+        li.textContent = [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size), status ? t[status] : ''].filter(Boolean).join(status ? ' ' : ' · ')
+        if (status) { li.dataset.expired = ''; li.title = unavailableReason(v) }
+        return li
+      }))
     }, () => {})
   }
 }
@@ -4519,6 +4550,14 @@ function start() {
   $('copy-sel').onclick = () => copySelection()
   $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('cite-sel').onclick = () => cite()
+  $('annotate-sel').addEventListener('pointerdown', event => event.preventDefault())
+  $('annotate-sel').onclick = () => {
+    const pick = state.picks[0]
+    if (!state.current || state.picks.length !== 1 || !pick?.lines) return
+    const selected = document.getSelection()
+    const lines = picksInPreview && selected?.rangeCount ? previewSelectionLines(selected.getRangeAt(0)) ?? pick.lines : pick.lines
+    comment.open({ file: state.current.entry, pick: { ...pick, text: state.current.file.type === 'source' ? linesText(state.current.file.text, ...lines) : pick.text, lines: [...lines] }, anchor: selectionEnd })
+  }
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)

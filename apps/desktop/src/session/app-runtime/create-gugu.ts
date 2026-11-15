@@ -124,6 +124,8 @@ export function createGugu(
     });
   // Every call names where its file is (真源原则 13): an entry or `ctx.file` carries it, a place says it.
   const files = Object.freeze({
+    /** Preinstalled Files App only; the host checks identity, session binding and real input gesture. */
+    ...(host.appFiles.annotateSelection ? { annotateSelection: (file: unknown, selection: import('@shared/extensions/file-annotation').FileAnnotationFields) => withRef(file, ref => host.appFiles.annotateSelection!({ ref, ...selection })) } : {}),
     open: (file: unknown, options?: { readOnly?: boolean }) => {
       const counts = countsOf(host);
       counts?.opened();

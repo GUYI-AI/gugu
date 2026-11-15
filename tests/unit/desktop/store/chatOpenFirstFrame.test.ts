@@ -18,7 +18,7 @@ const { openImRepositoryMock, revisionListeners, revisionCoordinatorMock, coordi
   openImRepositoryMock: vi.fn(),
   revisionListeners: new Map<string, Set<(operations: readonly unknown[]) => void | Promise<void>>>(),
   revisionCoordinatorMock: {
-    start: vi.fn(), stop: vi.fn(), retryPending: vi.fn(), whenIdle: vi.fn().mockResolvedValue(undefined),
+    start: vi.fn(), stop: vi.fn(), wake: vi.fn(), retryPending: vi.fn(), whenIdle: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn((events: string | readonly string[], listener: (operations: readonly unknown[]) => void | Promise<void>) => {
       const claimed = typeof events === 'string' ? [events] : [...events]
       for (const event of claimed) {
@@ -231,6 +231,46 @@ describe('打开会话的第一帧', () => {
       await act(async () => { summaries.resolve([chatA, chatB]) })
       await rest
       expect(ready).toBe(true)
+    } finally { network.resolve(); harness.cleanup() }
+  })
+
+  it.each(['foreground', 'online'] as const)('recovers a missed native message after a failed %s read without duplicating the window', async (signal) => {
+    shell.native = true
+    network.resolve()
+    const harness = await mount()
+    const scheduling = coordinatorFactory.mock.calls[0]?.[4] as import('../../../../apps/desktop/src/lib/accountRevisionRuntime').AccountRevisionScheduling
+    const settled = () => scheduling.beforeRequest(new AbortController().signal)
+    const resume = () => {
+      if (signal === 'foreground') shell.foreground?.()
+      else window.dispatchEvent(new Event('online'))
+    }
+    try {
+      await act(async () => { select('chatA') })
+      shell.visibleChat = 'chatA'
+      act(() => followCurrent(true))
+      await vi.waitFor(() => expect(framesOf('chatA').at(-1)?.messages.map(row => row.id)).toEqual(['msgA1']), WAIT)
+      await settled()
+
+      vi.mocked(chatService.getMessages).mockClear().mockRejectedValueOnce(new TypeError('Network request failed'))
+      await act(async () => { resume() })
+      await settled()
+      expect(chatService.getMessages).toHaveBeenCalledTimes(1)
+      expect(framesOf('chatA').at(-1)?.messages.map(row => row.id)).toEqual(['msgA1'])
+
+      // No revision broadcast arrives: the next lifecycle/network signal must
+      // retry the authoritative read, even though the previous read failed.
+      const missed = message({ id: 'missed-while-offline', chat_id: 'chatA', seq: 2, sender_user_id: 'a1', content: 'sent during the outage' })
+      messagesByChat.chatA = [msgA1, missed]
+      network = deferred<void>()
+      vi.mocked(chatService.getMessages).mockClear()
+      await act(async () => { resume(); shell.foreground?.(); window.dispatchEvent(new Event('online')) })
+      expect(chatService.getMessages).toHaveBeenCalledTimes(1)
+      await act(async () => { network.resolve(); await settled() })
+      await vi.waitFor(() => expect(framesOf('chatA').at(-1)?.messages.map(row => row.id)).toEqual(['msgA1', missed.id]), WAIT)
+
+      await act(async () => { resume(); await settled() })
+      expect(framesOf('chatA').at(-1)?.messages.map(row => row.id)).toEqual(['msgA1', missed.id])
+      expect(sharedAccess.read('chatA').messageWindow.messages.filter(row => row.id === missed.id)).toHaveLength(1)
     } finally { network.resolve(); harness.cleanup() }
   })
 

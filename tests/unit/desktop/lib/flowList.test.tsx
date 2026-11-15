@@ -160,6 +160,36 @@ describe('useFlowList 贴底', () => {
     await resize()
     expect(scroller().scrollTop, '读历史的人不被拽回底部').toBe(reading)
   })
+  it('正从底部往上滚、还没滚出贴底阈值的读者不被拽回去:重渲染、内容变高、视口变矮都不拽', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    const gap = () => maxTop(scroller()) - scroller().scrollTop
+    // 滚轮的每一帧只走十几像素,这一帧的读数要等绘制之后才有:此刻列表还以为读者在底部。
+    scroller().scrollTop -= 30
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: null }))
+    expect(gap(), '没有新消息的一次重渲染').toBe(30)
+    expect(topOf('r19'), '上方补挂的行不挪动读者正看着的内容').toBe(230)
+    await nextFrames()
+    scroller().scrollTop -= 20
+    ;(scroller().firstElementChild!.lastElementChild as HTMLElement).dataset.h = '110'
+    await resize()
+    expect(gap(), '最后一条变高').toBe(60)
+    await nextFrames()
+    scroller().scrollTop -= 10
+    VIEW = 290
+    await resize()
+    expect(gap(), '视口变矮').toBe(80)
+  })
+  it('停在贴底阈值以内的读者照旧跟随:滚到离底 30px 停下,新消息来了贴到底', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    await scrollTo(maxTop(scroller()) - 30)
+    expect(events.atBottom.at(-1)).toBe(true)
+    await nextFrames()
+    await harness.render(createElement(List, { rows: rowsOf(21), landing: null }))
+    await resize()
+    expect(topOf('r20')).toBe(200)
+  })
   it('调用方关掉跟随(还有更新的页没载、正在定位未读)时在底部也不贴', async () => {
     await harness.render(createElement(List, { rows: rowsOf(10), landing: { index: 'LAST', align: 'end' }, followTail: false }))
     await nextFrames()
