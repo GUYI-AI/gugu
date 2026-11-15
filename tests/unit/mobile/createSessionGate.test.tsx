@@ -9,6 +9,7 @@ import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-w
 import type { CreateSelection } from '../../../apps/desktop/src/mobile/agent-watch/create-session-form'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
+import { freshReplicaAccount } from '../../support/replicaAccount'
 
 const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn() }))
 vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
@@ -62,7 +63,9 @@ const pageOn = (on: Device, props: Omit<Parameters<typeof CreateSessionPage>[0],
   return createNode(CreateSessionPage, props)
 }
 const scrollTo = Element.prototype.scrollTo
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('create-gate-owner')
+
   harness = createReactHarness()
   Element.prototype.scrollTo = () => undefined
   composerDrafts.set(mobileCreationDraftKey('create-gate-owner'), '')

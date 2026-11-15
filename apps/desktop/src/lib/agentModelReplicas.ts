@@ -1,5 +1,7 @@
-import { fetchAgentHarnessModels, fetchPlatformModelCatalog, readAgentModelSelection } from './agentModelSelection'
+import type { SessionpageSessionCreateOptions, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
 import { useEffect } from 'react'
+import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/mobile/agent-watch/sessionpage-rpc'
+import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
 import { replica, useReplica, type Reading } from './replica'
 import type { PlatformCatalogModel } from './agentModelSelection'
 
@@ -77,11 +79,29 @@ export const agentModelSelection = replica({
   persist: { maxBytes: 1024, maxEntries: 4 },
 })
 
-/** The models an agent's own harness offers on its device. */
-export const agentHarnessModels = replica({
-  name: 'agentHarnessModels',
+/**
+ * The models a harness offers on a machine (one catalog per machine × harness × view × the model asked about, whose
+ * efforts it carries): the new-session pages (desktop and phone) and the agent model pane read this one model. No push:
+ * read again after five minutes. The last two are kept across restarts (the agent model pane's first frame).
+ */
+export const sessionCreateModels = replica({
+  name: 'sessionCreateModels',
   scope: 'account',
-  read: (_owner, deviceId: string, harness: string, isLocal: boolean) => fetchAgentHarnessModels(deviceId, harness, isLocal),
+  read: (_owner, deviceId: string, harness: string, sessionView: SessionpageSessionView | null, model: string | null, via: SessionCreateVia) =>
+    fetchSessionCreateModels(deviceId, harness, sessionView, model, via),
   fresh: 5 * 60_000,
   persist: { maxBytes: 3072, maxEntries: 2 },
+})
+
+/**
+ * What a machine offers for a new session (harnesses, projects, the last-used set). No push: read on open (`fresh: 0`),
+ * again after a session is created there (the last-used set changes), when the machine comes back, and on reload. Not
+ * kept across restarts (it carries the machine's project list, which grows).
+ */
+export const sessionCreateOptions = replica({
+  name: 'sessionCreateOptions',
+  scope: 'account',
+  read: (_owner, deviceId: string, via: 'machine' | 'phone'): Promise<SessionpageSessionCreateOptions> =>
+    via === 'phone' ? fetchPhoneCreateOptions(deviceId) : fetchCreateOptions(deviceId),
+  fresh: 0,
 })

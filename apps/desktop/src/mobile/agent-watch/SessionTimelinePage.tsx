@@ -9,7 +9,8 @@ import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
-import { reaction } from 'mobx'
+import { mobxReadable } from '@/lib/mobxReadable'
+import { useSelect } from '@/lib/selectStore'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -53,11 +54,13 @@ import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
  * on a computer. Their page draws here; their program runs on the session's computer.
  */
+const sessionApps = mobxReadable(() => installedExtensionsStore.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })))
+const sameApps = (a: Array<{ kind: string; name: string }>, b: Array<{ kind: string; name: string }>) =>
+  a.length === b.length && a.every((one, i) => one.kind === b[i]?.kind && one.name === b[i]?.name)
+
 function useSessionApps(): Array<{ kind: string; name: string }> {
-  const read = () => installedExtensionsStore.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName }))
-  const [apps, setApps] = useState(read)
-  useEffect(() => reaction(read, setApps, { equals: (a, b) => a.length === b.length && a.every((one, i) => one.kind === b[i]?.kind && one.name === b[i]?.name) }), [])
-  return apps
+  // The installed Apps store (MobX until it becomes a replica), read through the MobX adapter — ❌ a copy in component state.
+  return useSelect(sessionApps, (apps) => apps, sameApps)
 }
 
 /**

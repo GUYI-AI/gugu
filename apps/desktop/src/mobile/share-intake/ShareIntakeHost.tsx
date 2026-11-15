@@ -13,6 +13,7 @@ import { ShareIntakeContent } from './ShareIntakeSheet'
 export function ShareIntakeHost({ active }: { active: boolean }) {
   const { t } = useTranslation('messaging')
   const [share, setShare] = useState<IncomingShare | (() => void) | null>(null)
+  // @@@effect-flow - receives share intents from the OS (one-shot events, not a read)
   useEffect(() => {
     if (!active || !platform.subscribeIncomingShares) return
     return platform.subscribeIncomingShares(setShare)

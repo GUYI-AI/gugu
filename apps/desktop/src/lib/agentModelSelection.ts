@@ -23,10 +23,10 @@ import { edgeFunctionError } from './edgeFunctionError'
 import { identityDb, dataClient } from './supabase'
 import { PLATFORM_MODELS_CHANGED_EVENT, parsePlatformReasoningEfforts } from '@/session/shared/core/agents/platform-model'
 import { chatService } from './chat'
-import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
+import type { SessionpageSessionCreateModels, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
-import { fetchCreateModels } from '@/mobile/agent-watch/sessionpage-rpc'
+import { fetchCreateModels, fetchPhoneCreateModels } from '@/mobile/agent-watch/sessionpage-rpc'
 
 export interface PlatformCatalogModel {
   id: string
@@ -195,11 +195,23 @@ export async function setAgentModelSelection(
   }
 }
 
-/** 目录与订阅凭据都问 Agent 实际所在设备；控制端本机账号不能冒充远端凭据。 */
-export async function fetchAgentHarnessModels(deviceId: string, harness: string, isLocal: boolean): Promise<SessionpageSessionCreateModels> {
-  if (!isLocal) return fetchCreateModels(deviceId, harness, 'general', null)
-  const result = await rpcOn(null).sessionTimeline.sessionCreateModels({ harness, sessionView: 'general' })
+/** Which way a machine's create-model catalog is asked: this computer's runtime, another computer, or a phone task host. */
+export type SessionCreateVia = 'local' | 'machine' | 'phone'
+
+/**
+ * 一台机器上某个 harness 能跑哪些模型(新建会话框、智能体模型设置共用这一问)。目录与订阅凭据都问那台实际所在的设备;
+ * 控制端本机账号不能冒充远端凭据。`sessionView` null = 那台电脑按自己的「终端」开关定。
+ */
+export async function fetchSessionCreateModels(deviceId: string, harness: string, sessionView: SessionpageSessionView | null, model: string | null, via: SessionCreateVia): Promise<SessionpageSessionCreateModels> {
+  if (via === 'machine') return fetchCreateModels(deviceId, harness, sessionView, model)
+  if (via === 'phone') return fetchPhoneCreateModels(deviceId, harness, sessionView, model)
+  const result = await rpcOn(null).sessionTimeline.sessionCreateModels({ harness, ...(sessionView ? { sessionView } : {}), ...(model ? { model } : {}) })
   if (!result.ok) throw new Error(result.error.message)
   return result.value
+}
+
+/** An agent's own harness catalog on its device (the agent model pane, the assistant server setup). */
+export function fetchAgentHarnessModels(deviceId: string, harness: string, isLocal: boolean): Promise<SessionpageSessionCreateModels> {
+  return fetchSessionCreateModels(deviceId, harness, 'general', null, isLocal ? 'local' : 'machine')
 }
 

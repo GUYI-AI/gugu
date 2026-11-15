@@ -11,7 +11,6 @@ import {
 import type { Device } from '@gugu/core/shared/types/chat'
 import type {
   SessionpageSessionCreateModels,
-  SessionpageSessionCreateOptions,
   SessionpageSessionSummary,
   SessionpageSessionCreateRequest,
   SessionpageSessionCreateResult,
@@ -41,7 +40,9 @@ import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { guguReasonInText, remoteFailureKind } from '@gugu/session-core/session-record/contract'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptions, createPhoneSession, fetchPhoneCreateModels, fetchPhoneCreateOptions } from './sessionpage-rpc'
+import { SessionpageRpcError, createSession, createPhoneSession } from './sessionpage-rpc'
+import { useReplica } from '@/lib/replica'
+import { sessionCreateModels, sessionCreateOptions } from '@/lib/agentModelReplicas'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
 import './task-flow-catalog'
 import {
@@ -56,6 +57,8 @@ import {
 } from './create-session-form'
 
 const createLog = rendererLogger('mobile/agent-watch')
+/** Before the machine's options are read nothing is picked (the options pill is not drawn until they are). */
+const NO_SELECTION: CreateSelection = { harness: null, model: null, permissionMode: null, effort: null }
 
 /** 「没沿用上」那句话里每一格叫什么 —— 与选项胶囊上的行名同一套词。 */
 const LAST_USED_ITEM_LABEL_KEYS: Record<LastUsedItem, string> = {
@@ -172,65 +175,36 @@ function CreateOnMachine({
   }, [page])
   // #7199 在睡着的云电脑上新建 = 叫醒它;醒了(在线)选项照常读出来。
   const { issue: wakeIssue, dropped: wakeDropped, retry: retryWake } = useCloudComputerWake(device)
-  const [options, setOptions] = useState<SessionpageSessionCreateOptions | null>(null)
-  const [optionsError, setOptionsError] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
-  const [selection, setSelection] = useState<CreateSelection>({ harness: null, model: null, permissionMode: null, effort: null })
+  const via = phone ? 'phone' as const : 'machine' as const
+  // 机器离线时不发 RPC(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
+  const optionsReading = useReplica(sessionCreateOptions, online ? [device.device_id, via] : null)
+  const options = optionsReading.state === 'value' ? optionsReading.value : null
+  const optionsError = optionsReading.state === 'error' ? describe(optionsReading.error) : null
+  /** 手机上没确认完的那次创建(本机发件记录,同步读):沿用它的 harness / 模型,发的也只能是它。 */
+  const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(() => (phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null))
+  /** 人选的那一套;null = 还没动过(这时选的是从读数算出来的那一套)。 */
+  const [chosen, setChosen] = useState<CreateSelection | null>(null)
   /** 人动过选择没有 —— 动过之后「上次那一套没沿用上」就不再说(那是人自己的改动)。 */
-  const [touched, setTouched] = useState(false)
+  const touched = chosen !== null
   /** 与桌面创建框同一条：明确点选的自家默认不被自动默认覆盖；换 harness 后重算。 */
-  const modelTouched = useRef(false)
-  /** 选定 harness 的模型目录；自动默认等这份读数，人明确点选后沿用其选择。 */
-  const [models, setModels] = useState<SessionpageSessionCreateModels | null>(null)
-  const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  const modelTouched = useRef(phoneAttempt !== null)
+  const derived = options ? (phoneAttempt ? { ...initialSelection(options), harness: phoneAttempt.harness, model: phoneAttempt.model ?? null } : initialSelection(options)) : null
+  const picked = chosen ?? derived ?? NO_SELECTION
+  // 目录跟着 harness 走；复用这次读数定默认，不另发可用性探针。
+  // 展示不由手机选:那台电脑按自己的「终端」开关定。
+  const harness = picked.harness
+  const model = picked.model
+  const modelsReading = useReplica(sessionCreateModels, online && harness ? [device.device_id, harness, null, model, via] : null)
+  // 推理档跟着模型走(桌面同一条),所以换模型也重读;但同一家同一腿只是换模型时**不清空**清单 ——
+  // 清了列表会在人刚点完那一下闪没,而且 reconcile 会把刚选的模型判成「不在目录里」清掉。新读数到之前画上一份。
+  const [lastModels, setLastModels] = useState<SessionpageSessionCreateModels | null>(null)
+  if (modelsReading.state === 'value' && modelsReading.value !== lastModels) setLastModels(modelsReading.value)
+  const models = modelsReading.state === 'value' ? modelsReading.value : lastModels && lastModels.harness === harness ? lastModels : null
+  const modelsState: 'idle' | 'loading' | 'ready' | 'failed' = !online || !harness ? 'idle' : modelsReading.state === 'value' ? 'ready' : modelsReading.state === 'error' ? 'failed' : 'loading'
+  const selection = reconcileModel(picked, models, modelTouched.current, options?.lastUsed)
   /** 正在建的那句话;建成或失败后清空。它同时也是线程里唯一那条(乐观显示的)用户消息。 */
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
-
-  // 机器离线时**不发 RPC**(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
-  useEffect(() => {
-    setOptions(null)
-    setOptionsError(null)
-    if (!online) return
-    let cancelled = false
-    setTouched(false)
-    const readOptions = phone ? fetchPhoneCreateOptions : fetchCreateOptions
-    readOptions(device.device_id)
-      .then((next) => {
-        if (cancelled) return
-        const attempt = phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null
-        modelTouched.current = attempt !== null
-        setPhoneAttempt(attempt)
-        setOptions(next)
-        setSelection(attempt ? { ...initialSelection(next), harness: attempt.harness, model: attempt.model ?? null } : initialSelection(next))
-      })
-      .catch((err) => { if (!cancelled) setOptionsError(describe(err)) })
-    return () => { cancelled = true }
-  }, [device.device_id, online, reloadKey, phone, ownerId])
-
-  // 目录跟着 harness 走；复用这次读数定默认，不另发可用性探针。
-  // 展示不由手机选:那台电脑按自己的「终端」开关定。
-  const harness = selection.harness
-  const model = selection.model
-  useEffect(() => {
-    if (!online || !harness) { setModels(null); setModelsState('idle'); return }
-    let cancelled = false
-    // 推理档跟着模型走(桌面同一条),所以换模型也重读;但同一家同一腿只是换模型时**不清空**清单 ——
-    // 清了列表会在人刚点完那一下闪没,而且 reconcile 会把刚选的模型判成「不在目录里」清掉。
-    setModels((prev) => (prev && prev.harness === harness ? prev : null))
-    setModelsState('loading')
-    const readModels = phone ? fetchPhoneCreateModels : fetchCreateModels
-    readModels(device.device_id, harness, null, model)
-      .then((next) => {
-        if (cancelled) return
-        setModels(next)
-        setModelsState('ready')
-        setSelection((current) => reconcileModel(current, next, modelTouched.current, options?.lastUsed))
-      })
-      .catch(() => { if (!cancelled) setModelsState('failed') })
-    return () => { cancelled = true }
-  }, [device.device_id, online, harness, model, reloadKey, phone, options])
 
   const blocker = options ? createBlocker(options, selection) : null
   const readingModelDefault = !modelTouched.current && (!models || models.harness !== harness) && modelsState !== 'failed'
@@ -239,9 +213,9 @@ function CreateOnMachine({
   const creating = pendingText !== null
   const canSubmit = online && options !== null && optionsError === null && blocker === null && !readingModelDefault && !modelNeedsSignIn
   const reloadOptions = () => {
-    setOptions(null)
-    setOptionsError(null)
-    setReloadKey((key) => key + 1)
+    setChosen(null)
+    void sessionCreateOptions.refresh(device.device_id, via)
+    if (harness) void sessionCreateModels.refresh(device.device_id, harness)
   }
 
   const messages = useMemo<ThreadMessageLike[]>(
@@ -292,6 +266,8 @@ function CreateOnMachine({
           setPhoneAttempt(request)
         }
         const result = await (phone ? createPhoneSession : createSession)(device.device_id, request)
+        // That machine's last-used set changed: the next new session there starts from it.
+        void sessionCreateOptions.refresh(device.device_id)
         if (phone) {
           if (!result.session?.supported || result.session.conversationId !== result.conversationId) throw new Error('手机尚未返回完整的任务记录，请继续同一次创建')
           forgetPhoneSessionCreate(ownerId!, device.device_id, request)
@@ -462,8 +438,7 @@ function CreateOnMachine({
                     selection={selection}
                     onChange={(next, modelPicked) => {
                       modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
-                      setTouched(true)
-                      setSelection(next)
+                      setChosen(next)
                     }}
                     busy={!online || optionsError !== null || creating || phoneAttempt !== null}
                     models={models}

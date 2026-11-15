@@ -20,7 +20,7 @@ import {
 import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
-import { agentHarnessModels, agentModelSelection, useDetailedPlatformCatalog } from '../../lib/agentModelReplicas'
+import { agentModelSelection, sessionCreateModels, useDetailedPlatformCatalog } from '../../lib/agentModelReplicas'
 import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -72,7 +72,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       || cloudComputer?.snapshot?.deviceId === agent.device_id))
   const isLocal = platform.capabilities.agentRuntime && devices.some((device) => device.device_id === agent.device_id && device.is_current_device)
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
-  const harnessReading = useReplica(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
+  const harnessReading = useReplica(sessionCreateModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, 'general', null, isLocal ? 'local' : 'machine'] : null)
   const harness: SessionpageSessionCreateModels | null = harnessReading.state === 'value' ? harnessReading.value : null
   const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
@@ -215,7 +215,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
           : { source: 'platform', protocol: protocol!, modelId: chosen.modelId })
         if (next !== value) void save(next)
       }} />}
-      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={() => { void agentHarnessModels.refresh() }}>{t('settings.model.retryCatalog')}</Button></div>
+      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={() => { void sessionCreateModels.refresh() }}>{t('settings.model.retryCatalog')}</Button></div>
         : harness?.harnessState === 'auth-required' ? <div className={asClass.aiModelArd}>{t('settings.model.deviceSubscriptionMissing')}</div> : null)}
       <div className={asClass.aiModelArd} role="status">
         {saving ? t('settings.model.applying') : value === null && selection.state !== 'error' ? <Unknown className="w-48" /> : error

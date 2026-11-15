@@ -26,6 +26,7 @@ export function ServerLoginApproveSheet({ code, onDone }: { code: string | null;
   const { t } = useTranslation('settings')
   const [view, setView] = useState<View>({ kind: 'loading' })
 
+  // @@@effect-flow - one server-login approval step: reads the request the link names, then the person decides it (drawn as loading until it answers)
   useLayoutEffect(() => {
     if (code === null) return
     setView({ kind: 'loading' })

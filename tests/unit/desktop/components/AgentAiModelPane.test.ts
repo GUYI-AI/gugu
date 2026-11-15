@@ -30,7 +30,8 @@ vi.mock('../../../../apps/desktop/src/lib/agentModelSelection', async () => {
   return {
     ...actual,
     fetchPlatformModelCatalog: (...args: unknown[]) => fetchPlatformModelCatalog(...args),
-    fetchAgentHarnessModels: (...args: unknown[]) => fetchAgentHarnessModels(...args),
+    // The pane reads the shared create-model catalog; its agent-harness question is the `general` view, no model asked.
+    fetchSessionCreateModels: (deviceId: string, harness: string, _view: unknown, _model: unknown, via: string) => fetchAgentHarnessModels(deviceId, harness, via === 'local'),
     readAgentModelSelection: (...args: unknown[]) => readAgentModelSelection(...args),
     setAgentModelSelection: (...args: unknown[]) => setAgentModelSelection(...args),
   }

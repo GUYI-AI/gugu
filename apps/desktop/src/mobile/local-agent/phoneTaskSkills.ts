@@ -1,3 +1,4 @@
+import { replica } from '@/lib/replica'
 import { invokePhoneHost } from './phoneHostRpc'
 
 export interface PhoneTaskSkill { id: string; name: string; description: string; instructions: string; enabled: boolean }
@@ -42,6 +43,14 @@ function snapshot(value: PhoneTaskSkillsSnapshot, sessionId: string): PhoneTaskS
 export async function readPhoneTaskSkills(deviceId: string, sessionId: string): Promise<PhoneTaskSkillsSnapshot> {
   return snapshot(await invokePhoneHost<PhoneTaskSkillsSnapshot>(deviceId, 'sessionTimeline.phoneSkillsGet', [{ conversationId: sessionId }]), sessionId)
 }
+
+/** A phone task's Skills, as its phone answers them. No push: read when the dialog opens (`fresh: 0`); a save puts what the phone kept. */
+export const phoneTaskSkills = replica({
+  name: 'phoneTaskSkills',
+  scope: 'account',
+  read: (_owner: string, deviceId: string, sessionId: string) => readPhoneTaskSkills(deviceId, sessionId),
+  fresh: 0,
+})
 
 export async function savePhoneTaskSkills(deviceId: string, sessionId: string, expectedRevision: number, skills: PhoneTaskSkill[]): Promise<PhoneTaskSkillsSnapshot> {
   return snapshot(await invokePhoneHost<PhoneTaskSkillsSnapshot>(deviceId, 'sessionTimeline.phoneSkillsSet', [{ conversationId: sessionId, expectedRevision, skills }]), sessionId)
