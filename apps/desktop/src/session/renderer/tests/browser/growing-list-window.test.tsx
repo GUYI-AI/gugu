@@ -78,3 +78,30 @@ it('sections sharing one scroller each mount only their part in view, and scroll
   expect(document.querySelectorAll('[data-line^="agents-"]').length).toBeLessThan(40)
   expect(document.querySelectorAll('[data-line^="people-"]').length).toBeLessThan(20)
 })
+
+it('a scroll renders only the lines that enter the window, not the ones already mounted', async () => {
+  const renders = new Map<number, number>()
+  function Panel() {
+    const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+    return (
+      <div ref={setScroller} data-testid="scroller" style={{ height: 400, overflowY: 'auto' }}>
+        <GrowingList scroller={scroller} count={400} getKey={(i) => i} estimateSize={() => 40} renderLine={(i) => {
+          renders.set(i, (renders.get(i) ?? 0) + 1)
+          return <div data-line={i} style={{ height: 40 }}>line {i}</div>
+        }} />
+      </div>
+    )
+  }
+  act(() => mountHost().render(<Panel />))
+  await until('line 0 is drawn', () => document.querySelector('[data-line="0"]') != null)
+  const scroller = document.querySelector<HTMLElement>('[data-testid="scroller"]')!
+  for (let step = 1; step <= 5; step++) {
+    renders.clear()
+    act(() => { scroller.scrollTop = step * 200 })
+    // 200 px = 5 more lines at the bottom of the window (10 in view + 8 overscan): those render, the mounted ones do not.
+    const last = step * 5 + 17
+    await until(`line ${last} is drawn`, () => document.querySelector(`[data-line="${last}"]`) != null)
+    expect([...renders.keys()].sort((a, b) => a - b)).toEqual([last - 4, last - 3, last - 2, last - 1, last])
+    expect(Math.max(...renders.values())).toBe(1)
+  }
+})

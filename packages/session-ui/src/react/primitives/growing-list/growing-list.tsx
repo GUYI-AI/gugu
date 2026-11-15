@@ -1,5 +1,6 @@
 import { useVirtualizer, type Range, type VirtualItem, type Virtualizer } from '@tanstack/react-virtual'
-import { useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
+import { memo, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type Key, type ReactNode, type RefObject } from 'react'
 
 /**
  * @@@growing-list - the one way to draw a list whose length grows with the user's data (members, contacts, search
@@ -39,11 +40,22 @@ export type GrowingListWindow = Virtualizer<HTMLElement, Element> & {
 
 export function useGrowingList({ count, getKey, estimateSize, scroller, isSticky, scrollMargin = 0, overscan = 8, gap, padding = 0, enabled = true }: GrowingListOptions): GrowingListWindow {
   const stuck = useRef(-1)
+  const [, redraw] = useReducer((n: number) => n + 1, 0)
+  const jumping = useRef(false)
   const lineWindow = useVirtualizer<HTMLElement, Element>({
     count,
     getItemKey: getKey,
     estimateSize,
     getScrollElement: () => scroller,
+    // A scroll that moves the window renders it in the next task, not inside the scroll event (flushSync): the event
+    // returns at once and several scroll events in one frame make one render. A jump to a line (`scrollToIndex`) still
+    // renders inside: it settles over the next frames as the lines it brings in are measured, and stops early if they
+    // are measured a frame late (the line it went to ends up partly outside the view).
+    useFlushSync: false,
+    onChange: (instance, sync) => {
+      if (!instance.isScrolling) jumping.current = false
+      else if (sync && jumping.current) flushSync(redraw)
+    },
     // The first frame already shows the lines that fit, before the scroller's size is observed.
     initialRect: { width: 0, height: scroller?.clientHeight || globalThis.innerHeight || 800 },
     overscan,
@@ -65,7 +77,16 @@ export function useGrowingList({ count, getKey, estimateSize, scroller, isSticky
       return [...indexes].sort((a, b) => a - b)
     },
   })
-  return Object.assign(lineWindow, { stuckIndex: () => stuck.current })
+  const jumpTo = useRef(lineWindow.scrollToIndex)
+  return Object.assign(lineWindow, {
+    stuckIndex: () => stuck.current,
+    // Only a jump that moved the scroller (a line already in view, e.g. the hovered one, moves nothing).
+    scrollToIndex: (...args: Parameters<typeof lineWindow.scrollToIndex>) => {
+      const before = scroller?.scrollTop
+      jumpTo.current(...args)
+      if (scroller?.scrollTop !== before) jumping.current = true
+    },
+  })
 }
 
 /**
@@ -90,12 +111,23 @@ export function useOffsetInScroller(lines: RefObject<HTMLElement | null>, scroll
   return offset
 }
 
+/**
+ * One line's content. A scroll frame re-renders `GrowingList` (the window moved) but not its owner, so `renderLine` keeps its
+ * identity and every line already mounted skips rendering: only the lines entering the window render. When the owner
+ * re-renders, its new `renderLine` redraws the mounted lines, as it should.
+ */
+const Line = memo(function Line({ index, renderLine }: { index: number; renderLine: (index: number) => ReactNode }) {
+  return renderLine(index)
+})
+
 const LINES_STYLE_BASE: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' }
 const OWN_SCROLLER_STYLE: CSSProperties = { overflowY: 'auto', minHeight: 0 }
 
 /**
  * The mounted lines stack in one grid cell, each moved to its place: the cell is as wide as the widest mounted line, so a
  * list in a popover is as wide as its names. The sticky head is not moved: it sits at the top and `sticky` keeps it there.
+ * Each moved line is its own compositor layer (`will-change`): a line entering during a scroll paints alone instead of
+ * repainting every line already on screen.
  */
 export function GrowingList({ renderLine, scroller, className, style, scrollerStyle, testId, windowRef, ...options }: Omit<GrowingListOptions, 'scroller' | 'scrollMargin'> & {
   renderLine: (index: number) => ReactNode
@@ -126,9 +158,9 @@ export function GrowingList({ renderLine, scroller, className, style, scrollerSt
           ref={lineWindow.measureElement}
           style={item.index === stuckIndex
             ? { gridArea: '1 / 1', alignSelf: 'start', position: 'sticky', top: 0, zIndex: 1 }
-            : { gridArea: '1 / 1', alignSelf: 'start', transform: `translateY(${item.start - scrollMargin}px)` }}
+            : { gridArea: '1 / 1', alignSelf: 'start', transform: `translateY(${item.start - scrollMargin}px)`, willChange: 'transform' }}
         >
-          {renderLine(item.index)}
+          <Line index={item.index} renderLine={renderLine} />
         </div>
       ))}
     </div>

@@ -100,8 +100,10 @@ const TOPIC_NAME_EDIT_STYLE: React.CSSProperties = { flex: 1, minWidth: 0 }
 const MEMBER_LIST_ERROR_STYLE: React.CSSProperties = { padding: 'var(--spacing-sm) var(--spacing-lg)', color: 'var(--danger-fg)', fontSize: 'var(--font-caption)' }
 // 档位没改成的原因:写在那一行的档位钮下面。
 const MEMBER_ROW_ERROR_STYLE: React.CSSProperties = { marginTop: 4, color: 'var(--danger-fg)', fontSize: 'var(--font-caption)' }
-// A member row with its meta line; every mounted row is measured, this only places the ones not mounted yet.
-const memberRowEstimate = () => 56
+// Where the rows not mounted yet go (every mounted row is measured): a row is 48 px, an agent row
+// with its meta line (owner, engine, model, device) 58.
+const personRowEstimate = () => 48
+const agentRowEstimate = () => 58
 const MEMBER_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' }
 
 /**
@@ -436,7 +438,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
             <SectionLabel trailing={<span aria-hidden="true" style={SECTION_COUNT_STYLE}>{shownPeople.length}</span>}>{t('group.memberList.sectionPeople')}</SectionLabel>
             {/* @@@growing-list: a section mounts the rows around the visible part of the panel's one scroller. */}
             <div data-member-section-rows="human">
-              <GrowingList scroller={scroller} count={shownPeople.length} getKey={(index) => shownPeople[index]!.id} estimateSize={memberRowEstimate} renderLine={(index) => {
+              <GrowingList scroller={scroller} count={shownPeople.length} getKey={(index) => shownPeople[index]!.id} estimateSize={personRowEstimate} renderLine={(index) => {
                 const member = shownPeople[index]!
                 return (
                   <MemberRow
@@ -470,13 +472,13 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
                 >
                   {t('group.memberList.myAgents')}
                 </SectionLabel>
-                {myAgentsOpen ? <GrowingList scroller={scroller} count={myAgents.length} getKey={(index) => myAgents[index]!.id} estimateSize={memberRowEstimate} renderLine={(index) => renderAgentRow(myAgents[index]!)} /> : null}
+                {myAgentsOpen ? <GrowingList scroller={scroller} count={myAgents.length} getKey={(index) => myAgents[index]!.id} estimateSize={agentRowEstimate} renderLine={(index) => renderAgentRow(myAgents[index]!)} /> : null}
               </section>
             ) : null}
             {otherAgents.length > 0 ? (
               <section data-member-section="agent" data-member-group="others" style={MEMBER_LIST_NEXT_SECTION_STYLE}>
                 <SectionLabel trailing={<span aria-hidden="true" style={SECTION_COUNT_STYLE}>{otherAgents.length}</span>}>{t(myAgents.length > 0 ? 'group.memberList.otherAgents' : 'group.memberList.sectionAgents')}</SectionLabel>
-                <GrowingList scroller={scroller} count={otherAgents.length} getKey={(index) => otherAgents[index]!.id} estimateSize={memberRowEstimate} renderLine={(index) => renderAgentRow(otherAgents[index]!)} />
+                <GrowingList scroller={scroller} count={otherAgents.length} getKey={(index) => otherAgents[index]!.id} estimateSize={agentRowEstimate} renderLine={(index) => renderAgentRow(otherAgents[index]!)} />
               </section>
             ) : null}
           </>

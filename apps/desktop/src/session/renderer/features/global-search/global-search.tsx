@@ -50,6 +50,17 @@ const NameRow = observer(function NameRow({ id, userId, groupAvatar, name, query
   )
 })
 
+// @@@search-line-height - where the lines not mounted yet go (every mounted line is measured). A scope line is 34 px; a hit is
+// 58 px with one line of text and 78 px with two (line-clamp-2). Whether the text wraps is guessed from its width at 14 px
+// (a wide CJK character ≈ 14 px, any other ≈ 7) against the text column: the list minus its padding and the row's (2 × 8 each),
+// the avatar (20) and the gap (10).
+const SCOPE_LINE_HEIGHT = 34
+function hitHeight(text: string, list: HTMLElement | null): number {
+  let width = 0
+  for (const char of text) width += char.codePointAt(0)! >= 0x2e80 ? 14 : 7
+  return list && width > list.clientWidth - 62 ? 78 : 58
+}
+
 function Highlighted({ text, query }: { text: string; query: string }): ReactNode {
   const parts: ReactNode[] = []
   let at = 0
@@ -277,7 +288,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           scroller={list}
           count={lines.length}
           getKey={(index) => { const line = lines[index]!; return line.kind === 'hit' ? line.hit.id : `scope:${line.group.key}` }}
-          estimateSize={(index) => (lines[index]!.kind === 'hit' ? 64 : 32)}
+          estimateSize={(index) => { const line = lines[index]!; return line.kind === 'hit' ? hitHeight(line.hit.text, list) : SCOPE_LINE_HEIGHT }}
           windowRef={(lineWindow) => { lineWindowRef.current = lineWindow }}
           renderLine={(index) => {
             const line = lines[index]!
