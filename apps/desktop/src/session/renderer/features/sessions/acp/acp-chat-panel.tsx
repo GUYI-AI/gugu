@@ -266,14 +266,15 @@ function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promise<stri
     attachmentDataUrlCache.set(id, promise);
     return promise;
   }
-  if (!store.session) return Promise.resolve(null);
   const cached = attachmentDataUrlCache.get(id);
   if (cached) return cached;
-  const promise = store.session
-    .downloadAttachment(id)
+  // 任务停着也一样:按附件 id 从会话那台机器的附件仓读,❌ 不经运行中的会话 —— 手机走的是同一个口。
+  const promise = rpcOn(machineRegistry.machineOf(store.runtimeSessionId)).sessionTimeline
+    .sessionNativeAttachment({ attachmentId: id })
     .then((result) => {
-      if (!result.success) return null;
-      return `data:${result.data.ref.mimeType};base64,${bytesToBase64(result.data.data)}`;
+      if (result.ok) return result.value;
+      log.warn('ACP attachment unavailable', { id, error: result.error });
+      return null;
     })
     .catch((error: unknown) => {
       log.warn('Failed to resolve ACP attachment', { id, error });
@@ -281,15 +282,6 @@ function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promise<stri
     });
   attachmentDataUrlCache.set(id, promise);
   return promise;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
 }
 
 // ── Composer for a single store ────────────────────────────────────────────────

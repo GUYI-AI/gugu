@@ -1,18 +1,26 @@
-import type { AttachmentRef, TranscriptTurn } from '@gugu/session-core/acp/client';
+import type { AttachmentRef } from '@gugu/session-core/acp/client';
+import type { SessionTimelineResult } from './service';
 
-export type NativeAttachmentRequest = { conversationId: string; itemId: string; attachmentId: string };
+export type NativeAttachmentRequest = { attachmentId: string };
+type StoredAttachment = { ref: AttachmentRef; data: Uint8Array };
 
-/** Only an attachment explicitly recorded on this session's user message may be downloaded. */
-export async function nativeAttachmentDataUrl(input: NativeAttachmentRequest, deps: {
-  readTurn(input: NativeAttachmentRequest): Promise<TranscriptTurn | null>;
-  download(id: string): Promise<{ ref: AttachmentRef; data: Uint8Array }>;
-}): Promise<string> {
-  const turn = await deps.readTurn(input);
-  const item = turn?.items.find(item => item.id === input.itemId);
-  const ref = item?.kind === 'message' && item.role === 'user'
-    ? item.attachments?.find(attachment => attachment.id === input.attachmentId) : undefined;
-  if (!ref) throw new Error('这件图片附件不属于该会话的用户消息');
-  const stored = await deps.download(ref.id);
-  if (stored.ref.id !== ref.id || stored.ref.mimeType !== ref.mimeType) throw new Error('图片附件记录不一致');
-  return `data:${stored.ref.mimeType};base64,${Buffer.from(stored.data).toString('base64')}`;
+/** Desktop and phone read a user image the same way: by its attachment id from this machine's store, running session or not. */
+export function nativeAttachment(input: NativeAttachmentRequest): Promise<SessionTimelineResult<string>> {
+  return readNativeAttachment(input, downloadStored);
+}
+
+export async function readNativeAttachment(input: NativeAttachmentRequest, download: (id: string) => Promise<StoredAttachment>): Promise<SessionTimelineResult<string>> {
+  try {
+    const stored = await download(input.attachmentId);
+    return { ok: true, value: `data:${stored.ref.mimeType};base64,${Buffer.from(stored.data).toString('base64')}` };
+  } catch (error) {
+    return { ok: false, error: { code: 'attachment_unavailable', message: (error as Error)?.message ?? String(error) } };
+  }
+}
+
+async function downloadStored(id: string): Promise<StoredAttachment> {
+  const { getAcpRuntimeClient } = await import('../acp/runtime-process/host');
+  const result = await (await getAcpRuntimeClient()).downloadAttachment({ id });
+  if (!result.success) throw new Error('图片附件无法读取');
+  return { ref: result.data.meta, data: await result.data.bytes() };
 }

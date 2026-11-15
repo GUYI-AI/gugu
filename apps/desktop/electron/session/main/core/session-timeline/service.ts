@@ -1754,4 +1754,4 @@ export async function changeQueue(input: { conversationId: string; action: impor
 const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, withTimeline });
 export const nativeRecord = nativeRecordReader.snapshot;
 export const nativeToolImage = nativeRecordReader.image;
-export const nativeAttachment = nativeRecordReader.attachment;
+export { nativeAttachment } from './native-attachment';
