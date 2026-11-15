@@ -9,6 +9,8 @@ export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'clos
 export async function mountProjection(host: ProjectionHost, root: HTMLElement, id: string, options: {
   state?(state: ProjectionViewState, reason?: string): void; error?(error: unknown): void;
   painted?(frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null): void;
+  /** A host presentation can watch a thumbnail without admitting picture input. */
+  interactive?: boolean;
 } = {}) {
   const surface = document.createElement('div');
   surface.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;touch-action:none';
@@ -26,6 +28,10 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   root.append(surface);
   let frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null = null;
   let ready = false;
+  let interactive = options.interactive !== false;
+  let frozen = false;
+  let freezing: Promise<void> | undefined;
+  surface.style.pointerEvents = interactive ? 'auto' : 'none';
   let nextText = 0;
   const observed = new WeakSet<Promise<unknown>>();
   const pendingText = new Map<number, PendingProjectionText>();
@@ -48,7 +54,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   const send = (value: ProjectionInput) => {
     const text = value.kind === 'text' ? { id: ++nextText, text: value.text, state: 'not-sent' as const } : undefined;
     if (text) pendingText.set(text.id, text);
-    if (!ready || !client) return;
+    if (!ready || !client || !interactive || frozen) return;
     const operation = client.input(value, () => { if (text && pendingText.has(text.id)) pendingText.set(text.id, { ...text, state: 'unconfirmed' }); });
     if (observed.has(operation)) return;
     observed.add(operation);
@@ -68,7 +74,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     ...(event.metaKey ? ['meta' as const] : []), ...(event.shiftKey ? ['shift' as const] : []),
   ];
   const point = (event: MouseEvent, clamp = false) => {
-    if (!frame || !ready) return null;
+    if (!frame || !ready || !interactive || frozen) return null;
     const box = image.getBoundingClientRect();
     const ratio = frame.width / frame.height;
     const width = Math.min(box.width, box.height * ratio);
@@ -141,7 +147,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   }
   try {
     const changed = (state: 'connecting' | 'live' | 'closed', reason?: string) => {
-      ready = state === 'live'; input.disabled = !ready; options.state?.(state, reason);
+      ready = state === 'live'; input.disabled = !ready || !interactive || frozen; options.state?.(state, reason);
     };
     const painted = (next: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null) => {
       frame = next; if (next) recoveryAttempts = 0; options.painted?.(next);
@@ -160,9 +166,26 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
       error: pause,
     });
   } catch (error) { lifetime.abort(); surface.remove(); throw error; }
-  return Object.freeze({ pendingText: () => [...pendingText.values()].map(entry => ({ ...entry })), discardPendingText: (id: number) => pendingText.delete(id), close: async () => {
+  const freeze = () => {
+    if (freezing) return freezing;
+    frozen = true; interactive = false; ready = false; input.disabled = true; surface.style.pointerEvents = 'none';
     lifetime.abort();
-    try { await client?.close(); }
-    finally { surface.remove(); }
-  } });
+    // Closing the watch releases held input. Keep its last decoded picture until the presentation is closed.
+    freezing = Promise.resolve(client?.close());
+    return freezing;
+  };
+  return Object.freeze({
+    pendingText: () => [...pendingText.values()].map(entry => ({ ...entry })),
+    discardPendingText: (id: number) => pendingText.delete(id),
+    setInteractive(value: boolean) {
+      if (frozen || interactive === value) return;
+      interactive = value; input.disabled = !ready || !interactive; surface.style.pointerEvents = value ? 'auto' : 'none';
+      if (!value) { input.blur(); reset(); }
+    },
+    freeze,
+    close: async () => {
+      try { await freeze(); }
+      finally { surface.remove(); }
+    },
+  });
 }

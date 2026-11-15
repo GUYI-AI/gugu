@@ -51,7 +51,7 @@ export class LiveWindowModel {
     const next = accepted.map(source => ({ ...source, size: source.size && { ...source.size } }));
     // The last observed picture stays in its conversation when its live resource ends.
     for (const previous of entry.sources) {
-      if (!next.some(source => source.id === previous.id)) next.push({ ...previous, status: 'finished' });
+      if (!next.some(source => source.id === previous.id || source.kind === previous.kind)) next.push({ ...previous, status: 'finished' });
     }
     const newcomers = next.filter(source => source.status === 'operating' && !entry!.sources.some(old => old.id === source.id && old.status === 'operating'));
     if (!sameSources(entry.sources, next)) entry.sources = next;
@@ -59,6 +59,9 @@ export class LiveWindowModel {
       const selected = newcomers[0]!;
       entry.presentation = { ...entry.presentation, mode: 'floating', selectedSourceId: selected.id, controlsRevealed: false,
         dismissedSourceIds: entry.presentation.dismissedSourceIds.filter(sourceId => !newcomers.some(source => source.id === sourceId)) };
+    }
+    if (!next.some(source => source.id === entry!.presentation.selectedSourceId) && next.length) {
+      entry.presentation = { ...entry.presentation, selectedSourceId: next[0]!.id };
     }
     if (id === this.active) this.publish();
   }
@@ -89,10 +92,10 @@ export class LiveWindowModel {
         break;
       case 'close-tab': {
         if (this.platform !== 'desktop' || state.mode !== 'tabbed' || state.selectedTab === 'chat'
-          || state.selectedSourceId !== action.sourceId) break;
+          || !select(action.sourceId)) break;
         state.dismissedSourceIds = [...state.dismissedSourceIds, action.sourceId];
         const next = available()[0];
-        state.selectedSourceId = next?.id ?? null;
+        if (state.selectedSourceId === action.sourceId) state.selectedSourceId = next?.id ?? null;
         if (!next) { state.mode = 'closed'; state.selectedTab = 'chat'; }
         break;
       }

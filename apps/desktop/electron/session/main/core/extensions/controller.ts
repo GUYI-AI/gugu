@@ -1,3 +1,4 @@
+import { liveWindowController } from './live-window-controller';
 import { getMainWindow } from '@main/app/window';
 import type { ChatFileRef, MemberChange } from '@shared/extensions/app-files-core';
 import * as fs from 'node:fs';
@@ -126,6 +127,7 @@ function disclosureOf(manifests: readonly ExtensionManifest[]) {
 const MARKET_READ_MAX_BYTES = 2 * 1024 * 1024;
 
 export const extensionsController = createRPCController({
+  ...liveWindowController,
   variants: async (id: string) => {
     try { return { success: true as const, data: await extensionVariants(id) }; }
     catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }

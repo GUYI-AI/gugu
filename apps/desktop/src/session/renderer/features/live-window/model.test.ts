@@ -74,4 +74,12 @@ describe('approved live-window presentation', () => {
     expect(model.getSnapshot().visible).toBe(false); model.activate(context); expect(model.getSnapshot().visible).toBe(true);
     model.clear(); model.activate(context); expect(model.getSnapshot().visible).toBe(false);
   });
+  it('replaces a previous source of the same kind and preserves the selected screen when another tab closes', () => {
+    const model = opened(); model.observe(context, [source('next'), source('desktop', 'computer')]);
+    expect(model.getSnapshot().sources.map(item => item.id)).toEqual(['next', 'desktop']);
+    model.dispatch({ type: 'show-tab' });
+    model.dispatch({ type: 'select-tab', tab: 'screen', sourceId: 'next' });
+    model.dispatch({ type: 'close-tab', sourceId: 'desktop' });
+    expect(model.getSnapshot()).toMatchObject({ source: { id: 'next' }, presentation: { selectedTab: 'screen', mode: 'tabbed' } });
+  });
 });
