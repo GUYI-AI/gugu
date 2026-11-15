@@ -31,6 +31,7 @@ import { MESSAGE_SEEN_THRESHOLDS, messageSeen } from './messageSeen'
 import { useStructurallyShared } from '@/hooks/useStructurallyShared'
 import { collapseSendGroups, newestDelivered, sameAlbums } from './messageAlbum'
 import { MessageAlbumContext } from './MessageAlbumContext'
+import { MessageQuoteSourceContext } from './messageQuoteSource'
 
 // #1163 perf — 在父层为单条消息预算「发送/已读态」(primitive 字符串)，下传给 memo 化的 MessageBubble，
 // 取代旧的「整个 memberReadSeqs map 下传、气泡自己 derive」。任一成员已读回执会换 map 引用、破气泡浅比较
@@ -443,6 +444,7 @@ export function MessageList({
   if (!sameAlbums(albumsRef.current, freshAlbums)) albumsRef.current = freshAlbums
   const albums = albumsRef.current
   const rowProps = useMemo(() => albums.size ? { ...allRowProps, rows, messages: rows.map(row => row.message) } : allRowProps, [albums, allRowProps, rows])
+  const quoteSources = useMemo(() => new Map(allRowProps.messages.map(message => [message.id, message])), [allRowProps.messages])
   const ownScrollerRef = useRef<HTMLElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const handleScrollerRef = useCallback((element: HTMLDivElement | null) => {
@@ -506,6 +508,7 @@ export function MessageList({
   return (
     <RowStoreContext.Provider value={rowStore}>
     <MessageAlbumContext.Provider value={albums}>
+    <MessageQuoteSourceContext.Provider value={quoteSources}>
     <div style={frameStyle}>
       {/* 每换一条线(resetKey)换一个滚动容器:落点、贴底电平、锚定都从这条线自己的第一帧开始。 */}
       <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
@@ -518,6 +521,7 @@ export function MessageList({
       </div>
       {unreadAbove && showUnreadAbove && <Button variant="primary" size="sm" data-unread-above="" style={UNREAD_ABOVE_STYLE} onClick={unreadAbove.onJump}>{unreadAbove.label}</Button>}
     </div>
+    </MessageQuoteSourceContext.Provider>
     </MessageAlbumContext.Provider>
     </RowStoreContext.Provider>
   )
