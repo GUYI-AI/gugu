@@ -5,6 +5,7 @@ import { useLibraryHost, type LibraryGithubRpc, type LibraryHost } from '@render
 import { rpcOn } from '@renderer/lib/ipc';
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
 import { cachedDevicesAccount } from '@/store/devicesCache';
+import { refreshConnections } from '@/components/connections/connection-replicas';
 import type { GitHubAccountSummary } from '@shared/github';
 
 /**
@@ -47,22 +48,13 @@ function askable(host: LibraryHost): boolean {
   return host.remote?.online !== false;
 }
 
-type GitHubStateListener = () => void;
-const stateListeners = new Set<GitHubStateListener>();
-
 /**
  * Something changed the GitHub accounts (connected, imported, defaulted, removed, or the machine said so): every host's
- * list is read again, and whoever derives from them (the integrations' connection status) hears it.
+ * list is read again, and so are the connections' readings derived from them (the integrations' connection status).
  */
 export function refreshGitHubAccountState(): void {
   void githubAccounts.refresh();
-  stateListeners.forEach((listener) => listener());
-}
-
-/** Hear `refreshGitHubAccountState`; returns the unsubscribe. */
-export function onGitHubAccountStateChanged(listener: GitHubStateListener): () => void {
-  stateListeners.add(listener);
-  return () => { stateListeners.delete(listener); };
+  refreshConnections();
 }
 
 /** The GitHub accounts of the library's machine. */
