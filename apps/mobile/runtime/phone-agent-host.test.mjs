@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename, utimes, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -161,6 +161,21 @@ const untilNetworkQueued = (fx) => until(async () => {
   const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
   return !fx.host.state().execution && Object.values(journal.jobs).some(job => job.status === 'queued' && job.networkWait)
 }, fx.events)
+
+test('host start drops file-cache chunks older than an hour and keeps fresh ones', async () => {
+  const cache = (root) => join(root, 'hosts', ownerId, 'file-cache')
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }), { prepare: async ({ root }) => {
+    const stale = join(cache(root), `open-${'a'.repeat(64)}`), fresh = join(cache(root), `open-${'b'.repeat(64)}`)
+    await mkdir(stale, { recursive: true }); await writeFile(join(stale, '0'), 'x')
+    await mkdir(fresh, { recursive: true }); await writeFile(join(fresh, '0'), 'x')
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    await utimes(stale, old, old)
+  } })
+  try {
+    await until(async () => !(await readdir(cache(fx.root))).includes(`open-${'a'.repeat(64)}`), fx.events)
+    assert.deepEqual(await readdir(cache(fx.root)), [`open-${'b'.repeat(64)}`])
+  } finally { await fx.close() }
+})
 
 test('a read phone failure stays an error and the next real failed turn becomes unseen again', async () => {
   const fx = await fixture(async () => ({ status: 'failed', text: '', error: 'controlled turn failure' }))
