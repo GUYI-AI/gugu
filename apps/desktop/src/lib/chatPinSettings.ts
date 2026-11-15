@@ -1,4 +1,4 @@
-import { ownSettings, readOwnSettings, updateOwnSettings } from './ownSettings'
+import { chatOwnSettings, readOwnSettings, updateOwnSettings } from './ownSettings'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from './realtimeChannel'
 import { platform } from '../platform'
 import { rendererLogger } from './log'
@@ -35,7 +35,7 @@ export async function setChatPinPreference(userId: string, chatId: string, id: s
 /** One account channel, including reconnect, visibility and native foreground refresh. */
 export function watchChatPinSettings(userId: string, chatId: string, read: () => void): () => void {
   // Each of these says the row may have changed elsewhere: the next read asks the server, ❌ the shared reading.
-  const refresh = () => { void ownSettings.refresh(scopeOf(chatId)); read() }
+  const refresh = () => { void chatOwnSettings.refresh(scopeOf(chatId)); read() }
   const handle = subscribePrivateUserEventBus(userId, 'setting_changed', (payload) => {
     const setting = (payload as { setting?: { user_id?: string; scope?: string } } | null)?.setting
     if (setting?.user_id === userId && setting.scope === scopeOf(chatId)) refresh()
