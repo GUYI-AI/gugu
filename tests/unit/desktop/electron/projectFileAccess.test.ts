@@ -35,7 +35,10 @@ const digest = (data: Uint8Array) => createHash('sha256').update(data).digest('h
 const identity = async () => ({ accountId, deviceId: 'host-device' })
 const reader = () => createProjectFileReader({ identity, root: async id => id === 'project' ? root : null, env, later: noRecord })
 
-describe('downloads consume one file without the random-read cache', () => {
+// A save reads through the chunk cache (so a save that dies resumes); a finished or refused save leaves no chunks behind.
+const chunksLeft = () => readdir(tempRoot).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+
+describe('downloads consume one file and leave no cached chunks behind', () => {
   const remote = (content: Uint8Array = bytes) => {
     const stored = { ...revision, source: 'managed-object' as const }
     const fetcher = vi.fn(async (url: RequestInfo | URL) => {
@@ -190,10 +193,44 @@ describe('downloads consume one file without the random-read cache', () => {
     expect(first.file_path).toBe(concurrent.file_path)
     expect(await readFile(first.file_path)).toEqual(bytes)
     expect(await readdir(join(home, 'attachments', revision.sha256!))).toEqual(['file.bin'])
-    expect(await stat(tempRoot).catch(() => null)).toBeNull()
+    expect(await chunksLeft()).toEqual([])
     const gets = fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file').length
     await save()
     expect(fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file')).toHaveLength(gets)
+  })
+  it('a save stopped halfway resumes from its cached chunks: the next call asks only for the rest', async () => {
+    const big = Uint8Array.from({ length: 3 * 512 * 1024 + 7 }, (_, i) => i % 251)
+    const stored = { ...revision, source: 'managed-object' as const, size_bytes: big.length, sha256: digest(big) }
+    const ranges: number[] = []
+    const stop = new AbortController()
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...stored })
+      if (String(url).endsWith('/file-download')) return Response.json({ status: 'ready', url: 'https://objects.invalid/big', size_bytes: big.length, sha256: stored.sha256, download_id: 'download' })
+      if (String(url) !== 'https://objects.invalid/big') throw new Error('Unexpected file request')
+      const from = Number(/bytes=(\d+)-/.exec(new Headers(init?.headers).get('range') ?? '')?.[1] ?? 0)
+      ranges.push(from)
+      // One chunk per read. The first save stops when it asks for its third chunk (the process stops): by then the first
+      // two are cached. A later save is served in full.
+      const firstSave = ranges.length === 1
+      let at = from
+      const body = new ReadableStream<Uint8Array>({ pull(controller) {
+        if (at >= big.length) { controller.close(); return }
+        if (firstSave && at >= 2 * 512 * 1024) { stop.abort(); return new Promise<void>(() => {}) }
+        controller.enqueue(big.slice(at, at + 512 * 1024)); at += 512 * 1024
+      } }, { highWaterMark: 0 })
+      return new Response(body, from ? { status: 206, headers: { 'content-range': `bytes ${from}-${big.length - 1}/${big.length}` } } : { status: 200 })
+    })
+    const resolve = createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch }))
+    const first = await resolve(ref, actor, { signal: stop.signal })
+    if (first.status !== 'ready') throw new Error('Missing fixture')
+    await expect(saveToFileStore(first, home, 'big.bin')).rejects.toThrow()
+    expect((await chunksLeft()).length).toBeGreaterThan(0)
+    const second = await resolve(ref, actor)
+    if (second.status !== 'ready') throw new Error('Missing fixture')
+    const saved = await saveToFileStore(second, home, 'big.bin')
+    expect(digest(await readFile(saved.file_path))).toBe(stored.sha256)
+    expect(ranges).toEqual([0, 2 * 512 * 1024])
+    expect(await chunksLeft()).toEqual([])
   })
   it('removes the partial on a digest mismatch and never publishes corrupted content', async () => {
     const { resolve } = remote(Buffer.alloc(bytes.length, 9))
@@ -201,7 +238,7 @@ describe('downloads consume one file without the random-read cache', () => {
     if (file.status !== 'ready') throw new Error('Missing fixture')
     await expect(saveFileHandle(file, join(home, 'attachments'), 'file.bin')).rejects.toThrow('SHA-256')
     expect(await stat(join(home, 'attachments', revision.sha256!)).catch(() => null)).toBeNull()
-    expect(await stat(tempRoot).catch(() => null)).toBeNull()
+    expect(await chunksLeft()).toEqual([])
   })
 
   it.each([false, true])('authenticates encrypted downloads before publishing, including revoked access=%s', async revoked => {
@@ -245,7 +282,7 @@ describe('downloads consume one file without the random-read cache', () => {
         expect(await readdir(destination)).toEqual(['file.bin'])
         expect(routes).toContain('file-read-complete')
       }
-      expect(await stat(tempRoot).catch(() => null)).toBeNull()
+      expect(await chunksLeft()).toEqual([])
     } finally { key.fill(0) }
   })
 

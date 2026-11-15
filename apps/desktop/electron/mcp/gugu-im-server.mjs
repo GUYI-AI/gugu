@@ -6,6 +6,7 @@ import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
+import { openAsBlob } from 'node:fs'
 import { basename, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -18,7 +19,7 @@ import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../p
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
-import { workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
+import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
@@ -653,7 +654,6 @@ function normToList(v) {
 function clampLimit(v, def, lo, hi) {
   return Math.min(Math.max(lo, Number(v) || def), hi)
 }
-const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 // 附件叫什么：默认就是磁盘上那个文件名，要改名才传 file_name。
 // 传了路径还要求再手打一遍文件名是多余的，而多余的那一遍正是打错字的地方。
 export function resolveUploadName(args) {
@@ -666,7 +666,7 @@ export function resolveUploadName(args) {
 // 这里原先收的是 content_base64，而 MCP 工具的调用方就是模型：它得把整串编码逐 token
 // 复制一遍，漂一次后面全部错位，base64 解码又不报错，于是坏文件静默发出去（#5828 实测
 // 16 KB 的文件毁掉 60%）。该参数已整个去掉，不留这条路。
-export async function readUploadBytes(label, args, maxBytes) {
+async function uploadTarget(label, args) {
   const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
   if (!filePath) throw new Error(`${label}: file_path is required`)
   if (!isAbsolute(filePath)) throw new Error(`${label}: file_path must be absolute, got ${filePath}`)
@@ -678,11 +678,22 @@ export async function readUploadBytes(label, args, maxBytes) {
     throw new Error(`${label}: cannot read ${target} (${err?.code || err?.message || 'unknown'})`)
   }
   if (!info.isFile()) throw new Error(`${label}: ${target} is not a file`)
-  if (info.size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
+  return { target, size: info.size }
+}
+export async function readUploadBytes(label, args, maxBytes) {
+  const { target, size } = await uploadTarget(label, args)
+  if (size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
   const buf = await readFile(target)
   // 读盘期间被换掉就不传——宁可响亮失败，也别传一份说不清是什么的东西出去。
-  if (buf.length !== info.size) throw new Error(`${label}: ${target} changed while reading`)
+  if (buf.length !== size) throw new Error(`${label}: ${target} changed while reading`)
   return buf
+}
+// An attachment goes up as a file-backed Blob: this code never reads the whole file, and the server's upload permit is the
+// one size limit. fetch still reads the body ahead of the socket, so the upload's memory peak is about the file's size
+// (a chunked upload bounds it to a chunk). A file-backed Blob also refuses to be read once the file changes on disk.
+async function uploadBlob(label, args, contentType) {
+  const { target } = await uploadTarget(label, args)
+  return openAsBlob(target, { type: contentType })
 }
 function parseJwtPayload(token) {
   const part = String(token || '').split('.')[1]
@@ -2206,7 +2217,10 @@ async function handleProfile(args, deps) {
 
 /** The bytes of a file on this computer that the shared classifier makes a text document; `null` for stored bytes. */
 async function documentUploadBytes(args) {
-  const bytes = await readUploadBytes('message_send_file', args, ATTACHMENT_MAX_BYTES)
+  // Only a file within the live text size can be a document: anything larger is never read here.
+  const { size } = await uploadTarget('message_send_file', args)
+  if (size > WORKSPACE_TEXT_MAX_BYTES) return null
+  const bytes = await readUploadBytes('message_send_file', args, WORKSPACE_TEXT_MAX_BYTES)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   return workspaceUploadKind(resolveUploadName(args), contentType, new Uint8Array(bytes)).kind === 'document' ? bytes : null
 }
@@ -2214,9 +2228,9 @@ async function documentUploadBytes(args) {
 // gugu_file:send-file = 字节经 attachments/upload 直传 OSS,attachments/commit 放进会话的「附件」、发一条附件消息(#7290 gugu-3,
 // 和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
 async function uploadForSend(args, deps, label, chatId, read) {
-  const bytes = read ?? await readUploadBytes(label, args, ATTACHMENT_MAX_BYTES)
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+  const bytes = read ?? await uploadBlob(label, args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType }, { chat_id: chatId, as: deps.context.agentId }) }
 }
