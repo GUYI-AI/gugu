@@ -149,7 +149,8 @@ export const DispatchSheet = observer(function DispatchSheet() {
       sections={sections}
       above={preview}
       selected={selected}
-      onToggle={(id) => setSelected(new Set([id]))}
+      // One at a time: another row replaces the pick, the picked row (or its chip's ×) takes it back.
+      onToggle={(id) => setSelected((current) => (current.has(id) ? new Set() : new Set([id])))}
       query={query}
       onQuery={setQuery}
       placeholder={pick ? pick.search : t('dispatchPick.search')}
