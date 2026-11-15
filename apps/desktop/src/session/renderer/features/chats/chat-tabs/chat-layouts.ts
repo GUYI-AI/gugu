@@ -1,4 +1,5 @@
 import { UI_EVENTS } from '@/lib/uiEvents';
+import { OpenSuperseded } from '@/lib/guguLinks';
 import { action, reaction, runInAction } from 'mobx';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { AppOpenWithDetail } from '@shared/extensions/app-runtime-protocol';
@@ -337,7 +338,7 @@ export const updateFileNames = action(function updateFileNames(
 export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): void };
 export type ChatOpenAsk =
   | { app: string; tab?: string }
-  | { itemId: string; at?: Record<string, string>; opener?: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
+  | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
 
 const asks = new Map<string, ChatOpenAsk>();
 /**
@@ -346,7 +347,7 @@ const asks = new Map<string, ChatOpenAsk>();
  */
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
-  if (previous && 'itemId' in previous) previous.receipt?.reject(new Error('The file opening was superseded'));
+  if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
   asks.set(chatId, what);
 }
 /** Links acknowledge the consumer's result, rather than merely putting an item in its mailbox. */

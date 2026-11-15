@@ -17,6 +17,9 @@ export type LinkNavigation = {
   reject(error: unknown): void
 }
 
+/** The person asked for something else before this open arrived: nothing failed, and no notice is owed for it. */
+export class OpenSuperseded extends Error { constructor() { super('The file opening was superseded') } }
+
 export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source: Pick<LinkNavigation, 'message' | 'restore'> = {}): Promise<LinkPlace | 'own' | void> {
   return new Promise((resolve, reject) => {
     const detail: LinkNavigation = { target, ...source, resolve, reject }

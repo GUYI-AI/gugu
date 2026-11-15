@@ -3,7 +3,9 @@ import { observer } from 'mobx-react-lite'
 import { act, createElement, Fragment } from 'react'
 import { GroupTabContent } from '../../../../apps/desktop/src/components/appSlot/GroupTabContent'
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
-import { askChat, shownPanelTab, type ChatOpenAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile, shownPanelTab, type ChatOpenAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
+import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
 
@@ -42,3 +44,21 @@ export function ask(chatId: string, what: ChatOpenAsk): void {
 
 /** The item of the panel tab on screen; null: only the chat. */
 export const shownItem = (chatId: string) => shownPanelTab(chatId)?.item ?? null
+
+/** The shell's link handling as MainLayout wires it, over the chat's tabs: a file link asks the host once, then the chat. */
+const LinkShell = observer(function LinkShell(props: ChatTabsProps) {
+  useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: props.chatId, kind: 'group' }] as never, contacts: () => [],
+    openChat() {}, openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
+    openFile: (chatId, target, source, opener) => askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...source }),
+  })
+  return createElement(ChatTabs, props)
+})
+export const linkShell = (props: ChatTabsProps, userId = 'user-1') =>
+  createElement(AuthContext.Provider, { value: { user: { id: userId } } as never }, createElement(LinkShell, props))
+
+/** A pill (a file link, at a place) clicked: what the shell answers it; a replaced or failed one is caught here. */
+export function pill(itemId: string, at?: Record<string, string>): Promise<unknown> {
+  const opened = openLinkTarget({ kind: 'file', itemId, ...(at ? { at } : {}) })
+  void opened.catch(() => undefined)
+  return opened
+}

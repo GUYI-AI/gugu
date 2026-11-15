@@ -56,9 +56,9 @@ function PhoneShell() {
   useOwnedAgentConversationEntry({ ownerId: 'owner', chats: () => chats, contacts: () => contacts, mobile: true, onOpen() {} })
   useLinkNavigation({ ownerId: 'owner', chats: () => chats, contacts: () => contacts,
     openChat() {}, openAssistant() {}, openApp() {}, openOwnApp() {}, openProject() {},
-    openFile: async (chatId, target, source) => {
+    openFile: async (chatId, target, source, opener) => {
       if (!await openOwnedAgentResource(chatId)) throw new Error('not the agent of this person')
-      await askChatFile(chatId, { itemId: target.itemId, ...source })
+      await askChatFile(chatId, { itemId: target.itemId, opener, ...source })
     },
   })
   return <OwnedAgentResourcesHost ownerId="owner" mobile />
@@ -92,9 +92,12 @@ it('opens the file once for two quick taps and tells nobody the first was replac
   await harness.render(<PhoneShell />)
   await act(async () => { followLink(`gugu-file://${FILE}?v=1`) })
   await act(async () => { await until('first file resolution started', () => state.resolve.mock.calls.length === 1) })
+  // The second tap joins the open under way: the host is not asked again, and the one answer opens the file once.
   await act(async () => { followLink(`gugu-file://${FILE}?v=1`) })
+  expect(page()).toBeNull()
+  await act(async () => { finishFirst({ success: true, data: detail }) })
   await act(async () => { await until('the file page is shown', () => page() !== null) })
-  await act(async () => { finishFirst({ success: true, data: detail }); await new Promise(resolve => setTimeout(resolve, 50)) })
+  expect(state.resolve).toHaveBeenCalledOnce()
   expect(panelTabsOf('dm')).toHaveLength(1)
   expect(state.notify).not.toHaveBeenCalled()
 }, 20_000)

@@ -152,8 +152,9 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     expect(infoTabOf(id)).toBeNull();
   });
   it('each chat receives only its latest ask once', () => {
-    askChat('asked', { app: 'workspace' }); askChat('asked', { itemId: 'README', from: 'origin' });
-    expect(takeChatAsk('asked')).toEqual({ itemId: 'README', from: 'origin' });
+    const opener = { chatId: 'asked', itemId: 'README', name: 'README.md', typedName: 'README.md', choice: { kind: 'none' } } as never;
+    askChat('asked', { app: 'workspace' }); askChat('asked', { itemId: 'README', opener, from: 'origin' });
+    expect(takeChatAsk('asked')).toEqual({ itemId: 'README', opener, from: 'origin' });
     expect(takeChatAsk('asked')).toBeNull();
   });
 });

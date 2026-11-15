@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
-import { OPEN_LINK_TARGET, type LinkNavigation } from '../lib/guguLinks'
+import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
 import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
+import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
 import { SERVER_LOGIN_APPROVE_EVENT } from '../lib/inAppLinks'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
@@ -29,7 +30,7 @@ export function useLinkNavigation(input: {
   contacts: () => readonly ContactUser[]
   openChat: (chatId: string) => string | void
   openSender?: (sender: ContactUser, sourceChatId?: string) => Promise<void> | void
-  openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>) => void | Promise<void>
+  openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>, opener: AppOpenWithDetail) => void | Promise<void>
   openApp: (chatId: string, extensionId: string, tab: string) => void
   openProject: (projectId: string) => void
   openAppDetail?: (target: AppDetailLink) => void | Promise<void>
@@ -66,20 +67,17 @@ export function useLinkNavigation(input: {
         return 'own' as const
       }
       if (target.kind === 'file') {
-        const { localFileRevision } = await import('../lib/fileAccess')
-        const local = await localFileRevision(target.itemId)
-        let groupId = local?.chat_id
-        if (!local) {
-          const { chatDb } = await import('../lib/supabase')
-          const { data, error } = await chatDb.from('workspace_items').select('chat_id').eq('id', target.itemId).maybeSingle()
-          if (error) throw new Error(error.message)
-          groupId = data?.chat_id
-        }
-        if (asked !== generation || current.current.ownerId !== state.ownerId) throw new Error('The file opening was superseded')
+        // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
+        const { appsHere } = await import('../components/appSlot/appsHere')
+        if (!appsHere) throw new Error('The file opener is unavailable')
+        const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(target.at ? { at: target.at } : {}) })
+        if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
+        if (!found.success || !found.data) throw new Error(found.error || 'File reference is unavailable')
+        const groupId = found.data.chatId
         const fileChat = state.chats().find((row) => row.id === groupId)
         if (!fileChat) throw new Error('File reference is unavailable')
         const chatId = fileChat.kind === 'topic' ? fileChat.source_chat_id! : fileChat.id
-        await state.openFile(chatId, target, request)
+        await state.openFile(chatId, target, request, found.data)
         window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
         return
       }
@@ -162,17 +160,23 @@ export function useLinkNavigation(input: {
       if (target.messageId) askReveal(chat.id, target.messageId, viewportKey || undefined)
       window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId: chat.id } }))
     }
+    // The file being opened now: asked for again before it is up (a second click), the ask joins it — one open, one answer.
+    let opening: { file: string; done: ReturnType<typeof open> } | null = null
     const receive = (event: Event) => {
       const request = (event as CustomEvent<LinkNavigation>).detail
       if (!request) return
       event.preventDefault()
+      const file = request.target.kind === 'file' ? JSON.stringify(request.target) : null
+      if (file && opening?.file === file) { void opening.done.then(request.resolve, request.reject); return }
       ++generation
       const asked = generation
       const owner = current.current.ownerId
-      void open(request).then(request.resolve, (error: unknown) => {
-        if ((asked !== generation || owner !== current.current.ownerId) && request.target.kind !== 'file') { request.resolve(); return }
-        request.reject(targetError(request.target, error, messages.current.t('links.unavailable')))
-      })
+      const done: ReturnType<typeof open> = open(request).catch((error: unknown) => {
+        if ((asked !== generation || owner !== current.current.ownerId) && request.target.kind !== 'file') return undefined
+        throw error instanceof OpenSuperseded ? error : targetError(request.target, error, messages.current.t('links.unavailable'))
+      }).finally(() => { if (opening?.done === done) opening = null })
+      if (file) opening = { file, done }
+      void done.then(request.resolve, request.reject)
     }
     const receiveTask = () => { generation++; current.current.openAssistant(true) }
     window.addEventListener(OPEN_ASSISTANT_TASK_CHAT, receiveTask)

@@ -37,7 +37,7 @@ vi.mock('@/components/appSlot/appsHere', () => ({
 vi.mock('@/components/extensionBundle/sharedPackages', () => ({ sharedPackagesOf: async () => new Map(), subscribeSharedPackages: () => () => {} }))
 
 const { AppPeek } = await import('@/components/appSlot/AppPeek')
-const { ask, chatTabs, shownItem } = await import('./chatTabsHarness')
+const { ask, linkShell, pill, shownItem } = await import('./chatTabsHarness')
 const { folderItem, isFolderItem } = await import('@/session/renderer/features/chats/chat-tabs/chat-panel-item')
 const { chatAlone, chatPaneOf, closeChatTab, openPanelItem, panelFull, panelTabsOf, shownPanelTab } = await import('@/session/renderer/features/chats/chat-tabs/chat-layouts')
 import { tabFullscreen } from '@/session/renderer/features/tabs/tab-fullscreen'
@@ -48,13 +48,18 @@ const candidate = { extensionId: 'workspace', tabKind: 'workspace.main', tabTitl
 let harness: ReturnType<typeof createReactHarness>
 const checkVisibility = HTMLElement.prototype.checkVisibility
 const detail = (suffix: string) => ({ chatId: 'preview-group', itemId: `file-${suffix}`, name: `report.${suffix}`, typedName: `report.${suffix}`, file: { document: false, contentType: suffix === 'html' ? 'text/html' : suffix === 'mp4' ? 'video/mp4' : 'application/octet-stream', version: 3, size: 1024 }, choice: { kind: 'none' as const } })
-/** The chat's tabs drawn, then the file asked of it — a link's (no answer in hand: `supplied` false), or with its host's answer. */
+/** The chat's tabs drawn (under the shell's link handling), then the file asked of it — with its host's answer, or as a
+ *  link (`supplied` false: the shell asks the host, then hands the chat the answer). */
 const slot = async (opener: ReturnType<typeof detail>, supplied = true, extra: { visible?: boolean; message?: MessageItem; tabbed?: boolean; restore?: () => void; from?: string } = {}) => {
-  await harness.render(chatTabs({ chatId: opener.chatId, visible: extra.visible ?? true, tabbed: extra.tabbed, mobile: boundary.mobile, onForward: boundary.forward }, 'viewer'))
-  ask(opener.chatId, { itemId: opener.itemId, ...(extra.restore ? { restore: extra.restore } : {}), ...(extra.message ? { message: extra.message } : {}), ...(supplied ? { opener: opener as never } : {}), ...(extra.from ? { from: extra.from } : {}) })
+  await harness.render(linkShell({ chatId: opener.chatId, visible: extra.visible ?? true, tabbed: extra.tabbed, mobile: boundary.mobile, onForward: boundary.forward }, 'viewer'))
+  if (!supplied) {
+    await act(async () => { void pill(opener.itemId) })
+    return
+  }
+  ask(opener.chatId, { itemId: opener.itemId, ...(extra.restore ? { restore: extra.restore } : {}), ...(extra.message ? { message: extra.message } : {}), opener: opener as never, ...(extra.from ? { from: extra.from } : {}) })
 }
 const redraw = (chatId: string, extra: { visible?: boolean } = {}) =>
-  harness.render(chatTabs({ chatId, visible: extra.visible ?? true, mobile: boundary.mobile, onForward: boundary.forward }, 'viewer'))
+  harness.render(linkShell({ chatId, visible: extra.visible ?? true, mobile: boundary.mobile, onForward: boundary.forward }, 'viewer'))
 beforeEach(() => {
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
@@ -227,7 +232,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     vi.mocked(appsHere!.groupFileOpener).mockResolvedValue({ success: true, data: file })
     await slot(file, false)
     await until('the report HTML is drawn', () => boundary.previewContents.get(harness.container.querySelector('iframe')?.getAttribute('src') ?? '')?.includes('lane report') === true)
-    expect(appsHere!.groupFileOpener).toHaveBeenCalledWith({ chatId: file.chatId, itemId: file.itemId })
+    expect(appsHere!.groupFileOpener).toHaveBeenCalledExactlyOnceWith({ itemId: file.itemId })
     expect(harness.container.querySelector('iframe')?.getAttribute('sandbox')).toBe('allow-scripts')
     expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, 'shown', undefined, undefined, expect.any(Function))
   })
@@ -352,7 +357,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     let answer!: (value: never) => void
     vi.mocked(appsHere!.groupFileOpener).mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
     const later = { ...detail('md'), choice: { kind: 'one' as const, candidate } }
-    ask(later.chatId, { itemId: later.itemId })
+    await act(async () => { void pill(later.itemId) })
     const release = async () => act(async () => answer({ success: true, data: later } as never))
     if (answerFirst) await release()
     const app = { ...workspace, id: 'exe-reader', contributes: { tabs: [{ name: 'main', title: 'Reader', opensFiles: { chat: ['.exe'] } }] } }
