@@ -21,7 +21,6 @@ import {
   type ChatAgentCounts,
   type InnerSidebarTopicsView,
   type OneListAgentRow,
-  type OneListAgentRows,
 } from '@/lib/innerSidebarBridge';
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
@@ -44,7 +43,6 @@ import {
   chatAgentSection,
   openSessionAncestors,
   myAgentsInChat,
-  subAgentsOf,
   type ChatAgentEntry,
 } from './chat-agents';
 import {
