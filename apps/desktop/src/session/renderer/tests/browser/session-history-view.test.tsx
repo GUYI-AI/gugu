@@ -566,7 +566,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(directoryParams().some((p) => p.source === 'codex')).toBe(true));
     await pick('session-history-filter', 'session-history-filter-status-archived');
     await vi.waitFor(() => expect(directoryParams().some((p) => p.status === 'archived')).toBe(true));
-    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('Codex · 未导入 · 已归档');
+    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('Codex 会话，尚未导入, 已归档');
     await pick('session-history-filter', 'session-history-filter-source-all');
     await vi.waitFor(() => expect(directoryParams().at(-1)?.source).toBeUndefined());
     await pick('session-history-filter', 'session-history-filter-sort-title');
@@ -582,7 +582,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     render();
     await vi.waitFor(() => expect(directoryParams().length).toBeGreaterThan(0));
     expect(directoryParams().every((p) => p.source === undefined && p.status === 'not-imported')).toBe(true);
-    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('全部来源 · 未导入');
+    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('全部来源, 未导入');
   });
 
   const scrollToListEnd = () => (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
