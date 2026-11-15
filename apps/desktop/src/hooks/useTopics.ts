@@ -152,6 +152,7 @@ export function useTopicsOfChat(
 
   const bySourceMessageId = useMemo(() => {
     const index = new Map<string, TopicSummary[]>()
+    // @@@reading-default - topics not read: no anchor card for any message yet (the surface's decision, useTopicSurface)
     for (const topic of topics ?? []) {
       const bucket = index.get(topic.source_message_id)
       if (bucket) bucket.push(topic)

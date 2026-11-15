@@ -75,11 +75,12 @@ export const SessionTitleModelRow: React.FC = () => {
         <SettingValue reading={sessions.settings} placeholder="h-8 w-[252px]">
           {({ value }) => {
             const current = value.titleModel;
-            // Options: the catalog's; the current choice too when the catalog does not list it (or is not read yet).
-            const known = ordered ?? [];
-            const listed: { id: string; requiresMembership: boolean }[] = current && !known.some((option) => option.id === current)
-              ? [{ id: current, requiresMembership: false }, ...known]
-              : known;
+            // Options: the catalog's, and the current choice when the catalog does not list it; catalog not read (or failed):
+            // the current choice alone, with the catalog's state said below it.
+            const own = current ? [{ id: current, requiresMembership: false }] : [];
+            const listed: { id: string; requiresMembership: boolean }[] = ordered === null
+              ? own
+              : current && !ordered.some((option) => option.id === current) ? [...own, ...ordered] : ordered;
             return (
               <>
                 <ResetToDefaultButton
@@ -107,6 +108,9 @@ export const SessionTitleModelRow: React.FC = () => {
                         </span>
                       </SelectItem>
                     ))}
+                    {catalog.state === 'unknown' ? <Unknown className="m-2 w-24" /> : catalog.state === 'error' ? (
+                      <div className="p-2 text-sm text-muted-foreground">{translate('taskDefaults.titleModelsLoadFailed')}</div>
+                    ) : null}
                     <SelectItem value={TITLE_MODEL_OFF}>{translate('taskDefaults.titleModelOff')}</SelectItem>
                   </SelectContent>
                 </Select>

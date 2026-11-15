@@ -845,7 +845,7 @@ function GroupChatDetailPane({
               ))}
               {members && members.length > visibleMembers.length ? (
                 <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
-                  {ct('groupDetail.remainingMembers', { count: (members?.length ?? 0) - visibleMembers.length })}
+                  {ct('groupDetail.remainingMembers', { count: members.length - visibleMembers.length })}
                 </div>
               ) : null}
               {members && group.member_count > members.length ? (

@@ -52,10 +52,12 @@ export function ModelSection() {
   }
 
   const needle = query.trim().toLowerCase()
-  const matched = (models ?? []).filter((model) =>
-    !needle || model.displayName.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle))
-  const usable = matched.filter((model) => !model.requiresMembership)
-  const locked = matched.filter((model) => model.requiresMembership)
+  // The two groups of what the search matches; null while the catalog is not read.
+  const groups = models === null ? null : (() => {
+    const matched = models.filter((model) =>
+      !needle || model.displayName.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle))
+    return { usable: matched.filter((model) => !model.requiresMembership), locked: matched.filter((model) => model.requiresMembership) }
+  })()
 
   return (
     <SettingsPage data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
@@ -67,7 +69,7 @@ export function ModelSection() {
             control={<Button variant="secondary" size="sm" onClick={load}>{t('model.retry')}</Button>}
           />
         </SettingsGroup>
-      ) : models === null ? (
+      ) : groups === null ? (
         <Unknown className="h-64 w-full" />
       ) : (
         <>
@@ -80,16 +82,16 @@ export function ModelSection() {
             onClear={() => setQuery('')}
             data-testid="settings-model-search"
           />
-          {needle && usable.length === 0 && locked.length === 0 && (
+          {needle && groups.usable.length === 0 && groups.locked.length === 0 && (
             <SettingsNote>{t('model.noMatch')}</SettingsNote>
           )}
-          {usable.length > 0 && (
+          {groups.usable.length > 0 && (
             <SettingsGroup
               title={t('model.provided')}
               data-testid="settings-model-usable"
               footer={saveFailed ? <SettingsNote tone="danger">{saveFailed}</SettingsNote> : undefined}
             >
-              {usable.map((model) => (
+              {groups.usable.map((model) => (
                 <SettingsRow
                   key={model.id}
                   data-model-id={model.id}
@@ -105,14 +107,14 @@ export function ModelSection() {
               ))}
             </SettingsGroup>
           )}
-          {locked.length > 0 && (
+          {groups.locked.length > 0 && (
             <SettingsGroup title={t('model.membersOnly')} data-testid="settings-model-locked">
               {/* 一处去路,❌ 每行一枚按钮:那是同一句话说 N 遍。买会员只在网页面板(GUGU_BILLING_URL 抬头写了为什么)。 */}
               {billingLinksAvailable() && <SettingsRow
                 description={t('model.upgradeHint')}
                 control={<Button variant="secondary" size="sm" onClick={openBillingPage}>{t('model.upgrade')}</Button>}
               />}
-              {locked.map((model) => (
+              {groups.locked.map((model) => (
                 <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName} />
               ))}
             </SettingsGroup>

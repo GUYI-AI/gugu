@@ -80,19 +80,45 @@ describe('what counts', () => {
 })
 
 describe('a reading collapsed to a literal default (@@@client-state-model)', () => {
-  it('none in the source: branch on the three states, or say why with @@@reading-default', () => {
-    expect(scanLiteralDefaults(), 'an unknown reading must not draw like a stored empty value — docs/design/client-state-model.md').toEqual({})
+  // The task page's reads of app settings (new-task preferences, panel switches): PR 3 of the client state model moves
+  // them, and this list goes. Nothing else may have one.
+  const TASK_PAGE_DEBT = [
+    'apps/desktop/src/session/renderer/features/projects/components/create-project-name-modal.tsx',
+    'apps/desktop/src/session/renderer/features/sessions/diff-view/changes-panel/hooks/use-changes-view-mode.ts',
+    'apps/desktop/src/session/renderer/features/sessions/hooks/useSessionSettings.ts',
+    'apps/desktop/src/session/renderer/features/sessions/sessions-panel.tsx',
+  ]
+  it('none in the source but the task page\'s listed debt: branch on the three states, or say why with @@@reading-default', () => {
+    expect(Object.keys(scanLiteralDefaults()), 'an unknown reading must not draw like a stored empty value — docs/design/client-state-model.md').toEqual(TASK_PAGE_DEBT)
   })
   const lines = (code: string) => literalDefaultLines('a.ts', code)
   it('counts the literal defaults', () => {
     expect(lines("const xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
     expect(lines("const n = r.state === 'value' ? r.value.length : 0")).toHaveLength(1)
     expect(lines("const t = r.state === 'value' ? r.value : EMPTY_TOPICS")).toHaveLength(1)
+    expect(lines("const s = r.state === 'value' ? r.value.name : ''")).toHaveLength(1)
+    expect(lines("const on = r.state === 'value' ? r.value.on : false")).toHaveLength(1)
+    expect(lines("const o = r.state === 'value' ? r.value : {}")).toHaveLength(1)
+  })
+  it('counts every spelling of the check and of the fold', () => {
+    expect(lines("const xs = r.state !== 'value' ? [] : r.value")).toHaveLength(1)
+    expect(lines("const xs = !(r.state === 'value') ? [] : r.value")).toHaveLength(1)
+    expect(lines("const xs = 'value' === r.state ? r.value : []")).toHaveLength(1)
+    expect(lines("const r = useReplica(m, [])\nconst xs = r.value ?? []")).toEqual([2])
+    expect(lines("if (r.state === 'value') use(r.value)\nconst xs = r.value ?? []")).toEqual([2])
+    expect(lines("const xs = (r.state === 'value' && r.value) || []")).toHaveLength(1)
+    // The two-step fold: unknown kept as null, then collapsed downstream.
+    expect(lines("const fonts = r.state === 'value' ? r.value : null\nconst names = fonts ?? []")).toEqual([2])
+    expect(lines("const hosts = r.state === 'value' ? r.value : null\nconst n = hosts?.length ?? 0")).toEqual([2])
+    expect(lines("const v = r.state === 'value' ? r.value : null\nconst list = v || []")).toEqual([2])
   })
   it('not null (unknown in the consumer), not a value, and not a marked exception', () => {
     expect(lines("const xs = r.state === 'value' ? r.value : null")).toHaveLength(0)
     expect(lines("const x = r.state === 'value' ? r.value : other")).toHaveLength(0)
     expect(lines("// @@@reading-default - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(0)
     expect(lines("// @@@reading-default\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
+    // `??` on what is not a reading: an ordinary default.
+    expect(lines("const value = props.value ?? ''\nconst xs = list ?? []")).toHaveLength(0)
+    expect(lines("const fonts = r.state === 'value' ? r.value : null\nconst shown = fonts ?? null")).toHaveLength(0)
   })
 })

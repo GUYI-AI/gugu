@@ -163,40 +163,123 @@ export function scanFile(path: string, text: string): number {
 }
 
 /**
- * A reading collapsed to a literal default (@@@client-state-model): `r.state === 'value' ? r.value : []` (or `0`, `''`,
- * `false`, `{}`, an `EMPTY_*` constant), or `r.value ?? <that literal>` — the unknown reading then draws like a stored
- * empty value. Branch on the reading's three states instead. `: null` is not a default: null is "unknown" in the
- * consumer's type. Syntactic, so it sees readings by their `.state === 'value'` / `.value` shape.
+ * A reading collapsed to a literal default (@@@client-state-model): the unknown reading then draws like a stored empty
+ * value. Branch on the reading's three states instead. Literal = `[]`, `{}`, a number, a string, `false`, an `EMPTY_*`
+ * constant; `null` is not a default (null is "unknown" in the consumer's type) — until it is folded into one downstream.
+ * Syntactic: a reading is a name bound to `useReplica(…)` / `….peek(…)`, or any `x` whose `x.state` is compared with
+ * `'value'` in the file. Counted:
+ * - a value check whose not-value side is a literal: `r.state === 'value' ? r.value : []`, `r.state !== 'value' ? [] : …`,
+ *   `!(r.state === 'value') ? 0 : …`, `'value' === r.state ? … : ''`;
+ * - `?? literal` / `|| literal` on what a reading holds: `r.value ?? []`, `(r.state === 'value' && r.value) || []`, and
+ *   the two-step fold — a name bound to a value check (`const xs = r.state === 'value' ? r.value : null`) or to `r.value`,
+ *   then `xs ?? []` (also `xs?.length ?? 0`).
  */
 export function literalDefaultLines(path: string, text: string): number[] {
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
-  const lines: number[] = []
+  const lines = new Set<number>()
+  const bare = (node: ts.Expression): ts.Expression => {
+    let n = node
+    while (ts.isParenthesizedExpression(n) || ts.isNonNullExpression(n) || ts.isAsExpression(n) || ts.isSatisfiesExpression(n)) n = n.expression
+    return n
+  }
   const isLiteralDefault = (node: ts.Expression): boolean => {
-    const n = ts.isParenthesizedExpression(node) ? node.expression : node
+    const n = bare(node)
     if (ts.isArrayLiteralExpression(n) && n.elements.length === 0) return true
     if (ts.isObjectLiteralExpression(n) && n.properties.length === 0) return true
     if (ts.isNumericLiteral(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return true
     if (n.kind === ts.SyntaxKind.FalseKeyword) return true
     return ts.isIdentifier(n) && /^EMPTY_[A-Z0-9_]+$/.test(n.text)
   }
-  const isValueCheck = (node: ts.Expression): boolean => ts.isBinaryExpression(node)
-    && node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
-    && ts.isPropertyAccessExpression(node.left) && node.left.name.text === 'state'
-    && ts.isStringLiteral(node.right) && node.right.text === 'value'
+  const EQ = [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken]
+  const NE = [ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]
+  const isState = (n: ts.Expression) => ts.isPropertyAccessExpression(bare(n)) && (bare(n) as ts.PropertyAccessExpression).name.text === 'state'
+  const isValueText = (n: ts.Expression) => ts.isStringLiteral(bare(n)) && (bare(n) as ts.StringLiteral).text === 'value'
+  /** `true`: the check holds when the reading has a value; `false`: when it has not; `undefined`: not a value check. */
+  const valueCheck = (node: ts.Expression): boolean | undefined => {
+    const n = bare(node)
+    if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.ExclamationToken) {
+      const inner = valueCheck(n.operand)
+      return inner === undefined ? undefined : !inner
+    }
+    if (!ts.isBinaryExpression(n)) return undefined
+    const op = n.operatorToken.kind
+    if (!EQ.includes(op) && !NE.includes(op)) return undefined
+    if (!((isState(n.left) && isValueText(n.right)) || (isValueText(n.left) && isState(n.right)))) return undefined
+    return EQ.includes(op)
+  }
+  const hasValueCheck = (node: ts.Node): boolean => {
+    let found = false
+    const walk = (n: ts.Node): void => { if (found) return; if (ts.isExpression(n) && valueCheck(n) !== undefined) found = true; else ts.forEachChild(n, walk) }
+    walk(node)
+    return found
+  }
+  // Readings: names whose `.state` is compared with 'value'; derived: names bound to a value check or to `reading.value`.
+  const readings = new Set<string>()
+  const derived = new Set<string>()
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isCallExpression(bare(node.initializer))) {
+      const callee = (bare(node.initializer) as ts.CallExpression).expression
+      const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : ''
+      if (name === 'useReplica' || name === 'peek') readings.add(node.name.text)
+    }
+    if (ts.isExpression(node) && valueCheck(node) !== undefined) {
+      const b = bare(node)
+      const target = ts.isPrefixUnaryExpression(b) ? b.operand : b
+      if (ts.isBinaryExpression(bare(target))) {
+        const bin = bare(target) as ts.BinaryExpression
+        const state = bare(isState(bin.left) ? bin.left : bin.right) as ts.PropertyAccessExpression
+        if (ts.isIdentifier(state.expression)) readings.add(state.expression.text)
+      }
+    }
+    ts.forEachChild(node, collect)
+  }
+  collect(source)
+  const holdsReading = (node: ts.Expression): boolean => {
+    let n = bare(node)
+    if (hasValueCheck(n)) return true
+    let first: string | undefined
+    while (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n) || ts.isCallExpression(n) || ts.isNonNullExpression(n) || ts.isParenthesizedExpression(n)) {
+      if (ts.isPropertyAccessExpression(n)) first = n.name.text
+      n = ts.isCallExpression(n) ? n.expression : (n as ts.PropertyAccessExpression).expression
+    }
+    if (!ts.isIdentifier(n)) return false
+    return derived.has(n.text) || (readings.has(n.text) && first === 'value')
+  }
+  const isNothing = (node: ts.Expression) => {
+    const n = bare(node)
+    return n.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(n) && n.text === 'undefined')
+  }
+  // Derived: unknown kept as null (`check ? r.value… : null`, also inside useMemo) or bound straight to `r.value…`.
+  const bind = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      let init = bare(node.initializer)
+      if (ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === 'useMemo' && init.arguments[0]
+        && ts.isArrowFunction(init.arguments[0]) && !ts.isBlock(init.arguments[0].body)) init = bare(init.arguments[0].body as ts.Expression)
+      const check = ts.isConditionalExpression(init) ? valueCheck(init.condition) : undefined
+      const foldsToNothing = ts.isConditionalExpression(init) && check !== undefined && isNothing(check ? init.whenFalse : init.whenTrue)
+      if (foldsToNothing || (!hasValueCheck(init) && holdsReading(init))) derived.add(node.name.text)
+    }
+    ts.forEachChild(node, bind)
+  }
+  bind(source)
   // A justified exception says why on the line above: `@@@reading-default - <reason>` (a bare marker still counts).
   const marked = (node: ts.Node) => {
     let statement: ts.Node = node
     while (statement.parent && !ts.isBlock(statement.parent) && !ts.isSourceFile(statement.parent)) statement = statement.parent
     return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []).some((range) => /@@@reading-default\s*-\s*\S/.test(text.slice(range.pos, range.end)))
   }
+  const hit = (node: ts.Node) => { if (!marked(node)) lines.add(source.getLineAndCharacterOfPosition(node.getStart()).line + 1) }
   const visit = (node: ts.Node): void => {
-    if (ts.isConditionalExpression(node) && isValueCheck(node.condition) && isLiteralDefault(node.whenFalse) && !marked(node)) {
-      lines.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+    if (ts.isConditionalExpression(node)) {
+      const check = valueCheck(node.condition)
+      if (check !== undefined && isLiteralDefault(check ? node.whenFalse : node.whenTrue)) hit(node)
     }
+    if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)
+      && isLiteralDefault(node.right) && holdsReading(node.left)) hit(node)
     ts.forEachChild(node, visit)
   }
   visit(source)
-  return lines
+  return [...lines].sort((a, b) => a - b)
 }
 
 /** `{ relative path: lines }` for every non-test source file with a reading collapsed to a literal default. */

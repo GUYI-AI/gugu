@@ -22,6 +22,7 @@ import {
   menuSurfaceClassName,
 } from '../ui/Menu'
 import { Popover } from '../ui/Popover'
+import { Unknown } from '../ui/Unknown'
 import { cn } from '../../lib/cn'
 import { InstallProgress, type InstallLanding } from './addServer/InstallProgress'
 import { OneLineInstall } from './addServer/OneLineInstall'
@@ -271,7 +272,7 @@ export function AddServerPanel({
       ) : (
         <SshTargetForm
           target={target}
-          hosts={hosts ?? []} // not read yet: nothing to suggest
+          hosts={hosts}
           problem={problemText}
           onTargetChange={(value) => { setTarget(value); setInputProblem(null) }}
           onSubmit={(value) => { setTarget(value); void start(value) }}
@@ -307,7 +308,8 @@ function SshTargetForm({
   onClose,
 }: {
   target: string
-  hosts: readonly SshConfigHost[]
+  /** null: not read yet — the open list says so with a placeholder row, ❌ an empty list. */
+  hosts: readonly SshConfigHost[] | null
   problem: string | null
   onTargetChange: (value: string) => void
   onSubmit: (value: string) => void
@@ -317,8 +319,9 @@ function SshTargetForm({
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
-  const suggestions = useMemo(() => (open ? filterSshConfigHosts(hosts, target) : []), [open, hosts, target])
-  const showList = suggestions.length > 0
+  const suggestions = useMemo(() => (open && hosts !== null ? filterSshConfigHosts(hosts, target) : []), [open, hosts, target])
+  const reading = open && hosts === null
+  const showList = suggestions.length > 0 || reading
   const listRef = useRef<HTMLUListElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -338,7 +341,7 @@ function SshTargetForm({
       event.preventDefault()
       if (!open) { setOpen(true); setHighlight(0); return }
       if (suggestions.length) setHighlight((h) => (h + 1) % suggestions.length)
-    } else if (event.key === 'ArrowUp' && showList) {
+    } else if (event.key === 'ArrowUp' && suggestions.length > 0) {
       event.preventDefault()
       setHighlight((h) => (h <= 0 ? suggestions.length - 1 : h - 1))
     } else if (event.key === 'Enter' && showList && highlight >= 0 && suggestions[highlight]) {
@@ -415,6 +418,7 @@ function SshTargetForm({
                     // 最多露 5 行,再多就在浮层里滚:5 × 行高(菜单行 min-h-9 = 36px)+ 上下内边距(p-1 = 4px)= 188px。
                     className="m-0 max-h-[188px] list-none overflow-y-auto p-1"
                   >
+                    {reading && <li role="option" aria-selected={false} aria-disabled data-testid="add-server-suggestions-unknown"><Unknown className="m-2 w-40" /></li>}
                     {suggestions.map((host, index) => {
                       const address = hostAddress(host)
                       return (
