@@ -1,4 +1,5 @@
 import type { FirstPrompt } from './use-timeline-session'
+import type { TaskGroupOrigin } from './task-origin'
 import { messageForUser } from '@/lib/userFacingError';
 import { groupJoinDenialKey } from '@/lib/groupAgentJoin';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -70,11 +71,11 @@ export function AgentWatchPage({
   /** 每变一次 = 外面要建 agent(联系人页的「新建 Agent」):直接进新建页,与根页的 + 同一步。 */
   createRequest?: number
   /** 随 createRequest 一起来:群输入框「新任务」带的群(首句落成群里的任务卡、agent 进群、建完回到群)。null = 不进群。 */
-  taskInGroup?: { chatId: string; name: string } | null
+  taskInGroup?: TaskGroupOrigin | null
   /** 每来一个新的 = 一个 App 点名了这条会话(`gugu.showSession`,useAppShowSession):进它的时间线,与在列表里点那一行同一步。 */
   openRequest?: AppShowSessionDetail | null
   /** 从群里派的任务建好了:回到那个群。 */
-  onOpenGroupChat?: (chatId: string) => void
+  onOpenGroupChat?: (chatId: string, topic?: TaskGroupOrigin['topic']) => void
 }) {
   const { t: tWorkspace } = useTranslation('mobileWorkspace')
   const { t: tMessaging } = useTranslation('messaging')
@@ -133,7 +134,7 @@ export function AgentWatchPage({
   }, [route, device, navigate])
 
   // 「项目」tab 是手机壳返回栈里的一层(ui/sheetStack.ts):先在这张页的层级里往回退,退到根才离开这个 tab。
-  useBackLayer(goBack, active)
+  useBackLayer(goBack, active && route.name !== 'create')
 
   // 切走「项目」tab ⇒ 回到根页:相邻 tab 横滑过来看到的是这个 tab 的根(#6730),
   // 会话列表同步、时间线订阅与「正盯着」也不在屏外接着跑。
@@ -144,7 +145,7 @@ export function AgentWatchPage({
   // 只认「变了」:重挂时带着旧计数不能自己跳进去。
   const seenCreateRequest = useRef(createRequest)
   // 这一次新建派到哪个群里:只跟着外面那次请求来,退回项目页就清掉(项目页的 + 是不进群的新建)。
-  const [taskGroup, setTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
+  const [taskGroup, setTaskGroup] = useState<TaskGroupOrigin | null>(null)
   useEffect(() => {
     if (createRequest === seenCreateRequest.current) return
     seenCreateRequest.current = createRequest
@@ -181,9 +182,16 @@ export function AgentWatchPage({
         <CreateSessionPage
           key={ownerId}
           taskGroup={taskGroup}
-          onBack={goBack}
+          navigationActive={active}
+          onBack={(origin) => {
+            if (origin?.topic && onOpenGroupChat) {
+              navigate([{ name: 'projects' }], 'replace')
+              onOpenGroupChat(origin.chatId, origin.topic)
+            } else goBack()
+          }}
           // 从群里新建的会话回到那个群;其余打开新会话,返回时回到项目页。
-          onCreated={(device, session, firstPrompt, result) => {
+          onCreated={(device, session, firstPrompt, result, createdOrigin) => {
+            const origin = createdOrigin !== undefined ? createdOrigin : taskGroup
             const phone = isPhoneDevice(device)
             if (phone && result?.birthGroup?.status === 'failed') {
               log.error({ deviceId: device.device_id, sessionId: session.conversationId, chatId: result.birthGroup.chatId, reason: result.birthGroup.error ?? null }, 'phone agent created but group join failed')
@@ -192,11 +200,12 @@ export function AgentWatchPage({
               if (denial) toast(tWorkspace('groupJoinDenied'), 'error', tMessaging(denial))
               else toast(tWorkspace('groupJoinFailed'), 'error', messageForUser(result.birthGroup.error))
             }
-            const groupId = phone ? result?.birthGroup?.chatId : taskGroup?.chatId
+            const groupId = phone ? result?.birthGroup?.chatId : origin?.chatId
             if (groupId && onOpenGroupChat && (!phone || result?.birthGroup?.status === 'joined' || result?.birthGroup?.status === 'pending_approval')) {
               if (phone && result?.birthGroup?.status === 'pending_approval') toast(tWorkspace('groupJoinPending'), 'success')
               navigate([{ name: 'projects' }], 'replace')
-              onOpenGroupChat(groupId)
+              if (origin?.topic) onOpenGroupChat(groupId, origin.topic)
+              else onOpenGroupChat(groupId)
               return
             }
             navigate([{ name: 'projects' }, { name: 'timeline', deviceId: device.device_id, session, firstPrompt }], 'replace')

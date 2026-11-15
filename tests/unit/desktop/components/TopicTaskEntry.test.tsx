@@ -10,6 +10,7 @@ import { chat, clickElement, createReactHarness, renderWithAppProviders } from '
 import { readComposer, writeComposer } from '../../../support/composerEditor'
 import { plainTextDoc } from '../../../../packages/session-ui/src/react/components/prompt-editor/serialize'
 import { useMessages } from '@gugu/session-ui/react/components'
+import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 
 // The task host UI is a boundary: keep the real entry, menu, editor, draft bridge and cancellation.
 vi.mock('@renderer/features/sessions/new-session-page', () => ({
@@ -85,4 +86,22 @@ it('does not offer task creation without a known source group', async () => {
   await renderTopic(false)
   expect(harness.container.querySelector('[data-testid="chat-composer-attach-menu"]')).toBeNull()
   expect(config()).toBeNull()
+})
+
+it('opens mobile creation from the topic attachment panel with a fixed source and topic', async () => {
+  const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 412 })
+  const opened = vi.fn()
+  window.addEventListener(UI_EVENTS.createAgentInGroup, opened)
+  try {
+    await renderTopic()
+    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="chat-composer-attach-menu"]')!)
+    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="chat-composer-attach-topic-new-task"]')!)
+    expect(opened).toHaveBeenCalledOnce()
+    expect((opened.mock.calls[0]![0] as CustomEvent).detail).toEqual({ chatId: 'group', topic: { chatId: 'topic', name: 'Current topic' } })
+    expect(config()).toBeNull()
+  } finally {
+    window.removeEventListener(UI_EVENTS.createAgentInGroup, opened)
+    Object.defineProperty(window, 'innerWidth', width)
+  }
 })

@@ -97,6 +97,7 @@ import { pushToHost as pushTrayBadgeEnabled } from '../lib/trayBadgeSetting'
 import { hydrateSidebarTint } from '../lib/sidebarTint'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
+import type { TaskGroupOrigin } from '../mobile/agent-watch/task-origin'
 import { platform } from '../platform'
 import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
@@ -197,7 +198,7 @@ function InnerLayout({
   const settingsLinkedRef = useRef(false)
   const [watchCreateRequest, setWatchCreateRequest] = useState(0)
   // 手机上非项目群输入框的「新任务」:与 watchCreateRequest 一起递进去,null = 不进群。
-  const [watchTaskGroup, setWatchTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
+  const [watchTaskGroup, setWatchTaskGroup] = useState<TaskGroupOrigin | null>(null)
   const [openedPhoneApp, setOpenedPhoneApp] = useState<{ kind: string; name: string } | null>(null)
   const [watchParentTab, setWatchParentTab] = useState<SidebarTab | null>(null)
   const watchOpenRequest = useAppShowSession(() => {
@@ -677,11 +678,12 @@ function InnerLayout({
   // PhoneNewTask)进会话页选机器 —— 两边都是首句落成这个群里的任务卡、agent 进群、人回到群。
   useEffect(() => {
     const onCreateInGroup = (event: Event) => {
-      const { chatId } = (event as CustomEvent<{ chatId?: unknown }>).detail ?? {}
+      const { chatId, topic } = (event as CustomEvent<{ chatId?: unknown; topic?: { chatId?: unknown; name?: unknown } }>).detail ?? {}
       if (typeof chatId !== 'string' || chatId.length === 0) return
       const name = readChats().chats.find((chat) => chat.id === chatId)?.name || t('group.settings.groupFallback', { ns: 'messaging' })
       if (mobile) {
-        setWatchTaskGroup({ chatId, name })
+        setWatchTaskGroup({ chatId, name, ...(typeof topic?.chatId === 'string' && topic.chatId !== chatId
+          ? { topic: { chatId: topic.chatId, name: typeof topic.name === 'string' ? topic.name : '' } } : {}) })
         setActiveTab('tasks')
         setWatchCreateRequest((n) => n + 1)
         return
@@ -846,11 +848,13 @@ function InnerLayout({
   }
 
   // 手机上从群成员里建好 agent:回到那个群。
-  const handleReturnToGroup = (chatId: string) => {
-    if (openChatBlock(chatId, 'group-chat')) return
-    setActiveChatId(chatId)
-    enterChat(chatId)
-    focusComposerForUserEntry('group-chat')
+  const handleReturnToGroup = (chatId: string, topic?: TaskGroupOrigin['topic']) => {
+    if (!openChatBlock(chatId, 'group-chat')) {
+      setActiveChatId(chatId)
+      enterChat(chatId)
+      if (!topic) focusComposerForUserEntry('group-chat')
+    }
+    if (topic) requestTopicSplit({ chatId: topic.chatId, name: topic.name, sourceChatId: chatId })
   }
 
   const contactsSwitchToChat = useStableHandler(handleSwitchToChat)

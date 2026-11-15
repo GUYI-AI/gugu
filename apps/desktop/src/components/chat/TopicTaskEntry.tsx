@@ -5,6 +5,7 @@ import { useLocale } from '@/i18n'
 import { platform } from '@/platform'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { setComposerVerb } from '@/lib/composerVerbBridge'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { useChatStore } from '@/store/chatContext'
 import { useTheme } from '@/store/theme'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
@@ -27,11 +28,17 @@ export function TopicTaskEntry({ sourceChatId, topicName, ...composer }: Omit<Ch
   const { chats, readDraft, writeDraft } = useChatStore('chats', 'readDraft', 'writeDraft')
   const source = chats.find(chat => chat.id === sourceChatId && chat.kind === 'group' && chat.status !== 'archived')
   const desktopHost = !mobile && platform.capabilities.sessionHost
-  const enabled = desktopHost && !!source
+  const enabled = (mobile || desktopHost) && !!source
   const action: ComposerAttachAction = {
     id: 'topic-new-task', label: t('composer.verb.task'), icon: <Zap size={14} />,
     onSelect: () => {
       if (!enabled || !source) return
+      if (mobile) {
+        window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, {
+          detail: { chatId: source.id, topic: { chatId: composer.chatId, name: topicName } },
+        }))
+        return
+      }
       const carry = readDraft(composer.chatId)
       setComposerVerb(composer.chatId, 'task', carry, { name: topicName, joinable: false, inGroup: true, birthChatId: source.id })
       if (carry.trim()) writeDraft(composer.chatId, '')

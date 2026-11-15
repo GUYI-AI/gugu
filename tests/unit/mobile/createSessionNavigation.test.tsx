@@ -5,6 +5,7 @@ import type { useAui } from '../../../apps/desktop/node_modules/@assistant-ui/re
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { SessionpageSessionCreateOptions, SessionpageSessionCreateResult } from '@gugu/session-core/session-record/contract'
 import { CreateSessionPage } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
+import { rememberPhoneSessionCreate, readPhoneSessionCreate, forgetPhoneSessionCreate } from '../../../apps/desktop/src/mobile/local-agent/phoneSessionCreate'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
@@ -86,6 +87,39 @@ async function sendFirst() {
 }
 
 describe('creation keeps its navigation and draft ownership', () => {
+  it('retries an unconfirmed phone request in its original topic after opening creation from another topic', async () => {
+    const phone = { ...device, device_id: 'retained-topic-phone', platform: 'android', capabilities: { host_kind: 'phone', host_runtime_capability: 1, terminals: [], runtimes: ['pi'] } } as Device
+    const request = { clientRequestId: 'original-topic-request', projectId: 'project', harness: 'pi', prompt: '原来的任务', chatId: 'old-group', taskChatId: 'old-topic' }
+    rememberPhoneSessionCreate(state.owner, phone.device_id, request)
+    rpc.options.mockResolvedValue({ ...options, harnesses: [{ ...options.harnesses[0]!, id: 'pi', permissionModes: [] }] })
+    rpc.models.mockResolvedValue({ harness: 'pi', models: [], efforts: [], selected: null, selectedEffort: null })
+    rpc.create.mockResolvedValue({ ...result, session: { conversationId: result.conversationId, projectId: 'project', title: 'Task', harness: 'pi', runtime: 'acp', supported: true } })
+    const onCreated = vi.fn()
+    try {
+      await harness.render(pageOn(phone, { taskGroup: { chatId: 'new-group', name: 'New group', topic: { chatId: 'new-topic', name: 'New topic' } }, onCreated }))
+      await vi.waitFor(() => expect(state.composer?.getState().text).toBe(request.prompt))
+      await sendFirst()
+      expect(rpc.create).toHaveBeenCalledWith(phone.device_id, request)
+      expect(onCreated.mock.calls[0]?.[4]).toEqual({ chatId: 'old-group', name: '', topic: { chatId: 'old-topic', name: '' } })
+      expect(readPhoneSessionCreate(state.owner, phone.device_id)).toBeNull()
+    } finally {
+      const retained = readPhoneSessionCreate(state.owner, phone.device_id)
+      if (retained) forgetPhoneSessionCreate(state.owner, phone.device_id, retained)
+    }
+  })
+
+  it('creates in the fixed topic while joining the source group and returns the admitted origin', async () => {
+    const origin = { chatId: 'source-group', name: 'Source group', topic: { chatId: 'current-topic', name: 'Current topic' } }
+    const onCreated = vi.fn()
+    rpc.create.mockResolvedValue(result)
+    await harness.render(pageOn(device, { taskGroup: origin, onCreated }))
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-task-group"]')?.textContent).toContain('Current topic')
+    expect(harness.container.querySelector('[data-dimension="topic"]')).toBeNull()
+    await sendFirst()
+    expect(rpc.create).toHaveBeenCalledWith(device.device_id, expect.objectContaining({ chatId: 'source-group', taskChatId: 'current-topic' }))
+    expect(onCreated).toHaveBeenCalledWith(device, expect.objectContaining({ conversationId: 'created-task' }), expect.anything(), result, origin)
+  })
+
   it('settles a late successful creation without reopening a page the user left', async () => {
     const pending = deferred<SessionpageSessionCreateResult>()
     rpc.create.mockReturnValue(pending.promise)
