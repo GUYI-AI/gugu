@@ -41,11 +41,8 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   fetchPhoneCreateModels: rpc.models,
   createSession: rpc.create,
   createPhoneSession: rpc.create,
-  machineRpc: (...args: unknown[]) => { rpc.machine(...args); return { extensions: {
-    revoked: async () => ({ success: true, data: {} }),
-    list: async () => ({ success: true, data: { extensions: [{ id: 'meeting-app', name: 'Meeting App', permissions: { capabilities: ['agents:tools'] }, contributes: { skills: 'skills' } }], disabled: [], appIcons: {} } }),
-    appPlaces: async () => ({ success: true, data: [{ id: 'here:all', enabled: true }] }),
-    agentSkills: async () => ({ success: true, data: ['meeting-notes'], entries: [{ name: 'meeting-notes', description: 'Record decisions and next steps' }] }),
+  machineRpc: (...args: unknown[]) => { rpc.machine(...args); return { sessionTimeline: {
+    sessionCreateSkills: async () => ({ ok: true, value: { skills: [{ id: '/native/skills/meeting-notes/SKILL.md', name: 'meeting-notes', description: 'Record decisions and next steps' }] } }),
   } } },
 }))
 vi.mock('../../../apps/desktop/src/components/assistant-ui/thread.aui', async () => {
@@ -169,12 +166,12 @@ describe('creation keeps its navigation and draft ownership', () => {
     runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-work', name: 'work', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-work' }] }] })
     await harness.render(createNode(CreateSessionPage, { onBack: vi.fn(), onCreated }))
     const row = (dimension: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="agent-watch-create-${dimension}"]`)!
-    expect(row('project').textContent).toContain('选择项目')
+    expect(row('project').textContent).toBe('项目')
     expect(rpc.options).toHaveBeenLastCalledWith('mac')
     const originalComposer = state.composer
     await act(async () => { row('project').click() })
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-target-choice"][data-option-id="chat-work"]')!.click() })
-    expect(row('project').textContent).toContain('work')
+    expect(row('project').textContent).toBe('项目')
     expect(rpc.options).toHaveBeenLastCalledWith('gpu')
     expect(state.composer).toBe(originalComposer)
     await sendFirst()

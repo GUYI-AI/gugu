@@ -1,36 +1,16 @@
-import type { ExtensionsApi } from '@renderer/features/extensions/extensions-host'
-import { HERE_ALL } from '@/session/shared/extensions/host-actions'
-import { givesAgentTools } from '@/session/shared/extensions/app-places'
+export type CreationSkill = { id: string; name: string; description: string }
+type SkillSource = { sessionCreateSkills: (input: { harness: string; projectId?: string }) => Promise<{
+  ok: boolean; value?: { skills: CreationSkill[] }; error?: { message: string }
+}> }
 
-export type CreationSkill = { id: string; name: string; description: string; app: string; icon?: string }
-type SkillSource = Pick<ExtensionsApi, 'list' | 'revoked' | 'appPlaces' | 'agentSkills'>
-
-/** Read the selected computer's existing App catalog and its existing delivery grants. */
-export async function loadCreationSkills(api: SkillSource, scopeChatId: string | null): Promise<{ skills: CreationSkill[]; partial: boolean }> {
-  const [inventory, permissions] = await Promise.all([api.list(), api.revoked()])
-  if (!inventory.success || !inventory.data) throw new Error(String(inventory.error ?? 'App inventory is unavailable'))
-  if (!permissions.success || !permissions.data) throw new Error(String(permissions.error ?? 'App permissions are unavailable'))
-  const { extensions, disabled, appIcons } = inventory.data
-  const revoked = permissions.data
-  let partial = false
-  const groups = await Promise.all(extensions.filter((app) => app.contributes.skills && givesAgentTools(app) && !disabled.includes(app.id) && !(revoked[app.id] ?? []).includes('agents:tools')).map(async (app) => {
-    const places = await api.appPlaces({ extensionId: app.id })
-    if (!places.success) throw new Error(places.error)
-    if (!places.data.some((place) => place.enabled && (place.id === HERE_ALL || place.id === scopeChatId))) return []
-    const result = await api.agentSkills({ extensionId: app.id })
-    if (!result.success) throw new Error(result.error)
-    partial ||= (result.problems?.length ?? 0) > 0
-    // Older computers report real names but not descriptions. Keep that distinction visible via the App source.
-    const entries = result.entries ?? result.data.map((name) => ({ name, description: '' }))
-    return entries.map(({ name, description }) => ({ id: `${app.id}:${name}`, name, description, app: app.name,
-      ...(appIcons[app.id] ? { icon: appIcons[app.id] } : {}) }))
-  }))
-  const skills = groups.flat().sort((a, b) => a.name.localeCompare(b.name))
-  if (partial && !skills.length) throw new Error('The catalog contains unreadable skills')
-  return { skills, partial }
+/** Read the selected harness's native skills on its execution computer, never installed Apps. */
+export async function loadCreationSkills(api: SkillSource, harness: string, projectId: string | null) {
+  const result = await api.sessionCreateSkills({ harness, ...(projectId ? { projectId } : {}) })
+  if (!result.ok || !result.value) throw new Error(result.error?.message ?? 'Skill catalog is unavailable')
+  return { skills: result.value.skills }
 }
 
 export function filterCreationSkills(skills: readonly CreationSkill[], search: string): CreationSkill[] {
   const query = search.trim().toLocaleLowerCase()
-  return skills.filter((skill) => `${skill.name} ${skill.description} ${skill.app}`.toLocaleLowerCase().includes(query))
+  return skills.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query))
 }

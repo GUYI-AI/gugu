@@ -18,11 +18,8 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ extensions: {
-  revoked: async () => ({ success: true, data: {} }),
-  list: async () => ({ success: true, data: { extensions: [{ id: 'test-app', name: '验收 App', permissions: { capabilities: ['agents:tools'] }, contributes: { skills: 'skills', tabs: [] } }], disabled: [], appIcons: {} } }),
-  appPlaces: async () => ({ success: true, data: [{ id: 'here:all', enabled: true }] }),
-  agentSkills: async () => ({ success: true, data: ['会议记录', '代码检查'], entries: [{ name: '会议记录', description: '整理会议记录与待办事项' }, { name: '代码检查', description: '检查代码中的问题' }], problems: [] }),
+vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: {
+  sessionCreateSkills: async () => ({ ok: true, value: { skills: [{ id: '/native/meeting/SKILL.md', name: '会议记录', description: '整理会议记录与待办事项' }, { id: '/native/code/SKILL.md', name: '代码检查', description: '检查代码中的问题' }] } }),
 } }) }))
 const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))
 machines.push({ ...machines[0]!, device: { ...machines[0]!.device, device_id: 'Phone', label: 'Phone', platform: 'ios', capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone', host_runtime_capability: 1 } } })
@@ -40,13 +37,13 @@ function Harness() {
   </>
 }
 afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; document.documentElement.removeAttribute('data-theme') })
-async function mount(theme: 'light' | 'dark' = 'dark') {
+async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US' = 'zh-CN') {
   await page.viewport(390, 844)
-  setLocalePreference('zh-CN')
+  setLocalePreference(locale)
   document.documentElement.dataset.theme = theme
   host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''
   host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:12px'
-  root = createRoot(host); root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><Harness /></MessageProvider></SessionUiTheme></LocalizationProvider>)
+  root = createRoot(host); root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Harness /></MessageProvider></SessionUiTheme></LocalizationProvider>)
   await until('composer', () => !!host?.querySelector('[contenteditable]'))
   return host.querySelector<HTMLElement>('[contenteditable]')!
 }
@@ -58,7 +55,7 @@ it.each(['light', 'dark'] as const)('%s: all configuration transitions and a ski
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
   await page.getByTestId('agent-watch-create-model-device').click()
-  await page.getByRole('heading', { name: '模型和设备', exact: true }).click()
+  await page.getByRole('heading', { name: '工作', exact: true }).click()
   await page.getByRole('radio', { name: 'Cloud' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByTestId('agent-watch-create-project').click()
@@ -99,4 +96,17 @@ it('hides the skills entry for a phone target and restores it for a computer wit
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await expect.element(page.getByTestId('agent-watch-create-skills')).toBeVisible()
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
+})
+
+it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'light']] as const)('%s %s: three complete fixed labels fit at 390px without scrolling', async (locale, theme) => {
+  await mount(theme, locale)
+  const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('button')]
+  expect(buttons.map((button) => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
+  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  for (const button of buttons) {
+    const box = button.getBoundingClientRect(), label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
+    expect(box.right).toBeLessThanOrEqual(390)
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
+  }
 })

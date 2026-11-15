@@ -29,6 +29,7 @@ import {
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
+import { createSkills } from './create-skills';
 import * as service from './service';
 import { prefetchFiles } from './turn-files';
 import { markNativeConversationVisible, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
@@ -210,6 +211,8 @@ export const sessionTimelineController = createRPCController({
   sessionCreateOptions: () => create.createOptions(),
   /** 选定的 harness 在这台机器上能跑哪些模型。 */
   sessionCreateModels: (input: SessionpageSessionCreateModelsRequest) => create.createModels(input),
+  /** Native skills of the selected harness, before an agent is created. */
+  sessionCreateSkills: (input: { harness: string; projectId?: string }) => createSkills(input),
   /**
    * 起一条建好了、还没开起来的会话(「再试一次」那一步;第一句话随之投递)。gugu-dev#181:建完不打开的创建
    * (项目里、聊天里派任务)没有会话页去起它,建完就调这一句。已经起过的什么都不做。

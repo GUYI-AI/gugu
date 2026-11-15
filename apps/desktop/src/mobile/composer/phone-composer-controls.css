@@ -42,3 +42,7 @@
 .gg-phone-composer-sheet[data-ending-style] { animation: gg-phone-composer-sheet-out 120ms ease-in; }
 @keyframes gg-phone-composer-sheet-out { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 16px; } }
 @media (prefers-reduced-motion: reduce) { .gg-phone-composer-sheet { animation: none; } }
+
+/* Creation has three fixed, short labels; room controls retain their scrolling row. */
+.gg-phone-create-controls .gg-phone-composer-controls { overflow-x: visible; flex-wrap: nowrap; }
+.gg-phone-create-controls .gg-phone-composer-control-label { max-width: none; overflow: visible; text-overflow: clip; }

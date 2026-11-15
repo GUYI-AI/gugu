@@ -161,7 +161,6 @@ function CreateOnMachine({
   const { t: tControls } = useTranslation('mobileCreateControls')
   const { label: machineLabel } = useMachineLabel()
   const ownerId = useAuth().user?.id ?? null
-  const skillDraft = useCreationSkillDraft(ownerId, device.device_id, scopeChatId)
   const phone = isPhoneDevice(device)
   const online = targetAvailable && device.is_online && (!phone || isAgentHostDevice(device))
   const draft = useRef<ReturnType<typeof bindCreationDraft> | null>(null)
@@ -179,6 +178,7 @@ function CreateOnMachine({
   const [optionsError, setOptionsError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [selection, setSelection] = useState<CreateSelection>({ harness: null, model: null, permissionMode: null, effort: null })
+  const skillDraft = useCreationSkillDraft(ownerId, device.device_id, scopeChatId, selection.harness)
   /** 人动过选择没有 —— 动过之后「上次那一套没沿用上」就不再说(那是人自己的改动)。 */
   const [touched, setTouched] = useState(false)
   /** 与桌面创建框同一条：明确点选的自家默认不被自动默认覆盖；换 harness 后重算。 */

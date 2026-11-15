@@ -22,7 +22,7 @@ export type CreationConfiguration = {
 }
 
 /** The mobile creation row reads the same device, project and model catalogs as before. */
-export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, scopeChatId = null }: {
+export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration }: {
   projects: readonly CreateProject[]; project: CreateProject | null; onProject: (key: string | null) => void
   machines: readonly CreateMachine[]; machine: CreateMachine | undefined; onMachine: (deviceId: string) => void
   machineLabel: (device: CreateMachine['device']) => string; busy: boolean
@@ -44,10 +44,10 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
   const compact = view !== 'project' && view !== 'skills'
   return <>
-    <div data-testid="agent-watch-create-target"><PhoneComposerControlRow>
+    <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
       <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
-      <PhoneComposerControl label={project?.name ?? t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
+      <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
         testId="agent-watch-create-project" onClick={() => setView('project')} />
       {!phone && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
         testId="agent-watch-create-skills" onClick={() => { setSearch(''); setView('skills') }} />}
@@ -91,7 +91,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         {selectedHarness?.permissionModes.map((mode) => <Choice key={mode} id={mode} dimension="permission" name={tm(`agentWatch.create.permission.${mode}.name`)}
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}
       </div>}
-      {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} phone={phone} scopeChatId={scopeChatId} search={search}
+      {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.localProjectId ?? null} search={search}
         selected={configuration?.skills ?? []} onCount={setSkillCount} onChange={(skills) => { configuration?.onSkills(skills); setView(null) }} />}
     </PhoneComposerSheet>
   </>
