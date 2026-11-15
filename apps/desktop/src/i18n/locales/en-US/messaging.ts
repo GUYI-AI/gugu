@@ -1,5 +1,5 @@
 export default {
-  "fileAnnotation": { "addToChat": "Add to chat", "optionalComment": "Add an optional comment…", "comment": "Comment", "line": "Line {{start}}", "lines": "Lines {{start}}–{{end}}", "selectLine": "Select line {{line}}", "failed": "Could not save the comment. Try again." },
+  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}" },
   "agent": {
     "identity": {
       "phone": "Phone Agent",

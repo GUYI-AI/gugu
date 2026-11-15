@@ -8,6 +8,7 @@ import type { AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import { formatBytes } from '@renderer/utils/formatBytes'
 import { bindFileViewerMenu } from '@/components/preview/file-viewer-menu'
 import { workspaceFileQuote } from '@/components/preview/quote-preview-file'
+import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { MessageFilePreviewPanel } from '@/components/chat/MessageFilePreviewPanel'
 import type { DocumentPreviewKind } from '@/components/chat/documentPreview'
 import type { ChatCommands, OpenedOutput } from '@gugu/session-chat-ui'
@@ -22,7 +23,6 @@ import { rendererLogger } from '@/lib/log'
 import type { OpenedOutputHandlers } from './opened-output-handlers'
 import { OpenedFileChangedError, phoneOpenPlan, readWholeOpenedFile } from './opened-output-open'
 import { readOpenedFileChunk, SessionpageRpcError } from './sessionpage-rpc'
-import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 
 const log = rendererLogger('mobile/opened-output')
 type FileOpenSource = Parameters<NonNullable<ChatCommands['onOpenFile']>>[0]['source']
@@ -244,7 +244,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         videoUrl={preview.file.url || undefined}
         kind={preview.kind}
         content={preview.content}
-        onAnnotate={sessionId ? comment => { sessionAnnotations.forSession(sessionId).add({ kind: 'file', path: preview.path, ...comment }) } : undefined}
+        {...(sessionId ? { onCite: (selection: FileViewerSelection) => { onQuote(workspaceFileQuote(preview.path, selection)); close() } } : {})}
         loading={preview.loading}
         loadingLabel={
           preview.progress

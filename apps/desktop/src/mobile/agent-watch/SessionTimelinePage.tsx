@@ -118,6 +118,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   }), [session.conversationId, session.projectId, appKind])
   // Its back key goes back to the timeline, as its header's back does — not past it to the list (the App is a layer here).
   useBackLayer(() => setAppKind(null), appKind !== null)
+  // A draft brought to this session (a cite from its Files App) is the person's next words here: its conversation comes up.
+  useEffect(() => { if (draft) setAppKind(null) }, [draft])
   const apps = useSessionApps()
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({

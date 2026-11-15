@@ -1,4 +1,4 @@
-import { draftWithPills, stringifyMention } from '@gugu/session-shared/markdown';
+import { fileCiteDraft } from '@gugu/session-shared/markdown';
 import { composeInChat } from '@/session/shared/extensions/app-send-core';
 import { APP_COMPOSE_EVENT } from '@/session/shared/extensions/app-runtime-protocol';
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu';
@@ -32,9 +32,5 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
 
 /** The same task-file reference text in desktop and phone composers. */
 export function workspaceFileQuote(path: string, selection: FileViewerSelection | null): string {
-  const name = path.replace(/\\/g, '/').split('/').pop() ?? path;
-  const position = selection && selectionPosition(selection);
-  const label = `${name}${position ? ` (${position})` : ''}`;
-  const mention = stringifyMention({ label, target: path, kind: 'file' });
-  return selection ? draftWithPills(selectedTextQuote(selection), mention) : mention;
+  return fileCiteDraft(selection ? selectedTextQuote(selection) : '', [{ file: { id: path }, label: selection ? selectionPosition(selection) : '' }]);
 }

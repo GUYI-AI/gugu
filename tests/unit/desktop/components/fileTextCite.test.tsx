@@ -67,7 +67,7 @@ describe('file source ranges', () => {
 
   it('excludes the untouched next line at an end boundary and keeps code text without line numbers', async () => {
     const content = 'one\r\ntwo\r\nthree'
-    await act(async () => root.render(createElement(FileTextContent, { content, kind: 'text', fileName: 'a.ts', onAnnotate: vi.fn() })))
+    await act(async () => root.render(createElement(FileTextContent, { content, kind: 'text', onCite: vi.fn() })))
     const first = host.querySelector('[data-file-line="1"]')!
     const third = host.querySelector('[data-file-line="3"]')!
     const range = document.createRange()
@@ -105,9 +105,9 @@ describe('file source ranges', () => {
   })
 })
 
-it('saves the captured source after the comment input takes focus and lets another comment accumulate', async () => {
-  const onAnnotate = vi.fn()
-  await act(async () => root.render(createElement(FileTextContent, { content: 'first\nsecond\nthird', kind: 'text', fileName: 'a.ts', onAnnotate })))
+it('cites each selected range on its own, as many times as asked', async () => {
+  const onCite = vi.fn()
+  await act(async () => root.render(createElement(FileTextContent, { content: 'first\nsecond\nthird', kind: 'text', onCite })))
   for (const line of [2, 3]) {
     const span = host.querySelector(`[data-file-line="${line}"]`)!
     const range = document.createRange()
@@ -118,55 +118,26 @@ it('saves the captured source after the comment input takes focus and lets anoth
       document.dispatchEvent(new Event('selectionchange'))
     })
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
-    const add = document.querySelector<HTMLButtonElement>('.gg-file-annotation-popup button')!
-    expect(add).not.toBeNull()
-    await act(async () => add.click())
-    const input = document.querySelector('input')!
-    expect(input).not.toBeNull()
-    if (line === 2) {
-      const composingEnter = new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })
-      await act(async () => { input.dispatchEvent(composingEnter) })
-      expect(composingEnter.defaultPrevented).toBe(true)
-      expect(onAnnotate).not.toHaveBeenCalled()
-    }
-    await act(async () => {
-      if (line === 2) {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Please update this line')
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-      }
-      input.focus()
-      document.getSelection()?.removeAllRanges()
-      document.dispatchEvent(new Event('selectionchange'))
-    })
-    await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-annotation-form button[type="submit"]')!.click())
-    expect(onAnnotate).toHaveBeenLastCalledWith({ startLine: line, endLine: line, text: line === 2 ? 'second' : 'third', annotation: line === 2 ? 'Please update this line' : '' })
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.gg-file-cite-popup button')
+    expect(buttons).toHaveLength(1)
+    expect(document.querySelector('.gg-file-cite-popup input')).toBeNull()
+    await act(async () => buttons[0].click())
+    expect(onCite).toHaveBeenLastCalledWith({ text: line === 2 ? 'second' : 'third', at: { lines: String(line) } })
+    expect(document.querySelector('.gg-file-cite-popup')).toBeNull()
   }
-  expect(onAnnotate).toHaveBeenCalledTimes(2)
+  expect(onCite).toHaveBeenCalledTimes(2)
 })
 
-it('retains the selected quote and comment input after a failed save, then retries the same range', async () => {
-  const onAnnotate = vi.fn().mockRejectedValueOnce(new Error('Queue refused')).mockResolvedValueOnce(undefined)
-  await act(async () => root.render(createElement(FileTextContent, { content: 'one\ntwo', kind: 'text', fileName: 'a.ts', onAnnotate })))
-  await act(async () => host.querySelector<HTMLButtonElement>('.gg-file-line-number')!.click())
-  await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-annotation-popup button')!.click())
-  const submit = document.querySelector<HTMLButtonElement>('.gg-file-annotation-form button[type="submit"]')!
-  await act(async () => submit.click())
-  expect(document.querySelector('.gg-file-annotation-error[role="alert"]')).not.toBeNull()
-  expect(document.querySelector('input')).not.toBeNull()
-  await act(async () => submit.click())
-  expect(onAnnotate.mock.calls).toEqual([[{ startLine: 1, endLine: 1, text: 'one', annotation: '' }], [{ startLine: 1, endLine: 1, text: 'one', annotation: '' }]])
-  expect(document.querySelector('.gg-file-annotation-form')).toBeNull()
-})
-
-it('allows a code gutter comment on the empty final source line', async () => {
-  const onAnnotate = vi.fn()
-  await act(async () => root.render(createElement(FileTextContent, { content: 'one\n', kind: 'text', fileName: 'a.ts', onAnnotate })))
-  await act(async () => host.querySelectorAll<HTMLButtonElement>('.gg-file-line-number')[1].click())
+it('cites a code gutter range, including the empty final source line', async () => {
+  const onCite = vi.fn()
+  await act(async () => root.render(createElement(FileTextContent, { content: 'one\n', kind: 'text', onCite })))
+  const gutter = host.querySelectorAll<HTMLButtonElement>('.gg-file-line-number')
+  await act(async () => gutter[0].click())
+  await act(async () => gutter[1].dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
   await act(async () => {
     document.dispatchEvent(new Event('selectionchange'))
     await new Promise(resolve => requestAnimationFrame(resolve))
   })
-  await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-annotation-popup button')!.click())
-  await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-annotation-form button[type="submit"]')!.click())
-  expect(onAnnotate).toHaveBeenCalledWith({ startLine: 2, endLine: 2, text: '', annotation: '' })
+  await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-cite-popup button')!.click())
+  expect(onCite).toHaveBeenCalledWith({ text: 'one\n', at: { lines: '1-2' } })
 })
