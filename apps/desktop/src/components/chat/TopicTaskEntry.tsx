@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageProvider } from '@gugu/session-ui/react/components'
 import { Zap } from '@/lib/icons'
@@ -11,15 +12,16 @@ import { useTheme } from '@/store/theme'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-composer'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import { ChatMessageComposer } from './ChatMessageComposer'
-import type { ChatMessageComposerProps } from './chatComposerModels'
 import type { ComposerAttachAction } from './ComposerAttachButton'
 
 /** The task belongs to the topic whose composer opened it; no creation-time destination picker. */
-export function TopicTaskEntry({ sourceChatId, topicName, ...composer }: Omit<ChatMessageComposerProps, 'chatId'> & {
+export function TopicTaskEntry({ chatId, sourceChatId, topicName, attachMenu, children }: {
   chatId: string
   sourceChatId: string | null
   topicName: string
+  attachMenu?: readonly ComposerAttachAction[]
+  /** Keep the shared composer and its explicit prop contract at the conversation's call site. */
+  children: (attachMenu: readonly ComposerAttachAction[] | undefined) => ReactNode
 }) {
   const { t } = useTranslation('messaging')
   const mobile = useMobileShell()
@@ -35,20 +37,20 @@ export function TopicTaskEntry({ sourceChatId, topicName, ...composer }: Omit<Ch
       if (!enabled || !source) return
       if (mobile) {
         window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, {
-          detail: { chatId: source.id, topic: { chatId: composer.chatId, name: topicName } },
+          detail: { chatId: source.id, topic: { chatId, name: topicName } },
         }))
         return
       }
-      const carry = readDraft(composer.chatId)
-      setComposerVerb(composer.chatId, 'task', carry, { name: topicName, joinable: false, inGroup: true, birthChatId: source.id })
-      if (carry.trim()) writeDraft(composer.chatId, '')
+      const carry = readDraft(chatId)
+      setComposerVerb(chatId, 'task', carry, { name: topicName, joinable: false, inGroup: true, birthChatId: source.id })
+      if (carry.trim()) writeDraft(chatId, '')
     },
   }
   return <>
-    <ChatMessageComposer {...composer} attachMenu={enabled ? [...(composer.attachMenu ?? []), action] : composer.attachMenu} />
+    {children(enabled ? [...(attachMenu ?? []), action] : attachMenu)}
     {desktopHost && <SessionUiTheme theme={theme}>
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
-        <ComposerVerbDock key={composer.chatId} chatId={composer.chatId} />
+        <ComposerVerbDock key={chatId} chatId={chatId} />
       </MessageProvider>
     </SessionUiTheme>}
   </>

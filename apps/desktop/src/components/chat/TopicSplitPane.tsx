@@ -16,6 +16,7 @@ import type { MemberProfileOpener } from '../memberProfileModels'
 import { IconButton } from '../ui/IconButton'
 import { useBackLayer } from '../ui/sheetStack'
 import { TopicTaskEntry } from './TopicTaskEntry'
+import { ChatMessageComposer } from './ChatMessageComposer'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
 import { TopicBreadcrumb } from './TopicBreadcrumb'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
@@ -431,7 +432,9 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </RunningBarSlot>
         }>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
-        <TopicTaskEntry sourceChatId={runningPreviewChatId ?? null} topicName={topic.name}
+        <TopicTaskEntry chatId={topic.chatId} sourceChatId={runningPreviewChatId ?? null} topicName={topic.name}>
+        {(attachMenu) => <ChatMessageComposer
+          attachMenu={attachMenu}
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}
           onSend={async (content, opts) => {
@@ -452,7 +455,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
           //     话题是场所型会话,这三个在主线也只在 isAgentChat 时才有值。
           //   · whisperTarget / onExitWhisper —— 成员卡片的主动入口在主线;
           //     回复的私密性与显式退出由共用 composer 自己处理。
-        />
+        />}
+        </TopicTaskEntry>
         </div>
         </ChatBottomDock>
         <ReadReceiptPopover handle={readReceiptHandle} receiptOf={receiptOf} testId="message-read-receipt-panel" />
