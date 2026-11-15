@@ -34,8 +34,8 @@ async function mountTeam(role: TeamRole, api: TeamApi, node = <TeamPage onMessag
 }
 
 it('lets a member use directory/search/usage while omitting every management section', async () => {
-  const summary = vi.fn(), setCaps = vi.fn(), api = mockTeamApi('member', { summary, setCaps })
-  await mountTeam('member', api)
+  const summary = vi.fn(), setCaps = vi.fn(), onMessage = vi.fn(), api = mockTeamApi('member', { summary, setCaps })
+  await mountTeam('member', api, <TeamPage onMessage={onMessage} onTopUp={vi.fn()} />)
   expect(harness.container.querySelector('.gg-team-person-row [data-avatar-empty]')).toBeNull()
   await capture('member-overview')
   expect(harness.container.textContent).not.toContain('成员管理')
@@ -45,6 +45,9 @@ it('lets a member use directory/search/usage while omitting every management sec
   await until('member search returns the authorized person', () => harness.container.querySelectorAll('.gg-team-person-row').length === 1)
   expect(harness.container.textContent).toContain('许澄')
   expect(harness.container.textContent).not.toContain('共享资源')
+  await userEvent.click(page.getByRole('button', { name: /许澄.*成员/ }))
+  await click('发消息')
+  expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({ identity_id: 'team-person-xu' }))
   await click('我的用量')
   await until('my monthly usage is rendered', () => harness.container.textContent?.includes('74') === true)
   expect(harness.container.textContent).not.toContain('1,236')
@@ -173,6 +176,26 @@ it('verifies email before creating a team and installs only the independent team
   expect(create.mock.calls[0].slice(0, 2)).toEqual(['测试团队', 'receipt-fixture'])
   expect(auth.accept).toHaveBeenCalledWith(41, teamSignIn('superadmin').session)
   expect(harness.container.textContent).not.toMatch(/赠送|手机号|会员套餐|·/)
+})
+
+it('accepts an invitation only after verifying the invited email while keeping its token out of visible inputs', async () => {
+  const api = mockTeamApi(), challenge = vi.fn(api.challenge), acceptInvitation = vi.fn(api.acceptInvitation)
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <TeamApiProvider api={{ ...api, challenge, acceptInvitation }}>
+    <TeamAuthPane googleEnabled={false} onPersonal={vi.fn()} invitationToken="synthetic-invitation-secret" />
+  </TeamApiProvider>, { auth: null })
+  await until('the safe invitation summary is shown', () => document.body.textContent?.includes('明川研究院') === true)
+  expect(harness.container.textContent).not.toContain('synthetic-invitation-secret')
+  expect([...harness.container.querySelectorAll('input')].some(input => input.value.includes('synthetic-invitation-secret'))).toBe(false)
+  await userEvent.fill(page.getByRole('textbox', { name: '邮箱', exact: true }), 'lin@example.test')
+  await click('继续')
+  await until('invitation email verification is requested', () => !!harness.container.querySelector('input[autocomplete="one-time-code"]'))
+  expect(challenge).toHaveBeenCalledWith({ email: 'lin@example.test', purpose: 'accept_invitation', invitation_token: 'synthetic-invitation-secret' })
+  expect(acceptInvitation).not.toHaveBeenCalled()
+  await userEvent.fill(page.getByRole('textbox', { name: '验证码' }), '123456'); await click('加入团队')
+  await until('the invitation installs its independent team session', () => auth.accept.mock.calls.length === 1)
+  expect(acceptInvitation.mock.calls[0].slice(0, 2)).toEqual(['synthetic-invitation-secret', 'receipt-fixture'])
+  expect(auth.accept).toHaveBeenCalledWith(41, teamSignIn().session)
 })
 
 it('keeps verified team choices in the same login form and reuses the verified receipt once', async () => {

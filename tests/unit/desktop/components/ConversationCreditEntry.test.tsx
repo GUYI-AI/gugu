@@ -69,7 +69,7 @@ it('reads authenticated balance in the independent session entry without an Auth
   })
   await settle()
   expect(container.querySelector('[data-auth-context]')?.textContent).toBe('no-provider')
-  expect(container.querySelector('[role="status"]')?.textContent).toBe('剩 1 积分 · 充值')
+  expect(container.querySelector('[role="status"]')?.textContent).toBe('剩 1 积分 充值')
   expect(sent).toEqual(expect.arrayContaining([
     { path: '/rest/v1/rpc/current_membership_v2', authorization: 'Bearer entry-token-account-a', version: '2', profile: 'billing' },
     { path: '/rest/v1/rpc/current_quota_windows_v2', authorization: 'Bearer entry-token-account-a', version: '2', profile: 'billing' },
@@ -79,10 +79,21 @@ it('reads authenticated balance in the independent session entry without an Auth
 
   await act(async () => { signedIn('account-b') })
   await settle()
-  expect(container.querySelector('[role="status"]')?.textContent).toBe('剩 0.5 积分 · 充值')
+  expect(container.querySelector('[role="status"]')?.textContent).toBe('剩 0.5 积分 充值')
   expect(sent.filter(request => request.authorization === 'Bearer entry-token-account-b')).toHaveLength(2)
   expect(sent.every(request => request.version === '2' && request.profile === 'billing')).toBe(true)
 
   await act(async () => { publishRendererSession('SIGNED_OUT', null); publishSelfIdentity(null) })
   expect(container.querySelector('[role="status"]')).toBeNull()
+})
+
+it('does not read personal billing or offer personal recharge for a team identity in the independent entry', async () => {
+  publishRendererSession('SIGNED_IN', { access_token: 'synthetic-team-entry-token', user: { id: 'team-principal' } } as Session)
+  publishSelfIdentity({ userId: 'team-principal', displayName: '林晓', guguNumber: null, accountKind: 'team_member' })
+  await act(async () => {
+    root = renderEntryRoot('session-embedded', container, createElement(ConversationCreditNotice, { modelOptionId: 'platform:test' }))
+  })
+  await settle()
+  expect(sent).toHaveLength(0)
+  expect(container.querySelector('[role="status"],button')).toBeNull()
 })
