@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cloudFileProviders } from '../../../../packages/core/src/cloud/fileProviders'
+import { createFileDownloadSession, type FileDownloadSession } from '../../../../packages/core/src/cloud/fileDownloadRouting'
 import { attachmentRequest, AttachmentsError } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { setCoreLoggerFactory } from '../../../../packages/core/src/log'
 import type { FileSink } from '../../../../packages/core/src/shared/fileCipher'
@@ -15,21 +16,24 @@ const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 let restoreLog: () => void
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-03T00:00:00Z')); restoreLog = setCoreLoggerFactory(() => logger) })
 afterEach(() => { restoreLog(); vi.useRealTimers(); vi.clearAllMocks() })
-function fixture(options: { origin?: boolean; expired?: boolean; signerFails?: boolean; thumbnail?: boolean } = {}) {
+function fixture(options: { origin?: boolean; expired?: boolean; signerFails?: boolean; thumbnail?: boolean; session?: FileDownloadSession } = {}) {
+  const session = options.session ?? createFileDownloadSession()
   const cache = new Map<number, Uint8Array>(), committed = vi.fn(), requests: Record<string, unknown>[] = []
   const object = vi.fn<typeof fetch>(async (_url, init) => {
     const offset = Number(new Headers(init?.headers).get('Range')?.match(/bytes=(\d+)-/)?.[1] ?? 0)
     return new Response(bytes.slice(offset), { status: offset ? 206 : 200, headers: offset ? { 'content-range': `bytes ${offset}-${bytes.length - 1}/${bytes.length}` } : {} })
   })
   let signed = 0
+  const expiry = new Map<string, string>()
   const api = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith('/file-resolve')) return Response.json({ ...revision, status: 'ready' })
     const body = JSON.parse(String(init?.body)); requests.push(body); signed++
     if (body.origin && options.signerFails) return Response.json({ error: 'signing_failed', message: 'Origin signing failed' }, { status: 503 })
+    if (!expiry.has(body.request_id)) expiry.set(body.request_id, new Date(Date.now() + (options.expired && signed === 1 ? -1 : 60_000)).toISOString())
     return Response.json({ status: 'ready', url: body.origin ? `https://oss.invalid/file?x-oss-signature=secret-${signed}` : `https://cdn.invalid/file?auth_key=secret-${signed}`,
       ...(options.origin && !body.origin ? { origin_available: true } : {}),
-      ...(options.thumbnail ? { thumb_url: 'https://cdn.invalid/thumb.png' } : {}),
-      expires_at: new Date(Date.now() + (options.expired && signed === 1 ? -1 : 60_000)).toISOString(),
+      ...(options.thumbnail ? { thumb_url: body.origin ? 'https://oss.invalid/thumb.png?x-oss-signature=thumbnail' : 'https://cdn.invalid/thumb.png' } : {}),
+      expires_at: expiry.get(body.request_id),
       size_bytes: bytes.length, sha256: revision.sha256, download_id: body.request_id })
   })
   const endpoint = { supabaseUrl: 'https://signer.invalid', anonKey: 'fixture', token: 'fixture', fetch: api }
@@ -39,9 +43,9 @@ function fixture(options: { origin?: boolean; expired?: boolean; signerFails?: b
       const joined = Buffer.concat(chunks); committed(); return { size: joined.length, read: async (offset, length) => joined.subarray(offset, offset + length), dispose: async () => {} }
     } }
   }
-  const cloud = cloudFileProviders({ endpoint: async () => endpoint, fetch: object, sink,
+  const cloud = cloudFileProviders({ endpoint: async () => endpoint, fetch: object, sink, downloadSession: session,
     cache: { get: async (_key, index) => cache.get(index) ?? null, put: async (_key, index, part) => { cache.set(index, part.slice()) }, clear: async () => cache.clear() } })
-  return { cloud, api, object, endpoint, requests, cache, committed }
+  return { cloud, api, object, endpoint, requests, cache, committed, session }
 }
 async function finish<T>(promise: Promise<T>) { const result = promise.then(value => ({ value }), error => ({ error })); await vi.runAllTimersAsync(); return result }
 function value<T>(result: { value: T } | { error: unknown }): T { if ('error' in result) throw result.error; return result.value }
@@ -65,6 +69,104 @@ it('switches to the separately signed OSS URL on a CDN connection failure and pr
   expect(f.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid', 'oss.invalid'])
   expect(f.committed).toHaveBeenCalledTimes(1); expect(file.size).toBe(bytes.length)
   expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret-')
+})
+it('bounds an unresponsive CDN connection to three seconds, then creates the next origin read with one signing call', async () => {
+  const f = fixture({ origin: true }), started = Date.now()
+  f.object.mockImplementationOnce(() => new Promise(() => {}))
+  const work = f.cloud.managed(revision, context).then(value => ({ value }), error => ({ error }))
+  await vi.advanceTimersByTimeAsync(2_999)
+  expect(f.object).toHaveBeenCalledTimes(1); expect(f.requests).toHaveLength(1)
+  expect(f.object.mock.calls[0]![1]!.signal!.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(f.object.mock.calls[0]![1]!.signal!.aborted).toBe(true)
+  await vi.advanceTimersByTimeAsync(500)
+  const first = value(await work)
+  expect(Date.now() - started).toBe(3_500)
+  expect(sha(Buffer.concat([await first.read(0, 524288), await first.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+  const next = fixture({ origin: true, session: f.session })
+  const file = value(await finish(next.cloud.managed(revision, context)))
+  expect(next.requests).toEqual([expect.objectContaining({ origin: true })])
+  expect(next.requests[0]!.request_id).not.toBe(f.requests[0]!.request_id)
+  expect(next.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['oss.invalid'])
+  expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+})
+it('rechecks a recovered CDN after ten minutes without extending cooldown on origin reads', async () => {
+  const f = fixture({ origin: true }), started = Date.now()
+  f.object.mockRejectedValueOnce(network('ETIMEDOUT'))
+  value(await finish(f.cloud.managed(revision, context)))
+  await vi.advanceTimersByTimeAsync(300_000)
+  const during = fixture({ origin: true, session: f.session })
+  value(await finish(during.cloud.managed(revision, context)))
+  expect(during.requests).toEqual([expect.objectContaining({ origin: true })])
+  expect(during.object.mock.calls.every(([url]) => new URL(String(url)).host === 'oss.invalid')).toBe(true)
+  await vi.advanceTimersByTimeAsync(started + 600_000 - Date.now())
+  const recovered = fixture({ origin: true, session: f.session })
+  value(await finish(recovered.cloud.managed(revision, context)))
+  expect(recovered.requests).toHaveLength(1); expect(recovered.requests[0]).not.toHaveProperty('origin')
+  expect(recovered.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid'])
+})
+it('allows a healthy CDN stream to progress for longer than the probe deadline', async () => {
+  const f = fixture({ origin: true }), started = Date.now()
+  let offset = 0
+  f.object.mockResolvedValueOnce(new Response(new ReadableStream({ async pull(controller) {
+    await new Promise(resolve => setTimeout(resolve, 2_000))
+    controller.enqueue(bytes.slice(offset, offset += 100_000))
+    if (offset === bytes.length) controller.close()
+  } })))
+  const file = value(await finish(f.cloud.managed(revision, context)))
+  expect(Date.now() - started).toBeGreaterThan(3_000)
+  expect(f.requests).toHaveLength(1); expect(f.requests[0]).not.toHaveProperty('origin')
+  expect(f.object).toHaveBeenCalledTimes(1)
+  expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+})
+it('resumes only the incomplete chunk after a stalled CDN body even when its cancellation never settles', async () => {
+  const f = fixture({ origin: true }), cancelled = vi.fn(() => new Promise<void>(() => {}))
+  f.object.mockResolvedValueOnce(new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(bytes.slice(0, 524288 + 20))
+  }, cancel: cancelled })))
+  const file = value(await finish(f.cloud.managed(revision, context)))
+  expect(cancelled).toHaveBeenCalled()
+  expect(f.cache.get(0)).toEqual(bytes.subarray(0, 524288))
+  expect(new Headers(f.object.mock.calls[1]?.[1]?.headers).get('Range')).toBe('bytes=524288-')
+  expect(f.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid', 'oss.invalid'])
+  expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+})
+it('does not remember a caller cancellation as CDN failure', async () => {
+  const f = fixture({ origin: true }), abort = new AbortController()
+  f.object.mockImplementationOnce(() => new Promise(() => {}))
+  const work = f.cloud.managed(revision, { ...context, signal: abort.signal }).then(value => ({ value }), error => ({ error }))
+  await vi.advanceTimersByTimeAsync(0)
+  abort.abort(new DOMException('Stopped', 'AbortError'))
+  expect(await work).toHaveProperty('error', expect.objectContaining({ name: 'AbortError' }))
+  const next = fixture({ origin: true, session: f.session })
+  value(await finish(next.cloud.managed(revision, context)))
+  expect(next.requests[0]).not.toHaveProperty('origin')
+  expect(next.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid'])
+})
+it('discards a late CDN response after its timed-out request has already completed through origin', async () => {
+  const f = fixture({ origin: true }), cancelled = vi.fn()
+  let late!: (response: Response) => void
+  f.object.mockImplementationOnce(() => new Promise(resolve => { late = resolve }))
+  const file = value(await finish(f.cloud.managed(revision, context)))
+  late(new Response(new ReadableStream({ cancel: cancelled })))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(cancelled).toHaveBeenCalledTimes(1)
+  expect(f.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid', 'oss.invalid'])
+  expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+})
+it('keeps another backend and CDN independent of a remembered outage', async () => {
+  const f = fixture({ origin: true }); f.object.mockRejectedValueOnce(network())
+  value(await finish(f.cloud.managed(revision, context)))
+  const other = fixture({ origin: true, session: f.session })
+  other.endpoint.supabaseUrl = 'https://other-signer.invalid'
+  other.api.mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)); other.requests.push(body)
+    return Response.json({ status: 'ready', url: 'https://other-cdn.invalid/file', download_id: body.request_id,
+      size_bytes: bytes.length, sha256: revision.sha256, origin_available: true })
+  })
+  value(await finish(other.cloud.managed(revision, context)))
+  expect(other.requests[0]).not.toHaveProperty('origin')
+  expect(other.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['other-cdn.invalid'])
 })
 it('keeps a healthy CDN download independent of a failing optional origin signer', async () => {
   const f = fixture({ origin: true, signerFails: true })
@@ -243,7 +345,8 @@ it('recovers original bytes after a 60-second object-service outage without publ
 it('retries thumbnail responses and their bodies through the same window', async () => {
   const f = fixture({ thumbnail: true }), started = Date.now(), settled = vi.fn()
   f.object.mockImplementation(async () => Date.now() - started < 60_000
-    ? new Response(null, { status: 503 }) : new Response(new Blob(['pixels'], { type: 'image/png' })))
+    // Byte-backed fixtures keep stream delivery on the fake clock, rather than Blob's native I/O queue.
+    ? new Response(null, { status: 503 }) : new Response(new TextEncoder().encode('pixels'), { headers: { 'content-type': 'image/png' } }))
   const work = f.cloud.preview!({ ...revision, content_type: 'image/png' }, context, vi.fn()); void work.then(settled, settled)
   await vi.advanceTimersByTimeAsync(60_000); expect(settled).not.toHaveBeenCalled()
   const preview = value(await finish(work)); expect(preview).toBeInstanceOf(Blob)
@@ -253,6 +356,102 @@ it('never retries a thumbnail permission refusal', async () => {
   const f = fixture({ thumbnail: true }); f.object.mockResolvedValue(new Response(null, { status: 403 }))
   expect(await finish(f.cloud.preview!({ ...revision, content_type: 'image/png' }, context, vi.fn()))).toHaveProperty('error', expect.objectContaining({ status: 403 }))
   expect(f.object).toHaveBeenCalledTimes(1)
+})
+const pixels = new TextEncoder().encode('fixture thumbnail bytes')
+const imageRevision = { ...revision, content_type: 'image/png' }
+const imageResponse = () => new Response(pixels.slice(), { headers: { 'content-type': 'image/png' } })
+it('falls back to the signed thumbnail on the original reservation and shares cooldown with original reads', async () => {
+  const f = fixture({ origin: true, thumbnail: true }), full = vi.fn(async () => { throw new Error('Must not read the original') })
+  f.object.mockRejectedValueOnce(network()).mockImplementation(async () => imageResponse())
+  const preview = value(await finish(f.cloud.preview!(imageRevision, context, full))) as Blob
+  expect(sha(new Uint8Array(await preview.arrayBuffer()))).toBe(sha(pixels))
+  expect(f.requests).toHaveLength(2)
+  expect(f.requests[1]).toMatchObject({ origin: true, request_id: f.requests[0]!.request_id, ref: context.ref, as: context.actor.actorId })
+  expect(f.object.mock.calls.map(([url]) => [new URL(String(url)).host, new URL(String(url)).pathname])).toEqual([
+    ['cdn.invalid', '/thumb.png'], ['oss.invalid', '/thumb.png'],
+  ])
+  expect(full).not.toHaveBeenCalled()
+  const original = fixture({ origin: true, session: f.session })
+  value(await finish(original.cloud.managed(revision, context)))
+  expect(original.requests).toEqual([expect.objectContaining({ origin: true })])
+  expect(original.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['oss.invalid'])
+})
+it('creates a fresh thumbnail reservation with origin:true in its first and only signing call during cooldown', async () => {
+  const f = fixture({ origin: true }); f.object.mockRejectedValueOnce(network())
+  value(await finish(f.cloud.managed(revision, context)))
+  const thumbnail = fixture({ origin: true, thumbnail: true, session: f.session })
+  thumbnail.object.mockImplementation(async () => imageResponse())
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  const preview = value(await finish(thumbnail.cloud.preview!(imageRevision, context, full))) as Blob
+  expect(thumbnail.requests).toEqual([expect.objectContaining({ origin: true })])
+  expect(thumbnail.requests[0]!.request_id).not.toBe(f.requests[0]!.request_id)
+  expect(thumbnail.object.mock.calls.map(([url]) => [new URL(String(url)).host, new URL(String(url)).pathname])).toEqual([['oss.invalid', '/thumb.png']])
+  expect(sha(new Uint8Array(await preview.arrayBuffer()))).toBe(sha(pixels)); expect(full).not.toHaveBeenCalled()
+})
+it('bounds a stalled thumbnail body before switching to the separately signed image', async () => {
+  const f = fixture({ origin: true, thumbnail: true }), full = vi.fn(async () => { throw new Error('Must not read the original') })
+  f.object.mockResolvedValueOnce(new Response(new ReadableStream(), { headers: { 'content-type': 'image/png' } }))
+  f.object.mockImplementation(async () => imageResponse())
+  const preview = value(await finish(f.cloud.preview!(imageRevision, context, full))) as Blob
+  expect(f.object.mock.calls[0]![1]!.signal!.aborted).toBe(true)
+  expect(f.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid', 'oss.invalid'])
+  expect(sha(new Uint8Array(await preview.arrayBuffer()))).toBe(sha(pixels)); expect(full).not.toHaveBeenCalled()
+})
+it('redacts an invalid direct thumbnail URL without reading the original', async () => {
+  const f = fixture({ origin: true, thumbnail: true }), api = f.api.getMockImplementation()!
+  f.object.mockRejectedValueOnce(network())
+  f.api.mockImplementation(async (url, init) => {
+    const response = await api(url, init), body = JSON.parse(String(init?.body))
+    if (!body.origin) return response
+    return Response.json({ ...await response.json(), thumb_url: 'not a URL?auth_key=do-not-log' })
+  })
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  const result = await finish(f.cloud.preview!(imageRevision, context, full))
+  expect(result).toHaveProperty('error', expect.objectContaining({ message: 'Invalid file thumbnail URL' }))
+  expect(String('error' in result && result.error)).not.toContain('do-not-log')
+  expect(full).not.toHaveBeenCalled(); expect(f.object).toHaveBeenCalledTimes(1)
+})
+it.each(['missing', 'null', 'empty'] as const)('fails a %s direct thumbnail explicitly instead of reading the original', async missing => {
+  const f = fixture({ origin: true, thumbnail: true }), api = f.api.getMockImplementation()!
+  f.object.mockRejectedValueOnce(network())
+  f.api.mockImplementation(async (url, init) => {
+    const response = await api(url, init), body = JSON.parse(String(init?.body))
+    if (!body.origin) return response
+    const row = await response.json()
+    if (missing === 'missing') delete row.thumb_url
+    else row.thumb_url = missing === 'null' ? null : ''
+    return Response.json(row)
+  })
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  expect(await finish(f.cloud.preview!(imageRevision, context, full))).toHaveProperty('error', expect.objectContaining({ message: 'Direct file thumbnail is unavailable' }))
+  expect(f.requests).toHaveLength(2); expect(f.object).toHaveBeenCalledTimes(1); expect(full).not.toHaveBeenCalled()
+})
+it.each(['reservation', 'expiry', 'revision'] as const)('rejects a changed %s in the thumbnail origin response', async changed => {
+  const f = fixture({ origin: true, thumbnail: true }), api = f.api.getMockImplementation()!
+  f.object.mockRejectedValueOnce(network())
+  f.api.mockImplementation(async (url, init) => {
+    const response = await api(url, init), body = JSON.parse(String(init?.body))
+    if (!body.origin) return response
+    const row = await response.json()
+    if (changed === 'reservation') row.download_id = 'a-different-reservation'
+    if (changed === 'expiry') row.expires_at = new Date(Date.now() + 120_000).toISOString()
+    if (changed === 'revision') row.sha256 = '0'.repeat(64)
+    return Response.json(row)
+  })
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  expect(await finish(f.cloud.preview!(imageRevision, context, full))).toHaveProperty('error', expect.any(Error))
+  expect(f.object).toHaveBeenCalledTimes(1); expect(full).not.toHaveBeenCalled()
+})
+it('does not turn a valid thumbnail refusal into origin access or remembered CDN failure', async () => {
+  const f = fixture({ origin: true, thumbnail: true }), full = vi.fn(async () => { throw new Error('Must not read the original') })
+  f.object.mockResolvedValueOnce(new Response(null, { status: 403 }))
+  expect(await finish(f.cloud.preview!(imageRevision, context, full))).toHaveProperty('error', expect.objectContaining({ status: 403 }))
+  expect(f.requests).toHaveLength(1); expect(full).not.toHaveBeenCalled()
+  const next = fixture({ origin: true, thumbnail: true, session: f.session })
+  next.object.mockImplementation(async () => imageResponse())
+  value(await finish(next.cloud.preview!(imageRevision, context, full)))
+  expect(next.requests[0]).not.toHaveProperty('origin')
+  expect(next.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid'])
 })
 it.each(['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.'])('recovers browser connection failures: %s', async message => {
   const f = fixture(); f.api.mockRejectedValueOnce(new TypeError(message))
