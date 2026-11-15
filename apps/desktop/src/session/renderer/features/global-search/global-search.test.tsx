@@ -308,6 +308,33 @@ describe('global search panel', () => {
     expect(options()).toHaveLength(3)
   })
 
+  /**
+   * Review 4 Q5 (cell T7): typing three characters, the results never go rows → none → rows and the list keeps its
+   * height: while the next words' readings are on their way, the previous words' rows stay, dimmed.
+   */
+  it('typing keeps the previous words\' results (dimmed) until the next words\' land: never rows → none → rows', async () => {
+    await render('回')
+    expect(options().length).toBeGreaterThan(0)
+    const counts: number[] = []
+    const watch = new MutationObserver(() => { counts.push(options().length) })
+    watch.observe(host, { subtree: true, childList: true, attributes: true })
+    for (const words of ['回滚', '回滚开', '回滚开关']) {
+      let answer!: (value: { data: typeof rows; error: null }) => void
+      remote.messages.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
+      await act(async () => updateSearchSession({ text: words }))
+      await settle()
+      expect(options().length).toBeGreaterThan(0)
+      expect(host.querySelector('[role=listbox][data-stale]')).not.toBeNull()
+      expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
+      await act(async () => answer({ data: rows, error: null }))
+      await settle()
+      expect(host.querySelector('[role=listbox][data-stale]')).toBeNull()
+    }
+    watch.disconnect()
+    expect(counts.length).toBeGreaterThan(0)
+    expect(counts.every((count) => count > 0)).toBe(true)
+  })
+
   it('a failed message search says so and lists what the tasks found, ❌ "nothing found"', async () => {
     remote.messages.mockResolvedValue({ data: null, error: { message: 'search is down' } })
     await render('回滚')

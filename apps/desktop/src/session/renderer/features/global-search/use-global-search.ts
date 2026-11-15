@@ -45,6 +45,11 @@ export interface SearchView {
   loading: boolean
   error: Error | null
   taskIndex?: TaskTurnIndexStatus
+  /**
+   * The hits and counts shown are the previous words' while these words' are on their way (review 4 Q5): typing does not
+   * empty the list between keystrokes. The panel marks them as not this search's yet.
+   */
+  stale: boolean
 }
 
 /** Chat messages found in the cloud (message_search_as) for these words, in one conversation or every one. No push. */
@@ -142,11 +147,34 @@ function useIdentities() {
  * merged list is newest first too; there is no other order.
  */
 export function useGlobalSearch(text: string, chips: readonly SearchChip[], facet: SearchFacet, tasks: boolean): SearchView {
-  const summaries = useChatSummaries()
-  const identities = useIdentities()
-  const me = useSelfId()
-  const online = useNetworkOnline()
+  const context: SearchContext = { summaries: useChatSummaries(), identities: useIdentities(), me: useSelfId(), online: useNetworkOnline() }
   const typed = useDebounce(text, 100)
+  const current = useSearchView({ typed, chips }, facet, tasks, context, true)
+  // The last words (and chips) whose results were all in: shown, marked stale, while the next words' are on their way.
+  // View state of this panel (what it last showed), read through those words' own readings (`read: false`: no new read).
+  const [held, setHeld] = useState<SearchWords | null>(null)
+  const settled = current.hits !== null
+  // Only results worth keeping in sight are held (a search that found nothing, or none run yet, holds nothing: the next
+  // words draw their placeholders). Compared by content: a render may hand the same chips as a new array.
+  if (settled && current.hits!.length > 0 && (held?.typed !== typed || JSON.stringify(held.chips) !== JSON.stringify(chips))) setHeld({ typed, chips })
+  const previous = useSearchView(held ?? { typed, chips }, facet, tasks, context, false)
+  const view = !settled && held && previous.hits !== null
+    ? { ...current, hits: previous.hits, counts: previous.counts, capped: previous.capped, stale: true }
+    : current
+  return { ...view, loading: view.loading || text !== typed }
+}
+
+type SearchWords = { typed: string; chips: readonly SearchChip[] }
+type SearchContext = {
+  summaries: ReturnType<typeof useChatSummaries>
+  identities: ReturnType<typeof useIdentities>
+  me: string | null
+  online: boolean
+}
+
+/** The view of one search (words and chips): every source's reading, merged. `read: false` shows what is there only. */
+function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks: boolean, { summaries, identities, me, online }: SearchContext, read: boolean): SearchView {
+  const asked = { read }
 
   const scopes: SearchChip[] = [...chips]
   let unresolved: string | null = null
@@ -176,12 +204,12 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
 
   const messagesApply = runnable && !inTask
   const turnsApply = runnable && !!query && tasks && !inChat && !from && kinds.length === 0
-  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null] : null)
-  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null] : null)
+  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null] : null, asked)
+  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null] : null, asked)
   const messages = localScope ? stored : cloud
   // The same words everywhere, for the line that says how many more the in: chip is hiding (the unscoped search).
-  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null] : null)
-  const turns = useReplica(taskTurnSearch, turnsApply ? [query] : null)
+  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null] : null, asked)
+  const turns = useReplica(taskTurnSearch, turnsApply ? [query] : null, asked)
   const storedRows = stored.state === 'value' ? stored.value : null
   useEffect(() => {
     if (!storedRows) return
@@ -230,9 +258,10 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
       count: everywhere.value.filter((row) => row.chat_id !== inChat.chatId && shownRow(row)).length,
       capped: everywhere.value.length >= SEARCH_LIMIT,
     } : null,
-    loading: runnable && (pending || text !== typed),
+    loading: runnable && pending,
     error: errorOf(messagesApply ? messages : null) ?? errorOf(everywhere) ?? errorOf(turnsApply ? turns : null),
     taskIndex: turnsApply && turns.state === 'value' ? turns.value.index : undefined,
+    stale: false,
   }
 }
 

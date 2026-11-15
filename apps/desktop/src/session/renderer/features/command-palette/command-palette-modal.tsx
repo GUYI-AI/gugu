@@ -70,7 +70,15 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery]);
   // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
   const settled = debouncedQuery === search;
-  const results = settled && reading.state === 'value' ? reading.value : null;
+  const current = settled && reading.state === 'value' ? reading.value : null;
+  // The last words whose results were in: shown, dimmed, while the next words' are on their way (review 4 Q5), ❌ the
+  // list emptied and refilled on every keystroke. View state of this palette, read through those words' own reading.
+  const [heldQuery, setHeldQuery] = useState<string | null>(null);
+  // Only results worth keeping in sight are held: words that found nothing hold nothing (the next words show placeholders).
+  if (current && current.length > 0 && heldQuery !== debouncedQuery) setHeldQuery(debouncedQuery);
+  const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });
+  const results = current ?? (!commandsMode && held.state === 'value' ? held.value : null);
+  const stale = current === null && results !== null;
   const failed = settled && reading.state === 'error' ? reading.error : null;
   const commands = useObserver(() => rankPaletteMatches(commandRegistry.activeCommands
     .filter((command, index, all) => command.enabled !== false && !command.hideFromPalette
@@ -114,9 +122,10 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           placeholder={commandsMode ? translate('palette.commandPlaceholder') : translate('palette.switchPlaceholder')}
           className="w-full bg-transparent px-3 py-3 text-sm outline-none placeholder:text-foreground/40" autoFocus />
       </div>
-      <Command.List className="max-h-96 overflow-y-auto p-1">
+      <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
+        className={stale ? 'max-h-96 overflow-y-auto p-1 opacity-60 transition-opacity' : 'max-h-96 overflow-y-auto p-1 transition-opacity'}>
         {/* "No results" only once the words were searched: while the read is on its way the rows it will fill are held. */}
-        {(commandsMode || results) && (
+        {(commandsMode || current) && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">
             {translate('palette.noResults', { query: search })}
           </Command.Empty>

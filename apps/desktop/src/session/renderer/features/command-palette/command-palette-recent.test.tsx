@@ -233,4 +233,35 @@ describe('palette search reading', () => {
     await act(async () => { (host.querySelector('[role=alert] button') as HTMLButtonElement).click(); });
     await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-2']));
   });
+
+  /**
+   * Review 4 Q5 (cell T7): typing three characters, the result area never goes rows → none → rows (each new key is unknown
+   * until its read lands). The previous words' rows stay, dimmed, until the next words' arrive.
+   */
+  it('typing keeps the previous words\' rows (dimmed) until the next words\' land: never rows → none → rows', async () => {
+    const answers: ((items: SearchItem[]) => void)[] = [];
+    fixture.search.mockReset().mockImplementation(() => new Promise<SearchItem[]>((resolve) => { answers.push(resolve); }));
+    await typed('f');
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    await act(async () => answers[0]!(fixture.results.slice(0, 3)));
+    await vi.waitFor(() => expect(taskRows()).toHaveLength(3));
+
+    const counts: number[] = [];
+    const watch = new MutationObserver(() => { counts.push(taskRows().length); });
+    watch.observe(host, { subtree: true, childList: true, attributes: true });
+    const input = host.querySelector('input')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    for (const [index, words] of ['fr', 'fre', 'fres'].entries()) {
+      await act(async () => { setValue.call(input, words); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      expect(taskRows().length).toBeGreaterThan(0);
+      expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
+      await vi.waitFor(() => expect(answers).toHaveLength(index + 2));
+      await act(async () => answers[index + 1]!(fixture.results.slice(0, 2)));
+      await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
+    }
+    watch.disconnect();
+    expect(counts.length).toBeGreaterThan(0);
+    expect(counts.every((count) => count > 0)).toBe(true);
+    expect(fixture.search.mock.calls.map(([input]) => input)).toEqual([{ query: 'f' }, { query: 'fr' }, { query: 'fre' }, { query: 'fres' }]);
+  });
 });
