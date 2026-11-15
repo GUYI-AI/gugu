@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import './extensions-panel.css';
@@ -415,7 +416,7 @@ export function AppManagePage({
     <Row title={translate(`extensions.origin.${origin ?? 'unknown'}`)} note={manifest.author} testId="app-manage-origin">
       {onViewInMarket ? <Button type="button" variant="outline" size="sm" onClick={onViewInMarket} data-testid="app-manage-market">{translate('extensions.viewInMarket')}</Button> : null}
     </Row>
-    <Row title={translate('extensions.manageTechnical')} note={[manifest.id, translate('extensions.manageApi', { version: String(manifest.apiVersion) }), manifest.license && `${translate('extensions.infoLicense')} ${manifest.license}`].filter(Boolean).join(', ')} testId="app-manage-technical">
+    <Row title={translate('extensions.manageTechnical')} note={[manifest.id, translate('extensions.manageApi', { version: String(manifest.apiVersion) }), manifest.license && `${translate('extensions.infoLicense')} ${manifest.license}`].filter(Boolean).join(metadataSeparator())} testId="app-manage-technical">
       {links.map((link) => <Button type="button" variant="outline" size="sm" key={link.href} onClick={() => onOpenExternal(link.href)}>{link.label}</Button>)}
     </Row>
   </> });
@@ -468,7 +469,7 @@ export function AppManagePage({
             <span className="mk-icon is-56"><ExtensionMonogram name={text.name} iconDataUrl={iconDataUrl} /></span>
             <div className="mg-head-tx">
               <h2 title={text.name}>{text.name}</h2>
-              <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(', ')}</p>
+              <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(metadataSeparator())}</p>
             </div>
             <fieldset disabled={readOnly} className="mg-head-acts">
               <AppLifecycleButton state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />

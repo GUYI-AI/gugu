@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useLayoutEffect, useRef, useState } from 'react';
 import { PreviewCard, PreviewCardContent, PreviewCardTrigger } from '@renderer/lib/ui/preview-card';
 import { cn } from '@renderer/utils/utils';
@@ -27,13 +28,13 @@ function senderLabel(sender: TimelineSender | undefined, translate: Translate): 
     case 'gugu':
       return translate('transcript.deliveryLegacySender');
     case 'session':
-      return `${sender.name}, ${translate('transcript.deliveryViaSession')}`;
+      return `${sender.name}${metadataSeparator()}${translate('transcript.deliveryViaSession')}`;
     case 'extension':
-      return `${sender.name}, ${translate('transcript.deliveryViaExtension')}`;
+      return `${sender.name}${metadataSeparator()}${translate('transcript.deliveryViaExtension')}`;
     case 'group':
-      return `${sender.name}, ${((chat) => chat ? translate('transcript.deliveryViaGroup', { chat }) : translate('transcript.deliveryViaUnnamedGroup'))(sender.chatId ? chatDisplayName(sender.chatId) : null)}`;
+      return `${sender.name}${metadataSeparator()}${((chat) => chat ? translate('transcript.deliveryViaGroup', { chat }) : translate('transcript.deliveryViaUnnamedGroup'))(sender.chatId ? chatDisplayName(sender.chatId) : null)}`;
     case 'chat':
-      return `${sender.name}, ${translate('transcript.deliveryViaChat')}`;
+      return `${sender.name}${metadataSeparator()}${translate('transcript.deliveryViaChat')}`;
   }
 }
 
@@ -114,7 +115,7 @@ export function SessionTimelineRail({
                 <button
                   type="button"
                   // 一格代表多轮时读屏也要说清它覆盖了哪几轮 —— 否则「跳到这一轮」这句是假的。
-                  aria-label={spansMany ? `${range}, ${jumpLabel}` : jumpLabel}
+                  aria-label={spansMany ? `${range}${metadataSeparator()}${jumpLabel}` : jumpLabel}
                   aria-current={isCurrent ? 'location' : undefined}
                   data-tick-index={index}
                   data-tick-span={`${tick.from}-${tick.to}`}

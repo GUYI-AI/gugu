@@ -41,7 +41,7 @@ export function ConversationProcess(props: {
   // owner 0 号图:「1m14s · 10 步」—— 时长后面跟这一段过程有几步(折起来的那些行一共几条)。
   const summary = () => processSummary(props.process, translate, elapsed()) || null;
   const notice = () => commands().conversationProcessNotice?.(props.process.id);
-  const label = () => notice()?.text ?? `${translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingAndExecution')}${summary() ? `, ${summary()}` : ''}`;
+  const label = () => notice()?.text ?? `${translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingAndExecution')}${summary() ? `${translate('metadata.separator')}${summary()}` : ''}`;
   // 在跑:点阵代替大脑,字写「执行中 · 1m15s」并带微光(owner 2026-10-27 原型);跑完换回大脑 + 用时。
   const collapsible = () => props.collapsible !== false && !props.process.empty;
   const layout = () => processButtonLayout(props.process, props.measureCtx());

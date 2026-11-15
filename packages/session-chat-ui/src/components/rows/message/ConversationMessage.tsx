@@ -78,7 +78,7 @@ function replySenderLabel(quote: NonNullable<ChatMessage['conversationReply']>, 
   const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self);
   return [quote.chatId ? ctx.chatName?.(quote.chatId) : null,
     quote.self ? ctx.commands?.conversationAgentName?.() ?? null : sender]
-    .filter((part): part is string => Boolean(part?.trim())).join(', ');
+    .filter((part): part is string => Boolean(part?.trim())).join(rowTranslator(ctx)('metadata.separator'));
 }
 function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));

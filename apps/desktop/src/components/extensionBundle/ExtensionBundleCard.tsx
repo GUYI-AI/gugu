@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { marketCompatText } from '@shared/extensions/market'
 import { comparer, reaction } from 'mobx'
 import { observer } from 'mobx-react-lite'
@@ -321,7 +322,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
             {manifest ? `${name} ${manifest.version}` : meta.fileName}
           </span>
           <span className={`truncate text-[var(--font-caption)] ${muted}`}>
-            {[manifest?.id, formatAttachmentSize(sizeBytes), manifest && senderName ? t('extensions.bundleCardFrom', { name: senderName }) : null].filter(Boolean).join(', ')}
+            {[manifest?.id, formatAttachmentSize(sizeBytes), manifest && senderName ? t('extensions.bundleCardFrom', { name: senderName }) : null].filter(Boolean).join(metadataSeparator())}
           </span>
         </div>
       </div>

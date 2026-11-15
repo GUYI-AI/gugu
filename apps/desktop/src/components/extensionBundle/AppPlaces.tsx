@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import '../../i18n/registerMessagingCatalog'
@@ -204,7 +205,7 @@ export function AppPlacesSummary({ places, machineName }: { places: readonly Ena
   if (on.length === 0) return <span data-testid="app-places-summary">{t('chatArea.appEnable.none')}</span>
   const all = machineName ? t('chatArea.appEnable.hereAllOn', { machine: machineName }) : t('chatArea.appEnable.hereAll')
   const label = (place: EnablePlace) => (place.id === HERE_ALL ? all : (place.name ?? ''))
-  const names = on.slice(0, 3).map(label).join(', ')
+  const names = on.slice(0, 3).map(label).join(metadataSeparator())
   return (
     <span data-testid="app-places-summary" className="inline-flex min-w-0 items-center gap-1">
       <span className="inline-flex items-center gap-px">

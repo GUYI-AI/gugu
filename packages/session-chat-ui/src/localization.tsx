@@ -19,6 +19,7 @@ export type ChatTranslationSubscriber = (listener: () => void) => () => void;
  * 只是把发现时机从运行时提前到编译时。
  */
 const fallbackMessages = {
+  'metadata.separator': ', ',
   'transcript.activityReceivedOne': "Received {count} message from {names}",
   'transcript.activitySentOne': "Sent {count} message to {names}",
   'transcript.activityGroupSentOne': "Sent {count} message in {names}",

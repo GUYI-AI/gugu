@@ -93,7 +93,7 @@ export const compactionUnitDef = defineUnit<TranscriptCompaction, { rowH: number
       }
       if (d.durationMs !== undefined) parts.push(`${Math.round(d.durationMs / 1000)}s`);
       if (d.error) parts.push(d.error);
-      return parts.length > 0 ? parts.join(', ') : undefined;
+      return parts.length > 0 ? parts.join(translate('metadata.separator')) : undefined;
     };
 
     return (

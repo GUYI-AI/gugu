@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { GrowingList, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
 import { useTranslation } from 'react-i18next'
@@ -357,7 +358,7 @@ function PickerOption({ row, index, mobile, active, checked, locked, where, note
       </>}
       title={nameText}
       accessory={mobile ? marks : <>{marks}{faint ? <span className="min-w-0 flex-1 truncate !pl-1 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{faint}</span> : null}</>}
-      meta={mobile || !where ? time : `${where}, ${time}`}
+      meta={mobile || !where ? time : `${where}${metadataSeparator()}${time}`}
       subtitle={mobile ? <>{where ? `${where} ` : ''}{faint}</> : undefined}
       onClick={onToggle}
       onKeyDown={onKeyDown}

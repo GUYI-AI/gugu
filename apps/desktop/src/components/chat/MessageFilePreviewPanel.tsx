@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { ChevronLeft, ExternalLink, FileText, X, MoreHorizontal } from '@/lib/icons'
 import { formatAttachmentSize, type AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import { Button } from '../ui/Button'
@@ -101,7 +102,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
   usePinchZoom(textRef, delta => setZoom(value => pinchZoom(value, delta, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM)))
   // 手机页头第二行:扩展名 + 大小(「HTML · 791 B」);大小还不知道就只写扩展名。❌ MIME 原文。
   const extension = /\.([A-Za-z0-9]{1,8})$/.exec(file.fileName)?.[1]?.toUpperCase() ?? null
-  const meta = [extension, file.sizeBytes > 0 ? formatAttachmentSize(file.sizeBytes) : null].filter(Boolean).join(', ')
+  const meta = [extension, file.sizeBytes > 0 ? formatAttachmentSize(file.sizeBytes) : null].filter(Boolean).join(metadataSeparator())
   return (
     <FileZoomViewContext.Provider value={zoomView}>
     <aside ref={viewerRef} data-testid="message-file-preview-panel" data-preview-kind={kind} style={{ width: mobile || fill ? '100%' : 'clamp(380px, 38vw, 520px)', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: mobile || fill ? undefined : '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>

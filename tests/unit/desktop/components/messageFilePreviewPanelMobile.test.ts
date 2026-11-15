@@ -35,7 +35,7 @@ describe('手机文件预览的出口', () => {
     const { onDownload, onForward, container } = await render(true)
     const actions = container.querySelectorAll<HTMLButtonElement>('[data-slot="pane-header"] .gg-pane-actions button')
     expect([...actions].map((button) => button.getAttribute('aria-label'))).toEqual(['转发', '下载'])
-    expect(container.querySelector('[data-testid="message-file-preview-meta"]')?.textContent).toBe('WEBM, 323.3 KB')
+    expect(container.querySelector('[data-testid="message-file-preview-meta"]')?.textContent).toBe('WEBM，323.3 KB')
     const outside = Array.from(container.querySelectorAll('button')).filter((button) => !button.closest('[data-slot="pane-header"]'))
     expect(outside).toHaveLength(0)
     await act(async () => { actions[0].click(); actions[1].click() })

@@ -173,7 +173,7 @@ describe('「App」 on the phone: an App’s settings page', () => {
     await toggleEnabled()
     await until('vote was switched off', () => store.disabled.includes('vote'))
     expect(phone.setEnabled).toHaveBeenLastCalledWith('vote', false)
-    expect(row('vote')?.textContent).toContain('版本 1.0.0，来自 Alice, 未启用')
+    expect(row('vote')?.textContent).toContain('版本 1.0.0，来自 Alice，未启用')
     expect(page('[data-testid="app-manage-uninstall-action"]')).not.toBeNull()
     await toggleEnabled()
     await until('vote was switched on', () => !store.disabled.includes('vote'))

@@ -154,8 +154,8 @@ describe('一句里两个数:各自取单复数再拼', () => {
     expect(await render('en-US', () => meta(1, 0))).toBe('1 folder, 0 sessions')
     expect(await render('en-US', () => meta(2, 1))).toBe('2 folders, 1 session')
     expect(await render('en-US', () => meta(0, 2))).toBe('0 folders, 2 sessions')
-    expect(await render('zh-CN', () => meta(1, 0))).toBe('1 个文件夹, 0 个会话')
-    expect(await render('zh-CN', () => meta(2, 1))).toBe('2 个文件夹, 1 个会话')
+    expect(await render('zh-CN', () => meta(1, 0))).toBe('1 个文件夹，0 个会话')
+    expect(await render('zh-CN', () => meta(2, 1))).toBe('2 个文件夹，1 个会话')
   })
 
   // 与 changes-list-item.tsx / session-git-diff-stats.tsx 的拼法相同。

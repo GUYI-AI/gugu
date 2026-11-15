@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
@@ -28,7 +29,7 @@ const title = (item: PasswordItem) => item.name || host(item.origin)
 /** A list row's second line: its website when it has a name, its account when you may see it, else what it holds. */
 function subtitle(item: PasswordItem): string {
   const parts = [...(item.name ? [host(item.origin)] : []), ...(item.account ? [item.account] : [])]
-  if (parts.length) return parts.join(', ')
+  if (parts.length) return parts.join(metadataSeparator())
   return [...(item.maskedAccount ? ['账号'] : []), ...(item.hasPassword ? ['密码'] : []), ...item.fields.map(field => field.name)].join('、')
 }
 /** Name, website, account (unless secret) and value names; secret values are never in the snapshot to match. */
@@ -228,7 +229,7 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
   return <SettingsPage data-testid="password-detail">
     <SettingsGroup>
       <SettingsRow title={title(item)}
-        description={[...(item.name ? [host(item.origin)] : []), ...item.sites.map(host)].join(', ') || undefined}
+        description={[...(item.name ? [host(item.origin)] : []), ...item.sites.map(host)].join(metadataSeparator()) || undefined}
         control={<Button variant="ghost" size="sm" onClick={() => go({ kind: 'form', id: item.reference.id })}>编辑</Button>} />
     </SettingsGroup>
     <SettingsGroup>

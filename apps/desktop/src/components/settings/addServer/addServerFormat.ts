@@ -1,4 +1,5 @@
 // #6264 添加一台机器:界面上要拼的几样文字(字节、系统摘要、要复制给管理员的命令)。纯函数,单测直接测。
+import { metadataSeparator } from '@/i18n/format'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { ServerSshInstallMachine, ServerSshInstallStep, SshConfigHost } from '../../../lib/serverSshInstall'
 
@@ -34,7 +35,7 @@ function archLabel(arch: string): string {
 /** 识别出来的系统,一行:`Ubuntu 22.04.4 LTS · arm64 · glibc 2.35`。 */
 export function machineSummary(machine: Pick<ServerSshInstallMachine, 'os' | 'distro' | 'arch' | 'libc'>): string {
   const system = machine.distro || (machine.os === 'Darwin' ? 'macOS' : machine.os)
-  return [system, archLabel(machine.arch), machine.libc].filter(Boolean).join(', ')
+  return [system, archLabel(machine.arch), machine.libc].filter(Boolean).join(metadataSeparator())
 }
 
 /** 给 shell 用的单引号转义(命令里带 `[` `]` 时 zsh 会当通配,必须引起来)。 */

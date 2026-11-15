@@ -21,6 +21,7 @@ const $ = (id) => document.getElementById(id)
 
 const STRINGS = {
   zh: {
+    metadataSeparator: '，',
     folder: '文件',
     title: '{folder}',
     filter: '按文件名筛选',
@@ -265,6 +266,7 @@ const STRINGS = {
     noSources: '选中的文件都不是从聊天里来的。',
   },
   en: {
+    metadataSeparator: ', ',
     folder: 'Files',
     title: '{folder}',
     filter: 'Filter by name',
@@ -2027,7 +2029,7 @@ function readAgain(entry, into) {
 const fileTip = (entry) => fileUnavailable(entry) ? `${pathOf(entry)}\n${unavailableReason(entry)}` : [
   pathOf(entry), ...activityOf(entry), sizeOf(entry.size), entry.storedOn ? machineOf(entry.storedOn) : '',
   entry.keep ? entry.keep.expiresAt ? state.t.keepTemporary : state.t.keepPermanent : '',
-].filter(Boolean).join(', ')
+].filter(Boolean).join(state.t.metadataSeparator)
 
 function listItem(entry, now = new Date(Date.now())) {
   const li = document.createElement('li')
@@ -2068,7 +2070,7 @@ function listItem(entry, now = new Date(Date.now())) {
     span.dataset.cell = cell
     meta.append(span)
   }
-  if (!folder) meta.title = fileUnavailable(entry) ? unavailableReason(entry) : activityOf(entry).join(', ')
+  if (!folder) meta.title = fileUnavailable(entry) ? unavailableReason(entry) : activityOf(entry).join(state.t.metadataSeparator)
   open.append(title)
   const where = state.filter.trim() && entry.parentId ? pathOf(entry).split('/').slice(0, -1).join('/') : ''
   if (where) meta.prepend(Object.assign(document.createElement('span'), { className: 'file-path', textContent: where }))
@@ -4067,7 +4069,7 @@ function showEntry(entry) {
 function renderDocInfo(entry) {
   const t = state.t
   const parts = []
-  const activity = activityOf(entry).join(', ')
+  const activity = activityOf(entry).join(state.t.metadataSeparator)
   if (activity) parts.push(Object.assign(document.createElement('span'), { className: 'file-activity', textContent: activity, title: activity }))
   const sources = entry?.sourceMessageIds ?? []
   if (sources.length) {
@@ -4385,11 +4387,11 @@ function showDetails(entry) {
   }
   const dated = (iso) => (iso ? new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : '')
   if (fileUnavailable(entry)) fact(t.d_status, t[unavailableState(entry)], unavailableReason(entry))
-  fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(', '))
+  fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(state.t.metadataSeparator))
   // A working copy's file was made there, not uploaded.
-  fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(', '))
+  fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(state.t.metadataSeparator))
   if (entry.updatedAt && (!entry.createdAt || Date.parse(entry.updatedAt) - Date.parse(entry.createdAt) > 60_000)) {
-    fact(t.d_edited, [entry.updatedBy ? who(entry.updatedBy) : '', dated(entry.updatedAt), entry.version ? fmt(t.d_version, { n: entry.version }) : ''].filter(Boolean).join(', '))
+    fact(t.d_edited, [entry.updatedBy ? who(entry.updatedBy) : '', dated(entry.updatedAt), entry.version ? fmt(t.d_version, { n: entry.version }) : ''].filter(Boolean).join(state.t.metadataSeparator))
   }
   const folders = []
   for (let at = state.entries.find((e) => e.id === entry.parentId); at; at = state.entries.find((e) => e.id === at.parentId)) folders.unshift(shownName(at))
@@ -4421,7 +4423,7 @@ function showDetails(entry) {
       versions.replaceChildren(...kept.map((v) => {
         const li = document.createElement('li')
         const status = unavailableState(v)
-        li.textContent = [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size), status ? t[status] : ''].filter(Boolean).join(status ? ' ' : ', ')
+        li.textContent = [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size), status ? t[status] : ''].filter(Boolean).join(status ? ' ' : state.t.metadataSeparator)
         if (status) { li.dataset.expired = ''; li.title = unavailableReason(v) }
         return li
       }))

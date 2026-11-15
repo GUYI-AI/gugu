@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { zhCNSharedMessages } from '@renderer/localization/messages-shared';
 import { zhCNSubscriptionMessages } from '@renderer/localization/messages-subscriptions';
 import { formatPercent, quotaReading, payerLine, planLabel, planNotes, unavailableText, usedText, windowLabel } from './subscription-view';
 
 /** 用真词表(中文)渲染 —— 断言的就是用户读到的那句话。 */
 const translate = (key: string, values?: Record<string, unknown>) => {
-  const messages = zhCNSubscriptionMessages as Record<string, string>;
+  const messages = { ...zhCNSharedMessages, ...zhCNSubscriptionMessages } as Record<string, string>;
   // 带 count 的键拆成了 `_one` / `_other`(中文两条相同),照 i18next 的取法回落到 `_other`。
   const template = messages[key] ?? (typeof values?.count === 'number' ? messages[`${key}_other`] : undefined);
   if (template === undefined) throw new Error(`missing key ${key}`);
@@ -33,7 +34,7 @@ describe('「订阅」页一行里的字', () => {
   it('附注:接的是哪几家、套餐多旧、Claude 订阅登 Pi 扣额外用量', () => {
     expect(
       planNotes({ payer: 'subscription', via: ['Claude', 'ChatGPT'], planAsOf: 1, extraUsage: true }, t, () => '10-10 23:51')
-    ).toEqual(['接入：Claude, ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
+    ).toEqual(['接入：Claude，ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
   });
 
   // #2507 owner 2026-11-12:「订阅里面说去资源库智能体里登录，但我去看现在根本没有登录选项……本来这里应该点击直接跳转的」。

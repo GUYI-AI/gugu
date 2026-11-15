@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { AlertTriangle, Clock } from '@/lib/icons';
 import type { SessionpageScheduleDigest } from '@gugu/session-core/session-record/contract';
 import { formatScheduleWhen } from '@renderer/features/automations/session-schedule-format';
@@ -22,7 +23,7 @@ export function SidebarScheduleMark({ digest, emphasized }: { digest: Sessionpag
         digest.attention ? 'text-[var(--warn-fg)]' : emphasized ? 'text-foreground-muted' : 'text-foreground-passive'
       )}
       data-session-schedule={digest.attention ? 'attention' : 'pending'}
-      aria-label={lines.join(', ')}
+      aria-label={lines.join(metadataSeparator())}
     >
       {digest.attention ? <AlertTriangle className="size-3" /> : <Clock className="size-3" />}
     </span>

@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { Button } from '@/components/ui/Button'
 import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks'
 import { openShellSettings } from '@renderer/lib/open-shell-settings'
@@ -40,7 +41,7 @@ export function ModelMenuFooter({
       </div>
       {lockedModels.length > 0 && billingLinksAvailable() && (
         <div className="gg-aw-choice-desc gg-aw-choice-note">
-          {translateSessionMessage('composer.platformModelUpgradeList', { models: lockedModels.join(', ') })}
+          {translateSessionMessage('composer.platformModelUpgradeList', { models: lockedModels.join(metadataSeparator()) })}
         </div>
       )}
     </div>

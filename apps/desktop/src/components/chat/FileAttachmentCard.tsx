@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { Download, FileText } from '@/lib/icons'
 import { formatAttachmentSize, type AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import type { ResourceContext } from '@/session/shared/resource-actions'
@@ -22,7 +23,7 @@ interface FileAttachmentCardProps {
 export function FileAttachmentCard({ file, isMine = false, details, versionLabel, onOpen, onDownload, downloadLabel, resource }: FileAttachmentCardProps) {
   const { t } = useTranslation('messaging')
   const type = attachmentTypeKey(file)
-  const metadata = [versionLabel, formatAttachmentSize(file.sizeBytes), type ? t(`attachmentView.types.${type}`) : null].filter(Boolean).join(', ')
+  const metadata = [versionLabel, formatAttachmentSize(file.sizeBytes), type ? t(`attachmentView.types.${type}`) : null].filter(Boolean).join(metadataSeparator())
   const accent = isMine ? 'var(--text-on-bubble-strong)' : 'var(--text-link)'
   const muted = isMine ? 'var(--text-on-bubble-muted)' : 'var(--text-tertiary)'
   const card = (

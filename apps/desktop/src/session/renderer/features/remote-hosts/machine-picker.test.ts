@@ -201,7 +201,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     const row = (id: string) => container.querySelector(`[data-device-id="${id}"]`) as HTMLButtonElement;
     expect(row('d22').getAttribute('data-selected')).toBe('true');
     expect(row('local').getAttribute('data-selected')).toBe('false');
-    expect(row('d22').textContent).toContain('Linux, 远程 SSH');
+    expect(row('d22').textContent).toContain('Linux，远程 SSH');
     expect(row('local').textContent).toContain('macOS');
     expect(row('linux1').textContent).toMatch(/离线（.+）/);
     expect(row('linux1').className).toContain('text-foreground-passive');

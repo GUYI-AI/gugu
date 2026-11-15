@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { messageForUser } from '@/lib/userFacingError';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
@@ -75,7 +76,7 @@ function RendererRow({ row }: { row: InternalsRow }) {
     // A missing reading shows as –; why it is missing is diagnostic detail, kept in the hover text and the deep sample.
     <div
       className={`${ROW} text-foreground-muted hover:bg-row-hover`}
-      title={row.unavailable ? `pid ${row.pid}, ${row.unavailable}` : `pid ${row.pid}`}
+      title={row.unavailable ? `pid ${row.pid}${metadataSeparator()}${row.unavailable}` : `pid ${row.pid}`}
     >
       <span className="truncate">{translate(SOURCE_LABEL[row.source])}</span>
       <span className="text-right text-foreground/50 tabular-nums">

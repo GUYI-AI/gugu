@@ -380,7 +380,7 @@ describe('「后台守着」常驻通知两家共用', () => {
   beforeEach(() => platformMock.setBackgroundWatch.mockClear())
 
   it('两句都在时并排写,看管机器在前', () => {
-    expect(backgroundWatchLabel(new Map([['phoneDevice', { label: 'B' }], ['agentWatch', { label: 'A' }]]))).toBe('A, B')
+    expect(backgroundWatchLabel(new Map([['phoneDevice', { label: 'B' }], ['agentWatch', { label: 'A' }]]))).toBe('A，B')
     expect(backgroundWatchLabel(new Map())).toBeNull()
   })
 

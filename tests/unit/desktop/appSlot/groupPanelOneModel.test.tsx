@@ -105,7 +105,7 @@ describe('the slot header', () => {
       await harness.render(slot({ chatId: 'group-4' }))
       await act(async () => {})
       act(() => extensionSurfaceStore.say(null, claimOf('group-4', 'item-4').tabId, { title: 'Board' }))
-      expect(harness.container.querySelector('[title="plan.json, Board"]')?.textContent).toBe('plan')
+      expect(harness.container.querySelector('[title="plan.json，Board"]')?.textContent).toBe('plan')
       expect(harness.container.textContent).not.toContain('Board')
       expect(extensionSurfaceStore.sharedState(residentPageKey(WORKSPACE_APP_KIND, residentPlace({ chatId: 'group-4' }))).title).toBeNull()
     }

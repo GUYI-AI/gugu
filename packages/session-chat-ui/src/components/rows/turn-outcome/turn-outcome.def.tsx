@@ -399,7 +399,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             // spread 里的 `detail()` 只在创建那一刻求值一次,而行组件按下标复用 ⇒ 换单元时不重算。
             aria-label={
               detail()
-                ? `${[parts().label, parts().reason].filter(Boolean).join(', ')}: ${detail()}`
+                ? `${[parts().label, parts().reason].filter(Boolean).join(translate('metadata.separator'))}: ${detail()}`
                 : undefined
             }
             // ⚠️ `title` **就是 detail 本身,一个字不多** —— `failure-scope.contract.test.tsx`

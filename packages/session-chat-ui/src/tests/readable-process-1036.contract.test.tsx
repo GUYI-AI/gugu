@@ -44,14 +44,14 @@ describe('readable process rows at real split-column widths (#1036)', () => {
   it('keeps the translated process summary within its offscreen measurement without a middle-dot join', async () => {
     for (const width of [198, 430]) for (const chinese of [false, true]) for (const live of [false, true]) {
       const ctx = makeContractCtx({ width, theme: { ...DEFAULT_THEME, layout: { ...DEFAULT_THEME.layout, agentConversation: true } } });
-      ctx.translate = (key, args) => key === 'transcript.processSteps'
+      ctx.translate = (key, args) => key === 'metadata.separator' ? chinese ? '，' : ', ' : key === 'transcript.processSteps'
         ? chinese ? `${args?.count} 步` : `${args?.count} steps`
         : defaultChatTranslator(key, args);
       const startedAt = 1000;
       const result = await renderAndMeasureUnit(turnProcessUnitDef, {
         kind: 'turn-process', id: 'copy-summary', turnId: 't', live, steps: 9, startedAt, endedAt: startedAt + 39000,
       }, ctx, host => ({ ...textBounds(host),
-        hasSummary: host.textContent?.includes(chinese ? '39s, 9 步' : '39s, 9 steps') ? 1 : 0,
+        hasSummary: host.textContent?.includes(chinese ? '39s，9 步' : '39s, 9 steps') ? 1 : 0,
         hasSeparator: host.textContent?.includes('\u00b7') ? 1 : 0,
       }), { conversationClock: () => startedAt + 39000 });
       expect(result.inspected.hasSummary).toBe(1);

@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { messageForUser } from '@/lib/userFacingError';
 import { useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -98,7 +99,7 @@ function RequestBody({
   const { machine } = view.request
   const host = machine.hostname ?? t('devices.approveServer.thisMachine')
   const rows: Array<[string, string | null]> = [
-    [t('devices.approveServer.system'), [PLATFORM_NAMES[machine.platform?.toLowerCase() ?? ''] ?? machine.platform, machine.arch].filter(Boolean).join(', ') || null],
+    [t('devices.approveServer.system'), [PLATFORM_NAMES[machine.platform?.toLowerCase() ?? ''] ?? machine.platform, machine.arch].filter(Boolean).join(metadataSeparator()) || null],
     [t('devices.approveServer.user'), machine.user],
     [t('devices.approveServer.from'), view.request.requesterIp],
     [t('devices.approveServer.code'), view.request.code],

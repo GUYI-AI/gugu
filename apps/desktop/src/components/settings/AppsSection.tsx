@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { ExtensionMonogram } from '@/session/renderer/features/extensions/panel/extension-monogram'
 import { Unknown } from '../ui/Unknown'
 import { ResourceMenu } from '../ResourceMenu'
@@ -91,7 +92,7 @@ export function AppsSection({ updates, gone, known, onManage }: { updates: Recor
                         : t('settings.apps.from', { version: manifest.version, name: from ?? '—' }),
                     ...(enabled ? [] : [translateSessionMessage('extensions.switchedOff')]),
                     ...(gone.includes(manifest.id) ? [translateSessionMessage('extensions.rowGone')] : []),
-                  ].join(', ')}
+                  ].join(metadataSeparator())}
                   control={<ChevronRight className="size-4 text-[var(--text-secondary)]" />}
                 />
               </ResourceMenu>

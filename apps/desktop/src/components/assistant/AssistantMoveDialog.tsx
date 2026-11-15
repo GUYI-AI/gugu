@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
@@ -29,7 +30,7 @@ function ReconnectList({ names, items, testId }: { names: Map<string, string>; i
   return (
     <ul className="ml-5 list-disc" data-testid={testId}>
       {items.map((item) => {
-        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(', ')
+        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(metadataSeparator())
         return (
           <li key={`${item.integrationId}/${item.accountId ?? ''}`}>
             {accountLabel(names, item)}

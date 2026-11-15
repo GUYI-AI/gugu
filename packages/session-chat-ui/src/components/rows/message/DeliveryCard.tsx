@@ -7,7 +7,7 @@
 import { isAppRoute, type DeliveryReadFacts, type DeliverySegment } from '@gugu/core/local/agent/deliveryEnvelope';
 import { readableLabel, rowTranslator, wrappedRowHeight } from '../readable-label';
 import type { MeasureCtx, RenderCtx } from '@session-chat/core/define';
-import { useChatTranslator, type ChatTranslator } from '@session-chat/localization';
+import { useChatTranslator, defaultChatTranslator, type ChatTranslator } from '@session-chat/localization';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { isSelfAddress, shownSender, useSelfIdentity } from '@session-chat/lib/self-identity';
 import { useSenderAvatar } from '@session-chat/lib/sender-avatar';
@@ -76,7 +76,7 @@ export type DeliveryFactEntry = {
  * label, so here the sender row adds the id and the route row the raw chat
  * anchor — the things a person asks for when a delivery looks wrong.
  */
-export function deliveryFactEntries(facts: DeliveryReadFacts): DeliveryFactEntry[] {
+export function deliveryFactEntries(facts: DeliveryReadFacts, translate: ChatTranslator = defaultChatTranslator): DeliveryFactEntry[] {
   const entries: DeliveryFactEntry[] = [];
   const push = (key: DeliveryFactEntry['key'], value: string | null | undefined) => {
     if (value) entries.push({ key, value });
@@ -85,7 +85,7 @@ export function deliveryFactEntries(facts: DeliveryReadFacts): DeliveryFactEntry
   push('sender', facts.from && facts.fromId ? `${facts.from} (${facts.fromId})` : (facts.from ?? facts.fromId));
   push(
     'route',
-    [facts.route, facts.chat ? `${facts.chatKind ?? 'chat'} ${facts.chat}` : null].filter(Boolean).join(', ')
+    [facts.route, facts.chat ? `${facts.chatKind ?? 'chat'} ${facts.chat}` : null].filter(Boolean).join(translate('metadata.separator'))
   );
   push('whisperTo', facts.whisperTo);
   push('viaApp', facts.viaApp);
@@ -133,9 +133,9 @@ function cardFacts(item: ChatMessage): DeliveryReadFacts | null {
  * there is no details band and no toggle — measure and render key off the
  * same reading, so the height contract holds even when the collapse id is open.
  */
-function deliveryDetails(item: ChatMessage): DeliveryFactEntry[] {
+function deliveryDetails(item: ChatMessage, translate: ChatTranslator): DeliveryFactEntry[] {
   const facts = cardFacts(item);
-  return facts ? deliveryFactEntries(facts) : [];
+  return facts ? deliveryFactEntries(facts, translate) : [];
 }
 
 function sourceLayout(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars) {
@@ -148,18 +148,18 @@ function sourceLayout(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars) {
   const via = readableLabel(route, ctx, width - 20, 12, line);
   const parts = [{ width: vars.avatar, height: vars.avatar }, { width: Math.min(width - vars.avatar - 8, name.width), height: name.height }];
   if (route) parts.push({ width: Math.min(width - 20, via.width), height: via.height });
-  if (deliveryDetails(item).length) parts.push({ width: 12, height: line });
+  if (deliveryDetails(item, rowTranslator(ctx)).length) parts.push({ width: 12, height: line });
   return { name, via, height: wrappedRowHeight(parts, width, 8) + vars.headerExtraH };
 }
 
 function detailValueLayout(item: ChatMessage, entry: DeliveryFactEntry, ctx: MeasureCtx) {
   const t = rowTranslator(ctx), lineH = ctx.theme.fonts.body.lineHeight;
-  const labels = deliveryDetails(item).map(row => readableLabel(t(`transcript.deliveryFact.${row.key}`), ctx, ctx.width, 14, lineH).width);
+  const labels = deliveryDetails(item, t).map(row => readableLabel(t(`transcript.deliveryFact.${row.key}`), ctx, ctx.width, 14, lineH).width);
   const width = userAvailableWidth(ctx.width, ctx.theme.layout) - 16 - 12 - Math.max(0, ...labels);
   return readableLabel(entry.value, ctx, width, 14, lineH);
 }
 function detailsHeight(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): number {
-  const entries = deliveryDetails(item);
+  const entries = deliveryDetails(item, rowTranslator(ctx));
   return entries.length ? entries.reduce((sum, entry) => sum + detailValueLayout(item, entry, ctx).height, 0) + 2 * vars.factsPadY : 0;
 }
 function replyLayout(item: ChatMessage, ctx: MeasureCtx) {
@@ -234,7 +234,7 @@ function routeLabel(facts: DeliveryReadFacts, translate: ChatTranslator, { appNa
     facts.whisperTo ? translate('transcript.deliveryWhisper') : null,
     // An App's own delivery: naming the App above is the whole channel.
     facts.viaApp && isAppRoute(facts.route) ? null : channelLabel(facts, translate, chatName),
-  ].filter(Boolean).join(', ');
+  ].filter(Boolean).join(translate('metadata.separator'));
 }
 
 function channelLabel(facts: DeliveryReadFacts, translate: ChatTranslator, chatName: Namers['chatName']): string {
@@ -327,7 +327,7 @@ function SingleDelivery(props: {
     return translate(facts() ? 'transcript.deliveryUnknownSender' : 'transcript.deliveryLegacySender');
   };
 
-  const details = () => deliveryDetails(props.data);
+  const details = () => deliveryDetails(props.data, translate);
   const hasDetails = () => details().length > 0;
 
   const source = () => mCtx() ? sourceLayout(props.data, { ...mCtx()!, translate, selfIdentity: self(), appName: namers.appName, chatName: namers.chatName }, props.vars) : null;

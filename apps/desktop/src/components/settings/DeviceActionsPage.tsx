@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useAssistantPanelBack } from '@/lib/assistantPanelPage'
 /** Device pages summarize grants; only Settings → Permissions enables editing. */
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
@@ -309,7 +310,7 @@ function RecentCalls({ state }: { state: DeviceActionsState }) {
                     : call.code === 'needs_confirmation'
                       ? t('devices.deviceActions.recentNeedsConfirmation')
                       : failed(call),
-              ].filter(Boolean).join(', ')}
+              ].filter(Boolean).join(metadataSeparator())}
             />
           ))}
     </SettingsGroup>

@@ -8,7 +8,7 @@ type Process = NonNullable<ChatMessage['conversationProcess']>;
 
 export function processSummary(process: Process, translate: ReturnType<typeof rowTranslator>, elapsed: string | null) {
   const steps = process.steps ? translate(process.steps === 1 ? 'transcript.processStepsOne' : 'transcript.processSteps', { count: process.steps }) : null;
-  return [elapsed, steps].filter(Boolean).join(', ');
+  return [elapsed, steps].filter(Boolean).join(translate('metadata.separator'));
 }
 
 export function processButtonLayout(process: Process, ctx: MeasureCtx) {

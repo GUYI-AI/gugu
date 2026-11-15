@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useState } from 'react'
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server'
 import { Button } from '@renderer/lib/ui/button'
@@ -32,7 +33,7 @@ export function InstallProgressRow({
           translate('agentsPage.phaseDownloadingPackage')
         ]
           .filter(Boolean)
-          .join(', ')
+          .join(metadataSeparator())
       : (line?.heading ?? translate('agentsPage.phaseStarting'))
 
   return (
@@ -45,7 +46,7 @@ export function InstallProgressRow({
             {compact ? (
               <>
                 {heading}
-                {line?.ratio != null && `, ${Math.round(line.ratio * 100)}%`}
+                {line?.ratio != null && `${metadataSeparator()}${Math.round(line.ratio * 100)}%`}
               </>
             ) : (
               (line?.text ?? translate('agentsPage.installingToGuguHome'))

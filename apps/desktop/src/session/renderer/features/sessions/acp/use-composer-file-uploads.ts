@@ -5,6 +5,7 @@
  * 失败在 chip 上说、能重试;发送时还没放完就等(`waitForUploads`),有一件没成就不发。
  * 放到哪由 `placeTaskAttachment` 定(桌面:本机发布,按需取;手机 / 网页:上传进文件夹)。
  */
+import { metadataSeparator } from '@/i18n/format'
 import type { ComposerAttachment } from '@gugu/session-ui/react/components';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi';
@@ -24,7 +25,7 @@ type Upload = { placement: TaskAttachmentPlacement; file: File; controller: Abor
 
 function progressMeta(sent: number, total: number): string {
   const percent = total > 0 ? Math.min(100, Math.floor((sent / total) * 100)) : 100;
-  return `${formatBytes(sent)} / ${formatBytes(total)}, ${percent}%`;
+  return `${formatBytes(sent)} / ${formatBytes(total)}${metadataSeparator()}${percent}%`;
 }
 
 type ComposerFileUploadArgs = {

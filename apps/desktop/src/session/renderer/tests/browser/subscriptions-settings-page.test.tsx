@@ -872,7 +872,7 @@ it('the switch menu shows how much each account has left without switching to it
   await openSwitch('codex');
   await until('the other account shows its quota', () => layer.querySelector('[data-testid="connection-quota-second"]') !== null);
   const second = layer.querySelector('[data-testid="connection-quota-second"]') as HTMLElement;
-  expect(second.textContent).toBe('5 小时剩余 90%, 每周剩余 65%');
+  expect(second.textContent).toBe('5 小时剩余 90%，每周剩余 65%');
   expect(second.hasAttribute('data-warning')).toBe(false);
   await until('the current account shows its quota', () => layer.querySelector('[data-testid="connection-quota-native"]') !== null);
   const current = layer.querySelector('[data-testid="connection-quota-native"]') as HTMLElement;

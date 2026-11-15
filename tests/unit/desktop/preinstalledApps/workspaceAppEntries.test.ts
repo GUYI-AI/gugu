@@ -114,7 +114,7 @@ describe('workspace App: what the old workspace panel did', () => {
     const meta = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-meta`)!
     const cells = (id: string) => [...meta(id).children].map((cell) => cell.textContent)
     expect(cells('plan')).toEqual([clock(ago(60)), '10 B'])
-    expect(meta('plan').title).toBe('张三 于 1小时前 创建, 编辑于 1分钟前')
+    expect(meta('plan').title).toBe('张三 于 1小时前 创建，编辑于 1分钟前')
     expect(cells('photo')).toEqual([clock(ago(120)), '100 B'])
     expect(cells('cfg'), 'the system is no one to name on the row').toEqual([clock(ago(7200)), '2 B'])
     expect(meta('cfg').title).toBe('系统 于 2小时前 创建')

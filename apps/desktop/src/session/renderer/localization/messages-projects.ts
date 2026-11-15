@@ -354,7 +354,7 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.sample.shared': '发到群里：{files}',
   'projects.sample.posted': '在群里回复',
   'projects.home.connecting': '正在连接项目，就绪后即可发送…',
-  'projects.folders.meta': '{folders}, {sessions}',
+  'projects.folders.meta': "{folders}，{sessions}",
   'projects.folders.folderCount_one': '{count} 个文件夹',
   'projects.folders.folderCount_other': '{count} 个文件夹',
   'projects.folders.sessionCount_one': '{count} 个会话',

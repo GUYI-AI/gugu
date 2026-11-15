@@ -22,6 +22,7 @@
  * callbacks do not go stale after React re-renders.
  */
 
+import { metadataSeparator } from '@/i18n/format'
 import { openCreditSettings } from '@/lib/billing/settingsDestination';
 import { billingLinksAvailable } from '@/lib/appLinks';
 import type {
@@ -250,7 +251,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
     createElement('span', { style: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' } }, entry.text),
   }), entry.root, String(index))), inputFailures.map(entry => createPortal(createElement(FailedSendStatus, {
     reason: entry.error,
-    label: [translateSessionMessage(entry.unknown ? 'transcript.sendUnknown' : 'transcript.sendFailed'), safeFailureLine(entry.reason ?? entry.error ?? '').slice(0, 64)].filter(Boolean).join(', '),
+    label: [translateSessionMessage(entry.unknown ? 'transcript.sendUnknown' : 'transcript.sendFailed'), safeFailureLine(entry.reason ?? entry.error ?? '').slice(0, 64)].filter(Boolean).join(metadataSeparator()),
     onRetry: entry.retryable ? () => propsRef.current.commands?.onRetrySend?.(entry.itemId) : undefined,
     onDiscard: () => propsRef.current.commands?.onDiscardSend?.(entry.itemId),
   }), entry.root, entry.itemId)));

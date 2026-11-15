@@ -11,6 +11,7 @@ import {
 } from './machine-choice';
 
 const zh: Record<string, string> = {
+  'metadata.separator': '，',
   'machinePicker.offline': '离线',
   'machinePicker.needsSignIn': '要先登录',
   'machinePicker.updating': '正在更新…',
@@ -85,9 +86,9 @@ describe('机器选择器的一行(#6264,各处同一份)', () => {
   it('名字后面那段字:触发器只写系统,菜单再带连法;离线写「离线 · X 前」,问不通写「没有应答」', () => {
     const d22 = machine({ id: 'd22', platform: 'linux', link: 'ssh' });
     expect(machineMeta(d22, translate)).toBe('Linux');
-    expect(machineMeta(d22, translate, { withLink: true })).toBe('Linux, 远程 SSH');
+    expect(machineMeta(d22, translate, { withLink: true })).toBe('Linux，远程 SSH');
     expect(machineMeta(machine({ id: 't', platform: 'linux', link: 'tunnel' }), translate, { withLink: true })).toBe(
-      'Linux, 远程隧道'
+      'Linux，远程隧道'
     );
     expect(machineMeta(machine({ id: 'x', notResponding: true, platform: 'linux' }), translate)).toBe('没有应答');
     const off = machine({ id: 'off', isOnline: false, lastSeenAt: '2026-09-24T08:00:00Z' });

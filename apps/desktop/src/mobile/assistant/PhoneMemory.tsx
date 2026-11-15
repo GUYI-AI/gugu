@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { AssistantMemoryContent } from '@/components/assistant/AssistantMemoryContent'
 import { assistantPanelFailure } from '@/components/assistant/assistant-panel-errors'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
@@ -81,7 +82,7 @@ function MemoryNoteBody({ assistant, askInChat, go, notes, machine, note }: Open
   const title = aboutMe ? t('memory.filter.user') : note.title
   return (
     <div className="ta-page" data-testid="assistant-memory-detail">
-      <PageHead title={title} sub={[aboutMe ? null : kindLabel(note.kind, t, name), note.modifiedAt ? t('memory.updated', { time: time(note.modifiedAt) }) : null].filter(Boolean).join(', ')} />
+      <PageHead title={title} sub={[aboutMe ? null : kindLabel(note.kind, t, name), note.modifiedAt ? t('memory.updated', { time: time(note.modifiedAt) }) : null].filter(Boolean).join(metadataSeparator())} />
       <div className="ta-card ta-prose" data-testid="assistant-memory-body">
         <AssistantMemoryContent machine={machine} entry={note}>{(current,error,loading) => error ? <span role="alert">{assistantPanelFailure(error,t)}</span> : loading ? <LoadingIndicator size="inline" /> : <Markdown trust="chat" content={current.body || t('memory.noContent')} />}</AssistantMemoryContent>
       </div>

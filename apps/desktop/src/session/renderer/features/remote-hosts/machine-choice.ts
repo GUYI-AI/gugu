@@ -151,6 +151,6 @@ export function machineMeta(
   if (withLink && machine.link) {
     parts.push(translate(machine.link === 'ssh' ? 'machinePicker.linkSsh' : 'machinePicker.linkTunnel'));
   }
-  const text = parts.filter(Boolean).join(', ');
+  const text = parts.filter(Boolean).join(translate('metadata.separator'));
   return text || null;
 }

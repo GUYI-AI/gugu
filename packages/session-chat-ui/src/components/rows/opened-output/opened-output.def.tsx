@@ -109,7 +109,7 @@ function outputLayout(data: OpenedOutputItem, ctx: MeasureCtx) {
   const width = ctx.width - 26 - 40 - 12 - (control ? control + 12 : 0);
   const ext = look.extension;
   const format = ext === 'PPTX' || ext === 'PPT' ? 'PowerPoint' : ext === 'DOCX' || ext === 'DOC' ? 'Word' : ext === 'XLSX' || ext === 'XLS' ? 'Excel' : null;
-  const detail = reason ? `${kind}, ${reason}` : look.kind === 'page' ? t('transcript.outputWebsite') : format ?? (ext ? `${kind}, ${ext}` : kind);
+  const detail = reason ? `${kind}${t('metadata.separator')}${reason}` : look.kind === 'page' ? t('transcript.outputWebsite') : format ?? (ext ? `${kind}${t('metadata.separator')}${ext}` : kind);
   const name = readableLabel(look.kind === 'page' ? t('transcript.outputWebPreview') : look.name, ctx, width, 14, 20, 500);
   const description = readableLabel(detail, ctx, width, 12, 18);
   return { name, description, rowHeight: Math.max(OPENED_OUTPUT_ROW_H, name.height + description.height + 24) };

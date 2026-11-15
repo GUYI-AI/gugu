@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { messageForUser } from '@/lib/userFacingError';
 import { formatClock } from '@/i18n/format';
 import { observer } from 'mobx-react-lite';
@@ -95,13 +96,13 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   }).catch(fail); };
   const lastMinute = t('resourceMonitor.lastMinute');
   const pageTiles = [
-    { key: 'longFrames', label: labels.longFrames, value: countText(recent?.longFrames), note: `${lastMinute}, ${t('resourceMonitor.longFramesNote')}` },
-    { key: 'slowInteractions', label: labels.slowInteractions, value: countText(recent?.slowInteractions), note: `${lastMinute}, ${t('resourceMonitor.slowInteractionsNote')}` },
-    { key: 'styleLayout', label: t('resourceMonitor.styleLayout'), value: recent?.styleLayoutMs === undefined ? '–' : `${Math.round(recent.styleLayoutMs)} ms`, note: `${lastMinute}, ${t('resourceMonitor.styleLayoutNote')}` },
+    { key: 'longFrames', label: labels.longFrames, value: countText(recent?.longFrames), note: `${lastMinute}${metadataSeparator()}${t('resourceMonitor.longFramesNote')}` },
+    { key: 'slowInteractions', label: labels.slowInteractions, value: countText(recent?.slowInteractions), note: `${lastMinute}${metadataSeparator()}${t('resourceMonitor.slowInteractionsNote')}` },
+    { key: 'styleLayout', label: t('resourceMonitor.styleLayout'), value: recent?.styleLayoutMs === undefined ? '–' : `${Math.round(recent.styleLayoutMs)} ms`, note: `${lastMinute}${metadataSeparator()}${t('resourceMonitor.styleLayoutNote')}` },
   ];
   const tiles = [
-    { key: 'cpu' as const, label: 'CPU', value: cpuText(now.cpu), note: `${t('resourceMonitor.oneCore')}, ${t('resourceMonitor.peak', { value: cpuText(peak.cpu) })}, ${t('resourceMonitor.cpuSecondary')}` },
-    { key: 'memory' as const, label: t('resourceMonitor.memory'), value: memoryText(now.memory), note: `${t(footprint ? 'resourceMonitor.footprintSum' : 'resourceMonitor.rssSum')}, ${t('resourceMonitor.peak', { value: memoryText(peak.memory) })}` },
+    { key: 'cpu' as const, label: 'CPU', value: cpuText(now.cpu), note: `${t('resourceMonitor.oneCore')}${metadataSeparator()}${t('resourceMonitor.peak', { value: cpuText(peak.cpu) })}${metadataSeparator()}${t('resourceMonitor.cpuSecondary')}` },
+    { key: 'memory' as const, label: t('resourceMonitor.memory'), value: memoryText(now.memory), note: `${t(footprint ? 'resourceMonitor.footprintSum' : 'resourceMonitor.rssSum')}${metadataSeparator()}${t('resourceMonitor.peak', { value: memoryText(peak.memory) })}` },
   ];
   const chart = (metric: Metric, height: number) => <div aria-label={labels[metric]} style={{ height }}><TimelineChart data={data} metric={metric} compact={compact} select={select} labels={labels} /></div>;
 
@@ -183,7 +184,7 @@ function sampleContext(sample: ResourceSnapshot, t: ReturnType<typeof useSession
   const state = (w: (typeof windows)[number]) => t(!w.visible ? 'resourceMonitor.hidden' : w.minimized ? 'resourceMonitor.minimized' : 'resourceMonitor.visible');
   const titles = windows.map((w) => `${w.title} (${state(w)})`).join(' / ') || '–';
   const focused = windows.filter((w) => w.focused).map((w) => w.title).join(' / ') || '–';
-  return `${t('resourceMonitor.context')}: ${titles}, ${t('resourceMonitor.foreground')}: ${focused}, ${t('resourceMonitor.localTasks')} ${tasks?.total ?? '–'} (${t('resourceMonitor.running')} ${tasks?.running ?? '–'}, ${t('resourceMonitor.waiting')} ${tasks?.waiting ?? '–'}, ${t('resourceMonitor.scheduled')} ${tasks?.scheduled ?? '–'})`;
+  return `${t('resourceMonitor.context')}: ${titles}${metadataSeparator()}${t('resourceMonitor.foreground')}: ${focused}${metadataSeparator()}${t('resourceMonitor.localTasks')} ${tasks?.total ?? '–'} (${t('resourceMonitor.running')} ${tasks?.running ?? '–'}${metadataSeparator()}${t('resourceMonitor.waiting')} ${tasks?.waiting ?? '–'}${metadataSeparator()}${t('resourceMonitor.scheduled')} ${tasks?.scheduled ?? '–'})`;
 }
 
 type ChartData = { id: string; values: (ResourcePoint & { mem?: number; stall?: number; series: string })[] }[];
