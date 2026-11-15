@@ -3,33 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
-import { copyTextWithFeedback } from '@/lib/copyTextWithFeedback'
 import { useTeamApi } from './context'
 import { teamErrorCopy } from './copy'
 import { TeamDialog } from './TeamPrimitives'
 import { useTeamCommandKey } from './operations'
 import { useTeamDisableIntent } from './disableIntents'
-import type { TeamInvitation, TeamMember } from './types'
-
-export function TeamInviteDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
-  const { t } = useTranslation('team'), api = useTeamApi(), key = useTeamCommandKey()
-  const [email, setEmail] = useState(''), [result, setResult] = useState<TeamInvitation | null>(null)
-  const [busy, setBusy] = useState(false), [error, setError] = useState('')
-  async function invite() {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError(t('emailRequired')); return }
-    setBusy(true); setError('')
-    try { setResult(await api.invite(email.trim(), key({ email: email.trim() }))); await onSaved() }
-    catch (cause) { setError(teamErrorCopy(cause, t)) }
-    finally { setBusy(false) }
-  }
-  return <TeamDialog title={t('invite')} onClose={() => { if (!busy) onClose() }} actions={result
-    ? <><Button onClick={onClose}>{t('close')}</Button><Button variant="primary" onClick={() => { void copyTextWithFeedback(result.invitation_url) }}>{t('copyInvitation')}</Button></>
-    : <><Button disabled={busy} onClick={onClose}>{t('cancel')}</Button><Button variant="primary" disabled={busy} onClick={() => { void invite() }}>{t('inviteAction')}</Button></>}>
-    {result ? <p role="status">{t('invitedNotice')}</p> : <Field.Root><Field.Label>{t('memberEmail')}</Field.Label>
-      <Field.Input type="email" autoComplete="off" value={email} disabled={busy} onChange={event => setEmail(event.target.value)} /></Field.Root>}
-    {error && <p role="alert" className="gg-team-error">{error}</p>}
-  </TeamDialog>
-}
+import type { TeamMember } from './types'
+export { TeamInviteDialog } from './TeamInviteDialog'
 
 export function TeamEmailDialog({ member, onClose, onSaved }: { member: TeamMember; onClose: () => void; onSaved: () => Promise<void> }) {
   const { t } = useTranslation('team'), api = useTeamApi(), key = useTeamCommandKey()

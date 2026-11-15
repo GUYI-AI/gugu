@@ -22,6 +22,7 @@ export function teamErrorCopy(error: unknown, t: TFunction<'team'>): string {
     version_conflict: 'conflict', idempotency_conflict: 'duplicate', not_found: 'notFound', invalid_response: 'invalidResponse',
     dependency_unavailable: 'unavailable', billing_unavailable: 'unavailable', gateway_unavailable: 'unavailable',
     revocation_pending: 'revokeCheckFailed',
+    invitation_storage_unavailable: 'inviteStorageUnavailable',
     invitation_invalid: 'invitationInvalid', invitation_used: 'invitationInvalid', google_failed: 'googleFailed', google_unavailable: 'googleFailed', google_cancelled: 'googleFailed',
   }
   return t(keys[error.code] ?? 'updateFailed')

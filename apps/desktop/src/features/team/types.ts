@@ -43,7 +43,14 @@ export interface TeamProfile {
   entitlements: Record<string, unknown>
   pending_email_change: { challenge_id: string; new_email: string; expires_at: string } | null
 }
-export interface TeamInvitation {
+export interface TeamInvitationReceipt {
+  operation_id: string | null
+  invitation_created: boolean | null
+  delivery: { operation_id: string | null; state: 'pending' | 'sending' | 'accepted' | 'failed' | 'unknown'; reason_code: string | null }
+}
+export interface TeamInvitation extends TeamInvitationReceipt {
+  operation_id: string
+  invitation_created: true
   invitation_id: string
   state: 'invited'
   expires_at: string

@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js'
 import { TeamApiError, teamStopReason } from './errors'
 import * as read from './readers'
 import type { TeamApi, TeamChoice, TeamRevocation, TeamSignInResult } from './types'
+import { captureInvitationFailure, readInvitation } from './invitation-receipt'
 
 export interface TeamRequest {
   endpoint: 'team-accounts' | 'team-billing'
@@ -58,15 +59,17 @@ function revocation(value: unknown, operationId?: string, requireChecks = false)
 
 /** HTTP and test transports share one strict contract reader. No successful-empty error fallback. */
 export function createTeamApi(transport: TeamTransport): TeamApi {
-  async function call(request: TeamRequest): Promise<unknown> {
+  async function call(request: TeamRequest, captureFailure?: (error: TeamApiError, data: unknown) => void): Promise<unknown> {
     const response = read.object(await transport(request), 'response')
     if (response.ok !== true) {
       const error = read.object(response.error, 'error')
-      throw new TeamApiError(read.text(error.code, 'error.code'),
+      const refusal = new TeamApiError(read.text(error.code, 'error.code'),
         typeof response.status === 'number' ? response.status : undefined,
         teamStopReason(error.reason_code) ?? undefined,
         typeof error.retry_after_seconds === 'number' ? error.retry_after_seconds : undefined,
         choices(error.contexts))
+      captureFailure?.(refusal, response.data)
+      throw refusal
     }
     return response.data
   }
@@ -95,12 +98,7 @@ export function createTeamApi(transport: TeamTransport): TeamApi {
     async directory(input, signal) { return read.directory(await accounts('directory', input, 'GET', signal)) },
     async members(input, signal) { return read.members(await accounts('members', input, 'GET', signal)) },
     async invite(email, idempotency_key) {
-      const row = read.object(await accounts('invite', { email, role: 'member', idempotency_key }), 'invitation')
-      if (row.state !== 'invited') throw new TeamApiError('invalid_response')
-      const links = read.object(row.app_deep_links, 'app_deep_links')
-      return { invitation_id: read.text(row.invitation_id, 'invitation_id'), state: 'invited', expires_at: read.text(row.expires_at, 'expires_at'),
-        invitation_url: read.text(row.invitation_url, 'invitation_url'), app_deep_links: {
-          stable: read.text(links.stable, 'links.stable'), beta: read.text(links.beta, 'links.beta'), dev: read.text(links.dev, 'links.dev') } }
+      return readInvitation(await call({ endpoint: 'team-accounts', action: 'invite', method: 'POST', body: { email, role: 'member', idempotency_key } }, captureInvitationFailure))
     },
     async invitationInfo(invitation_token) {
       const row = read.object(await accounts('invitation_info', { invitation_token }), 'invitation_info')

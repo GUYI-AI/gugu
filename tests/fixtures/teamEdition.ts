@@ -1,7 +1,17 @@
 import { creditDecimal as cd, creditFromUnits, creditUnits } from '@gugu/core/billing/creditAmount'
 import type { AuthUser } from '../../apps/desktop/src/store/auth'
-import type { TeamApi, TeamRole, TeamSignInResult, TeamProfile, CurrentTeamContext, TeamMember } from '../../apps/desktop/src/features/team/types'
+import type { TeamApi, TeamRole, TeamSignInResult, TeamProfile, CurrentTeamContext, TeamMember, TeamInvitation } from '../../apps/desktop/src/features/team/types'
 import { TeamApiError } from '../../apps/desktop/src/features/team/errors'
+
+export const teamInvitationCapability = 'synthetic-team-invitation-'.repeat(2)
+export function teamInvitationFixture(): TeamInvitation {
+  const fragment = `?region=cn#invitation_token=${teamInvitationCapability}`
+  return { invitation_id: 'invitation-fixture', state: 'invited', expires_at: '2099-11-01T00:05:00Z',
+    operation_id: 'identity-operation-fixture', invitation_created: true,
+    delivery: { operation_id: 'mail-operation-fixture', state: 'accepted', reason_code: 'smtp_accepted' },
+    invitation_url: `https://website.example.test/team/invite${fragment}`,
+    app_deep_links: { stable: `gugu://team/invite${fragment}`, beta: `gugu-beta://team/invite${fragment}`, dev: `gugu-dev://team/invite${fragment}` } }
+}
 
 export const teamUser: AuthUser = { id: 'team-person-lin', accountKind: 'team_member', nickname: '林晓', email: 'lin@example.test', bio: '', gugu_number: 635812 }
 export const teamMonth = { starts_at: '2026-10-31T16:00:00Z', ends_at: '2026-11-30T16:00:00Z', timezone: 'Asia/Shanghai' as const, label: '2026-11' }
@@ -39,8 +49,7 @@ export function mockTeamApi(role: TeamRole = 'member', overrides: Partial<TeamAp
     create: async () => teamSignIn('superadmin'), signIn: async () => teamSignIn(role), googleSignIn: async () => teamSignIn(role),
     directory: async input => ({ members: people.filter(person => person.state === 'active' && (!input?.query || person.name.includes(input.query))).map(person => ({ identity_id: person.identity_id!, name: person.name, avatar: null, role: person.role })), next_cursor: null }),
     members: async input => ({ members: people.filter(person => person.state === input.state).map(person => ({ ...person })), next_cursor: null }),
-    invite: async () => ({ invitation_id: 'invitation-fixture', state: 'invited', expires_at: '2099-11-01T00:05:00Z', invitation_url: 'https://website.example.test/team/invite#invitation_token=synthetic-invitation',
-      app_deep_links: { stable: 'gugu://team/invite#invitation_token=synthetic-invitation', beta: 'gugu-beta://team/invite#invitation_token=synthetic-invitation', dev: 'gugu-dev://team/invite#invitation_token=synthetic-invitation' } }),
+    invite: async () => teamInvitationFixture(),
     invitationInfo: async () => ({ invitation_id: 'invitation-fixture', team_id: 'team-ming', team_name: '明川研究院', region: 'cn', email_hint: 'l***@example.test', expires_at: '2099-11-01T00:05:00Z', state: 'invited' }),
     acceptInvitation: async () => teamSignIn(role),
     setRole: async (id, next, revision) => { const person = people.find(person => person.id === id)!; person.role = next; person.revision = revision + 1
