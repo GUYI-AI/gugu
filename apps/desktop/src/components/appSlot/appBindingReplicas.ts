@@ -76,15 +76,20 @@ export function inventoryChanged(note: { extensionId?: string } | undefined): vo
 
 let users = 0
 let stop: (() => void) | null = null
+/** The composer entries a column has shown in this run (their arguments): what the watcher reads again when it starts. */
+const composerEntries = new Map<string, [extensionId: string, authority: string]>()
 
 /** Follow main's notes while a surface shows any of these (ref-counted, one subscription for all of them). */
 function watch(): () => void {
   if (users++ === 0) {
     stop = events.on(extensionsInventoryChangedChannel, inventoryChanged)
     // Values from before the watch began may have missed a note: read again what is already there (❌ a first read on
-    // its way, which would then read twice). A column's composer entries are read when the column mounts without one.
+    // its way, which would then read twice).
     if (appSurfaceBindings.peek().state === 'value') void appSurfaceBindings.refresh()
     if (appUnreadBindings.peek().state === 'value') void appUnreadBindings.refresh()
+    for (const args of composerEntries.values()) {
+      if (appComposerActions.peek(...args).state === 'value') void appComposerActions.refresh(...args)
+    }
   }
   return () => {
     if (--users === 0) {
@@ -95,6 +100,11 @@ function watch(): () => void {
 }
 
 /** Mounted by each surface that shows one of these replicas: main's notes reach them while it is up. */
-export function useAppBindingPush(active: boolean): void {
-  useEffect(() => (active ? watch() : undefined), [active])
+export function useAppBindingPush(active: boolean, composer?: [extensionId: string, authority: string]): void {
+  const [extensionId, authority] = composer ?? []
+  useEffect(() => {
+    if (!active) return
+    if (extensionId !== undefined && authority !== undefined) composerEntries.set(JSON.stringify([extensionId, authority]), [extensionId, authority])
+    return watch()
+  }, [active, extensionId, authority])
 }

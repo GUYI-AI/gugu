@@ -65,7 +65,7 @@ export function useAppComposerEntries({ ownerId, extensionId, authority, chatId 
   const zhNow = useCallback(() => i18n.language.startsWith('zh'), [i18n])
   // Read for this column's App and authority; main's notes (a grant withdrawn, say) read it again.
   const reading = useReplica(appComposerActions, [extensionId, authority])
-  useAppBindingPush(true)
+  useAppBindingPush(true, [extensionId, authority])
   const run = useCallback((actionId: string) => {
     void rpc.extensions.runConversationComposerAction({ ownerId, extensionId, authority, actionId }).then((result) => {
       if (!result.success) {
