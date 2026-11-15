@@ -8,6 +8,8 @@ final class IOSAccountClosureTests: XCTestCase {
         XCTAssertEqual(Bundle.main.bundleIdentifier, "app.gugu.chat")
         let expected = try XCTUnwrap(ProcessInfo.processInfo.environment["GUGU_D_EXPECTED_SIMULATOR_UDID"])
         XCTAssertEqual(ProcessInfo.processInfo.environment["SIMULATOR_UDID"], expected)
+        XCTAssertEqual(GuguAccountClosurePlugin.publicCode(GuguPushFailure(code: "closure_not_prepared", message: "synthetic private message")), "closure_not_prepared")
+        XCTAssertEqual(GuguAccountClosurePlugin.publicCode(NSError(domain: "synthetic-private-error", code: 1)), "closure_storage_unavailable")
         let configURL = try XCTUnwrap(Bundle.main.url(forResource: "capacitor.config", withExtension: "json"))
         let config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: configURL)) as? [String: Any])
         XCTAssertEqual(config["loggingBehavior"] as? String, "none")

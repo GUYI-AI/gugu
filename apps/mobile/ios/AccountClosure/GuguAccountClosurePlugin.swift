@@ -33,8 +33,14 @@ public final class GuguAccountClosurePlugin: CAPPlugin, CAPBridgedPlugin {
     }
     private func reject(_ call: CAPPluginCall, _ error: Error) {
         // Never forward Keychain/JSON/opaque receipt errors or values to logs.
-        let code = (error as? GuguHostFailure)?.code ?? "closure_storage_unavailable"
-        call.reject("Local account closure data could not be accessed or cleaned", code)
+        call.reject("Local account closure data could not be accessed or cleaned", Self.publicCode(error))
+    }
+    static func publicCode(_ error: Error) -> String {
+        if let failure = error as? GuguHostFailure { return failure.code }
+        // Push's original cleanup gate uses its own native failure type. Preserve
+        // the shared precondition code without forwarding its message or values.
+        if let failure = error as? GuguPushFailure, failure.code == "closure_not_prepared" { return failure.code }
+        return "closure_storage_unavailable"
     }
     @objc public func put(_ call: CAPPluginCall) {
         guard let value = call.getString("receipt") else { reject(call, GuguIOSAccountClosure.failure("invalid_receipt")); return }
