@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import { act, useSyncExternalStore } from 'react'
 import { i18n } from '@/i18n'
 import { TeamApiProvider } from '@/features/team/context'
 import { TeamAuthPane } from '@/features/team/TeamAuthPane'
@@ -97,4 +98,25 @@ it('independently honors a final provision region refusal after successful summa
   await until('provision refuses the region', () => harness.container.textContent?.includes('请在所属区域登录团队账号。') === true)
   expect(transport.mock.calls.map(([request]) => request.action)).toEqual(['invitation_info', 'email_challenge', 'email_verify', 'accept_invitation'])
   expect(auth.accept).not.toHaveBeenCalled()
+})
+it('revalidates the same capability after its link region changes and cannot reuse the earlier verified form', async () => {
+  let receive!: (raw: string) => void
+  const inbox = createTeamInvitationInbox(next => { receive = next; return () => {} }); inbox.start()
+  receive(`gugu-beta://team/invite?region=cn#invitation_token=${token}`)
+  const fixture = mockTeamApi(), invitationInfo = vi.fn(fixture.invitationInfo), challenge = vi.fn(fixture.challenge), acceptInvitation = vi.fn(fixture.acceptInvitation)
+  function Flow() {
+    const snapshot = useSyncExternalStore(inbox.subscribe, inbox.getSnapshot)
+    return <TeamAuthPane key={snapshot.version} googleEnabled={false} onPersonal={vi.fn()} invitationLink={inbox.readLink()} />
+  }
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <TeamApiProvider api={{ ...fixture, invitationInfo, challenge, acceptInvitation }}><Flow /></TeamApiProvider>, { auth: null })
+  await expect.element(page.getByRole('button', { name: '继续', exact: true })).toBeEnabled()
+  await act(async () => { receive(`gugu-beta://team/invite?region=hk#invitation_token=${token}`) })
+  await until('the changed region is freshly refused', () => harness.container.textContent?.includes('请在所属区域登录团队账号。') === true)
+  await expect.element(page.getByRole('button', { name: '继续', exact: true })).toBeDisabled()
+  await userEvent.fill(page.getByRole('textbox', { name: '邮箱', exact: true }), 'member@example.test')
+  harness.container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  expect(invitationInfo).toHaveBeenCalledTimes(2)
+  expect(invitationInfo.mock.calls.map(([capability]) => capability)).toEqual([token, token])
+  expect(challenge).not.toHaveBeenCalled(); expect(acceptInvitation).not.toHaveBeenCalled(); expect(auth.accept).not.toHaveBeenCalled()
 })

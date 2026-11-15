@@ -19,12 +19,12 @@ const render = (modelOptionId = 'platform:test') => harness.render(createElement
 
 it('shows the live spendable total as one quiet composer line and follows balance changes', async () => {
   await render()
-  expect(harness.container.textContent).toBe('剩 1 积分 充值')
+  expect(harness.container.textContent).toBe('剩 1 积分 · 充值')
   expect(harness.container.querySelectorAll('button')).toHaveLength(1)
   expect(harness.container.querySelector('svg, [role="alert"]')).toBeNull()
   state.spendable = 0.5
   await render()
-  expect(harness.container.textContent).toBe('剩 0.5 积分 充值')
+  expect(harness.container.textContent).toBe('剩 0.5 积分 · 充值')
 })
 
 it.each([null, 0, 1, 2])('does not invent a low-balance reminder for %s spendable credits', async spendable => {
