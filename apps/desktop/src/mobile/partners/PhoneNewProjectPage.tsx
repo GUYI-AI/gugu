@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PaneBackButton } from '@/components/contacts/ContactDetail'
 import { RemoteFolderPicker } from '@/components/RemoteFolderPicker'
@@ -15,6 +15,9 @@ import { useDevicesStore } from '@/store/devicesContext'
 import { newProjectPath, projectNameProblem } from './partnersModel'
 import { Avatar } from '@/components/Avatar'
 import { projectRpcOn } from './projectRpc'
+import { Unknown } from '@/components/ui/Unknown'
+import { useReplica } from '@/lib/replica'
+import { LOCAL_SETTINGS_HOST_KEY, settingsModelOf } from '@/session/renderer/features/settings/app-settings-client'
 import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
@@ -33,7 +36,6 @@ function writeLastMachine(deviceId: string): void {
   writeInterface(LAST_MACHINE_KEY, deviceId)
 }
 
-type Directory = { deviceId: string; path: string | null; failed: boolean }
 
 /**
  * 手机「新项目」(OpenDCAI/gugu#446):名字 + 机器 + 文件夹。项目一定有文件夹(owner 10-26「新建项目我们不存在空文件夹的情况」):
@@ -54,7 +56,6 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const [name, setName] = useState('')
   const [pickedMachineId, setPickedMachineId] = useState<string | null>(readLastMachine)
   const [existingFolder, setExistingFolder] = useState<{ deviceId: string; path: string } | null>(null)
-  const [directory, setDirectory] = useState<Directory | null>(null)
   const [picking, setPicking] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,21 +64,12 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const device = machines.find((row) => row.device_id === pickedMachineId && row.is_online) ?? machines.find((row) => row.is_online) ?? null
   const deviceId = device?.device_id ?? null
   const folderPath = existingFolder && existingFolder.deviceId === deviceId ? existingFolder.path : null
-  const shownDirectory = directory && directory.deviceId === deviceId ? directory : null
-
-  // 那台机器的默认项目目录(它自己的设置,同电脑设置 → 机器 → 默认项目目录)。
-  useEffect(() => {
-    if (!device) return
-    let cancelled = false
-    const id = device.device_id
-    projectRpcOn(device).appSettings.getWithMeta('localProject')
-      .then((meta) => {
-        const path = (meta as { value?: { defaultProjectsDirectory?: string } } | undefined)?.value?.defaultProjectsDirectory?.trim()
-        if (!cancelled) setDirectory({ deviceId: id, path: path || null, failed: false })
-      })
-      .catch(() => { if (!cancelled) setDirectory({ deviceId: id, path: null, failed: true }) })
-    return () => { cancelled = true }
-  }, [deviceId]) // eslint-disable-line react-hooks/exhaustive-deps -- 设备行每刷新一次就是新对象,按机器认
+  // 那台机器的默认项目目录(它自己的设置,同电脑设置 → 机器 → 默认项目目录):那台机器的设置 replica,这台手机的线路。
+  const host = device ? (device.is_current_device ? LOCAL_SETTINGS_HOST_KEY : device.device_id) : null
+  const settings = useReplica(settingsModelOf(host ?? LOCAL_SETTINGS_HOST_KEY), host ? ['localProject', host] : null)
+  const shownDirectory = settings.state === 'value'
+    ? { path: (settings.value.value as { defaultProjectsDirectory?: string }).defaultProjectsDirectory?.trim() || null, failed: false }
+    : settings.state === 'error' ? { path: null, failed: true } : null
 
   const trimmed = name.trim()
   const placeholder = t('partners.newProject.title')
@@ -87,7 +79,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       ? shortHome(newProjectPath(shownDirectory.path, trimmed || placeholder))
       : shownDirectory
         ? t('partners.newProject.noDefaultDirectory')
-        : device ? t('partners.newProject.readingDirectory') : ''
+        : device ? <Unknown className="w-32" /> : ''
 
   const create = async () => {
     if (!device || creating) return

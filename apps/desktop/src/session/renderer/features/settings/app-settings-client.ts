@@ -70,10 +70,21 @@ export const appSettingsModel = replica({
  * Another machine's settings (#6264, machine-scoped rows): read when its Settings page shows them, ❌ kept across
  * restarts (they would push this device's keys out of the snapshot) — that page draws placeholders on a cold open.
  */
+type SettingsRpc = Pick<ReturnType<typeof rpcOn>, 'appSettings'>;
+let remoteSettingsRoute: (host: string) => SettingsRpc = (host) => rpcOn(host);
+
+/**
+ * How another machine's settings are reached in this shell: a desktop asks over its machine client (`rpcOn`); the phone has
+ * none and reaches machines through its session-page channel, so its shell sets that route once (mobile/partners/projectRpc.ts).
+ */
+export function routeRemoteSettings(route: (host: string) => SettingsRpc): void {
+  remoteSettingsRoute = route;
+}
+
 export const remoteAppSettingsModel = replica({
   name: 'remoteAppSettings',
   scope: 'device',
-  read: async (_device, key: AppSettingsKey, host: string) => await rpcOn(host).appSettings.getWithMeta(key) as SettingsMeta<AppSettingsKey>,
+  read: async (_device, key: AppSettingsKey, host: string) => await remoteSettingsRoute(host).appSettings.getWithMeta(key) as SettingsMeta<AppSettingsKey>,
   fresh: 5 * 60_000,
 });
 

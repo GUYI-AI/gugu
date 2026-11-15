@@ -15,6 +15,7 @@ export function CliInstallProgress({ read, idle = null }: { read: () => Promise<
   const { t } = useTranslation('assistant')
   const [progress, setProgress] = useState<CliDownloadProgress>(null)
   const [unreadable, setUnreadable] = useState(false)
+  // @@@effect-flow - follows the progress of an install that is running now (a command's progress, polled while shown)
   useEffect(() => {
     let cancelled = false
     let inFlight = false
