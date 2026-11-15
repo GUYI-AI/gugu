@@ -29,8 +29,6 @@ const log = rendererLogger('phone-new-task')
 const START = 'gugu:phone-new-task'
 export function startPhoneNewTask(chatId: string) { window.dispatchEvent(new CustomEvent(START, { detail: { chatId } })) }
 
-const folderName = (path: string) => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
-
 /** off = 发消息;on = 新任务的框(folder 还没点 = 卡浮着等你点;picking = 卡浮着)。 */
 type Stage = { kind: 'off' } | { kind: 'on'; folder: ShownFolder | null; picking: boolean }
 
