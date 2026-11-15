@@ -1,4 +1,5 @@
 import { ChevronDown } from '@/lib/icons'
+import { Unknown } from '@/components/ui/Unknown';
 import { type SelectionState } from '@renderer/features/sessions/diff-view/stores/changes-view-store';
 import { Badge } from '@renderer/lib/ui/badge';
 import { Checkbox } from '@renderer/lib/ui/checkbox';
@@ -6,8 +7,9 @@ import { cn } from '@renderer/utils/utils';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 interface SectionHeaderProps {
-  label: string;
-  count: number;
+  /** null = not known yet (what the section lists is still being read): a placeholder holds its place. */
+  label: string | null;
+  count: number | null;
   selectionState?: SelectionState;
   onToggleAll?: () => void;
   actions?: React.ReactNode;
@@ -30,9 +32,9 @@ export function SectionHeader({
     <div className="flex h-10 shrink-0 items-center justify-between gap-2 px-3.5">
       <button onClick={onToggleCollapsed} className="min-w-0">
         <span className="flex min-w-0 items-center gap-2 text-sm text-foreground-muted">
-          <span className="truncate">{label}</span>{' '}
+          <span className="truncate">{label ?? <Unknown className="w-24" />}</span>{' '}
           <Badge variant="secondary" className="shrink-0">
-            {count}
+            {count ?? <Unknown className="w-3" />}
           </Badge>{' '}
           <span className="p-2 text-foreground-muted hover:text-foreground">
             <ChevronDown
@@ -46,7 +48,7 @@ export function SectionHeader({
       </button>
       <div className="flex items-center gap-1.5">
         {actions}
-        {showCheckbox && (
+        {showCheckbox && label !== null && (
           <Checkbox
             checked={selectionState === 'all'}
             indeterminate={selectionState === 'partial'}

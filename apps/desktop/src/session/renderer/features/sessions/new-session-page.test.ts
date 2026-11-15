@@ -108,8 +108,8 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
     ...args: unknown[]
   ) => {
     mocks.createSessionStateProjectId = projectId;
-    // (projectId, defaultBranch, isUnborn, currentBranch, workspaceId, …, options)
-    mocks.createSessionStateWorkspaceId = args[3] as string | null | undefined;
+    // (projectId, workspaceId, …, options)
+    mocks.createSessionStateWorkspaceId = args[0] as string | null | undefined;
     mocks.createSessionStateOptions = args.at(-1) as typeof mocks.createSessionStateOptions;
     return {
       isValid: false,
@@ -121,9 +121,6 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
 
 vi.mock('@renderer/features/sessions/create-session-modal/use-project-git-context', () => ({
   useProjectGitContext: () => ({
-    defaultBranch: undefined,
-    isUnborn: false,
-    currentBranch: null,
     repositoryWorkspaceId: null
   })
 }));

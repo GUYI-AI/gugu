@@ -8,6 +8,8 @@ import { rpc } from '@renderer/lib/ipc';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { EmptyState } from '@renderer/lib/ui/empty-state';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { Unknown } from '@/components/ui/Unknown';
 import { SplitButton, type SplitButtonAction } from '@renderer/lib/ui/split-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { pullRequestErrorMessage } from '@shared/core/pull-requests/pull-requests';
@@ -55,11 +57,11 @@ export const PullRequestsSection = observer(function PullRequestsSection({
           source: 'branch',
           baseRefOid: defaultBranch.oid,
           headRefOid: headOid,
-          revision: workspace.gitWorktree.statusRevision,
         }
       : undefined;
   const branchCommits = useCommits(projectId, workspaceId, branchCommitRange);
-  const branchCommitCount = branchCommits.data?.pages[0]?.aheadCount;
+  // How far the branch is ahead decides what this section is (its commits, or pull requests): not known until read.
+  const branchHead = branchCommitRange ? branchCommits.pages[0] : undefined;
   const showCreatePrModal = useShowModal('createPrModal');
   const { toast } = useToast();
   const prSyncStore = getPrSyncStore(projectId);
@@ -122,12 +124,13 @@ export const PullRequestsSection = observer(function PullRequestsSection({
   };
 
   const { mode: viewMode, setMode: setViewMode } = useChangesViewMode('pr');
-  const showBranchCommits =
-    !!branchCommitRange && branchCommitCount !== undefined && branchCommitCount > 0;
-  const sectionLabel = translate(
-    showBranchCommits ? 'changes.branchCommits' : 'changes.pullRequests'
-  );
-  const sectionCount = showBranchCommits ? (branchCommitCount ?? 0) : pullRequests.length;
+  const branchUnread = branchHead !== undefined && branchHead.state !== 'value';
+  const branchCommitCount = branchHead?.state === 'value' ? branchHead.value.aheadCount : null;
+  const showBranchCommits = branchCommitCount !== null && branchCommitCount > 0;
+  const sectionLabel = branchHead?.state === 'unknown'
+    ? null
+    : translate(showBranchCommits || branchHead?.state === 'error' ? 'changes.branchCommits' : 'changes.pullRequests');
+  const sectionCount = branchUnread ? null : showBranchCommits ? branchCommitCount : pullRequests.length;
   const createPrTooltip = !repositoryUrl
     ? 'Pull requests unavailable'
     : hasOpenPr
@@ -181,7 +184,17 @@ export const PullRequestsSection = observer(function PullRequestsSection({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {currentPr ? (
           <PullRequestEntry key={currentPr.url} pr={currentPr} />
-        ) : showBranchCommits ? (
+        ) : branchHead?.state === 'unknown' ? (
+          <div className="border-t border-border px-3 py-2">
+            <Unknown className="h-[39px] w-full" />
+          </div>
+        ) : branchHead?.state === 'error' ? (
+          <ReadFailedLine
+            className="border-t border-border px-3 py-2"
+            message={translate('pr.commitsFailed')}
+            onRetry={() => branchCommits.retry(0)}
+          />
+        ) : showBranchCommits && branchCommitRange ? (
           <BranchCommitsEntry range={branchCommitRange} />
         ) : !repositoryUrl ? (
           <EmptyState

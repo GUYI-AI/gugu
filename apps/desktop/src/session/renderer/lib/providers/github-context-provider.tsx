@@ -1,6 +1,5 @@
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { createContext, useCallback, useContext, useEffect } from 'react';
 import { events, rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
@@ -9,78 +8,30 @@ import {
   githubAuthErrorChannel,
   githubAuthSuccessChannel,
 } from '@shared/events/githubEvents';
-import type { GitHubAccountState, GitHubAccountSummary, GitHubUser } from '@shared/github';
+import type { GitHubUser } from '@shared/github';
 import { useToast } from '../hooks/use-toast';
-import {
-  GITHUB_ACCOUNTS_QUERY_KEY,
-  GITHUB_ACCOUNT_STATE_QUERY_KEY,
-  ISSUE_CONNECTION_STATUS_QUERY_KEY,
-} from '../hooks/useGithubAccounts';
+import { refreshGitHubAccountState } from '../hooks/useGithubAccounts';
 
 type GithubContextValue = {
-  user: GitHubUser | null;
   cancelGithubConnect: () => void;
 };
 
 const GithubContext = createContext<GithubContextValue | null>(null);
 
-function accountSummaryToUser(account: GitHubAccountSummary | undefined): GitHubUser | null {
-  if (!account) return null;
-  const providerAccountId = account.accountId.slice(`${account.host}:`.length);
-  const numericId = Number(providerAccountId);
-  return {
-    id: Number.isFinite(numericId) ? numericId : 0,
-    login: account.login,
-    name: '',
-    email: '',
-    avatar_url: account.avatarUrl,
-  };
-}
-
+/** This machine's GitHub sign-in events: a device-flow outcome is said, and an accounts change refreshes the lists. */
 export function GithubContextProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const { data: accountState } = useQuery<GitHubAccountState>({
-    queryKey: GITHUB_ACCOUNT_STATE_QUERY_KEY,
-    queryFn: () => rpc.github.getAccountState(),
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-  });
-
-  const defaultAccount = accountState?.accounts.find(
-    (account) => account.accountId === accountState.defaultAccountId
-  );
-  const user = accountSummaryToUser(defaultAccount);
-
-  const invalidateGitHubState = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: GITHUB_ACCOUNTS_QUERY_KEY });
-    void queryClient.invalidateQueries({ queryKey: GITHUB_ACCOUNT_STATE_QUERY_KEY });
-    void queryClient.invalidateQueries({ queryKey: ISSUE_CONNECTION_STATUS_QUERY_KEY });
-  }, [queryClient]);
-
-  const refreshAccountState = useCallback(
-    () =>
-      queryClient.fetchQuery<GitHubAccountState>({
-        queryKey: GITHUB_ACCOUNT_STATE_QUERY_KEY,
-        queryFn: () => rpc.github.getAccountState(),
-        staleTime: 0,
-      }),
-    [queryClient]
-  );
 
   const handleDeviceFlowSuccess = useCallback(
-    async (flowUser: GitHubUser) => {
+    (flowUser: GitHubUser) => {
       log.info('[GithubContext] auth success via device flow', { user: flowUser?.login });
-      void refreshAccountState();
-      setTimeout(() => void refreshAccountState(), 500);
-      invalidateGitHubState();
+      refreshGitHubAccountState();
       toast({
         title: 'Connected to GitHub',
         description: `Signed in as ${flowUser?.login || flowUser?.name || 'user'}`,
       });
     },
-    [refreshAccountState, invalidateGitHubState, toast]
+    [toast]
   );
 
   const handleDeviceFlowError = useCallback(
@@ -99,7 +50,7 @@ export function GithubContextProvider({ children }: { children: React.ReactNode 
       log.info('[GithubContext] received githubAuthSuccessChannel event', {
         user: data.user?.login,
       });
-      void handleDeviceFlowSuccess(data.user);
+      handleDeviceFlowSuccess(data.user);
     });
     const cleanupError = events.on(githubAuthErrorChannel, (data) => {
       log.info('[GithubContext] received githubAuthErrorChannel event', {
@@ -109,7 +60,7 @@ export function GithubContextProvider({ children }: { children: React.ReactNode 
     });
     const cleanupAccountsChanged = events.on(githubAccountsChangedChannel, () => {
       log.info('[GithubContext] received githubAccountsChangedChannel event');
-      invalidateGitHubState();
+      refreshGitHubAccountState();
     });
 
     return () => {
@@ -117,7 +68,7 @@ export function GithubContextProvider({ children }: { children: React.ReactNode 
       cleanupError();
       cleanupAccountsChanged();
     };
-  }, [handleDeviceFlowSuccess, handleDeviceFlowError, invalidateGitHubState]);
+  }, [handleDeviceFlowSuccess, handleDeviceFlowError]);
 
   const cancelGithubConnect = useCallback(() => {
     void rpc.github.authCancel();
@@ -127,10 +78,7 @@ export function GithubContextProvider({ children }: { children: React.ReactNode 
     });
   }, [toast]);
 
-  const value: GithubContextValue = {
-    user,
-    cancelGithubConnect,
-  };
+  const value: GithubContextValue = { cancelGithubConnect };
 
   return <GithubContext.Provider value={value}>{children}</GithubContext.Provider>;
 }

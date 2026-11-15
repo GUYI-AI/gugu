@@ -115,16 +115,12 @@ const NewSessionComposerReady = observer(function NewSessionComposerReady({
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { defaultBranch, isUnborn, currentBranch, repositoryWorkspaceId } =
-    useProjectGitContext(projectId);
+  const { repositoryWorkspaceId } = useProjectGitContext(projectId);
   // Repository store warms lazily; touching it keeps parity with the project home / modal.
   if (projectId) void getGitRepositoryStore(projectId);
 
   const state = useCreateSessionState(
     projectId,
-    defaultBranch,
-    isUnborn,
-    currentBranch,
     workspaceId ?? repositoryWorkspaceId,
     undefined,
     null,
@@ -194,7 +190,6 @@ const NewSessionComposerReady = observer(function NewSessionComposerReady({
         workspaceConfig={state.workspaceConfig}
         initialSession={initialSession}
         projectId={projectId}
-        isUnborn={isUnborn}
         hasPR={false}
         includeIssueContextByDefault={includeIssueContextByDefault}
       >

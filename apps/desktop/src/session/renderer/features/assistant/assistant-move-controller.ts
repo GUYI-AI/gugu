@@ -5,7 +5,7 @@
 import { CloudComputerError } from '@gugu/core/cloud/cloudComputer';
 import { rendererLogger } from '@/lib/log';
 import { rpcOn } from '@renderer/lib/ipc';
-import { ISSUE_CONNECTION_STATUS_QUERY_KEY } from '@renderer/lib/hooks/useGithubAccounts';
+import { ISSUE_CONNECTION_STATUS_QUERY_KEY } from '@renderer/features/integrations/integrations-provider';
 import { queryClient } from '@/lib/replica';
 import { isUnknownMethod, MoveError, type MoveDirection, type MoveProgress, type MoveReport } from './assistant-move';
 import { MoveCopyError } from './assistant-move-copy';

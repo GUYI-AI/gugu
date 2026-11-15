@@ -112,9 +112,7 @@ export function useAutomationFormState(
     initialSession.setSessionView(sessionViewOfRuntime(seedType));
   }
 
-  const localGit = useProjectGitContext(effectiveProjectId);
-  const { isUnborn, currentBranch } = localGit;
-  const repositoryWorkspaceId = localGit.repositoryWorkspaceId;
+  const { repositoryWorkspaceId } = useProjectGitContext(effectiveProjectId);
 
   const sessionName = useSessionName({
     generatedName: seedConfig?.sessionConfig.name,
@@ -192,8 +190,6 @@ export function useAutomationFormState(
     cronTz,
     initialSession,
     workspaceConfig,
-    isUnborn,
-    currentBranch,
     prompt,
     provider,
     model,

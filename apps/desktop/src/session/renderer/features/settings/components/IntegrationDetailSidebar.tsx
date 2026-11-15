@@ -22,6 +22,10 @@ import { MicroLabel } from '@renderer/lib/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { GitHubAccountSummary } from '@shared/github';
+import { Unknown } from '@/components/ui/Unknown';
+import type { Reading } from '@/lib/replica';
+import { githubAccounts as githubAccountsModel } from '@renderer/lib/hooks/useGithubAccounts';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { GitHubAccountRows } from './GitHubAccountsSection';
 import type { IntegrationItem } from './IntegrationsCard';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
@@ -37,7 +41,7 @@ export function IntegrationDetailSidebar({
   onClose,
 }: {
   integration: IntegrationItem;
-  githubAccounts: GitHubAccountSummary[];
+  githubAccounts: Reading<GitHubAccountSummary[]>;
   onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
@@ -88,18 +92,26 @@ export function IntegrationDetailSidebar({
             <div className="mt-3">
               {integration.id === 'github' ? (
                 <div className="space-y-2">
-                  {githubAccounts.length > 0 && (
-                    <GitHubAccountRows accounts={githubAccounts} readOnly={integration.readOnly} />
+                  {githubAccounts.state === 'unknown' ? (
+                    <Unknown className="h-[60px] w-full rounded-lg" />
+                  ) : githubAccounts.state === 'error' ? (
+                    <ReadFailedLine message={translate('github.loadFailed')} onRetry={() => void githubAccountsModel.refresh()} />
+                  ) : (
+                    <>
+                      {githubAccounts.value.length > 0 && (
+                        <GitHubAccountRows accounts={githubAccounts.value} readOnly={integration.readOnly} />
+                      )}
+                      <AddAccountCard
+                        integration={integration}
+                        label={translate('github.add')}
+                        detail={
+                          githubAccounts.value.length === 0
+                            ? translate('github.none')
+                            : translate('github.connectHint')
+                        }
+                      />
+                    </>
                   )}
-                  <AddAccountCard
-                    integration={integration}
-                    label={translate('github.add')}
-                    detail={
-                      githubAccounts.length === 0
-                        ? translate('github.none')
-                        : translate('github.connectHint')
-                    }
-                  />
                 </div>
               ) : !integration.isConfigured ? (
                 <AddAccountCard integration={integration} />

@@ -11,6 +11,8 @@ import { useLibraryHost } from '@renderer/features/library/library-host';
 import { DeviceScopeNoticeLine } from '@renderer/features/remote-hosts/device-scope-picker';
 import { deviceScopeNotice } from '@renderer/features/remote-hosts/device-scope-notice';
 import { sortGitHubAccountsByDefault } from '@renderer/features/projects/components/github-account-select-model';
+import type { Reading } from '@/lib/replica';
+import type { GitHubAccountSummary } from '@shared/github';
 import { useGitHubAccounts } from '@renderer/lib/hooks/useGithubAccounts';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Sheet, SheetContent } from '@renderer/lib/ui/sheet';
@@ -71,10 +73,13 @@ const IntegrationsCard: React.FC = () => {
   // #6264 资源库看的是别的机器:连 / 断的是那台机器上的集成;弹窗带上它(弹窗挂在应用根上,自己拿不到)。
   const host = useLibraryHost();
   const modalHost = host.remote ? host : undefined;
-  const { data: githubAccounts = [] } = useGitHubAccounts();
+  const githubAccountsReading = useGitHubAccounts();
   const sortedGithubAccounts = useMemo(
-    () => sortGitHubAccountsByDefault(githubAccounts),
-    [githubAccounts]
+    (): Reading<GitHubAccountSummary[]> =>
+      githubAccountsReading.state === 'value'
+        ? { ...githubAccountsReading, value: sortGitHubAccountsByDefault(githubAccountsReading.value) }
+        : githubAccountsReading,
+    [githubAccountsReading]
   );
   const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection();
   const showIntegrationSetup = useShowModal('integrationSetupModal');
@@ -173,7 +178,8 @@ const IntegrationsCard: React.FC = () => {
         readOnly: !!notice?.readOnly,
         connectionError: isConfigured ? integrationErrorText(translate, integration.name, status) : undefined,
         connectionErrorDetail: isConfigured ? status.error : undefined,
-        displayName: sortedGithubAccounts[0]?.login ?? status.displayName,
+        // The default account's login once the accounts are read; until then the connection status's own name.
+        displayName: (sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value[0]?.login : undefined) ?? status.displayName,
         displayDetail: status.displayDetail,
         onConnect: () => showConnectGitHub({ host: modalHost }),
         abilities: integration.abilities ?? [],

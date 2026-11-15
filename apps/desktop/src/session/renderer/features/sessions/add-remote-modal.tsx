@@ -24,6 +24,8 @@ import { ModalLayout } from '@renderer/lib/ui/modal-layout';
 import { RadioGroup, RadioGroupItem } from '@renderer/lib/ui/radio-group';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 
 export type AddRemoteModalArgs = {
   projectId: string;
@@ -67,20 +69,13 @@ export const AddRemoteModal = observer(function AddRemoteModal({
   const settingsLoading =
     !!settingsStore && settingsStore.pageData.data === null && settingsError === null;
 
-  const {
-    owners,
-    owner,
-    isLoading: ownersLoading,
-    errorMessage: ownersErrorMessage,
-    handleOwnerChange,
-  } = useGitHubRepositoryOwnerSelect(githubAccountId);
+  const { owners, owner, retry: retryOwners, handleOwnerChange } = useGitHubRepositoryOwnerSelect(githubAccountId);
   const selectedRemote = getGitRepositoryStore(projectId)?.pushRemote.name ?? 'origin';
   const canSubmitCreateRepository =
     githubAccountId !== null &&
     !settingsLoading &&
-    !ownersLoading &&
     !settingsError &&
-    !ownersErrorMessage &&
+    owners.state === 'value' &&
     repositoryName.trim().length > 0 &&
     !!owner;
   const isValid = tab === 'create' ? canSubmitCreateRepository : url.trim().length > 0;
@@ -98,7 +93,7 @@ export const AddRemoteModal = observer(function AddRemoteModal({
           return;
         }
         if (!owner) {
-          setError(ownersErrorMessage ?? 'No repository owner available');
+          setError('No repository owner available');
           return;
         }
 
@@ -228,30 +223,36 @@ export const AddRemoteModal = observer(function AddRemoteModal({
             </Field>
             <Field>
               <FieldLabel>{translate('remote.owner')}</FieldLabel>
-              <ComboboxPopover
-                trigger={
-                  <ComboboxTrigger
-                    render={
-                      <button className="flex h-9 w-full min-w-0 items-center justify-between rounded-md border border-border px-2.5 py-1 text-left text-sm outline-none">
-                        <ComboboxValue />
-                        <ChevronsUpDownIcon className="text-foreground-muted size-4 shrink-0" />
-                      </button>
-                    }
-                  />
-                }
-                items={owners}
-                defaultValue={owner}
-                value={owner}
-                onValueChange={handleOwnerChange}
-              />
+              {owners.state === 'value' ? (
+                <ComboboxPopover
+                  trigger={
+                    <ComboboxTrigger
+                      render={
+                        <button className="flex h-9 w-full min-w-0 items-center justify-between rounded-md border border-border px-2.5 py-1 text-left text-sm outline-none">
+                          <ComboboxValue />
+                          <ChevronsUpDownIcon className="text-foreground-muted size-4 shrink-0" />
+                        </button>
+                      }
+                    />
+                  }
+                  items={owners.value}
+                  value={owner}
+                  onValueChange={handleOwnerChange}
+                />
+              ) : githubAccountId !== null && owners.state === 'unknown' ? (
+                <Unknown className="h-9 w-full" />
+              ) : (
+                // No account to list owners of, or they could not be read: the field is there, nothing to choose.
+                <div className="h-9 w-full rounded-md border border-border opacity-50" aria-disabled="true" />
+              )}
               {githubAccountId === null && !settingsLoading && !settingsError && (
                 <p className="text-foreground-muted text-xs">
                   {translate('remote.selectGitHubAccount')}
                 </p>
               )}
               {settingsError && <p className="text-foreground-destructive text-xs">{settingsError}</p>}
-              {ownersErrorMessage && (
-                <p className="text-foreground-destructive text-xs">{ownersErrorMessage}</p>
+              {owners.state === 'error' && (
+                <ReadFailedLine className="text-foreground-destructive" message={owners.error.message} onRetry={retryOwners} />
               )}
             </Field>
             <Field>

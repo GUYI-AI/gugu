@@ -1,4 +1,3 @@
-import type { GitBranchRef } from '@gugu/session-core/git';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useSessionSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
@@ -15,9 +14,6 @@ export type CreateSessionState = ReturnType<typeof useCreateSessionState>;
 
 export function useCreateSessionState(
   projectId: string | undefined,
-  defaultBranch: GitBranchRef | undefined,
-  isUnborn: boolean,
-  currentBranch: string | null,
   repositoryWorkspaceId: string | null | undefined,
   initialPR?: PullRequest,
   initialLinkedType: LinkedType = null,

@@ -15,7 +15,9 @@ import { RelativeTime } from '@renderer/lib/ui/relative-time';
 import { cn } from '@renderer/utils/utils';
 import { commitRef, refsEqual } from '@shared/core/git/utils';
 import { ChangesListItem } from '../changes-list-item';
-import { useCommitFiles } from './use-commit-files';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { commitFiles, useCommitFiles } from './use-commit-files';
 import { type CommitRange, useCommits } from './use-commits';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -43,7 +45,7 @@ const EMPTY_EXPANDED_HASHES: ReadonlySet<string> = new Set();
 
 function commitRangeIdentity(range: CommitRange | undefined): string {
   if (!range) return 'none';
-  return `${range.source}:${range.baseRefOid}:${range.headRefOid}:${range.revision ?? 0}`;
+  return `${range.source}:${range.baseRefOid}:${range.headRefOid}`;
 }
 
 export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
@@ -60,13 +62,14 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     rangeIdentity,
     hashes: new Set(),
   }));
-  const { data, isFetchingNextPage, hasNextPage, fetchNextPage } = useCommits(
-    projectId,
-    workspaceId,
-    range
-  );
-
-  const commits = data?.pages.flatMap((page) => page.commits) ?? [];
+  const { translate } = useSessionMessages();
+  const { pages, hasMore, loadMore, retry } = useCommits(projectId, workspaceId, range);
+  // The pages read so far, up to the first one not read (yet, or at all): what follows it is not drawn out of order.
+  const pending = pages.findIndex((page) => page.state !== 'value');
+  const commits = (pending === -1 ? pages : pages.slice(0, pending))
+    .filter((page): page is Extract<typeof page, { state: 'value' }> => page.state === 'value')
+    .flatMap((page) => page.value.commits);
+  const waiting = pending === -1 ? null : pages[pending]!;
   const expandedHashes =
     expanded.rangeIdentity === rangeIdentity ? expanded.hashes : EMPTY_EXPANDED_HASHES;
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
@@ -85,7 +88,20 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     });
   };
 
-  if (commits.length === 0 && !isFetchingNextPage) {
+  if (!range) return <EmptyState label={emptyState.label} description={emptyState.description} />;
+  if (pending === 0 && waiting?.state === 'unknown') {
+    return (
+      <div className="flex flex-col gap-1 py-2">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Unknown key={index} className="h-[39px] w-full" />
+        ))}
+      </div>
+    );
+  }
+  if (pending === 0 && waiting?.state === 'error') {
+    return <ReadFailedLine className="px-3 py-2" message={translate('pr.commitsFailed')} onRetry={() => retry(0)} />;
+  }
+  if (commits.length === 0) {
     return <EmptyState label={emptyState.label} description={emptyState.description} />;
   }
 
@@ -111,14 +127,16 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
           );
         }}
       />
-      {hasNextPage && (
+      {waiting?.state === 'error' ? (
+        <ReadFailedLine className="justify-center py-2" message={translate('pr.commitsFailed')} onRetry={() => retry(pending)} />
+      ) : (waiting || hasMore) && (
         <div className="flex justify-center py-2">
           <button
             className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted transition-colors hover:text-foreground"
-            onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
+            onClick={loadMore}
+            disabled={!!waiting}
           >
-            {isFetchingNextPage ? 'Loading...' : 'Load more'}
+            {waiting ? 'Loading...' : 'Load more'}
           </button>
         </div>
       )}
@@ -206,7 +224,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
   const originalRef = useMemo(() => parentRefForCommit(commit), [commit]);
   const modifiedRef = useMemo(() => commitRefForCommit(commit), [commit]);
   const originalSha = useMemo(() => parentShaForCommit(commit), [commit]);
-  const filesQuery = useCommitFiles(projectId, workspaceId, commit.hash, true);
+  const files = useCommitFiles(projectId, workspaceId, commit.hash);
   const prefetchDiff = usePrefetchDiffModels(
     projectId,
     workspaceId,
@@ -261,23 +279,32 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
     );
   };
 
-  if (filesQuery.isLoading) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.loadingFiles')}</div>;
+  if (files.state === 'unknown') {
+    return (
+      <div className="pr-1 pb-1 pl-5">
+        <Unknown className="h-7 w-full" />
+      </div>
+    );
   }
 
-  if (filesQuery.isError) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.filesFailed')}</div>;
+  if (files.state === 'error') {
+    return (
+      <ReadFailedLine
+        className="px-6 py-2"
+        message={translate('pr.filesFailed')}
+        onRetry={() => void commitFiles.refresh(projectId, workspaceId, commit.hash)}
+      />
+    );
   }
 
-  const files = filesQuery.data ?? [];
-  if (files.length === 0) {
+  if (files.value.length === 0) {
     return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div>;
   }
 
   return (
     <div className="pr-1 pb-1 pl-5">
       <div className="flex flex-col gap-0.5">
-        {files.map((change) => (
+        {files.value.map((change) => (
           <ChangesListItem
             key={change.path}
             change={change}

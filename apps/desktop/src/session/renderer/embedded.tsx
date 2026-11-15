@@ -50,13 +50,11 @@ import { wireExtensionHostActions } from '@renderer/features/extensions/wire-ext
 import { setupAppCommandProvider } from '@renderer/lib/commands/app-commands';
 import { setupExtensionCommandProvider } from '@renderer/features/extensions/extension-command-provider';
 import { setupViewCommandProvider } from '@renderer/lib/commands/view-command-provider';
-import { wireCommitHistoryInvalidation } from '@renderer/lib/commit-history-invalidation';
 import { wireExternalLinkRequests } from '@renderer/lib/external-link-requests';
 import { wireSessionsOnScreenReport } from '@renderer/app/sessions-on-screen';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { wireModelRegistryInvalidation } from '@renderer/lib/text-model/invalidation-bridges';
 import { modelRegistry } from '@renderer/lib/text-model/model-registry';
-import { wirePrCacheInvalidation } from '@renderer/lib/pr-cache-invalidation';
 import { wireAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { log } from '@renderer/utils/logger';
@@ -218,9 +216,7 @@ async function bootstrap() {
   }
 
   wireModelRegistryInvalidation(modelRegistry);
-  wirePrCacheInvalidation();
   wireAgentReadings();
-  wireCommitHistoryInvalidation();
   wireExternalLinkRequests();
   // 屏上的会话报给主进程:闲置回收不停人正看着的会话(spec idle-reclaim「不在屏上」)。
   wireSessionsOnScreenReport();
