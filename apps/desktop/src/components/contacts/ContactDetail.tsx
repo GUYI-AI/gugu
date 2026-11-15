@@ -30,7 +30,6 @@ import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowA
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { ShareAgentModal } from './ShareAgentModal'
 import { cn } from '@/lib/cn'
-import { rendererLogger } from '@/lib/log'
 import { chatPublicId, displayName, userPublicId } from '../../lib/contactsListSort'
 import {
   ct, detailBlockClass, detailBodyClass, detailCaptionClass, detailNoticeClass, detailPlaceholderClass, detailTitleClass,

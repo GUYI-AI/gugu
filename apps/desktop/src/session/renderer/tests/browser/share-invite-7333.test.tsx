@@ -1,9 +1,11 @@
 import { act } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { contact, createNode, createReactHarness, deferred, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { i18n } from '@/i18n';
+import { openImRepository } from '@/lib/imRepository';
+import { createMemoryLocalSyncDb } from '@/lib/localSyncDb';
 import '@/i18n/registerContactsCatalog';
 import '@/styles/tokens.css';
 
@@ -114,6 +116,9 @@ describe('share and invite surfaces use the approved roles without changing acti
     const getSettings = vi.spyOn(chatService, 'getGroupChatSettings').mockReturnValue(settings.promise);
     vi.spyOn(chatService, 'getGroupCollab').mockResolvedValue({ snapshot: { humans: [], agents: [] }, identities: [] } as never);
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    // The QR section reads the group's roster through the account's IM library.
+    const repository = await openImRepository('user-1', { adapter: createMemoryLocalSyncDb() });
+    onTestFinished(() => repository.close());
     await render(createNode(GroupInviteQrShare, { group: { id: group.id, kind: 'group', name: group.name, public_id: 7333, member_count: 3, avatar_url: null, is_muted: false } }));
     expect(harness.container.querySelector('[data-testid="group-invite-copy-link"]')).toBeNull();
     await act(async () => settings.resolve({

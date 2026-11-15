@@ -10,8 +10,14 @@ const settingsLog = rendererLogger('chat/group-settings')
 
 type SettingsKey = keyof UpdateGroupChatSettingsInput & keyof GroupChatSettings
 
+// What the server derives from a field: a write that owns the field takes these from the answer too (a line with its own
+// threshold no longer follows the line above, so its effective threshold changes with it).
+const DERIVED: Partial<Record<SettingsKey, readonly (keyof GroupChatSettings)[]>> = {
+  agent_flood_threshold: ['agent_flood_threshold_effective'],
+}
+
 function pick(source: GroupChatSettings, keys: readonly SettingsKey[]): Partial<GroupChatSettings> {
-  return Object.fromEntries(keys.map((key) => [key, source[key]])) as Partial<GroupChatSettings>
+  return Object.fromEntries(keys.flatMap((key) => [key, ...(DERIVED[key] ?? [])]).map((key) => [key, source[key]])) as Partial<GroupChatSettings>
 }
 
 /**
@@ -65,6 +71,39 @@ export const groupSettings = replica({
   },
 })
 
+/**
+ * Write some of a group's settings, for every surface of the group: optimistic, then the server's answer for the fields
+ * this write still owns; a failure rolls back only those fields and is thrown to the caller (who says it its own way).
+ * Requires the settings to be read (there is no「before」to reconcile against otherwise).
+ */
+export async function writeGroupSettings(chatId: string, input: UpdateGroupChatSettingsInput): Promise<GroupChatSettings> {
+  const shown = groupSettings.peek(chatId)
+  if (shown.state !== 'value') throw new Error(`group settings of ${chatId} are not read yet`)
+  const before = shown.value
+  const w = writesOf(chatId)
+  const keys = Object.keys(input) as SettingsKey[]
+  const seq = ++w.seq
+  for (const key of keys) w.latest.set(key, seq)
+  const ownedKeys = () => keys.filter((key) => w.latest.get(key) === seq)
+  groupSettings.set([chatId], (current) => (current ? { ...current, ...input } as GroupChatSettings : current))
+  w.inFlight += 1
+  try {
+    const updated = await chatService.updateGroupChatSettings(chatId, input)
+    groupSettings.set([chatId], (current) => (current ? { ...current, ...pick(updated, ownedKeys()) } : updated))
+    return updated
+  } catch (err) {
+    groupSettings.set([chatId], (current) => (current ? { ...current, ...pick(before, ownedKeys()) } : current))
+    settingsLog.error({ error: err, chatId, fields: keys }, 'group settings update failed')
+    throw err
+  } finally {
+    w.inFlight -= 1
+    if (w.inFlight === 0 && w.rereadAfter) {
+      w.rereadAfter = false
+      void groupSettings.refresh(chatId)
+    }
+  }
+}
+
 export function useGroupChatSettings(chatId: string | null, revision?: string, authorityRevision = 0) {
   const { t } = useTranslation('messaging')
   const reading = useReplica(groupSettings, chatId ? [chatId] : null)
@@ -91,36 +130,18 @@ export function useGroupChatSettings(chatId: string | null, revision?: string, a
   }, [chatId, authorityRevision])
 
   const update = useCallback(async (input: UpdateGroupChatSettingsInput): Promise<boolean> => {
-    const shown = chatId ? groupSettings.peek(chatId) : null
-    if (!chatId || shown?.state !== 'value') {
+    if (!chatId || groupSettings.peek(chatId).state !== 'value') {
       // 设置还没读到(或读失败)时写,只会拿一个不存在的「之前」去对账 —— 明说,❌ 静默丢掉这次操作。
       setError({ chatId, message: t('group.settings.notLoaded') })
       return false
     }
-    const before = shown.value
-    const w = writesOf(chatId)
-    const keys = Object.keys(input) as SettingsKey[]
-    const seq = ++w.seq
-    for (const key of keys) w.latest.set(key, seq)
-    const ownedKeys = () => keys.filter((key) => w.latest.get(key) === seq)
     setError(null)
-    groupSettings.set([chatId], (current) => (current ? { ...current, ...input } as GroupChatSettings : current))
-    w.inFlight += 1
     try {
-      const updated = await chatService.updateGroupChatSettings(chatId, input)
-      groupSettings.set([chatId], (current) => (current ? { ...current, ...pick(updated, ownedKeys()) } : updated))
+      await writeGroupSettings(chatId, input)
       return true
     } catch (err) {
-      groupSettings.set([chatId], (current) => (current ? { ...current, ...pick(before, ownedKeys()) } : current))
-      settingsLog.error({ error: err, chatId, fields: keys }, 'group settings update failed')
       setError({ chatId, message: messageForUser(err) })
       return false
-    } finally {
-      w.inFlight -= 1
-      if (w.inFlight === 0 && w.rereadAfter) {
-        w.rereadAfter = false
-        void groupSettings.refresh(chatId)
-      }
     }
   }, [chatId, t])
 

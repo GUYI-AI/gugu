@@ -172,27 +172,36 @@ export const imSelectors = {
 
 // The account's repository once the chat provider has opened it, for readers that live outside the provider (read
 // models). The provider still opens and closes it; this only hands out the one that is open.
-type OpenedSlot = { promise: Promise<AccountImRepository>; resolve: (repository: AccountImRepository) => void; repository: AccountImRepository | null }
+type OpenedSlot = {
+  promise: Promise<AccountImRepository>
+  resolve: (repository: AccountImRepository) => void
+  reject: (error: unknown) => void
+  repository: AccountImRepository | null
+  failed: boolean
+}
 const openedRepositories = new Map<string, OpenedSlot>()
 
 function openedSlot(accountId: string): OpenedSlot {
   let slot = openedRepositories.get(accountId)
   if (!slot) {
     let resolve!: (repository: AccountImRepository) => void
-    const promise = new Promise<AccountImRepository>((done) => { resolve = done })
-    slot = { promise, resolve, repository: null }
+    let reject!: (error: unknown) => void
+    const promise = new Promise<AccountImRepository>((done, fail) => { resolve = done; reject = fail })
+    promise.catch(() => undefined) // a failed open is reported to whoever waits; nobody waiting is not an error
+    slot = { promise, resolve, reject, repository: null, failed: false }
     openedRepositories.set(accountId, slot)
   }
   return slot
 }
 
-/** The account's open repository; waits while the provider is still opening it. */
+/** The account's open repository; waits while the provider is still opening it, and fails if that open failed. */
 export function openedImRepository(accountId: string): Promise<AccountImRepository> {
   return openedSlot(accountId).promise
 }
 
 function publishOpened(repository: AccountImRepository): void {
-  if (openedRepositories.get(repository.accountId)?.repository) openedRepositories.delete(repository.accountId)
+  const previous = openedRepositories.get(repository.accountId)
+  if (previous?.repository || previous?.failed) openedRepositories.delete(repository.accountId)
   const slot = openedSlot(repository.accountId)
   slot.repository = repository
   slot.resolve(repository)
@@ -230,6 +239,9 @@ export async function openImRepository(
     return repository
   } catch (error) {
     if (options.adapter === undefined) adapter.close()
+    // Readers waiting for this account's repository learn that it did not open (a later open replaces this answer).
+    const slot = openedSlot(accountId)
+    if (!slot.repository) { slot.failed = true; slot.reject(error) }
     throw error
   }
 }
