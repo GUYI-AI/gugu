@@ -103,5 +103,5 @@ function RoomAgentChoice({ profile, userId, opener, onOpen }: {
     displayName: profile.displayName, avatar: profile.avatar, email: profile.email, bio: profile.bio ?? null, type: 'agent',
     session: { projectId: session.session.projectId, sessionId: session.session.conversationId } })}>{body}</Button>
   return <Popover.Trigger handle={opener.handle} payload={{ member: profile, openedFrom: opener.openedFrom }}
-    render={<Button {...props}>{null}</Button>}>{body}</Popover.Trigger>
+    render={<Button {...props}>{body}</Button>} />
 }

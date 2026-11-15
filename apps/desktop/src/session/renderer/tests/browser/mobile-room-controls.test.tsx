@@ -66,7 +66,9 @@ it('lists the main room and every topic with real unread values and dispatches t
 })
 
 it('opens the existing profile card for another person’s Agent without entering a DM',async()=>{
- await mount();await page.getByTestId('phone-room-agents').click();await page.getByTestId('phone-room-agent').click()
+ await mount();await page.getByTestId('phone-room-agents').click()
+ await expect.element(page.getByTestId('phone-room-agent')).toHaveTextContent('协作智能体')
+ await page.getByTestId('phone-room-agent').click()
  await until('existing profile card',()=>!!document.querySelector('[data-profile-member-id="peer-agent"]'))
  expect(onOpen).not.toHaveBeenCalled()
 })
