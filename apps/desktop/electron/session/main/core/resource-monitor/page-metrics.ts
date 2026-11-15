@@ -1,6 +1,7 @@
 import { webContents, type WebContents } from 'electron';
 import type { ResourcePageMetrics } from '@shared/resource-monitor';
 import type { RendererMetrics } from '@shared/renderer-metrics';
+import { acquireMonitorDebugger } from './debugger-lease';
 
 /**
  * Main-window page metrics for the resource monitor. Two cumulative sources, differenced against the last recorded
@@ -11,7 +12,6 @@ import type { RendererMetrics } from '@shared/renderer-metrics';
  *   Measured on macOS (11-07): on a whole-page restyle workload the cost stayed inside the ±1% resolution of the
  *   measurement; idle it was ~2 M instructions per 45 s. Still switchable off in settings.
  */
-const PROTOCOL_VERSION = '1.3';
 const COUNTERS = ['RecalcStyleDuration', 'LayoutDuration', 'RecalcStyleCount', 'LayoutCount', 'Nodes', 'JSEventListeners'] as const;
 type Counter = (typeof COUNTERS)[number];
 
@@ -27,8 +27,8 @@ export interface PageTotals {
   countersUnavailable?: ResourcePageMetrics['countersUnavailable'];
 }
 
-/** Windows whose Performance domain this module enabled; `own` = this module attached the debugger and may detach it. */
-const attached = new Map<number, { contents: WebContents; own: boolean }>();
+/** Windows whose Performance domain this module enabled; transport ownership is shared with active traces. */
+const attached = new Map<number, { contents: WebContents; release: () => void }>();
 let committed: PageTotals | null = null;
 /** Bumped on every detach, so a read still awaiting the debugger when monitoring or the counters stop never re-attaches. */
 let generation = 0;
@@ -37,11 +37,10 @@ const isMainWindow = (contents: WebContents) => !contents.isDestroyed() && conte
 
 async function attach(contents: WebContents): Promise<void> {
   if (attached.has(contents.id)) return;
-  const own = !contents.debugger.isAttached();
-  if (own) contents.debugger.attach(PROTOCOL_VERSION);
+  const release = acquireMonitorDebugger(contents);
   // Registered before the await: a detach while Performance.enable is pending undoes it too.
-  attached.set(contents.id, { contents, own });
-  const forget = () => { attached.delete(contents.id); };
+  attached.set(contents.id, { contents, release });
+  const forget = () => { attached.delete(contents.id); release(); };
   contents.debugger.once('detach', forget);
   contents.once('destroyed', forget);
   await contents.debugger.sendCommand('Performance.enable', { timeDomain: 'timeTicks' });
@@ -49,13 +48,13 @@ async function attach(contents: WebContents): Promise<void> {
 
 function detachAll(): void {
   generation += 1;
-  for (const { contents, own } of attached.values()) {
+  for (const { contents, release } of attached.values()) {
     try {
       if (contents.isDestroyed() || !contents.debugger.isAttached()) continue;
-      // Someone else's debugger (DevTools, another module) stays attached; only the domain this module enabled goes.
-      if (own) contents.debugger.detach();
-      else void contents.debugger.sendCommand('Performance.disable').catch(() => {});
+      // Release only our domain/lease; an active trace or an external debugger keeps its transport.
+      void contents.debugger.sendCommand('Performance.disable').catch(() => {});
     } catch { /* already gone */ }
+    finally { release(); }
   }
   attached.clear();
 }
