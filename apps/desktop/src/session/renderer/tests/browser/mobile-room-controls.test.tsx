@@ -22,10 +22,12 @@ const topics: TopicSummary[]=['设计讨论','一个用于检验窄屏与长名�
 const member: MemberProfileCardModel={id:'peer-agent',displayName:'协作智能体',avatar:null,email:null,type:'agent',ownerUserId:'another-owner',role:'member',membership:'current',profileScope:'group',agentStatus:'offline'}
 let harness: ReturnType<typeof createReactHarness> | null=null
 let onPick=vi.fn(),onOpen=vi.fn(),retry=vi.fn()
+let showTopicExternally: ((topic: TopicSummary | null) => void) | undefined
 function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed';selected?:TopicSummary|null}){
  const [handle]=useState(()=>Popover.createHandle<ActiveMemberProfile>())
+ const [current,setCurrent]=useState(selected);showTopicExternally=setCurrent
  return <>
-  <PhoneRoomComposerControls chatId="room" topics={topics} current={selected?{chatId:selected.chat_id,name:selected.name}:null} onPick={onPick} members={state==='ready'?[member]:[]}
+  <PhoneRoomComposerControls chatId="room" topics={topics} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={onPick} members={state==='ready'?[member]:[]}
    roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle,openedFrom:'main'}} onOpenAgent={onOpen} />
   <ChatComposer mobile editorOptions={{inputTestId:'room-editor'}} onSubmit={vi.fn()} />
   <MemberProfileRoot handle={handle}>{profile=><MemberProfilePopover profile={profile} onClose={()=>handle.close()} />}</MemberProfileRoot>
@@ -34,7 +36,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
 async function mount(theme:'light'|'dark'='dark',state:'ready'|'loading'|'failed'='ready',selected:TopicSummary|null=null){
  await page.viewport(360,780);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'8px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme mode={theme} locale="zh-CN" translate={translateSessionMessage}><MessageProvider><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3}),chat({id:'topic-1',kind:'topic',unread_count:1})]},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3}),chat({id:'topic-1',kind:'topic',unread_count:1})]},contacts:{contacts:[]}})
  await until('real composer',()=>!!harness?.container.querySelector('[contenteditable]'))
  return harness.container.querySelector<HTMLElement>('[contenteditable]')!
 }
@@ -60,7 +62,7 @@ it('lists the main room and every topic with real unread values and dispatches t
  await expect.element(page.getByLabelText('3 条未读',{exact:true})).toBeVisible()
  await expect.element(page.getByLabelText('1 条未读',{exact:true})).toBeVisible()
  await page.getByRole('radio',{name:/设计讨论/}).click()
- expect(onPick).toHaveBeenCalledExactlyOnceWith(topics[0]);expect(document.querySelector('[data-testid="phone-room-controls-sheet"]')).toBeNull()
+ expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(topics[0]!));await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
 })
 
 it('opens the existing profile card for another person’s Agent without entering a DM',async()=>{
@@ -72,7 +74,7 @@ it('opens the existing profile card for another person’s Agent without enterin
 it('shows the current topic name and does not toggle it closed when selected again',async()=>{
  await mount('dark','ready',topics[0]);await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('设计讨论')
  await page.getByTestId('phone-room-topics').click();await page.getByRole('radio',{name:/设计讨论/}).click()
- expect(onPick).not.toHaveBeenCalled();expect(document.querySelector('[data-testid="phone-room-controls-sheet"]')).toBeNull()
+ expect(onPick).not.toHaveBeenCalled();await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
  await page.getByTestId('phone-room-topics').click();await page.getByRole('radio',{name:'群聊',exact:true}).click()
  expect(onPick).toHaveBeenCalledExactlyOnceWith(null)
 })
@@ -91,4 +93,13 @@ it('does not present an unread roster as an empty group',async()=>{
  await mount('dark','loading');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByRole('status')).toHaveTextContent('正在读取智能体')
  expect(document.body.textContent).not.toContain('群里还没有智能体')
+})
+
+
+it('closes a retained room sheet when the host switches to another topic',async()=>{
+ await mount();await page.getByTestId('phone-room-topics').click()
+ await expect.element(page.getByRole('heading',{name:'话题',exact:true})).toBeVisible()
+ showTopicExternally?.(topics[1]!)
+ await until('external topic name',()=>document.querySelector('[data-testid="phone-room-topics"]')?.textContent?.includes(topics[1]!.name)===true)
+ await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
 })

@@ -30,7 +30,11 @@ export type PhoneRoomComposerControlsProps = {
   onOpenAgent?: (target: MemberProfileChatTarget) => void
 }
 
-export function PhoneRoomComposerControls({ chatId, topics, current, onPick, members, roster, userId, profileOpener, onOpenAgent }: PhoneRoomComposerControlsProps) {
+export function PhoneRoomComposerControls(props: PhoneRoomComposerControlsProps) {
+  return <RoomComposerControls key={`${props.chatId}:${props.current?.chatId ?? ''}`} {...props} />
+}
+
+function RoomComposerControls({ chatId, topics, current, onPick, members, roster, userId, profileOpener, onOpenAgent }: PhoneRoomComposerControlsProps) {
   const { t } = useTranslation('mobileRoomControls')
   const { chats } = useChatStore('chats')
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
