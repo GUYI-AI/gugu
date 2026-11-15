@@ -1,3 +1,4 @@
+import { PasswordSaveError } from './save-error'
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -238,9 +239,10 @@ export function installPasswordBetaHost(host: NativeHost): void {
  */
 async function agentSave(value: Account, caller: { agentId: string; sessionId: string }, subjects: string[], input: SaveProposal & { origin: string; credentialId?: string },
   context: GuguMcpContext | null, remote?: { agentName: string; sessionTitle: string; remote: string }) {
-  const origin = httpsOrigin(input.origin)
+  let origin: string
+  try { origin = httpsOrigin(input.origin) } catch { throw new VaultError('INVALID_INPUT') }
   const item = input.credentialId ? (await value.vault.list(person)).find(entry => entry.reference.id === input.credentialId) : undefined
-  if (input.credentialId && (!item || item.origin !== origin)) throw unavailable()
+  if (input.credentialId && (!item || item.origin !== origin)) throw new PasswordSaveError('CREDENTIAL_CHANGED')
   const fields = planAgentSave(item, subjects, input, randomUUID)
   if (item && fields) {
     const saved = await value.vault.save(person, randomUUID(), { origin, name: input.name, account: input.account ?? '', accountSecret: input.accountSecret,
