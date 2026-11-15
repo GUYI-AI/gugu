@@ -87,9 +87,11 @@ private final class Fixture {
     }
     func cleanup() throws -> GuguIOSRetirementCleanup { try .init(root: root, configuration: configuration, authorize: authorize, send: send) }
     func seedDeviceCAS(_ cas: [String: Any]) throws {
-        try store.update("requests", id: "retirement:\(retirementId)") { row in
-            row = ["status": "pending", "scopeKeys": [String](), "leases": [[String: String]](),
-                   "unknownKeys": [String](), "progress": [String: [String: Bool]](), "deviceConfirmed": false, "deviceCAS": cas]
+        try store.transaction { state in
+            var requests = state["requests"] as? [String: [String: Any]] ?? [:]
+            requests["retirement:\(retirementId)"] = ["status": "pending", "scopeKeys": [String](), "leases": [[String: String]](),
+                "unknownKeys": [String](), "progress": [String: [String: Bool]](), "deviceConfirmed": false, "deviceCAS": cas]
+            state["requests"] = requests
         }
     }
     func legacyDeviceCAS(applied: Bool) throws -> [String: Any] {
