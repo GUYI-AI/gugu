@@ -269,6 +269,26 @@ describe('conversation scroll memory', () => {
       rig.geometry()
     }
 
+    // A split opened or closed beside the conversation is not a new opening: the conversation stays (no switch), so where the
+    // reader is stays too and nothing is restored again, whether the panel re-renders or not.
+    it('a split toggled beside the same conversation keeps the reader where they are and does not restore again', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        rig.view.scrollTop = 700
+        await frames(5)
+        expect(rig.view.memory!.isPreservingPosition(), 'the opening restored and completed').toBe(false)
+        rig.view.scrollTop = 1_200 // the reader moves on
+        const ids = ['first', 'anchor', 'last']
+        await rig.render({ chatId: 'chat-a', messageIds: [...ids], rows: ids }) // the split toggles: same conversation, new props
+        await frames(5)
+        expect(rig.view.scrollTop, 'not pulled back to the saved row').toBe(1_200)
+        expect(rig.view.memory!.isPreservingPosition()).toBe(false)
+      } finally {
+        await rig.cleanup()
+      }
+    })
+
     // A7: where the conversation was read to is stored (the view-state table; this page keeps it in localStorage), so a
     // restart starts from it — the cache hands stored entries to the first frame.
     it('stores the position it leaves at, so a restart comes back to it', async () => {
