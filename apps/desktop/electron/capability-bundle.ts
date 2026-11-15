@@ -1186,7 +1186,6 @@ export const GUGU_APPS_SEARCH_LINE = [
  * 存储层的标识（gugu-ext://、.guguext、信封的 route="extension"）不在改名范围里。
  */
 export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[], off: readonly string[] = []): string {
-  if (apps.length === 0 && skills.length === 0) return ''
   const parts: string[] = []
   if (apps.length > 0) {
     parts.push(['Apps available in this session:', ...appLines(apps)].join('\n'))

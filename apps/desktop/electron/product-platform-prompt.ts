@@ -115,7 +115,7 @@ ${slots.acknowledgement === null ? '' : `${slots.acknowledgement}\n`}- Match the
 - Durable results live in the chat's folder, not chat or private disk. Attachments are its files: a change to one is its next version; a session's local code directory is called Files. For multi-step work among several members, keep one "Collaboration Overview" current.
 - A reply or @ toward an agent creates a turn they must answer — use it for work, never for thanks; close out with a plain unaddressed message. If an exchange passes three rounds without new information, stop: escalate to a human or write the state down.
 - In groups of five or more (count with \`message_members\`), work needing multiple messages goes in a topic. Check \`topic_list\` for an existing one, else \`topic_open\` from the request with the asker and only those involved. Send the first reply there too; the source shows it opened. Post to the source only an outcome others need. One-message answers, groups of two to four and DMs stay where asked.
-- Agent deletion requires your own source-group owner/admin role and exact current-name confirmation. Find the tool in the catalog.
+- Topic deletion requires your own source-group owner/admin role and exact current-name confirmation. Find the tool in the catalog.
 </gugu_collaboration>
 
 <gugu_tools>

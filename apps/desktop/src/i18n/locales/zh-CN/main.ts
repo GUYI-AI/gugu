@@ -3,7 +3,7 @@ export default {
     "contactCaption": "扫码加我为联系人",
     "contactFooter": "用咕咕连接你的 AI 协作网络",
     "noNumber": "咕咕号尚未分配，暂不能生成联系人名片。",
-    "proposal": "建议 · 待审核",
+    "proposal": "建议待审核",
     "invite": "邀请朋友",
     "summary": "分享邀请码，让朋友加入咕咕。邀请码选填，人人都能注册。",
     "code": "我的邀请码",
@@ -63,8 +63,8 @@ export default {
     "notSignedIn": "请先登录后将图片放进对话",
     "originalUnavailable": "原消息已不可用，无法回复。",
     "canvas": "标注画布",
-    "keyboardHint": "R 框 · A 箭头 · N 编号 · P 画笔 · T 文字 · M 马赛克 · C 裁剪 · 空格加拖动平移 · ⌘ +/− 缩放",
-    "touchHint": "单指绘制 · 双指缩放、平移 · 长按标注选择"
+    "keyboardHint": "R 框;A 箭头;N 编号;P 画笔;T 文字;M 马赛克;C 裁剪;空格加拖动平移;⌘ +/− 缩放",
+    "touchHint": "单指绘制，双指缩放或平移，长按选择标注。"
   },
   "firstRun": {
     "unreadableTitle": "读不到你的引导进度",
@@ -206,7 +206,7 @@ export default {
     "output": {
       "machineOnly": "只能在那台电脑上打开",
       "notOpened": "这条会话还没打开过这个文件。",
-      "editedNotOpened": "agent 改过 · 请在电脑上打开",
+      "editedNotOpened": "Agent 改过此文件，请在电脑上打开。",
       "fileMissing": "文件已经不在那台电脑上了。",
       "fileChanged": "读的时候文件被改了，再点一次。",
       "tooLarge": "文件太大，手机上最多看 {{limit}}。",
@@ -501,7 +501,7 @@ export default {
       "theme": "外观",
       "themePack": "主题",
       "themePackDefault": "咕咕默认",
-      "themePackValue": "深色：{{dark}} · 浅色：{{light}}",
+      "themePackValue": "深色：{{dark}}，浅色：{{light}}",
       "title": "通用"
     },
     "guguNumber": "咕咕号",
@@ -513,8 +513,8 @@ export default {
     "apps": {
       "intro": "装在这台手机上的 App:从聊天里的卡片装的，和从市场装的。咕咕自带的不在这里。",
       "empty": "还没有装过 App。",
-      "from": "{{version}} · 来自 {{name}}",
-      "fromMarket": "{{version}} · 来自咕咕市场",
+      "from": "版本 {{version}}，来自 {{name}}",
+      "fromMarket": "版本 {{version}}，来自咕咕市场",
       "updateTo": "更新到 {{version}}",
       "open": "打开"
     },
@@ -648,7 +648,7 @@ export default {
       "title": "暂时连不上服务器"
     },
     "settings": "设置",
-    "shareSubtitle": "Agent · 咕咕号 {{number}}",
+    "shareSubtitle": "Agent，咕咕号 {{number}}",
     "taskFrame": {
       "hostDisconnectedTitle": "会话页宿主未连接",
       "hostNotConnected": "会话页宿主未连接",
@@ -721,11 +721,11 @@ export default {
   "partners": {
     "search": "搜索",
     "noResults": "没有找到",
-    "projects": "项目 · {{count}}",
-    "friends": "朋友 · {{count}}",
-    "groupAgents": "群里遇到的 Agent · {{count}}",
-    "rooms": "群 · {{count}}",
-    "agents": "Agent · {{count}}",
+    "projects": "项目（{{count}}）",
+    "friends": "朋友（{{count}}）",
+    "groupAgents": "群里遇到的 Agent（{{count}}）",
+    "rooms": "群（{{count}}）",
+    "agents": "Agent（{{count}}）",
     "groupChat": "群聊",
     "assistant": "个人助理",
     "groupOffline": "项目所在的电脑不在线",

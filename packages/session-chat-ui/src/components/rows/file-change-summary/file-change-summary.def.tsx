@@ -46,7 +46,7 @@ const textWidth = (file: File, ctx: MeasureCtx) => ctx.width - BORDER - 24 - 40 
 /** Name, then 「已编辑 · +3 −0 · …/a/b」: both wrap where they must (never hidden), the row grows with them. */
 function fileLayout(file: File, ctx: MeasureCtx) {
   const name = readableLabel(basename(file.path), ctx, textWidth(file, ctx), 14, 20, 500)
-  const detailText = [rowTranslator(ctx)('transcript.edited'), statsText(file), lastTwoFolders(file.path)].filter(Boolean).join(' · ')
+  const detailText = [rowTranslator(ctx)('transcript.edited'), statsText(file), lastTwoFolders(file.path)].filter(Boolean).join(rowTranslator(ctx)('metadata.separator'))
   const description = readableLabel(detailText, ctx, textWidth(file, ctx), 12, 18)
   return { name, description, rowHeight: Math.max(OPENED_OUTPUT_ROW_H, name.height + description.height + 24) }
 }

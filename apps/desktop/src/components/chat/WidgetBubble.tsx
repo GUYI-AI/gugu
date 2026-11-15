@@ -96,7 +96,7 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
     {/* The link follows the text: an outgoing bubble keeps its time at the right of this line. */}
     <p className="whitespace-pre-wrap break-words text-[length:var(--font-caption)] text-[var(--text-secondary)]">
       <span data-widget-text>{widget.text}</span>
-      {!mounted ? <>{' · '}<Button variant="ghost" className="inline h-auto min-h-0 cursor-pointer border-0 p-0 align-baseline text-[length:inherit] font-normal leading-[inherit] underline underline-offset-2 [&:hover:not([data-disabled])]:bg-transparent hover:text-[var(--text-primary)] max-[719px]:min-h-0" onClick={presence.locate}>{t('message.reference.locateActive')}</Button></> : null}
+      {!mounted ? <>{' '}<Button variant="ghost" className="inline h-auto min-h-0 cursor-pointer border-0 p-0 align-baseline text-[length:inherit] font-normal leading-[inherit] underline underline-offset-2 [&:hover:not([data-disabled])]:bg-transparent hover:text-[var(--text-primary)] max-[719px]:min-h-0" onClick={presence.locate}>{t('message.reference.locateActive')}</Button></> : null}
     </p>
   </div>
 })

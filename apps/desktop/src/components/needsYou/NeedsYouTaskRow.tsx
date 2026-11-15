@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { formatCalendarDay } from '@/i18n/format'
 import { useChatStore } from '@/store/chatContext'
@@ -56,7 +57,7 @@ export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick
     </PhoneMessageAvatar>}
     title={emphasis ? name : <span className="font-normal text-[var(--muted-fg)]">{name}</span>}
     meta={Number.isFinite(time) ? formatCalendarDay(new Date(time).toISOString()) : undefined}
-    subtitle={state.length > 0 ? [...state, ...(title === name ? [] : [title])].join(' · ') : undefined}
+    subtitle={state.length > 0 ? [...state, ...(title === name ? [] : [title])].join(metadataSeparator()) : undefined}
     trailing={emphasis ? <Chip tone="accent" shape="count">1</Chip> : undefined}
   />
 })

@@ -1,4 +1,5 @@
 import { storedMessageLink } from '../../shared/ui/guguLink'
+import { SESSION_ATTACHMENTS_MARKER } from '../../cloud/sessionAttachments'
 import { encodeTypedId } from '../../shared/typedId.mjs'
 import { findMentionSpans } from '../../shared/mentionToken.mjs'
 import type { ChatKind, ListenMode } from '../../shared/types/chat'
@@ -102,6 +103,9 @@ export function arrivalHint(route: DeliveryRouteKind, mode: DeliveryMode | null 
   const hint = `Sent to you through 咕咕; what you print here does not reach the sender — reply with ${RETURN_TOOL_BY_ROUTE[route]}.`
   return route === 'chat' && chatKind === 'dm' ? `${hint} After replying through message_send, finish this turn without repeating the answer or adding a separate task summary here.` : hint
 }
+
+/** A session message's files are references (`withSessionAttachments`): the next step is said where they arrive. */
+const SESSION_FILES_ARRIVAL = 'Its files are references: message_download_file {source_attachment_id} saves one on this computer.'
 
 /** #6562 没有发送者的系统消息是通知:不是请求。 */
 export type DeliveryMode = 'notice' | 'task'
@@ -254,7 +258,7 @@ export function renderDeliveryEnvelope(facts: DeliveryEnvelopeFacts): string {
   // ⚠️ 批量外框 `renderDeliveryEnvelopes` 的 arrival 位置**不在本次改动内**(归 delivery-routing 治理)。
   lines.push(
     `<![CDATA[${toCdata(facts.content)}]]>`,
-    `  <arrival>${escapeXmlText(arrivalHint(facts.route, facts.mode ?? null, facts.chatKind, facts.ownDm === true, facts.arrival))}</arrival>`,
+    `  <arrival>${escapeXmlText(arrivalHint(facts.route, facts.mode ?? null, facts.chatKind, facts.ownDm === true, facts.arrival))}${facts.route === 'session-direct' && facts.content.includes(SESSION_ATTACHMENTS_MARKER) ? ` ${SESSION_FILES_ARRIVAL}` : ''}</arrival>`,
     '</gugu_delivery>',
   )
   return lines.join('\n')

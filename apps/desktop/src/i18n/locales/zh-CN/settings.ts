@@ -55,7 +55,7 @@ export default {
     "checkUpdates": "检查更新",
     "currentVersion": "当前版本",
     "iconAlt": "咕咕 App 图标",
-    "iconAttribution": "图标 · <iconSet>Solar Icon Set</iconSet> by 480 Design · CC BY 4.0",
+    "iconAttribution": "图标来自 <iconSet>Solar Icon Set</iconSet>，作者 480 Design，许可 CC BY 4.0",
     "releaseNotes": "更新说明",
     "restartToInstall": "有新版本，重启安装",
     "updateUpToDate": "已是最新版本",
@@ -168,7 +168,7 @@ export default {
     "noDefaultChannel": "不额外推送",
     "health": {
       "running": "正常收发",
-      "lastMessage": "正常收发 · 最近一条 {{time}}",
+      "lastMessage": "正常收发，最近一条消息在 {{time}}。",
       "starting": "正在连接",
       "broken": "这个连接失效了，断开后重新扫码",
       "retrying": "咕咕服务器暂时连不上微信，正在重试",
@@ -247,7 +247,7 @@ export default {
       "anyTime": "随时",
       "available_one": "{{window}}内最多能花 {{credits}} 积分",
       "available_other": "{{window}}内最多能花 {{credits}} 积分",
-      "breakdown": "会员额度 {{period}} · 不过期积分 {{wallet}}",
+      "breakdown": "会员额度 {{period}}，不过期积分 {{wallet}}",
       "daysLater": "{{count}} 天后",
       "daysLater_one": "{{count}} 天后",
       "daysLater_other": "{{count}} 天后",
@@ -491,7 +491,7 @@ export default {
       },
       "stepDetail": {
         "minutes": "约需几分钟",
-        "minutesElapsed": "约需几分钟 · 已用 {{elapsed}}"
+        "minutesElapsed": "约需几分钟，目前已用 {{elapsed}}。"
       },
       "presence": {
         "awake": "在线",
@@ -763,9 +763,9 @@ export default {
       "server": "添加一台服务器",
       "serverHint": "经 SSH 装上咕咕 server，智能体能在上面运行",
       "requirement": {
-        "mac": "macOS · Apple 芯片或 Intel 芯片",
-        "windows": "Windows 10 及以上 · x64",
-        "linux": "x64 · AppImage",
+        "mac": "macOS（Apple 芯片或 Intel 芯片）",
+        "windows": "Windows 10 及以上（x64）",
+        "linux": "x64 AppImage",
         "android": "Android 10 及以上"
       },
       "download": {
@@ -1000,7 +1000,7 @@ export default {
     "kept": "图片和标了「临时」的文件",
     "keptHint": "标了「临时」的文件，和手机在项目群里发的图片，在云端保存多久，到期自动删除。标了「持续保存」的不按时间删除；没人打开的大文件什么时候从云端删除，见上方「持续保存」旁的说明。只影响之后发的。",
     "keptDiffer": "现在图片是 {{images}}、临时文件是 {{temporary}}；改一次就对齐。",
-    "dashboard": {"title": "云端占用", "total": "你上传到云端的文件 · {{count}} 个", "files": "{{count}} 个", "classes": {"temporary": "临时文件", "image": "图片", "kept": "持续保存"}, "keptRuleLabel": "持续保存的规则", "keptRule": "持续保存的文件不按时间删除。{{size}} 以上、{{days}} 天没人打开的文件和图片会从云端删除，机器上的不受影响。项目群里的文件不受这条规则影响。标了「临时」的文件，和手机在项目群里发的图片，按下面设置的天数到期删除。", "keptRuleNoExpiry": "持续保存的文件不会从云端删除。标了「临时」的文件，和手机在项目群里发的图片，按下面设置的天数到期删除。", "clean": "从云端删除…", "cleanTitle": "从云端删除这些文件？", "cleanNote": "只删云端这一份，你机器上的文件还在。群里的人也将打不开这些文件。删除后无法恢复。", "confirmClean": "删除 {{size}}", "cancel": "取消", "soonTitle": "即将过期", "columns": {"name": "名称", "group": "群", "size": "大小", "expires": "多久后删除"}, "daysLeft": "还剩 {{count}} 天", "today": "今天", "showAll": "查看全部 {{count}} 个", "showLess": "收起", "machinesTitle": "在你的机器上", "machinesNote": "存在你的机器上，不占云端空间", "machineHint": "项目文件 {{count}} 个，共 {{size}} · 别人打开时传到云端 {{copies}}", "machineHintNone": "项目文件 {{count}} 个，共 {{size}} · 没有传到云端的"},
+    "dashboard": {"title": "云端占用", "total": "你上传到云端的文件共有 {{count}} 个", "files": "{{count}} 个", "classes": {"temporary": "临时文件", "image": "图片", "kept": "持续保存"}, "keptRuleLabel": "持续保存的规则", "keptRule": "持续保存的文件不按时间删除。{{size}} 以上、{{days}} 天没人打开的文件和图片会从云端删除，机器上的不受影响。项目群里的文件不受这条规则影响。标了「临时」的文件，和手机在项目群里发的图片，按下面设置的天数到期删除。", "keptRuleNoExpiry": "持续保存的文件不会从云端删除。标了「临时」的文件，和手机在项目群里发的图片，按下面设置的天数到期删除。", "clean": "从云端删除…", "cleanTitle": "从云端删除这些文件？", "cleanNote": "只删云端这一份，你机器上的文件还在。群里的人也将打不开这些文件。删除后无法恢复。", "confirmClean": "删除 {{size}}", "cancel": "取消", "soonTitle": "即将过期", "columns": {"name": "名称", "group": "群", "size": "大小", "expires": "多久后删除"}, "daysLeft": "还剩 {{count}} 天", "today": "今天", "showAll": "查看全部 {{count}} 个", "showLess": "收起", "machinesTitle": "在你的机器上", "machinesNote": "存在你的机器上，不占云端空间", "machineHint": "项目文件 {{count}} 个，共 {{size}}；别人打开时上传到云端的有 {{copies}}。", "machineHintNone": "项目文件 {{count}} 个，共 {{size}}，没有上传到云端的文件。"},
     "title": "文件存储",
     "entryHint": "你名下机器上的项目群：图片、其他文件怎么存，留多久；和普通群对照。",
     "projectTitle": "项目群",
@@ -1154,7 +1154,7 @@ export default {
       "less": "少",
       "more": "多",
       "none": "没有使用",
-      "tip": "{{date}} · {{value}}"
+      "tip": "{{date}}：{{value}}"
     },
     "hourTip_one": "{{hour}} 点 · {{count}} 个会话",
     "hourTip_other": "{{hour}} 点 · {{count}} 个会话",
@@ -1250,8 +1250,8 @@ export default {
     },
     "rhythm": "节奏",
     "rhythmEmpty": "这段时间还没有开过会话。",
-    "streaks_one": "连续 {{current}} 天 · 最长 {{longest}} 天 · 活跃 {{count}} 天",
-    "streaks_other": "连续 {{current}} 天 · 最长 {{longest}} 天 · 活跃 {{count}} 天",
+    "streaks_one": "连续 {{current}} 天，最长 {{longest}} 天，共活跃 {{count}} 天",
+    "streaks_other": "连续 {{current}} 天，最长 {{longest}} 天，共活跃 {{count}} 天",
     "syncError": "这台设备的最新数据没送上去，下面显示的是上一次的。",
     "syncing": "正在同步这台设备的最新数据…",
     "thisDevice": "（本机）",

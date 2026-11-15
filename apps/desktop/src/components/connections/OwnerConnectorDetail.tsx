@@ -57,7 +57,7 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
     {app.integration ? <AppConnectionHero icon={<IntegrationIcon provider={app.id} icon={app.integration.icon} size={56} />}
       description={app.description} label={t(app.saved ? 'connectors.reconnect' : 'connectors.connect')} onConnect={connect} disabled={!allowed} /> : null}
     {app.id === 'wechat' ? <fieldset className="contents" disabled={!allowed}><WechatAppConnection /></fieldset> : null}
-    {app.connectionStatus ? <p role="status">{app.name} · {app.connectionStatus}</p> : null}
+    {app.connectionStatus ? <p role="status">{app.name} : {app.connectionStatus}</p> : null}
     {!accounts.data ? <AppConnectionListPlaceholder /> : null}
     {accounts.data?.length ? <SettingsGroup title={copy('accounts')}>
       {accounts.data.map(row => <SettingsRow key={JSON.stringify([host.connectionMetadata?.ownerId,row.resource_key])}

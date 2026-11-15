@@ -176,7 +176,7 @@ export function FileStorageDashboard() {
                 content={overview.expiry ? t('fileStorage.dashboard.keptRule', { size: size(overview.expiry.large_file_bytes), days: Math.round(overview.expiry.idle_seconds / 86400) })
                   : t('fileStorage.dashboard.keptRuleNoExpiry')} /></span>}
               <b className="ml-1 font-medium text-[var(--fg)]">{size(overview.classes[name].bytes)}</b>
-              <span>&nbsp;· {t('fileStorage.dashboard.files', { count: overview.classes[name].count })}</span>
+              <span> {t('fileStorage.dashboard.files', { count: overview.classes[name].count })}</span>
             </span>
           ))}
         </div>

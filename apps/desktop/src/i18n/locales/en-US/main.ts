@@ -3,7 +3,7 @@ export default {
     "contactCaption": "Scan to add me as a contact",
     "contactFooter": "Connect your AI collaboration network with Gugu",
     "noNumber": "A contact card is unavailable until a Gugu number is assigned.",
-    "proposal": "Proposal · pending review",
+    "proposal": "Proposal pending review",
     "invite": "Invite friends",
     "summary": "Share an invitation code with friends. Codes are optional; anyone can register.",
     "code": "My invitation code",
@@ -63,8 +63,8 @@ export default {
     "notSignedIn": "Sign in to put the image in a chat",
     "originalUnavailable": "The original message is no longer available to reply to.",
     "canvas": "Annotation canvas",
-    "keyboardHint": "R rectangle · A arrow · N number · P pen · T text · M mosaic · C crop · Space + drag to pan · ⌘ +/− zoom",
-    "touchHint": "Draw with one finger · Pan and zoom with two fingers · Hold a mark to select it"
+    "keyboardHint": "R rectangle;A arrow;N number;P pen;T text;M mosaic;C crop;Space + drag to pan;⌘ +/− zoom",
+    "touchHint": "Draw with one finger, pan or zoom with two, and hold a mark to select it."
   },
   "firstRun": {
     "unreadableTitle": "Couldn't read your setup progress",
@@ -212,7 +212,7 @@ export default {
     "output": {
       "machineOnly": "Opens only on that computer",
       "notOpened": "This session hasn't opened this file yet.",
-      "editedNotOpened": "Edited by agent · Open on computer",
+      "editedNotOpened": "The agent edited this file. Open it on your computer.",
       "fileMissing": "The file is no longer on that computer.",
       "fileChanged": "The file changed while it was being read. Tap again.",
       "tooLarge": "The file is too large. The phone shows files up to {{limit}}.",
@@ -229,7 +229,7 @@ export default {
       "copyFailed": "Couldn't copy. Try again.",
       "saveFailed": "Couldn't save the file. Try again.",
       "readingStart": "Getting it from that computer…",
-      "reading": "Getting it from that computer · {{read}} / {{total}}"
+      "reading": "Reading from that computer: {{read}} of {{total}}."
     },
     "toolImages": {
       "failed": "Couldn't load · tap to retry",
@@ -507,7 +507,7 @@ export default {
       "theme": "Appearance",
       "themePack": "Theme",
       "themePackDefault": "Gugu default",
-      "themePackValue": "Dark: {{dark}} · Light: {{light}}",
+      "themePackValue": "Dark: {{dark}}, light: {{light}}",
       "title": "General"
     },
     "guguNumber": "Gugu ID",
@@ -519,8 +519,8 @@ export default {
     "apps": {
       "intro": "Apps installed on this phone — from cards in chats and from the market. The ones that come with Gugu are not listed.",
       "empty": "No App installed yet.",
-      "from": "{{version}} · from {{name}}",
-      "fromMarket": "{{version}} · from the Gugu market",
+      "from": "Version {{version}}, from {{name}}",
+      "fromMarket": "Version {{version}}, from the Gugu market",
       "updateTo": "Update to {{version}}",
       "open": "Open"
     },
@@ -564,8 +564,8 @@ export default {
       "fileAccessPurpose": "Opens project folders on your computer",
       "on": "On",
       "off": "Off",
-      "offPrompt": "Off · tap to turn on",
-      "offBlocked": "Off · turn on in system settings",
+      "offPrompt": "Off. Tap to turn on.",
+      "offBlocked": "Off. Turn it on in system settings.",
       "unknown": "Check system settings",
       "settingsUnreachable": "Couldn't open that screen. Open system settings yourself, find 咕咕, and turn on {{name}}.",
       "readFailed": "Couldn't read permission status from the system. Come back to this page to try again."
@@ -654,7 +654,7 @@ export default {
       "title": "Can't reach the server right now"
     },
     "settings": "Settings",
-    "shareSubtitle": "Agent · Gugu ID {{number}}",
+    "shareSubtitle": "Agent, Gugu ID {{number}}",
     "taskFrame": {
       "hostDisconnectedTitle": "Task host not connected",
       "hostNotConnected": "Task host is not connected",
@@ -727,11 +727,11 @@ export default {
   "partners": {
     "search": "Search",
     "noResults": "No results",
-    "projects": "Projects · {{count}}",
-    "friends": "Friends · {{count}}",
-    "groupAgents": "Agents met in groups · {{count}}",
-    "rooms": "Chats · {{count}}",
-    "agents": "Agents · {{count}}",
+    "projects": "Projects ({{count}})",
+    "friends": "Friends ({{count}})",
+    "groupAgents": "Agents met in groups ({{count}})",
+    "rooms": "Chats ({{count}})",
+    "agents": "Agents ({{count}})",
     "groupChat": "Group chat",
     "assistant": "Personal assistant",
     "groupOffline": "The computer with this project is offline",

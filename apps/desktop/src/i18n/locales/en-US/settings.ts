@@ -55,7 +55,7 @@ export default {
     "checkUpdates": "Check for updates",
     "currentVersion": "Current version",
     "iconAlt": "Gugu app icon",
-    "iconAttribution": "Icons · <iconSet>Solar Icon Set</iconSet> by 480 Design · CC BY 4.0",
+    "iconAttribution": "Icons from <iconSet>Solar Icon Set</iconSet> by 480 Design, licensed CC BY 4.0",
     "releaseNotes": "What's new",
     "restartToInstall": "Restart to install the update",
     "updateUpToDate": "You are on the latest version",
@@ -168,7 +168,7 @@ export default {
     "noDefaultChannel": "No extra delivery",
     "health": {
       "running": "Working",
-      "lastMessage": "Working · last message {{time}}",
+      "lastMessage": "Working. Last message at {{time}}.",
       "starting": "Connecting",
       "broken": "This connection no longer works; disconnect and scan again",
       "retrying": "Gugu's server can't reach WeChat right now, retrying",
@@ -247,7 +247,7 @@ export default {
       "anyTime": "any time",
       "available_one": "you can spend up to {{credits}} credit within {{window}}",
       "available_other": "you can spend up to {{credits}} credits within {{window}}",
-      "breakdown": "Plan allowance {{period}} · Non-expiring {{wallet}}",
+      "breakdown": "Plan allowance {{period}}, non-expiring {{wallet}}",
       "daysLater": "in {{count}} days",
       "daysLater_one": "in {{count}} day",
       "daysLater_other": "in {{count}} days",
@@ -491,7 +491,7 @@ export default {
       },
       "stepDetail": {
         "minutes": "Takes a few minutes",
-        "minutesElapsed": "Takes a few minutes · {{elapsed}} so far"
+        "minutesElapsed": "This takes a few minutes; {{elapsed}} has elapsed."
       },
       "presence": {
         "awake": "Online",
@@ -763,9 +763,9 @@ export default {
       "server": "Add a server",
       "serverHint": "Install Gugu server over SSH so agents can run there",
       "requirement": {
-        "mac": "macOS · Apple silicon or Intel",
-        "windows": "Windows 10 or later · x64",
-        "linux": "x64 · AppImage",
+        "mac": "macOS on Apple silicon or Intel",
+        "windows": "Windows 10 or later (x64)",
+        "linux": "x64 AppImage",
         "android": "Android 10 or later"
       },
       "download": {
@@ -814,9 +814,9 @@ export default {
     "loading": "Loading devices...",
     "loginState": {
       "reconnecting": "Reconnecting",
-      "updating": "Too old · updating…",
-      "updatingPercent": "Too old · updating {{percent}}%",
-      "updateFailed": "Too old · update failed",
+      "updating": "Outdated, updating…",
+      "updatingPercent": "Outdated, updating ({{percent}}%)",
+      "updateFailed": "Outdated, update failed",
       "retryUpdate": "Retry",
       "matchFailed": "Update failed",
       "matchRetrying": "Updating…",
@@ -1000,7 +1000,7 @@ export default {
     "kept": "Images and files marked “Temporary”",
     "keptHint": "How long files marked “Temporary”, and images sent from a phone in project groups, stay in the cloud before they are deleted. Files marked “Keep” are not deleted on a schedule; when a large unopened one is removed is shown beside “Kept” above. Applies to files sent from now on.",
     "keptDiffer": "Images now stay {{images}} and temporary files {{temporary}}; one change aligns them.",
-    "dashboard": {"title": "Cloud usage", "total": "of files you uploaded to the cloud · {{count}} files", "files_one": "{{count}} file", "files_other": "{{count}} files", "classes": {"temporary": "Temporary", "image": "Images", "kept": "Kept"}, "keptRuleLabel": "How kept files are kept", "keptRule": "Kept files are not deleted on a schedule. A file or image over {{size}} that nobody has opened for {{days}} days is deleted from the cloud; copies on your machines are not affected. Files in project groups are not affected by this rule. Files marked “Temporary”, and images sent from a phone in project groups, are deleted after the period set below.", "keptRuleNoExpiry": "Kept files are not deleted from the cloud. Files marked “Temporary”, and images sent from a phone in project groups, are deleted after the period set below.", "clean": "Delete from cloud…", "cleanTitle": "Delete these files from the cloud?", "cleanNote": "Only the cloud copy is deleted. Files on your machines stay. People in the group will no longer be able to open these files. This cannot be undone.", "confirmClean": "Delete {{size}}", "cancel": "Cancel", "soonTitle": "Expiring soon", "columns": {"name": "Name", "group": "Group", "size": "Size", "expires": "Deleted in"}, "daysLeft_one": "{{count}} day", "daysLeft_other": "{{count}} days", "today": "Today", "showAll": "Show all {{count}}", "showLess": "Show fewer", "machinesTitle": "On your machines", "machinesNote": "Stored on your machines, not in the cloud", "machineHint": "{{count}} project files, {{size}} · {{copies}} uploaded to the cloud while others open them", "machineHintNone": "{{count}} project files, {{size}} · nothing uploaded to the cloud"},
+    "dashboard": {"title": "Cloud usage", "total": "You uploaded {{count}} files to the cloud", "files_one": "{{count}} file", "files_other": "{{count}} files", "classes": {"temporary": "Temporary", "image": "Images", "kept": "Kept"}, "keptRuleLabel": "How kept files are kept", "keptRule": "Kept files are not deleted on a schedule. A file or image over {{size}} that nobody has opened for {{days}} days is deleted from the cloud; copies on your machines are not affected. Files in project groups are not affected by this rule. Files marked “Temporary”, and images sent from a phone in project groups, are deleted after the period set below.", "keptRuleNoExpiry": "Kept files are not deleted from the cloud. Files marked “Temporary”, and images sent from a phone in project groups, are deleted after the period set below.", "clean": "Delete from cloud…", "cleanTitle": "Delete these files from the cloud?", "cleanNote": "Only the cloud copy is deleted. Files on your machines stay. People in the group will no longer be able to open these files. This cannot be undone.", "confirmClean": "Delete {{size}}", "cancel": "Cancel", "soonTitle": "Expiring soon", "columns": {"name": "Name", "group": "Group", "size": "Size", "expires": "Deleted in"}, "daysLeft_one": "{{count}} day", "daysLeft_other": "{{count}} days", "today": "Today", "showAll": "Show all {{count}}", "showLess": "Show fewer", "machinesTitle": "On your machines", "machinesNote": "Stored on your machines, not in the cloud", "machineHint": "{{count}} project files totaling {{size}}; {{copies}} uploaded to the cloud while others open them.", "machineHintNone": "{{count}} project files totaling {{size}}, with none uploaded to the cloud."},
     "title": "File storage",
     "entryHint": "How project groups on your machines keep images and other files, and for how long; next to ordinary groups.",
     "projectTitle": "Project groups",
@@ -1154,7 +1154,7 @@ export default {
       "less": "Less",
       "more": "More",
       "none": "no activity",
-      "tip": "{{date}} · {{value}}"
+      "tip": "{{date}}: {{value}}"
     },
     "hourTip_one": "{{hour}}:00 · {{count}} task",
     "hourTip_other": "{{hour}}:00 · {{count}} tasks",
@@ -1250,8 +1250,8 @@ export default {
     },
     "rhythm": "Rhythm",
     "rhythmEmpty": "No tasks in this period yet.",
-    "streaks_one": "{{current}}-day streak · longest {{longest}} · {{count}} active day",
-    "streaks_other": "{{current}}-day streak · longest {{longest}} · {{count}} active days",
+    "streaks_one": "{{current}}-day streak, longest {{longest}}, {{count}} active day",
+    "streaks_other": "{{current}}-day streak, longest {{longest}}, {{count}} active days",
     "syncError": "Couldn't upload this device's latest data; showing the last upload.",
     "syncing": "Syncing this device's latest data…",
     "thisDevice": " (this device)",

@@ -118,7 +118,7 @@ export function presentAgentStatus(input: AgentStatusInput & { hostOnline?: bool
     case 'working':
       return reading.detail === 'parked' ? still('parked') : { tone: 'running', label: 'running', animate: true, emphasis: false }
     case 'needs_user':
-      return still('needs_user', reading.detail && reading.detail in WAIT_LABEL ? WAIT_LABEL[reading.detail as AgentWaitKind] : 'needsAction')
+      return still('needs_user', reading.detail && Object.hasOwn(WAIT_LABEL, reading.detail) ? WAIT_LABEL[reading.detail as AgentWaitKind] : 'needsAction')
     case 'error':
       return still('error')
     case 'idle':

@@ -103,7 +103,7 @@ async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ 
   const mentions = refs.map(({ file, label }) => {
     const target = file!.id as string;
     const name = target.replace(/\\/g, '/').split('/').pop() ?? target;
-    return stringifyMention({ label: typeof label === 'string' && label ? `${name} · ${label}` : name, target, kind: 'file' });
+    return stringifyMention({ label: typeof label === 'string' && label ? `${name} (${label})` : name, target, kind: 'file' });
   });
   return { session: { id, projectId }, text: `${draftWithPills(typeof args.text === 'string' ? args.text.trim() : '', mentions.join(' '))}\n` };
 }

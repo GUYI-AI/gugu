@@ -91,6 +91,6 @@ function AnnotationCanvas({ item, image, imageBounds, mobile, onCancel, onDone }
     </div>
     {mobile ? notes : null}
     <AnnotateToolbar editor={editor} />
-    <p className="ia-hint">{t(mobile ? 'touchHint' : 'keyboardHint')}<span className="ia-sr-only">{annotateCaption(editor.doc, '', true)}</span></p>
+    <p className="ia-hint">{mobile ? t('touchHint') : t('keyboardHint').split(';').map(hint => <span key={hint} className="ia-shortcut">{hint}</span>)}<span className="ia-sr-only">{annotateCaption(editor.doc, '', true)}</span></p>
   </div>
 }

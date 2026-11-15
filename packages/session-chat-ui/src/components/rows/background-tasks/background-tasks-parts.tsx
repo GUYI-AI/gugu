@@ -118,7 +118,7 @@ function backgroundTaskMetaText(agent: SubagentRosterEntry, translate: ChatTrans
       ? translate(agent.completedSteps === 1 ? 'transcript.backgroundTasks.stepsOne' : 'transcript.backgroundTasks.steps', { count: agent.completedSteps })
       : '',
     elapsed,
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(translate('metadata.separator'));
 }
 
 /** 量高用的最坏单位串:秒/分的任何实时值都不会比 `00m00s` 宽,小时不会比 `00h00m` 宽(评审)。 */
@@ -164,7 +164,7 @@ export function backgroundTasksLabel(
     parts.push(translate(commandCount === 1 ? 'transcript.backgroundTasks.commandsOne' : 'transcript.backgroundTasks.commands', { count: commandCount }));
   if (agentCount > 0)
     parts.push(translate(agentCount === 1 ? 'transcript.backgroundTasks.subagentsOne' : 'transcript.backgroundTasks.subagents', { count: agentCount }));
-  return translate('transcript.backgroundTasks.label', { parts: parts.join(' · ') });
+  return translate('transcript.backgroundTasks.label', { parts: parts.join(translate('metadata.separator')) });
 }
 
 /** 悬停开 / 离开关的延时(原来摘要卡同一对):扫过去不闪,从行挪到浮层上的那一下不关。 */

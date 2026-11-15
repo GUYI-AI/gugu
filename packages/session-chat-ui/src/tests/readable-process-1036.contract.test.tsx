@@ -14,6 +14,7 @@ import { toolRunUnitDef } from '@session-chat/components/rows/tool-run/tool-run.
 import { sessionNoticeUnitDef } from '@session-chat/components/rows/boundary/session-notice.def';
 import { backgroundTasksUnitDef } from '@session-chat/components/rows/background-tasks/background-tasks.def';
 import { makeContractCtx, renderAndMeasureUnit } from './contract';
+import { defaultChatTranslator } from '@session-chat/localization';
 
 /** Text must fit its painted box, not merely survive in textContent/title. */
 function textBounds(host: HTMLElement) {
@@ -40,6 +41,27 @@ function textBounds(host: HTMLElement) {
 }
 
 describe('readable process rows at real split-column widths (#1036)', () => {
+  it('keeps the translated process summary within its offscreen measurement without a middle-dot join', async () => {
+    for (const width of [198, 430]) for (const chinese of [false, true]) for (const live of [false, true]) {
+      const ctx = makeContractCtx({ width, theme: { ...DEFAULT_THEME, layout: { ...DEFAULT_THEME.layout, agentConversation: true } } });
+      ctx.translate = (key, args) => key === 'metadata.separator' ? chinese ? '，' : ', ' : key === 'transcript.processSteps'
+        ? chinese ? `${args?.count} 步` : `${args?.count} steps`
+        : defaultChatTranslator(key, args);
+      const startedAt = 1000;
+      const result = await renderAndMeasureUnit(turnProcessUnitDef, {
+        kind: 'turn-process', id: 'copy-summary', turnId: 't', live, steps: 9, startedAt, endedAt: startedAt + 39000,
+      }, ctx, host => ({ ...textBounds(host),
+        hasSummary: host.textContent?.includes(chinese ? '39s，9 步' : '39s, 9 steps') ? 1 : 0,
+        hasSeparator: host.textContent?.includes('\u00b7') ? 1 : 0,
+      }), { conversationClock: () => startedAt + 39000 });
+      expect(result.inspected.hasSummary).toBe(1);
+      expect(result.inspected.hasSeparator).toBe(0);
+      expect(result.inspected.hidden).toBeLessThanOrEqual(1);
+      expect(result.dom).toBe(result.computed);
+      expect(result.spill).toBeLessThanOrEqual(1);
+    }
+  });
+
   for (const width of [198, 430, 724]) {
     it(`shows the complete process summary at ${width}px`, async () => {
       const result = await renderAndMeasureUnit(toolRunUnitDef, {

@@ -307,7 +307,7 @@ describe('设备行', () => {
     const actions = buildPhoneActionsCapability(ALL_ON, osState())
     const row = phoneDeviceRow({ deviceId: 'phone-i-u', userId: 'u', installId: 'i', info, actions, nowIso: '2026-10-15T04:00:00.000Z' })
     expect(row).toMatchObject({ device_id: 'phone-i-u', platform: 'android', tier: 'cloudtest', status: 'online', machine_id: 'i' })
-    expect(row.capabilities).toMatchObject({ host_kind: 'phone', os_name: 'Android 15 · HyperOS OS2.0', app_version: '0.2.55', actions })
+    expect(row.capabilities).toMatchObject({ host_kind: 'phone', os_name: 'Android 15 (HyperOS OS2.0)', app_version: '0.2.55', actions })
     expect(row.capabilities).not.toHaveProperty('host_runtime_capability')
   })
 
@@ -380,7 +380,7 @@ describe('「后台守着」常驻通知两家共用', () => {
   beforeEach(() => platformMock.setBackgroundWatch.mockClear())
 
   it('两句都在时并排写,看管机器在前', () => {
-    expect(backgroundWatchLabel(new Map([['phoneDevice', { label: 'B' }], ['agentWatch', { label: 'A' }]]))).toBe('A · B')
+    expect(backgroundWatchLabel(new Map([['phoneDevice', { label: 'B' }], ['agentWatch', { label: 'A' }]]))).toBe('A，B')
     expect(backgroundWatchLabel(new Map())).toBeNull()
   })
 

@@ -33,7 +33,8 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
 /** The same task-file reference text in desktop and phone composers. */
 export function workspaceFileQuote(path: string, selection: FileViewerSelection | null): string {
   const name = path.replace(/\\/g, '/').split('/').pop() ?? path;
-  const label = [name, selection && selectionPosition(selection)].filter(Boolean).join(' · ');
+  const position = selection && selectionPosition(selection);
+  const label = `${name}${position ? ` (${position})` : ''}`;
   const mention = stringifyMention({ label, target: path, kind: 'file' });
   return selection ? draftWithPills(selectedTextQuote(selection), mention) : mention;
 }

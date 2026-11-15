@@ -138,7 +138,7 @@ export function FileTextContent({ content, kind, fileName, style, onAnnotate }: 
             className="gg-file-annotation-popup" data-editing={editing || undefined} data-failed={failed || undefined} aria-label={t(editing ? 'fileAnnotation.comment' : 'fileAnnotation.addToChat')}>
             {!editing ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => setEditing(true)}>{t('fileAnnotation.addToChat')}</Button>
               : <>
-                <form className="gg-file-annotation-form" aria-label={`${fileName} · ${t(selection.quote.startLine === selection.quote.endLine ? 'fileAnnotation.line' : 'fileAnnotation.lines', { start: selection.quote.startLine, end: selection.quote.endLine })}`}
+                <form className="gg-file-annotation-form" aria-label={`${fileName} (${t(selection.quote.startLine === selection.quote.endLine ? 'fileAnnotation.line' : 'fileAnnotation.lines', { start: selection.quote.startLine, end: selection.quote.endLine })})`}
                   onSubmit={event => { event.preventDefault(); void save() }}>
                   <input type="text" autoFocus aria-label={t('fileAnnotation.optionalComment')} placeholder={t('fileAnnotation.optionalComment')}
                     value={annotation} disabled={saving} onChange={event => setAnnotation(event.target.value)}

@@ -114,7 +114,7 @@ describe('durable provider failure notice', () => {
   it('offers no model change for a reason another model would not get past', async () => {
     await harness.render(createNode(SystemMessageNotice, { senderName: 'Codex 1', message: failureRow('rateLimited') }))
     expect(harness.container.querySelector('.tfc-title')?.textContent).toBe('请求太频繁')
-    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('请求过于频繁，请稍后重试。 · 下条消息会自动再试')
+    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('请求过于频繁，请稍后重试。 下条消息会自动再试')
     expect(harness.container.querySelector('[data-testid="agent-turn-failure-retry"]')).toBeNull()
   })
   it('shows a row whose reason it cannot read (an old Chinese row, an unknown reason) as its plain content', async () => {
@@ -177,12 +177,12 @@ describe('shared failure card behavior', () => {
   it('folds a recovered run and expands the same counted card without offering stream retry', async () => {
     await harness.render(createNode(SystemMessageNotice, { message, senderName: 'Codex' }))
     const summary = harness.container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!
-    expect(summary.textContent).toBe('Codex 之前 3 次没有完成 · 已恢复')
+    expect(summary.textContent).toBe('Codex 之前 3 次未完成，现已恢复。')
     expect(harness.container.querySelector('[role="status"]')).toBeNull()
     await clickElement(summary)
     expect(summary.getAttribute('aria-expanded')).toBe('true')
     expect(harness.container.querySelector('.tfc-count')?.textContent).toBe('×3')
-    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('与模型服务的连接中断，本次回复未完成。 · 下条消息会自动再试')
+    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('与模型服务的连接中断，本次回复未完成。 下条消息会自动再试')
     expect(harness.container.querySelector('[data-testid="agent-turn-failure-retry"]')).toBeNull()
     expect(harness.container.textContent).not.toContain('private host cause')
   })

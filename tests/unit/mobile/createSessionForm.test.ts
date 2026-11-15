@@ -53,7 +53,7 @@ describe('新建页的模型那一格(#5014 续)', () => {
   it('选了模型:胶囊第三段写它收起时的名字(咕咕的带「咕咕」,与桌面触发器同词);目录还没到时退回写 id,❌ 不留空', () => {
     const selection = { ...defaultSelection(options), model: 'platform:gpt-6' }
     expect(createPillLabel(options, selection, catalog('codex', ['gpt-5', 'platform:gpt-6']))).toBe(
-      `Codex · ${translateSessionMessage('composer.platformModelShortName', { model: 'gpt-6' })}`,
+      `Codex，${translateSessionMessage('composer.platformModelShortName', { model: 'gpt-6' })}`,
     )
     expect(selectedModelName(catalog('codex', ['gpt-5']), { ...selection, model: 'gpt-5' })).toBe('gpt-5')
     expect(selectedModelName(null, selection)).toBe('platform:gpt-6')
@@ -75,7 +75,7 @@ describe('新建页的模型那一格(#5014 续)', () => {
     const picked = { ...defaultSelection(options), effort: 'high' }
     expect(reconcileModel(picked, catalog('codex', ['gpt-5']))).toBe(picked)
     expect(reconcileModel({ ...picked, effort: 'ultra' }, catalog('codex', ['gpt-5'])).effort).toBeNull()
-    expect(createPillLabel(options, picked, catalog('codex', ['gpt-5']))).toBe('Codex · High')
+    expect(createPillLabel(options, picked, catalog('codex', ['gpt-5']))).toBe('Codex，High')
   })
 
   it('新目录到了:选中的模型不在里面就退回默认;目录没到 / 是另一家的不动', () => {

@@ -136,6 +136,9 @@ public class MobileShellChrome extends Plugin {
         int color = ContextCompat.getColor(window.getContext(),
                 dark ? R.color.gugu_mobile_shell_bar_dark : R.color.gugu_mobile_shell_bar_light);
         window.setBackgroundDrawable(new ColorDrawable(color));
+        // SystemBars paints the decor separately from the Window on configuration changes.
+        // On edge-to-edge Android the exposed system-bar margins show this background.
+        window.getDecorView().setBackgroundColor(color);
         // Android 14 and earlier still draw opaque bars; their default scrim does not follow the page.
         if (Build.VERSION.SDK_INT < 35) {
             window.setStatusBarColor(color);

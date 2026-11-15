@@ -9,6 +9,7 @@ import {
   PRODUCT_CAPABILITY_PACKAGES,
   type Materialization,
   type SessionCapabilityBundle,
+  guguAppsBlock,
   guguSessionSurfaceBlock,
 } from '../../../../apps/desktop/electron/capability-bundle';
 import {
@@ -20,7 +21,7 @@ import { pluginRegistry, resolveSessionTuiDeliveryToolNames } from '@gugu/sessio
 // #3577：会话自述 = 平台常量 + 该 surface 的自述块；这张表的每一行都是 session-TUI。
 // #6192：自述块里还有这一家 harness 的工具名那一行,所以按 provider 合成。
 const promptFor = (providerId: string) =>
-  `<gugu_platform>P</gugu_platform>\n${guguSessionSurfaceBlock('tui', providerId, false)}<agent_identity>A</agent_identity>\n`;
+  `<gugu_platform>P</gugu_platform>\n${guguSessionSurfaceBlock('tui', providerId, false)}${guguAppsBlock([], [])}<agent_identity>A</agent_identity>\n`;
 const PROMPT = promptFor('claude');
 const CWD = '/tmp/gugu-tui-launch-contract';
 const GUGU_HOME = '/tmp/gugu-tui-launch-contract-home';

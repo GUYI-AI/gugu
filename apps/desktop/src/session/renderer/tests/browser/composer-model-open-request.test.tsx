@@ -17,8 +17,8 @@ import '@renderer/index.css'
  * ❌ 宿主去 DOM 里找触发器 click(那是拿测试锚点当产品接口)。阴控:0 / 缺省不开。
  */
 const MODELS = {
-  'platform:glm-5.3': { name: 'GLM 5.3', groupLabel: '咕咕提供的模型 · 按积分计费' },
-  'platform:deepseek-v4-flash': { name: 'DeepSeek V4 Flash', groupLabel: '咕咕提供的模型 · 按积分计费' },
+  'platform:glm-5.3': { name: 'GLM 5.3', groupLabel: '咕咕模型按积分计费' },
+  'platform:deepseek-v4-flash': { name: 'DeepSeek V4 Flash', groupLabel: '咕咕模型按积分计费' },
 }
 
 const refresh = vi.fn()

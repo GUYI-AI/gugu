@@ -206,7 +206,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
                   {task.title || task.prompt}
                 </div>
                 <div style={{ fontSize: 'var(--font-caption)', color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  {intervalLabel(task.intervalSeconds, t)} · {nextRunLabel(task.nextRunAt, task.enabled, t)}
+                  {intervalLabel(task.intervalSeconds, t)}  {nextRunLabel(task.nextRunAt, task.enabled, t)}
                 </div>
               </div>
               <button

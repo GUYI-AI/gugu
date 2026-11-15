@@ -307,7 +307,7 @@ describe('agent-centered conversation bubbles', () => {
   it('writes the step count after the duration on the process line', async () => {
     const view = await mount({ kind: 'message', id: 'counted', role: 'assistant', text: '好了', conversationProcess: { id: 'counted:process', startedAt: 1000, endedAt: 75000, steps: 10 } });
     try {
-      expect(view.host.querySelector('[data-conversation-process]')?.textContent).toBe('1m14s · 10 steps›');
+      expect(view.host.querySelector('[data-conversation-process]')?.textContent).toBe('1m14s, 10 steps›');
     } finally { view.dispose(); }
   });
   it('keeps a zero-body process clock without a disclosure arrow or action', async () => {
@@ -674,7 +674,7 @@ it.each([220, 320, 600])('puts a repeated speaker message reference before its p
     const quote = view.host.querySelector<HTMLButtonElement>('[data-slot="conversation-quote"]')!;
     const process = view.host.querySelector<HTMLElement>('[data-conversation-process]')!;
     expect(quote.textContent).toBe(''); expect(view.host.textContent).not.toContain('旧消息');
-    expect(view.host.querySelector('[data-slot="conversation-reference-separator"]')?.textContent).toBe('·');
+    expect(view.host.querySelector('[data-slot="conversation-reference-separator"]')?.textContent).toBe(' ');
     expect(quote.getBoundingClientRect().right).toBeLessThan(process.getBoundingClientRect().left);
     expect(process.getBoundingClientRect().right).toBeLessThanOrEqual(view.host.getBoundingClientRect().right + 1);
     expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
@@ -807,7 +807,7 @@ it.each([188, 220, 320])('keeps a completed duration and step count on one line 
     const process = header.querySelector<HTMLElement>('[data-conversation-process]')!;
     expect(process.getBoundingClientRect().height, 'time and steps are an atomic line').toBe(22);
     expect(header.getBoundingClientRect().height).toBe(28);
-    expect(process.textContent).toContain('6s · 1 step');
+    expect(process.textContent).toContain('6s, 1 step');
     expect(process.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right + 1);
     assertVisiblePrefix(header.querySelector<HTMLElement>('[title]')!, header);
   } finally { view.dispose(); }

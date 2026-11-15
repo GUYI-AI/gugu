@@ -303,7 +303,7 @@
   line-height: 1.3;
   cursor: pointer;
 }
-/* Not a chat bubble's `a.gg-file-pill`: that is an inline run with its own label cut (below), left as it was. */
+/* Chat file/link pills have their own width constraint below. */
 .gg-md .gg-md-mention:not(.gg-file-pill) { max-width: 100%; vertical-align: bottom; }
 /* One line, cut at the end: a long file name or a cited place never wraps the pill across the bubble. The name gives way;
    the place after it (` · 第 4 行`) stays whole, up to 60% of the pill, so the name always keeps the rest. */
@@ -351,7 +351,12 @@
    the way Zulip draws a mention — body-sized text in the body colour on a tight link-tinted fill, deeper on hover — not as
    a boxed chip. A long label is cut with an ellipsis rather than pushing the bubble wider (a phone's width). */
 .gg-md a.gg-file-pill {
-  display: inline;
+  display: inline-flex;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  gap: 0;
+  vertical-align: bottom;
   padding: 0 3px;
   border-radius: 3px;
   box-shadow: none;
@@ -367,7 +372,7 @@
 [data-theme='dark'] .gg-md a.gg-file-pill:hover { background: color-mix(in srgb, var(--md-link) 45%, transparent); }
 .gg-md a.gg-file-pill .gg-md-mention-icon { display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.2em; vertical-align: -0.08em; }
 .gg-md a.gg-file-pill .gg-md-mention-icon svg { width: 100%; height: 100%; }
-.gg-md a.gg-file-pill .gg-file-pill-label { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.gg-md a.gg-file-pill .gg-file-pill-label { display: inline-block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 /* A reference the reader cannot open (LinkPill): the link tint goes, leaving muted text on the neutral fill; the reason
    is its title. */
 .gg-md a.gg-file-pill[data-unavailable='true'],

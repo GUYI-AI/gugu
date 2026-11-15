@@ -822,7 +822,7 @@ const MOCK_GROUPED_MODELS: Record<string, ComposerModelOption> = {
   'glm-5.2': {
     name: 'GLM 5.2 ×0.3',
     description: '按积分计费，不用自带 Key。',
-    groupLabel: '咕咕提供的模型 · 按积分计费',
+    groupLabel: '咕咕模型按积分计费',
   },
 };
 

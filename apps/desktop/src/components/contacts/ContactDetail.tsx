@@ -471,7 +471,7 @@ export function GroupChatRow({
         title={groupDisplayName(group)}
         subtitle={
           <>
-            {kindLabel} · {publicId ? `${ct('groupInvite.groupNumber', { number: publicId })} · ` : ''}
+            {kindLabel}  {publicId ? `${ct('groupInvite.groupNumber', { number: publicId })} ` : ''}
             {ct('groupDetail.memberCount', { count: group.member_count })}
           </>
         }

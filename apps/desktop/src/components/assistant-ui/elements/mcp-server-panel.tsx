@@ -112,7 +112,7 @@ export function McpServerPanel({
                     {server.transport}
                   </span>
                   <span className={cn(mono, "text-foreground/30")}>
-                    · {LABEL[server.status]}
+                     {LABEL[server.status]}
                   </span>
                   {server.status === "needs-auth" && onAuthorize && (
                     <button

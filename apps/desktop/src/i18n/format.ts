@@ -1,5 +1,6 @@
 import {
   formatNumber as formatNumberValue,
+  metadataSeparator as metadataSeparatorValue,
   formatDate as formatDateValue,
   formatRelativeTimeParts as formatRelativeParts,
   type DateValue,
@@ -55,4 +56,9 @@ export function formatRelativeTimeParts(
 
 export function formatRelativeTime(value: DateValue | null | undefined, options: FormatRelativeTimeOptions = { mode: 'elapsed' }): string | null {
   return formatRelativeTimeParts(value, options)?.map((part) => part.value).join('') ?? null
+}
+
+/** Metadata punctuation follows the same language as the rendered words. */
+export function metadataSeparator(localeOverride?: string): string {
+  return metadataSeparatorValue(localeOverride ?? i18n.resolvedLanguage ?? i18n.language)
 }
