@@ -9,12 +9,6 @@
  *
  * 每条判据都带必失败对照(变异构造为显式测试用例,红以「断言变异后必然出现坏结果」的形式常驻)。
  */
-import { mkdtempSync, rmSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { createNodeFileResolver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
-import { createHash } from 'node:crypto'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   __pullOnceUnguardedForTests,
@@ -193,7 +187,8 @@ class FakeCloud {
   }
 }
 
-type Injection = { messageId?: string } & Pick<AgentInboxInjectionInput, 'text' | 'attachments'>
+/** `keys`: the fields the reader handed over, so a test can say which are absent. */
+type Injection = { messageId?: string; keys?: string[] } & Pick<AgentInboxInjectionInput, 'text'>
 
 function makeDeps(
   cloud: FakeCloud,
@@ -207,7 +202,7 @@ function makeDeps(
     agentSpokeAfter: async () => false,
     groupRulesLedger: memoryGroupRulesLedger(),
     inject: async (input) => {
-      injections.push({ messageId: input.sourceMessageId, text: input.text, attachments: input.attachments })
+      injections.push({ messageId: input.sourceMessageId, text: input.text, keys: Object.keys(input) })
       return 'accepted' as AgentInboxInjectionVerdict
     },
     wake: (agentUserId) => { wakes.push(agentUserId) },
@@ -1022,59 +1017,44 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     expect(cloud.watermark(chat, AGENT)).toBe(0)
   })
 
-  it('inbox entries are admitted one by one while attachments remain solo', async () => {
-    const cloud = new FakeCloud()
-    cloud.addChat('00000000-0000-4000-8000-000000000005', 'group')
-    cloud.join('00000000-0000-4000-8000-000000000005', AGENT, { listenMode: 'active' })
-    cloud.join('00000000-0000-4000-8000-000000000005', HUMAN)
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000017', seq: 1, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000017' })
-    cloud.post({
-      chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000008', seq: 2, senderUserId: HUMAN, senderType: 'human',
-      content: '[附件] one.png (image/png)\n[URL] https://example.test/one.png\n[Size] 3\n[Kind] image',
-    })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000018', seq: 3, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000018' })
-    const batches: Array<{ agentUserId: string; rows: number; units: number }> = []
-    const { deps, injections } = makeDeps(cloud, {
-      onBatch: (batch) => batches.push(batch),
-      downloadAttachment: async () => ({ bytes: Uint8Array.from([1, 2]), localPath: '/tmp/one.png' }),
-    })
+  // An attachment reaches its agent as a reference: what it is and how to fetch it. The inbox moves no bytes; the agent
+  // calls message_download_file when it wants the file, on the machine it runs on.
+  it('an attachment row is delivered as a reference: no download, no inline image, the exact call that fetches it', async () => {
+    const fetched = vi.fn(async () => { throw new Error('the inbox must not fetch file bytes') })
+    vi.stubGlobal('fetch', fetched)
+    try {
+      const cloud = new FakeCloud()
+      cloud.addChat('00000000-0000-4000-8000-000000000005', 'group')
+      cloud.join('00000000-0000-4000-8000-000000000005', AGENT, { listenMode: 'active' })
+      cloud.join('00000000-0000-4000-8000-000000000005', HUMAN)
+      cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000017', seq: 1, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000017' })
+      cloud.post({
+        chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000008', seq: 2, senderUserId: HUMAN, senderType: 'human',
+        content: '[附件] one.png (image/png)\n[Size] 3\n[Kind] image\n[Caption]\nwhat is this', fileItemId: 'item-1', fileVersion: 2,
+      })
+      cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000018', seq: 3, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000018' })
+      const batches: Array<{ agentUserId: string; rows: number; units: number }> = []
+      const { deps, injections } = makeDeps(cloud, { onBatch: (batch) => batches.push(batch) })
 
-    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3, injected: 3, verdict: 'accepted' })
-    expect(batches).toEqual([{ agentUserId: AGENT, rows: 3, units: 3 }])
-    expect(injections.map((entry) => entry.messageId)).toEqual(['10000000-0000-4000-8000-000000000017', '10000000-0000-4000-8000-000000000008', '10000000-0000-4000-8000-000000000018'])
-    expect(injections.map((entry) => entry.attachments?.length ?? 0)).toEqual([0, 1, 0])
-    expect(injections.every((entry) => entry.text.includes('<gugu_delivery route="chat"'))).toBe(true)
+      await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3, injected: 3, verdict: 'accepted' })
+      expect(batches).toEqual([{ agentUserId: AGENT, rows: 3, units: 3 }])
+      expect(injections.map((entry) => entry.messageId)).toEqual(['10000000-0000-4000-8000-000000000017', '10000000-0000-4000-8000-000000000008', '10000000-0000-4000-8000-000000000018'])
+      expect(injections.every((entry) => entry.keys?.includes('text') && !entry.keys.includes('attachments'))).toBe(true)
+      const image = injections[1]!.text
+      expect(image).toContain('[附件] one.png (image/png)')
+      expect(image).toContain('what is this')
+      expect(image).toContain('[Folder file gugu-file://item-1?v=2')
+      expect(image).toContain('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:10000000-0000-4000-8000-000000000008"}]')
+      expect(image).not.toContain('local path')
+      expect(fetched).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
-  // #7290 新式附件:正文没有 [URL],字节由行上的 file_item_id / file_version 指着;条目删了就只交正文。
-  it('folder-backed image: downloads by its file pointer; a deleted file delivers the text without bytes', async () => {
-    const cloud = new FakeCloud()
-    cloud.addChat('00000000-0000-4000-8000-000000000009', 'group')
-    cloud.join('00000000-0000-4000-8000-000000000009', AGENT, { listenMode: 'active' })
-    cloud.join('00000000-0000-4000-8000-000000000009', HUMAN)
-    const envelope = '[附件] two.png (image/png)\n[Size] 3\n[Kind] image'
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000009', id: '10000000-0000-4000-8000-00000000000b', seq: 1, senderUserId: HUMAN, senderType: 'human', content: envelope, fileItemId: 'item-2', fileVersion: 4 })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000009', id: '10000000-0000-4000-8000-00000000000a', seq: 2, senderUserId: HUMAN, senderType: 'human', content: envelope, fileItemId: null, fileVersion: 4 })
-    // 悄悄话的附件:不进群文件夹,消息直接指字节 ⇒ 按这条消息签(能读这条消息的人才签得到)。
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000009', id: '10000000-0000-4000-8000-00000000000c', seq: 3, senderUserId: HUMAN, senderType: 'human', content: envelope, fileBlobId: 'blob-9' })
-    const asked: unknown[] = []
-    const { deps, injections } = makeDeps(cloud, {
-      downloadAttachment: async (source) => {
-        asked.push(source)
-        return { bytes: Uint8Array.from([1, 2]), localPath: '/tmp/two.png' }
-      },
-    })
-    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3, injected: 3 })
-    expect(asked).toEqual([{ message_id: '10000000-0000-4000-8000-00000000000b' }, { message_id: '10000000-0000-4000-8000-00000000000c' }])
-    expect(injections.map((entry) => entry.attachments?.length ?? 0)).toEqual([1, 0, 1])
-    expect(injections[1]!.text).toContain('[附件] two.png (image/png)')
-    expect(injections[0]!.text).toContain('[Folder file gugu-file://item-2?v=4')
-    expect(injections[2]!.text, '悄悄话附件不在文件夹里').not.toContain('[Folder file')
-  })
-
-  // 新式附件的文件(不是图,比如 App 包):正文里没有链接,字节和图片一样下到本机、正文后面交本地路径;
-  // Legacy pointers use the same signed resolver; without verified private metadata they fail closed. Deleted items stay text-only.
-  it('saves the current file, refuses an unverified legacy pointer without fetching its public URL, and keeps deleted files text-only', async () => {
+  // Every kind of attachment row gets the same last line: a folder file, a whisper's blob, an old URL attachment (the resolver
+  // reads it by its message, never by the body's public URL), and a deleted item, which says there is nothing to fetch.
+  it('folder file, whisper blob and legacy URL rows name message_download_file by their message; a deleted item says so', async () => {
     const cloud = new FakeCloud()
     cloud.addChat('00000000-0000-4000-8000-000000000008', 'group')
     cloud.join('00000000-0000-4000-8000-000000000008', AGENT, { listenMode: 'active' })
@@ -1083,86 +1063,18 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000005', seq: 1, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: 'item-7', fileVersion: 1 })
     cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000006', seq: 2, senderUserId: HUMAN, senderType: 'human', content: '[附件] a.pdf (application/pdf)\n[URL] https://example.test/a.pdf\n[Size] 3\n[Kind] file' })
     cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000004', seq: 3, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: null, fileVersion: 1 })
-    const asked: unknown[] = []
-    const { deps, injections } = makeDeps(cloud, {
-      downloadAttachment: async (source) => {
-        asked.push(source)
-        if ('message_id' in source && source.message_id === '10000000-0000-4000-8000-000000000006') throw new Error('Legacy file requires verified private metadata')
-        return { bytes: Uint8Array.from([1, 2]), localPath: '/tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext', readOnly: true }
-      },
-    })
-    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3 })
-    expect(asked).toEqual([{ message_id: '10000000-0000-4000-8000-000000000005' }, { message_id: '10000000-0000-4000-8000-000000000006' }])
-    const text = injections.map((entry) => entry.text).join('\n')
-    expect(text).toContain('[附件] poll-0.1.0.guguext (application/vnd.gugu.extension+zip)')
-    expect(text).toContain('[File at local path: /tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext (shared read-only copy: to change it, copy it to a file of your own; do not change its permissions)]')
-    expect(text.match(/\[File at local path:/g)).toHaveLength(1)
-    // 它是群文件夹里的哪个文件、哪一版,怎么再发、怎么把改过的发成下一版:只在指着条目的那一条上。
-    expect(text).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send_file {file: "gugu-file://item-7?v=1"}')
-    expect(text.match(/\[Folder file /g)).toHaveLength(1)
-    expect(text).toContain('[URL] https://example.test/a.pdf')
-    // 下不下来:给取它的那一步,原因由 message_download_file 自己说。
-    expect(text).toContain('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:10000000-0000-4000-8000-000000000006"}]')
-    expect(injections.every((entry) => !entry.attachments)).toBe(true)
-  })
-
-  // 文件下不下来(签不到、CDN 回错、超时):这一行照交、写上取它的那一步,同一批的别的行也照样送到 —— 收件不卡在这一行上。
-  it('a file that cannot be saved: its text goes with how to fetch it, and the other rows of the batch are delivered too', async () => {
-    const cloud = new FakeCloud()
-    cloud.addChat('00000000-0000-4000-8000-000000000007', 'group')
-    cloud.join('00000000-0000-4000-8000-000000000007', AGENT, { listenMode: 'active' })
-    cloud.join('00000000-0000-4000-8000-000000000007', HUMAN)
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000007', id: '10000000-0000-4000-8000-000000000002', seq: 1, senderUserId: HUMAN, senderType: 'human', content: 'before the file' })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000007', id: '10000000-0000-4000-8000-000000000003', seq: 2, senderUserId: HUMAN, senderType: 'human', content: '[附件] deck.pptx (application/vnd.openxmlformats-officedocument.presentationml.presentation)\n[Size] 9\n[Kind] file', fileItemId: 'item-9', fileVersion: 2 })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000007', id: '10000000-0000-4000-8000-000000000001', seq: 3, senderUserId: HUMAN, senderType: 'human', content: 'after the file' })
-    const { deps, injections } = makeDeps(cloud, {
-      downloadAttachment: async () => { throw new Error('chat attachment download failed (503)') },
-    })
-    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3 })
-    const text = injections.map((entry) => entry.text).join('\n')
-    expect(text).toContain('before the file')
-    expect(text).toContain('[附件] deck.pptx')
-    expect(text).toContain('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:10000000-0000-4000-8000-000000000003"}]')
-    expect(text).toContain('after the file')
-  })
-
-  // #7290 复核 X2:签链接以 agent 自己的身份(`as` = agent),不是令牌的主人 —— 主人读得到的,agent 不一定读得到。
-  it('exports the verified image through the canonical resolver as this inbox agent, never its owner', async () => {
-    vi.stubEnv('GUGU_SUPABASE_URL', 'https://db.example.test')
-    vi.stubEnv('GUGU_SUPABASE_ANON_KEY', 'anon')
-    const home = mkdtempSync(join(tmpdir(), 'gugu-inbox-as-agent-'))
-    const asked: Array<{ url: string; body: unknown }> = []
-    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-      asked.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null })
-      const revision = { status: 'ready', source: 'managed-object', file_name: 'two.png', content_type: 'image/png', sha256: createHash('sha256').update(new Uint8Array([1, 2, 3])).digest('hex'), size_bytes: 3 }
-      if (url.endsWith('/file-resolve')) return Response.json(revision)
-      if (url.endsWith('/file-download')) return Response.json({ ...revision, download_id: 'download', url: 'https://cdn.example.test/two.png?auth_key=1' })
-      return new Response(new Uint8Array([1, 2, 3]))
-    })
-    try {
-      const cloud = new FakeCloud()
-      cloud.addChat('00000000-0000-4000-8000-000000000004', 'group')
-      cloud.join('00000000-0000-4000-8000-000000000004', AGENT, { listenMode: 'active' })
-      cloud.join('00000000-0000-4000-8000-000000000004', HUMAN)
-      cloud.post({ chatId: '00000000-0000-4000-8000-000000000004', id: '10000000-0000-4000-8000-000000000009', seq: 1, senderUserId: HUMAN, senderType: 'human', content: '[附件] two.png (image/png)\n[Size] 3\n[Kind] image', fileItemId: 'item-2', fileVersion: 4 })
-      const resolve = createNodeFileResolver(join(home, 'cache'), async () => ({ supabaseUrl: 'https://db.example.test', anonKey: 'anon', token: 'owner-token' }))
-      const { deps, injections } = makeDeps(cloud, { env: { GUGU_HOME: home }, downloadAttachment: async (ref, name, actorId) => {
-        const file = await resolve(ref, { accountId: HUMAN, actorId })
-        if (file.status !== 'ready') throw Error('Expected image')
-        const saved = await saveFileHandle(file, join(home, 'chat-media'), name)
-        return { bytes: await readFile(saved.file_path), localPath: saved.file_path }
-      } })
-      await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 1, injected: 1 })
-      expect(asked.map((one) => one.url)).toEqual(['https://db.example.test/functions/v1/attachments/file-resolve', 'https://db.example.test/functions/v1/attachments/file-download', 'https://cdn.example.test/two.png?auth_key=1', 'https://db.example.test/functions/v1/attachments/file-resolve'])
-      expect(asked[0]!.body).toEqual({ ref: { message_id: '10000000-0000-4000-8000-000000000009' }, as: AGENT })
-      expect(asked[1]!.body).toMatchObject({ ref: { message_id: '10000000-0000-4000-8000-000000000009' }, as: AGENT, request_id: expect.any(String) })
-      expect(asked[3]!.body).toEqual(asked[0]!.body)
-      expect(injections[0]!.attachments).toHaveLength(1)
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-      rmSync(home, { recursive: true, force: true })
-    }
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-00000000000c', seq: 4, senderUserId: HUMAN, senderType: 'human', content: '[附件] two.png (image/png)\n[Size] 3\n[Kind] image', fileBlobId: 'blob-9' })
+    const { deps, injections } = makeDeps(cloud)
+    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 4 })
+    const byId = new Map(injections.map((entry) => [entry.messageId, entry.text]))
+    const fetchLine = (id: string) => `[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:${id}"}]`
+    expect(byId.get('10000000-0000-4000-8000-000000000005')).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send_file {file: "gugu-file://item-7?v=1"}')
+    expect(byId.get('10000000-0000-4000-8000-000000000005')).toContain(fetchLine('10000000-0000-4000-8000-000000000005'))
+    expect(byId.get('10000000-0000-4000-8000-000000000006')).toContain(fetchLine('10000000-0000-4000-8000-000000000006'))
+    expect(byId.get('10000000-0000-4000-8000-00000000000c')).toContain(fetchLine('10000000-0000-4000-8000-00000000000c'))
+    expect(byId.get('10000000-0000-4000-8000-00000000000c'), 'a whisper attachment is not a folder file').not.toContain('[Folder file')
+    expect(byId.get('10000000-0000-4000-8000-000000000004')).toContain('[Deleted: there are no bytes to fetch]')
+    expect(byId.get('10000000-0000-4000-8000-000000000004')).not.toContain('message_download_file')
   })
 
   it('a pull_agent_inbox_v2 row without file_item_id / file_version / file_blob_id is refused (the database is older than this client)', () => {

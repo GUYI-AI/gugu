@@ -120,20 +120,16 @@ describe('inbox recovery without another incoming message', () => {
     expect(deps.markRead).toHaveBeenCalledTimes(1)
   })
 
-  it('immediately admits image text and its folder link after one download failure, without a disclosure or second download', async () => {
+  it('admits an image row as text, its folder link and the call that fetches it, without a disclosure', async () => {
     const { deps, inject, postDisclosure } = inbox({
       content: '[附件] screen.png (image/png)\n[Size] 3\n[Kind] image\n[Caption]\nPlease explain the screenshot',
       contentType: 'image', fileItemId: 'image-item', fileVersion: 2,
     })
-    deps.downloadAttachment = vi.fn(async () => { throw new Error('download HTTP 503') })
-    const started = Date.now()
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ injected: 1, verdict: 'accepted' })
-    expect(Date.now() - started).toBeLessThan(3000)
     expect(inject).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Please explain the screenshot') }))
     expect(inject.mock.calls[0]![0].text).toContain(`[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:${MESSAGE}"}]`)
     expect(inject.mock.calls[0]![0].text).toContain('gugu-file://image-item?v=2')
-    expect(inject.mock.calls[0]![0].attachments).toBeUndefined()
-    expect(deps.downloadAttachment).toHaveBeenCalledTimes(1)
+    expect(inject.mock.calls[0]![0]).not.toHaveProperty('attachments')
     expect(postDisclosure).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(120_000)
     expect(inject).toHaveBeenCalledTimes(1)

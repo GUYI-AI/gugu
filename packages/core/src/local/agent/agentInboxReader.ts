@@ -18,7 +18,6 @@
  */
 import { createHash } from 'node:crypto'
 import { isSqliteBusy } from '../../shared/sqliteBusy'
-import type { FileRef } from '../../shared/fileResolver'
 import { getSupabaseAnonKey, getSupabaseUrl } from '../../cloud/config'
 import { resolveListenModeDefault } from '../../cloud/listenMode'
 import type { ChatKind } from '../../shared/types/chat'
@@ -50,7 +49,6 @@ import { turnFailureMarker } from '../../shared/ui/systemNotice'
 import { sessionArchiveRefusesMessage, type SessionArchivalState } from '../../shared/sessionArchival'
 import { beginInboxAttempt, clearInboxReceiptRetry, clearInboxRetry, resetInboxRetries, retryInboxFailure, retryInboxReceipt } from './inboxRetry'
 import { isTransientNetworkError } from '../../shared/networkError'
-import { attachmentStage } from '../files/attachmentDiagnostics'
 
 const log = coreLogger('agent-inbox-reader')
 
@@ -136,8 +134,6 @@ export interface AgentInboxInjectionInput {
    * Absent: a host-made unit (a notice) with no inbox row behind it.
    */
   sources?: readonly AgentInboxSource[]
-  /** Image bytes travel as content blocks, never as a URL for the agent to fetch. */
-  attachments?: Array<{ data: string; mimeType: string; fileName: string; localPath?: string }>
 }
 
 export type AgentInboxDeliveryTiming = 'next-tool-call' | 'idle-only'
@@ -215,12 +211,6 @@ export interface AgentInboxReaderDeps {
   onOutcome?: (outcome: { agentUserId: string; ok: boolean }) => void
   /** Product-level audit: one callback per injectBatch, recording the rows seen together. */
   onBatch?: (batch: { agentUserId: string; rows: number; units: number }) => void
-  /** The host exports a verified original through the canonical resolver, as this inbox agent. */
-  downloadAttachment?: (
-    ref: FileRef,
-    fileName: string,
-    agentUserId: string,
-  ) => Promise<SavedAttachment>
   nowIso?: () => string
 }
 
@@ -360,8 +350,6 @@ function deliveryContextOf(raw: Record<string, unknown>): { groupRules: string |
   }
 }
 
-type InlineImage = { data: string; mimeType: string; fileName: string; localPath: string }
-type SavedAttachment = { bytes: Uint8Array; localPath: string; readOnly?: boolean }
 
 export type DisclosureRow = { agentUserId: string; chatId: string; threadRootId: string | null; key: string; reason: AgentFailureReason }
 
@@ -647,7 +635,6 @@ type PreparedMessage = {
   row: AgentInboxUnreadRow
   envelope: string
   preparationError?: unknown
-  attachments?: InlineImage[]
   bootstrapKey?: string
   /** 这条投递附上了群规原文(或撤销通知):受理后记为已送达。 */
   rulesDelivered?: { chatId: string; entry: DeliveredGroupRules }
@@ -684,7 +671,6 @@ async function planGroupRules(
 
 type PreparedUnit = {
   text: string
-  attachments?: InlineImage[]
   members: PreparedMessage[]
   preparationError?: unknown
 }
@@ -790,7 +776,7 @@ async function injectBatch(
     const members = sends.get(sendKeyOf(entry.row) ?? '')
     return members && members.length > 1 ? members : null
   }
-  const framed = prepared.filter((entry) => !entry.attachments && !('preparationError' in entry) && !sendOf(entry))
+  const framed = prepared.filter((entry) => !('preparationError' in entry) && !sendOf(entry))
   const mergedText = !queueBacked && timing === 'next-tool-call' && framed.length > 0
     ? mergeDeliveryEnvelopes(framed.map((entry) => entry.envelope))
     : null
@@ -799,9 +785,6 @@ async function injectBatch(
     const send = sendOf(entry)
     if (send) return send[0] === entry ? [sendUnit(send)] : []
     if ('preparationError' in entry) return [{ text: entry.envelope, members: [entry], preparationError: entry.preparationError }]
-    if (entry.attachments) {
-      return [{ text: entry.envelope, attachments: entry.attachments, members: [entry] }]
-    }
     if (mergedText !== null) {
       if (merged) return []
       merged = true
@@ -838,7 +821,6 @@ async function injectBatch(
         text: unit.text,
         sources: unit.members.map(({ row, rulesDelivered, bootstrapKey }) =>
           ({ row, ...(rulesDelivered ? { rulesDelivered } : {}), ...(bootstrapKey ? { bootstrapKey } : {}) })),
-        ...(unit.attachments ? { attachments: unit.attachments } : {}),
       })
       if (typeof result === 'string') {
         unitVerdict = result
@@ -890,12 +872,11 @@ function sendKeyOf(row: AgentInboxUnreadRow): string | null {
   return row.sendGroupId && row.sendGroupSize && row.sendGroupSize > 1 && !row.localSessionDirect && !row.app ? `${row.chatId}\u0000${row.sendGroupId}` : null
 }
 
-/** Prepared rows handed over as one: one row as itself, a send's rows as one delivery carrying every image. */
+/** Prepared rows handed over as one: one row as itself, a send's rows as one delivery naming every file. */
 function sendUnit(entries: PreparedMessage[]): PreparedUnit {
   const failed = entries.find((entry) => 'preparationError' in entry)
   if (failed) return { text: failed.envelope, members: entries, preparationError: failed.preparationError }
-  const attachments = entries.flatMap((entry) => entry.attachments ?? [])
-  return { text: mergeDeliveryEnvelopes(entries.map((entry) => entry.envelope)), members: entries, ...(attachments.length ? { attachments } : {}) }
+  return { text: mergeDeliveryEnvelopes(entries.map((entry) => entry.envelope)), members: entries }
 }
 
 /** How long a send whose other files have not reached the conversation is held back, counted from its last arrival. */
@@ -1005,39 +986,12 @@ async function prepareMessage(
     }
   }
   const attachment = parseAttachmentContent(row.content, { id: row.id, file_item_id: row.fileItemId, file_version: row.fileVersion, file_blob_id: row.fileBlobId })
-  const download = (fileName: string) => attachmentStage({ agentUserId, chatId: row.chatId, messageId: row.id }, 'download', async () => {
-    if (!deps.downloadAttachment) throw new Error('Verified attachment reader is not installed')
-    return deps.downloadAttachment({ message_id: row.id }, fileName, agentUserId)
-  })
-  // 条目已删(gone):没有字节可给,正文(名字、大小)照原样交下去,外加一行「已删」。
-  // 下不下来(签不到、CDN 回错、超时)就给取它的那一步 —— 原因由 message_download_file 自己说;这一行和同一批的别的行照样交,不卡住收件。
-  let attachments: InlineImage[] | undefined
-  const fetch = { fetch: { source_message_id: `msg:${row.id}` } }
-  let where: AttachmentWhere | null = attachment?.source.kind === 'gone' ? 'gone' : null
-  if (attachment?.kind === 'image' && attachment.source.kind !== 'gone') {
-    try {
-      const image = await download(attachment.fileName)
-      attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
-      where = { localPath: image.localPath, readOnly: image.readOnly }
-    } catch {
-      where = fetch
-    }
-  }
-  // 新式附件的文件(不是图):正文里没有链接(老附件靠正文里的 [URL] 去取),字节和图片一样下到本机,交本地路径。
-  if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
-    try {
-      const file = await download(attachment.fileName)
-      where = { localPath: file.localPath, readOnly: file.readOnly }
-    } catch {
-      where = fetch
-    }
-  }
-  // 那几行与任务输入框的附件同一个格式(attachmentLocationLines,P3)。
+  // An attachment reaches its agent as a reference: what it is, then how to fetch it. Bytes move only when the agent calls
+  // message_download_file, on the machine it runs on; a deleted item says there are none.
+  const where: AttachmentWhere | null = !attachment ? null
+    : attachment.source.kind === 'gone' ? 'gone' : { fetch: { source_message_id: `msg:${row.id}` } }
   const item = attachment?.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
-  const lines = attachmentLocationLines(item, where)
-  const content = attachments && attachment
-    ? `${attachment.caption || `[Image attached: ${attachment.fileName}]`}${lines}`
-    : `${row.content}${lines}`
+  const content = `${row.content}${attachmentLocationLines(item, where)}`
   const messageContext = buildAgentMentionContext(content, row.toUserIds, identities, agentUserId)
   const chat = { publicId: row.chatPublicId, name: row.chatName, kind: row.chatKind,
     ownDm: (row.chatKind === 'dm' || row.chatKind === 'ai') && !!deps.ownerUserId && row.senderUserId === deps.ownerUserId }
@@ -1069,7 +1023,6 @@ async function prepareMessage(
     envelope: threadContext
       ? rebuildEnvelopeWithThreadContext(agentUserId, row, content, identities, chat, toolNames, threadContext, messageContext, groupRules)
       : envelope,
-    ...(attachments ? { attachments } : {}),
     ...(bootstrapKey ? { bootstrapKey } : {}),
   }
 }

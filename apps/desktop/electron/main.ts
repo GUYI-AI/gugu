@@ -19,7 +19,6 @@ import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/fi
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
-import { fileStoreDirectory } from '@gugu/core/local/files/fileSnapshots'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
@@ -1058,7 +1057,6 @@ function createDeviceSessionpageBridge() {
   }
   return {
     ...bridge,
-    downloadAttachment: desktopFiles.download,
     appInbox: {
       refusal: (source: string) => appInboxPort().refusal(source),
       pull: (agentUserId: string, required?: string) => appInboxPort().pull(agentUserId, required),
@@ -2437,7 +2435,7 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
+  fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
