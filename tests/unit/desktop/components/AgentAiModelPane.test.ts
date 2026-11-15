@@ -74,11 +74,14 @@ const agent = {
   device_id: 'device-1',
 } satisfies ContactUser
 
+// A catalog as read (with its menu details): one restored from the snapshot carries none and is not drawn by the pane.
 const catalog = [{
   id: 'glm-5.2',
   displayName: 'GLM 5.2',
   protocols: ['anthropic-messages'],
   enabled: true,
+  creditMultipliers: {},
+  reasoningEfforts: null,
 }]
 
 beforeEach(() => {
@@ -283,7 +286,7 @@ describe('AgentAiModelPane', () => {
   // used to read it as "cannot use models provided by Gugu" because a second type → engine list stopped at six types.
   it('offers Gugu models to a copilot agent on its own protocol', async () => {
     fetchPlatformModelCatalog.mockResolvedValue([
-      { id: 'glm-5.3', displayName: 'GLM-5.3', protocols: ['openai-responses'], enabled: true },
+      { id: 'glm-5.3', displayName: 'GLM-5.3', protocols: ['openai-responses'], enabled: true, creditMultipliers: {}, reasoningEfforts: null },
     ])
     await harness.render(createNode(AgentAiModelPane, { agent: { ...agent, agent_type: 'copilot' } }))
     await waitForCondition(() => harness.container.querySelectorAll('option').length === 2, 'copilot options did not load')
@@ -295,9 +298,9 @@ describe('AgentAiModelPane', () => {
   // #7056 与模型下拉同一个判据:要会员的、他在设置「模型」页关掉的都不列。
   it('leaves members-only and hidden models out of the list', async () => {
     fetchPlatformModelCatalog.mockResolvedValue([
-      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false },
-      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false },
-      { id: 'grok-4.5', displayName: 'Grok 4.5', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: true },
+      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
+      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
+      { id: 'grok-4.5', displayName: 'Grok 4.5', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: true, creditMultipliers: {}, reasoningEfforts: null },
     ])
     await harness.render(createNode(AgentAiModelPane, { agent }))
     await waitForCondition(() => harness.container.querySelectorAll('option').length === 2, 'model options did not load')
@@ -316,8 +319,8 @@ describe('AgentAiModelPane', () => {
       applied: null, appliedAt: null, applyError: null,
     })
     fetchPlatformModelCatalog.mockResolvedValue([
-      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false },
-      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false },
+      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
+      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
     ])
     await harness.render(createNode(AgentAiModelPane, { agent }))
     await waitForCondition(() => harness.container.querySelectorAll('option').length === 3, 'model options did not load')
