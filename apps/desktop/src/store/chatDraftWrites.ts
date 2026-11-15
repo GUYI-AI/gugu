@@ -12,6 +12,10 @@ export function appendToDraft(draft: string, text: string): string {
 export function createDraftWriter(store: () => DraftStore) {
   const editors = new Map<string | null, Set<DraftEditor>>()
   return {
+    readDraft(chatId: string | null | undefined): string {
+      const live = [...editors.get(chatId ?? null) ?? []].map(resolve => resolve()).findLast(editor => editor !== null)
+      return live?.getText() ?? (chatId ? store().drafts[chatId] ?? '' : '')
+    },
     registerDraftEditor(chatId: string | null, resolve: DraftEditor) {
       const mounted = editors.get(chatId) ?? new Set<DraftEditor>()
       const text = [...mounted].at(-1)?.()?.getText() ?? (chatId ? store().drafts[chatId] ?? '' : '')

@@ -15,7 +15,7 @@ import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import type { MemberProfileOpener } from '../memberProfileModels'
 import { IconButton } from '../ui/IconButton'
 import { useBackLayer } from '../ui/sheetStack'
-import { ChatMessageComposer } from './ChatMessageComposer'
+import { TopicTaskEntry } from './TopicTaskEntry'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
 import { TopicBreadcrumb } from './TopicBreadcrumb'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
@@ -434,7 +434,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         }>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
         {composerControls}
-        <ChatMessageComposer
+        <TopicTaskEntry sourceChatId={runningPreviewChatId ?? null} topicName={topic.name}
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}
           onSend={async (content, opts) => {
