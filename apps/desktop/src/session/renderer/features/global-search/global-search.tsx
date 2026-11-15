@@ -224,9 +224,9 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         </div>
       )}
 
-      {/* The previous words' results while these words' are on their way: kept in place, dimmed, ❌ emptied per keystroke. */}
+      {/* The previous words' results while these words' are on their way: kept in place and dimmed after 150 ms (.gg-stale, the unknown slot's rule), ❌ emptied per keystroke. */}
       <div ref={setList} data-growing-list="" data-stale={view.stale || undefined} aria-busy={view.stale || undefined}
-        className={cn('flex-1 overflow-y-auto px-2 transition-opacity', hasQuery && 'min-h-48 pb-2', view.stale && 'opacity-60')} role="listbox" aria-label={translate('globalSearch.results')}>
+        className={cn('flex-1 overflow-y-auto px-2', hasQuery && 'min-h-48 pb-2', view.stale && 'gg-stale')} role="listbox" aria-label={translate('globalSearch.results')}>
         {view.error && <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{messageForUser(view.error)}</div>}
         {hasQuery && view.taskIndex?.state === 'preparing' && (facet === 'all' || facet === 'task') && (
           <div role="status" className="px-3 py-3 text-sm text-foreground/50">{view.taskIndex.total

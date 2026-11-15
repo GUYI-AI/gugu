@@ -71,7 +71,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
   const settled = debouncedQuery === search;
   const current = settled && reading.state === 'value' ? reading.value : null;
-  // The last words whose results were in: shown, dimmed, while the next words' are on their way (review 4 Q5), ❌ the
+  // The last words whose results were in: shown (dimmed after 150 ms: .gg-stale) while the next words' are on their way (review 4 Q5), ❌ the
   // list emptied and refilled on every keystroke. View state of this palette, read through those words' own reading.
   const [heldQuery, setHeldQuery] = useState<string | null>(null);
   // Only results worth keeping in sight are held: words that found nothing hold nothing (the next words show placeholders).
@@ -123,7 +123,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           className="w-full bg-transparent px-3 py-3 text-sm outline-none placeholder:text-foreground/40" autoFocus />
       </div>
       <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
-        className={stale ? 'max-h-96 overflow-y-auto p-1 opacity-60 transition-opacity' : 'max-h-96 overflow-y-auto p-1 transition-opacity'}>
+        className={stale ? 'max-h-96 overflow-y-auto p-1 gg-stale' : 'max-h-96 overflow-y-auto p-1'}>
         {/* "No results" only once the words were searched: while the read is on its way the rows it will fill are held. */}
         {(commandsMode || current) && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">

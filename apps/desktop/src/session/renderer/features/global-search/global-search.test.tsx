@@ -325,6 +325,9 @@ describe('global search panel', () => {
       await settle()
       expect(options().length).toBeGreaterThan(0)
       expect(host.querySelector('[role=listbox][data-stale]')).not.toBeNull()
+      // Dimmed only by `.gg-stale` (after 150 ms, styles/staleResultsDelay.test.ts): nothing changes at once.
+      expect(host.querySelector('[role=listbox][data-stale]')!.className).toContain('gg-stale')
+      expect(host.querySelector('[role=listbox][data-stale]')!.className).not.toMatch(/opacity-/)
       expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
       await act(async () => answer({ data: rows, error: null }))
       await settle()
