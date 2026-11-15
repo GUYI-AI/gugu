@@ -38,6 +38,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const [view, setView] = useState<View | null>(null)
   const [search, setSearch] = useState('')
   const modelButton = useRef<HTMLButtonElement>(null)
+  const skillsButton = useRef<HTMLButtonElement>(null)
   const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
@@ -48,22 +49,22 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
   const title = view === 'project' ? t('project') : view === 'skills' ? skillCount === null ? t('skills') : t('skillsCount', { count: skillCount }) : t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
-  const compact = view !== 'project' && view !== 'skills'
+  const compact = view !== 'project'
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
-      <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact} disabled={busy}
+      <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
       {projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
           testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
       : <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
         testId="agent-watch-create-project" onClick={() => setView('project')} />}
       {!phone && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
-        testId="agent-watch-create-skills" onClick={() => { setSearch(''); setView('skills') }} />}
+        testId="agent-watch-create-skills" buttonRef={skillsButton} onClick={() => { setSearch(''); setView('skills') }} />}
     </PhoneComposerControlRow></div>
     <PhoneComposerSheet open={view !== null && !(phone && view === 'skills')} onClose={() => setView(null)} title={title}
-      anchor={compact ? modelButton : undefined} testId="agent-watch-create-controls-sheet"
+      anchor={compact ? view === 'skills' ? skillsButton : modelButton : undefined} testId="agent-watch-create-controls-sheet"
       footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
-      {view && compact && view !== 'device' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
+      {view && compact && view !== 'device' && view !== 'skills' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
       {view === 'device' && <>
         <div className="gg-phone-composer-section-label">{t('device')}</div>
         {machines.map((row) => <Choice key={row.device.device_id} id={row.device.device_id} dimension="machine" name={label(row.device)}
