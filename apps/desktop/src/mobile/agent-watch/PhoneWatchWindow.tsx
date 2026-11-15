@@ -4,10 +4,11 @@ import { IconButton } from '@/components/ui/IconButton'
 import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { Expand, Minimize, MonitorSmartphone, PanelRightClose, X } from '@/lib/icons'
-import { createPhoneWatchOrientation, phoneWatchIsLandscape } from '@/platform/phoneWatchOrientation'
+import { createPhoneWatchOrientation, phoneWatchCanOrient, phoneWatchIsLandscape } from '@/platform/phoneWatchOrientation'
 import { fitLiveWindow } from '@/session/renderer/features/live-window/geometry'
 import type { LiveWindowAction, LiveWindowPresentation, LiveWindowSource } from '@/session/renderer/features/live-window/types'
 import { cornerFromPhoneDock, movePhoneWatch, phoneWatchCorner, phoneWatchDock, type PhoneWatchBox } from './phone-watch-drag'
+import { usePhoneWatchZoom } from './phone-watch-zoom'
 import './phone-watch-window.css'
 
 export interface PhoneWatchSource extends LiveWindowSource {
@@ -27,6 +28,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   const { t } = useTranslation('main')
   const root = useRef<HTMLDivElement>(null)
   const chat = useRef<HTMLDivElement>(null)
+  const picture = useRef<HTMLDivElement>(null)
   const [area, setArea] = useState<PhoneWatchBox>({ x: 0, y: 0, width: 0, height: 0 })
   const [composerHeight, setComposerHeight] = useState(0)
   const [layoutHeight, setLayoutHeight] = useState(0)
@@ -42,6 +44,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   const both = sources.length > 1
   const source = sources.find(item => item.id === selectedId)
   const ended = source?.status === 'finished'
+  const zoom = usePhoneWatchZoom(picture, selectedId, large, source?.kind === 'computer', !ended)
   const lastError = useRef(onError)
   lastError.current = onError
 
@@ -61,9 +64,12 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
       if (composer !== nextComposer) { if (composer) observer.unobserve(composer); composer = nextComposer; if (composer) observer.observe(composer) }
       // Discovery ends when the real transcript and composer mount. Streaming text is not a geometry signal.
       if (composer && viewportElement) content.disconnect()
-      const height = composer?.getBoundingClientRect().height ?? 0
+      const composerBox = composer?.getBoundingClientRect()
+      const height = composerBox?.height ?? 0
       setComposerHeight(height)
-      const next = { x: 0, y: 0, width: box.width, height: Math.max(0, (viewport?.bottom ?? box.bottom - height) - box.top) }
+      // The shared transcript scrolls behind its floating composer.
+      const bottom = Math.min(viewport?.bottom ?? box.bottom, composerBox?.top ?? box.bottom)
+      const next = { x: 0, y: 0, width: box.width, height: Math.max(0, bottom - box.top) }
       setArea(current => current.x === next.x && current.y === next.y && current.width === next.width && current.height === next.height ? current : next)
     }
     const observer = new ResizeObserver(measure)
@@ -82,18 +88,24 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
     return () => { media.removeEventListener('change', changed); window.screen.orientation?.removeEventListener('change', changed) }
   }, [])
   useEffect(() => {
-    if (large) return
+    if (large) {
+      if (phoneWatchCanOrient() && (presentation.orientation === 'landscape' || orientation.current)) {
+        orientation.current ??= createPhoneWatchOrientation()
+        void orientation.current.set(presentation.orientation ?? 'portrait').catch(error => lastError.current(error))
+      }
+      return
+    }
     const lease = orientation.current
     orientation.current = null
     if (lease) void lease.release().catch(error => lastError.current(error))
-  }, [large])
+  }, [large, presentation.orientation])
   useEffect(() => () => {
     if (revealTimer.current) clearTimeout(revealTimer.current)
     const lease = orientation.current
     orientation.current = null
     if (lease) void lease.release().catch(error => lastError.current(error))
   }, [])
-  useBackLayer(() => dispatch({ type: 'minimize' }), large)
+  useBackLayer(() => { dispatch({ type: 'set-orientation', orientation: 'portrait' }); dispatch({ type: 'minimize' }) }, large)
 
   const small = fitLiveWindow(source?.size ?? null, { width: Math.min(160, Math.max(0, area.width - 32)), height: Math.max(0, area.height - 32) })
   // A portrait picture gives the conversation room too; its composer remains at the bottom.
@@ -138,10 +150,14 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
     if (revealTimer.current) clearTimeout(revealTimer.current)
     revealTimer.current = setTimeout(() => setRevealed(false), 3000)
   }
-  const shrink = () => { setRevealed(false); dispatch({ type: 'minimize' }) }
+  const shrink = () => { setRevealed(false); dispatch({ type: 'set-orientation', orientation: 'portrait' }); dispatch({ type: 'minimize' }) }
   const rotate = () => {
-    orientation.current ??= createPhoneWatchOrientation()
-    void orientation.current.set(landscape ? 'portrait' : 'landscape').catch(onError)
+    const next = landscape ? 'portrait' : 'landscape'
+    if ((presentation.orientation ?? 'portrait') === next && phoneWatchCanOrient()) {
+      orientation.current ??= createPhoneWatchOrientation()
+      void orientation.current.set(next).catch(onError)
+    }
+    dispatch({ type: 'set-orientation', orientation: next })
   }
 
   return <div ref={root} data-phone-watch-layout data-landscape={large && landscape || undefined}>
@@ -153,7 +169,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
         <IconButton aria-label={t('controlWatch.shrink')} onClick={shrink}><Minimize /></IconButton>
         <IconButton aria-label={t(landscape ? 'controlWatch.portrait' : 'controlWatch.landscape')} onClick={rotate}><MonitorSmartphone /></IconButton>
       </div>}
-      <div data-phone-watch-picture>
+      <div ref={picture} data-phone-watch-picture {...zoom}>
         {sources.map(source => <div key={source.id} data-phone-watch-source hidden={source.id !== selectedId}
           inert={source.id !== selectedId || source.status === 'finished'}>{source.picture}</div>)}
       </div>
@@ -162,7 +178,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
         <div data-phone-watch-small-actions>
           {ended ? <IconButton aria-label={t('controlWatch.close')} onClick={() => dispatch({ type: 'close' })}><X /></IconButton>
             : <IconButton aria-label={t('controlWatch.dock')} onClick={() => dispatch({ type: 'dock', ...presentation.dock })}><PanelRightClose /></IconButton>}
-          <IconButton className="phone-watch-enlarge" aria-label={t('controlWatch.enlarge')} onClick={() => { setRevealed(false); dispatch({ type: 'enlarge' }) }}><Expand /></IconButton>
+          <IconButton className="phone-watch-enlarge" aria-label={t('controlWatch.enlarge')} onClick={() => { setRevealed(false); dispatch({ type: 'set-orientation', orientation: 'portrait' }); dispatch({ type: 'enlarge' }) }}><Expand /></IconButton>
         </div>
       </div>}
       {large && both && <div data-phone-watch-switch role="tablist" aria-label={t('controlWatch.sources')}>

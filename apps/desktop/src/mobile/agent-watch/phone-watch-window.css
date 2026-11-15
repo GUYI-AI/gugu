@@ -1,6 +1,4 @@
 [data-phone-watch-layout] { display: flex; position: relative; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
-.gg-aw .gg-aw-body > [data-phone-live-conversation] { margin-inline: calc(-1 * var(--spacing-md)); }
-.gg-aw [data-phone-live-conversation] [data-phone-watch-chat] { padding-inline: var(--spacing-md); }
 [data-phone-watch-layout] [data-phone-watch-chat] { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 [data-phone-watch-layout] [data-phone-watch-window] { position: absolute; z-index: 10; overflow: hidden; border-radius: var(--radius-xl); box-shadow: var(--shadow-lift); background: var(--bg); isolation: isolate; }
 [data-phone-watch-layout] [data-phone-watch-window][hidden], [data-phone-watch-layout] [data-phone-watch-source][hidden] { display: none; }

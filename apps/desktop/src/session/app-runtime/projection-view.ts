@@ -2,6 +2,7 @@ import { PROJECTION_NOT_SENT, PROJECTION_UNCONFIRMED, type ProjectionFrame, type
 import { ProjectionInputNotSent } from './projection-input-queue';
 import { projectionClient } from './projection-client';
 import type { ProjectionHost } from './projection-source';
+import { installLocalTouchViewing } from './projection-local-touch';
 export type PendingProjectionText = { id: number; text: string; state: 'not-sent' | 'unconfirmed'; reason?: string };
 export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'closed';
 
@@ -11,6 +12,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   painted?(frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null): void;
   /** A host presentation can watch a thumbnail without admitting picture input. */
   interactive?: boolean;
+  localTouchViewing?: boolean;
 } = {}) {
   const surface = document.createElement('div');
   surface.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;touch-action:none';
@@ -85,7 +87,11 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     if (!clamp && (x < 0 || y < 0 || x > 1 || y > 1)) return null;
     return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
   };
+  if (options.localTouchViewing) installLocalTouchViewing(surface, {
+    point: event => point(event), send, focus: () => input.focus({ preventScroll: true }), signal: lifetime.signal,
+  });
   surface.addEventListener('pointerdown', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event);
     if (!at || event.button > 2) return;
     event.preventDefault();
@@ -95,15 +101,18 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     send({ kind: 'pointer', action: 'down', button, ...at, modifiers: modifiers(event) });
   });
   surface.addEventListener('pointermove', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event, surface.hasPointerCapture(event.pointerId));
     if (at) send({ kind: 'pointer', action: 'move', button, ...at, modifiers: modifiers(event) });
   });
   surface.addEventListener('pointerup', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event, true);
     if (at) send({ kind: 'pointer', action: 'up', button, ...at, modifiers: modifiers(event) });
     if (surface.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
   });
   surface.addEventListener('pointercancel', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event, true);
     if (at) send({ kind: 'pointer', action: 'up', button, ...at, modifiers: modifiers(event) });
   });

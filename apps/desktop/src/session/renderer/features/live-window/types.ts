@@ -30,6 +30,7 @@ export interface LiveWindowPresentation {
   selectedSourceId: string | null;
   selectedTab: 'chat' | 'screen';
   controlsRevealed: boolean;
+  orientation?: 'portrait' | 'landscape';
   small: { corner: LiveWindowCorner; x?: number; y?: number };
   dock: { edge: 'left' | 'right'; ratio: number };
   dismissedSourceIds: readonly string[];
@@ -46,6 +47,7 @@ export interface LiveWindowSnapshot {
 
 export type LiveWindowAction =
   | { type: 'reveal'; shown: boolean }
+  | { type: 'set-orientation'; orientation: 'portrait' | 'landscape' }
   | { type: 'enlarge' }
   | { type: 'minimize' }
   | { type: 'composer-focus' }

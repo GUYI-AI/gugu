@@ -1,7 +1,7 @@
 import { act, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { cdp, page } from 'vitest/browser'
 import { PhoneWatchWindow } from '@/mobile/agent-watch/PhoneWatchWindow'
 import { LiveWindowModel } from '@renderer/features/live-window/model'
 import type { LiveWindowContext, LiveWindowSource } from '@renderer/features/live-window/types'
@@ -29,7 +29,7 @@ async function mount(both = false) {
   function View() {
     const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot)
     return <PhoneWatchWindow sources={snapshot.sources.map(item => ({ ...item,
-      picture: <div data-testid={`picture-${item.id}`} onPointerDown={clicked} style={{ width: '100%', height: '100%', background: '#b6c4d4' }} /> }))}
+      picture: <div data-testid={`picture-${item.id}`} data-live-window-picture={item.id} onPointerDown={clicked} style={{ width: '100%', height: '100%', background: '#b6c4d4' }} /> }))}
       selectedId={snapshot.source?.id ?? null} presentation={snapshot.presentation!} visible={snapshot.visible}
       dispatch={action => model.dispatch(action)} onError={errors}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -94,4 +94,32 @@ it('keeps the last picture when the source finishes and hides the window with it
   await act(async () => model.activate(context))
   expect((host.querySelector('[data-phone-watch-window]') as HTMLElement).hidden).toBe(false)
   expect(host.querySelector('[data-testid="picture-web"]')).toBe(picture)
+})
+
+it('uses two real touch points to view a computer picture proportionally and restores that scale after minimizing', async () => {
+  const { host, model } = await mount(true)
+  await act(async () => { model.dispatch({ type: 'enlarge' }); model.dispatch({ type: 'select-source', sourceId: 'desktop' }) })
+  const picture = host.querySelector<HTMLElement>('[data-testid="picture-desktop"]')!
+  const bounds = host.querySelector('[data-phone-watch-picture]')!.getBoundingClientRect()
+  const at = (x: number, id: number) => {
+    let point = { x: bounds.left + bounds.width / 2 + x, y: bounds.top + bounds.height / 2 }
+    for (let current: Window = window; current.frameElement; current = current.parent) {
+      const frame = current.frameElement as HTMLElement, box = frame.getBoundingClientRect(), scale = box.width / frame.offsetWidth
+      point = { x: box.left + (frame.clientLeft + point.x) * scale, y: box.top + (frame.clientTop + point.y) * scale }
+    }
+    return { ...point, id }
+  }
+  const session = cdp() as unknown as { send(method: string, params: object): Promise<unknown> }
+  await act(async () => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at(-20, 1), at(20, 2)] })
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at(-40, 1), at(40, 2)] })
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  })
+  expect(Number(picture.dataset.phoneWatchZoom)).toBeCloseTo(2, 1)
+  const enlarged = picture.getBoundingClientRect()
+  expect(enlarged.width / enlarged.height).toBeCloseTo(.8, 2)
+  await act(async () => model.dispatch({ type: 'minimize' }))
+  expect(picture.style.transform).toContain('scale(2')
+  await act(async () => model.dispatch({ type: 'enlarge' }))
+  expect(picture.style.transform).toContain('scale(2')
 })

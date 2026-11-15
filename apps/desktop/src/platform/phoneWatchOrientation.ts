@@ -8,6 +8,8 @@ export interface PhoneWatchOrientationBridge {
 const native = registerPlugin<PhoneWatchOrientationBridge>('GuguWatchOrientation')
 let changes: Promise<unknown> = Promise.resolve()
 
+export const phoneWatchCanOrient = () => Capacitor.getPlatform() === 'android' && Capacitor.isPluginAvailable('GuguWatchOrientation')
+
 /** Android's display orientation does not turn into landscape when its keyboard shortens the WebView. */
 export function phoneWatchIsLandscape(): boolean {
   return Capacitor.getPlatform() === 'android'
