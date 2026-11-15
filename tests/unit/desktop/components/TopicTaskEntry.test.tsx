@@ -9,16 +9,21 @@ import { i18n } from '../../../../apps/desktop/src/i18n'
 import { chat, clickElement, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { readComposer, writeComposer } from '../../../support/composerEditor'
 import { plainTextDoc } from '../../../../packages/session-ui/src/react/components/prompt-editor/serialize'
+import { useMessages } from '@gugu/session-ui/react/components'
 
 // The task host UI is a boundary: keep the real entry, menu, editor, draft bridge and cancellation.
 vi.mock('@renderer/features/sessions/new-session-page', () => ({
   NewSessionComposer: ({ taskChatId, birthChatId, verb, onSessionCreated }: {
     taskChatId?: string; birthChatId?: string; verb?: { tag: () => React.ReactNode };
     onSessionCreated?: (result: { projectId: string; sessionId: string }) => void
-  }) => <div data-testid="created-task-config" data-topic={taskChatId} data-group={birthChatId}>
+  }) => {
+    // The real creation composer consumes this context too; a sibling chat provider is insufficient.
+    const { locale } = useMessages()
+    return <div data-testid="created-task-config" data-topic={taskChatId} data-group={birthChatId} data-locale={locale}>
     {verb?.tag()}
     <button onClick={() => onSessionCreated?.({ projectId: 'project', sessionId: 'created' })}>Complete fixture creation</button>
-  </div>,
+    </div>
+  },
 }))
 vi.mock('@renderer/features/sessions/composer-tray', () => ({ ComposerTray: ({ children }: { children: React.ReactNode }) => <>{children}</> }))
 vi.mock('@renderer/features/remote-hosts/use-new-session-machine', () => ({ useNewSessionMachine: () => ({ remote: null, machineContext: null, devicePicker: null }) }))

@@ -1,10 +1,15 @@
 import { useTranslation } from 'react-i18next'
+import { MessageProvider } from '@gugu/session-ui/react/components'
 import { Zap } from '@/lib/icons'
+import { useLocale } from '@/i18n'
 import { platform } from '@/platform'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { setComposerVerb } from '@/lib/composerVerbBridge'
 import { useChatStore } from '@/store/chatContext'
+import { useTheme } from '@/store/theme'
+import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-composer'
+import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { ChatMessageComposer } from './ChatMessageComposer'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import type { ComposerAttachAction } from './ComposerAttachButton'
@@ -17,6 +22,8 @@ export function TopicTaskEntry({ sourceChatId, topicName, ...composer }: Omit<Ch
 }) {
   const { t } = useTranslation('messaging')
   const mobile = useMobileShell()
+  const { resolvedLocale } = useLocale()
+  const { theme } = useTheme()
   const { chats, readDraft, writeDraft } = useChatStore('chats', 'readDraft', 'writeDraft')
   const source = chats.find(chat => chat.id === sourceChatId && chat.kind === 'group' && chat.status !== 'archived')
   const desktopHost = !mobile && platform.capabilities.sessionHost
@@ -32,6 +39,10 @@ export function TopicTaskEntry({ sourceChatId, topicName, ...composer }: Omit<Ch
   }
   return <>
     <ChatMessageComposer {...composer} attachMenu={enabled ? [...(composer.attachMenu ?? []), action] : composer.attachMenu} />
-    {desktopHost && <ComposerVerbDock key={composer.chatId} chatId={composer.chatId} />}
+    {desktopHost && <SessionUiTheme theme={theme}>
+      <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
+        <ComposerVerbDock key={composer.chatId} chatId={composer.chatId} />
+      </MessageProvider>
+    </SessionUiTheme>}
   </>
 }
