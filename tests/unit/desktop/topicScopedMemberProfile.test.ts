@@ -3,6 +3,7 @@
 // 从话题分栏点开的成员名片,倾听模式读写的是**话题自己**那行 chat_members,❌ 不是来源群的
 // (2026-09-24 设计同事 截图:「主被动居然是群的而不是 topic 的」)。
 // 判据都带反例:主线点开的名片必须原样走群那一套,否则「一律用话题」也能过。
+import { notifyManager } from '@tanstack/react-query'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GroupAgentItem, GroupChatSettings, GroupCollabSnapshot, GroupMemberItem } from '../../../packages/core/src/shared/types/chat'
@@ -16,6 +17,9 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
 
 const { chatService } = await import('../../../apps/desktop/src/lib/chat')
 const { useTopicScopedMemberProfile } = await import('../../../apps/desktop/src/hooks/useTopicScopedMemberProfile')
+const { followRendererSession, queryClient } = await import('../../../apps/desktop/src/lib/replica')
+const { openImRepository } = await import('../../../apps/desktop/src/lib/imRepository')
+const { createMemoryLocalSyncDb } = await import('../../../apps/desktop/src/lib/localSyncDb')
 const getGroupCollab = vi.mocked(chatService.getGroupCollab)
 const getSettings = vi.mocked(chatService.getGroupChatSettings)
 const setAgentListenMode = vi.mocked(chatService.setAgentListenMode)
@@ -49,16 +53,22 @@ function Probe(props: { profile: ActiveMemberProfile | null; topicChatId: string
   result = useTopicScopedMemberProfile({ ...props, currentUserId: 'owner-1', groupEditControlsFor: () => groupEdit })
   return null
 }
+// The roster is a replica: it reads for the signed-in account, through the account's open IM repository.
+const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 async function render(profile: ActiveMemberProfile | null, topicChatId: string | null = 'topic-1') {
   await harness.render(createNode(Probe, { profile, topicChatId }))
-  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  await settle()
 }
 
-beforeEach(() => {
+let repository: Awaited<ReturnType<typeof openImRepository>>
+beforeEach(async () => {
+  notifyManager.setScheduler((callback) => { callback() })
+  followRendererSession('SIGNED_IN', 'owner-1')
+  repository = await openImRepository('owner-1', { adapter: createMemoryLocalSyncDb() })
   harness = createReactHarness()
   getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'member', can_manage: false } as GroupChatSettings)
 })
-afterEach(() => { harness.cleanup(); vi.clearAllMocks() })
+afterEach(() => { harness.cleanup(); queryClient.clear(); repository.close(); vi.clearAllMocks() })
 
 describe('useTopicScopedMemberProfile', () => {
   it('分栏点开:显示话题里的档位,改档写到话题 id', async () => {
@@ -110,6 +120,7 @@ it('re-reads topic authority on a source-group revision without changing its top
   getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'member')]), identities: [] })
   const profile = { ...opened('aside'), member: { ...groupMember, ownerUserId: 'member-9' } }
   await harness.render(createNode(Probe, { profile, topicChatId: 'topic-1', authorityRevision: 0 }))
+  await settle()
   expect(result?.editControls).toBeDefined()
   const before = getSettings.mock.calls.length
   getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'member', can_manage: false } as GroupChatSettings)

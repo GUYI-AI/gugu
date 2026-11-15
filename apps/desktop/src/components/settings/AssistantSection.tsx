@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
@@ -158,21 +158,21 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
 }
 
 /** Whether this computer can read a calendar for meeting reminders. */
-const meetingCalendar = readModel({
+const meetingCalendar = replica({
   name: 'meetingCalendar',
   scope: 'device',
   read: async () => {
     const result = await (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
     return result.ok ? 'ok' as const : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' as const : 'ok' as const
   },
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 /** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/meetingReminderPref)。 */
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
   const enabled = useSyncExternalStore(subscribeMeetingReminderPref, meetingReminderEnabled)
-  const reading = useReadModel(meetingCalendar, [])
+  const reading = useReplica(meetingCalendar, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
       <SettingsRow

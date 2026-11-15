@@ -5,6 +5,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+import { followRendererSession } from '@/lib/replica'
 
 const fixture = vi.hoisted(() => ({ platform: { kind: 'electron' }, locate: vi.fn(), picture: null as Blob | null }))
 vi.mock('@/platform', async original => ({ ...(await original<object>()), platform: fixture.platform }))
@@ -31,6 +32,8 @@ it.each(['electron', 'phone'])('shows an inactive slot as one layer that leads t
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = 2
   fixture.picture = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/webp'))
+  // The original's read is an account replica: it follows the published session, signed in as the same user.
+  followRendererSession('SIGNED_IN', 'reader')
   harness = createReactHarness()
   const message = { id: `${platform}-message`, chat_id: 'chat', sender_user_id: 'sender', content: JSON.stringify({ v: 2, app: 'vote', view: 'poll', text: 'Dinner', height: 240 }) }
   await harness.render(<div style={{ width: 400 }}><WidgetBubble message={message} /></div>)

@@ -11,7 +11,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 
-import { viewStateService } from './view-state-service';
+import { flushViewState, viewStateService, viewStateSnapshot } from './view-state-service';
 import { readViewStateForRestore } from './restore-state';
 
 const lastViewed = (projectId: string, sessionId: string) => ({
@@ -35,6 +35,7 @@ describe('navigation restore: "not in this table" is not "deleted"', () => {
   });
 
   afterEach(() => {
+    flushViewState();
     fixture.close();
     mocks.db = undefined;
   });
@@ -57,11 +58,54 @@ describe('navigation restore: "not in this table" is not "deleted"', () => {
     expect(await viewStateService.get('navigation')).toMatchObject({ currentViewId: 'project' });
   });
 
-  it('returns normal view state and only referenced session locations in the same restore read', async () => {
-    await viewStateService.save('sidebar', { selected: 'user-project' });
-    const restored = await readViewStateForRestore(['archived', 'not-here']);
-    expect(restored.views).toMatchObject({ sidebar: { selected: 'user-project' } });
-    expect(restored.locations).toEqual([{ conversationId: 'archived', projectId: 'local-project' }]);
-    expect(await viewStateService.getAll()).toEqual(restored.views);
+  it('the restore read returns only the referenced session locations (the view state came with the first frame)', () => {
+    expect(readViewStateForRestore(['archived', 'not-here'])).toEqual({ locations: [{ conversationId: 'archived', projectId: 'local-project' }] });
+  });
+});
+
+// Written behind: reads see a save at once, the database gets it within a second in one go, and a quit or a signal
+// (flushViewState) writes whatever is still held, so nothing typed just before is lost.
+describe('view state is written behind and flushed on the way out', () => {
+  let fixture: Awaited<ReturnType<typeof openFixture>>;
+  const rows = () => fixture.sqlite.prepare("SELECT key, value FROM kv WHERE key LIKE 'view-state:%' ORDER BY updated_at").all();
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    fixture = await openFixture('empty');
+    mocks.db = fixture.db;
+  });
+
+  afterEach(() => {
+    flushViewState();
+    vi.useRealTimers();
+    fixture.close();
+    mocks.db = undefined;
+  });
+
+  it('a burst of saves is one row write; reads and the snapshot see each save at once', async () => {
+    for (const query of ['S', 'Si', 'Sim']) await viewStateService.save('view:a/g/members', { query });
+    expect(rows(), 'nothing on disk yet').toEqual([]);
+    expect(await viewStateService.get('view:a/g/members')).toEqual({ query: 'Sim' });
+    expect(viewStateSnapshot()).toEqual({ 'view:a/g/members': { query: 'Sim' } });
+    vi.advanceTimersByTime(1000);
+    expect(rows()).toEqual([{ key: 'view-state:view:a/g/members', value: '{"query":"Sim"}' }]);
+  });
+
+  it('a save just before the process leaves is on disk once it flushes', async () => {
+    await viewStateService.save('view:a/g/draft', { text: 'typed 26 ms before SIGTERM', mentions: [] });
+    flushViewState();
+    expect(rows()).toEqual([{ key: 'view-state:view:a/g/draft', value: '{"text":"typed 26 ms before SIGTERM","mentions":[]}' }]);
+  });
+
+  it('the snapshot lists entries oldest write first, a pending delete is gone from it', async () => {
+    await viewStateService.save('a', 1);
+    await viewStateService.save('b', 2);
+    flushViewState();
+    await viewStateService.save('a', 3);
+    await viewStateService.del('b');
+    await viewStateService.save('c', 4);
+    expect(Object.entries(viewStateSnapshot())).toEqual([['a', 3], ['c', 4]]);
+    flushViewState();
+    expect(Object.entries(viewStateSnapshot()), 'the same order from the database').toEqual([['a', 3], ['c', 4]]);
   });
 });

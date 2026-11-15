@@ -8,13 +8,13 @@ describe('source performance counters', () => {
 
   it('does no sampling or periodic work when imported, written, or read', async () => {
     const counters = await import('../../../../apps/desktop/src/lib/perfCounters')
-    expect(counters.readPerfCounters()).toEqual({ imTransactions: 0, presenceBatches: 0, presenceIds: 0, contactsProviderRenders: 0 })
+    expect(counters.readPerfCounters()).toEqual({ imTransactions: 0, presenceBatches: 0, presenceIds: 0, contactsProviderRenders: 0, snapshotRefusals: 0 })
     counters.recordImTransaction()
     counters.recordPresenceBatch(200)
     counters.recordPresenceBatch(5)
     counters.recordContactsRender()
     const snapshot = counters.readPerfCounters()
-    expect(snapshot).toEqual({ imTransactions: 1, presenceBatches: 2, presenceIds: 205, contactsProviderRenders: 1 })
+    expect(snapshot).toEqual({ imTransactions: 1, presenceBatches: 2, presenceIds: 205, contactsProviderRenders: 1, snapshotRefusals: 0 })
     snapshot.presenceIds = 0
     vi.advanceTimersByTime(60_000)
     expect(counters.readPerfCounters().presenceIds).toBe(205)
@@ -35,7 +35,7 @@ describe('source performance counters', () => {
     bus.emit(RENDERER_METRICS_REQUEST, null)
     expect(eventSend).not.toHaveBeenCalled()
     bus.emit(RENDERER_METRICS_REQUEST, { requestId: 'sample-1' })
-    expect(eventSend).toHaveBeenCalledWith(PERF_COUNTERS_REPLY, { requestId: 'sample-1', counters: { imTransactions: 1, presenceBatches: 0, presenceIds: 0, contactsProviderRenders: 0 }, frames: { longFrames: 0, blockingMs: 0, slowInteractions: 0 } })
+    expect(eventSend).toHaveBeenCalledWith(PERF_COUNTERS_REPLY, { requestId: 'sample-1', counters: { imTransactions: 1, presenceBatches: 0, presenceIds: 0, contactsProviderRenders: 0, snapshotRefusals: 0 }, frames: { longFrames: 0, blockingMs: 0, slowInteractions: 0 } })
     dispose()
     bus.emit(RENDERER_METRICS_REQUEST, { requestId: 'sample-2' })
     expect(eventSend).toHaveBeenCalledTimes(1)

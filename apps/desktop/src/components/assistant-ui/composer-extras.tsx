@@ -22,14 +22,15 @@ import { createContext, useContext, type ReactNode } from 'react'
  */
 export type ComposerStop = { onStop: () => void; stopping: boolean }
 
-type Slots = { inline: ReactNode; above: ReactNode; tail: ReactNode; placeholder: string | null; stop: ComposerStop | null }
+type Slots = { inline: ReactNode; above: ReactNode; inputHeader: ReactNode; tail: ReactNode; placeholder: string | null; stop: ComposerStop | null }
 
-const ComposerSlotsContext = createContext<Slots>({ inline: null, above: null, tail: null, placeholder: null, stop: null })
+const ComposerSlotsContext = createContext<Slots>({ inline: null, above: null, inputHeader: null, tail: null, placeholder: null, stop: null })
 
 export function ComposerExtrasProvider({
   children,
   extras,
   above = null,
+  inputHeader = null,
   tail = null,
   placeholder = null,
   stop = null
@@ -39,6 +40,7 @@ export function ComposerExtrasProvider({
   extras: ReactNode
   /** 输入框正上方的东西。它在贴底的那一带里,❌ 放高度没上限的东西:比视口高就把整个视口盖住。 */
   above?: ReactNode
+  inputHeader?: ReactNode
   /**
    * 时间线末尾、在消息流里的东西。待答的审批/提问卡放这里:最后一条消息之后、跟着时间线滚 ——
    * 视口跟到底时就在眼前,卡片再高也能整张滑着看完(2026-10-02:3 题 × 4 选项的卡钉在贴底带里,
@@ -58,7 +60,7 @@ export function ComposerExtrasProvider({
   stop?: ComposerStop | null
 }) {
   return (
-    <ComposerSlotsContext.Provider value={{ inline: extras, above, tail, placeholder, stop }}>
+    <ComposerSlotsContext.Provider value={{ inline: extras, above, inputHeader, tail, placeholder, stop }}>
       {children}
     </ComposerSlotsContext.Provider>
   )
@@ -82,6 +84,10 @@ export function ComposerExtras() {
 /** 输入框上方插槽；宿主没塞就什么都不画。 */
 export function ComposerAboveExtras() {
   return <>{useContext(ComposerSlotsContext).above}</>
+}
+
+export function ComposerInputHeader() {
+  return <>{useContext(ComposerSlotsContext).inputHeader}</>
 }
 
 /** 时间线末尾插槽；宿主没塞就什么都不画。 */

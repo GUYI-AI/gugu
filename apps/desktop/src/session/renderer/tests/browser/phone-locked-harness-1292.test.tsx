@@ -116,6 +116,13 @@ it.each([false, true])(
       'button[disabled][aria-label*="Codex"]'
     )!
     const model = harness.container.querySelector('[data-testid="composer-model-trigger"]')!
+    const attachment = harness.container.querySelector<HTMLButtonElement>('[data-phone-attachment]')!
+    const editor = harness.container.querySelector<HTMLElement>('[contenteditable]')!
+    expect(attachment).not.toBeNull()
+    expect(attachment.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
+    const chooseFile = vi.spyOn(harness.container.querySelector<HTMLInputElement>('input[type="file"]')!, 'click').mockImplementation(() => {})
+    await userEvent.click(attachment)
+    expect(chooseFile).toHaveBeenCalledOnce()
     expect(locked).not.toBeNull()
     expect(locked.getBoundingClientRect().width).toBeGreaterThan(0)
     expect(getComputedStyle(locked).opacity).toBe('1')
@@ -295,4 +302,24 @@ it('1292 phone project attachment menu uses the real new-task action lightning',
     document.querySelector('[data-zap-control] svg')!.innerHTML
   )
   await page.screenshot({ path: `${out}/phone-task-menu-component.png` })
+})
+
+it('keeps the existing model menu in the phone sidebar row and omits the old harness row', async () => {
+  await page.viewport(390, 960)
+  await i18n.changeLanguage('zh-CN')
+  harness = createReactHarness()
+  harness.container.setAttribute('data-phone-shell', '')
+  harness.container.style.cssText = 'height:800px;width:390px;display:flex;flex-direction:column'
+  await renderWithAppProviders(harness, <SessionConversation
+    timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="single-row" agentName="Pi" harness="pi"
+    nativeRecord sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()}
+    pendingSends={[]} sending={false} agentWorking={false} onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()}
+    composerControls={model => <div data-testid="single-phone-row">智能体{model}</div>}
+  />, { contacts: {} })
+  await until('the same model control moved into the new row', () => !!harness.container.querySelector('[data-testid="single-phone-row"] [data-testid="composer-model-trigger"]'))
+  expect(harness.container.querySelector('[data-composer-locked-agent]')).toBeNull()
+  expect(harness.container.querySelector('[data-slot="composer-actions-end"] [data-slot="composer-model"]')).toBeNull()
+  expect(harness.container.querySelectorAll('[data-testid="composer-model-trigger"]')).toHaveLength(1)
+  await page.getByTestId('composer-model-trigger').click()
+  await until('the original model menu opens', () => harness.container.querySelector('[data-testid="composer-model-trigger"]')?.getAttribute('aria-expanded') === 'true')
 })

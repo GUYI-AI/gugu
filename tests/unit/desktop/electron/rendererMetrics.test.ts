@@ -28,7 +28,7 @@ function reply(wc: Contents, channel: string, value: object) {
   mock.bus.emit(channel, { sender: wc, senderFrame: wc.mainFrame }, { requestId, source: wc.source === 'main' ? 'main-window' : 'app', ...value })
 }
 const memory = { v8: { usedBytes: 1024, totalBytes: 4096 }, oilpan: { allocatedBytes: 2048, totalBytes: 8192 }, privateBytes: 16384 }
-const counters = { imTransactions: 4, presenceBatches: 2, presenceIds: 205, contactsProviderRenders: 3 }
+const counters = { imTransactions: 4, presenceBatches: 2, presenceIds: 205, contactsProviderRenders: 3, snapshotRefusals: 0 }
 
 describe('on-demand renderer metrics collection', () => {
   beforeEach(() => {

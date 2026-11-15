@@ -380,10 +380,16 @@ function InnerLayout({
   }, [activeTab, sessionCreateOpen])
   const openSessionCreate = useCallback(() => {
     if (!sessionHostAvailable) return
+    if (mobile) {
+      setWatchTaskGroup(null)
+      setActiveTab('tasks')
+      setWatchCreateRequest(n => n + 1)
+      return
+    }
     setActiveTab('chats')
     setSessionCreateOpen(true)
     shellTab.setChatFrom(null)
-  }, [setActiveTab, shellTab, sessionHostAvailable])
+  }, [setActiveTab, shellTab, sessionHostAvailable, mobile])
 
   // 联系人页的「新建 Agent」。手机:去会话页建 agent 的那条路(先选机器),与会话页右上 + 同一条。
   // 桌面:gugu-dev#181 只有一个「新建会话」—— 会话页的新建会话页(不进群)。

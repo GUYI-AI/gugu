@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { queryClient } from '@/lib/readModel'
+import { queryClient } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { useState } from 'react'
 import { ComposerModelMenu } from '@gugu/session-ui/react/components'
@@ -10,7 +10,7 @@ import type { HarnessConnection } from '@gugu/session-core/workspace-server/agen
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal'
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel'
 import { refreshSubscriptionReadings, subscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries'
-// A provider's subscription readings on this machine (the read models' keys: [model, device, machine, provider, …]).
+// A provider's subscription readings on this machine (the replicas' keys: [model, device, machine, provider, …]).
 const readingsOf = (id: string) => ({ predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[2] === null && q.queryKey[3] === id })
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { setLocalePreference } from '@/i18n'
@@ -219,7 +219,7 @@ beforeEach(() => {
   control.busy = false
   control.removed = []
   control.connections = [{ id: 'native', kind: 'native', name: 'CLI', current: true }]
-  // The subscription readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  // The subscription readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient
   host = document.createElement('div')
   host.className = 'gugu-skin emlight'

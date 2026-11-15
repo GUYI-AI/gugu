@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 
+export class GroupCollabEmptyError extends Error {}
+
 export const chatService = {
   getCommonGroupChats: vi.fn(async () => []),
   getGroupCollab: vi.fn(async () => null),

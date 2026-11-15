@@ -4,6 +4,7 @@ import type { GuguMcpContext } from '../acp-engine-utils'
 import type { GuguMcpRequestTracker } from '../gugu-mcp-host'
 import { passwordBetaAgentPort } from '../password-vault/beta-runtime-port'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
+import { passwordSaveFailure } from '../password-vault/save-error'
 import { registerGuguTool } from './register-gugu-tool.mjs'
 
 const fillEntrySchema = z.object({ field: z.string().trim().min(1).max(200), into: z.string().min(1).max(1000), code: z.boolean().optional(), value: z.string().max(4096).optional() }).strict()
@@ -63,6 +64,6 @@ export function registerPasswordBetaTools(server: McpServer, context: () => Gugu
         if (input.action === 'status') return result(await passwordBetaAgentPort().saveStatus(context(), input.requestId))
         const { action: _action, ...proposal } = input
         return result(await passwordBetaAgentPort().save(bound(signal), proposal))
-      } catch { return result({ status: 'unavailable', retry: false }) }
+      } catch (error) { return result(passwordSaveFailure(error)) }
     }, track)
 }

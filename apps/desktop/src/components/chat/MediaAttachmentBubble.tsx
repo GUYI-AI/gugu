@@ -6,7 +6,7 @@ import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
 import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
 import { attachmentState } from '../../lib/attachmentState'
-import { useReadModel } from '../../lib/readModel'
+import { useReplica } from '../../lib/replica'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { useAuth } from '../../store/auth'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
@@ -37,7 +37,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const box = useRef<HTMLDivElement>(null)
   const managedFile = (meta.source.kind === 'item' || meta.source.kind === 'message' || meta.source.kind === 'attachment') && !isRenderableImage(meta.fileName, meta.mimeType)
   const near = useNearViewport(box, managedFile)
-  const reading = useReadModel(attachmentState, user && managedFile ? [sourceKeyOf(meta.source), meta.source] : null, { read: near })
+  const reading = useReplica(attachmentState, user && managedFile ? [sourceKeyOf(meta.source), meta.source] : null, { read: near })
   const metadata = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error' }
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>

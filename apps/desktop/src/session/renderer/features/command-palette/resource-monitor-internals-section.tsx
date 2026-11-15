@@ -25,6 +25,7 @@ const COUNTER_LABEL = {
   presenceBatches: 'palette.counterPresenceBatches',
   presenceIds: 'palette.counterPresenceIds',
   contactsProviderRenders: 'palette.counterContactsRenders',
+  snapshotRefusals: 'palette.counterSnapshotRefusals',
 } as const;
 
 const log = rendererLogger('resource-monitor/internals');

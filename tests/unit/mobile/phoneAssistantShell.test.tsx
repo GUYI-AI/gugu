@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({ transition: vi.fn((update: () => void) => upda
 vi.mock('../../../apps/desktop/src/mobile/navigateMobile', () => ({ navigateMobile: state.transition }))
 vi.mock('react-i18next', async original => ({ ...await original<object>(), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: null }) }))
-vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ setDraft: vi.fn(), draftAttachments: {}, setDraftAttachments: vi.fn() }) }))
+vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ setDraft: vi.fn(), keepDraft: vi.fn(), draftAttachments: {}, setDraftAttachments: vi.fn() }) }))
 vi.mock('../../../apps/desktop/src/store/chatLineScope', () => ({ ChatLineScope: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../../../apps/desktop/src/components/assistant/AssistantConversationProgress', () => ({ AssistantConversationProgress: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../../../apps/desktop/src/components/assistant/AssistantComposerEntries', () => ({ AssistantComposerEntries: () => null }))

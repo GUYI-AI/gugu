@@ -63,7 +63,7 @@ const { followLink } = vi.hoisted(() => ({ followLink: vi.fn(() => true) }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', () => ({ followLink }))
 const { AppsSection } = await import('../../../../apps/desktop/src/components/settings/AppsSection')
 const { useOfferedVersions } = await import('../../../../apps/desktop/src/components/settings/phoneMarketPage')
-const { queryClient } = await import('../../../../apps/desktop/src/lib/readModel')
+const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
 const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
 const { installedExtensionsStore: store } = (await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')) as unknown as {
@@ -72,7 +72,7 @@ const { installedExtensionsStore: store } = (await import('../../../../apps/desk
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
-  // What the market says is a read model: each case starts without an answer, delivered in the act() that brought it.
+  // What the market says is a replica: each case starts without an answer, delivered in the act() that brought it.
   notifyManager.setScheduler((callback) => { callback() })
   queryClient.clear()
   harness = createReactHarness()

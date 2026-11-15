@@ -83,7 +83,8 @@
    nothing drawn in between. Then it pulses. */
 .gg-usage-skeleton { background: var(--muted); border-radius: var(--radius-control); opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards, gg-usage-pulse 1.4s ease-in-out 150ms infinite; }
 @keyframes gg-usage-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
-@media (prefers-reduced-motion: reduce) { .gg-usage-skeleton { animation: gg-unknown-appear 0s linear 150ms forwards; } }
+.gg-usage-bone { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards, gg-usage-pulse 1.4s ease-in-out 150ms infinite; }
+@media (prefers-reduced-motion: reduce) { .gg-usage-skeleton, .gg-usage-bone { animation: gg-unknown-appear 0s linear 150ms forwards; } }
 
 /* ───────────────────────────────────────────────────────────────────────────
  * 用量看板层(#6334):模型调用分析、消耗分布与使用日志的卡片、表格、标签。

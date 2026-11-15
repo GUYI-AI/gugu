@@ -1,6 +1,7 @@
 // @@@5856 话题分栏的纯函数 —— 单独一个文件是 react-refresh 的要求(一个文件只导出组件),
 // 也让引文的取法能被单独判真假。
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
 
 /** 引用条的文本:与主线同形(一行引文 + 省略)。引用的是话题里的一句话,所以它留在分栏自己的输入框上。 */
 export function quotePrefixOf(message: Pick<MessageItem, 'content'>): string {
@@ -53,12 +54,15 @@ export function maxTopicSplitWidthForAvailableWidth(availableWidth: number): num
   return Math.min(TOPIC_SPLIT_MAX_WIDTH, Math.max(TOPIC_SPLIT_MIN_WIDTH, remaining))
 }
 
-export function readStoredTopicSplitWidth(storage: Storage = window.localStorage): number {
-  const value = Number(storage.getItem(TOPIC_SPLIT_WIDTH_STORAGE_KEY))
-  if (!Number.isFinite(value) || value <= 0) return TOPIC_SPLIT_DEFAULT_WIDTH
+// A view-state setting of the device (lib/viewStateTable); the old localStorage value moves over once.
+takeLegacyInterface(TOPIC_SPLIT_WIDTH_STORAGE_KEY, TOPIC_SPLIT_WIDTH_STORAGE_KEY, Number)
+
+export function readStoredTopicSplitWidth(): number {
+  const value = readInterface<number>(TOPIC_SPLIT_WIDTH_STORAGE_KEY)
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return TOPIC_SPLIT_DEFAULT_WIDTH
   return clampTopicSplitWidth(value)
 }
 
-export function writeStoredTopicSplitWidth(width: number, storage: Storage = window.localStorage): void {
-  storage.setItem(TOPIC_SPLIT_WIDTH_STORAGE_KEY, String(clampTopicSplitWidth(width)))
+export function writeStoredTopicSplitWidth(width: number): void {
+  writeInterface(TOPIC_SPLIT_WIDTH_STORAGE_KEY, clampTopicSplitWidth(width))
 }

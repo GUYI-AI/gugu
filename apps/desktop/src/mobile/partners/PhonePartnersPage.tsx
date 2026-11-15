@@ -95,7 +95,7 @@ export function PhonePartnersPage({
 }) {
   const { t } = useTranslation('main')
   const { t: ct } = useTranslation('contacts')
-  const { contacts, sharedGroupAgents, groupChats, pendingRequestCount, sentRequests, sendRequest, setAgentPublic, setAgentDesiredStatus, getCommonGroupChats } = useContactsStore()
+  const { contacts, sharedGroupAgents, groupChats, pendingRequestCount, sentRequests, sendRequest, setAgentPublic, setAgentDesiredStatus } = useContactsStore()
   const { devices } = useDevicesStore()
   const { isHome } = useMachineLabel()
   const liveSessions = useLiveDeviceSessions()
@@ -217,7 +217,6 @@ export function PhonePartnersPage({
             onRequestAgent={requestAgent}
             onSetAgentPublic={setAgentPublic}
             onSetAgentDesiredStatus={setAgentDesiredStatus}
-            getCommonGroupChats={getCommonGroupChats}
           />
         )
       }

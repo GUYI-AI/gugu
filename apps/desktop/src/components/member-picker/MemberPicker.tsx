@@ -50,7 +50,7 @@ export interface MemberPickerProps {
   /** 不能拉人进来时「人」那一页说的话(项目群 / 没有邀请权限);给了就只能选 Agent。 */
   peopleDenied?: string
   /** Agent 行上替换任务那一句的话(添加成员时的审批状态)。 */
-  agentNote?: (id: string) => string | undefined
+  agentNote?: (id: string) => ReactNode | undefined
   busy?: boolean
   busyLabel?: string
   /** 提交后的说明 / 错误,画在确认按钮上方。 */
@@ -318,7 +318,7 @@ function PickerOption({ row, index, mobile, active, checked, locked, where, note
   checked: boolean
   locked: boolean
   where: string | null
-  note?: string
+  note?: ReactNode
   onToggle: () => void
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
 }) {

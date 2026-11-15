@@ -1,5 +1,5 @@
 import { remoteWorkspaceDevices } from './remoteWorkspaceDevices'
-import type { Reading } from '../lib/readModel'
+import type { Reading } from '../lib/replica'
 import { machineKeyOf } from '@gugu/core/shared/deviceMachines'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { serverMachineNotices } from '@gugu/core/cloud/serverMachineHealth'

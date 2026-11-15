@@ -22,7 +22,9 @@ import type { ContactUser } from '../../../packages/core/src/shared/types/contac
 import type { AccountRevisionListener } from '../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import type { ChatContextValue } from '../../../apps/desktop/src/store/chatContext'
 import { createNode, createReactHarness, displayIdentity, renderWithAppProviders, typeInto } from '../../support/testHarness'
+import { publishRendererSession } from '../../../apps/desktop/src/lib/sessionPublication'
 import { setAgentDisplayStatusOverride, clearAgentDisplayStatusOverrides } from '../../support/agentDisplayStatusTestDouble'
+import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
@@ -99,7 +101,11 @@ function identitiesFor(snapshot: GroupCollabSnapshot): DisplayIdentity[] {
 }
 
 let harness: ReturnType<typeof createReactHarness>
+let viewAccount = 0
 beforeEach(() => {
+  viewStateCache.forget('view:')
+  // The view-state table (search words, folds) is keyed by the signed-in account: a fresh one per case keeps cases apart.
+  publishRendererSession('SIGNED_IN', { user: { id: `view-${viewAccount++}` } } as never)
   harness = createReactHarness()
   clearAgentDisplayStatusOverrides()
   // Member controls project the authoritative management capabilities.

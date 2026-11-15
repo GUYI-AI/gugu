@@ -29,7 +29,7 @@ export interface PasswordApproval { kind?: 'login'; requestId: string; origin: s
 /** An Agent asking the person to save a new credential, or to change one it may not write. Metadata only. */
 export interface PasswordSaveRequest { kind: 'save'; requestId: string; origin: string; credentialId?: string; agent: string; agentName: string; sessionTitle: string; sessionId: string; deviceId: string; maskedAccount?: string; expiresAt: number
   /** What the card asks the person to fill, in order (names only): `account` / `password`, or a field's id. */
-  inputs?: PasswordSaveInput[] }
+  inputs?: PasswordSaveInput[]; saveKey?: string }
 export interface PasswordSaveInput { key: string; name: string; secret: boolean }
 export type PasswordRequestView = PasswordApproval | PasswordSaveRequest
 /** What the Agent proposed. Shown only in the person's own add/edit form, never in a message. */

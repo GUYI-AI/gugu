@@ -18,52 +18,12 @@
 [data-chat-surface][data-phone-task-picking] [data-running-bar-content] { visibility: hidden; }
 .gg-phone-folder-picker { position: absolute; inset: 0; z-index: 20; display: flex; background: var(--ta-panel-bg); }
 
-/* 框上沿那一枚任务标签(原型 v7.12 .v7-task-tag):左缩进让开回形针,和框里的字对齐。 */
-.gg-phone-task-tag {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--control-h-touch);
-  align-items: center;
-  gap: var(--spacing-xs);
-  min-width: 0;
-  margin: 0 var(--spacing-sm) var(--spacing-sm) 48px;
-}
-.gg-phone-task-chip {
-  grid-column: 1;
-  grid-row: 1;
-  justify-self: start;
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: var(--spacing-sm);
-  height: 32px;
-  padding: 0 var(--spacing-sm);
-  border: 0;
-  border-radius: var(--radius-capsule);
-  background: var(--selected);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--font-body);
-  cursor: pointer;
-}
-.gg-phone-task-where {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  min-width: 0;
-  min-height: 32px;
-  height: auto;
-  padding: 0 var(--spacing-xs);
-  border: 0;
-  background: none;
-  color: var(--muted-fg);
-  font: inherit;
-  font-size: var(--font-caption);
-  cursor: pointer;
-}
-.gg-phone-task-where > span { min-width: 0; overflow-wrap: anywhere; white-space: normal; text-align: left; }
-.gg-phone-task-where[data-blocked] { color: var(--warn-fg); }
-.gg-phone-task-tag > .gg-icon-btn { grid-column: 2; grid-row: 1; justify-self: end; }
+/* Project tasks use the same compact control row and focus-preserving menus as new sessions. */
+.gg-phone-task-controls { display: flex; align-items: center; min-width: 0; gap: 4px; }
+.gg-phone-task-controls > .gg-phone-create-controls { flex: 1; min-width: 0; }
+.gg-phone-task-controls > .gg-icon-btn { flex: 0 0 auto; }
+[data-chat-surface][data-phone-task-open] .gg-phone-room-controls { display: none; }
 .gg-phone-project-empty { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-lg); padding-top: var(--spacing-2xl); color: var(--text-primary); font-size: var(--font-title); }
 [data-chat-surface][data-phone-task-open] .gg-phone-project-empty-start { visibility: hidden; }
+
+.gg-phone-task-blocker { margin: 0 0 8px; color: var(--text-secondary); font-size: var(--font-caption); }
