@@ -229,9 +229,11 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   useEffect(() => {
     const before = seen.current?.rowId === rowId ? seen.current.members : null;
     seen.current = { rowId, members: answered };
-    if (answered.every((list) => list !== null)) {
-      const counts = answered.map((list) => list!.length);
+    // Each machine that answered gives its count; one that has not keeps the count it had (a machine offline for good
+    // must not keep the others' counts from being written).
+    if (answered.some((list) => list !== null)) {
       const stored = layout.state === 'value' ? layout.value : null;
+      const counts = answered.map((list, index) => (list ? list.length : stored?.[index] ?? null));
       if (!stored || stored.join() !== counts.join()) projectFolderLayout.set(layoutArgs, counts);
     }
     if (!before) return;
@@ -322,17 +324,21 @@ function memberFolders(
 ): ShownFolder[] | 'waiting' | 'nothing' {
   const deviceId = machineRegistry.machineOf(projectId) ?? null;
   const live = (list: ProjectFolder[]) => list.map((folder): ShownFolder => ({ ...folder, offline: false, deviceId }));
-  const recorded = accountFolders(projectId)?.map((folder): ShownFolder => ({
-    ...folder, offline: true, deviceId, ...(accountUnread(projectId) ? { stale: true as const } : {}),
+  // The account's record of the machine's folders. Marked offline only once the machine is known not to answer (its
+  // read failed, or the deadline passed): before that, whether it is online is the machine's own state, ❌ "offline".
+  const recordedAs = (offline: boolean) => accountFolders(projectId)?.map((folder): ShownFolder => ({
+    ...folder, offline, deviceId, ...(accountUnread(projectId) ? { stale: true as const } : {}),
   })) ?? null;
+  const recorded = recordedAs(true);
   // Asked again and not answered past the deadline: what it last answered, now marked offline.
   if (reading.state === 'value' && !reading.error && !(reading.stale && late)) return live(reading.value);
   if (reading.state === 'value') {
     const last = reading.value.map((folder): ShownFolder => ({ ...folder, offline: true, deviceId }));
     return accountIsNewer(projectId) ? recorded ?? last : last;
   }
-  if (recorded) return recorded;
-  if (reading.state === 'error') return 'nothing';
+  if (reading.state === 'error') return recorded ?? 'nothing';
+  const waitingOnRecord = recordedAs(late);
+  if (waitingOnRecord) return waitingOnRecord;
   const count = layout.state === 'value' ? layout.value[index] : null;
   if (typeof count === 'number') {
     return Array.from({ length: count }, (_, n): ShownFolder => ({

@@ -50,10 +50,9 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const { settings: settingsSettings } = useAppSettingsKey('localProject')
+  const { settings: settingsSettings, reload: reloadSettings } = useAppSettingsKey('localProject')
   // null = not read yet (that machine's settings, or this device's on a first run): Create waits, ❌ "no default directory".
   const defaultDirectory = settingsSettings.state === 'value' ? settingsSettings.value.value.defaultProjectsDirectory : null
-  const settingsUnread = settingsSettings.state === 'error' ? translate('projects.create.failed') : null
 
   const create = async () => {
     const trimmed = name.trim()
@@ -121,13 +120,19 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
                 if (event.key === 'Enter') void create()
               }}
             />
-            {(error ?? settingsUnread) && (
+            {settingsSettings.state === 'error' && !error ? (
+              <p role="alert" data-testid="project-creation-error" className="text-foreground-destructive mt-1 text-xs">
+                {translate('projects.create.directoryUnread')}{' '}
+                <Button variant="link" size="xs" onClick={reloadSettings}>{translate('projects.create.retryRead')}</Button>
+              </p>
+            ) : null}
+            {error && (
               <p
                 role="alert"
                 data-testid="project-creation-error"
                 className="text-foreground-destructive mt-1 text-xs"
               >
-                {error ?? settingsUnread}
+                {error}
               </p>
             )}
           </Field>

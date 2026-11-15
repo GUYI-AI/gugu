@@ -336,6 +336,20 @@ describe('ProjectFolderCard', () => {
     await act(async () => retry?.click());
     expect(state.reload).toHaveBeenCalledTimes(1);
   });
+
+  it('the row\'s root placeholder holds the chosen place: a cold card keeps its order when the folders arrive', async () => {
+    const pending = (projectId: string, deviceId: string | null) => ({
+      ...folder(`pending:${projectId}:0`, 'root', '', [], projectId), path: '' as CanonicalPath, offline: false, deviceId, placeholder: true as const,
+    });
+    const order = () => [...container.querySelectorAll('[data-folder-of]')].map((node) => node.getAttribute('data-folder-of'));
+    // The row's own machine is second in member order.
+    await renderCard(stateOf({ folders: [pending('proj-d15', 'd15'), pending('p1', null)], chosen: null }), { memberIds: ['proj-d15', 'p1'] });
+    const before = order();
+    const real = [{ ...folder('ws-d15', 'root', '/srv/gugu', [], 'proj-d15'), offline: false, deviceId: 'd15' }, { ...ROOT, offline: false, deviceId: null }];
+    await renderCard(stateOf({ folders: real, chosen: real[1]! }), { memberIds: ['proj-d15', 'p1'] });
+    expect(order()).toEqual(before);
+    expect(before).toEqual(['p1', 'proj-d15']);
+  });
 });
 
 describe('useProjectFolders', () => {
@@ -673,7 +687,7 @@ describe('useProjectFolders', () => {
   // only one with nothing at all is waited for, until the deadline (open-flicker PR 3, C1).
   const never = () => new Promise<never>(() => {});
 
-  it('draws a machine that does not answer from the account’s record at once, marked offline', async () => {
+  it('draws a machine that does not answer from the account’s record at once, offline only once the deadline passes', async () => {
     onD15();
     mocks.account.set('d15:proj-hung-d15', [{ ...D15_ROOT, projectId: 'proj-hung-d15' }]);
     mocks.list.mockImplementation((projectId: string) =>
@@ -682,14 +696,19 @@ describe('useProjectFolders', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       await mount('p-here', ['p-here', 'proj-hung-d15']);
+      // Not answered yet is not offline: the machine is drawn as it is known to be (CODE-REVIEW-2 S1).
       expect(latest?.folders?.map((f) => [f.workspaceId, f.offline])).toEqual([
         ['ws-root', false],
-        ['ws-d15', true],
+        ['ws-d15', false],
       ]);
       expect(latest?.loadError).toBe(false);
       expect(latest?.unanswered).toEqual(['proj-hung-d15']);
       await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS));
       expect(latest?.unanswered).toEqual([]);
+      expect(latest?.folders?.map((f) => [f.workspaceId, f.offline])).toEqual([
+        ['ws-root', false],
+        ['ws-d15', true],
+      ]);
     } finally {
       vi.useRealTimers();
     }
@@ -776,6 +795,14 @@ describe('useProjectFolders', () => {
     await act(async () => root.render(React.createElement(Watch)));
     expect(frames[0]).toEqual(['ws-root', 'ws-d15']);
     expect(mocks.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('writes the count of each machine that answered, null for one that never does (a machine offline for good)', async () => {
+    mocks.list.mockImplementation((projectId: string) => projectId === 'p-part' ? Promise.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-part' }] }) : never());
+    await mount('p-part', ['p-part', 'proj-gone']);
+    const stored = Object.values(JSON.parse(localStorage.getItem('gugu.readModel.v1:tester') ?? '{}') as Record<string, { key: unknown[]; value: unknown }>)
+      .filter((entry) => entry.key[0] === 'projectFolderLayout').map((entry) => entry.value);
+    expect(stored).toEqual([[1, null]]);
   });
 
   it('after a restart, holds each machine\'s last count as placeholder papers in member order until it answers', async () => {

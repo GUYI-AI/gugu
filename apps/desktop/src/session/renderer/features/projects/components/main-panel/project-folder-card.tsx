@@ -293,8 +293,12 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
     Date.now() - Date.parse(folder.attachedAt) < FRESH_MS;
   // 刚挂上的排最前,然后是选中的,再是根目录和其余的(按挂上的先后)。
   const ordered = [...folders].sort((x, y) => {
-    const rank = (f: ProjectFolder) =>
-      isFresh(f) ? 0 : f.workspaceId === state.chosen?.workspaceId ? 1 : f.kind === 'root' ? 2 : 3;
+    // While the row's own machine has not answered, its root placeholder holds the chosen place: the real root lands in
+    // the same slot, ❌ moves to the front when it arrives.
+    const chosenPlace = (f: ShownFolder) => f.workspaceId === state.chosen?.workspaceId
+      || (state.chosen === null && f.placeholder === true && f.kind === 'root' && f.projectId === projectId);
+    const rank = (f: ShownFolder) =>
+      isFresh(f) ? 0 : chosenPlace(f) ? 1 : f.kind === 'root' ? 2 : 3;
     return rank(x) - rank(y);
   });
 
@@ -467,7 +471,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                 // 摊开 / 悬停上浮 / 落进来的动画放在按钮身上会被它压掉 —— 分层的 !important 从外面压不回来。
                 folder.placeholder ? (
                   // A folder of a machine not answered yet (the last run's count): its paper, in its place, without a name.
-                  <div key={folder.workspaceId} className="gg-folder-paper-slot" style={paperStyle(place, index)} data-peek={place.hidden ? 'hidden' : 'shown'} aria-hidden>
+                  <div key={folder.workspaceId} className="gg-folder-paper-slot" style={paperStyle(place, index)} data-peek={place.hidden ? 'hidden' : 'shown'} data-folder-of={folder.projectId} aria-hidden>
                     <div className="gg-folder-paper" aria-busy="true" data-testid="project-folder-paper-pending">
                       <span className="gg-folder-paper__top"><Unknown className="w-24" /></span>
                       <span className="gg-folder-paper__path block"><Unknown className="w-32" /></span>
@@ -477,6 +481,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                 <ProjectFolderMenu key={folder.workspaceId} folder={folder} projectName={projectName} state={state} disabled={!open}>
                 <div
                   className={cn('gg-folder-paper-slot', folder.workspaceId === dropping && 'is-dropping')}
+                  data-folder-of={folder.projectId}
                   style={paperStyle(place, index)}
                   data-peek={place.hidden ? 'hidden' : 'shown'}
                   aria-hidden={place.hidden || undefined}
