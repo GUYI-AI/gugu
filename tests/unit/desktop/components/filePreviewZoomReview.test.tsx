@@ -11,14 +11,16 @@ import { wireReadingZoom } from '../../../../apps/desktop/src/components/preview
 import { fileZoomScript, FILE_ZOOM_ATTRIBUTE } from '../../../../apps/desktop/src/session/shared/preview/file-zoom'
 import { PREVIEW_RESTORED_MESSAGE_TYPE } from '../../../../apps/desktop/src/session/shared/preview/preview-link-script'
 import { runWindowMenuCommand, type WindowMenuCommandTarget } from '../../../../apps/desktop/electron/window-menu-commands'
+import { readInterface } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 let harness: ReturnType<typeof createReactHarness>
 const originalVisibility = HTMLElement.prototype.checkVisibility
 beforeEach(() => {
-  harness = createReactHarness(); localStorage.clear(); HTMLElement.prototype.checkVisibility = () => true
+  harness = createReactHarness(); localStorage.clear(); viewStateCache.forget('view:'); HTMLElement.prototype.checkVisibility = () => true
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
 })
-afterEach(() => { harness.cleanup(); localStorage.clear(); HTMLElement.prototype.checkVisibility = originalVisibility; vi.unstubAllGlobals() })
+afterEach(() => { harness.cleanup(); localStorage.clear(); viewStateCache.forget('view:'); HTMLElement.prototype.checkVisibility = originalVisibility; vi.unstubAllGlobals() })
 
 const runScript = (source: string) => Function('document', 'CustomEvent', `return ${source}`)(document, CustomEvent)
 const native = () => {
@@ -77,11 +79,11 @@ it('an HTML page whose CSP blocked the injected script leaves Cmd+ to the window
   const n = native()
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
   expect(n.contents.setZoomLevel).toHaveBeenCalledWith(0.5)
-  expect(localStorage.getItem('gugu.file-content-zoom.html')).toBeNull()
+  expect(readInterface('gugu.file-content-zoom.html')).toBeUndefined()
 
   await act(async () => { window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: PREVIEW_RESTORED_MESSAGE_TYPE } })) })
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.html'))).toBeCloseTo(1.2)
+  expect(readInterface<number>('gugu.file-content-zoom.html')).toBeCloseTo(1.2)
   expect(n.contents.setZoomLevel).toHaveBeenCalledTimes(1)
 })
 
@@ -167,7 +169,7 @@ it('a scripted HTML page keeps Cmd+ after re-renders, also when it never scrolls
   const n = native()
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.html'))).toBeCloseTo(1.44)
+  expect(readInterface<number>('gugu.file-content-zoom.html')).toBeCloseTo(1.44)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
 })
 

@@ -10,6 +10,14 @@ import { SettingsGroup, SettingsRow } from '../settings/SettingsPrimitives'
 import { Mail } from '@/lib/icons'
 import '../../i18n/registerMainCatalog'
 import './referralPreview.css'
+import { takeLegacyLocalStorage, useViewState, writeViewState, type ViewPanel } from '../../lib/viewStateTable'
+
+// The code typed here is a draft of the account: view state (lib/viewStateTable). Kept in localStorage before
+// (`gugu:referral-entry-review:<account>`); moved over once.
+const referralDraftOf = (userId: string): ViewPanel => ({ conversation: 'account:referral', panel: 'draft', account: userId })
+takeLegacyLocalStorage((key) => key.startsWith('gugu:referral-entry-review:'), (key, raw) => {
+  if (raw) writeViewState(referralDraftOf(key.slice('gugu:referral-entry-review:'.length)), { text: raw })
+})
 
 // Review-only surfaces. A production build cannot enable this preview.
 const enabled = import.meta.env.DEV && import.meta.env.VITE_REFERRAL_ENTRY_PREVIEW === '1'
@@ -193,26 +201,8 @@ export function ReferralCodePreview({ userId }: { userId: string }) {
 
 function ReferralDraftField({ userId }: { userId: string }) {
   const { t } = useTranslation('main')
-  const storageKey = `gugu:referral-entry-review:${userId}`
-  const [initial] = useState(() => {
-    try {
-      return { draft: localStorage.getItem(storageKey) ?? '', failed: false }
-    } catch {
-      return { draft: '', failed: true }
-    }
-  })
-  const [draft, setDraft] = useState(initial.draft)
-  const [storageError, setStorageError] = useState(initial.failed)
-  const change = (value: string) => {
-    setDraft(value)
-    try {
-      if (value) localStorage.setItem(storageKey, value)
-      else localStorage.removeItem(storageKey)
-      setStorageError(false)
-    } catch {
-      setStorageError(true)
-    }
-  }
+  const [{ text: draft }, setEntry] = useViewState(referralDraftOf(userId), { text: '' })
+  const change = (value: string) => setEntry({ text: value })
   return (
     <div className="ta-onb-field" data-testid="referral-preview-onboarding">
       <label htmlFor="referral-preview-code" className="ta-field-label flex items-center gap-2">
@@ -238,9 +228,9 @@ function ReferralDraftField({ userId }: { userId: string }) {
       <p
         id="referral-preview-draft-note"
         className="m-0 text-left text-[length:var(--font-caption)] text-[var(--muted-fg)]"
-        role={storageError ? 'alert' : undefined}
+
       >
-        {t(storageError ? 'referralPreview.storageError' : 'referralPreview.draftNote')}
+        {t('referralPreview.draftNote')}
       </p>
     </div>
   )

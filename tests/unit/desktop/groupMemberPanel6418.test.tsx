@@ -19,6 +19,7 @@ import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
 import { removeDeviceSessions, updateDeviceSessions } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { publishRendererSession } from '../../../apps/desktop/src/lib/sessionPublication'
 import { readViewState } from '../../../apps/desktop/src/lib/viewStateTable'
+import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 const shell = vi.hoisted(() => ({ mobile: false }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
@@ -84,6 +85,7 @@ const IDENTITIES: DisplayIdentity[] = [
 let harness: ReturnType<typeof createReactHarness>
 let viewAccount = 0
 beforeEach(() => {
+  viewStateCache.forget('view:')
   harness = createReactHarness()
   // The view-state table is keyed by the signed-in account: a fresh one per case keeps one case's search words out of the next.
   publishRendererSession('SIGNED_IN', { user: { id: `view-${viewAccount++}` } } as never)

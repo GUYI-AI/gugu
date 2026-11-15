@@ -42,8 +42,9 @@ export function readChatDrafts(accountId: string | null): { texts: Record<string
   const texts: Record<string, string> = {}, mentions: Record<string, StoredDraftMention[]> = {}
   if (!accountId) return { texts, mentions }
   for (const [chatId, entry] of readPanelEntries<Entry>('draft', accountId)) {
-    // @ picks without words mean nothing to restore (the composer drops them too). Task sessions keep theirs apart.
-    if (!entry.text || chatId.startsWith('task:')) continue
+    // @ picks without words mean nothing to restore (the composer drops them too). Drafts of a task (`task:…`) or of the
+    // account itself (`account:…`) are not a chat's.
+    if (!entry.text || chatId.includes(':')) continue
     texts[chatId] = entry.text
     if (entry.mentions?.length) mentions[chatId] = entry.mentions
   }

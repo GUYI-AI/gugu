@@ -62,3 +62,20 @@ it('a left conversation takes no writes (its closing panels saving on the way ou
   writeViewState({ conversation: 'left', panel: 'draft' }, { text: 'joined again' })
   expect(readViewState({ conversation: 'left', panel: 'draft' })).toEqual({ text: 'joined again' })
 })
+
+it('the hook reads and writes the entry of the account it names (a device setting, another account), not the signed-in one', async () => {
+  const { DEVICE, readInterface, useInterface } = await import('../../../../apps/desktop/src/lib/viewStateTable')
+  const { createReactHarness } = await import('../../../support/testHarness')
+  const { act, createElement } = await import('react')
+  const seen: unknown[] = []
+  let set: (value: number) => void = () => {}
+  function Probe() { const [width, setWidth] = useInterface('probe.width', 240); seen.push(width); set = setWidth; return null }
+  const harness = createReactHarness()
+  await harness.render(createElement(Probe))
+  await act(async () => set(300))
+  expect(readInterface('probe.width'), 'stored as the device\'s').toBe(300)
+  expect(readViewState({ conversation: '', panel: 'ui:probe.width' }), 'not under the signed-in account').toEqual({})
+  expect(readViewState({ conversation: '', panel: 'ui:probe.width', account: DEVICE })).toEqual({ value: 300 })
+  expect(seen.at(-1)).toBe(300)
+  harness.cleanup()
+})

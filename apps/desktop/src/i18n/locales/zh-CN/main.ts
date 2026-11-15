@@ -19,8 +19,7 @@ export default {
     "optionalCode": "邀请码（选填）",
     "placeholder": "有邀请码可以填在这里",
     "clear": "清除",
-    "draftNote": "仅保存本机预览草稿，尚未提交或确认邀请来源；留空也能继续。",
-    "storageError": "本机草稿保存失败；仍可留空继续，邀请码不会提交。"
+    "draftNote": "仅保存本机预览草稿，尚未提交或确认邀请来源；留空也能继续。"
 },
   "imageAnnotate": {
     "title": "编辑图片",

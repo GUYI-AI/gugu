@@ -19,6 +19,7 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
+import { readInterface, writeInterface } from '@/lib/viewStateTable'
 
 /**
  * GUYI-AI/gugu#2642 the inner column (a group's / project's agents and topics, between the one list and the content) is
@@ -53,16 +54,16 @@ const FoldableColumn = observer(() => (columnShown.get() ? <InnerColumn /> : nul
 let harness: ReturnType<typeof createReactHarness>;
 beforeEach(async () => {
   await page.viewport(1100, 700);
-  localStorage.removeItem(LIST_KEY);
-  localStorage.removeItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY);
+  writeInterface(LIST_KEY, undefined);
+  writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, undefined);
   runInAction(() => columnShown.set(true));
   document.documentElement.dataset.platform = 'mac';
   document.documentElement.dataset.theme = 'light';
 });
 afterEach(() => {
   harness?.cleanup();
-  localStorage.removeItem(LIST_KEY);
-  localStorage.removeItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY);
+  writeInterface(LIST_KEY, undefined);
+  writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, undefined);
   delete document.documentElement.dataset.platform;
   delete document.documentElement.dataset.theme;
 });
@@ -153,10 +154,10 @@ it('dragging resizes the column live; the width is stored on release under its o
   await expect.poll(() => width(ui.column()!)).toBe(300);
   expect(ui.surface().getBoundingClientRect().left, 'the content gives way at once').toBeCloseTo(ui.column()!.getBoundingClientRect().right);
   expect(centreX(handle), 'the handle moves with the edge').toBeCloseTo(ui.column()!.getBoundingClientRect().right);
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing is stored mid-drag').toBeNull();
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing is stored mid-drag').toBeUndefined();
   pointer('pointerup', handle, start + 60);
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe('300');
-  expect(localStorage.getItem(LIST_KEY), 'the list keeps its own width').toBeNull();
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(300);
+  expect(readInterface(LIST_KEY), 'the list keeps its own width').toBeUndefined();
   expect(width(ui.list())).toBe(240);
 });
 
@@ -169,7 +170,7 @@ it('dragging past the minimum stops there (no collapse); past the cap it stops a
   await expect.poll(() => width(ui.column()!)).toBe(INNER_SIDEBAR_MIN_WIDTH_PX);
   pointer('pointerup', handle, start - 500);
   expect(ui.column(), 'the column is still there').not.toBeNull();
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(String(INNER_SIDEBAR_MIN_WIDTH_PX));
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(INNER_SIDEBAR_MIN_WIDTH_PX);
 
   // 1100 wide, list 240: the card is 860, 40% of it is 344.
   const again = centreX(handle);
@@ -177,7 +178,7 @@ it('dragging past the minimum stops there (no collapse); past the cap it stops a
   pointer('pointermove', handle, again + 800);
   await expect.poll(() => width(ui.column()!)).toBe(344);
   pointer('pointerup', handle, again + 800);
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe('344');
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(344);
   const card = ui.surface().getBoundingClientRect().right - ui.column()!.getBoundingClientRect().left;
   expect(width(ui.surface()) / card, 'the content keeps at least 60% of the card').toBeGreaterThanOrEqual(0.6 - 0.01);
 });
@@ -188,17 +189,17 @@ it('arrow keys step it by 16 and store it, even two presses within one frame', a
   handle.focus();
   await userEvent.keyboard('{ArrowRight}');
   await expect.poll(() => width(ui.column()!)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX + 16);
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(String(INNER_SIDEBAR_DEFAULT_WIDTH_PX + 16));
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX + 16);
   // The drawn width is a transform that catches up on the next frame; the second press must not read the old one.
   const press = (key: string) => handle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   press('ArrowLeft');
   press('ArrowLeft');
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(String(INNER_SIDEBAR_DEFAULT_WIDTH_PX - 16));
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX - 16);
   await expect.poll(() => width(ui.column()!)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX - 16);
 });
 
 it('a restart comes back at the stored width', async () => {
-  localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, '300');
+  writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, 300);
   const ui = await renderWorkspace();
   expect(width(ui.column()!)).toBe(300);
   expect(centreX(ui.innerHandle()!)).toBeCloseTo(ui.column()!.getBoundingClientRect().right);
@@ -206,7 +207,7 @@ it('a restart comes back at the stored width', async () => {
 
 it('a narrower window or a wider list makes the column give way; the stored width comes back with the room', async () => {
   await page.viewport(1600, 700);
-  localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, '500');
+  writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, 500);
   const ui = await renderWorkspace();
   expect(width(ui.column()!)).toBe(500);
 
@@ -225,14 +226,14 @@ it('a narrower window or a wider list makes the column give way; the stored widt
   await expect.poll(() => width(ui.column()!)).toBe(240);
   expect(width(ui.surface())).toBeGreaterThan(300);
 
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'the choice itself is kept').toBe('500');
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'the choice itself is kept').toBe(500);
   // 1700 wide, list 400: the card is 1300, 40% of it is over 500 again.
   await page.viewport(1700, 700);
   await expect.poll(() => width(ui.column()!)).toBe(500);
 });
 
 it('while the window holds the column narrower than chosen, a press without a move or an arrow at the cap keeps the choice', async () => {
-  localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, '500');
+  writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, 500);
   await page.viewport(1000, 700);
   const ui = await renderWorkspace();
   await expect.poll(() => width(ui.column()!)).toBe(304);
@@ -243,7 +244,7 @@ it('while the window holds the column narrower than chosen, a press without a mo
   handle.focus();
   await userEvent.keyboard('{ArrowRight}');
   expect(width(ui.column()!)).toBe(304);
-  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing the drawn width did not change is stored').toBe('500');
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing the drawn width did not change is stored').toBe(500);
   await page.viewport(1700, 700);
   await expect.poll(() => width(ui.column()!)).toBe(500);
 });
@@ -276,7 +277,7 @@ it('the drag guard sits over the tab strip behind the content, so pressing there
 });
 
 it('folding the column takes its handle and guard away; unfolding brings them back at the same width', async () => {
-  localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, '320');
+  writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, 320);
   const ui = await renderWorkspace();
   expect(ui.handles()).toHaveLength(2);
   await act(async () => runInAction(() => columnShown.set(false)));

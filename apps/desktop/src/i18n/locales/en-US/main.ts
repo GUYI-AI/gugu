@@ -19,8 +19,7 @@ export default {
     "optionalCode": "Invitation code (optional)",
     "placeholder": "Enter a code if you have one",
     "clear": "Clear",
-    "draftNote": "Saved only as a local preview draft. No referral is submitted or confirmed; you can continue without a code.",
-    "storageError": "The local draft could not be saved. You can continue without a code; nothing will be submitted."
+    "draftNote": "Saved only as a local preview draft. No referral is submitted or confirmed; you can continue without a code."
 },
   "imageAnnotate": {
     "title": "Edit image",
