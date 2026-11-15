@@ -147,7 +147,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   return <div ref={root} data-phone-watch-layout data-landscape={large && landscape || undefined}>
     <section data-phone-watch-window data-mode={large ? 'enlarged' : 'floating'} data-revealed={revealed || undefined} data-source-tabs={large && both || undefined}
       aria-label={t('controlWatch.picture')} hidden={!active || docked}
-      style={large ? { height: landscape ? undefined : (enlarged?.height ?? 0) + 48 + (both ? 32 : 0), visibility: landscape ? source?.size ? undefined : 'hidden' : enlarged ? undefined : 'hidden' }
+      style={large ? { width: landscape ? undefined : enlarged?.width, height: landscape ? undefined : (enlarged?.height ?? 0) + 48 + (both ? 32 : 0), visibility: landscape ? source?.size ? undefined : 'hidden' : enlarged ? undefined : 'hidden' }
         : { width: currentBox.width, height: currentBox.height, left: currentBox.x, top: currentBox.y, visibility: small ? undefined : 'hidden' }}>
       {large && <div data-phone-watch-toolbar>
         <IconButton aria-label={t('controlWatch.shrink')} onClick={shrink}><Minimize /></IconButton>

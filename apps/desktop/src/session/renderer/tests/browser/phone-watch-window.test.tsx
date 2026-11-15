@@ -75,6 +75,8 @@ it('restores a docked window on the same side and keeps source labels out of the
   await act(async () => model.dispatch({ type: 'enlarge' }))
   await page.getByRole('tab', { name: 'controlWatch.computer', exact: true }).click()
   expect(model.getSnapshot().source!.id).toBe('desktop')
+  const enlarged = host.querySelector('[data-phone-watch-picture]')!.getBoundingClientRect()
+  expect(enlarged.width / enlarged.height).toBeCloseTo(.8, 2)
   await act(async () => model.dispatch({ type: 'minimize' }))
   expect(host.querySelector('[data-phone-watch-switch]')).toBeNull()
   const frame = host.querySelector('[data-phone-watch-window]')!.getBoundingClientRect()

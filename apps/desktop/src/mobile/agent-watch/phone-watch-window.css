@@ -1,4 +1,6 @@
 [data-phone-watch-layout] { display: flex; position: relative; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.gg-aw .gg-aw-body > [data-phone-live-conversation] { margin-inline: calc(-1 * var(--spacing-md)); }
+.gg-aw [data-phone-live-conversation] [data-phone-watch-chat] { padding-inline: var(--spacing-md); }
 [data-phone-watch-layout] [data-phone-watch-chat] { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 [data-phone-watch-layout] [data-phone-watch-window] { position: absolute; z-index: 10; overflow: hidden; border-radius: var(--radius-xl); box-shadow: var(--shadow-lift); background: var(--bg); isolation: isolate; }
 [data-phone-watch-layout] [data-phone-watch-window][hidden], [data-phone-watch-layout] [data-phone-watch-source][hidden] { display: none; }
@@ -11,7 +13,7 @@
 [data-phone-watch-layout] [data-phone-watch-small-actions] > button svg { width: 14px; height: 14px; }
 [data-phone-watch-layout] [data-phone-watch-small-actions] > .phone-watch-enlarge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; min-height: 40px; padding: 10px; border: 0; border-radius: var(--radius-circle); background: var(--bg-overlay-modal); color: var(--color-white); }
 [data-phone-watch-layout] [data-phone-watch-small-actions] > .phone-watch-enlarge svg { width: 20px; height: 20px; }
-[data-phone-watch-layout] [data-phone-watch-window][data-mode='enlarged'] { position: relative; left: auto; top: auto; width: 100%; flex: none; margin-bottom: var(--spacing-sm); }
+[data-phone-watch-layout] [data-phone-watch-window][data-mode='enlarged'] { position: relative; left: auto; top: auto; width: 100%; align-self: center; flex: none; margin-bottom: var(--spacing-sm); }
 [data-phone-watch-layout] [data-mode='enlarged'] [data-phone-watch-picture] { top: 48px; bottom: 0; }
 [data-phone-watch-layout] [data-mode='enlarged'][data-source-tabs] [data-phone-watch-picture] { bottom: 32px; }
 [data-phone-watch-layout] [data-phone-watch-toolbar] { position: absolute; inset: 0 0 auto; display: flex; justify-content: flex-end; align-items: center; height: 48px; padding: 4px 8px; background: var(--bg); }
