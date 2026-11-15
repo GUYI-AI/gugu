@@ -27,7 +27,7 @@ describe('personal account deletion presentation', () => {
   it('shows all consequences and retains group history under the deleted identity', async () => {
     await render({ stage: 'impact', impact, acknowledged: false, onAcknowledge: vi.fn(), onContinue: vi.fn() })
     const text = harness.container.textContent!
-    for (const label of ['你的智能体', '你的项目', '你的文件', '你发出的消息和文件', '剩余积分', '已注销用户']) expect(text).toContain(label)
+    for (const label of ['你的智能体', '你的项目', '你上传的文件', '你发出的消息和文件', '剩余积分', '已注销用户']) expect(text).toContain(label)
     expect([...harness.container.querySelectorAll('button')].find(button => button.textContent === '继续')?.disabled).toBe(true)
     expect(text).not.toMatch(/冷静期|反悔期|群消息将被删除/)
   })

@@ -21,8 +21,8 @@ export function PersonalAccountDeletion({ view, onCancel }: { view: AccountDelet
       <SettingsRow title={t('accountDeletion.agents')} description={t('accountDeletion.agentsNote')} control={number(impact.agents)} />
       <SettingsRow title={t('accountDeletion.projects')} description={t('accountDeletion.projectsNote')} control={number(impact.projects)} />
       <SettingsRow title={t('accountDeletion.files')} description={t('accountDeletion.filesNote')} control={<span>{number(impact.files)} <span>{formatAttachmentSize(impact.fileBytes)}</span></span>} />
-      <SettingsRow title={t('accountDeletion.orders')} />
       <SettingsRow title={t('accountDeletion.messages')} description={t('accountDeletion.messagesNote')} control={number(impact.groupMessages)} />
+      <SettingsRow title={t('accountDeletion.orders')} />
       <SettingsRow title={t('accountDeletion.credits')} description={t('accountDeletion.creditsNote')} control={number(impact.remainingCredits)} />
     </SettingsGroup>
   }
