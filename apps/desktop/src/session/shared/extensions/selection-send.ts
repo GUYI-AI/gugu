@@ -1,4 +1,4 @@
-import { fileCiteDraft } from '@gugu/session-shared/markdown';
+import { fileCite } from '@gugu/session-shared/markdown';
 import { fileRefOf } from './app-runtime-protocol';
 
 /**
@@ -10,8 +10,10 @@ import { fileRefOf } from './app-runtime-protocol';
  */
 export type SelectionSendResult = 'sent' | 'cancelled';
 export interface SelectionSendRect { x: number; y: number; width: number; height: number }
-/** What the host opens: the App's words and pills as they will be sent, and where (the page's CSS px). */
-export interface SelectionSendOpen { draft: string; quote: string; pills: string[]; rect: SelectionSendRect; viewport: { width: number; height: number } }
+/** The cite as it will be sent (`draft`, `fileCiteDraft`'s), and its parts as the box shows them. */
+export type SelectionSendCite = ReturnType<typeof fileCite>;
+/** What the host opens: the App's cite, and where (the page's CSS px). */
+export interface SelectionSendOpen extends SelectionSendCite { rect: SelectionSendRect; viewport: { width: number; height: number } }
 
 const MAX_TEXT = 16 * 1024;
 const MAX_REFS = 8;
@@ -41,8 +43,7 @@ export function selectionSendOf(input: Record<string, unknown>, workspace: strin
   const page = { width: viewport.width as number, height: viewport.height as number };
   if (box.width < 0 || box.height < 0 || page.width <= 0 || page.height <= 0) refuse('invalid', 'Send takes the selection\'s rect and the page\'s viewport in CSS px');
   if (box.x > page.width || box.y > page.height || box.x + box.width < 0 || box.y + box.height < 0) refuse('invalid', 'The selection is not on the page');
-  const draft = fileCiteDraft(text, pills);
-  return { draft, quote: text.trim(), pills: pills.map(({ file, label }) => `${file.id.replace(/\\/g, '/').split('/').pop()}${label ? ` · ${label}` : ''}`), rect: box, viewport: page };
+  return { ...fileCite(text, pills), rect: box, viewport: page };
 }
 
 /** What Send sends: the cite's words and pills as `fileCiteDraft` writes them, then the person's own, after a blank line. */

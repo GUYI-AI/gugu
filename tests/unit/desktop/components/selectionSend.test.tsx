@@ -26,8 +26,9 @@ const place = { rect: { x: 0, y: 0, width: 10, height: 10 }, viewport: { width: 
 
 describe('what Send sends', () => {
   it('is the cite exactly as fileCiteDraft writes it, a blank line, then the person\'s words', () => {
-    const { draft } = selectionSendOf({ text, refs, ...place }, 'session:task-1')
+    const { draft, quote, pills } = selectionSendOf({ text, refs, ...place }, 'session:task-1')
     expect(draft).toBe(fileCiteDraft(text, refs))
+    expect({ quote, pills }).toEqual({ quote: text, pills: ['proof.md · Lines 3–4'] })
     expect(selectionSendBody(draft, '  怎么证明？ @Claude  ')).toBe(`${fileCiteDraft(text, refs)}\n\n怎么证明？ @Claude`)
     expect(selectionSendBody(draft, ' \n ')).toBe(fileCiteDraft(text, refs))
   })

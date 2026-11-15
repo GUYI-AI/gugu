@@ -16,6 +16,7 @@ import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError
 import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
+import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
@@ -679,10 +680,9 @@ export function hostAppFrame(
       case 'filesSendSelection': {
         requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
         if (!session) refused('denied', 'Send needs a session page')
-        const { draft } = selectionSendOf(args, sessionWorkspace(session.id))
+        const { draft, quote, pills } = selectionSendOf(args, sessionWorkspace(session.id))
         // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
-        const { openSelectionSend } = await import('../chat/openSelectionSend')
-        return await openSelectionSend({ draft, sessionId: session.id, anchor: 'dock' })
+        return await openSelectionSend({ cite: { draft, quote, pills }, sessionId: session.id, anchor: 'dock' })
       }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)

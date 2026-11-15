@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { sessionSend } from '@/session/renderer/features/sessions/session-send'
 import { selectionSendBody, type SelectionSendResult } from '@/session/shared/extensions/selection-send'
@@ -6,40 +7,51 @@ import { rendererLogger } from '@/lib/log'
 import { Markdown } from '../markdown/Markdown'
 import { MentionPill } from '../markdown/MentionPill'
 import { Button } from '../ui/Button'
+import { useToast } from '../toastContext'
 import { NoteEditor } from './NoteEditor'
+import { takeSelectionSends, type SelectionSendAsked, type SelectionSendOptions } from './selectionSendAsk'
 import './selection-send.css'
 
-export interface SelectionSendOptions {
-  /** The selection's words and pills as `fileCiteDraft` writes them: shown, then sent before the person's words. */
-  draft: string
-  sessionId: string
-  /** Beside the selection (this window's CSS px), or a bar at the bottom (phone). */
-  anchor: DOMRect | 'dock'
-  /** The page under the selection: a click or a wheel on it closes Send (it cannot scroll away under the box). */
-  cover?: DOMRect
+const log = rendererLogger('selection-send')
+
+/** The shell's one Send box (`openSelectionSend`), as DispatchSheet is its picker: a new ask cancels the one open. */
+export function SelectionSendLayer() {
+  const [open, setOpen] = useState<{ asked: SelectionSendAsked; key: number } | null>(null)
+  const current = useRef<SelectionSendAsked | null>(null)
+  // Answered once: by the person, by running out, or by the next ask taking the box.
+  const finish = useCallback((asked: SelectionSendAsked, result: SelectionSendResult) => {
+    if (current.current !== asked) return
+    current.current = null
+    setOpen(null)
+    asked.answer(result)
+  }, [])
+  useEffect(() => takeSelectionSends((asked) => {
+    current.current?.answer('cancelled')
+    current.current = asked
+    setOpen(previous => ({ asked, key: (previous?.key ?? 0) + 1 }))
+  }), [])
+  useEffect(() => {
+    if (open?.asked.closeAfterMs === undefined) return
+    const timer = setTimeout(() => finish(open.asked, 'cancelled'), open.asked.closeAfterMs)
+    return () => clearTimeout(timer)
+  }, [open, finish])
+  // On body, as DispatchSheet's Sheet portals: inside the phone's viewport shell it would sit under the file preview's sheet.
+  return open ? createPortal(<SelectionSendBox key={open.key} {...open.asked} done={result => finish(open.asked, result)} />, document.body) : null
 }
 
-const log = rendererLogger('selection-send')
-/** One `@[label](target)` of `fileCiteDraft`'s pill line (stringifyMention's bracket form). */
-const PILL = /@\[((?:\\.|[^\]\\])*)\]\((?:<([^>]*)>|([^)\s]*))\)/g
-
-export function SelectionSendBox({ draft, sessionId, anchor, cover, done }: SelectionSendOptions & { done(result: SelectionSendResult): void }) {
+function SelectionSendBox({ cite, sessionId, anchor, cover, done }: SelectionSendOptions & { done(result: SelectionSendResult): void }) {
   const { t } = useTranslation('messaging')
+  const { toast } = useToast()
   const box = useRef<HTMLDivElement>(null)
-  const quote = useRef<HTMLDivElement>(null)
   const [words, setWords] = useState('')
   const [sending, setSending] = useState(false)
   const [failed, setFailed] = useState(false)
   const [place, setPlace] = useState<CSSProperties>({ visibility: 'hidden' })
-  const [clipped, setClipped] = useState(false)
   const mentionProvider = sessionSend(sessionId)?.mentionProvider
-  // `fileCiteDraft` ends with its pills' one line: the words above it are what may be cut, never the pills.
-  const cut = draft.lastIndexOf('\n')
 
   useLayoutEffect(() => {
     const element = box.current
     if (!element) return
-    setClipped(!!quote.current && quote.current.scrollHeight > quote.current.clientHeight + 1)
     if (anchor === 'dock') return setPlace({})
     const gap = 8, { innerWidth, innerHeight } = window, height = element.offsetHeight, width = element.offsetWidth
     const top = anchor.bottom + gap + height <= innerHeight ? anchor.bottom + gap : Math.max(gap, anchor.top - gap - height)
@@ -66,7 +78,9 @@ export function SelectionSendBox({ draft, sessionId, anchor, cover, done }: Sele
     setFailed(false)
     try {
       if (!target) throw new Error('No composer of this session is shown here')
-      await target.send(selectionSendBody(draft, said))
+      await target.send(selectionSendBody(cite.draft, said))
+      // The phone's bar covers the conversation the words went into: say they went. Beside a desktop page, it is in view.
+      if (anchor === 'dock') toast(t('selectionSend.sent'), 'success')
       done('sent')
     } catch (error) {
       log.warn({ error: String(error) }, 'Selection send failed')
@@ -81,14 +95,10 @@ export function SelectionSendBox({ draft, sessionId, anchor, cover, done }: Sele
       onWheel={() => done('cancelled')} /> : null}
     <div ref={box} role="dialog" aria-label={t('selectionSend.label')} className="gg-selection-send" data-dock={anchor === 'dock' || undefined}
       data-occludes-browser-page style={place}>
-      {cut > 0 ? <div ref={quote} className="gg-selection-send-quote" data-clipped={clipped || undefined}>
-        <Markdown trust="chat" content={draft.slice(0, cut)} />
-      </div> : null}
+      {/* The selected words as the bubble draws them (formulas too), out of their `> ` quote: at most three lines, then … */}
+      {cite.quote ? <div className="gg-selection-send-quote"><Markdown trust="chat" content={cite.quote.replace(/^> ?/gm, '')} /></div> : null}
       <div className="gg-md gg-selection-send-pills">
-        {[...draft.slice(cut + 1).matchAll(PILL)].map(([, label, wrapped, bare], index) => {
-          const name = label!.replace(/\\(.)/g, '$1')
-          return <MentionPill key={index} href={wrapped ?? bare ?? ''} title={name} file mention onClick={event => event.preventDefault()}>{name}</MentionPill>
-        })}
+        {cite.pills.map((label, index) => <MentionPill key={index} href="" title={label} file mention onClick={event => event.preventDefault()}>{label}</MentionPill>)}
       </div>
       <div className="gg-selection-send-note">
         <NoteEditor inputTestId="selection-send-note" placeholder={t('selectionSend.placeholder')} disabled={sending} mentionProvider={mentionProvider}
@@ -97,7 +107,7 @@ export function SelectionSendBox({ draft, sessionId, anchor, cover, done }: Sele
       </div>
       {failed ? <div role="alert" className="gg-selection-send-failure">{t('selectionSend.failed')}</div> : null}
       <div className="gg-selection-send-actions">
-        <Button variant="primary" size="sm" disabled={sending} onClick={() => void send()}>{t(sending ? 'selectionSend.sending' : 'selectionSend.send')}</Button>
+        <Button variant="primary" disabled={sending} onClick={() => void send()}>{t(sending ? 'selectionSend.sending' : 'selectionSend.send')}</Button>
       </div>
     </div>
   </>

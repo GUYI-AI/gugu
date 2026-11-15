@@ -39,7 +39,6 @@ export interface ExtensionHostActionOrigin {
 
 export type ExtensionHostAction =
   | { kind: 'taskMessage'; text: string }
-  /** API 54 `files.sendSelection`, checked by main: the Send box beside the selection of this page (its guest, by id). */
   | { kind: 'navigateTab'; delta: -1 | 1 }
   | { kind: 'openAppModal'; page: AppModalPage }
   | { kind: 'closeAppModal'; id: string }
