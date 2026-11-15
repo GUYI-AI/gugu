@@ -74,7 +74,7 @@ function mentionToPopupItem(item: MentionItem, renderMentionIcon?: RenderMention
       ? filePath
       : item.role === 'agent'
       ? isStackedAgent
-        ? `${name} · agent`
+        ? `${name}: agent`
         : undefined
       : item.role ?? item.description ?? (item.name && item.label !== item.name ? item.label : undefined),
     stacked: isStackedAgent || isFile,

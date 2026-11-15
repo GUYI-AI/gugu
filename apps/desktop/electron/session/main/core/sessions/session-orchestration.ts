@@ -384,7 +384,7 @@ async function localEnvelopeSender(caller: SessionRow): Promise<EnvelopeSender> 
 function remoteEnvelopeSender(caller: RemoteSessionCaller): EnvelopeSender {
   const name = caller.name?.trim() || providerDisplayName(caller.harness) || null;
   const device = caller.deviceLabel?.trim();
-  return { sessionId: caller.sessionId, title: name && device ? `${name} · ${device}` : name ?? device ?? null };
+  return { sessionId: caller.sessionId, title: name && device ? `${name} (${device})` : name ?? device ?? null };
 }
 
 /**

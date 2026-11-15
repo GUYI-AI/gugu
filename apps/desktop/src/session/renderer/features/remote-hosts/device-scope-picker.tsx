@@ -3,6 +3,7 @@
 // 选择器就是全 app 共用的那一个(`MachinePicker`,页标题尺寸):本机在前、在线的、离线的(淡着、写「离线 · X 前」)。
 // 一个模块**一个**选择,挂在模块层(`DeviceScopeProvider`),模块里每一页的标题右边画同一个选择器
 // (`PageHeader` 读它);❌ 挂在左栏列头下、搜索框旁、设置行里,❌ 按页各选各的。
+import { metadataSeparator } from '@/i18n/format'
 import { observer } from 'mobx-react-lite';
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -86,7 +87,7 @@ export const DeviceScopeStatus = observer(function DeviceScopeStatus({
   // state. `detail` replaces the last-seen time, so it carries both.
   const cached = state !== 'online' && store.cachedViews > 0;
   const seen = state === 'device_offline' && device.lastSeenAt ? t('connection.lastSeen', { time: formatRelativeTime(device.lastSeenAt) }) : null;
-  const detail = cached ? [seen, translate('deviceScope.readOnlyCache')].filter(Boolean).join(' · ') : null;
+  const detail = cached ? [seen, translate('deviceScope.readOnlyCache')].filter(Boolean).join(metadataSeparator()) : null;
   return (
     <ConnectionStatus
       state={state}

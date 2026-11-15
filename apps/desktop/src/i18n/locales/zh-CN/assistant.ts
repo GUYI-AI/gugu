@@ -481,7 +481,7 @@ export default {
     "tileSub_one": "{{count}} 项数据",
     "tileSub_other": "{{count}} 项数据",
     "tileSubEmpty": "睡眠、活动、心率",
-    "from": "来自 {{device}} · 更新于 {{time}}",
+    "from": "来自 {{device}}，更新于 {{time}}",
     "refresh": "刷新",
     "loading": "加载中…",
     "emptyStateTitle": "让健康状况一目了然",
@@ -532,7 +532,7 @@ export default {
     "noData": "没有记录",
     "lastNight": "昨晚",
     "nightOf": "{{date}} 醒来",
-    "bedWake": "{{bed}} 入睡 · {{wake}} 醒来",
+    "bedWake": "{{bed}} 入睡，{{wake}} 醒来",
     "inBed": "卧床 {{duration}}",
     "stage": {
       "awake": "清醒",
@@ -543,7 +543,7 @@ export default {
     },
     "workouts": "锻炼",
     "noWorkouts": "最近 7 天没有锻炼记录。",
-    "workoutHr": "平均 {{avg}} · 最高 {{max}}",
+    "workoutHr": "平均心率 {{avg}}，最高心率 {{max}}",
     "body": "身体",
     "bodyItem": {
       "weight_kg": "体重",

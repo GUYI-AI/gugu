@@ -266,7 +266,7 @@ function MobileAssistantAppContent({
         leading={
           <>
             {innerPage || back ? (
-              <IconButton size="lg" aria-label={`${t('panel.back')} · ${labels[back?.tab ?? tab]}`} onClick={() => innerPage ? innerPage.back() : back && open(back)} data-testid="mobile-assistant-back">
+              <IconButton size="lg" aria-label={`${t('panel.back')}: ${labels[back?.tab ?? tab]}`} onClick={() => innerPage ? innerPage.back() : back && open(back)} data-testid="mobile-assistant-back">
                 <ChevronLeft />
               </IconButton>
             ) : onExit ? (

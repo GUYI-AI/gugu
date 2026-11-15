@@ -19,7 +19,7 @@ import { STEP_STRIP_INSET } from '../tools/tool/tool-images';
 import { turnProcessHeaderSlot, turnProcessLine, turnProcessRow } from '../turn-process/turn-process.css';
 
 function summaryLayout(data: ToolRunItem, ctx: import('@session-chat/core/define').MeasureCtx) {
-  const now = data.now ? ` · ${toolRunNowLabel(data.now, rowTranslator(ctx))}` : '';
+  const now = data.now ? `: ${toolRunNowLabel(data.now, rowTranslator(ctx))}` : '';
   const command = data.now?.kind === 'command' ? ` ${data.now.command}` : '';
   const label = readableLabel(data.label + now + command, ctx, ctx.width - 20,
     ctx.theme.layout.agentConversation ? 12 : ctx.theme.config.roles.body.size);

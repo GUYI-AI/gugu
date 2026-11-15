@@ -274,7 +274,7 @@ export function toolDisplayName(node: ToolNode): string {
  */
 export function toolCallLabel(toolCall: ToolCallItem): string {
   const name = toolDisplayName(toolCall);
-  const label = toolCall.kind === 'mcp-tool-call' ? [toolCall.server, name].filter(Boolean).join(' · ') : name;
+  const label = toolCall.kind === 'mcp-tool-call' ? [toolCall.server, name].filter(Boolean).join(', ') : name;
   return label || toolCall.title;
 }
 

@@ -43,9 +43,7 @@ export function ConnectionStatus({
     <span className="gg-conn-status" role="status" data-state={state} data-testid={testId}>
       <span className="gg-conn-glyph" data-state={state} aria-hidden="true"><span className="gg-conn-glyph-inner" /></span>
       {subject ? <span className="gg-conn-subject" title={subject}>{subject}</span> : null}
-      {subject ? <span className="gg-conn-sep" aria-hidden="true">·</span> : null}
       <span className="gg-conn-word">{t(WORD_KEY[state])}</span>
-      {trailing ? <span className="gg-conn-sep" aria-hidden="true">·</span> : null}
       {trailing ? <span className="gg-conn-detail" title={trailing} data-testid={`${testId}-detail`}>{trailing}</span> : null}
     </span>
   )

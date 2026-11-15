@@ -474,7 +474,7 @@ function onEvent({ type, runtimeSessionId, payload }: GatewayEvent) {
     case 'subagent.complete': {
       const parent = [...runningTools].filter(([, name]) => name === 'delegate_task');
       if (parent.length !== 1) return;
-      const line = [payload.goal, payload.status, payload.summary ?? payload.text].filter(Boolean).join(' · ');
+      const line = [payload.goal, payload.status, payload.summary ?? payload.text].filter(Boolean).join(', ');
       sessionUpdate({ sessionUpdate: 'tool_call_update', toolCallId: parent[0]![0], content: [{ type: 'content', content: { type: 'text', text: String(line) } }] });
       return;
     }

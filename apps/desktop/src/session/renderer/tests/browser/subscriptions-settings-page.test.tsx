@@ -446,7 +446,7 @@ it('a Qwen row adds an API key connection with address and model and switches to
   await until('the select names the new key', () => switchTrigger('qwen')?.textContent === 'Saved API');
   await openSwitch('qwen');
   await until('the saved connection is listed', () => layer.querySelector('[data-testid="connection-api-1"]') !== null);
-  expect(layer.querySelector('[data-testid="connection-api-1"]')?.textContent).toContain('dashscope.example · qwen3-coder-plus');
+  expect(layer.querySelector('[data-testid="connection-api-1"]')?.textContent).toContain('dashscope.example, qwen3-coder-plus');
   await userEvent.keyboard('{Escape}');
 
   // 选中之后这一行就是这把 key:API 角标、连接名,❌「未登录」,❌「登录」。
@@ -872,7 +872,7 @@ it('the switch menu shows how much each account has left without switching to it
   await openSwitch('codex');
   await until('the other account shows its quota', () => layer.querySelector('[data-testid="connection-quota-second"]') !== null);
   const second = layer.querySelector('[data-testid="connection-quota-second"]') as HTMLElement;
-  expect(second.textContent).toBe('5 小时剩余 90% · 每周剩余 65%');
+  expect(second.textContent).toBe('5 小时剩余 90%，每周剩余 65%');
   expect(second.hasAttribute('data-warning')).toBe(false);
   await until('the current account shows its quota', () => layer.querySelector('[data-testid="connection-quota-native"]') !== null);
   const current = layer.querySelector('[data-testid="connection-quota-native"]') as HTMLElement;
