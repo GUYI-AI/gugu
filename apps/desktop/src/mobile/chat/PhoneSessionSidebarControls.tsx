@@ -48,9 +48,10 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
         </Button>
       }) : view === 'topics' ? <>
         <Button variant="ghost" className="gg-phone-room-choice" onClick={() => { setView(null); followLink({ kind: 'chat', chatId: anchor.chatId }) }}>{t('main')}</Button>
-        {topics.topics.map(topic => <Button key={topic.chat_id} variant="ghost" className="gg-phone-room-choice"
+        {topics.topics === null && !topics.error && <p role="status" className="gg-phone-composer-sheet-status">{t('loadingTopics')}</p>}
+        {topics.topics?.map(topic => <Button key={topic.chat_id} variant="ghost" className="gg-phone-room-choice"
           onClick={() => { setView(null); followLink({ kind: 'chat', chatId: topic.chat_id }) }}><Hash /><span className="gg-phone-room-choice-name">{topic.name}</span></Button>)}
-        {topics.error && <p role="alert">{topics.error}</p>}
+        {topics.error && <div role="alert">{topics.error}<Button variant="ghost" onClick={topics.reload}>{t('retry')}</Button></div>}
       </> : null}
     </PhoneComposerSheet>
   </div>
