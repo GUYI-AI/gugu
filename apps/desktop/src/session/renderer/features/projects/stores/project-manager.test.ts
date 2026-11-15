@@ -99,7 +99,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 
 vi.mock('@renderer/lib/stores/view-state-cache', () => ({
   viewStateCache: {
-    get: vi.fn(async () => undefined),
+    read: vi.fn(() => undefined),
   },
 }));
 

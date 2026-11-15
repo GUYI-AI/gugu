@@ -227,3 +227,4 @@ export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/co
 export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
+export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'

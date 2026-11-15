@@ -1,46 +1,33 @@
 import { comparer, reaction } from 'mobx';
-import { rpc } from '@renderer/lib/ipc';
 import { viewStateCache } from './view-state-cache';
 
 export class SnapshotRegistry {
   private readonly disposers = new Map<string, () => void>();
 
   /**
-   * Register an entity's snapshot with the registry.
-   *
-   * A MobX reaction is started that watches `getSnapshot()` and persists the
-   * result via RPC after a 1 second debounce whenever it structurally changes.
-   * Pass zero for manual preferences that must be saved before a refresh or restart.
-   * The cache is updated immediately on every change so subsequent reads are
-   * instant, and the entry is evicted from the cache when the disposer runs.
+   * Register an entity's snapshot with the registry: a MobX reaction writes `getSnapshot()` to the view state whenever
+   * it structurally changes. The write is immediate — main holds it from then on and writes the disk behind it, so
+   * nothing is lost to a quit right after a change.
    *
    * Call this AFTER restoring saved state so the initial value does not trigger
    * a spurious write (fireImmediately is false).
    *
-   * @returns A disposer function — call it when the entity is torn down to stop
-   *          the reaction and clean up the entry.
+   * @returns A disposer: stops the reaction. The entry stays — it is what the entity restores from next time.
    */
-  register(key: string, getSnapshot: () => unknown, delay = 1000): () => void {
+  register(key: string, getSnapshot: () => unknown): () => void {
     // Clean up any stale reaction for this key before creating a new one.
     this.disposers.get(key)?.();
 
-    // Warm the cache with the current snapshot value immediately on register.
-    viewStateCache.set(key, getSnapshot());
-
     const disposer = reaction(
       () => getSnapshot(),
-      (snapshot) => {
-        viewStateCache.set(key, snapshot);
-        void rpc.viewState.save(key, snapshot);
-      },
-      { equals: comparer.structural, delay, fireImmediately: false }
+      (snapshot) => viewStateCache.write(key, snapshot),
+      { equals: comparer.structural, fireImmediately: false }
     );
 
     this.disposers.set(key, disposer);
 
     return () => {
       disposer();
-      viewStateCache.delete(key);
       this.disposers.delete(key);
     };
   }
