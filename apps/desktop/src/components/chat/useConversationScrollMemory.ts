@@ -78,7 +78,7 @@ export function useConversationScrollMemory({
   viewportKey,
   activationKey,
   enabled,
-  messageIds,
+  messageIds: currentMessageIds,
   isAtBottomRef,
   setFollowingTail,
   loadMessageAnchor,
@@ -95,6 +95,11 @@ export function useConversationScrollMemory({
   openLocation: () => ListLanding | null
   revealMessage: (messageId: string, commit?: UnreadLocatorCommit) => Promise<void>
 } {
+  // Callers hand over a new array on every render. The restore below restarts when the rows change, not when the panel
+  // re-renders: restarted every frame it never counts its stable frames and holds the list for its whole deadline.
+  const messageIdsRef = useRef(currentMessageIds)
+  if (messageIdsRef.current.length !== currentMessageIds.length || messageIdsRef.current.some((id, index) => id !== currentMessageIds[index])) messageIdsRef.current = currentMessageIds
+  const messageIds = messageIdsRef.current
   const session = currentAuthSessionSignal()
   const positions = useMemo(() => positionsBySession.get(session) ?? new Map<string, ConversationViewportPosition>(), [session])
   positionsBySession.set(session, positions)
@@ -319,12 +324,25 @@ export function useConversationScrollMemory({
       }
       frame = requestAnimationFrame(settle)
     }
+    // The restore holds the row against late layout, never against the reader: their own input ends it where they are
+    // (as in useHistoryPageAnchor). Without this a wheel is undone every frame until the row has been still for three.
+    const yieldToReader = () => {
+      if (restoringActivationRef.current !== activationKey) return
+      cancelAnimationFrame(frame)
+      completedActivationRef.current = activationKey
+      restoringActivationRef.current = null
+      restoreDeadlineRef.current = null
+      settleReveal(position.messageId)
+    }
+    const inputs = ['wheel', 'touchstart', 'pointerdown'] as const
+    for (const type of inputs) scroller.addEventListener(type, yieldToReader, { passive: true })
     // 已加载但尚未挂载的行也沿同一个 FlowList 句柄补挂;不为恢复再维护一份切片或位置。
     if (!mountedRow()) listRef.current?.scrollToIndex({ index: location.index, align: 'start', offset: location.offset })
     // An already loaded target also moves before paint; a window replacement uses openLocation above.
     settle(performance.now())
     return () => {
       cancelAnimationFrame(frame)
+      for (const type of inputs) scroller.removeEventListener(type, yieldToReader)
       if (restoringActivationRef.current === activationKey) restoringActivationRef.current = null
     }
   }, [
