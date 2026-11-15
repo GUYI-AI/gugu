@@ -138,6 +138,21 @@ final class GuguIOSOwnerRetirementStore {
         }
     }
 
+    /// A local erase cannot consume another identity's pending auth commit.
+    /// No network validation is possible after confirmed account closure.
+    func prepareLocalErase(ownerId: String) throws -> Bool {
+        try transaction {
+            guard let value = try read() else { return true }
+            let original = value.original?.binding.ownerId, target = value.target.ownerId
+            guard original == ownerId || target == ownerId else { return true }
+            guard (original == nil || original == ownerId), (target == nil || target == ownerId),
+                  value.captureComplete, value.cleanupComplete else { return false }
+            try FileManager.default.removeItem(at: path)
+            try syncDirectory()
+            return true
+        }
+    }
+
     static func digest(_ token: String) -> String {
         SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
