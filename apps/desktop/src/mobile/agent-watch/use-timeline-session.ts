@@ -169,20 +169,8 @@ export function useTimelineSession(
   const stream = followed ?? initial
   const { timeline, phase, error, link, errorCode, waitingForRecord } = stream
   // The subscription writes into the store (one writer per session stream).
-  const writers = useMemo(() => {
-    const write = (change: (current: SessionStreamState) => SessionStreamState) => { if (streamKey) updateSessionStream(streamKey, change, client.boundedWindow) }
-    const field = <K extends keyof SessionStreamState>(name: K) =>
-      (value: SessionStreamState[K] | ((current: SessionStreamState[K]) => SessionStreamState[K])) =>
-        write((current) => {
-          const next = typeof value === 'function' ? (value as (old: SessionStreamState[K]) => SessionStreamState[K])(current[name]) : value
-          return next === current[name] ? current : { ...current, [name]: next }
-        })
-    return {
-      setTimeline: field('timeline'), setPhase: field('phase'), setError: field('error'), setLink: field('link'),
-      setErrorCode: field('errorCode'), setWaitingForRecord: field('waitingForRecord'),
-    }
-  }, [streamKey, client.boundedWindow])
-  const { setTimeline, setPhase, setError, setLink, setErrorCode, setWaitingForRecord } = writers
+  const writers = useMemo(() => streamWriters(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
+  const { setTimeline } = writers
   // 动作失败与读失败分开存:两者的标题、位置、能做的补救都不是一回事 ——
   // 发送失败时时间线好端端在那儿,套上「打不开时间线 + 重新读取」是在骗人。
   const [actionError, setActionError] = useState<string | null>(null)
@@ -192,15 +180,7 @@ export function useTimelineSession(
     ? { key: `${deviceId ?? ''}/${sessionId ?? ''}`, sends: [{ id: firstPrompt.id, text: firstPrompt.text, sentAt: firstPrompt.sentAt, baseline: new Set(), accepted: true }] }
     : { key: '', sends: NO_SENDS }))
   const [respondingItemId, setRespondingItemId] = useState<string | null>(null)
-  const [reloadNonce, setReloadNonce] = useState(0)
 
-  // cursor 走 ref:补缺口发生在事件回调/定时器里,读 state 会读到挂载那一刻的旧值。
-  const cursorRef = useRef<RecordCursor | null>(null)
-  // 快照落地前不收增量:此时手里还没有可续的那一份,收了只会得到一段悬空的尾巴。
-  const readyRef = useRef(false)
-  // 手里这份**已经和那台机器对过一次账**(整份快照落地,或本地底稿补完差量;记录还没写出来也算 —— 那时确实是空的)。
-  // 乐观发送靠「发送那一刻已有哪些行」认回显,底稿还没对账时这份清单不全:之后补进来的整段都会被当成新行。
-  const syncedRef = useRef(false)
   // 翻页要读「此刻最早那一轮」,而 loadOlder 被界面按钮以闭包形式握着 ——
   // 依赖 timeline 会让每次时间线更新都换一个新函数,读 ref 才拿得到当下那份。
   const timelineRef = useRef(timeline)
@@ -212,224 +192,15 @@ export function useTimelineSession(
   const olderGeneration = useRef(0)
   useEffect(() => () => { olderGeneration.current++ }, [client, deviceId, sessionId, enabled])
 
-  const applyResult = useCallback((result: TimelineAfterResult) => {
-    // Invalidate before applying resolutions: no older promise can resurrect a ticket.
-    if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) olderGeneration.current++
-    setTimeline((current) => {
-      const next = applyTimelineResult(current, result)
-      cursorRef.current = next.cursor
-      return next
-    })
-    if (!result.ok) timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
-  }, [setTimeline])
+  const reload = useCallback(() => {
+    if (deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled })
+  }, [client, deviceId, sessionId, enabled])
 
-  const reload = useCallback(() => setReloadNonce((n) => n + 1), [])
-
+  // The session's host stream is followed once, however many pages show it (ref-counted, `attachSessionFollow`).
   useEffect(() => {
     if (!deviceId || !sessionId) return
-    if (!enabled) {
-      // Its machine is away: what this phone saw last time is still true, so it is still shown — ❌ a blank page.
-      let cancelled = false
-      setError(null)
-      setErrorCode(null)
-      setLink('lost')
-      const cached = client.boundedWindow ? null : readCachedTimeline({ deviceId, sessionId })
-      setTimeline(cached ?? emptyAgentWatchTimeline())
-      if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
-      return () => { cancelled = true }
-    }
-    let cancelled = false
-    const recoveryAbort = new AbortController()
-    const subscriptionId = newLocalId()
-    const cacheKey = { deviceId, sessionId }
-    readyRef.current = false
-    syncedRef.current = false
-    cursorRef.current = null
-    setError(null)
-    setLink('connecting')
-
-    /*
-     * 先把**上次看到的那一份**画出来(本地底稿),再去对账。
-     * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
-     * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
-     */
-    const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
-    if (cached) {
-      setTimeline(cached)
-      cursorRef.current = cached.cursor
-      readyRef.current = true
-      setPhase('ready')
-    } else {
-      setPhase('loading')
-    }
-
-    /*
-     * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的读失败按既有退避自动补几次，
-     * 耗尽才交统一出口，期间不把重试按钮留给用户；窗口重开、回前台也能重新驱动。
-     * 失败耗尽后仍如实报原文，补上了就收回这一条 —— 别的路报的错(比如订阅没订上)不归这里管。
-     * 补上一次就算和那台机器对过账了(syncedRef)。
-     */
-    let catchUpReported = false
-    let catchUpRunning = false
-    const catchUp = () => {
-      const cursor = cursorRef.current
-      if (cancelled || catchUpRunning || !readyRef.current || !cursor) return
-      catchUpRunning = true
-      void recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
-        .then((result) => {
-          if (cancelled) return
-          setLink('ok')
-          if (catchUpReported) {
-            catchUpReported = false
-            setError(null)
-            setErrorCode(null)
-          }
-          applyResult(result)
-          syncedRef.current = true
-        })
-        .catch((err) => {
-          if (cancelled) return
-          setLink('lost')
-          const code = rpcErrorCode(err)
-          catchUpReported = true
-          setError(messageForUser(err))
-          setErrorCode(code)
-        }).finally(() => { catchUpRunning = false })
-    }
-
-    /*
-     * 内存里没有 ⇒ 这是**冷启动后第一次**进这条会话，去本地库里捞上次那份。
-     *
-     * 下面的 `loadSnapshot` 会先等这一步：装上了就只订阅 + 补差量，一次整份快照都不用拉。
-     * ❌ 不能不等就先拉快照 —— 那样"存了一份在本地"就只省下第一帧的空白，
-     * 该请求的照样请求了一遍，而 owner 要的正是**不要每次都重新去请求**。
-     * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
-     * 所以给它一个上限，超时就当没有存档，照旧整份拉。
-     */
-    const hydrated: Promise<void> = cached || client.boundedWindow
-      ? Promise.resolve()
-      : Promise.race([
-          hydrateCachedTimeline(cacheKey),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), HYDRATE_BUDGET_MS)),
-        ]).then((stored) => {
-          if (cancelled || readyRef.current || !stored) return
-          setTimeline(stored)
-          cursorRef.current = stored.cursor
-          readyRef.current = true
-          setPhase('ready')
-        })
-
-    // 先挂监听再发 subscribe:反过来的话,宿主在应答与挂监听之间推的那一批没人收。
-    const stopEvents = client.subscribeSessionEvents(deviceId, subscriptionId, (result) => {
-      if (cancelled || !readyRef.current) return
-      applyResult(result)
-    })
-    const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (failure) => {
-      if (cancelled) return
-      // A bounded window ends when its stopped session starts again: open it afresh, which asks the host where to follow it.
-      if (client.boundedWindow && rpcErrorCode(failure) === 'scope_changed') {
-        reload()
-        return
-      }
-      setLink('lost')
-      catchUp()
-    })
-    // 窗口断了:标断开;又通了:那台机器已经拆了这条订阅(订阅跟着窗口生灭),整个重来 —— 手里有游标就只重订 + 补差量。
-    const stopLink = client.onLinkChange(deviceId, (open) => {
-      if (cancelled) return
-      if (open) reload()
-      else setLink('lost')
-    })
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') catchUp()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-
-    const startedAt = Date.now()
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
-    let attempt = 0
-    setWaitingForRecord(false)
-
-    const loadSnapshot = async (): Promise<void> => {
-      try {
-        // 先给本地那份一个装上的机会,再决定要不要整份拉(重试时它早已完成,await 是白拿的)。
-        await hydrated
-        if (cancelled) return
-        // 手里已经有本地那份 ⇒ 只订阅 + 补差量,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
-        // 世代对不上时机器会在订阅的第一推里直接回一份新快照,由 reducer 认出来。
-        if (readyRef.current && cursorRef.current) {
-          await client.subscribeSession(deviceId, sessionId, subscriptionId, cursorRef.current)
-          if (cancelled) return
-          setWaitingForRecord(false)
-          setError(null)
-          setErrorCode(null)
-          setLink('ok')
-          attempt = 0
-          catchUp()
-          return
-        }
-        const snapshot = await client.fetchSnapshot(deviceId, sessionId)
-        if (cancelled) return
-        setWaitingForRecord(false)
-        setError(null)
-        olderGeneration.current++
-        setTimeline((current) => applySnapshot(current, snapshot))
-        cursorRef.current = snapshot.cursor
-        readyRef.current = true
-        syncedRef.current = true
-        setPhase('ready')
-        await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor)
-        if (cancelled) return
-        attempt = 0
-        setErrorCode(null)
-        setLink('ok')
-      } catch (err) {
-        if (cancelled) return
-        const code = rpcErrorCode(err)
-        attempt += 1
-        /*
-         * ⚠️ 会自己好的失败**自己再试一次**,期间界面停在普通加载态 ——
-         * owner 2026-09-08:「不应该是先报一个红色的报错、等我刷新之后才显示出来」。
-         * 判据在 record-wait.ts(纯函数),三类各有一条会红的用例。
-         */
-        const delay = client.boundedWindow && code === 'source_locating' ? 2_000
-          : readyRef.current ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
-          : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
-        if (delay !== null) {
-          // That machine did not answer: still tried again, but the page can say so meanwhile (link), ❌ a silent spinner.
-          if (code === 'timeout') setLink('lost')
-          // 记录还没写出来:留在 loading,过一会儿再读;❌ 不报红。
-          setWaitingForRecord(code === 'record_not_found')
-          if (code === 'record_not_found') syncedRef.current = true
-          retryTimer = setTimeout(() => { void loadSnapshot() }, delay)
-          return
-        }
-        setWaitingForRecord(false)
-        setError(messageForUser(err))
-        setErrorCode(code)
-        setLink('lost')
-        setPhase(readyRef.current ? 'ready' : 'error')
-      }
-    }
-    void loadSnapshot()
-
-    return () => {
-      cancelled = true
-      recoveryAbort.abort()
-      if (retryTimer) clearTimeout(retryTimer)
-      stopLink()
-      readyRef.current = false
-      document.removeEventListener('visibilitychange', onVisible)
-      stopEvents()
-      stopErrors?.()
-      // 走之前把手里这份存下来:下次进来第一帧就有东西。
-      const current = timelineRef.current
-      if (!client.boundedWindow && current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
-      // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
-      void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
-    }
-  }, [client, deviceId, sessionId, enabled, reloadNonce, applyResult, reload, setError, setErrorCode, setLink, setPhase, setTimeline, setWaitingForRecord])
+    return attachSessionFollow({ client, deviceId, sessionId, enabled }, () => { olderGeneration.current++ })
+  }, [client, deviceId, sessionId, enabled])
 
   // 世代变了 ⇒ 手里那份接不上,重新走一遍「快照 + 订阅」。
   useEffect(() => {
@@ -539,7 +310,7 @@ export function useTimelineSession(
     // 按下发送就画出来(pending-sends.ts 说了为什么):那台机器上的 agent 没在跑时,这次往返要先等它起来。
     // 还没和机器对过账就不画(syncedRef 那条注释):认不准回显的乐观行宁可不要,退回等记录回来。
     const key = `${deviceId}/${sessionId}`
-    const pendingId = syncedRef.current ? `pending:${newLocalId()}` : null
+    const pendingId = deviceId && sessionId && sessionFollowSynced({ client, deviceId, sessionId, enabled }) ? `pending:${newLocalId()}` : null
     // 受理/失败回来时人可能已经换到别的会话、在那边又发了一句:只动还是这条会话的那一份,❌ 把别人的清掉。
     const update = (next: (sends: readonly PendingSend[]) => readonly PendingSend[]) =>
       setPendingState((current) => (current.key === key ? { key, sends: next(current.sends) } : current))
@@ -561,7 +332,7 @@ export function useTimelineSession(
     } finally {
       setSending(false)
     }
-  }, [client, deviceId, sessionId])
+  }, [client, deviceId, sessionId, enabled])
 
   const [cancelling, setCancelling] = useState(false)
   const cancel = useCallback(async () => {
@@ -601,5 +372,308 @@ export function useTimelineSession(
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
     reload, loadOlder, loadToolImage, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
     link, errorCode,
+  }
+}
+
+// ── following a session's host stream: once per session, however many pages show it ─────────────────────────────
+
+type FollowParams = { client: SessionpageTimelineClient; deviceId: string; sessionId: string; enabled: boolean }
+/**
+ * One follow of a session's host stream (its subscription, catch-up and retries), shared by every page that shows the
+ * session: the first to attach starts it, the last to detach stops it (and unsubscribes). What it reads goes into the
+ * session's entry of `sessionStreams` once, whoever is looking.
+ */
+type SessionFollow = {
+  params: FollowParams
+  followers: number
+  stop: () => void
+  // cursor:补缺口发生在事件回调/定时器里,要读当下那一份。
+  cursor: RecordCursor | null
+  // 快照落地前不收增量:此时手里还没有可续的那一份,收了只会得到一段悬空的尾巴。
+  ready: boolean
+  // 手里这份**已经和那台机器对过一次账**(整份快照落地,或本地底稿补完差量;记录还没写出来也算 —— 那时确实是空的)。
+  // 乐观发送靠「发送那一刻已有哪些行」认回显,底稿还没对账时这份清单不全:之后补进来的整段都会被当成新行。
+  synced: boolean
+  /** Each follower's older-page requests: a reset or a resolution makes them stale. */
+  olderResets: Set<() => void>
+  resetOlder: () => void
+}
+const follows = new Map<string, SessionFollow>()
+const clientIds = new WeakMap<object, number>()
+let clientSequence = 0
+function followKey({ client, deviceId, sessionId, enabled }: FollowParams): string {
+  let id = clientIds.get(client)
+  if (id === undefined) clientIds.set(client, id = ++clientSequence)
+  return JSON.stringify([id, deviceId, sessionId, enabled])
+}
+
+/** The writers of one session's stream entry (the follow and the page's own actions write through them). */
+function streamWriters(streamKey: { deviceId: string; sessionId: string } | null, boundedWindow: boolean | undefined) {
+  const write = (change: (current: SessionStreamState) => SessionStreamState) => { if (streamKey) updateSessionStream(streamKey, change, boundedWindow) }
+  const field = <K extends keyof SessionStreamState>(name: K) =>
+    (value: SessionStreamState[K] | ((current: SessionStreamState[K]) => SessionStreamState[K])) =>
+      write((current) => {
+        const next = typeof value === 'function' ? (value as (old: SessionStreamState[K]) => SessionStreamState[K])(current[name]) : value
+        return next === current[name] ? current : { ...current, [name]: next }
+      })
+  return {
+    setTimeline: field('timeline'), setPhase: field('phase'), setError: field('error'), setLink: field('link'),
+    setErrorCode: field('errorCode'), setWaitingForRecord: field('waitingForRecord'),
+  }
+}
+
+/** Follow a session's host stream from one more page; returns the detach. `onOlderReset` hears a reset / resolution. */
+export function attachSessionFollow(params: FollowParams, onOlderReset: () => void): () => void {
+  const key = followKey(params)
+  let follow = follows.get(key)
+  if (!follow) {
+    const created: SessionFollow = {
+      params, followers: 0, stop: () => undefined, cursor: null, ready: false, synced: false, olderResets: new Set(),
+      resetOlder: () => { for (const reset of [...created.olderResets]) reset() },
+    }
+    follows.set(key, created)
+    created.stop = runSessionFollow(created)
+    follow = created
+  }
+  const active = follow
+  active.followers += 1
+  active.olderResets.add(onOlderReset)
+  return () => {
+    active.olderResets.delete(onOlderReset)
+    if (--active.followers > 0) return
+    follows.delete(key)
+    active.stop()
+  }
+}
+
+/** Start the session's follow over (a snapshot generation change, a reopened link, the reload button). */
+export function restartSessionFollow(params: FollowParams): void {
+  const follow = follows.get(followKey(params))
+  if (!follow) return
+  follow.stop()
+  follow.stop = runSessionFollow(follow)
+}
+
+/** Whether the followed session has been squared with its machine once (see SessionFollow.synced). */
+function sessionFollowSynced(params: FollowParams): boolean {
+  return follows.get(followKey(params))?.synced === true
+}
+
+function runSessionFollow(follow: SessionFollow): () => void {
+  const { client, deviceId, sessionId, enabled } = follow.params
+  const { setTimeline, setPhase, setError, setLink, setErrorCode, setWaitingForRecord } = streamWriters({ deviceId, sessionId }, client.boundedWindow)
+  const applyResult = (result: TimelineAfterResult) => {
+    // Invalidate before applying resolutions: no older promise can resurrect a ticket.
+    if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) follow.resetOlder()
+    setTimeline((current) => {
+      const next = applyTimelineResult(current, result)
+      follow.cursor = next.cursor
+      return next
+    })
+    if (!result.ok) timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
+  }
+  // Out of the stack that asks for it (a callback of this very follow): start over once it has returned.
+  const reload = () => { queueMicrotask(() => { if (follows.get(followKey(follow.params)) === follow) restartSessionFollow(follow.params) }) }
+  if (!enabled) {
+    // Its machine is away: what this phone saw last time is still true, so it is still shown — ❌ a blank page.
+    let cancelled = false
+    setError(null)
+    setErrorCode(null)
+    setLink('lost')
+    const cached = client.boundedWindow ? null : readCachedTimeline({ deviceId, sessionId })
+    setTimeline(cached ?? emptyAgentWatchTimeline())
+    if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
+    return () => { cancelled = true }
+  }
+  let cancelled = false
+  const recoveryAbort = new AbortController()
+  const subscriptionId = newLocalId()
+  const cacheKey = { deviceId, sessionId }
+  follow.ready = false
+  follow.synced = false
+  follow.cursor = null
+  setError(null)
+  setLink('connecting')
+
+  /*
+   * 先把**上次看到的那一份**画出来(本地底稿),再去对账。
+   * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
+   * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
+   */
+  const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
+  if (cached) {
+    setTimeline(cached)
+    follow.cursor = cached.cursor
+    follow.ready = true
+    setPhase('ready')
+  } else {
+    setPhase('loading')
+  }
+
+  /*
+   * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的读失败按既有退避自动补几次，
+   * 耗尽才交统一出口，期间不把重试按钮留给用户；窗口重开、回前台也能重新驱动。
+   * 失败耗尽后仍如实报原文，补上了就收回这一条 —— 别的路报的错(比如订阅没订上)不归这里管。
+   * 补上一次就算和那台机器对过账了(syncedRef)。
+   */
+  let catchUpReported = false
+  let catchUpRunning = false
+  const catchUp = () => {
+    const cursor = follow.cursor
+    if (cancelled || catchUpRunning || !follow.ready || !cursor) return
+    catchUpRunning = true
+    void recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
+      .then((result) => {
+        if (cancelled) return
+        setLink('ok')
+        if (catchUpReported) {
+          catchUpReported = false
+          setError(null)
+          setErrorCode(null)
+        }
+        applyResult(result)
+        follow.synced = true
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setLink('lost')
+        const code = rpcErrorCode(err)
+        catchUpReported = true
+        setError(messageForUser(err))
+        setErrorCode(code)
+      }).finally(() => { catchUpRunning = false })
+  }
+
+  /*
+   * 内存里没有 ⇒ 这是**冷启动后第一次**进这条会话，去本地库里捞上次那份。
+   *
+   * 下面的 `loadSnapshot` 会先等这一步：装上了就只订阅 + 补差量，一次整份快照都不用拉。
+   * ❌ 不能不等就先拉快照 —— 那样"存了一份在本地"就只省下第一帧的空白，
+   * 该请求的照样请求了一遍，而 owner 要的正是**不要每次都重新去请求**。
+   * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
+   * 所以给它一个上限，超时就当没有存档，照旧整份拉。
+   */
+  const hydrated: Promise<void> = cached || client.boundedWindow
+    ? Promise.resolve()
+    : Promise.race([
+        hydrateCachedTimeline(cacheKey),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), HYDRATE_BUDGET_MS)),
+      ]).then((stored) => {
+        if (cancelled || follow.ready || !stored) return
+        setTimeline(stored)
+        follow.cursor = stored.cursor
+        follow.ready = true
+        setPhase('ready')
+      })
+
+  // 先挂监听再发 subscribe:反过来的话,宿主在应答与挂监听之间推的那一批没人收。
+  const stopEvents = client.subscribeSessionEvents(deviceId, subscriptionId, (result) => {
+    if (cancelled || !follow.ready) return
+    applyResult(result)
+  })
+  const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (failure) => {
+    if (cancelled) return
+    // A bounded window ends when its stopped session starts again: open it afresh, which asks the host where to follow it.
+    if (client.boundedWindow && rpcErrorCode(failure) === 'scope_changed') {
+      reload()
+      return
+    }
+    setLink('lost')
+    catchUp()
+  })
+  // 窗口断了:标断开;又通了:那台机器已经拆了这条订阅(订阅跟着窗口生灭),整个重来 —— 手里有游标就只重订 + 补差量。
+  const stopLink = client.onLinkChange(deviceId, (open) => {
+    if (cancelled) return
+    if (open) reload()
+    else setLink('lost')
+  })
+
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') catchUp()
+  }
+  document.addEventListener('visibilitychange', onVisible)
+
+  const startedAt = Date.now()
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let attempt = 0
+  setWaitingForRecord(false)
+
+  const loadSnapshot = async (): Promise<void> => {
+    try {
+      // 先给本地那份一个装上的机会,再决定要不要整份拉(重试时它早已完成,await 是白拿的)。
+      await hydrated
+      if (cancelled) return
+      // 手里已经有本地那份 ⇒ 只订阅 + 补差量,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
+      // 世代对不上时机器会在订阅的第一推里直接回一份新快照,由 reducer 认出来。
+      if (follow.ready && follow.cursor) {
+        await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor)
+        if (cancelled) return
+        setWaitingForRecord(false)
+        setError(null)
+        setErrorCode(null)
+        setLink('ok')
+        attempt = 0
+        catchUp()
+        return
+      }
+      const snapshot = await client.fetchSnapshot(deviceId, sessionId)
+      if (cancelled) return
+      setWaitingForRecord(false)
+      setError(null)
+      follow.resetOlder()
+      setTimeline((current) => applySnapshot(current, snapshot))
+      follow.cursor = snapshot.cursor
+      follow.ready = true
+      follow.synced = true
+      setPhase('ready')
+      await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor)
+      if (cancelled) return
+      attempt = 0
+      setErrorCode(null)
+      setLink('ok')
+    } catch (err) {
+      if (cancelled) return
+      const code = rpcErrorCode(err)
+      attempt += 1
+      /*
+       * ⚠️ 会自己好的失败**自己再试一次**,期间界面停在普通加载态 ——
+       * owner 2026-09-08:「不应该是先报一个红色的报错、等我刷新之后才显示出来」。
+       * 判据在 record-wait.ts(纯函数),三类各有一条会红的用例。
+       */
+      const delay = client.boundedWindow && code === 'source_locating' ? 2_000
+        : follow.ready ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
+        : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
+      if (delay !== null) {
+        // That machine did not answer: still tried again, but the page can say so meanwhile (link), ❌ a silent spinner.
+        if (code === 'timeout') setLink('lost')
+        // 记录还没写出来:留在 loading,过一会儿再读;❌ 不报红。
+        setWaitingForRecord(code === 'record_not_found')
+        if (code === 'record_not_found') follow.synced = true
+        retryTimer = setTimeout(() => { void loadSnapshot() }, delay)
+        return
+      }
+      setWaitingForRecord(false)
+      setError(messageForUser(err))
+      setErrorCode(code)
+      setLink('lost')
+      setPhase(follow.ready ? 'ready' : 'error')
+    }
+  }
+  void loadSnapshot()
+
+  return () => {
+    cancelled = true
+    recoveryAbort.abort()
+    if (retryTimer) clearTimeout(retryTimer)
+    stopLink()
+    follow.ready = false
+    document.removeEventListener('visibilitychange', onVisible)
+    stopEvents()
+    stopErrors?.()
+    // 走之前把手里这份存下来:下次进来第一帧就有东西。
+    const current = sessionStreams.get().get(sessionStreamKey(cacheKey))?.timeline ?? emptyAgentWatchTimeline()
+    if (!client.boundedWindow && current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
+    // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
+    void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
   }
 }
