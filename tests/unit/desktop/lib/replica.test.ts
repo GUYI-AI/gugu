@@ -54,6 +54,23 @@ describe('readings', () => {
     expect(model.peek()).toMatchObject({ state: 'value', value: 1, error: { message: 'offline' } })
   })
 
+  it('a read that never leaves this device reads while the browser is offline; others wait for the network', async () => {
+    const { onlineManager } = await import('@tanstack/react-query')
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    onlineManager.setOnline(false)
+    try {
+      const local = rm.replica({ name: 'test-offline-local', scope: 'account', networkMode: 'always', read: async () => 'here' })
+      const remote = rm.replica({ name: 'test-offline-remote', scope: 'account', read: async () => 'there' })
+      await local.prefetch()
+      void remote.prefetch()
+      await Promise.resolve()
+      expect(local.peek()).toMatchObject({ state: 'value', value: 'here' })
+      expect(remote.peek()).toEqual({ state: 'unknown' })
+    } finally {
+      onlineManager.setOnline(true)
+    }
+  })
+
   it('draws through useReplica: the first frame of a surface opened again already has the value', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const reads = vi.fn(async () => 'kept')

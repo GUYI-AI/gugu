@@ -70,6 +70,11 @@ type Definition<A extends unknown[], V> = {
   refreshJoinsRead?: boolean
   /** Read again this often while a surface shows it (ms); a function of the value shown decides per value (false = not now). */
   refreshEvery?: number | ((value: V | undefined) => number | false)
+  /**
+   * `always`: read even while the browser says it is offline (a read that never leaves this device, e.g. the local message
+   * library). Default: a read waits for the network to come back.
+   */
+  networkMode?: 'online' | 'always'
   /** How many times a failed read is retried before the reading is an error. Default 0: fail loud. */
   retry?: number | true
   retryDelay?: (attempt: number) => number
@@ -446,6 +451,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
+    ...(definition.networkMode ? { networkMode: definition.networkMode } : {}),
     ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
   })
   const key = (...args: A): QueryKey | null => {
