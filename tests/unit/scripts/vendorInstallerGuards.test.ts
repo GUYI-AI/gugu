@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest'
 const require_ = createRequire(import.meta.url)
 const { configureVendorDownloads } = require_('../../../scripts/build/vendor-download-env.cjs')
 const origin = 'https://download.gugu.nextmind.space/releases/vendor/'
-const { verifySqliteNodeDependency } = await import('../../../scripts/build/install-vendor-node-deps.mjs')
+const { verifySqliteNodeDependency } = await import(pathToFileURL(resolve(__dirname, '../../../scripts/build/install-vendor-node-deps.mjs')).href) as {
+  verifySqliteNodeDependency(directory: string): void
+}
 
 describe('installer archive boundaries', () => {
   it('loads the integrity-locked SQLite 13 npm package without a remote prebuild installer', () => {
