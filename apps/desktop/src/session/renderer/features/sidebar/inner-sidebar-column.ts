@@ -2,7 +2,6 @@ import type { ChatSummary } from '@/lib/chatSummariesBridge';
 import type { OneListAgentRows } from '@/lib/innerSidebarBridge';
 import { myAgentsInChat, subAgentsOf, type AgentFamilies, type ChatAgentEntry, type ChatAgentScope } from './chat-agents';
 import type { InnerSidebarAnchor, InnerSidebarAgentAnchor, InnerSidebarRoomAnchor } from './inner-sidebar-anchor';
-import { chatScope } from './inner-sidebar-scope';
 
 /**
  * 这一列「智能体」里的那些:群 / 项目里我的智能体,或一个独立智能体的子智能体(#2574;一个列表不再把它画成自己一行,
@@ -13,7 +12,7 @@ export function columnAgents(
   families: AgentFamilies,
   summaries: ReadonlyMap<string, ChatSummary>,
   agentRows: OneListAgentRows | null,
-  scope: (anchor: InnerSidebarRoomAnchor, summaries: ReadonlyMap<string, ChatSummary>) => ChatAgentScope = chatScope
+  scope: (anchor: InnerSidebarRoomAnchor, summaries: ReadonlyMap<string, ChatSummary>) => ChatAgentScope
 ): ChatAgentEntry[] {
   if (anchor.kind !== 'agent') return myAgentsInChat(families.entries, scope(anchor, summaries));
   return agentRows?.get(anchor.agentUserId)?.chatId === anchor.chatId ? subAgentsOf(families, anchor.agentUserId) : [];

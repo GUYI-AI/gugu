@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentFamilies, type ChatAgentEntry, type ChatAgentScope } from './chat-agents';
 import { columnAgents, standaloneAgentAnchor } from './inner-sidebar-column';
-import { followInnerSidebar, viewAnchor, type InnerSidebarView } from './inner-sidebar-anchor';
+import { followInnerSidebar, viewAnchor, type InnerSidebarAnchor, type InnerSidebarView } from './inner-sidebar-anchor';
 
 const agents: ChatAgentEntry[] = [
   { id:'room-task', projectId:'loose', agentUserId:'mine', bornInChatId:'room', time:1, isPinned:false },
@@ -15,7 +15,7 @@ const scope=():ChatAgentScope=>({kind:'group',projectIds:[],bornHere:id=>id==='r
 const summaries=new Map();
 const room={kind:'group' as const,chatId:'room'};
 const agentOf=(id:string)=>standaloneAgentAnchor(id,families,rows);
-const listed=(anchor:NonNullable<ReturnType<typeof agentOf>>|typeof room,id:string)=>columnAgents(anchor,families,summaries,rows,scope).some(agent=>agent.id===id);
+const listed=(anchor:InnerSidebarAnchor,id:string)=>columnAgents(anchor,families,summaries,rows,scope).some(agent=>agent.id===id);
 
 describe('phone eligibility uses the desktop inner-sidebar result',()=>{
  it.each([

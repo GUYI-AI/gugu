@@ -143,7 +143,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const next = followInnerSidebar(
     entryAnchor,
     view,
-    (anchor, sessionId) => columnAgents(anchor, families, summaries, agentRows).some((agent) => agent.id === sessionId),
+    (anchor, sessionId) => columnAgents(anchor, families, summaries, agentRows, chatScope).some((agent) => agent.id === sessionId),
     agentAnchorOf,
     (anchor) => chatBlockOnScreen(anchor.chatId) !== undefined
   );
@@ -193,7 +193,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
           row={agentRows?.get(next.agentUserId) ?? null}
           ownSession={ownSessions[0] ?? null}
           headActive={headActive}
-          agents={columnAgents(next, families, summaries, agentRows)}
+          agents={columnAgents(next, families, summaries, agentRows, chatScope)}
         />
       ) : next ? (
         // 换一个对话 = 新的一列(分区收起都是这一个对话的);同一个对话里切「全部 / 返回」不重建,滚动位置留着。
@@ -202,7 +202,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
           anchor={next}
           summary={summaries.get(next.chatId) ?? null}
           headActive={headActive}
-          agents={columnAgents(next, families, summaries, agentRows)}
+          agents={columnAgents(next, families, summaries, agentRows, chatScope)}
         />
       ) : sampleOwnerId ? (
         <InnerSidebarFrame kind="sample">
