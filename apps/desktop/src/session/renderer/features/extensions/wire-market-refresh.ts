@@ -1,20 +1,20 @@
 import { onMachineEvent, rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { marketRefreshedChannel } from '@shared/extensions/marketEvents';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { LOCAL_HOST, marketUpdates } from './installed-extensions';
 import { warmKeptShots } from './panel/kept-shelf';
 
 /**
- * 本机的「有新版 / 被撤回 / 已弃用」跟着手上那份市场目录走(market-snapshot.ts):启动时先从手上那份查一次,同时让主进程去
- * 下载站取一趟;之后不论哪一趟(启动这趟、打开 App 页、安装时现取)取回来变了,都再查一次 —— 和市场页读的永远是同一份。
- * ❌ 轮询:去取只在启动、打开 App 页、安装时。失败只进日志(checkUpdates 自己兜底)。
+ * 本机的「有新版 / 被撤回 / 已弃用」(`marketUpdates('local')`)跟着手上那份市场目录走(market-snapshot.ts):启动时先从手上那份
+ * 查一次,同时让主进程去下载站取一趟;之后不论哪一趟取回来变了,都再查一次 —— 和市场页读的永远是同一份。❌ 轮询。
+ * 读失败落在读数上(角标不画),不吞成「没有更新」。
  */
 export function wireMarketRefresh(): void {
   warmKeptShots();
   onMachineEvent(null, marketRefreshedChannel, (refreshed) => {
-    if (refreshed.outcome === 'changed') void installedExtensionsStore.checkUpdates();
+    if (refreshed.outcome === 'changed') void marketUpdates.refresh(LOCAL_HOST);
   });
-  void installedExtensionsStore.checkUpdates();
+  void marketUpdates.refresh(LOCAL_HOST);
   void rpc.extensions.marketRefresh().catch((error: unknown) => {
     log.warn('App market refresh at startup not asked:', error);
   });

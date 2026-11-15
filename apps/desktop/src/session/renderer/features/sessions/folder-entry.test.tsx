@@ -17,15 +17,20 @@ const h = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  WORKSPACE_APP_ID: 'workspace',
-  installedExtensionsStore: {
+vi.mock('@renderer/features/extensions/installed-extensions', () => {
+  const apps = {
     get enabledTabContributions() { return h.tabs.filter((tab) => h.folderEnabled || tab.extensionId !== 'workspace'); },
     get allTabContributions() { return h.tabs; },
     openableApps: [{ extensionId: 'notes', name: 'Notes', kind: 'notes.main', iconDataUrl: null }],
     tabTitle: (kind: string) => h.tabs.find((tab) => tab.kind === kind)?.title,
-  },
-}));
+    isChatFile: () => false,
+  };
+  return {
+    WORKSPACE_APP_ID: 'workspace', LOCAL_HOST: 'local',
+    useInstalledApps: () => ({ state: 'value', value: apps, stale: false, error: null }),
+    peekInstalledApps: () => apps, peekInstalledAppsTracked: () => apps,
+  };
+});
 vi.mock('@renderer/app/screen-block-context', () => ({ useScreenBlock: () => ({ blockId: null }) }));
 vi.mock('@renderer/features/tabs/pane-context', () => ({ usePaneContext: () => ({ pane: { open: h.open }, paneId: 'pane', isFocusedPane: true }) }));
 vi.mock('@renderer/features/sessions/session-view-context', () => ({

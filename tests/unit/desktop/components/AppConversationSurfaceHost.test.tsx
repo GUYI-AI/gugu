@@ -41,12 +41,13 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
     return () => { state.inventoryNotes.delete(listener); };
   } },
 }));
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
+// What is installed here, as the replica reads it (a value): the test's inventory, switches and publishers.
+vi.mock('@/session/renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: {
   get manifests() { return state.inventory; },
   get origins() { return {}; },
   get publishers() { return state.publishers; },
   isEnabled: (id: string) => !state.disabled.includes(id),
-} }));
+} }) }));
 // The native conversation as far as this test needs it: an instance with state of its own (a draft typed in its composer).
 vi.mock('@/components/ChatAreaPanel', async () => {
   const { useEffect } = await import('react');

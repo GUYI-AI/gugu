@@ -70,8 +70,8 @@ vi.mock('./workspace-registry', () => ({
   workspaceRegistry: { get: mocks.workspaceGet },
 }));
 
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: {
+vi.mock('@renderer/features/extensions/installed-extensions', () => {
+  const apps = {
     get manifests() {
       return mocks.installedManifests;
     },
@@ -79,10 +79,10 @@ vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
       return mocks.openWithDefaults;
     },
     isEnabled: () => true,
-    noteOpenWithDefault: vi.fn(),
     locale: 'en-US',
-  },
-}));
+  };
+  return { LOCAL_HOST: 'local', fetchInstalledApps: async () => apps, peekInstalledApps: () => apps, noteOpenWithDefault: vi.fn() };
+});
 
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 

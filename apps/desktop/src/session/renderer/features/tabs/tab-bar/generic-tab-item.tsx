@@ -20,6 +20,8 @@ export interface GenericTabItemProps {
   ctx: TabViewContext;
   /** Plain visible text; used as the default tooltip base and rename commit basis. */
   label: string;
+  /** Drawn instead of the label while it is not known yet (a placeholder the size of a title, ❌ a raw id). */
+  unknownLabel?: ReactNode;
   /** Tooltip base when different from label (e.g. full file path). */
   tooltip?: string;
   /** Leading icon slot (file icon, agent icon, spinner). */
@@ -53,6 +55,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   host,
   ctx,
   label,
+  unknownLabel,
   tooltip,
   preSlot,
   hint,
@@ -168,7 +171,7 @@ export const GenericTabItem = observer(function GenericTabItem({
                   }
                 }}
               />
-            ) : undefined
+            ) : unknownLabel
           }
           statusSlot={statusSlot}
           actionSlot={fillButton}

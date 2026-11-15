@@ -10,11 +10,13 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast }));
 vi.mock('@/store/devicesCache', () => ({ readCachedDevices: () => [] }));
 
 const { useAppDetailRequest } = await import('./use-app-detail-request');
+const { tellInstalled } = await import('@renderer/features/extensions/installed-extensions');
 
 async function request(installed: string[], market: Record<string, unknown> | null) {
   const setDetail = vi.fn();
   const marketEntry = vi.fn(async () => (market ? { success: true, data: market } : { success: false, error: 'not in the market' }));
-  const host = { key: 'local', store: { manifests: installed.map((id) => ({ id })), variants: {} }, api: { marketEntry } };
+  tellInstalled('local', { extensions: installed.map((id) => ({ id })), invalid: [], variants: {} } as never);
+  const host = { key: 'local', api: { marketEntry } };
   function Probe() {
     useAppDetailRequest({ target: { kind: 'app-detail', extensionId: 'notes' }, ready: true, host: host as never, setDetail, detail: null, rootRef: { current: null } });
     return null;

@@ -4,7 +4,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { ExtensionViewLayer } from '@renderer/features/extensions/extension-view-layer'
 import { extensionViewStore, residentPageKey, residentPlace } from '@renderer/features/extensions/extension-view-store'
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store'
+import { tellInstalled } from '@renderer/features/extensions/installed-extensions'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '@shared/extensions/manifest'
 import { publishSelfIdentity } from '@/lib/selfIdentityBridge'
 
@@ -21,7 +21,7 @@ let harness: ReturnType<typeof createReactHarness>, slot: HTMLElement
 afterEach(() => {
   harness?.cleanup()
   slot?.remove()
-  act(() => { extensionViewStore.forgetOpened(kind); installedExtensionsStore.manifests = [] })
+  act(() => { extensionViewStore.forgetOpened(kind); tellInstalled('local', { extensions: [], invalid: [] } as never) })
   publishSelfIdentity(null)
   vi.unstubAllGlobals()
 })
@@ -33,7 +33,7 @@ it('mounts a widget page claimed by the signed-in account, clear until painted, 
     if (channel === 'extensions.activate') return { success: true, data: { partition: 'counter', entryUrl: 'about:blank' } }
     throw new Error(`Unexpected bridge call: ${channel}`)
   } })
-  act(() => { installedExtensionsStore.manifests = [manifest] })
+  act(() => { tellInstalled('local', { extensions: [manifest], invalid: [] } as never) })
   publishSelfIdentity({ userId: 'reader', displayName: null, guguNumber: null })
   harness = createReactHarness()
   slot = document.createElement('div')

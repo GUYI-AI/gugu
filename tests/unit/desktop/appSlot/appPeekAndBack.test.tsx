@@ -29,7 +29,7 @@ import { tabFullscreen } from '../../../../apps/desktop/src/session/renderer/fea
 const { AppPeekSlot } = await import('../../../../apps/desktop/src/components/appSlot/AppPeekSlot')
 const { ClaimedPage } = await import('../../../../apps/desktop/src/components/appSlot/ClaimedPage')
 const { peekStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/peek-store')
-const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { extensionViewStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store')
 
 const board = { id: 'kanban', name: 'Kanban', version: '1.0.0', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'board', title: 'Kanban' }] } }
@@ -61,14 +61,14 @@ beforeEach(() => {
     return !this.closest('.invisible')
   }
   HTMLElement.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 520, bottom: 800, width: 520, height: 800, toJSON: () => ({}) })
-  act(() => installedExtensionsStore.applyList({ extensions: [board], invalid: [] } as never))
+  act(() => tellInstalled('local', { extensions: [board], invalid: [] } as never))
 })
 afterEach(() => {
   harness.cleanup()
   for (const spy of spies.splice(0)) spy.mockRestore()
   HTMLElement.prototype.checkVisibility = original.checkVisibility
   HTMLElement.prototype.getBoundingClientRect = original.rect
-  act(() => installedExtensionsStore.applyList({ extensions: [], invalid: [] } as never))
+  act(() => tellInstalled('local', { extensions: [], invalid: [] } as never))
 })
 
 const button = (testId: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)

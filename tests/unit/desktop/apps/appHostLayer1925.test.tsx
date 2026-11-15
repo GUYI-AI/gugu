@@ -14,7 +14,7 @@ const D = '../../../../apps/desktop/src';
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }));
 vi.mock('../../../../apps/desktop/src/session/renderer/utils/logger', () => ({ log: { warn: vi.fn() } }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/extension-shared-slot', () => ({ ExtensionSharedSlot: () => <div data-testid="app-page" /> }));
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { isEnabled: () => true, manifests: [] } }));
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', value: { isEnabled: () => true, manifests: [] }, stale: false, error: null }) }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-ui', () => ({
   AssistantShellPageFrame: ({ testId, children }: { testId: string; children: unknown }) => <div data-testid={testId}>{children as never}</div>,

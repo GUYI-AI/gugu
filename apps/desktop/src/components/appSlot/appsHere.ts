@@ -44,8 +44,8 @@ export interface AppMarketInstall {
 /**
  * This device's Apps (L9): who installs them from a chat, who says which App opens a group file, where 「始终用它」 is
  * kept — main on the desktop (`rpc.extensions`), the phone's own App store in this page (phoneApps.ts). The card and the
- * group's panel ask here, never which platform they are on; what is installed they read from `installedExtensionsStore`,
- * which both fill. None on the web, where Apps do not run.
+ * group's panel ask here, never which platform they are on; what is installed they read from the `installedExtensions`
+ * replica under `HERE_HOST`, which both fill. None on the web, where Apps do not run.
  */
 export interface AppsHere {
   /** Whether this device can use the App at all — by what it can do (app-redesign §5): the desktop every App, the phone `phoneRuns`. */
@@ -126,6 +126,9 @@ const phone: AppsHere = {
 }
 
 export const appsHere: AppsHere | null = platform.kind === 'electron' ? desktop : platform.capabilities.mobileApps ? phone : null
+
+/** The host key of this device's Apps (`installedExtensions(HERE_HOST)`), as `appsHere` is chosen. */
+export { HERE_HOST } from './hereHost'
 
 // The phone reads what it has installed once the page is up, so the cards and the panel know it from the start.
 if (appsHere === phone) {

@@ -12,8 +12,8 @@ for (const kind of ['app', 'chat-app', 'session-app', 'project', 'fresh', 'legac
   it(`cold start restores ${kind} from the workspace before following navigation`, async () => {
     const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
     const { ScreenLayoutStore, screenLayout } = await import('../../../../apps/desktop/src/session/renderer/app/screen-layout')
-    const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
-    installedExtensionsStore.applyList({ extensions: [{ id: 'notes', name: 'Notes', version: '1.0.0', apiVersion: 1, entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Notes' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {} } as never)
+    const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+    tellInstalled('local', { extensions: [{ id: 'notes', name: 'Notes', version: '1.0.0', apiVersion: 1, entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Notes' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {} } as never)
     for (const view of ['home', 'chat', 'project', 'session', 'screen'] as const) appState.navigation.registerView(view)
     appState.navigation.restoreSnapshot({ currentViewId: kind === 'fresh' ? 'home' : kind === 'session-app' ? 'session' : 'chat', viewParams: { chat: { chatId: 'old-chat' }, session: { projectId: 'shown-project', sessionId: 'shown-session' } } })
     const saved = new ScreenLayoutStore()

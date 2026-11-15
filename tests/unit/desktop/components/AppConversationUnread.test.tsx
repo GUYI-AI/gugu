@@ -11,9 +11,9 @@ vi.mock('@/store/auth', () => ({ useAuth: () => ({ user: state.owner ? { id: sta
 vi.mock('@/store/chatContext', () => ({ useChatStore: () => ({ chats: state.chats }) }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }));
 vi.mock('@/session/renderer/lib/ipc', () => ({ rpc: { extensions: { conversationUnreadBindings: query } } }));
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
+vi.mock('@/session/renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: {
   get manifests() { return state.inventory; }, manifestFor: () => ({ contributes: { unreadSource: { binding: 'main' } } }),
-} }));
+} }) }));
 const { AppConversationUnread } = await import('../../../../apps/desktop/src/components/extensionBundle/AppConversationUnread');
 let root: Root;
 let element: HTMLDivElement;

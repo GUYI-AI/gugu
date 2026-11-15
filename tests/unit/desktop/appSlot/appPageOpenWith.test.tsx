@@ -22,21 +22,17 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: (event: string, listener: (operations: { payload: unknown }[]) => void) => { revisions.set(event, listener); return () => revisions.delete(event) } }),
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({ phoneApps: { pageUrl: () => 'https://office.apps.gugu.invalid/home.html' } }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: {
-    isLoaded: true,
-    isEnabled: () => true,
-    manifestFor: () => ({ id: 'office', version: '0.2.0', entry: 'index.html', permissions: { capabilities: ['files:read'] }, contributes: { tabs: [{ name: 'home', title: 'Office', entry: 'home.html' }] } }),
-  },
-}))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [] }) }))
 vi.mock('../../../../apps/desktop/src/store/theme', () => ({ useTheme: () => ({ theme: 'light' }) }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ onMachineChannel: () => () => undefined }))
 
 const { SessionAppFrame } = await import('../../../../apps/desktop/src/components/appSlot/SessionAppFrame')
+const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const office = { id: 'office', version: '0.2.0', entry: 'index.html', permissions: { capabilities: ['files:read'] }, contributes: { tabs: [{ name: 'home', title: 'Office', entry: 'home.html' }] } }
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  tellInstalled('phone', { extensions: [office], invalid: [] } as never)
   harness = createReactHarness()
   host.hooks = null
   host.filesChanged.length = 0

@@ -72,7 +72,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useWorkspaceSlots: () => ({ currentView: 'chat' }),
 }));
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { isLoaded: true, appName: () => undefined } }));
+vi.mock('@renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', value: { appName: () => undefined }, stale: false, error: null }) }));
 vi.mock('@renderer/features/sessions/archive-session-flow', () => ({ requestArchiveSession: () => {} }));
 vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: () => {} }));
 vi.mock('@renderer/features/sessions/fork-task', () => ({ forkTask: () => {} }));

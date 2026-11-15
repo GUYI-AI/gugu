@@ -2,11 +2,11 @@ import { metadataSeparator } from '@/i18n/format'
 import { ExtensionMonogram } from '@/session/renderer/features/extensions/panel/extension-monogram'
 import { Unknown } from '../ui/Unknown'
 import { ResourceMenu } from '../ResourceMenu'
-import { comparer, reaction } from 'mobx'
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from '@/lib/icons'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { PHONE_HOST, useInstalledApps, type InstalledApps, type MarketUpdates } from '../../session/renderer/features/extensions/installed-extensions'
+import type { Reading } from '../../lib/replica'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { localizedManifestText } from '../../session/shared/extensions/catalog'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
@@ -20,44 +20,27 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
  * stands; everything about one is on its settings page (`onManage`). The ones gugu ships are not listed. One this build
  * cannot run has no such page: its refusal is said as it is, and it can still be removed, as any App the phone cannot read must be.
  */
-const installedApps = (): { manifest: ExtensionManifest; from: string | null; enabled: boolean }[] =>
-  installedExtensionsStore.manifests
-    .filter((manifest) => !installedExtensionsStore.isPreinstalled(manifest.id))
+const installedApps = (installed: InstalledApps): { manifest: ExtensionManifest; from: string | null; enabled: boolean }[] =>
+  installed.manifests
+    .filter((manifest) => !installed.isPreinstalled(manifest.id))
     .map((manifest) => ({
       manifest,
-      from: installedExtensionsStore.publishers[manifest.id]?.name ?? null,
-      enabled: installedExtensionsStore.isEnabled(manifest.id),
+      from: installed.publishers[manifest.id]?.name ?? null,
+      enabled: installed.isEnabled(manifest.id),
     }))
-const unusableApps = (): { id: string; reason: string }[] =>
-  installedExtensionsStore.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason }))
+const unusableApps = (installed: InstalledApps): { id: string; reason: string }[] =>
+  installed.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason }))
 
-export function AppsSection({ updates, gone, known, onManage }: { updates: Record<string, string>; gone: readonly string[]; known: boolean; onManage: (id: string) => void }) {
+/** `offered`: what the market says of these Apps (`marketUpdates('phone')`); while unknown a row says nothing about versions. */
+export function AppsSection({ offered, onManage }: { offered: Reading<MarketUpdates>; onManage: (id: string) => void }) {
   const { t, i18n } = useTranslation('main')
   const { t: tm } = useTranslation('messaging')
   const titleId = useId()
-  // The installed list is already in the store: the first frame shows it (❌ one frame of "no Apps installed" first).
-  const [apps, setApps] = useState(installedApps)
-  const [unusable, setUnusable] = useState(unusableApps)
+  // What is installed here (`installedExtensions('phone')`): unknown draws placeholder rows (❌ "no Apps installed" first).
+  const installed = useInstalledApps(PHONE_HOST)
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
-
-  useEffect(() => {
-    const off = reaction(
-      unusableApps,
-      setUnusable,
-      { fireImmediately: true, equals: comparer.structural },
-    )
-    const offApps = reaction(
-      installedApps,
-      setApps,
-      { fireImmediately: true, equals: comparer.structural },
-    )
-    return () => {
-      off()
-      offApps()
-    }
-  }, [])
 
   const uninstall = async (id: string) => {
     setBusy(true)
@@ -70,34 +53,39 @@ export function AppsSection({ updates, gone, known, onManage }: { updates: Recor
   return (
     <SettingsPage data-testid="settings-apps">
       <SettingsGroup note={t('settings.apps.intro')}>
-        {apps.length === 0 && unusable.length === 0 ? (
+        {installed.state === 'unknown' ? (
+          <SettingsRow data-testid="settings-apps-unknown" leading={<Unknown className="mk-icon" />} title={<Unknown className="w-24" />} description={<Unknown className="w-32" />} />
+        ) : installed.state === 'error' ? (
+          <SettingsRow data-testid="settings-apps-unreadable" description={installed.error.message} />
+        ) : installedApps(installed.value).length === 0 && unusableApps(installed.value).length === 0 ? (
           <SettingsRow description={t('settings.apps.empty')} data-testid="settings-apps-empty" />
         ) : (
           <>
-            {apps.map(({ manifest, from, enabled }) => (
+            {installedApps(installed.value).map(({ manifest, from, enabled }) => (
               <ResourceMenu key={manifest.id} resource={{ kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}>
                 <SettingsRow
                   data-app-id={manifest.id}
                   data-testid="settings-apps-row"
-                  leading={<span className="mk-icon"><ExtensionMonogram name={localizedManifestText(manifest, i18n.language).name} iconDataUrl={installedExtensionsStore.appIcons[manifest.id]} /></span>}
+                  leading={<span className="mk-icon"><ExtensionMonogram name={localizedManifestText(manifest, i18n.language).name} iconDataUrl={installed.value.appIcons[manifest.id]} /></span>}
                   onClick={() => onManage(manifest.id)}
                   // 名字跟界面语言走,和电脑上 App 页同一个挑法(manifest 的 localized)。
                   title={localizedManifestText(manifest, i18n.language).name}
                   // 市场还没回过话:版本那一句画占位,❌ 先写「来自市场 v1.2」再改成「更新到 v1.3」。
-                  description={!known ? <Unknown className="w-32" /> : [
-                    updates[manifest.id]
-                      ? t('settings.apps.updateTo', { version: updates[manifest.id] })
+                  description={offered.state === 'unknown' ? <Unknown className="w-32" /> : [
+                    // The market unreachable is an answer too: each row says the version it has, and offers nothing.
+                    offered.state === 'value' && offered.value.offered[manifest.id]
+                      ? t('settings.apps.updateTo', { version: offered.value.offered[manifest.id] })
                       : phoneApps.originOf(manifest.id) === 'market'
                         ? t('settings.apps.fromMarket', { version: manifest.version })
                         : t('settings.apps.from', { version: manifest.version, name: from ?? '—' }),
                     ...(enabled ? [] : [translateSessionMessage('extensions.switchedOff')]),
-                    ...(gone.includes(manifest.id) ? [translateSessionMessage('extensions.rowGone')] : []),
+                    ...(offered.state === 'value' && offered.value.gone.includes(manifest.id) ? [translateSessionMessage('extensions.rowGone')] : []),
                   ].join(metadataSeparator())}
                   control={<ChevronRight className="size-4 text-[var(--text-secondary)]" />}
                 />
               </ResourceMenu>
             ))}
-            {unusable.map(({ id, reason }) => (
+            {unusableApps(installed.value).map(({ id, reason }) => (
               <SettingsRow
                 key={id}
                 data-app-id={id}

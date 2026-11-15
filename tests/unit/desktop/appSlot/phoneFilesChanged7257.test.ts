@@ -2,6 +2,7 @@
 import { rpcQuery } from '../../../support/rpcQuery'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hostAppFrame } from '../../../../apps/desktop/src/components/appSlot/phoneAppHost'
+import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { APP_FRAME_MARKER } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { MAX_HELD_IDS } from '../../../../apps/desktop/src/session/shared/extensions/coalesced-reads'
 import { until } from '../../../support/awaitCondition'
@@ -74,6 +75,8 @@ let frame: HTMLIFrameElement
 let posted: ReturnType<typeof vi.fn>
 let host: ReturnType<typeof hostAppFrame> | undefined
 beforeEach(() => {
+  // What the phone has installed is read (nothing): an App's calls are answered against it.
+  tellInstalled('phone', { extensions: [], invalid: [] } as never)
   db.reads.length = 0
   db.lists = 0
   db.hold = null

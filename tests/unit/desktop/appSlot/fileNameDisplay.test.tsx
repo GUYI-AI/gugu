@@ -14,7 +14,7 @@ vi.mock('@/lib/fileAccess', async importOriginal => ({
   fileMetadata: vi.fn(async () => ({ status: 'gone', sha256: null })),
 }));
 const { ask, chatTabs, shownItem } = await import('./chatTabsHarness');
-const { installedExtensionsStore } = await import('@/session/renderer/features/extensions/installed-extensions-store');
+const { tellInstalled } = await import('@/session/renderer/features/extensions/installed-extensions');
 const { GroupFileName } = await import('@/components/markdown/GroupFileName');
 const { OpenWithPick } = await import('@/components/appSlot/OpenWithPick');
 const workspace = { id: 'workspace', name: 'Folder', version: '1.0.0', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Folder', opensFiles: { chat: ['.md', '.json'] } }] } };
@@ -25,12 +25,12 @@ const originalCheckVisibility = HTMLElement.prototype.checkVisibility;
 beforeEach(() => {
   harness = createReactHarness();
   HTMLElement.prototype.checkVisibility = () => false;
-  act(() => installedExtensionsStore.applyList({ extensions: [workspace, vote], invalid: [] } as never));
+  act(() => tellInstalled('local', { extensions: [workspace, vote], invalid: [] } as never));
 });
 afterEach(() => {
   harness.cleanup();
   HTMLElement.prototype.checkVisibility = originalCheckVisibility;
-  act(() => installedExtensionsStore.applyList({ extensions: [], invalid: [] } as never));
+  act(() => tellInstalled('local', { extensions: [], invalid: [] } as never));
 });
 
 describe('stored file names on message, tab, and chooser surfaces', () => {

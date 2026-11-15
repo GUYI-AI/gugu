@@ -9,7 +9,7 @@ import { rendererLogger } from '../../lib/log'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { openAttachmentImage } from '../../lib/attachmentBytes'
-import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps, peekInstalledApps, WORKSPACE_APP_ID, type InstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
@@ -17,6 +17,7 @@ import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, type ChatFileOpen
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
+import { HERE_HOST } from './hereHost'
 import { tellFilePlace } from '../preview/file-place'
 import { OpenWithPick } from './OpenWithPick'
 
@@ -147,6 +148,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     [chatId, openResolved],
   )
 
+  // @@@effect-flow - takes the open-ask queued for this chat and opens what it names; a list of several files is that ask's chooser
   useEffect(() => {
     if (!chatId || !appsHere) return undefined
     let live = true
@@ -185,37 +187,45 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         void Promise.resolve(show(chatId, folderItem(), {})).catch(error => setUnopened(String(error)))
         return
       }
-      const page = ask.tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${ask.app}.${ask.tab}`) : installedExtensionsStore.mainTabOf(ask.app)
-      // A link naming the App's own page asks the same as its card's 「打开」: the file already open here is the tab shown, not a second one.
-      if (ask.tab && !page) {
-        setUnopened(`${installedExtensionsStore.appName(ask.app) ?? ask.app} has no page named ${ask.tab}`)
-        return
+      // Which page it opens is decided on what is installed here: at once when known, else once it is read (❌ "no such
+      // page" while unknown).
+      const decide = (installed: InstalledApps) => {
+        if (!live || asked !== asking.current) return
+        const page = ask.tab ? installed.allTabContributions.find((entry) => entry.kind === `${ask.app}.${ask.tab}`) : installed.mainTabOf(ask.app)
+        // A link naming the App's own page asks the same as its card's 「打开」: the file already open here is the tab shown, not a second one.
+        if (ask.tab && !page) {
+          setUnopened(`${installed.appName(ask.app) ?? ask.app} has no page named ${ask.tab}`)
+          return
+        }
+        const main = installed.mainTabOf(ask.app)
+        const namesFile = (!ask.tab || page?.kind === main?.kind) && installed.isEnabled(ask.app) && installed.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
+        if (page?.enabled && !namesFile) {
+          void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, {})).catch(error => setUnopened(String(error)))
+          return
+        }
+        if (namesFile) {
+          void appsHere!.appChatFile({ chatId, extensionId: ask.app }).then((result) => {
+            if (!live || asked !== asking.current) return
+            if (!result.success || !result.data) setUnopened(result.error || 'no answer')
+            else void Promise.resolve(openResolved(result.data)).catch(error => setUnopened(String(error)))
+          })
+        } else {
+          void appsHere!.groupFilesOpenedBy({ chatId, extensionId: ask.app }).then((result) => {
+            if (!live || asked !== asking.current) return
+            if (!result.success || !result.data) {
+              setUnopened(result.error || 'no answer')
+              return
+            }
+            const files = result.data
+            // One opens; several, or none yet, are said in the same sheet — a click never comes to nothing.
+            if (files.length === 1) void openGroupFile(files[0]!.itemId)
+            else setAppFiles({ chatId, appName: installed.appName(ask.app) ?? ask.app, files })
+          })
+        }
       }
-      const main = installedExtensionsStore.mainTabOf(ask.app)
-      const namesFile = (!ask.tab || page?.kind === main?.kind) && installedExtensionsStore.isEnabled(ask.app) && installedExtensionsStore.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
-      if (page?.enabled && !namesFile) {
-        void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, {})).catch(error => setUnopened(String(error)))
-        return
-      }
-      if (namesFile) {
-        void appsHere!.appChatFile({ chatId, extensionId: ask.app }).then((result) => {
-          if (!live || asked !== asking.current) return
-          if (!result.success || !result.data) setUnopened(result.error || 'no answer')
-          else void Promise.resolve(openResolved(result.data)).catch(error => setUnopened(String(error)))
-        })
-      } else {
-        void appsHere!.groupFilesOpenedBy({ chatId, extensionId: ask.app }).then((result) => {
-          if (!live || asked !== asking.current) return
-          if (!result.success || !result.data) {
-            setUnopened(result.error || 'no answer')
-            return
-          }
-          const files = result.data
-          // One opens; several, or none yet, are said in the same sheet — a click never comes to nothing.
-          if (files.length === 1) void openGroupFile(files[0]!.itemId)
-          else setAppFiles({ chatId, appName: installedExtensionsStore.appName(ask.app) ?? ask.app, files })
-        })
-      }
+      const known = peekInstalledApps(HERE_HOST!)
+      if (known) decide(known)
+      else void fetchInstalledApps(HERE_HOST!).then(decide, (error: unknown) => { if (live && asked === asking.current) setUnopened(String(error)) })
     }
     take()
     window.addEventListener(UI_EVENTS.chatAsked, take)

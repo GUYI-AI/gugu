@@ -5,10 +5,12 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseWidgetMessage, type WidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 import { platform } from '../../platform'
 import { appsHere } from '../appSlot/appsHere'
+import { HERE_HOST } from '../appSlot/hereHost'
 import { PhoneAppFrame } from '../appSlot/PhoneAppFrame'
 import { Button } from '../ui/Button'
 import { APP_OPEN_WITH_EVENT } from '../../session/shared/extensions/app-runtime-protocol'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { extensionViewStore, residentPageKey, residentPlace } from '../../session/renderer/features/extensions/extension-view-store'
@@ -29,19 +31,26 @@ const log = rendererLogger('chat/widget')
 
 type Message = Pick<MessageItem, 'id' | 'chat_id' | 'sender_user_id' | 'content'>
 
-export const WidgetBubble = observer(function WidgetBubble({ message, slotMessageId = message.id, referenceWidget }: { message: Message; slotMessageId?: string; referenceWidget?: ResolvedWidget }) {
+export function WidgetBubble({ message, slotMessageId = message.id, referenceWidget }: { message: Message; slotMessageId?: string; referenceWidget?: ResolvedWidget }) {
   const { t } = useTranslation('messaging')
   const widget = useMemo(() => referenceWidget?.widget ?? parseWidgetMessage(message.content), [message.content, referenceWidget])
+  const installedReading = useInstalledApps(HERE_HOST)
   if (!widget) return <span>{t('message.widget')}</span>
-  if (!installedExtensionsStore.isLoaded) return <p>{widget.text}</p>
-  const manifest = installedExtensionsStore.manifestFor(widget.app)
+  // No App store here (the web): the widget's App is not on this platform, said by `reason` below.
+  // Not read yet: the message's own text (its size is the App's to say), ❌ 「没有装」 for an App that may be installed.
+  if (HERE_HOST && installedReading.state === 'unknown') return <p>{widget.text}</p>
+  if (installedReading.state === 'error') {
+    return <div><p>{widget.text}</p><RefreshFailed error={installedReading.error} onRetry={() => { if (HERE_HOST) void installedExtensions.refresh(HERE_HOST) }} /></div>
+  }
+  const installed = installedReading.state === 'value' ? installedReading.value : null
+  const manifest = installed?.manifestFor(widget.app)
   const tab = manifest?.contributes.tabs.find(tab => tab.name === widget.view)
   const reason = !appsHere || (manifest?.platforms && !manifest.platforms.includes(platform.kind === 'electron' ? 'desktop' : 'phone')) ? 'platform'
-    : !manifest ? 'missing' : !installedExtensionsStore.isEnabled(widget.app) ? 'disabled' : !tab?.widget ? 'view' : null
+    : !manifest || !installed ? 'missing' : !installed.isEnabled(widget.app) ? 'disabled' : !tab?.widget ? 'view' : null
   if (reason || !tab?.widget) return <WidgetUnavailable widget={widget} reason={reason ?? 'view'} chatId={message.chat_id} />
   return referenceWidget ? <WidgetView key={`${referenceWidget.id}:${manifest?.version}`} message={message} slotMessageId={slotMessageId} resolved={referenceWidget} height={widget.height ?? tab.widget.height} />
     : <OriginalWidgetView message={message} slotMessageId={slotMessageId} height={widget.height ?? tab.widget.height} text={widget.text} />
-})
+}
 
 function OriginalWidgetView({ message, slotMessageId, height, text }: { message: Message; slotMessageId: string; height: number; text: string }) {
   const resolved = useWidgetOriginal(message)
@@ -101,8 +110,9 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
   </div>
 })
 
-const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; reason: string; chatId: string }) {
+function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; reason: string; chatId: string }) {
   const { t } = useTranslation('messaging')
+  const installed = useInstalledApps(HERE_HOST)
   const { user } = useAuth()
   const { ref, shown } = useConversationVisibility(true)
   const [sources, setSources] = useState<{ chatId: string; userId: string; shared: ReadonlyMap<string, SharedPackage>; market: readonly MarketOffer[] } | null>(null)
@@ -128,8 +138,8 @@ const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, 
     ]).then(([shared, market]) => { if (live) setSources({ chatId, userId: user.id, shared, market }) })
     return () => { live = false }
   }, [shown, canOffer, chatId, user?.id, cue])
-  const offer = canOffer && sources?.chatId === chatId && sources.userId === user?.id
-    ? widgetInstallOffer(availableInstallOffers(sources.shared, sources.market, installedExtensionsStore.manifests, installedExtensionsStore.origins),
+  const offer = canOffer && sources?.chatId === chatId && sources.userId === user?.id && installed.state === 'value'
+    ? widgetInstallOffer(availableInstallOffers(sources.shared, sources.market, installed.value.manifests, installed.value.origins),
       widget.app, widget.view, platform.kind === 'electron' ? 'desktop' : 'phone') : null
   const install = async () => {
     if (!appsHere || !offer) return
@@ -151,4 +161,4 @@ const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, 
     </p>
     {error ? <p role="alert">{error}</p> : null}
   </div>
-})
+}

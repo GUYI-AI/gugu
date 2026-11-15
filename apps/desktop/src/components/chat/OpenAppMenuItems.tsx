@@ -1,5 +1,8 @@
 import { observer } from 'mobx-react-lite'
-import { installedExtensionsStore, type RailApp } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, LOCAL_HOST, useInstalledApps, type RailApp } from '../../session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '../appSlot/hereHost'
+import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { openApp } from '../appSlot/useOpenApp'
 import { RailAppIcon } from '../RailAppIcon'
 import { LayoutGrid } from '@/lib/icons'
@@ -12,12 +15,23 @@ import { appIsRunning } from '../../session/renderer/features/extensions/app-doc
  * 打开 —— 群和私聊的页头(ChatHeaderActions);走卡片「打开」的同一条 `openApp`。
  * 列表与最左栏右键「App」同一份(`openableApps`)。没有可开的 App 时什么都不画。
  */
-export const OpenAppMenuItems = observer(function OpenAppMenuItems({ chatId, separated, apps = installedExtensionsStore.openableApps }: {
+export function OpenAppMenuItems({ chatId, separated }: {
   chatId: string
   /** 前面还有别的菜单项:先画一条分组线。 */
   separated?: boolean
-  apps?: readonly RailApp[]
 }) {
+  const installed = useInstalledApps(HERE_HOST)
+  // No Apps on this platform (the web): nothing to open.
+  if (!HERE_HOST) return null
+  // Not known yet: the fold's row holds its place (❌ no fold, then one appearing under the pointer).
+  if (installed.state === 'unknown') return <>{separated && <MenuSeparator />}<div className="px-2 py-1.5"><Unknown className="w-32" /></div></>
+  if (installed.state === 'error') {
+    return <>{separated && <MenuSeparator />}<div className="px-2 py-1.5"><RefreshFailed error={installed.error} onRetry={() => { if (HERE_HOST) void installedExtensions.refresh(HERE_HOST) }} /></div></>
+  }
+  return <OpenAppFold chatId={chatId} separated={separated} apps={installed.value.openableApps} />
+}
+
+function OpenAppFold({ chatId, separated, apps }: { chatId: string; separated?: boolean; apps: readonly RailApp[] }) {
   const { t } = useTranslation('messaging')
   const { t: tc } = useTranslation('common')
   const { search, shown } = useMenuSearch(apps, app => app.name, { placeholder: tc('menu.search'), noResults: tc('menu.noResults') })
@@ -37,12 +51,14 @@ export const OpenAppMenuItems = observer(function OpenAppMenuItems({ chatId, sep
       </MenuFold>
     </>
   )
-})
+}
 
 /** The rail's right-click list of Apps: a search over it once it is long, as every long menu list. */
 export const OpenableAppRows = observer(function OpenableAppRows({ apps, onOpen }: { apps: readonly RailApp[]; onOpen: (appId: string) => void }) {
   const { t } = useTranslation('common')
   const { search, shown } = useMenuSearch(apps, app => app.name, { placeholder: t('menu.search'), noResults: t('menu.noResults') })
+  // The rows come from the list (the rail's menu draws them only once it is a value); the dot also reads the live pages.
+  const installed = useInstalledApps(LOCAL_HOST)
   return <>
     {search && <MenuSearch {...search} />}
     {shown.map((app) => (
@@ -53,7 +69,7 @@ export const OpenableAppRows = observer(function OpenableAppRows({ apps, onOpen 
         onClick={() => onOpen(app.extensionId)}
       >
         {app.name}
-        {appIsRunning(app.extensionId) && <i className="gg-sidebar-launch-running" aria-hidden="true" />}
+        {installed.state === 'value' && appIsRunning(installed.value, app.extensionId) && <i className="gg-sidebar-launch-running" aria-hidden="true" />}
       </MenuItem>
     ))}
   </>

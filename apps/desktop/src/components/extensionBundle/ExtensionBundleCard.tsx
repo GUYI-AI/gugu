@@ -1,6 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
 import { marketCompatText } from '@shared/extensions/market'
-import { comparer, reaction } from 'mobx'
 import { observer } from 'mobx-react-lite'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ChevronDown, Shield } from '@/lib/icons'
@@ -8,9 +7,8 @@ import { formatAttachmentSize, type ParsedAttachment } from '@gugu/core/shared/u
 import { extensionMonogram, localizedManifestText } from '@shared/extensions/catalog'
 import { cardOffer } from '@shared/extensions/app-card-state'
 import { compareExtensionVersions, opensInChats } from '@shared/extensions/manifest'
-import type { ExtensionOrigin } from '@shared/extensions/upgrade'
 import { describePermissions } from '@/session/renderer/features/extensions/extension-consent'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { useLocale } from '@/i18n'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { askInShell, installConsentPrompt } from '@/session/renderer/features/extensions/install-consent'
@@ -25,6 +23,9 @@ import { rendererLogger } from '../../lib/log'
 import { useTheme } from '../../store/theme'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { appsHere } from '../appSlot/appsHere'
+import { HERE_HOST } from '../appSlot/hereHost'
+import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { openApp } from '../appSlot/useOpenApp'
 import { Button } from '../ui/Button'
 import { Progress } from '../ui/Progress'
@@ -35,29 +36,6 @@ import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
 import type { HandedConsent } from '@/session/shared/extensions/install-consent-flow'
 
 const log = rendererLogger('chat/extension-bundle')
-
-/**
- * The version of this App installed here, whichever way it came — a folder an agent installed, a
- * card in a chat, the market (摩擦单 F4) — and where it came from (E-05). Follows the installed list as it changes.
- */
-function useInstalled(id: string | undefined): { version: string; origin: ExtensionOrigin | undefined } | null {
-  const [installed, setInstalled] = useState<{ version: string; origin: ExtensionOrigin | undefined } | null>(null)
-  useEffect(() => {
-    if (!id) {
-      setInstalled(null)
-      return undefined
-    }
-    return reaction(
-      () => {
-        const version = installedExtensionsStore.manifests.find((manifest) => manifest.id === id)?.version
-        return version === undefined ? null : { version, origin: installedExtensionsStore.origins[id] }
-      },
-      setInstalled,
-      { fireImmediately: true, equals: comparer.structural },
-    )
-  }, [id])
-  return installed
-}
 
 /**
  * 「装到哪台」(主人 10-02):这台电脑连着的别的机器 —— 产品里选机器的那一个 MachinePicker(新建任务、资源库同一份清单与说法:
@@ -282,16 +260,21 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   const manifest = summary?.ok ? summary.manifest : null
   const { resolvedLocale: locale } = useLocale()
   const name = manifest ? localizedManifestText(manifest, locale).name : null
-  // Already here — the same App at the same version — is installed, however it got here.
-  const here = useInstalled(manifest?.id)
-  const installedVersion = here?.version ?? null
+  // Already here — the same App at the same version — is installed, however it got here (a folder an agent installed, a
+  // card in a chat, the market, 摩擦单 F4), and where it came from (E-05). Follows the installed list as it changes.
+  const installedHere = useInstalledApps(HERE_HOST)
+  const hereManifest = manifest && installedHere.state === 'value' ? installedHere.value.manifestFor(manifest.id) : undefined
+  const here = hereManifest && installedHere.state === 'value' ? { version: hereManifest.version, origin: installedHere.value.origins[hereManifest.id] } : null
+  const installedVersion = here ? here.version : null
   // A newer package of the same App is on screen too: this card says so, and installs that one (摩擦单 F21).
   useSyncExternalStore(subscribeShownPackages, shownPackagesVersion)
   const newest = manifest ? newestShownPackage(manifest.id) : undefined
   const newer = manifest && newest && compareExtensionVersions(newest.manifest.version, manifest.version) > 0 ? newest : null
   // What the card offers follows what is installed here, always — installed, updated, uninstalled (摩擦单 F66): the one
   // answer the desktop and the phone share (`cardOffer`).
-  const offer = manifest
+  // Not known yet what is installed here: no offer is made (the button's place holds a placeholder), ❌ 「安装」 for an App
+  // that may well be installed.
+  const offer = manifest && installedHere.state === 'value'
     ? cardOffer({ installedVersion, installedOrigin: here?.origin, cardVersion: manifest.version, ...(newer ? { newestVersion: newer.manifest.version } : {}) })
     : null
   const installed = offer?.action === 'open'
@@ -351,7 +334,11 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <InstallTarget selectedId={machineId} onSelect={setMachineId} />
                 <span className="flex-1" />
-                {offer?.action === 'elsewhere' && !machine ? (
+                {installedHere.state !== 'value' && !machine ? (
+                  installedHere.state === 'error'
+                    ? <RefreshFailed error={installedHere.error} onRetry={() => { if (HERE_HOST) void installedExtensions.refresh(HERE_HOST) }} />
+                    : <Unknown className="h-7 w-20" />
+                ) : offer?.action === 'elsewhere' && !machine ? (
                   // E-05: what is here comes with gugu, so this card cannot update it — said, with the way to the App page
                   // where it is managed.
                   <>

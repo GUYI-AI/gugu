@@ -7,7 +7,7 @@ import type { BrowserWebviewElement } from '@renderer/features/browser/browser-w
 import { extensionSurfaceStore } from './extension-surface-store';
 import { extensionViewStore, type ExtensionViewClaim } from './extension-view-store';
 import { sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps } from './installed-extensions';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
@@ -50,14 +50,18 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
   useEffect(
     () =>
       reaction(
-        () => installedExtensionsStore.residentTabContributions.map((contribution) => contribution.kind),
+        // Not known (yet, or dropped): nothing is said to be gone.
+        () => peekInstalledAppsTracked()?.residentTabContributions.map((contribution) => contribution.kind) ?? null,
         (now, before) => {
-          for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
+          if (now && before) for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
         }
       ),
     []
   );
-  const contributions = installedExtensionsStore.residentTabContributions;
+  const installed = useInstalledApps(LOCAL_HOST);
+  // The pages float over their slots, each slot drawing its own waiting state: none starts before the list is known.
+  if (installed.state !== 'value') return <div ref={layerRef} data-slot="extension-view-layer" className="pointer-events-none absolute inset-0" />;
+  const contributions = installed.value.residentTabContributions;
   const enabled = new Map<string, (typeof contributions)[number]>(
     contributions.map((contribution) => [contribution.kind, contribution])
   );
@@ -163,6 +167,7 @@ export const ExtensionPage = observer(function ExtensionPage({
 }) {
   const unusedLayerRef = useRef<HTMLDivElement | null>(null);
   const layerRef = residentLayerRef ?? unusedLayerRef;
+  const installed = useInstalledApps(LOCAL_HOST);
   const claimOf = useCallback(
     () => pageKey === undefined ? undefined : extensionViewStore.claims.get(pageKey),
     [pageKey]
@@ -538,7 +543,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   );
 
   if (!surface && !managed) return null;
-  const manifest = installedExtensionsStore.manifestFor(extensionId);
+  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
   // A widget's page stays clear until it has painted: its slot's snapshot shows through, not a blank box.
   const unpainted = !inline && !!claimOf()?.widget && (!pageKey || !extensionViewStore.paintedPages.has(pageKey));
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
-import { installedExtensionsStore, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps, tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { ask, chatTabs, shownItem } from './chatTabsHarness'
 
 /**
@@ -38,7 +38,7 @@ function slides(version: string) {
 }
 const workspace = { id: 'workspace', name: 'Workspace', version: '1.0.0', apiVersion: 4, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Workspace', opensFiles: { chat: ['.json'] } }] } }
 const install = (manifests: unknown[]) =>
-  act(() => installedExtensionsStore.applyList({ extensions: manifests, invalid: [] } as unknown as InstalledExtensionsList))
+  act(() => tellInstalled('local', { extensions: manifests, invalid: [] } as unknown as InstalledExtensionsList))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
@@ -57,7 +57,7 @@ beforeEach(() => {
       const candidate = { extensionId: 'notes', app: { name: 'Notes' }, tabKind: 'notes.main', tabTitle: 'Notes', suffix: '.md', onlyTab: true }
       return new Promise((resolve) => gates.set('G', () => resolve({ success: true, data: { chatId: args.chatId, itemId: 'item-g', name: 'g.md', typedName: 'g.md', choice: { kind: 'one', candidate } } } as never)))
     }
-    const installed = installedExtensionsStore.manifests.some((manifest) => manifest.id === 'slides')
+    const installed = peekInstalledApps('local')!.manifests.some((manifest) => manifest.id === 'slides')
     const candidate = { extensionId: 'slides', app: { name: 'Slides' }, tabKind: 'slides.main', tabTitle: 'Slides', suffix: '.deck.json', onlyTab: true }
     const opener = installed ? candidate : { ...candidate, extensionId: 'workspace', app: { name: 'Workspace' }, tabKind: 'workspace.main', tabTitle: 'Workspace', suffix: '.json' }
     return Promise.resolve({ success: true, data: { chatId: args.chatId, itemId: 'item-f', name: 'deck.deck.json', typedName: 'deck.deck.json', file: { document: false, contentType: 'application/json', version: 1, size: 10 }, choice: { kind: 'one', candidate: opener } } } as never)

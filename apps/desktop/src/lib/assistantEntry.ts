@@ -21,7 +21,8 @@ import { openLinkTarget } from './guguLinks'
 import { notify } from './notices'
 import { platform } from '../platform'
 import { UI_EVENTS } from './uiEvents'
-import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps, watchInstalled } from '../session/renderer/features/extensions/installed-extensions'
+import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { readsWork } from '../components/appSlot/appWorkLedger'
 
 /** 产品自己的助理 App(GUYI-AI/gugu-assistant):两端同一个常量(assistant-entry.ts)。 */
@@ -91,14 +92,16 @@ export function decideAssistantEntry(input: {
   shell: Pick<AssistantShellSnapshot, 'assistantState' | 'chatId' | 'ownerId'> | null
   word: AssistantAppWord | null
   surfaces: AppConversationSurfaces
-  /** 人有没有把那个 App 关掉(关掉 = 它的页不画,当它此刻用不了)。 */
-  appEnabled: boolean
+  /** 人有没有把那个 App 关掉(关掉 = 它的页不画,当它此刻用不了)。null:装着什么还没读到(❌ 先当关着去私聊,读到再改去 App,AP13)。 */
+  appEnabled: boolean | null
 }): AssistantEntryTarget {
   const { shell, word, surfaces } = input
   const ownerId = shell?.ownerId ?? null
   if (!ownerId) return WAIT
   const chatId = shell?.assistantState === 'found' ? shell.chatId : null
-  if (word && word.ownerId === ownerId && word.trusted && input.appEnabled) {
+  const trusted = !!word && word.ownerId === ownerId && word.trusted
+  if (trusted && input.appEnabled === null) return WAIT
+  if (trusted && input.appEnabled) {
     return { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: chatId && surfaces[ASSISTANT_APP_ID] === chatId ? chatId : null }
   }
   if (chatId) return { kind: 'chat', chatId }
@@ -107,18 +110,27 @@ export function decideAssistantEntry(input: {
 
 const NO_SURFACES: AppConversationSurfaces = Object.freeze({})
 
+
+/** Whether the assistant App is installed here and on; null while what is installed is not read yet. */
+function assistantAppEnabled(): boolean | null {
+  const apps = peekInstalledApps(LISTED_HOST)
+  if (!apps) return null
+  return !!apps.manifestFor(ASSISTANT_APP_ID) && apps.isEnabled(ASSISTANT_APP_ID)
+}
+
 function appReadsWork(): boolean {
-  const manifest = installedExtensionsStore.manifestFor(ASSISTANT_APP_ID)
+  // @@@reading-default - a command, one moment: the list not read yet cannot say the App reads its work, so the task is refused (said by the caller)
+  const manifest = peekInstalledApps(LISTED_HOST)?.manifestFor(ASSISTANT_APP_ID)
   return !!manifest && readsWork(manifest)
 }
 
-/** 此刻的判断(读三座桥:壳的助理快照、旁边画着哪条会话、主进程那一句;再加上人有没有关掉那个 App)。 */
+/** 此刻的判断(读三座桥:壳的助理快照、旁边画着哪条会话、主进程那一句;再加上人有没有关掉那个 App)。命令里一刻的判断;画的用 `useAssistantEntryTarget`(订阅了这几样)。 */
 export function readAssistantEntryTarget(): AssistantEntryTarget {
   return decideAssistantEntry({
     shell: readAssistantShellBridge()?.getSnapshot() ?? null,
     word: readAssistantAppEntryBridge()?.getSnapshot() ?? null,
     surfaces: readAppConversationSurfaceBridge()?.getSnapshot() ?? NO_SURFACES,
-    appEnabled: !!installedExtensionsStore.manifestFor(ASSISTANT_APP_ID) && installedExtensionsStore.isEnabled(ASSISTANT_APP_ID),
+    appEnabled: assistantAppEnabled(),
   })
 }
 
@@ -133,6 +145,8 @@ export function assistantAppUsable(): boolean {
 function subscribeAll(listener: () => void): () => void {
   const offs = [readAssistantShellBridge(), readAppConversationSurfaceBridge(), readAssistantAppEntryBridge()]
     .map((source) => source?.subscribe(listener) ?? (() => undefined))
+  // …and what is installed here (the App switched on or off, the list read for the first time).
+  offs.push(watchInstalled(LISTED_HOST, listener))
   return () => offs.forEach((off) => off())
 }
 

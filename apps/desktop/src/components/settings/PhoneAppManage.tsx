@@ -1,12 +1,11 @@
 import { useId, useState } from 'react'
-import { observer } from 'mobx-react-lite'
 import { followLink } from '../../lib/guguLinks'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { installedExtensionsStore as store } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { PHONE_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { AppManagePage } from '@/session/renderer/features/extensions/panel/app-manage-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { InstalledRowNotice } from '@/session/renderer/features/extensions/panel/installed-extension-row'
@@ -25,7 +24,7 @@ const log = rendererLogger('settings/phone-app-manage')
  * An App's settings page on the phone: the desktop's page, with what this phone can manage. It has no agents and no App
  * background, and permissions are not taken back one by one here, so those hand it no action.
  */
-export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onViewInMarket }: {
+export function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onViewInMarket }: {
   extensionId: string
   updateVersion?: string
   gone: boolean
@@ -38,8 +37,11 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
-  const installed = store.manifests.find((manifest) => manifest.id === extensionId)
-  if (!installed) return null
+  const reading = useInstalledApps(PHONE_HOST)
+  // Opened from a row of the list, so it is read; were it not (yet), nothing to manage is drawn until it is.
+  const store = reading.state === 'value' ? reading.value : null
+  const installed = store?.manifests.find((manifest) => manifest.id === extensionId)
+  if (!store || !installed) return null
   const name = localizedManifestText(installed, locale).name
   const enabled = store.isEnabled(extensionId)
   const fromMarket = phoneApps.originOf(extensionId) === 'market'
@@ -119,4 +121,4 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
       ) : null}
     </Sheet>
   )
-})
+}

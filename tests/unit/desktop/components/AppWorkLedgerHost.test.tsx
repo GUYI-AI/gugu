@@ -51,10 +51,6 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
     return () => { state.inventoryNotes.delete(listener); };
   } },
 }));
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
-  get manifests() { return state.inventory; },
-  isEnabled: (id: string) => !state.disabled.includes(id),
-} }));
 // The built-in task window, as far as this test needs it: which task, for whom, and its back control.
 vi.mock('@/components/assistant/AssistantWorkTaskWindow', () => ({ AssistantWorkTaskWindow: (props: { ownerId: string; request: Record<string, unknown>; onClose?: () => void; appPanel?: boolean }) => {
   state.windows.push({ ...props, signedIn: state.owner } as never);
@@ -67,6 +63,7 @@ vi.mock('@/components/assistant/AssistantSettingsPage', () => ({ AssistantSettin
 } }));
 
 const { AppWorkLedgerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppWorkLedgerHost');
+const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
 const { AppHostLayerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppHostLayerHost');
 const { forgetPushedWorkForTest, pushedRowsOf } = await import('../../../../apps/desktop/src/components/appSlot/appWorkLedger');
 const { forgetReportedHostLayersForTest } = await import('../../../../apps/desktop/src/components/appSlot/appHostLayer');
@@ -103,6 +100,8 @@ const render = async (visible = true) => act(async () => {
   followRendererSession(state.owner ? 'SIGNED_IN' : 'SIGNED_OUT', state.owner || null);
   state.tick += 1;
   for (const listener of state.ticks) listener();
+  // What main lists as installed here, as the test's state says it now.
+  tellInstalled('local', { extensions: state.inventory, invalid: [], disabled: state.disabled } as never);
   root.render(<><AppWorkLedgerHost /><AppHostLayerHost visible={visible} /></>);
 });
 const settle = () => act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); });

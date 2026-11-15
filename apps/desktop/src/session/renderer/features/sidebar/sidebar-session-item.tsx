@@ -7,7 +7,7 @@ import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfG
 import { screenLayout } from '@renderer/app/screen-layout';
 import { AlertTriangle, Archive, Copy, LayoutGrid, MoreHorizontal, PanelLeft, PanelLeftClose, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { observer } from 'mobx-react-lite';
@@ -123,6 +123,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
 }: SidebarSessionItemProps) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
+  const installed = useInstalledApps(LOCAL_HOST);
   const { params } = useParams('session');
   const agentsReading = useAgents();
   const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
@@ -195,10 +196,10 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const spawnedByExtensionId = row.spawnedByExtensionId;
   const spawnedByExtensionLabel = spawnedByExtensionLabelFor({
     extensionId: spawnedByExtensionId,
-    installedName: spawnedByExtensionId
-      ? installedExtensionsStore.appName(spawnedByExtensionId)
+    installedName: spawnedByExtensionId && installed.state === 'value'
+      ? installed.value.appName(spawnedByExtensionId)
       : undefined,
-    manifestsLoaded: installedExtensionsStore.isLoaded,
+    manifestsLoaded: installed.state === 'value',
   });
 
   // A row of the inner column (a group's agents) opens inside that group: the screen stays the group's (screen-layout `entry`).

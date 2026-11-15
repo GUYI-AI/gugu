@@ -40,7 +40,7 @@ import 'katex/dist/katex.min.css';
 // shadow root, so toasts render as a bare <ol>. Import it here so it lands in the build CSS
 // that the gugu host injects INTO the shadow root (the head copy is a harmless duplicate).
 import 'sonner/dist/styles.css';
-import { registerInstalledExtensionTabs } from '@renderer/features/extensions/register-extension-tabs';
+import { wireInstalledExtensionTabs } from '@renderer/features/extensions/register-extension-tabs';
 import { wireRemoteExtensionResync } from '@renderer/features/extensions/wire-remote-extension-resync';
 import { wireMarketRefresh } from '@renderer/features/extensions/wire-market-refresh';
 import { wireProgramNotifications } from '@renderer/features/extensions/wire-program-notifications';
@@ -233,12 +233,11 @@ async function bootstrap() {
 
   // Extensions register their tab providers off the critical path (#2374): a tab whose provider
   // has not arrived yet is held as a placeholder and promoted in place once it registers, so the
-  // session page never waits on an inventory read to become usable.
-  void registerInstalledExtensionTabs().catch((error: unknown) => {
-    log.warn('Extension tab registration failed:', error);
-  });
+  // session page never waits on an inventory read to become usable. The providers follow the
+  // installedExtensions('local') replica from here on; this reads it once (the snapshot kept only the dock).
+  wireInstalledExtensionTabs();
   // 有新版 / 被撤回 / 已弃用的提示在启动时查一次(#5410 spec:❌ 轮询、❌ 横幅),之后跟着市场目录变 ——
-  // 同样脱离关键路径,失败只进日志(installedExtensionsStore.checkUpdates 自己兜底)。
+  // 同样脱离关键路径;读失败落在 marketUpdates('local') 的读数上(角标不画),不吞成「没有更新」。
   wireMarketRefresh();
   wireProgramNotifications();
   wireRemoteExtensionResync();

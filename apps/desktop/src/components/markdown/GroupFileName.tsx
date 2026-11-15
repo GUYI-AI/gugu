@@ -1,7 +1,6 @@
-import { useMemo } from 'react'
 import { displayNameOf } from '@shared/extensions/file-openers'
-import { mobxReadable } from '@/lib/mobxReadable'
-import { useSelect } from '@/lib/selectStore'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '../appSlot/hereHost'
 import { chatClaimantHere } from './chatClaimant'
 
 /**
@@ -12,11 +11,9 @@ import { chatClaimantHere } from './chatClaimant'
  * list is — so two people may read one message differently.
  */
 export function GroupFileName({ name }: { name: string }) {
-  // The installed Apps' claims (a MobX store until it becomes a replica), read through the MobX adapter.
-  const claims = useMemo(() => mobxReadable(() => {
-    const claim = chatClaimantHere(name)
-    return claim ? displayNameOf(name, claim.suffix) : null
-  }), [name])
-  const shown = useSelect(claims, (value) => value, Object.is)
+  const installed = useInstalledApps(HERE_HOST)
+  // Not known yet (or unreadable): the words as written — the message's own text, not a guess at a claim.
+  const claim = installed.state === 'value' ? chatClaimantHere(installed.value, name) : null
+  const shown = claim ? displayNameOf(name, claim.suffix) : null
   return shown !== null && shown !== name ? <span title={name}>{shown}</span> : <>{name}</>
 }

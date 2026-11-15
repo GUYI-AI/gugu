@@ -38,7 +38,7 @@ const { phoneRuns } = await import('../../../../apps/desktop/src/components/appS
 const { useChatOpener } = await import('../../../../apps/desktop/src/components/appSlot/useChatOpener')
 const { ExtensionBundleCard } = await import('../../../../apps/desktop/src/components/extensionBundle/ExtensionBundleCard')
 const { ChatStoreProvider } = await import('../../../../apps/desktop/src/store/chatContext')
-const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { UI_EVENTS } = await import('../../../../apps/desktop/src/lib/uiEvents')
 const { folderItem } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item')
 const { askChat, openPanelItem, panelTabsOf, chatPaneOf, shownPanelTab } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
@@ -52,7 +52,7 @@ const OWN_PAGE: Tab = { name: 'main', title: 'Board' }
 const GROUP_FILES: Tab = { name: 'main', title: 'Board', opensFiles: { chat: ['.board.json'] } }
 const SESSION_FILES: Tab = { name: 'main', title: 'Board', opensFiles: { session: ['TODO.md'] } }
 const install = (manifest: unknown) =>
-  act(() => installedExtensionsStore.applyList({ extensions: manifest ? [manifest] : [], invalid: [] } as never))
+  act(() => tellInstalled('local', { extensions: manifest ? [manifest] : [], invalid: [] } as never))
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {

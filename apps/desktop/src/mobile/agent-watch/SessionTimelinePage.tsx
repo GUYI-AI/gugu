@@ -7,10 +7,8 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
-import { mobxReadable } from '@/lib/mobxReadable'
-import { useSelect } from '@/lib/selectStore'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -41,7 +39,9 @@ import { type SessionMenuTarget, SessionActions, SessionMenuButton } from './Ses
 import { SessionAppMenu } from './SessionAppMenu'
 import { useMachineLabel } from './useMachineLabel'
 import { SessionAppFrame } from '@/components/appSlot/SessionAppFrame'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '@/components/appSlot/hereHost'
+import type { Reading } from '@/lib/replica'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { useMobileShell } from '@/hooks/useMobileShell'
@@ -54,13 +54,11 @@ import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
  * on a computer. Their page draws here; their program runs on the session's computer.
  */
-const sessionApps = mobxReadable(() => installedExtensionsStore.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })))
-const sameApps = (a: Array<{ kind: string; name: string }>, b: Array<{ kind: string; name: string }>) =>
-  a.length === b.length && a.every((one, i) => one.kind === b[i]?.kind && one.name === b[i]?.name)
-
-function useSessionApps(): Array<{ kind: string; name: string }> {
-  // The installed Apps store (MobX until it becomes a replica), read through the MobX adapter — ❌ a copy in component state.
-  return useSelect(sessionApps, (apps) => apps, sameApps)
+function useSessionApps(): Reading<Array<{ kind: string; name: string }>> {
+  const installed = useInstalledApps(HERE_HOST)
+  return useMemo(() => installed.state === 'value'
+    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })) }
+    : installed, [installed])
 }
 
 /**
@@ -122,6 +120,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // Its back key goes back to the timeline, as its header's back does — not past it to the list (the App is a layer here).
   useBackLayer(() => setAppKind(null), appKind !== null)
   const apps = useSessionApps()
+  const browserApp = { kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
     deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
@@ -245,7 +244,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       {!phoneHost && !appPanel ? <SessionAppMenu
         appKind={appKind}
         onConversation={() => setAppKind(null)}
-        apps={[{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps]}
+        apps={apps.state === 'value' ? [browserApp, ...apps.value] : [browserApp]}
+        pending={!!HERE_HOST && apps.state !== 'value'}
         onOpenApp={setAppKind}
       /> : null}
       {reachable && !hostSilent ? (

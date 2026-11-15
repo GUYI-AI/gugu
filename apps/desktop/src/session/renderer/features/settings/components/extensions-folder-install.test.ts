@@ -43,7 +43,7 @@ const h = vi.hoisted(() => {
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: h.ranking } }));
 
 vi.mock('@renderer/lib/ipc', () => ({
-  rpc: { extensions: {}, viewState: { save: vi.fn(async () => ({ success: true })) } },
+  rpc: { extensions: h.api, viewState: { save: vi.fn(async () => ({ success: true })) } },
   rpcOn: () => ({}),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
@@ -54,11 +54,9 @@ vi.mock('@renderer/features/extensions/register-extension-tabs', () => ({ regist
 // A row's 「给哪些 agent」 is the main renderer's editor, which reads the platform as it loads: not what these cells are about.
 vi.mock('@renderer/features/extensions/panel/app-given-section', () => ({ AppGivenSection: () => null }));
 vi.mock('@renderer/features/library/library-host', async () => {
-  const { InstalledExtensionsStore } = await import('@renderer/features/extensions/installed-extensions-store');
   const extensions = {
     key: 'local',
     api: h.api,
-    store: new InstalledExtensionsStore(h.api as never),
     onEvent: () => () => undefined,
     local: true,
     pickFolder: h.pickFolder,
@@ -70,6 +68,13 @@ const { SessionLocalizationProvider } = await import('@renderer/localization/loc
 const { translateSessionMessage } = await import('@renderer/localization/locale-store');
 const { toast } = await import('@renderer/lib/hooks/use-toast');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
+const { queryClient: replicas } = await import('@/lib/replica');
+
+// What is installed and what the market says of it are replicas (fresh until pushed): each cell reads them anew.
+beforeEach(() => {
+  replicas.removeQueries({ queryKey: ['installedExtensions'] });
+  replicas.removeQueries({ queryKey: ['marketUpdates'] });
+});
 
 // How this build refuses an App written for apiVersion 2, as list() hands it over (#6934).
 const REFUSED = 'Invalid manifest:\n- apiVersion: apiVersion 2 is an older App interface; ask an agent to rewrite the App for apiVersion 25 as app_create writes Apps.';
@@ -610,7 +615,8 @@ describe('市场页 (#7059)', () => {
       React.createElement(FreshLocalization, null, React.createElement(FreshCard)))));
     const document = dom.window.document;
     const img = () => heroArt()?.querySelector('img') as HTMLImageElement | null;
-    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    // The shelf draws no skeleton (what is installed is unknown in a fresh process: only the 已安装 count is a placeholder).
+    expect(document.querySelector('[data-testid="extensions-market-panel"] [aria-busy="true"]')).toBeNull();
     expect(document.querySelector('[data-testid="extension-card-arxiv"]')).not.toBeNull();
     expect(img()?.getAttribute('src')).toBe(placeholder);
     expect(img()?.style.visibility).toBe('');

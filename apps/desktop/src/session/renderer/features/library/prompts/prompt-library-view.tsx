@@ -12,7 +12,7 @@ import { SearchInput } from '@renderer/lib/ui/search-input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import { APP_PROMPT_ACTIONS } from '@shared/prompt-library';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import type { InstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { usePromptLibraryActions, type AppPromptRow, type PromptLibraryActions } from './use-prompt-library-actions';
 
 type PromptListItem = { title: string; prompt: string } | AppPromptRow;
@@ -92,10 +92,11 @@ function AppPromptBody({ prompt, actions, disabled, actionsShown }: { prompt: Ap
 }
 
 /** One App's prompts, on its settings page. Same data and writes as the library page. */
-export const AppPromptsSection = observer(function AppPromptsSection({ extensionId, store }: { extensionId: string; store: Pick<typeof installedExtensionsStore, 'appPrompts'> }) {
+export function AppPromptsSection({ extensionId, store }: { extensionId: string; store: Pick<InstalledApps, 'appPrompts'> }) {
   const actions = usePromptLibraryActions(store);
-  return <>{actions.appPrompts.filter((prompt) => prompt.key.startsWith(`${extensionId}/`)).map((prompt) => <div className="mg-row" key={prompt.key}><AppPromptBody prompt={prompt} actions={actions} disabled={actions.isBusy} actionsShown /></div>)}</>;
-});
+  // Given the list (`store`), the App's prompts are known.
+  return <>{(actions.appPrompts ?? []).filter((prompt) => prompt.key.startsWith(`${extensionId}/`)).map((prompt) => <div className="mg-row" key={prompt.key}><AppPromptBody prompt={prompt} actions={actions} disabled={actions.isBusy} actionsShown /></div>)}</>;
+}
 
 /** Sections like the composer's `/` (prompt-slash-items.ts): the person's own, then each enabled App's. */
 export const PromptLibraryView = observer(function PromptLibraryView() {
@@ -119,7 +120,7 @@ export const PromptLibraryView = observer(function PromptLibraryView() {
     [promptLibrary, search]
   );
   const appSections = new Map<string, AppPromptRow[]>();
-  for (const item of actions.appPrompts.filter((prompt) => matchesSearch(prompt, search.trim()))) appSections.set(item.appName, [...(appSections.get(item.appName) ?? []), item]);
+  for (const item of (actions.appPrompts ?? []).filter((prompt) => matchesSearch(prompt, search.trim()))) appSections.set(item.appName, [...(appSections.get(item.appName) ?? []), item]);
   return (
     <div ref={rootRef} className="flex flex-col text-foreground">
       <PageHeader
@@ -147,7 +148,8 @@ export const PromptLibraryView = observer(function PromptLibraryView() {
         <DeviceScopeNoticeLine notice={{ kind: 'failed', text: translate('prompts.loadFailed'), retry: true, readOnly: false, inHeading: false, cached: false }} onRetry={actions.reload} />
       )}
       {/* 还没读到(在读 / 读不到):❌ 先画一句「还没有提示词」冒充它是空的。读不到时上面那一句说清楚。 */}
-      {actions.isLoading ? (
+      {/* What is installed not read yet either: the Apps' sections would come in under the list, so it waits too. */}
+      {actions.isLoading || actions.appPrompts === null ? (
         <PageLoading />
       ) : !actions.hasData ? null : (
         <div className={cn('flex flex-col py-2', filteredItems.length === 0 && appSections.size === 0 && 'min-h-64')}>

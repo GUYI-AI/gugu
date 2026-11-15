@@ -17,10 +17,14 @@ vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: {} }))
 vi.mock('@/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <iframe title="resolved original" /> }))
 vi.mock('@/session/renderer/features/extensions/extension-view-store', async original => ({ ...(await original<object>()), extensionViewStore: { claim: fixture.claim, release: vi.fn(), paintedPages: new Set() } }))
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
+vi.mock('@/session/renderer/features/extensions/installed-extensions', async original => {
+  const installed = {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1', contributes: { tabs: [{ name: 'poll', widget: { height: 240 } }] } }),
-} }))
+}
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+})
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => { harness?.cleanup(); fixture.read.mockReset(); fixture.claim.mockClear() })

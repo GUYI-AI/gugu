@@ -1,8 +1,9 @@
-import { useEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { readCachedDevices } from '@/store/devicesCache';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host';
+import { useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import type { AppDetail } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { toast } from '@renderer/lib/hooks/use-toast';
 
@@ -15,15 +16,22 @@ export function useAppDetailRequest({ target, ready, host, setDetail, detail, ro
   setDetail: Dispatch<SetStateAction<AppDetail | null>>; detail: AppDetail | null;
   rootRef: RefObject<HTMLDivElement | null>;
 }) {
+  // What is installed on that host, read when the request is taken (a later list does not reopen the page).
+  const installedReading = useInstalledApps(host.key);
+  const apps = installedReading.state === 'value' ? installedReading.value : null;
+  const appsRef = useRef(apps);
+  appsRef.current = apps;
+  const known = apps !== null;
   useEffect(() => {
-    if (!target || !ready) return;
+    const installedApps = appsRef.current;
+    if (!target || !ready || !installedApps) return;
     let cancelled = false;
     const open = async () => {
       if (target.deviceId) {
         const local = readCachedDevices().some((row) => row.device_id === target.deviceId && row.is_current_device);
         if (host.key !== (local ? 'local' : `remote:${target.deviceId}`)) throw new Error('The App link names another device; reopen the link or reconnect that device.');
       }
-      const installed = host.store.manifests.find((row) => row.id === target.extensionId);
+      const installed = installedApps.manifests.find((row) => row.id === target.extensionId);
       if (target.variant && !installed) throw new Error('The installed App is no longer available on this device.');
       if (installed) {
         setDetail({ page: 'manage', extensionId: target.extensionId, fromApp: target.fromApp });
@@ -38,8 +46,8 @@ export function useAppDetailRequest({ target, ready, host, setDetail, detail, ro
     };
     void open().catch((error: unknown) => { if (!cancelled) toast({ title: messageForUser(error), variant: 'destructive' }); });
     return () => { cancelled = true; };
-  }, [target, ready, host, setDetail, rootRef]);
-  const variants = target ? host.store.variants[target.extensionId] : undefined;
+  }, [target, ready, known, host, setDetail, rootRef]);
+  const variants = target && apps ? apps.variants[target.extensionId] : undefined;
   useEffect(() => {
     if (target?.variant && detail?.page === 'manage' && detail.extensionId === target.extensionId) {
       rootRef.current?.querySelector(`[data-testid="app-variant-${target.variant}"]`)?.scrollIntoView({ block: 'center' });

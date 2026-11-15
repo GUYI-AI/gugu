@@ -3,7 +3,8 @@ import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { Unknown } from '@/components/ui/Unknown';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
@@ -96,15 +97,17 @@ export function useSessionWorkspaceActions(
   // extend the list instead of joining the union. Both surfaces read the same store, so what the menu offers and what the
   // empty state offers cannot drift (#2374). 与「+」菜单同一套语义(behavior tab-extensions):只列启用的,点一个 =
   // 把它放到这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。
-  const extensionActions: WorkspacePanelAction[] = installedExtensionsStore.enabledTabContributions.map(
-    (contribution) => ({
+  // What is installed not known yet: one placeholder row where the Apps go (❌ 「no Apps」 before the list is read).
+  const installed = useInstalledApps(LOCAL_HOST);
+  const extensionActions: WorkspacePanelAction[] = installed.state !== 'value'
+    ? [{ id: 'extensions-unknown', label: '', icon: null, section: 'extensions', unknown: true, disabled: true, onClick: () => undefined }]
+    : installed.value.enabledTabContributions.map((contribution) => ({
       id: contribution.kind,
       label: contribution.title,
       icon: <ExtensionMark iconDataUrl={contribution.iconDataUrl} />,
       section: 'extensions',
       onClick: () => onOpenApp(contribution.kind),
-    })
-  );
+    }));
 
   return [
     ...getSessionWorkspaceActionOrder(projectId, terminalEnabled).map((actionId) =>
@@ -198,6 +201,8 @@ export interface WorkspacePanelAction {
   shortcutSettingsKey?: CommandId;
   disabled?: boolean;
   title?: string;
+  /** The row of an entry not known yet (the Apps, before what is installed is read): drawn as a placeholder row. */
+  unknown?: true;
   onClick: () => void;
 }
 
@@ -227,6 +232,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
   const openExtensionsSettings = () => navigate('apps');
 
   const renderAction = (entry: WorkspacePanelAction, className?: string) => {
+    if (entry.unknown) return <div className={cn('flex min-h-10 w-full items-center px-2.5 py-2', className)}><Unknown className="w-28" /></div>;
     const enabledIndex = enabledEntries.indexOf(entry);
     return (
       <PaneEmptyStateAction
@@ -263,7 +269,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
           <span>{translate('extensions.appsSection')}</span>
           {/* One door, not two: with nothing enabled the sentence below is the way
               in, so the「+」only appears once there is a list to add to (owner). */}
-          {extensions.length > 0 && (
+          {extensions.some((entry) => !entry.unknown) && (
             <Button
               size="icon-sm"
               variant="ghost"

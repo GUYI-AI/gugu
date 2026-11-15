@@ -26,7 +26,7 @@ export interface AssistantAppInstall {
   /** The variant in use: `upstream` unless a fork is switched on (a phone has no forks). */
   activeVariant: string;
   enabled: boolean;
-  /** The kind of its main page (`<id>.<tab>`, `installedExtensionsStore.mainTabOf`); null: it has none. */
+  /** The kind of its main page (`<id>.<tab>`, `InstalledApps.mainTabOf`); null: it has none. */
   mainTabKind: string | null;
 }
 

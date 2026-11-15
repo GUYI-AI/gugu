@@ -14,8 +14,9 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({
     market: { onRefreshed: () => () => {}, refresh: async () => ({ outcome: 'unchanged' }) },
   },
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { manifests: [manifest], isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null },
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
+  installedExtensions: { refresh: async () => {} },
+  useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: { manifests: [manifest], unreadable: null, isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null } }),
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () => ({
   PHONE_HOST: 'phone',
@@ -23,7 +24,7 @@ vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () =
   phoneProductApi: {},
   readPhoneMarketPage: async () => market,
   phoneMarketRows: (entries: unknown[]) => entries,
-  useOfferedVersions: () => ({ updates: {}, gone: [] }),
+  useOfferedVersions: () => ({ state: 'value', stale: false, error: null, value: { offered: {}, gone: [] } }),
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/AppsSection', () => ({
   AppsSection: ({ onManage }: { onManage: (id: string) => void }) => createElement('button', { 'data-testid': 'row', onClick: () => onManage('notes') }),

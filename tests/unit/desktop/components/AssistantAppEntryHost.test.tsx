@@ -38,13 +38,11 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
     return () => { state.notes.delete(listener); };
   } },
 }));
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
-  manifestFor: (id: string) => (id === 'gugu-assistant' ? state.manifest : null),
-  get origins() { return { 'gugu-assistant': 'market' }; },
-  isEnabled: () => true,
-} }));
 
 const { AssistantAppEntryHost } = await import('../../../../apps/desktop/src/components/appSlot/AssistantAppEntryHost');
+const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
+/** What main lists as installed here, as the test's state says it now. */
+const listInstalled = () => tellInstalled('local', { extensions: state.manifest ? [state.manifest] : [], invalid: [], origins: { 'gugu-assistant': 'market' } } as never);
 const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge');
 const { publishAppConversationSurfaces, installAppConversationSurfaceBridge } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge');
 const { readAssistantAppEntryBridge, readAssistantEntryTarget, ASSISTANT_APP_ID } = await import('../../../../apps/desktop/src/lib/assistantEntry');
@@ -76,6 +74,7 @@ beforeEach(() => {
   installAppConversationSurfaceBridge();
   state.owner = OWNER;
   state.manifest = { id: ASSISTANT_APP_ID, version: '0.1.0' };
+  listInstalled();
   sync.mockReset().mockImplementation(async (args: { ownerId: string; chatId: string | null }) => state.answer(args));
   refresh.mockClear();
   handOver.mockReset().mockResolvedValue({ success: true, data: { held: true } });

@@ -1,8 +1,7 @@
-import { reaction } from 'mobx'
-import { replica, useReplica } from '../../lib/replica'
+import { useReplica, type Reading } from '../../lib/replica'
 import { useEffect } from 'react'
 import { chatDb } from '@/lib/supabase'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { marketUpdates, PHONE_HOST, type MarketUpdates } from '@/session/renderer/features/extensions/installed-extensions'
 import { rendererLogger } from '@/lib/log'
 import type { CloudMarketEntry, MarketListItem } from '@/session/shared/extensions/market'
 import { marketHome, type MarketHome } from '@/session/shared/extensions/market-home'
@@ -11,6 +10,8 @@ import { searchApps } from '@/session/shared/extensions/app-search'
 import { marketCategoryOf, marketCategoryRank } from '@/session/shared/extensions/catalog'
 import type { ProductPageApi } from '@/session/renderer/features/extensions/panel/app-product-page'
 import { phoneApps } from '../appSlot/phoneApps'
+
+export { PHONE_HOST }
 
 const log = rendererLogger('app-slot/phone-market-page')
 
@@ -29,8 +30,6 @@ export async function readPhoneMarketPage() {
   return pageOf(entries, home)
 }
 
-/** 这台手机在市场缓存里的名字(桌面按机器分,手机只有自己)。 */
-export const PHONE_HOST = 'phone'
 
 /** 上次画出来的那一页(kept-shelf.ts):重启后第一帧先画它,❌ 等排名那一趟网络。 */
 export function keptPhoneMarketPage() {
@@ -93,46 +92,18 @@ export const phoneProductApi: ProductPageApi = {
 
 /**
  * The version the market offers this phone for each App installed here from it, and the ones no longer in the market (owner
- * 10-19, as the desktop says); null when the market was not reached. Since owner 10-19 they also update by themselves
- * (phoneApps `autoUpdate`); here the person sees one is waiting, and its settings page offers it.
+ * 10-19, as the desktop says): `marketUpdates('phone')`, the one model the desktop reads too (it absorbed `offeredVersions`).
+ * Since owner 10-19 they also update by themselves (phoneApps `autoUpdate`); here the person sees one is waiting.
  */
-async function offeredVersions(): Promise<{ updates: Record<string, string>; gone: string[] } | null> {
-  const result = await phoneApps.marketUpdates()
-  return result.success
-    ? { updates: Object.fromEntries(Object.entries(result.data.updates).map(([id, update]) => [id, update.version])), gone: result.data.gone ?? [] }
-    : null
-}
-
-/** What the market says of the Apps installed here (an update, or delisted). 161 10-15: else their fixes never reach the phone. */
-const offeredVersionsModel = replica({
-  name: 'offeredVersions',
-  scope: 'device',
-  read: async () => {
-    const offered = await phoneApps.ready().then(offeredVersions)
-    if (!offered) throw new Error('The market could not say which installed Apps have updates')
-    return offered
-  },
-  persist: { maxBytes: 1024, maxEntries: 1 },
-})
-
-/** `known` false until the market was asked once on this device: the rows then say nothing about versions yet. The market
- *  unreachable is an answer too: each row says the version it has, and offers nothing. */
-export function useOfferedVersions(): { updates: Record<string, string>; gone: readonly string[]; known: boolean } {
-  const reading = useReplica(offeredVersionsModel, [])
+export function useOfferedVersions(): Reading<MarketUpdates> {
+  const reading = useReplica(marketUpdates, [PHONE_HOST])
   useEffect(() => {
     // 「更新到 vX」 from the index in hand at once; the download site is asked behind it, and when the index it brings is
     // another, the buttons are read again from that one (market-snapshot.ts).
-    const read = () => void offeredVersionsModel.refresh()
-    const offRefreshed = phoneApps.market.onRefreshed((refreshed) => refreshed.outcome === 'changed' && read())
-    // What is installed changed (an App updated by itself, owner 10-19): what the market has to say about it is read again.
-    const offInstalled = reaction(() => installedExtensionsStore.manifests.map((manifest) => `${manifest.id}@${manifest.version}`).join(' '), read)
+    const offRefreshed = phoneApps.market.onRefreshed((refreshed) => refreshed.outcome === 'changed' && void marketUpdates.refresh(PHONE_HOST))
+    // @@@effect-flow - asks the phone's store to fetch the market index; its answer arrives as the onRefreshed push above
     void phoneApps.market.refresh()
-    return () => {
-      offRefreshed()
-      offInstalled()
-    }
+    return offRefreshed
   }, [])
-  return reading.state === 'value'
-    ? { ...reading.value, known: true }
-    : { updates: {}, gone: [], known: reading.state === 'error' }
+  return reading
 }

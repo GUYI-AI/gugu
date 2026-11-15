@@ -81,8 +81,10 @@ vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages'
   subscribeShownPackages: () => () => undefined,
   shownPackagesVersion: () => 0,
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { manifests: [] },
+// Read: nothing installed here.
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
+  installedExtensions: { refresh: async () => undefined },
+  useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: { manifests: [], origins: {}, manifestFor: () => undefined } }),
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/extension-consent', () => ({
   // Says which computer it was asked about (`machine`), so the card's preview can be read for it.

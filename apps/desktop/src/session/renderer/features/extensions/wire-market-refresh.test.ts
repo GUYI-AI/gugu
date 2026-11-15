@@ -14,7 +14,8 @@ vi.mock('@renderer/lib/ipc', () => ({
     return () => undefined;
   },
 }));
-vi.mock('./installed-extensions-store', () => ({ installedExtensionsStore: { checkUpdates: h.checkUpdates } }));
+vi.mock('./installed-extensions', () => ({ LOCAL_HOST: 'local', marketUpdates: { refresh: h.checkUpdates } }));
+vi.mock('./panel/kept-shelf', () => ({ warmKeptShots: () => undefined }));
 
 const { wireMarketRefresh } = await import('./wire-market-refresh');
 

@@ -9,16 +9,14 @@ import { ToastContext } from '../../../apps/desktop/src/components/toastContext'
 import { createNode, createReactHarness } from '../../support/testHarness'
 
 const m = vi.hoisted(() => ({ ledger: vi.fn(), workingCopy: vi.fn(), call: vi.fn(), toast: vi.fn() }))
-vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', saveFile: vi.fn() } }))
+vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', saveFile: vi.fn(), capabilities: {} } }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   readOpenedFileChunk: m.ledger,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },
 }))
 vi.mock('../../../apps/desktop/src/components/appSlot/phoneProgramCall', () => ({ callOnComputer: m.call }))
-vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { manifestFor: (id: string) => (id === 'workspace' ? { id: 'workspace', name: '文件', version: '0.2.75' } : undefined) },
-}))
+const { tellInstalled } = await import('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 
 let h: ReturnType<typeof createReactHarness>
 // "abc"
@@ -26,6 +24,8 @@ const chunk = { size: 3, etag: 'e1', data: 'YWJj' }
 let open: (path: string, source?: 'diff' | 'file-op' | 'resource-link' | 'prose-link') => void
 beforeEach(() => {
   vi.clearAllMocks()
+  // What is installed here: the folder App (its version goes with the working copy it reads).
+  for (const host of ['local', 'phone']) tellInstalled(host, { extensions: [{ id: 'workspace', name: '文件', version: '0.2.75', contributes: { tabs: [] } }], invalid: [] } as never)
   m.ledger.mockResolvedValue(chunk)
   m.workingCopy.mockResolvedValue(chunk)
   h = createReactHarness()

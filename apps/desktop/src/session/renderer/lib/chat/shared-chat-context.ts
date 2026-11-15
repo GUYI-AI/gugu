@@ -1,6 +1,6 @@
 import { createChatContext, DEFAULT_CONFIG, type ChatConfig, type ChatContext } from '@gugu/session-chat-ui';
-import { reaction } from 'mobx';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { subscribeLocale } from '@/i18n';
+import { LOCAL_HOST, peekInstalledApps, watchInstalled } from '@renderer/features/extensions/installed-extensions';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { rpc } from '@renderer/lib/ipc';
 import { advertisedCommandProvider } from './advertised-command-provider';
@@ -66,8 +66,13 @@ export function createSessionChatContext(): ChatContext {
     senderAvatar: (fromId) => senderAvatarUrl(fromId),
     subscribeSenderAvatars,
     // App 代发的投递卡写 App 的名字:这台装着的 App、界面语言(store 的 appName);没装就是 null,卡上写 id。
-    appName: (appId) => installedExtensionsStore.appName(appId) ?? null,
-    subscribeAppNames: (listener) => reaction(() => [installedExtensionsStore.manifests, installedExtensionsStore.locale], listener),
+    // @@@reading-default - the card's contract has no "not known yet": before the list is read it writes the id, and the subscription below redraws it with the name once read
+    appName: (appId) => peekInstalledApps(LOCAL_HOST)?.appName(appId) ?? null,
+    subscribeAppNames: (listener) => {
+      const stopList = watchInstalled(LOCAL_HOST, () => listener());
+      const stopLocale = subscribeLocale(listener);
+      return () => { stopList(); stopLocale(); };
+    },
     // 群里来的投递写群名(项目群就是项目名,见 chat-name.ts);认不出来是 null,卡上只说「来自群聊」。
     chatName: chatDisplayName,
     chatKind: id => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null,

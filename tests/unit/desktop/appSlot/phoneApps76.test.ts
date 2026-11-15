@@ -137,8 +137,12 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (ids: string[]) =>
     ids.map((id) => ({ id, type: 'human', owner_user_id: null, display_name: id.startsWith('1111') ? 'Alice' : 'Mallory' })),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { applyList: (list: (typeof shell.lists)[number]) => shell.lists.push(list) },
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
+  PHONE_HOST: 'phone',
+  tellInstalled: (_host: string, list: (typeof shell.lists)[number]) => shell.lists.push(list),
+  definePhoneInstalledList: () => undefined,
+  definePhoneMarketUpdates: () => undefined,
+  marketUpdates: { refresh: async () => undefined },
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/install-consent', () => ({
   installConsentPrompt: (request: (typeof shell.asked)[number]) => request,

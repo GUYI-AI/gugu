@@ -57,7 +57,8 @@ export function AppMarketContent({ shelf, query, hostKey, api, lifecycleOf, pend
   onAction: (item: ShelfItem) => void;
   sentinelRef?: Ref<HTMLDivElement>;
   marketStale?: string | null;
-  installedIds: ReadonlySet<string>;
+  /** null: what is installed is not known yet — a row says nothing in its button's place (no word, no button). */
+  installedIds: ReadonlySet<string> | null;
   chip: 'all' | MarketCategory;
   onChipChange: (chip: 'all' | MarketCategory) => void;
 }) {
@@ -117,7 +118,7 @@ export function AppMarketContent({ shelf, query, hostKey, api, lifecycleOf, pend
   const marketRowOf = (item: ShelfItem) => {
     const id = item.manifest.id;
     const text = localizedManifestText(item.manifest, locale);
-    const here = installedIds.has(id);
+    const here = installedIds === null || installedIds.has(id);
     const compat = item.cloud.compat;
     const word: AppLifecycle | undefined = here
       ? undefined

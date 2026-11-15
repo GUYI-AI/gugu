@@ -26,10 +26,14 @@ vi.mock('@/components/extensionBundle/sharedPackages', async original => ({
 }));
 vi.mock('@renderer/features/extensions/extension-view-layer', () => ({ ExtensionPage: () => <div>Widget view</div> }));
 vi.mock('@/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <div>Widget view</div> }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
+vi.mock('@renderer/features/extensions/installed-extensions', async original => {
+  const installed = {
   isLoaded: true, get manifests() { return state.manifests; }, origins: {},
   manifestFor: (id: string) => state.manifests.find(m => m.id === id), isEnabled: () => true,
-} }));
+}
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+});
 const pkg = () => ({ manifest: { id: 'vote', name: 'Vote', version: '2.0.0', contributes: { tabs: [{ name: 'main', widget: { height: 200 } }] } }, card: { source: { kind: 'message', messageId: 'package-message' }, messageId: 'package-message' } });
 const message = { id: 'widget', chat_id: 'chat', sender_user_id: 'agent', content: JSON.stringify({ v: 2, app: 'vote', view: 'main', text: 'Vote here' }) };
 let harness: ReturnType<typeof createReactHarness>;

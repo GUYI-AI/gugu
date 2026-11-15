@@ -2,7 +2,7 @@ import { localizedTabText } from '@shared/extensions/catalog';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { extensionSurfaceStore } from './extension-surface-store';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { peekInstalledAppsTracked } from './installed-extensions';
 
 /**
  * The entries an extension declared for one of its tabs, and how a click gets
@@ -23,8 +23,8 @@ export interface ExtensionDeclaredCommand {
 function contributionFor(kind: string) {
   const [extensionId, ...rest] = kind.split('.');
   const tabName = rest.join('.');
-  return installedExtensionsStore
-    .manifestFor(extensionId ?? '')
+  return peekInstalledAppsTracked()
+    ?.manifestFor(extensionId ?? '')
     ?.contributes.tabs.find((tab) => tab.name === tabName);
 }
 
@@ -35,9 +35,11 @@ export function declaredMenuCommands(kind: string): ExtensionDeclaredCommand[] {
 /** A tab's toolbar, its titles in the reader's language (`localized.<tag>.tabs`). */
 export function declaredToolbarCommands(kind: string): ExtensionDeclaredCommand[] {
   const tab = contributionFor(kind);
-  const manifest = installedExtensionsStore.manifestFor(kind.split('.')[0] ?? '');
-  if (!tab || !manifest) return [];
-  const titles = new Map(localizedTabText(manifest, tab, installedExtensionsStore.locale).toolbar.map((command) => [command.id, command.title]));
+  const installed = peekInstalledAppsTracked();
+  const manifest = installed?.manifestFor(kind.split('.')[0] ?? '');
+  // @@@reading-default - an App's tab is registered from the list it is in, so its toolbar is asked only once the list is known
+  if (!tab || !manifest || !installed) return [];
+  const titles = new Map(localizedTabText(manifest, tab, installed.locale).toolbar.map((command) => [command.id, command.title]));
   return (tab.toolbar ?? []).map((command) => ({ ...command, title: titles.get(command.id) ?? command.title }));
 }
 

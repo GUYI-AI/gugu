@@ -8,7 +8,8 @@ import { createNode, createReactHarness, clickElement } from '../../../../../../
 import { until } from '../../../../../../../../tests/support/awaitCondition';
 import { ExtensionsService } from '@main/core/extensions/extensions-service';
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { installedExtensions, LOCAL_HOST } from '@renderer/features/extensions/installed-extensions';
+import { queryClient as replicas } from '@/lib/replica';
 
 const log = createLogger('test/notification-settings-card');
 const h = vi.hoisted(() => ({ service: null as unknown as ExtensionsService, setPermission: vi.fn() }));
@@ -40,7 +41,12 @@ import { answerCall, type BridgeCaller } from '@main/core/extensions/extension-b
 
 let ui: ReturnType<typeof createReactHarness>;
 let root: string;
-beforeEach(() => { ui = createReactHarness(); });
+beforeEach(() => {
+  ui = createReactHarness();
+  // Each cell installs its own App: what is installed (a host-pushed replica) is read anew.
+  replicas.removeQueries({ queryKey: ['installedExtensions'] });
+  replicas.removeQueries({ queryKey: ['extensionRevokedPermissions'] });
+});
 afterEach(() => {
   ui.cleanup();
   if (root) { expect(root.startsWith(join(tmpdir(), 'gugu-notification-card-'))).toBe(true); log.info({ root }, 'cleanup owned fixture'); rmSync(root, { recursive: true }); }
@@ -55,8 +61,7 @@ describe('App notification permission in the task settings', () => {
       entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Plain' }] } }));
     h.service = new ExtensionsService(join(root, 'installed'));
     h.service.installFromDirectory(source, h.service.inspectDirectory(source).manifestDigest, 'folder');
-    await installedExtensionsStore.load();
-    expect(installedExtensionsStore.manifests[0]?.permissions).toBeUndefined();
+    expect((await installedExtensions.fetch(LOCAL_HOST)).list?.extensions[0]?.permissions).toBeUndefined();
     await ui.render(createNode(NotificationSettingsCard));
     expect(ui.container.querySelectorAll('[role="switch"]')).toHaveLength(2);
     expect(ui.container.textContent).not.toContain('Plain');

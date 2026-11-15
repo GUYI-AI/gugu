@@ -57,7 +57,8 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, app: {} },
-  rpcOn: () => ({}),
+  // Every host of these cells is another machine's key (`remote:…`): what is installed there is read through h.api.
+  rpcOn: () => ({ extensions: h.api }),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
 }));
@@ -66,16 +67,11 @@ vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => vi.fn
 vi.mock('@renderer/features/extensions/register-extension-tabs', () => ({ registerInstalledExtensionTabs: vi.fn() }));
 vi.mock('@renderer/features/extensions/panel/app-given-section', () => ({ AppGivenSection: () => null }));
 vi.mock('@renderer/features/library/library-host', async () => {
-  const { InstalledExtensionsStore } = await import('@renderer/features/extensions/installed-extensions-store');
-  const stores = new Map<string, InstanceType<typeof InstalledExtensionsStore>>();
   return {
     useLibraryHost: () => {
-      const store = stores.get(h.host.key) ?? new InstalledExtensionsStore(h.api as never);
-      stores.set(h.host.key, store);
       const extensions = {
         key: h.host.key,
         api: h.api,
-        store,
         onEvent: (_event: unknown, listener: (refreshed: unknown) => void) => {
           h.heard.push(listener);
           return () => h.heard.splice(h.heard.indexOf(listener), 1);
@@ -149,7 +145,7 @@ describe('the App page market: the index in hand at once, the download site behi
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
     vi.stubGlobal('Event', dom.window.Event);
-    h.host.key = `local-${Math.random()}`;
+    h.host.key = `remote:local-${Math.random()}`;
     h.host.local = true;
     h.heard.length = 0;
     h.api.market.mockReset().mockResolvedValue(h.listing(['one', 'two'], T1));
@@ -212,7 +208,7 @@ describe('the App page market: the index in hand at once, the download site behi
     expect(tileIds()).toEqual(['one']);
     await close();
     // As a client before #1188 wrote it: `description`, an older apiVersion, no `defaultLocale`.
-    h.host.key = `local-${Math.random()}`;
+    h.host.key = `remote:local-${Math.random()}`;
     const { defaultLocale: _gone, ...before } = h.item('one').manifest;
     kept({ ...before, apiVersion: 23, description: 'One. An App.' });
     await open();

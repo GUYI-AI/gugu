@@ -26,7 +26,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/app-d
 }))
 
 const { Sidebar } = await import('../../../../apps/desktop/src/components/Sidebar')
-const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
 
 const app = (id: string, more: Record<string, unknown> = {}) => ({
@@ -50,7 +50,7 @@ describe('#7050 左栏的右键菜单', () => {
   beforeEach(async () => {
     harness = createReactHarness()
     // timer 有后台(启用即在跑);notes 没有、也没打开过;alpha 装着但没钉。
-    installedExtensionsStore.applyList({
+    tellInstalled('local', {
       extensions: [app('timer', { background: { entry: 'bg.html' } }), app('notes'), app('alpha')],
       invalid: [],
       icons: {},

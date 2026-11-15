@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
-import { installedExtensionsStore, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps, tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { ask, chatTabs, shownItem } from './chatTabsHarness'
 import { openerChoice } from '../../../../apps/desktop/src/session/shared/extensions/file-openers'
@@ -48,7 +48,7 @@ const slides = (version: string) => ({
 })
 const file = { chatId: 'group-1', itemId: 'item-1', name: 'deck.pptx', typedName: 'deck.pptx', file: { document: false, contentType: 'application/json', version: 1, size: 10 } }
 const install = (manifests: unknown[], origins?: InstalledExtensionsList['origins']) =>
-  act(() => installedExtensionsStore.applyList({ extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
+  act(() => tellInstalled('local', { extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
@@ -65,7 +65,7 @@ beforeEach(() => {
   vi.mocked(appsHere!.groupFileOpener).mockReset()
   // Nobody here opens it — until Slides is installed.
   vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => {
-    const installed = installedExtensionsStore.manifests.some((manifest) => manifest.id === 'slides')
+    const installed = peekInstalledApps('local')!.manifests.some((manifest) => manifest.id === 'slides')
     const candidate = { extensionId: 'slides', app: { name: 'Slides' }, tabKind: 'slides.main', tabTitle: 'Slides', suffix: '.pptx', onlyTab: true }
     return { success: true, data: { ...file, choice: installed ? { kind: 'one', candidate } : { kind: 'none' } } } as never
   })
@@ -98,7 +98,7 @@ describe('a group JSON file already open in Workspace', () => {
     here.market = { success: true, data: [{ manifest, version: manifest.version }] }
     const typedName = 'x.turtle-soup.json'
     vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => ({
-      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, installedExtensionsStore.manifests, 'chat', () => null) },
+      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, peekInstalledApps('local')!.manifests, 'chat', () => null) },
     }))
     await openFile()
     await until('Workspace opened the JSON', () => shownItem('group-1')?.kind === 'workspace.main')
@@ -123,7 +123,7 @@ describe('a group JSON file already open in Workspace', () => {
     const manifest = soup(claim)
     here.market = { success: true, data: [{ manifest, version: manifest.version }] }
     vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => ({
-      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, installedExtensionsStore.manifests, 'chat', () => null) },
+      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, peekInstalledApps('local')!.manifests, 'chat', () => null) },
     }))
     vi.mocked(appsHere!.installFromMarket).mockImplementation(async () => {
       install([workspace, manifest])

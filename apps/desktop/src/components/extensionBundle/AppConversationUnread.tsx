@@ -1,10 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { observer } from 'mobx-react-lite';
 import { useAuth } from '@/store/auth';
 import { useChatStore } from '@/store/chatContext';
 import { rendererLogger } from '@/lib/log';
 import { rpc } from '@/session/renderer/lib/ipc';
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions';
 import { conversationUnreadProjection } from '@/session/shared/extensions/unread-projection';
 import type { StoredUnreadBinding } from '@/session/shared/extensions/unread-binding';
 
@@ -27,17 +26,19 @@ function read(ownerId: string, inventory: object) {
 }
 
 /** Mounted by the host rail, never by an App guest. Page lifetime does not participate. */
-export const AppConversationUnread = observer(function AppConversationUnread({ extensionId, children }: {
+export function AppConversationUnread({ extensionId, children }: {
   extensionId: string; children: (unread: boolean | null) => ReactNode;
 }) {
   const { user } = useAuth();
   const ownerId = user?.id ?? null;
   const { chats } = useChatStore('chats');
-  const inventory = installedExtensionsStore.manifests;
-  const name = installedExtensionsStore.manifestFor(extensionId)?.contributes.unreadSource?.binding;
+  const installed = useInstalledApps(LOCAL_HOST);
+  // Unknown list: no binding name, so nothing is read and no unread is said (`null`) until it is known.
+  const inventory = installed.state === 'value' ? installed.value.manifests : null;
+  const name = installed.state === 'value' ? installed.value.manifestFor(extensionId)?.contributes.unreadSource?.binding : undefined;
   const [scope, setScope] = useState<Scope | null>(null);
   useEffect(() => {
-    if (!ownerId || !name) return;
+    if (!ownerId || !name || !inventory) return;
     let disposed = false;
     // Synchronize the host-owned authorization association, not chat contents or a copied unread count.
     void read(ownerId, inventory).then(({ result }) => {
@@ -55,4 +56,4 @@ export const AppConversationUnread = observer(function AppConversationUnread({ e
   const current = scope?.ownerId === ownerId && scope.inventory === inventory ? scope : null;
   const binding = current?.bindings[extensionId];
   return children(name ? conversationUnreadProjection({ ownerId, binding, name, chats }) : null);
-});
+}

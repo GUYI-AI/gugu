@@ -1,61 +1,67 @@
 import { log } from '@renderer/utils/logger';
 import { sessionTabRegistry } from '@renderer/features/sessions/session-tab-registry';
 import { createExtensionTabProvider } from './extension-tab-provider';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { installedExtensions, marketUpdates, peekInstalledApps, watchInstalled, LOCAL_HOST, type InstalledApps } from './installed-extensions';
 import { extensionTabKind, type ExtensionManifest } from '@shared/extensions/manifest';
 
 /**
- * Loads what is installed and registers a tab provider per contribution.
- *
- * Runs off the critical path: an extension arriving late costs nothing, because
- * a tab whose provider is missing is held as a placeholder and promoted in
- * place the moment its provider registers (PaneStore). Blocking the mount on
- * this would trade the session page's open time for an inventory read. Refs #2374.
+ * The tab providers follow what is installed here (a flow over the `installedExtensions('local')` replica, diffing each
+ * value with the one before): a newly installed or switched-on App's tabs register, a switched-off one's close and
+ * withdraw, an uninstalled one's withdraw (its open tabs fall back to the 「未加载」 placeholder). Off the critical path: a
+ * tab whose provider is missing is held as a placeholder and promoted in place when it registers (PaneStore). Refs #2374.
  */
-export async function registerInstalledExtensionTabs(): Promise<void> {
-  await installedExtensionsStore.load();
-  for (const manifest of installedExtensionsStore.manifests) {
-    // Switched-off extensions stay listed but are not offered: no provider, so
-    // their tabs hold as the placeholder until the switch flips back (#5265).
-    if (!installedExtensionsStore.isEnabled(manifest.id)) continue;
-    registerExtensionTabs(manifest);
+let followed: Map<string, { manifest: ExtensionManifest; enabled: boolean }> | null = null;
+
+function follow(apps: InstalledApps | null): void {
+  // A value restored from the snapshot (the dock only) or an entry dropped says nothing about what is installed.
+  if (!apps) return;
+  const before = followed;
+  followed = new Map(apps.manifests.map((manifest) => [manifest.id, { manifest, enabled: apps.isEnabled(manifest.id) }]));
+  for (const manifest of apps.manifests) {
+    const enabled = apps.isEnabled(manifest.id);
+    // Switched-off extensions stay listed but are not offered: no provider, so their tabs hold as the placeholder (#5265).
+    if (enabled) registerExtensionTabs(manifest);
+    else if (before?.get(manifest.id)?.enabled) {
+      unregisterExtensionTabs(manifest.id, manifest.contributes.tabs.map((tab) => tab.name), { closeOpenTabs: true });
+    }
+  }
+  for (const [id, { manifest }] of before ?? []) {
+    if (followed.has(id)) continue;
+    unregisterExtensionTabs(id, manifest.contributes.tabs.map((tab) => tab.name));
   }
 }
 
+let stopFollowing: (() => void) | null = null;
+
+function ensureFollowing(): void {
+  if (stopFollowing) return;
+  const stop = watchInstalled(LOCAL_HOST, follow);
+  stopFollowing = () => { stop(); stopFollowing = null; followed = null; };
+  follow(peekInstalledApps(LOCAL_HOST));
+}
+
+/** Start following (once per window), then read the list: the snapshot kept only the dock. */
+export function wireInstalledExtensionTabs(): () => void {
+  ensureFollowing();
+  void registerInstalledExtensionTabs().catch((error: unknown) => log.warn('Installed extensions could not be read:', error));
+  return () => stopFollowing?.();
+}
+
+/** Read what is installed here again (an install, an uninstall, a switch): the tabs follow the value it puts. */
+export async function registerInstalledExtensionTabs(): Promise<void> {
+  ensureFollowing();
+  // Marked stale first, then read whether or not a surface shows it (a refresh alone reads only where shown).
+  await installedExtensions.refresh(LOCAL_HOST);
+  await installedExtensions.fetch(LOCAL_HOST);
+}
+
 /**
- * #6264 这台机器上装着的扩展被**别的桌面**改了(资源库切到这台机器后装 / 卸 / 开关):重读清单,让这个窗口跟上。
- * 新装或刚开的补上 provider;卸掉的撤下(开着的 tab 退回「未加载」占位,与本机卸载同一条);关掉的连 tab 一起关
- * (与本机「不可用」同一条)。
+ * #6264 这台机器上装着的扩展被**别的桌面**改了(资源库切到这台机器后装 / 卸 / 开关):重读清单,tab 跟着值走(`follow`);
+ * 市场对装着的这些要说的话一起重读。
  */
 export async function resyncInstalledExtensionTabs(): Promise<void> {
-  const before = new Map(
-    installedExtensionsStore.manifests.map((manifest) => [
-      manifest.id,
-      { manifest, enabled: installedExtensionsStore.isEnabled(manifest.id) },
-    ])
-  );
-  await installedExtensionsStore.load();
-  const after = new Set(installedExtensionsStore.manifests.map((manifest) => manifest.id));
-  for (const manifest of installedExtensionsStore.manifests) {
-    const enabled = installedExtensionsStore.isEnabled(manifest.id);
-    const was = before.get(manifest.id);
-    if (enabled) registerExtensionTabs(manifest);
-    else if (was?.enabled) {
-      unregisterExtensionTabs(
-        manifest.id,
-        manifest.contributes.tabs.map((tab) => tab.name),
-        { closeOpenTabs: true }
-      );
-    }
-  }
-  for (const [id, { manifest }] of before) {
-    if (after.has(id)) continue;
-    unregisterExtensionTabs(
-      id,
-      manifest.contributes.tabs.map((tab) => tab.name)
-    );
-  }
-  void installedExtensionsStore.checkUpdates();
+  await registerInstalledExtensionTabs();
+  void marketUpdates.refresh(LOCAL_HOST);
 }
 
 /** Registers every tab one extension contributes — on install, and on switching it back on. */
@@ -100,7 +106,7 @@ export function unregisterExtensionTabs(
  * Registers one contribution, tolerating a kind that is already registered.
  * Reinstalling an extension re-runs this while its providers are still live: the
  * existing provider stays and the tabs open against it keep working, and since
- * providers read their title from the store rather than a captured manifest, a
+ * providers read their title from the replica rather than a captured manifest, a
  * renamed tab still updates.
  */
 function registerExtensionTabProvider(extensionId: string, tabName: string): void {

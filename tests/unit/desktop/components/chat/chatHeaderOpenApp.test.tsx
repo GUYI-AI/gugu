@@ -3,37 +3,36 @@
 // 「在本群打开」的常驻入口:卡片划走以后,页头 ⋯ 列出这台设备上装着、开着、有自己页面的 App,点一下走卡片「打开」的同一条
 // `openApp`,在本对话的右栏打开它自己的页(海龟汤 / 读论文车道 10-19)。
 import { createRef } from 'react'
-import { runInAction } from 'mobx'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
-import { installedExtensionsStore } from '../../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { putInstalled, tellInstalled } from '../../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { UI_EVENTS } from '../../../../../apps/desktop/src/lib/uiEvents'
 
 const app = (id: string, name: string, tab: Record<string, unknown>) =>
   parseExtensionManifest({ id, name, version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name, ...tab }] } })
 
+// This device's Apps are the desktop's (the header lists the Apps installed here).
+vi.mock('@/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
 vi.mock('@/lib/chatPinSettings', () => ({ readChatPinSettings: async () => ({ topicIds: [] }), setChatPinPreference: vi.fn(), watchChatPinSettings: () => () => {} }))
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
-  runInAction(() => {
-    installedExtensionsStore.manifests = [
+  tellInstalled('local', {
+    extensions: [
       app('turtle-soup', '海龟汤', {}),
       app('paper-reader', '读论文', {}),
       app('draw-guess', '你画我猜', { opensFiles: { chat: ['.draw-guess.json'] } }),
-    ]
-    installedExtensionsStore.disabled = ['paper-reader']
-  })
+    ],
+    invalid: [],
+    disabled: ['paper-reader'],
+  } as never)
 })
 afterEach(() => {
   harness.cleanup()
-  runInAction(() => {
-    installedExtensionsStore.manifests = []
-    installedExtensionsStore.disabled = []
-  })
+  tellInstalled('local', { extensions: [], invalid: [], disabled: [] } as never)
 })
 
 async function openMenu(mobile: boolean) {
@@ -77,7 +76,7 @@ describe('应用 打开本机的 App', () => {
   }
 
   it('没有可打开的 App:应用 列表为空', async () => {
-    runInAction(() => { installedExtensionsStore.disabled = ['turtle-soup', 'paper-reader'] })
+    putInstalled('local', (list) => ({ ...list, disabled: ['turtle-soup', 'paper-reader'] }))
     expect(await openMenu(false)).toEqual([])
   })
 })

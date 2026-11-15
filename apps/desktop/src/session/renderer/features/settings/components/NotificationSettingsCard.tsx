@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { observer } from 'mobx-react-lite';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { events, rpc } from '@renderer/lib/ipc';
 import { Switch } from '@/components/ui/Switch';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { extensionsApiOf } from '@renderer/features/extensions/extensions-api';
 import { extensionsInventoryChangedChannel } from '@shared/extensions/marketEvents';
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { messageForUser } from '@/lib/userFacingError';
@@ -13,22 +13,26 @@ import { replica, useReplica } from '@/lib/replica';
 import { SettingSwitch } from './SettingControls';
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives';
 
-/** Per-App permissions this device's owner took back (the bridge reads the same grant on every call). */
-const revokedPermissions = replica({
+/**
+ * Per-App permissions a host's owner took back (the bridge reads the same grant on every call), by host key (`local`,
+ * `remote:<deviceId>`). Host push: main's inventory channel refreshes this desktop's. Only this desktop's is kept.
+ */
+export const revokedPermissions = replica({
   name: 'extensionRevokedPermissions',
   scope: 'device',
-  read: async () => {
-    const [, result] = await Promise.all([installedExtensionsStore.load(), rpc.extensions.revoked()]);
+  read: async (_owner: string, hostKey: string) => {
+    const result = await extensionsApiOf(hostKey).revoked();
     if (!result.success || !result.data) throw new Error(result.error);
     return result.data;
   },
-  persist: { maxBytes: 1024, maxEntries: 1 },
+  persist: { maxBytes: 1024, maxEntries: 1, carry: (value: Record<string, string[]>, hostKey: string) => (hostKey === LOCAL_HOST ? value : undefined) },
 });
-events.on(extensionsInventoryChangedChannel, () => { void revokedPermissions.refresh(); });
+events.on(extensionsInventoryChangedChannel, () => { void revokedPermissions.refresh(LOCAL_HOST); });
 
-const AppNotificationPermissions = observer(function AppNotificationPermissions() {
+function AppNotificationPermissions() {
   const { translate } = useSessionMessages();
-  const revoked = useReplica(revokedPermissions, []);
+  const revoked = useReplica(revokedPermissions, [LOCAL_HOST]);
+  const installed = useInstalledApps(LOCAL_HOST);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +42,7 @@ const AppNotificationPermissions = observer(function AppNotificationPermissions(
       // Same IPC as the App product page: the bridge reads this grant on every call.
       const result = await rpc.extensions.setPermissionGranted({ extensionId, permission: 'notifications', granted });
       if (!result.success || !result.data) throw new Error(result.error);
-      revokedPermissions.set([], (now) => ({ ...now, [extensionId]: result.data!.revoked }));
+      revokedPermissions.at(LOCAL_HOST).set((now) => ({ ...now, [extensionId]: result.data!.revoked }));
       setError(null);
     } catch (cause) {
       setError(messageForUser(cause));
@@ -46,12 +50,20 @@ const AppNotificationPermissions = observer(function AppNotificationPermissions(
       setPending((now) => ({ ...now, [extensionId]: false }));
     }
   };
-  const apps = installedExtensionsStore.manifests.filter((app) => app.permissions?.capabilities?.includes('notifications'));
-  const readError = revoked.state === 'error' ? messageForUser(revoked.error) : null;
-  if (apps.length === 0 && !error && !readError) return null;
+  const readError = revoked.state === 'error' ? messageForUser(revoked.error) : installed.state === 'error' ? messageForUser(installed.error) : null;
+  // What is installed not known yet: one row's placeholder under the heading (❌ the section absent, then inserted).
+  if (installed.state === 'unknown') {
+    return <SettingsGroup title={translate('notifications.apps')}>
+      <SettingsRow title={<Unknown className="w-24" />} control={<Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />} />
+    </SettingsGroup>;
+  }
+  // An error reading the list is said below (readError); no rows then.
+  const listed = installed.state === 'value' ? installed.value : null;
+  const apps = listed ? listed.manifests.filter((app) => app.permissions?.capabilities?.includes('notifications')) : null;
+  if (apps !== null && apps.length === 0 && !error && !readError) return null;
   return <SettingsGroup title={translate('notifications.apps')}>
-    {apps.map((app) => {
-      const name = localizedManifestText(app, installedExtensionsStore.locale).name;
+    {apps?.map((app) => {
+      const name = localizedManifestText(app, listed!.locale).name;
       return <SettingsRow key={app.id} title={name} control={revoked.state === 'value' ? <Switch
         aria-label={name}
         checked={!revoked.value[app.id]?.includes('notifications')}
@@ -61,7 +73,7 @@ const AppNotificationPermissions = observer(function AppNotificationPermissions(
     })}
     {(error ?? readError) && <SettingsNote tone="danger">{error ?? readError}</SettingsNote>}
   </SettingsGroup>;
-});
+}
 
 export default function NotificationSettingsCard() {
   const notifications = useAppSettingsKey('notifications');

@@ -12,7 +12,7 @@ import {
   translateSessionMessage,
 } from '@renderer/localization/locale-store';
 import { UnavailableTabPlaceholder } from '@renderer/features/tabs/unavailable-tab';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { installedExtensions, peekInstalledApps, tellInstalled } from '@renderer/features/extensions/installed-extensions';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 // owner (#5265):「如果扩展还在被其他 tab 页面上使用,但是我们把他移除了,这种情况你有考虑吗」
@@ -81,8 +81,7 @@ const placeholder = () => container.querySelector('[data-testid="unavailable-tab
 describe('a tab whose extension is not enabled', () => {
   it('names the extension and offers Enable, which brings the providers back', async () => {
     await act(async () => {
-      installedExtensionsStore.manifests = [probe];
-      installedExtensionsStore.applyDisabled(['probe']);
+      tellInstalled('local', { extensions: [probe], invalid: [], disabled: ['probe'] } as never);
     });
     await draw();
     expect(placeholder().getAttribute('data-reason')).toBe('not-enabled');
@@ -96,18 +95,22 @@ describe('a tab whose extension is not enabled', () => {
     });
     // The enable path is loaded on the click (a dynamic import, see the component),
     // so this waits for facts rather than counting microtasks: the write reaching main,
-    // then the providers registering again — the last step of setExtensionEnabled.
+    // then the list saying it is on (the providers follow the list: register-extension-tabs.ts `follow`).
     await until('enable write reaches main', () => mocks.setEnabled.mock.calls.length > 0);
-    await until('enabled extension registers its tabs again', () => mocks.register.mock.calls.length > 0);
+    await until('the list says it is on', () => peekInstalledApps('local')?.isEnabled('probe') === true);
     expect(mocks.setEnabled).toHaveBeenCalledWith({ extensionId: 'probe', enabled: true });
-    expect(installedExtensionsStore.isEnabled('probe')).toBe(true);
-    expect(mocks.register).toHaveBeenCalledWith(probe);
+  });
+
+  it('while what is installed is not known, it says neither (placeholders, no Enable)', async () => {
+    await act(async () => { installedExtensions.set(['local'], {}); });
+    await draw();
+    expect(placeholder().getAttribute('data-reason')).toBe('unknown');
+    expect(buttons().find((b) => /^(启用|Enable)$/.test(b.textContent?.trim() ?? ''))).toBeUndefined();
   });
 
   it('an extension that is gone gets the plain placeholder — nothing to enable', async () => {
     await act(async () => {
-      installedExtensionsStore.manifests = [];
-      installedExtensionsStore.applyDisabled([]);
+      tellInstalled('local', { extensions: [], invalid: [], disabled: [] } as never);
     });
     await draw();
     expect(placeholder().getAttribute('data-reason')).toBe('unavailable');

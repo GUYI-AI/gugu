@@ -2,6 +2,7 @@
 import { rpcQuery } from '../../../support/rpcQuery'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hostAppFrame } from '../../../../apps/desktop/src/components/appSlot/phoneAppHost'
+import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { APP_FRAME_MARKER, SYNC_PORT_WINDOW_MESSAGE } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 
 /**
@@ -36,6 +37,8 @@ let frame: HTMLIFrameElement
 let posted: ReturnType<typeof vi.fn>
 let host: ReturnType<typeof hostAppFrame>
 beforeEach(() => {
+  // What the phone has installed is read (nothing): an App's calls are answered against it.
+  tellInstalled('phone', { extensions: [], invalid: [] } as never)
   frame = document.createElement('iframe')
   frame.src = `${ORIGIN}/shelf.html`
   document.body.appendChild(frame)

@@ -3,9 +3,10 @@ import { ActivitySourceBadge } from './ActivitySourceBadge'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { AgentSentBadge } from './AgentSentBadge'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '../appSlot/hereHost'
+import { Unknown } from '../ui/Unknown'
 import { useForwardedSource } from '../../hooks/useForwardedSource'
 import { useChatStore } from '../../store/chatContext'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
@@ -64,10 +65,13 @@ export function MessageMetaRow({ targetingLabels, forwardedFromMessageId, viaApp
   )
 }
 
-// App 的名字在它的 manifest 里,只有装着这个 App 的机器(扩展清单那份 store)叫得出;别的端只认得 id,就写 id。
-const ViaAppBadge = observer(function ViaAppBadge({ appId, sender }: { appId: string; sender: string | null }) {
+// App 的名字在它的 manifest 里,只有装着这个 App 的机器(`installedExtensions` 那份清单)叫得出;读到了没装(或这端没有 App)
+// 就写 id;清单还没读到时名字处画占位,❌ 先写 id 再换成名字。
+function ViaAppBadge({ appId, sender }: { appId: string; sender: string | null }) {
   const { t } = useTranslation('messaging')
-  const app = installedExtensionsStore.appName(appId) ?? appId
+  const installed = useInstalledApps(HERE_HOST)
+  if (HERE_HOST && installed.state === 'unknown') return <Unknown className="w-24 text-[length:var(--font-caption)]" />
+  const app = installed.state === 'value' ? installed.value.appName(appId) ?? appId : appId
   return (
     <span
       data-testid={AUTOMATION_TEST_IDS.messageViaAppBadge}
@@ -77,7 +81,7 @@ const ViaAppBadge = observer(function ViaAppBadge({ appId, sender }: { appId: st
       {sender === null ? t('message.viaApp', { app }) : t('message.viaAppFor', { app, name: sender })}
     </span>
   )
-})
+}
 
 // 只有转发来的消息才需要会话列表来叫出出处的名字 —— 所以只有它订阅 chats。
 // 放在元指示行本体里时,每条气泡都订阅 chats,任何一条会话的预览变了全部气泡的这一行都重渲。

@@ -26,11 +26,11 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
   fetchBackgroundTasks: vi.fn(async () => []), readOpenedFileChunk: m.ledger,
 }));
 vi.mock('@/components/appSlot/phoneProgramCall', async original => ({ ...(await original<object>()), callOnComputer: m.call }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', async original => {
-  const real = await original<typeof import('@renderer/features/extensions/installed-extensions-store')>();
-  return { ...real, installedExtensionsStore: new Proxy(real.installedExtensionsStore, { get: (target, key, receiver) => key === 'manifestFor'
-    ? (id: string) => (id === 'workspace' ? { id: 'workspace', name: 'Files', version: '0.2.75' } : undefined)
-    : Reflect.get(target, key, receiver) }) };
+vi.mock('@renderer/features/extensions/installed-extensions', async original => {
+  const real = await original<typeof import('@renderer/features/extensions/installed-extensions')>();
+  // The phone has the Files App installed (its working-copy reads go through it).
+  const phone = { manifestFor: (id: string) => (id === 'workspace' ? { id: 'workspace', name: 'Files', version: '0.2.75' } : undefined) };
+  return { ...real, fetchInstalledApps: async (host?: string) => (host === 'phone' ? phone : real.fetchInstalledApps(host)) };
 });
 let harness: ReturnType<typeof createReactHarness>;
 const initialLocale = getLocaleSnapshot().preference;

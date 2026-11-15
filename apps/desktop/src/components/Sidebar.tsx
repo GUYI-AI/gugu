@@ -7,7 +7,10 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { platform } from '../platform'
-import { installedExtensionsStore, type RailApp } from '../session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, LOCAL_HOST, marketUpdates, updateCountOf, useInstalledApps, type InstalledApps, type KeptDock, type RailApp } from '../session/renderer/features/extensions/installed-extensions'
+import { useReplica } from '../lib/replica'
+import { extensionMonogram } from '../session/shared/extensions/catalog'
+import { Unknown } from './ui/Unknown'
 import { AppConversationUnread } from './extensionBundle/AppConversationUnread'
 import { extensionSurfaceStore } from '../session/renderer/features/extensions/extension-surface-store'
 import { appIsRunning, openApp, openAppInWindow, quitApp, setDock, unpinFromDock } from '../session/renderer/features/extensions/app-dock'
@@ -196,13 +199,13 @@ function sessionPagePlace(): 'tasks' | 'apps' | 'library' | { app: string } {
   return 'tasks'
 }
 
-const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindow, onUnpin, onQuit }: { app: RailApp; active: boolean; onOpen: () => void; onOpenInWindow: () => void; onUnpin: () => void; onQuit: () => void }) {
+const DockItem = observer(function DockItem({ apps, app, active, onOpen, onOpenInWindow, onUnpin, onQuit }: { apps: InstalledApps; app: RailApp; active: boolean; onOpen: () => void; onOpenInWindow: () => void; onUnpin: () => void; onQuit: () => void }) {
   const { t } = useTranslation('main')
   // Dragged to reorder; a click (the pointer moved less than 4px) still opens it. A right click never drags (dnd-kit's
   // pointer sensor takes the primary button only).
   const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: app.extensionId })
   const { menuPos, onContextMenu, closeMenu } = useRowContextMenu()
-  const running = appIsRunning(app.extensionId)
+  const running = appIsRunning(apps, app.extensionId)
   return (
     <>
       <div
@@ -212,7 +215,7 @@ const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindo
         style={{ transform: CSS.Transform.toString(transform), transition }}
         {...listeners}
       >
-        {installedExtensionsStore.manifestFor(app.extensionId)?.contributes.unreadSource
+        {apps.manifestFor(app.extensionId)?.contributes.unreadSource
           ? <AppConversationUnread extensionId={app.extensionId}>{unread => <RailItem
               icon={<RailAppIcon app={app} />} active={active} onClick={onOpen} title={app.name}
               badge={unread === true || extensionSurfaceStore.badgedAnywhere(app.kind) ? 1 : 0}
@@ -249,17 +252,38 @@ const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindo
  * voice note being recorded in it. There only while the App is where the assistant lives — installed, on, trusted
  * (`target.kind === 'app'`); otherwise nothing of it is on the rail and its chat is a chat in the message list.
  */
-const AssistantAppItem = observer(function AssistantAppItem({ app, chatId, active, onOpen }: { app: RailApp; chatId: string | null; active: boolean; onOpen: () => void }) {
+const AssistantAppItem = observer(function AssistantAppItem({ apps, app, chatId, active, onOpen }: { apps: InstalledApps; app: RailApp; chatId: string | null; active: boolean; onOpen: () => void }) {
   const { chats } = useChatStore('chats')
   const unread = !!chatId && assistantEntryUnread(chats, chatId) === true
   const { t: tVoice } = useTranslation('voiceNotes')
   const { recording } = useVoiceNoteHandler()
   return (
     <RailItem icon={<RailAppIcon app={app} />} active={active} onClick={onOpen} title={recording ? tVoice('bar.recording') : app.name}
-      testId={AUTOMATION_TEST_IDS.sidebarAssistantNav} rail="assistant" running={appIsRunning(app.extensionId)}
+      testId={AUTOMATION_TEST_IDS.sidebarAssistantNav} rail="assistant" running={appIsRunning(apps, app.extensionId)}
       badge={recording || unread || extensionSurfaceStore.badgedAnywhere(app.kind) ? 1 : 0} />
   )
 })
+
+/**
+ * The dock as it was last read, drawn before what is installed is read this run (PLAN v2 C4): each kept App as its monogram
+ * (its icon is not kept) with its name, not opened yet; an App left out of what was kept (a long name), and the Apps past the
+ * kept ones, as an icon-sized placeholder. The assistant App heads the group as it will once read. When the list lands the
+ * real items take these places in the same order: nothing moves.
+ */
+function KeptDockRail({ dock }: { dock: KeptDock }) {
+  const assistant = dock.slots.find((slot) => slot?.extensionId === ASSISTANT_APP_ID) ?? null
+  const slots = [...dock.slots.filter((slot) => slot?.extensionId !== ASSISTANT_APP_ID), ...Array.from({ length: Math.max(0, dock.count - dock.slots.length) }, () => null)]
+  const kept = (slot: { extensionId: string; name: string } | null, index: number) => slot
+    ? <RailItem key={slot.extensionId} data-dock-kept={slot.extensionId} disabled title={slot.name}
+        icon={<span className="gg-sidebar-app-icon gg-sidebar-app-letter" aria-hidden="true">{extensionMonogram(slot.name)}</span>} />
+    : <div key={`unknown-${index}`} className="gg-sidebar-item" data-dock-kept=""><Unknown className="h-[var(--icon-rail)] w-[var(--icon-rail)]" /></div>
+  return (
+    <div className="gg-sidebar-dock" data-testid={AUTOMATION_TEST_IDS.sidebarDock}>
+      {assistant && kept(assistant, -1)}
+      {slots.map(kept)}
+    </div>
+  )
+}
 
 const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }: { sessionsShown: boolean; showSessions: () => void }) {
   const { t } = useTranslation('main')
@@ -269,10 +293,19 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   const place = sessionsShown ? sessionPagePlace() : null
   // The assistant App heads the group (AssistantAppItem), so it is not a second icon among the pinned ones.
   const target = useAssistantEntryTarget()
-  const assistantApp = target.kind === 'app' ? installedExtensionsStore.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
-  const apps = installedExtensionsStore.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID))
+  const installed = useInstalledApps(LOCAL_HOST)
+  // Before the list is read, the dock as it was last read (kept across restarts): the rail's first frame (PLAN v2 C4).
+  const kept = useReplica(installedExtensions, [LOCAL_HOST])
+  const updates = useReplica(marketUpdates, [LOCAL_HOST])
+  const apps = installed.state === 'value' ? installed.value : null
+  const keptDock = !apps && kept.state === 'value' && !kept.value.list ? kept.value.dock ?? null : null
+  const assistantApp = apps && target.kind === 'app' ? apps.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
+  const docked = apps ? apps.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID)) : null
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
-  const openable = installedExtensionsStore.openableApps
+  // Not read yet: no menu (nothing to list that would not be a guess).
+  const openable = apps ? apps.openableApps : null
+  // @@@reading-default - the badge is an optional hint; nothing while not known
+  const updateCount = apps && updates.state === 'value' && updates.value.summary ? updateCountOf(updates.value.summary, apps) : 0
   const open = (appId?: string) => {
     showSessions()
     if (appId) openApp(appId)
@@ -280,8 +313,8 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   }
   const dockFailed = (error: unknown) => { rendererLogger('actions/Sidebar').error({ error: error }, 'action failed'); toast(t('shell.appDockFailed'), 'error', messageForUser(error)) }
   const reorder = ({ active, over }: DragEndEvent) => {
-    const dock = installedExtensionsStore.dock
-    if (!over || active.id === over.id) return
+    if (!apps || !over || active.id === over.id) return
+    const dock = apps.dock
     void setDock(arrayMove(dock, dock.indexOf(String(active.id)), dock.indexOf(String(over.id)))).catch(dockFailed)
   }
   return (
@@ -292,28 +325,30 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
         onClick={() => open()}
         title={t('shell.apps')}
         testId={AUTOMATION_TEST_IDS.sidebarAppsNav}
-        badge={installedExtensionsStore.updateCount}
+        badge={updateCount}
         rail="apps"
-        onContextMenu={openable.length > 0 ? onContextMenu : undefined}
+        onContextMenu={openable && openable.length > 0 ? onContextMenu : undefined}
         menuOpen={menuPos !== null}
       />
-      {menuPos && openable.length > 0 && (
+      {menuPos && openable && openable.length > 0 && (
         <Menu x={menuPos.x} y={menuPos.y} minWidth={180} onClose={closeMenu} ariaLabel={t('shell.apps')}>
           <OpenableAppRows apps={openable} onOpen={(appId) => { open(appId); closeMenu() }} />
         </Menu>
       )}
-      {(assistantApp || apps.length > 0) && <i className="gg-sidebar-rail-sep" aria-hidden="true" />}
-      {(assistantApp || apps.length > 0) && (
+      {(assistantApp || (docked && docked.length > 0) || (keptDock && keptDock.count > 0)) && <i className="gg-sidebar-rail-sep" aria-hidden="true" />}
+      {keptDock && keptDock.count > 0 && <KeptDockRail dock={keptDock} />}
+      {apps && docked && (assistantApp || docked.length > 0) && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder}>
-          <SortableContext items={apps.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={docked.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
             <div className="gg-sidebar-dock" data-testid={AUTOMATION_TEST_IDS.sidebarDock}>
               {assistantApp && target.kind === 'app' ? (
-                <AssistantAppItem app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
+                <AssistantAppItem apps={apps} app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
                   onOpen={() => { showSessions(); openAssistantEntry() }} />
               ) : null}
-              {apps.map((app) => (
+              {docked.map((app) => (
                 <DockItem
                   key={app.extensionId}
+                  apps={apps}
                   app={app}
                   active={typeof place === 'object' && place?.app === app.extensionId}
                   onOpen={() => open(app.extensionId)}

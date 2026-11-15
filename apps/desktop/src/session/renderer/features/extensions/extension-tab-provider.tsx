@@ -21,8 +21,8 @@ import { ExtensionMark } from './extension-mark';
 import { ExtensionTabPane } from './extension-tab-pane';
 import { ExtensionSharedSlot } from './extension-shared-slot';
 import { extensionViewStore, residentPageKey, residentPlace } from './extension-view-store';
-import { extensionSurfaceStore, extensionTabTitle } from './extension-surface-store';
-import { installedExtensionsStore, WORKSPACE_APP_ID } from './installed-extensions-store';
+import { extensionSurfaceStore, extensionTabTitle, type ExtensionSharedPresentation } from './extension-surface-store';
+import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps, WORKSPACE_APP_ID, type ExtensionTabContributionEntry } from './installed-extensions';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { placeOnScreen } from '@renderer/app/screen-layout-actions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -90,10 +90,32 @@ export class ExtensionTabResource implements TabResource {
   }
 }
 
+/**
+ * An App page standing on its own (a block of the screen, a window): its contribution, and the label of its one tab — what
+ * its page says, else its title in the list of what is installed. `unknown` while neither is known yet: the tab draws a
+ * placeholder the size of a title, ❌ the raw tab kind. `file`: the chat file it shows, named by the file unless the file is
+ * the App's own state (`chatFile`, then the App's name).
+ */
+export function useAppPageTab(said: ExtensionSharedPresentation, tabKind: string, file?: string, stored?: string): {
+  /** null: what is installed is not known yet (undefined: known, and this App's tab is not in it). */
+  contribution: ExtensionTabContributionEntry | undefined | null; label: string; tooltip: string; unknown: boolean;
+} {
+  const installed = useInstalledApps(LOCAL_HOST);
+  if (installed.state !== 'value') {
+    if (said.title === null) return { contribution: null, label: '', tooltip: '', unknown: true };
+    return { contribution: null, ...extensionTabTitle(said, said.title), unknown: false };
+  }
+  const apps = installed.value;
+  const contribution = apps.allTabContributions.find((entry) => entry.kind === tabKind);
+  // An App no longer installed keeps the name it had on the tab (`stored`, else its kind): the list says it is not there.
+  const named = file !== undefined && !apps.isChatFile(tabKind, file) ? file : apps.tabTitle(tabKind) ?? stored ?? tabKind;
+  return { contribution, ...extensionTabTitle(said, named), unknown: false };
+}
+
 /** File and folder pages share the same per-tab navigation context; hidden pages retain their own state. */
 /** The tab is one per task (manifest `perSession`, #7317): every task keeps its own, none is moved from another. */
 function isPerSession(kind: string): boolean {
-  return installedExtensionsStore.allTabContributions.find((entry) => entry.kind === kind)?.perSession === true;
+  return peekInstalledAppsTracked()?.allTabContributions.find((entry) => entry.kind === kind)?.perSession === true;
 }
 
 /**
@@ -161,7 +183,7 @@ const ExtensionTabIcon = observer(function ExtensionTabIcon({ kind, file }: { ki
   if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) {
     return file ? <span className="flex shrink-0 text-foreground-muted"><FileIcon filename={fileBaseName(file)} className="shrink-0" /></span> : <Folder className="size-3 text-foreground-muted" />;
   }
-  const iconDataUrl = installedExtensionsStore.allTabContributions.find(
+  const iconDataUrl = peekInstalledAppsTracked()?.allTabContributions.find(
     (entry) => entry.kind === kind
   )?.iconDataUrl;
   return (
@@ -187,20 +209,21 @@ export function createExtensionTabProvider(
   const TabContent = createExtensionTabContent(extensionId, kind);
 
   /**
-   * Read from the store at render time rather than captured here: a provider
+   * Read from the replica at render time rather than captured here: a provider
    * can only be registered once per kind, so a title captured now would be the
    * title forever — an upgrade that renames its tab would keep showing the old
-   * name until the app restarted.
+   * name until the app restarted. This provider is registered from a list that
+   * was read (register-extension-tabs.ts `follow`), so the list is known here;
+   * the tab name stands only for a tab its App no longer declares.
    */
-  const titleOf = (): string =>
-    installedExtensionsStore.tabTitle(kind) ?? tabName;
+  const titleOf = (): string => peekInstalledAppsTracked()?.tabTitle(kind) ?? tabName;
 
   return createTabProvider({
     kind,
     resourceKey: (state: ExtensionTabState) => (state?.filePath ? `${state.byHost ? 'host\u0000' : ''}${filePathKey(state.filePath)}` : 'app'),
     // Its own page beside the conversation takes the width its manifest declares (`sideWidth`, read now: an update can
     // change it); a file opened in it is the conversation's peer, half each.
-    sideWidth: (state: ExtensionTabState) => (state?.filePath ? undefined : installedExtensionsStore.sideWidth(kind)),
+    sideWidth: (state: ExtensionTabState) => (state?.filePath ? undefined : peekInstalledAppsTracked()?.sideWidth(kind)),
     onBeforeOpen: (args: ExtensionTabState): ExtensionTabState => args?.filePath ? { filePath: args.filePath, ...(args.byHost ? { byHost: true as const } : {}) } : (isPerSession(kind) ? { perSession: true } : {}),
     // `entry.state` is the only path a per-tab fact travels on, and until now it
     // was read by nobody — which is why a tab could not be told which file it was
@@ -221,7 +244,7 @@ export function createExtensionTabProvider(
     onBeforeClose: (entry, _resource, ctx) => confirmCloseOfUnsaved(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, entry.tabId, entry.state?.filePath),
     closed: (tabId, ctx) => extensionViewStore.closeSlot(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, tabId),
 
-    // Observers, because the title is read from the store: reinstalling an
+    // Observers, because the title is read through the replica's MobX tick: reinstalling an
     // extension that renamed its tab updates the tab bar in place.
     TabBarItem: observer(function ExtensionTabBarItem({
       tab,

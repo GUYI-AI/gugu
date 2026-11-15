@@ -23,7 +23,7 @@ import type { ResourceContext } from '@shared/resource-actions';
 import { AppSettingsForm } from '../app-settings-form';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
-import type { ExtensionDisclosureLevel } from '../installed-extensions-store';
+import type { ExtensionDisclosureLevel } from '../installed-extensions';
 import { AppGivenSection } from './app-given-section';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { AppMoreMenu } from './app-more-menu';
