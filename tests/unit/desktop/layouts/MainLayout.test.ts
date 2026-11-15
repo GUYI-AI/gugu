@@ -1276,6 +1276,21 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
   expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', message: source })
 })
 
+it('opens an owned agent\'s file beside its task on the phone, as on a computer', async () => {
+  platformMock.kind = 'capacitor'
+  platformMock.capabilities.sessionHost = false
+  const chatId = 'phone-file-chat'
+  chatStoreMock.chats = [{ id: chatId, kind: 'dm', peer_user_id: 'agent' }] as never
+  taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]; taskRoute.remote = true
+  fileOwner.mockResolvedValue({ data: { chat_id: chatId }, error: null })
+  resourceHosts.host.mockClear()
+  await renderMainLayoutWithToast()
+  await act(async () => { void openLinkTarget({ kind: 'file', itemId: 'F1', version: 1 }).catch(() => undefined) })
+  await vi.waitFor(() => expect(resourceHosts.host).toHaveBeenCalledWith('user-1', chatId, expect.objectContaining({ sessionId: 'task-session', projectId: 'project' })))
+  expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
+  expect(takeChatAsk(chatId)).toMatchObject({ itemId: 'F1' })
+})
+
 it('opens an App card beside the owned agent session without an IM block', async () => {
   taskRoute.remote = true
   chatStoreMock.chats = [{ id: 'owned-app', kind: 'dm', peer_user_id: 'agent' }] as never

@@ -15,7 +15,7 @@ export function creditChartScale(values: readonly CreditAmount[]) {
       const amount = (scale * BigInt(Math.round(position * 1_000_000_000))) / 1_000_000_000n
       // An axis tick may fall below a single storage unit. Keep its nonzero display marker;
       // this label never replaces a source amount, tooltip datum or total.
-      return format(creditFromUnits(position > 0 && amount === 0n ? 1n : amount))
+      return format(creditFromUnits(position !== 0 && amount === 0n ? position > 0 ? 1n : -1n : amount))
     },
     coordinate(value: CreditAmount): number {
       if (!decimal) {

@@ -2111,7 +2111,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           if (!path || !store) return;
           // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
           // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
-          // ——附件不是工作区文件,它自己就带着一条绝对路径(#5269)。
+          // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
           makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
           return;
         }

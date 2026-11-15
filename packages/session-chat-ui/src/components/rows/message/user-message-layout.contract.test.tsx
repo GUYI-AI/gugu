@@ -217,107 +217,36 @@ describe('user message × layout preset contract (#4874)', () => {
 });
 
 /**
- * 正文里指着附件的 mention 要显示成附件条上的一枚 chip,而不是一枚裸的文字 pill(#5269)。
- *
- * 判据有两层,缺一不可:
- *   ① **画出来了** —— 卡片里真有一枚 chip(首轮附件只能以「正文里一条绝对路径」送达,
- *      从前那条路上一张图都画不出来);
- *   ② **测得准** —— measure() === offsetHeight。附件条会长高这张卡,行高是离屏算出来的,
- *      算漏了整个虚拟化列表就会错位。
- *
- * ⚠️ 第四条从前是反向对照「非图片不许摘」。owner 2026-09-10 推翻了它:同一条消息里图是
- * 缩略图、文件是正文末尾一枚裸 pill,两件附件长成两个样子。现在两种都进附件条,反向对照
- * 换成**相对路径**的 mention —— 那才是「正文里提到的文件」,摘走就等于凭空造出一件附件。
+ * 正文里的 `@[name](path)` 是引用:路径绝对也好、相对也好,都留在正文里画成胶囊,不升格成附件条上的
+ * 一枚 chip(11-14 owner:引用文件那条消息「有点粗糙然后 layout 也不对」)。附件条只画结构化的附件
+ * (`attachments` / `files`,11-01 起附件都走这条)。更早那些靠绝对路径送达的附件,如今也是正文里一枚胶囊。
  */
-describe('附件 mention → 附件条 (#5269)', () => {
-  const IMAGE_MENTION: ChatMessage = {
-    kind: 'message',
-    id: 'u-img',
-    role: 'user',
-    text: 'hello，这张图有什么\n@[image.png](/Users/me/Library/task-attachments/t1/abc-image.png)',
-  };
-  const FILE_MENTION: ChatMessage = {
-    kind: 'message',
-    id: 'u-file',
-    role: 'user',
-    text: '看下 @[notes.md](/Users/me/notes.md) 这份',
-  };
-  const WORKSPACE_MENTION: ChatMessage = {
-    kind: 'message',
-    id: 'u-rel',
-    role: 'user',
-    text: '看下 @[server.ts](src/server.ts) 这个文件',
-  };
-
-  it('画成一枚 chip,而且 measure === offsetHeight', async () => {
-    const item = normalizeMessage(IMAGE_MENTION);
-    expect(item.attachments?.map((a) => a.name)).toEqual(['image.png']);
-    // 正文里那枚 pill 不再出现 —— 图已经画在上面了。
-    expect(item.text).toBe('hello，这张图有什么');
-    const r = await mountUser(item, DOUBLE);
-    expect(r.computed).toBe(r.dom);
-    expect(r.chips).toBe(1);
-  });
-
-  it('阳控:同一条消息去掉那张图之后,卡片明显变矮 —— 说明附件条真的占了高度', async () => {
-    const withImage = await mountUser(normalizeMessage(IMAGE_MENTION), DOUBLE);
-    const withoutImage = await mountUser(
-      { kind: 'message', id: 'u-img-plain', role: 'user', text: 'hello，这张图有什么' },
-      DOUBLE
-    );
-    expect(withImage.dom).toBeGreaterThan(withoutImage.dom);
-    expect(withoutImage.chips).toBe(0);
-  });
-
-  it('同一张图既有上传的附件又有正文引用时,只画一张(刚发出去的那一轮就是这样)', async () => {
-    const item = normalizeMessage({
-      ...IMAGE_MENTION,
-      id: 'u-img-live',
-      attachments: [{ id: 'acp-1', name: 'image.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }],
-    });
-    expect(item.attachments?.length).toBe(1);
-    expect(item.text).toBe('hello，这张图有什么');
-    const r = await mountUser(item, DOUBLE);
-    expect(r.computed).toBe(r.dom);
-    expect(r.chips).toBe(1);
-  });
-
-  it('非图片的文件 mention 也进附件条,画成同一枚 chip', async () => {
-    const item = normalizeMessage(FILE_MENTION);
-    expect(item.attachments?.map((a) => [a.name, a.kind])).toEqual([['notes.md', 'file']]);
-    expect(item.text).toBe('看下 这份');
-    const r = await mountUser(item, DOUBLE);
-    expect(r.computed).toBe(r.dom);
-    expect(r.chips).toBe(1);
-  });
-
-  it('只有附件、没有正文(长文本自动转成的 pasted-text.txt):只画附件,不画空气泡;measure === offsetHeight', async () => {
-    const item = normalizeMessage({
-      kind: 'message',
-      id: 'u-pasted',
-      role: 'user',
-      text: '@[pasted-text.txt](/Users/me/Library/task-attachments/t1/abc-pasted-text.txt)',
-    });
-    expect(item.text).toBe('');
-    for (const layout of [DOUBLE, SINGLE]) {
-      const r = await mountUser(item, layout);
-      expect(r.chips).toBe(1);
-      expect(r.cards, 'an empty bubble is drawn: a full-width colored bar under the chip').toBe(0);
-      expect(r.computed).toBe(r.dom);
-    }
-    // 阳控:有正文时气泡照画。
-    expect((await mountUser(normalizeMessage(FILE_MENTION), DOUBLE)).cards).toBe(1);
-  });
-
-  it('❌ 相对路径的 mention 不摘 —— 那是正文里提到的文件,不是这条消息的附件', async () => {
-    // 阴控:判据若退回「见 mention 就摘」,agent 惯写的 `@[src/a.ts](src/a.ts)` 会变成
-    // 一件凭空出现的附件,而正文里那句话缺一块。
-    const item = normalizeMessage(WORKSPACE_MENTION);
+describe('a cite stays in the words; the strip draws attachments only', () => {
+  it.each([
+    'hello，这张图有什么\n@[image.png](/Users/me/Library/task-attachments/t1/abc-image.png)',
+    '看下 @[notes.md](/Users/me/notes.md) 这份',
+    '看下 @[server.ts](src/server.ts) 这个文件',
+  ])('%s', async (text) => {
+    const item = normalizeMessage({ kind: 'message', id: 'u-cite', role: 'user', text });
     expect(item.attachments ?? []).toEqual([]);
-    expect(item.text).toBe(WORKSPACE_MENTION.text);
+    expect(item.text).toBe(text);
     const r = await mountUser(item, DOUBLE);
     expect(r.computed).toBe(r.dom);
     expect(r.chips).toBe(0);
+  });
+
+  it('an attachment draws its chip and grows the card; with no words, no empty bubble; measure === offsetHeight', async () => {
+    const image = { id: 'acp-1', name: 'image.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' };
+    const plain = await mountUser({ kind: 'message', id: 'u-plain', role: 'user', text: 'hello，这张图有什么' }, DOUBLE);
+    const withImage = await mountUser(normalizeMessage({ kind: 'message', id: 'u-img', role: 'user', text: 'hello，这张图有什么', attachments: [image] }), DOUBLE);
+    expect([withImage.chips, withImage.cards]).toEqual([1, 1]);
+    expect(withImage.computed).toBe(withImage.dom);
+    expect(withImage.dom).toBeGreaterThan(plain.dom);
+    for (const layout of [DOUBLE, SINGLE]) {
+      const only = await mountUser(normalizeMessage({ kind: 'message', id: 'u-only', role: 'user', text: '', attachments: [image] }), layout);
+      expect([only.chips, only.cards]).toEqual([1, 0]);
+      expect(only.computed).toBe(only.dom);
+    }
   });
 });
 
