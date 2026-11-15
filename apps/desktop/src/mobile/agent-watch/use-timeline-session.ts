@@ -25,7 +25,8 @@ import {
 } from './agent-watch-store'
 import { settlePendingSends, userMessageIds, type PendingSend } from './pending-sends'
 import { loadRetryDelay, LOAD_RETRY_DELAYS_MS } from './record-wait'
-import { hydrateCachedTimeline, readCachedTimeline, writeCachedTimeline } from './timeline-cache'
+import { hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type TimelineLink } from './timeline-cache'
+import { useSelect } from '@/lib/selectStore'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
 export type SessionpageTimelineClient = {
@@ -67,15 +68,11 @@ function rpcErrorCode(err: unknown): string | null {
 /** A new session's first prompt and the client message id its create request gave it. */
 export type FirstPrompt = { id: string; text: string; sentAt: number }
 
-export type AgentWatchPhase = 'loading' | 'ready' | 'error'
-
 /**
- * 和那台机器的链路。
- *  · connecting —— 正在(重新)快照 + 订阅;
- *  · ok —— 订阅上了,窗口通着;
- *  · lost —— 读不出来 / 补缺口失败 / 窗口断了。
+ * 和那台机器的链路(TimelineLink):connecting —— 正在(重新)快照 + 订阅;ok —— 订阅上了,窗口通着;
+ * lost —— 读不出来 / 补缺口失败 / 窗口断了。状态本身在 timeline-cache.ts 的会话流 store 里。
  */
-export type TimelineLink = 'connecting' | 'ok' | 'lost'
+export type { AgentWatchPhase, TimelineLink } from './timeline-cache'
 
 
 export type AgentWatchSession = {
@@ -117,6 +114,8 @@ export type AgentWatchSession = {
 const HYDRATE_BUDGET_MS = 400
 
 const NO_SENDS: readonly PendingSend[] = []
+/** No session named: nothing to follow. */
+const NO_STREAM: SessionStreamState = { timeline: emptyAgentWatchTimeline(), phase: 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
 const timelineLog = rendererLogger('agent-watch/timeline')
 
 function newLocalId(): string {
@@ -160,13 +159,30 @@ export function useTimelineSession(
    * 那一帧(真机几百 ms)里写的是「Nothing in this task yet」,随后整段历史从透明淡入、再跳到底:
    * owner 10-12「进运行中的任务页,一进去就颤两下」。下面 effect 里那次读照旧,换会话时靠它。
    */
-  const [timeline, setTimeline] = useState<AgentWatchTimeline>(() =>
-    (!client.boundedWindow && deviceId && sessionId ? readCachedTimeline({ deviceId, sessionId }) : null) ?? emptyAgentWatchTimeline())
-  const [phase, setPhase] = useState<AgentWatchPhase>(() => (timeline.cursor ? 'ready' : 'loading'))
-  const [error, setError] = useState<string | null>(null)
-  const [link, setLink] = useState<TimelineLink>('connecting')
-  const [errorCode, setErrorCode] = useState<string | null>(null)
-  const [waitingForRecord, setWaitingForRecord] = useState(false)
+  /*
+   * 这条会话流的状态在 timeline-cache.ts 的会话流 store 里(按会话分键,流引擎自己的状态):重挂载、换页回来都从
+   * 上次那一份接着画,❌ 先画一帧空线程。还没跟过这条会话时,首帧是内存里上次看到的那一份(或空 + loading)。
+   */
+  const streamKey = useMemo(() => (deviceId && sessionId ? { deviceId, sessionId } : null), [deviceId, sessionId])
+  const followed = useSelect(sessionStreams, (map) => (streamKey ? map.get(sessionStreamKey(streamKey)) : undefined), Object.is)
+  const initial = useMemo(() => (streamKey ? initialSessionStream(streamKey, client.boundedWindow) : NO_STREAM), [streamKey, client.boundedWindow])
+  const stream = followed ?? initial
+  const { timeline, phase, error, link, errorCode, waitingForRecord } = stream
+  // The subscription writes into the store (one writer per session stream).
+  const writers = useMemo(() => {
+    const write = (change: (current: SessionStreamState) => SessionStreamState) => { if (streamKey) updateSessionStream(streamKey, change, client.boundedWindow) }
+    const field = <K extends keyof SessionStreamState>(name: K) =>
+      (value: SessionStreamState[K] | ((current: SessionStreamState[K]) => SessionStreamState[K])) =>
+        write((current) => {
+          const next = typeof value === 'function' ? (value as (old: SessionStreamState[K]) => SessionStreamState[K])(current[name]) : value
+          return next === current[name] ? current : { ...current, [name]: next }
+        })
+    return {
+      setTimeline: field('timeline'), setPhase: field('phase'), setError: field('error'), setLink: field('link'),
+      setErrorCode: field('errorCode'), setWaitingForRecord: field('waitingForRecord'),
+    }
+  }, [streamKey, client.boundedWindow])
+  const { setTimeline, setPhase, setError, setLink, setErrorCode, setWaitingForRecord } = writers
   // 动作失败与读失败分开存:两者的标题、位置、能做的补救都不是一回事 ——
   // 发送失败时时间线好端端在那儿,套上「打不开时间线 + 重新读取」是在骗人。
   const [actionError, setActionError] = useState<string | null>(null)
@@ -205,7 +221,7 @@ export function useTimelineSession(
       return next
     })
     if (!result.ok) timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
-  }, [])
+  }, [setTimeline])
 
   const reload = useCallback(() => setReloadNonce((n) => n + 1), [])
 
@@ -413,7 +429,7 @@ export function useTimelineSession(
       // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
       void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
     }
-  }, [client, deviceId, sessionId, enabled, reloadNonce, applyResult, reload])
+  }, [client, deviceId, sessionId, enabled, reloadNonce, applyResult, reload, setError, setErrorCode, setLink, setPhase, setTimeline, setWaitingForRecord])
 
   // 世代变了 ⇒ 手里那份接不上,重新走一遍「快照 + 订阅」。
   useEffect(() => {
@@ -467,7 +483,7 @@ export function useTimelineSession(
     })()
     olderRequest.current = { identity, generation, promise: reading }
     try { await reading } finally { if (olderRequest.current?.promise === reading) olderRequest.current = null }
-  }, [client, deviceId, sessionId, enabled])
+  }, [client, deviceId, sessionId, enabled, setTimeline])
 
   /**
    * 一张工具图去机器上取一次:取到的写回条目,和时间线一起存在手机上(timeline-cache),重开不重取。
@@ -486,10 +502,9 @@ export function useTimelineSession(
     if (known) return known
     const loading = client.fetchToolImage(deviceId, sessionId, itemId, index).then(
       (image) => {
-        setTimeline((current) => {
-          toolImageLoads.current.delete(key)
-          return withToolImage(current, itemId, index, image)
-        })
+        // Written into the session's stream (drawn in the same moment): the ask is done.
+        toolImageLoads.current.delete(key)
+        setTimeline((current) => withToolImage(current, itemId, index, image))
       },
       (err: unknown) => {
         toolImageLoads.current.delete(key)
@@ -498,7 +513,7 @@ export function useTimelineSession(
     )
     toolImageLoads.current.set(key, loading)
     return loading
-  }, [client, deviceId, sessionId])
+  }, [client, deviceId, sessionId, setTimeline])
 
   /*
    * 回显到了的那几句在**渲染时**就让位(派生,❌ 等下面那个 effect:那样记录里那一行与乐观那一行
@@ -579,7 +594,7 @@ export function useTimelineSession(
     } finally {
       setRespondingItemId(null)
     }
-  }, [client, responderId, deviceId, sessionId])
+  }, [client, responderId, deviceId, sessionId, setTimeline])
 
   const dismissActionError = useCallback(() => setActionError(null), [])
   return {

@@ -29,7 +29,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
   } },
 }))
 vi.mock('../../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: vi.fn(), retrySessionInputs: vi.fn(), useQueuedSessionInputs: () => [] }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/timeline-cache', () => ({
+vi.mock('../../../../apps/desktop/src/mobile/agent-watch/timeline-cache', async (original) => ({ ...await original<object>(),
   readCachedTimeline: () => null, hydrateCachedTimeline: async () => null, writeCachedTimeline: () => {},
   readCachedNativeRecord: () => null, hydrateCachedNativeRecord: async () => null, writeCachedNativeRecord: () => {},
 }))
