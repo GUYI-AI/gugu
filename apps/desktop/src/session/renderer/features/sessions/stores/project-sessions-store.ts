@@ -49,9 +49,7 @@ import { terminalRegistry } from './terminal-registry';
 import { workspaceRegistry } from './workspace-registry';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rendererLogger } from '../../../../../lib/log';
-import { queryClient } from '@/lib/replica';
-import { AGENTS_METADATA_QUERY_KEY } from '@renderer/lib/stores/use-agents';
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
+import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
 import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
 
 /**
@@ -60,10 +58,7 @@ import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
  * 同一组输入,❌ 猜一个 hooks kind。
  */
 async function agentHooksKind(provider: string): Promise<string> {
-  const agents = await queryClient.ensureQueryData<AgentPayload[]>({
-    queryKey: AGENTS_METADATA_QUERY_KEY,
-    queryFn: () => rpc.agents.list() as Promise<AgentPayload[]>,
-  });
+  const agents = await agentsMetadata.fetch(null);
   const agent = agents.find((candidate) => candidate.id === provider);
   if (!agent) throw new Error(`session-manager: agent catalog has no '${provider}' at session creation`);
   return agent.capabilities.hooks.kind;

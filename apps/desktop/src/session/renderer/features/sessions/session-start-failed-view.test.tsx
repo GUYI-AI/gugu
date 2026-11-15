@@ -12,7 +12,7 @@ const openMembershipPage = vi.fn();
 vi.mock('@renderer/lib/ipc', () => ({ invokeOnMachine: (...args: unknown[]) => invoke(...args) }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ state: 'value', value: [], stale: false, error: null }) }));
 vi.mock('@renderer/features/settings/agents-page/AgentDetailModal', () => ({ AgentDetailModal: () => null }));
 vi.mock('@renderer/features/sessions/session-config/use-composer-model-options', () => ({
   openMembershipPage: () => openMembershipPage(),
@@ -22,16 +22,16 @@ import { SessionStartFailedView } from './session-start-failed-view';
 import type { SessionStartupFailure } from './stores/session-startup-failures';
 import { notifyManager } from '@tanstack/react-query';
 import { queryClient } from '@/lib/replica';
+import { routableAgent, seedPlatformCatalog } from '@renderer/tests/platform-catalog-fixture';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
 
-const CATALOG = {
-  models: [
-    { id: 'glm-5.3-flash', displayName: 'GLM-5.3 Flash', protocol: 'anthropic-messages' },
-    { id: 'glm-5.3', displayName: 'GLM-5.3', protocol: 'anthropic-messages', requiresMembership: true },
-  ],
-  sessionSelection: { modelId: 'glm-5.3' },
-};
+// The account's catalog (what the composer's Gugu group derives from) and the session's own decision (the host's).
+const ROWS = [
+  { id: 'glm-5.3-flash', displayName: 'GLM-5.3 Flash', protocol: 'openai-responses' as const },
+  { id: 'glm-5.3', displayName: 'GLM-5.3', protocol: 'openai-responses' as const, requiresMembership: true },
+];
+const CATALOG = { models: [], sessionSelection: { modelId: 'glm-5.3' } };
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -61,6 +61,7 @@ function button(testId: string): HTMLButtonElement {
 
 beforeEach(() => {
   queryClient.clear();
+  seedPlatformCatalog({ rows: ROWS, agents: [routableAgent('codex', 'Codex')] });
   invoke.mockReset().mockResolvedValue(CATALOG);
   openMembershipPage.mockReset();
 });

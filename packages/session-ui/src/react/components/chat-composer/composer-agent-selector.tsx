@@ -1,4 +1,3 @@
-import { LoadingIndicator } from '../loading-indicator/LoadingIndicator';
 /**
  * Agent（harness）选择器 —— 底排右组里排在模型触发器**前面**的那颗。
  *
@@ -22,11 +21,14 @@ import type { ComposerAgentOption } from './composer-options';
  * 智能体名单还在路上(典型:问的是另一台机器,要跨云往返)时,这一格画一枚不可点的「正在读取」占位 ——
  * ❌ 不让这一格凭空消失,用户会以为这台机器上什么都开不了。
  */
-export function ComposerAgentLoading({ label, title }: { label: string; title: string }) {
+/** The agent trigger's place while the list or the selection is not read: an icon and a name wide (@@@unknown-slot). */
+export function ComposerAgentLoading({ title }: { title: string }) {
   return (
-    <span role="status" className={styles.agentTrigger} data-testid="composer-agent-loading" title={title}>
-      <LoadingIndicator size="inline" />
-      <span className={styles.agentTriggerLabel}>{label}</span>
+    <span role="status" aria-busy="true" className={styles.agentTrigger} data-testid="composer-agent-loading" title={title}>
+      <span data-unknown="" className="gg-unknown" style={{
+        display: 'inline-block', width: '6.5em', height: '1lh', verticalAlign: 'top',
+        borderRadius: 'var(--radius-control)', background: 'var(--muted)',
+      }} />
     </span>
   );
 }

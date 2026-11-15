@@ -1,5 +1,6 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { queryClient as readModelClient } from '@/lib/replica';
+import { followRendererSession, queryClient as readModelClient } from '@/lib/replica';
+import { wireAgentReadings, agentIcons, agentMetadata, agentSettings, agentsMetadata, harnessModelCatalog, harnessModelCredential, installSourceVersions, managementAgent, managementAgents } from './agent-replicas';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -31,8 +32,8 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   }),
 }));
 
-vi.mock('@renderer/lib/ipc', () => ({
-  rpc: {
+vi.mock('@renderer/lib/ipc', () => {
+  const rpc = {
     agents: {
       listAgentInstallationStatus: mocks.listAgentInstallationStatus,
       install: mocks.install,
@@ -40,18 +41,18 @@ vi.mock('@renderer/lib/ipc', () => ({
       refreshLatestVersion: mocks.refreshLatestVersion,
       probeAll: mocks.probeAll,
     },
-  },
-  events: { on: mocks.on },
-}));
+  };
+  return { rpc, rpcOn: () => rpc, events: { on: mocks.on }, onMachineEvent: () => () => {} };
+});
 
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 
 vi.mock('./use-agents', () => ({
-  AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'] as const,
-  useAgents: () => ({ data: [] }),
+  useAgents: () => ({ state: 'value', value: [], stale: false, error: null }),
 }));
 
-const SOURCE_VERSIONS_KEY = ['agents', 'install-source-versions', 'claude', 'local'] as const;
+const ACCOUNT = 'account-1';
+const SOURCE_VERSIONS_KEY = ['installSourceVersions', ACCOUNT, null, 'claude'] as const;
 
 type Api = ReturnType<typeof useAgentInstallationStatuses>;
 
@@ -76,6 +77,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
   let container: HTMLDivElement;
   let queryClient: QueryClient;
   let api: Api | undefined;
+  let unwire: () => void = () => {};
 
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -94,6 +96,9 @@ describe('useAgentInstallationStatuses invalidate', () => {
 
     // The availability reading is a replica: it lives in the one client (lib/replica), cleared after each case.
     queryClient = readModelClient;
+    followRendererSession('SIGNED_IN', ACCOUNT);
+    // This computer's install-state push, wired once per document (embedded.tsx).
+    unwire = wireAgentReadings();
     container = dom.window.document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
 
@@ -120,6 +125,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    unwire();
     queryClient.clear();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -307,7 +313,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
    * 徽标读的是 `agent.status`(AgentRow.tsx:8),来自 `useManagementAgents()` 的
    * `['agents','management']`,而它挂着 5 分钟 staleTime。这两条判据钉的就是那个键。
    */
-  const MANAGEMENT_KEY = ['agents', 'management'] as const;
+  const MANAGEMENT_KEY = ['managementAgents', ACCOUNT, null] as const;
 
   it('装完之后，智能体列表那份缓存也被标脏（否则徽标要等切页面/重启）', async () => {
     queryClient.setQueryData(MANAGEMENT_KEY, [{ id: 'claude', status: 'unavailable' }]);
@@ -333,28 +339,29 @@ describe('useAgentInstallationStatuses invalidate', () => {
   });
 
   /**
-   * 这条判的是**结构**,不是某一个键:作废按 `['agents', …]` 前缀整体来,所以将来新加的派生缓存
-   * 不必回到 invalidate() 里补登记。第三个键是故意编的 —— 它代表「还没被写出来的那个查询」,
-   * 只有前缀作废能覆盖它,逐条列举必然漏。
+   * 这条判的是**整族**:装完 / 重新检测之后,从安装状态派生的每一个读数都重读。成员只在一处列出
+   * (`refreshAgentReadings`,agent-replicas.ts);新加的派生读数必须登记在那里,这条判据随之列上。
    */
-  it('这一族里每一个都被覆盖，包括还没写出来的那个', async () => {
+  it('这一族里每一个都被作废', async () => {
     const keys = [
-      ['agents', 'metadata'],
-      ['agents', 'management'],
-      ['agents', 'icons'],
-      ['agents', 'modelCatalog'],
-      ['agents', 'modelCredential'],
-      ['agents', 'install-source-versions', 'claude', 'local'],
-      ['agents', 'some-future-derived-cache'],
-    ] as const;
-    for (const key of keys) queryClient.setQueryData(key, {});
+      agentsMetadata.key(null),
+      managementAgents.key(null),
+      managementAgent.key(null, 'claude'),
+      agentIcons.key(),
+      agentMetadata.key('claude'),
+      harnessModelCatalog.key('claude', 'acp', null),
+      harnessModelCredential.key('claude', 'opus', null),
+      installSourceVersions.key(null, 'claude'),
+      agentSettings.key(null, 'claude'),
+    ];
+    for (const key of keys) queryClient.setQueryData(key!, {});
 
     await act(async () => {
       api?.probeAll();
     });
     await settle();
 
-    const stale = keys.filter((key) => queryClient.getQueryState(key)?.isInvalidated);
+    const stale = keys.filter((key) => queryClient.getQueryState(key!)?.isInvalidated);
     expect(stale).toHaveLength(keys.length);
   });
 });

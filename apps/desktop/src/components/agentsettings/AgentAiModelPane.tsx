@@ -127,14 +127,21 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       if (model.source === 'harness') ownOptions[model.id] = { name: model.name, description: model.description }
     }
   }
+  // The harness's own catalog is asked only when it can answer (a device, an engine, not cloud-only); while it is asked
+  // and not answered, the picker holds its place like the platform catalog does.
+  const harnessUnknown = harnessReading.state === 'unknown' && Boolean(agent.device_id && engine && !cloudOnly)
   const options = (listed === null ? null : assembleComposerModelOptions(ownOptions, listed.map((model) => ({
       ...model, creditMultiplier: model.creditMultiplier ?? null, contextWindow: model.contextWindow ?? null,
     })), engine ?? '', undefined, state?.desired.source === 'platform' ? state.desired.modelId : null)) ?? ownOptions
-  const current = parseSelection(value ?? 'default')
-  const selectedOption = current.source === 'default' ? originalOption
+  const current = value === null ? null : parseSelection(value)
+  const selectedOption = current === null || current.source === 'default' ? originalOption
     : current.source === 'byok' ? current.modelId : platformOptionId(current.modelId)
-  if (current.source !== 'default' && !options[selectedOption]) options[selectedOption] = { name: current.modelId }
-  const items = [...(!cloudOnly || current.source === 'default' ? [{ id: originalOption, name: t('settings.model.original'), description: t('settings.model.originalSourceNote') }] : []),
+  // A saved model its catalog (read) no longer lists: still the selection, named as retired — ❌ a raw id drawn as a name
+  // while the catalog is on its way (the picker is not drawn then).
+  if (current !== null && current.source !== 'default' && !options[selectedOption]) {
+    options[selectedOption] = { name: t('settings.model.retired', { model: current.modelId }) }
+  }
+  const items = [...(!cloudOnly || current?.source === 'default' ? [{ id: originalOption, name: t('settings.model.original'), description: t('settings.model.originalSourceNote') }] : []),
     ...Object.entries(options).filter(([id]) => !cloudOnly || id.startsWith('platform:')).map(([id, option]) => ({ id, ...option }))]
 
   // 能改的前提:Agent 绑了设备(没有谁能把选择变成事实,RPC 会拒)且当前值已读到。
@@ -199,7 +206,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   return (
     <div className={agentSettingsPaneClass(true)}>
       <div className={asClass.aiModelLabel}>{t('settings.model.label')}</div>
-      {value === null || listed === null ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
+      {value === null || listed === null || harnessUnknown ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
         const chosen = composerModelSelection(optionId)
         if (cloudOnly && (optionId === originalOption || chosen.source === 'own')) return
         const next = optionId === originalOption ? 'default' : selectionValue(chosen.source === 'own'

@@ -329,6 +329,7 @@ export default {
       "original": "Keep the original configuration",
       "retryApply": "Retry switch",
       "retryCatalog": "Retry",
+      "retired": "{{model}} (no longer offered)",
       "deviceCatalogUnavailable": "Cannot read subscription models from the agent’s device right now.",
       "deviceSubscriptionMissing": "The agent’s device is not signed in to this model account.",
       "billed": "Provided by Gugu, billed in credits, and subject to platform quota windows.",

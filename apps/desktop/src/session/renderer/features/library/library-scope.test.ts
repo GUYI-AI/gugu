@@ -71,6 +71,7 @@ const { IntegrationsProvider, useIntegrationsContext } = await import(
 );
 const { useGitHubAccounts } = await import('@renderer/lib/hooks/useGithubAccounts');
 const { useManagementAgents } = await import('@renderer/lib/stores/use-agents');
+const { followRendererSession, queryClient: replicaClient } = await import('@/lib/replica');
 const { ExtensionsLibraryPage } = await import('./extensions-library-page');
 
 type Seen = {
@@ -120,6 +121,9 @@ describe('资源库的机器选择管整个模块:每一格都跟着它(#6264)',
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
     vi.stubGlobal('Event', dom.window.Event);
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The agent lists are account replicas (agent-replicas.ts): read for a signed-in account, in the one client.
+    replicaClient.clear();
+    followRendererSession('SIGNED_IN', 'account-1');
     machine.calls.length = 0;
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
   });

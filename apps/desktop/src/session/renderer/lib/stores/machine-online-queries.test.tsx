@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,28 +21,28 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
 }));
 vi.mock('./use-agent-auth-status', () => ({ useAgentAuthStatus: () => ({ auth: null }) }));
 
+import { followRendererSession, queryClient as client } from '@/lib/replica';
 import { useAgents } from './use-agents';
 import { useHarnessModelCatalog } from './use-harness-model-catalog';
 import { useHarnessModelCredential } from './use-harness-model-credential';
 
-let seen: { agentsLoading: boolean; agents: unknown; catalog: string; credential: string } | null = null;
+let seen: { agents: unknown; catalog: string; credential: string | null } | null = null;
 function Probe() {
   const agents = useAgents();
   const catalog = useHarnessModelCatalog('claude', 'acp');
   const credential = useHarnessModelCredential('claude', 'opus');
-  seen = { agentsLoading: agents.isLoading, agents: agents.data, catalog: catalog.state.kind, credential: credential.status };
+  seen = { agents, catalog: catalog.state.kind, credential };
   return null;
 }
 
 let root: Root;
 let container: HTMLDivElement;
-let client: QueryClient;
 // react-query 把结果推给组件排在下一个 setTimeout 里
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 async function render(online: boolean) {
   mocks.host.remote = { deviceId: 'mac-1', online };
   await act(async () => {
-    root.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+    root.render(<Probe />);
   });
   await settle();
 }
@@ -52,7 +51,8 @@ beforeEach(() => {
   mocks.list.mockReset();
   mocks.modelCatalog.mockReset();
   mocks.modelCredential.mockReset();
-  client = new QueryClient();
+  client.clear();
+  followRendererSession('SIGNED_IN', 'account-1');
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -65,12 +65,13 @@ afterEach(() => {
 });
 
 describe('新建框跟着那台机器连没连上去问', () => {
-  it('没连上:三样都不问,名单那一格也不说「正在读取」', async () => {
+  // The composer does not hold a place for a machine not connected (initial-session-section `agentOptionsLoading`).
+  it('没连上:三样都不问,读数停在未知', async () => {
     await render(false);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.modelCatalog).not.toHaveBeenCalled();
     expect(mocks.modelCredential).not.toHaveBeenCalled();
-    expect(seen?.agentsLoading).toBe(false);
+    expect(seen?.agents).toEqual({ state: 'unknown' });
   });
 
   it('连上那一刻:自己去取,取的时候说「正在读取」,取到就是那台机器的', async () => {
@@ -80,11 +81,10 @@ describe('新建框跟着那台机器连没连上去问', () => {
     mocks.modelCatalog.mockResolvedValue({ state: { kind: 'unsupported' }, refreshing: false });
     mocks.modelCredential.mockResolvedValue({ success: true, data: 'credentialed' });
     await render(true);
-    expect(seen?.agentsLoading).toBe(true);
+    expect(seen?.agents).toEqual({ state: 'unknown' });
     await act(async () => answer([{ id: 'claude' }]));
     await settle();
-    expect(seen?.agentsLoading).toBe(false);
-    expect(seen?.agents).toEqual([{ id: 'claude' }]);
+    expect(seen?.agents).toMatchObject({ state: 'value', value: [{ id: 'claude' }] });
     expect(seen?.catalog).toBe('unsupported');
     expect(seen?.credential).toBe('credentialed');
     expect(mocks.list).toHaveBeenCalledTimes(1);

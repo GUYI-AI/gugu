@@ -2,7 +2,7 @@ import { metadataSeparator } from '@/i18n/format'
 import { Unknown } from '@/components/ui/Unknown';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
@@ -36,7 +36,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useLibraryHost } from '@renderer/features/library/library-host'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog'
-import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential'
+import { refreshHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential'
 import { resolveSignInMethod } from '../agents-page/agent-account'
 import { useAgentSignIn } from '../agents-page/use-agent-sign-in'
 import { dropIfNeverSignedIn } from './drop-unsigned-connection'
@@ -118,7 +118,6 @@ export function SubscriptionConnections({
     [onOpenChange]
   )
   const [adding, setAdding] = useState(false)
-  const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
   // A failed read says so at once on every surface (a value already read stays, with the failure next to it).
@@ -156,7 +155,7 @@ export function SubscriptionConnections({
   const canAdd = accountMethod !== null || apiKeyMethod
   const refresh = () => {
     refreshSubscriptionReadings(machine, agent.id)
-    void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) })
+    void refreshHarnessModelCredential(agent.id)
   }
   const action = useMutation({
     mutationFn: async ({
@@ -189,7 +188,7 @@ export function SubscriptionConnections({
       refresh()
       setOpen(false)
       if (kind === 'select' || connections.data?.some((c) => c.current && c.id === id)) {
-        await forceRefreshHarnessModelCatalog(queryClient, agent.id, 'acp', machine)
+        await forceRefreshHarnessModelCatalog(agent.id, 'acp', machine)
       }
     }
   })
@@ -532,7 +531,7 @@ export function SubscriptionConnections({
           refresh()
           setManaging(null)
           // 正在用的就是它:新建任务的模型菜单照新的几个重读。
-          if (connection.current) await forceRefreshHarnessModelCatalog(queryClient, agent.id, 'acp', machine)
+          if (connection.current) await forceRefreshHarnessModelCatalog(agent.id, 'acp', machine)
         }}
       />
     </>

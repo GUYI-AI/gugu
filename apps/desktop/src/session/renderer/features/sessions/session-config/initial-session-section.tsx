@@ -77,7 +77,6 @@ import {
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { queryClient } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
@@ -131,6 +130,7 @@ import {
   composerModelSelection,
   composerSelectedOptionId,
   composerModelFooter,
+  composerOwnTierAgentName,
   useComposerModelOptions,
 } from './use-composer-model-options';
 
@@ -146,6 +146,16 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
 }
 
 export type InitialSessionState = {
+  /**
+   * The agent choice rests on what is read (the new-task memory, the default agent setting, the machine's agent list).
+   * While false, `provider` is null and means nothing: the agent trigger holds its place.
+   */
+  providerKnown: boolean;
+  /**
+   * The model choice rests on what is read (the harness's catalog, the Gugu catalog, the default model's credential).
+   * While false the model trigger holds its place (❌ "Model", a raw id, or the harness default replaced by a Gugu model).
+   */
+  modelKnown: boolean;
   provider: AgentProviderId | null;
   setProvider: (provider: AgentProviderId | null) => void;
   providerError: string | null;
@@ -513,15 +523,18 @@ export function useInitialSessionState(
     setProviderOverride,
     error: providerError,
     chosenByUser: providerChosenByUser,
+    known: providerKnown,
   } = useEffectiveProvider(
     initialProvider,
     preferredSessionpageLeg,
     // 记忆单独一格传进去 —— 并进上面那个初值,换项目时的重置会连它一起抹掉(#5973)。
     // 亲手点过的那一家 > 上次真启动过的那家;出厂偏好猜出来的那家不算记忆,否则它排到「设置里的默认 Agent」
     // 前面,用户后来在设置里选的那家永远不生效。一个函数,主进程同用(`rememberedProviderOf`)。
-    rememberedProviderOf(memory)
+    // Not read yet: `undefined`, and the provider (so the model and effort) waits for it (`known`).
+    memorySettings.state === 'value' ? rememberedProviderOf(memory) : undefined
   );
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const [localPrompt, setLocalPrompt] = useState(initialPrompt);
   const prompt = draft ? draft.prompt : localPrompt;
   const setPrompt: Dispatch<SetStateAction<string>> = useCallback((next) => {
@@ -778,7 +791,7 @@ export function useInitialSessionState(
   // 的恢复路误改到平台。只对活目录 ready 的家问;其余家 modelId 为 null,hook 不发请求、恒 'unknown'。
   // ⚠️ 只取读数:登完之后的作废由抽屉那一行按 provider 前缀做(#6100),❌ 别在这里再留一把
   //    没人调的 refresh —— 上一版留着它,是因为登录终端曾经就在本文件里弹。
-  const { status: harnessDefaultCredential } =
+  const harnessDefaultCredential =
     useHarnessModelCredential(
       providerId,
       harnessCatalogState.kind === 'ready' ? resolvedDefaultModel : null
@@ -845,8 +858,8 @@ export function useInitialSessionState(
     lastStartedConfiguration,
     harnessDefaultUncredentialed
   );
-  const agentDisplayName =
-    agents?.find((agent) => agent.id === providerId)?.name ?? providerId ?? 'agent';
+  // Named once the list is read (the provider is chosen only then, `providerKnown`); a retired agent keeps its id.
+  const agentDisplayName = composerOwnTierAgentName(agents ?? null, providerId);
   /**
    * 这家没登录,但**咕咕自己的模型现在就能用**。
    *
@@ -880,6 +893,10 @@ export function useInitialSessionState(
   // 选的是别的机器、此刻没连上:为什么连不上由右下角那台机器的提示说(重连中 / 离线 / 要先登录 / 版本太旧,
   // 见 remote-hosts/machine-notice.ts),❌ 这里再报一句「读取 X 的模型失败」—— 那不是 X 的问题,是机器的。
   const machineUnreachable = Boolean(remoteHost && !remoteHost.online);
+  /** Whether the model choice can be made now: see `InitialSessionState.modelKnown`. */
+  const modelKnown = providerKnown && (!providerId || machineUnreachable || (
+    harnessCatalogState.kind !== 'unknown' && platformCatalog.known && harnessDefaultCredential !== null
+  ));
   /**
    * Whether this session runs on a Gugu model at all is answered by the Gugu catalog
    * (`platformModel`, `byokLoginOptional`). Until it answers, the harness's own install/login
@@ -1040,7 +1057,7 @@ export function useInitialSessionState(
     : harnessNoticeMessage?.action === 'login'
       ? (harnessSignIn ? { label: translate('harnessLogin.signIn'), onClick: () => harnessSignIn() } : undefined)
       : harnessNoticeMessage?.action === 'retry' && providerId
-        ? { label: translate('harnessCatalog.retry'), onClick: () => { void forceRefreshHarnessModelCatalog(queryClient, providerId, sessionpageSurface, machine).catch(error => log.error('Model catalog retry failed', { error })); } }
+        ? { label: translate('harnessCatalog.retry'), onClick: () => { void forceRefreshHarnessModelCatalog(providerId, sessionpageSurface, machine).catch(error => log.error('Model catalog retry failed', { error })); } }
         : undefined;
   useSessionInputNotice(`session-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`, guguRouteUnknown
     ? undefined
@@ -1182,6 +1199,8 @@ export function useInitialSessionState(
 
 
   return {
+    providerKnown,
+    modelKnown,
     provider: providerId,
     setProvider: (next) => {
       setProviderOverride(next);
@@ -1287,9 +1306,9 @@ export function useInitialSessionState(
 }
 
 function useAgentCapabilities(providerId: AgentProviderId | null): AgentCapabilities | null {
-  const { data: agents } = useAgents();
-  if (!providerId) return null;
-  return agents?.find((agent) => agent.id === providerId)?.capabilities ?? null;
+  const agents = useAgents();
+  if (!providerId || agents.state !== 'value') return null;
+  return agents.value.find((agent) => agent.id === providerId)?.capabilities ?? null;
 }
 
 function toLinkedIssueMentionItem(issue: LinkedIssue): MentionItem {
@@ -1358,18 +1377,19 @@ export function InitialSessionField({
   const localMentionItemsRef = useRef<MentionItem[]>([]);
   const { value: promptLibrary, overrides } = usePromptLibrary();
   const harnessModelOptions = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
-  const { data: agents, isLoading: agentsLoading } = useAgents();
-  // #6264 名单要跨云问另一台机器时,那一格画「正在读取」,❌ 空着让人以为那台机器上什么都开不了。
-  // 只在真在读时画(isLoading):那台机器没连上就不问,❌ 一直转到它回来(原因由机器的提示说)。
-  const remoteCreateForActions = useLibraryHost().remote !== null;
-  const agentOptionsLoading = remoteCreateForActions && agentsLoading;
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : null;
+  const remoteHost = useLibraryHost().remote;
+  const remoteCreateForActions = remoteHost !== null;
+  // The agent list or this box's choice not read yet: the agent trigger holds its place (❌ "Agent", then a name).
+  // #6264 a machine not connected is not asked: nothing is held for it (why it is unreachable is the machine's notice).
+  const agentOptionsLoading = !state.providerKnown && agentsReading.state !== 'error' && remoteHost?.online !== false;
   const { tools: agentCreationTools, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
   const agentCreationToolsByEngine = useMemo(
     () => new Map<string, (typeof agentCreationTools)[number]>(agentCreationTools.map((tool) => [tool.engine, tool])),
     [agentCreationTools],
   );
-  const selectedAgentName =
-    agents?.find((agent) => agent.id === state.provider)?.name ?? state.provider ?? 'agent';
+  const selectedAgentName = composerOwnTierAgentName(agents, state.provider);
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。
   // 它们与用户自己那档并列在同一个下拉里(不是另开一个选择器),每条自带积分标注。
   //
@@ -1390,10 +1410,11 @@ export function InitialSessionField({
   // 扁平一列、全部可选,点中没装的 agent 只会在会话启动时炸(owner 实遇)。口径见
   // `agent-availability-groups`,两个 composer 入口共用一份,免得同一个选择器两处表现不同。
   // #6101:读的是四态 `reading`(去装 / 去修 / 重新选一份是三件不同的事),❌ 不再看 `status`。
-  const agentOptions = useMemo<ComposerAgentOption[]>(
-    () =>
+  // null = the list is not read (or could not be): no options; the trigger holds its place meanwhile.
+  const agentOptions = useMemo<ComposerAgentOption[] | null>(
+    () => agents &&
       sortAgentsByAvailability(
-        (agents ?? []).flatMap((a) => {
+        agents.flatMap((a) => {
           // 会话形态按引擎定（见 `sessionpageLegFor` 抬头）：开关只在**两条腿都能跑**时择一，
           // 只有一条腿的引擎跟着自己那条走 —— ❌ 不因为开关拨在另一边就从选择器里消失。
           const leg = sessionpageLegFor(a.capabilities.sessionpage, state.providerSelectionSurface ?? 'tui');
@@ -1760,7 +1781,8 @@ export function InitialSessionField({
             }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(id)
             navigate('library', { tab: 'agents', agentId: id })
           }}
-          modelOptions={modelOptions}
+          modelOptions={modelOptions === undefined ? null : modelOptions}
+          modelUnknown={modelOptions === undefined || !state.modelKnown}
           // 编解码都在装配那份里(@@@composer-model-assembly)—— 这里只把分好的两路写回
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。

@@ -105,7 +105,8 @@ type AgentNotice = { kind: 'none' | 'installing'; text: string } | null;
  */
 function useSampleAgentNotice(): AgentNotice {
   const { translate, locale } = useSessionMessages();
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const { data: statuses } = useAgentInstallationStatuses();
   const installing = useInstallingAgents();
   if (!agents || !statuses) return null;

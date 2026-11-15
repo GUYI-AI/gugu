@@ -329,6 +329,7 @@ export default {
       "original": "沿用原有配置",
       "retryApply": "重试切换",
       "retryCatalog": "重新读取",
+      "retired": "{{model}}(已下线)",
       "deviceCatalogUnavailable": "暂时读不到助理所在设备的订阅模型。",
       "deviceSubscriptionMissing": "助理所在设备还没有登录这家模型账号。",
       "billed": "由咕咕提供，按积分计费，受平台额度窗口限制。",

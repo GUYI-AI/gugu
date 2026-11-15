@@ -21,7 +21,7 @@ import type { AgentType } from '@gugu/core/agentTypes'
 import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-protocols'
 import { edgeFunctionError } from './edgeFunctionError'
 import { identityDb, dataClient } from './supabase'
-import { PLATFORM_MODELS_CHANGED_EVENT } from '@/session/shared/core/agents/platform-model'
+import { PLATFORM_MODELS_CHANGED_EVENT, parsePlatformReasoningEfforts } from '@/session/shared/core/agents/platform-model'
 import { chatService } from './chat'
 import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
 import { rpcOn } from '@/session/renderer/lib/ipc'
@@ -38,7 +38,11 @@ export interface PlatformCatalogModel {
   /** 目录 `hidden`(#7056):他在设置「模型」页关掉了这一条。只认 true,旧服务端不带 ⇒ false。 */
   hidden: boolean
   creditMultiplier?: number | null
+  /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
+  creditMultipliers: Partial<Record<ModelAccessProtocol, number>>
   contextWindow?: number | null
+  /** The reasoning levels this model accepts (#6447); null = the catalog does not say. */
+  reasoningEfforts: string[] | null
 }
 
 export interface AgentModelSelectionState {
@@ -83,10 +87,23 @@ export async function fetchPlatformModelCatalog(): Promise<PlatformCatalogModel[
           requiresMembership: row.requires_membership === true,
           hidden: row.hidden === true,
           creditMultiplier: typeof row.credit_multiplier === 'number' ? row.credit_multiplier : null,
+          creditMultipliers: creditMultipliersOf(row.credit_multipliers),
           contextWindow: typeof row.context_window === 'number' ? row.context_window : null,
+          reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
         }]
       : []
   })
+}
+
+/** The catalog's per-protocol multipliers: only protocols this client knows and real positive numbers (as main parses them). */
+function creditMultipliersOf(value: unknown): Partial<Record<ModelAccessProtocol, number>> {
+  if (!value || typeof value !== 'object') return {}
+  const parsed: Partial<Record<ModelAccessProtocol, number>> = {}
+  for (const [protocol, raw] of Object.entries(value as Record<string, unknown>)) {
+    const ratio = Number(raw)
+    if (isModelAccessProtocol(protocol) && Number.isFinite(ratio) && ratio > 0) parsed[protocol] = ratio
+  }
+  return parsed
 }
 
 /**

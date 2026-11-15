@@ -57,7 +57,7 @@ import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { wireModelRegistryInvalidation } from '@renderer/lib/text-model/invalidation-bridges';
 import { modelRegistry } from '@renderer/lib/text-model/model-registry';
 import { wirePrCacheInvalidation } from '@renderer/lib/pr-cache-invalidation';
-import { wireAgentCapabilityInvalidation } from '@renderer/lib/stores/use-agents';
+import { wireAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { log } from '@renderer/utils/logger';
 import type { NavigationSnapshot, SidebarSnapshot } from '@shared/view-state';
@@ -219,7 +219,7 @@ async function bootstrap() {
 
   wireModelRegistryInvalidation(modelRegistry);
   wirePrCacheInvalidation();
-  wireAgentCapabilityInvalidation();
+  wireAgentReadings();
   wireCommitHistoryInvalidation();
   wireExternalLinkRequests();
   // 屏上的会话报给主进程:闲置回收不停人正看着的会话(spec idle-reclaim「不在屏上」)。

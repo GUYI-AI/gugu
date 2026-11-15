@@ -1,9 +1,13 @@
 import { fetchAgentHarnessModels, fetchPlatformModelCatalog, readAgentModelSelection } from './agentModelSelection'
 import { replica } from './replica'
 
-/** The account's platform model catalog (settings → Model, the agent model pane); kept across restarts. */
+/**
+ * The account's platform model catalog (settings → Model, the agent model pane, and every composer's Gugu group, derived
+ * per engine in platform-model-catalog.ts); kept across restarts. Named v2 since it carries the per-protocol multipliers and
+ * the reasoning levels (an older snapshot's entries lack them and age out).
+ */
 export const platformModels = replica({
-  name: 'platformModels',
+  name: 'platformModelsV2',
   scope: 'account',
   read: () => fetchPlatformModelCatalog(),
   fresh: 5 * 60_000,

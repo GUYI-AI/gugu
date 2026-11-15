@@ -38,7 +38,7 @@ vi.mock('@renderer/features/sessions/pane-empty-state', () => ({
   sessionWorkspaceActionBlocked: () => null, workspaceBlockedTitle: () => undefined,
 }));
 vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => { const { readValue } = await import('../../../../../../../tests/support/appSettingsDouble'); return { ...await original<object>(), useTerminalEnabled: () => readValue(true) } });
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ state: 'value', value: [], stale: false, error: null }) }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: h.navigate }) }));
 vi.mock('@renderer/lib/commands/use-command-provider', () => ({
   useCommandProvider: ({ getCommands }: { getCommands: () => { execute: () => void }[] }) => { h.command = getCommands()[0]?.execute; },

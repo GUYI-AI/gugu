@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -16,6 +15,7 @@ vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage:
 vi.mock('./use-agent-auth-status', () => ({ useAgentAuthStatus: () => ({ auth: undefined }) }));
 
 const { useHarnessModelCatalog } = await import('./use-harness-model-catalog');
+const { followRendererSession, queryClient: client } = await import('@/lib/replica');
 
 function lookup(haiku: string): HarnessCatalogLookup {
   return {
@@ -45,7 +45,6 @@ describe('useHarnessModelCatalog —— 本机清单每次打开都问主进程'
   let dom: JSDOM;
   let root: Root;
   let container: HTMLDivElement;
-  let client: QueryClient;
 
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
@@ -53,7 +52,7 @@ describe('useHarnessModelCatalog —— 本机清单每次打开都问主进程'
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
-    client = new QueryClient();
+    followRendererSession('SIGNED_IN', 'account-1');
     container = dom.window.document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
   });
@@ -69,7 +68,7 @@ describe('useHarnessModelCatalog —— 本机清单每次打开都问主进程'
   // React Query 的通知批排在 setTimeout(0) 上:渲染之后让它跑完再读。
   const render = async (node: React.ReactNode) => {
     await act(async () => {
-      root.render(React.createElement(QueryClientProvider, { client }, node));
+      root.render(node);
     });
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   };

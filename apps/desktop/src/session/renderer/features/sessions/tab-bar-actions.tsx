@@ -75,7 +75,9 @@ const TaskAddItems = observer(function TaskAddItems() {
   const { translate } = useSessionMessages();
   const sessionView = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
-  const { data: agents } = useAgents();
+  // Unknown (undefined) is not evidence the provider cannot fork: startSideSession checks again (canStartSideSession).
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = terminalShown(useTerminalEnabled());
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});

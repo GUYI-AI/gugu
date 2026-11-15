@@ -1,4 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import { followRendererSession, queryClient as replicaClient } from '@/lib/replica';
+import { managementAgents } from './agent-replicas';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -18,8 +20,11 @@ const local = vi.hoisted(() => ({
   install: vi.fn(async () => ({ success: true, data: {} })),
 }));
 
+// Readings go to the machine by id (rpcOn); actions go through the library host. Both must reach the same machine.
+const remoteRef = vi.hoisted(() => ({ agents: null as unknown }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { agents: local, mcp: {} },
+  rpcOn: (machine: string | null) => ({ agents: machine ? remoteRef.agents : local }),
   events: { on: () => () => {} },
 }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
@@ -51,6 +56,7 @@ function remoteAgents(): FakeAgents {
 }
 
 function remoteHost(agents: FakeAgents, online: boolean): LibraryHost {
+  remoteRef.agents = agents;
   return {
     key: 'remote:d22',
     agents: agents as unknown as LibraryAgentsRpc,
@@ -112,7 +118,8 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
     vi.stubGlobal('Event', dom.window.Event);
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient = replicaClient;
+    followRendererSession('SIGNED_IN', 'account-1');
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
   });
 
@@ -128,7 +135,7 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
   it('opens agent details from the same host cache before a slow probe finishes, then retries silently', async () => {
     const agents = remoteAgents();
     const cached = { id: 'claude', name: 'Cached CLI', status: 'available', reading: 'installed', installOptions: [] };
-    queryClient.setQueryData(['agents', 'management', 'host', 'remote:d22'], [cached]);
+    managementAgents.set(['d22'], [cached as never]);
     let finish!: (value: unknown) => void;
     agents.getManagement.mockRejectedValueOnce(new Error('temporary host failure')).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     let detail!: ReturnType<typeof useManagementAgent>;
@@ -180,7 +187,7 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     await settle();
     expect(agents.listManagement).not.toHaveBeenCalled();
     expect(agents.listAgentInstallationStatus).not.toHaveBeenCalled();
-    expect(api?.list.fetchStatus).toBe('idle');
+    expect(api?.list.reading).toEqual({ state: 'unknown' });
   });
 
   it('没有挂资源库的机器(composer、会话页)= 本机,照旧问本机', async () => {

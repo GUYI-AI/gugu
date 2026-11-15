@@ -731,18 +731,20 @@ const ComposerForStore = observer(function ComposerForStore({
     localSessionMentionProvider,
   ]);
 
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
   // 只渲染成一个禁用图标按钮、列表根本不展开,所以这里**不**接安装动作 —— 接了也是死代码。
   // 分组口径仍与 initial-session-section 共用,见 `agent-availability-groups`。
-  const agentOptions = useMemo<ComposerAgentOption[]>(
+  // null while the list is not read: the locked agent icon holds its place (`agentOptionsLoading`).
+  const agentOptions = useMemo<ComposerAgentOption[] | null>(
     () =>
-      sortAgentsByAvailability(agents ?? []).map((a) => ({
+      agents ? sortAgentsByAvailability(agents).map((a) => ({
         id: a.id,
         name: a.name,
         icon: <AgentIcon id={a.id} size={14} className="rounded-sm" />,
         groupLabel: agentGroupLabel(a.reading, translate),
-      })),
+      })) : null,
     [agents]
   );
 
@@ -1455,6 +1457,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 与新建任务那个 composer 同一套装配(@@@composer-model-assembly);
         // 「哪几条现在切不了」由 sessionModelOptions 判,见 @@@session-options-disabled。
         modelOptions={sessionModelOptions}
+        modelUnknown={merged === undefined || !platformCatalog.known}
         selectedModel={composerSelectedOptionId({
           platformModel: runningPlatformModel,
           model: store.model,
@@ -1483,6 +1486,7 @@ const ComposerForStore = observer(function ComposerForStore({
         )}
         onPermissionModeChange={handleModeChange}
         agentOptions={agentOptions}
+        agentOptionsLoading={agentsReading.state === 'unknown'}
         selectedAgent={providerId ?? undefined}
         agentLocked
         onAgentChange={() => {}}
@@ -1691,7 +1695,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       ? sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)
       : undefined
   );
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const providerId = sessionStore?.data.providerId ?? null;
   // 上一轮被宿主的退出打断(开机收残记下的):停着时说明原因;兼容旧 error 记录,下一轮开工就不是了。
   const interruptedBy = sessionStore?.status === 'idle' || sessionStore?.status === 'error'

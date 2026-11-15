@@ -1,6 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
-import { matchQuery, useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useMutationState } from '@tanstack/react-query';
+import { useReplica } from '@/lib/replica';
 import { createElement, type ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -14,7 +15,7 @@ import {
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useLibraryHost, type LibraryAgentsRpc } from '@renderer/features/library/library-host';
-import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { queryView, refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import type {
   AgentInstallationStatus,
   AgentInstallError,
@@ -28,41 +29,18 @@ import type {
   InstallSourceVersions,
   SelectedSource,
 } from '@shared/core/agents/agent-payload';
-import { agentInstallationStatusUpdatedChannel } from '@shared/events/appEvents';
-import { events } from '@renderer/lib/ipc';
 import { useAgents } from './use-agents';
-
-/**
- * 最后一段是「哪台机器」(#6264 资源库可以切到别的机器):本机 `local`,别的机器 `remote:<id>`。
- * 进行中的装 / 升级也按它分 —— ❌ 本机正在装的那家,在 d22 的网格上转进度环。
- */
-function statusQueryKey(hostKey: string) {
-  return ['agents', 'status', hostKey] as const;
-}
+import { agentInstallationStatus, installSourceVersions, refreshAgentReadings } from './agent-replicas';
 
 function opKey(op: 'install' | 'update' | 'uninstall', hostKey: string) {
   return ['agents', op, hostKey] as const;
 }
 
-/** Prefix key for the per-registry version queries — matches every agent. */
-const INSTALL_SOURCE_VERSIONS_QUERY_KEY = ['agents', 'install-source-versions'] as const;
-
-/**
- * 渲染层里每一个「从安装状态派生」的查询都挂在这个前缀下。作废按它整体来，
- * ❌ 不要回到逐条列举 —— 见 invalidate() 上方那段。
- */
-const AGENT_DERIVED_QUERY_PREFIX = ['agents'] as const;
-
+/** The versions each install registry offers for an agent on the library's machine (`installSourceVersions`). */
 export function useInstallSourceVersions(id: string, enabled: boolean) {
-  const host = useLibraryHost();
-  return useQuery<InstallSourceVersions>({
-    queryKey: [...INSTALL_SOURCE_VERSIONS_QUERY_KEY, id, host.key],
-    queryFn: () => host.agents.getInstallSourceVersions(id),
-    retry: true,
-    retryDelay: attempt => Math.min(1000 * 2 ** attempt, 30_000),
-    enabled: enabled && host.remote?.online !== false,
-    staleTime: 30 * 60 * 1000,
-  });
+  const remote = useLibraryHost().remote;
+  const reading = useReplica(installSourceVersions, enabled ? [remote?.deviceId ?? null, id] : null, { read: remote?.online !== false });
+  return queryView<InstallSourceVersions>(reading);
 }
 
 /**
@@ -194,88 +172,34 @@ export function useAgentInstallProgress(
  * live-patched when the main process emits status changes.
  */
 export function useAgentInstallationStatuses() {
-  const queryClient = useQueryClient();
   const host = useLibraryHost();
   const agentsRpc = host.agents;
-  const key = statusQueryKey(host.key);
+  const machine = host.remote?.deviceId ?? null;
   // 装/更新的结果提示原本整条链都是硬编码英文,顶在中文界面上 —— owner 点名的就是这个。
   const { translate } = useSessionMessages();
 
-  const { data: agents } = useAgents();
+  const agents = useAgents();
   const agentNameMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const a of agents ?? []) map.set(a.id, a.name);
+    if (agents.state === 'value') for (const a of agents.value) map.set(a.id, a.name);
     return map;
   }, [agents]);
+  // A toast after the operation: the name when the list says it, the id otherwise (a toast has no slot to wait in).
   const nameOf = (id: string) => agentNameMap.get(id) ?? id;
 
-  // #6264 资源库 / 会话 / 新建框在别的机器上:问那台机器(见 library-host.ts);它离线时不问,手上有上次的就照旧画。
-  const query = useQuery<AgentInstallationStatus[]>({
-    queryKey: key,
-    queryFn: () => agentsRpc.listAgentInstallationStatus(),
-    retry: true,
-    retryDelay: attempt => Math.min(1000 * 2 ** attempt, 30_000),
-    enabled: host.remote?.online !== false,
-    staleTime: 30_000,
-  });
+  // #6264 资源库 / 会话 / 新建框在别的机器上:问那台机器;它离线时不问,手上有上次的就照旧画。
+  // This computer's statuses are patched by its push (agent-replicas.ts `wireAgentReadings`).
+  const reading = useReplica(agentInstallationStatus, [machine], { read: host.remote?.online !== false });
 
   /**
-   * 把「从安装状态派生的那一族缓存」一次作废。`keepStatus` 留给已经手工打准 status 的调用方。
-   * 这是这一族唯一知道成员是谁的地方 —— 见下方 invalidate() 上的那段账。
-   */
-  const invalidateDerived = (opts?: { keepStatus?: boolean; providerId?: string }) => {
-    void queryClient.invalidateQueries({
-      predicate: (q) =>
-        matchQuery({ queryKey: AGENT_DERIVED_QUERY_PREFIX }, q) && (!opts?.keepStatus || q.queryKey[1] !== 'status'),
-    });
-    // Auth/connection readings are the subscription replicas: re-read them on the host that completed the
-    // operation, including when the library has since switched hosts.
-    if (!opts?.keepStatus) void refreshSubscriptionReadings(host.remote?.deviceId ?? null, opts?.providerId);
-  };
-
-  // Live-patch cache from background events — the event is already a full DTO
-  useEffect(() => {
-    // 这条事件只说**本机**:资源库看的是别的机器时,❌ 拿它去打那台机器的缓存。
-    if (host.remote) return;
-    const stop = events.on(
-      agentInstallationStatusUpdatedChannel,
-      (event: AgentInstallationStatus) => {
-        queryClient.setQueryData<AgentInstallationStatus[]>(key, (prev) => {
-          if (!prev) return [event];
-          const existingIndex = prev.findIndex((s) => s.id === event.id);
-          if (existingIndex === -1) return [...prev, event];
-          return prev.map((s, index) => (index === existingIndex ? event : s));
-        });
-        // 事件已经把 status 那份**手工打准**了,所以这里只作废其余派生缓存 —— 连 status 一起
-        // 作废会立刻触发一次重取,把刚打的补丁又冲掉,等于白打。
-        invalidateDerived({ keepStatus: true });
-      },
-    );
-    return stop;
-  }, [host.key]);
-
-  /**
-   * 装完 / 卸完 / 重新检测之后，**所有从安装状态派生的缓存一次全作废**。
-   *
-   * 为什么按前缀，而不是一条条列：这个形状已经漏过四次，每次都是同一个症状——主进程那边
-   * 已经是新的，界面还捧着旧的，用户要么等 staleTime 过期、要么切走再切回、要么重启应用：
-   *   · #2802 漏了 `agents/metadata`（选择器一直挂「尚未安装」好几分钟）
-   *   · 漏了 `agents/install-source-versions`（点了「检查更新」，数字纹丝不动）
-   *   · #5605 漏了 `agents/modelCatalog`
-   *   · #5719 漏了 `agents/management`（资源库→智能体那张列表的「已安装/未安装」标签，
-   *     owner 真机实测：装完必须切换页面或重启才更新）
-   *
-   * 逐条列举要求每加一个派生缓存就记得回来补一行，而四次实证说明没人记得住。所以改成
-   * **按 `['agents', …]` 这个前缀整体作废** —— 渲染层每一个从安装状态派生的查询都在这个
-   * 前缀下（status / metadata / management / icons / modelCatalog / modelCredential /
-   * install-source-versions），于是「新加的派生缓存忘了登记」这一类 bug 归零，而不是
-   * 这次不复现。
-   *
-   * 代价可控：react-query 默认只**重新拉取挂着的查询**（refetchType: 'active'），
-   * 没在屏幕上的那些只是标脏，等下次用到再说。
+   * 装完 / 卸完 / 重新检测之后,从安装状态派生的那一族读数一起重读(`refreshAgentReadings` 是唯一列出成员的地方),
+   * 连同那台机器上的订阅 / 连接读数。
    */
   const invalidate = (providerId?: string) => {
-    invalidateDerived({ providerId });
+    void refreshAgentReadings(machine);
+    // Auth/connection readings are the subscription replicas: re-read them on the host that completed the
+    // operation, including when the library has since switched hosts.
+    void refreshSubscriptionReadings(machine, providerId);
   };
 
   /**
@@ -291,9 +215,10 @@ export function useAgentInstallationStatuses() {
    * 闭包捕获：`invalidate()` 只把数据标脏、不清空，所以这里读到的仍是命令跑之前那份枚举，
    * 正是要用来解释这次失败的那份。
    */
-  const installationsOf = (id: string): Installation[] | undefined =>
-    queryClient.getQueryData<AgentInstallationStatus[]>(key)?.find((s) => s.id === id)
-      ?.installations;
+  const installationsOf = (id: string): Installation[] | undefined => {
+    const statuses = agentInstallationStatus.peek(machine);
+    return statuses.state === 'value' ? statuses.value.find((s) => s.id === id)?.installations : undefined;
+  };
 
   const failureToast = (title: string, description: ReactNode) =>
     toast({ title, description, variant: 'destructive' });
@@ -416,7 +341,8 @@ export function useAgentInstallationStatuses() {
   });
 
   return {
-    ...query,
+    ...queryView(reading),
+    reading,
     install: installMutation.mutate,
     installAsync: installMutation.mutateAsync,
     update: updateMutation.mutate,

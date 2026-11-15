@@ -48,7 +48,9 @@ vi.mock('@renderer/features/sessions/new-session-page', () => ({
   },
 }));
 vi.mock('@renderer/features/sessions/composer-verb-tag', () => ({ composerVerbLook: (tone: string) => ({ tone, tag: () => null }) }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: io.agents }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({
+  useAgents: () => (io.agents ? { state: 'value', value: io.agents, stale: false, error: null } : { state: 'unknown' }),
+}));
 vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useAgentInstallationStatuses: () => ({ data: io.statuses }),
   useInstallingAgents: () => io.installing,

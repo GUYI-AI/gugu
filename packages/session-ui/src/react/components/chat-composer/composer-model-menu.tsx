@@ -254,6 +254,11 @@ export interface ComposerModelMenuProps {
   triggerTitle?: string;
   modelItems: ComposerModelItem[];
   selectedModel?: string;
+  /**
+   * The model options are not read yet (a catalog still on its way): the trigger holds the model name's place with a
+   * neutral slot (@@@unknown-slot), ❌ the literal "Model" that a name then replaces.
+   */
+  modelUnknown?: boolean;
   onModelChange?: (modelId: string) => void;
   /**
    * 宿主要把模型面板打开(例如「这个模型要会员」那一行上的「换模型」,#7056)。每变一次开一次;0 / 缺省 = 不开。
@@ -277,12 +282,19 @@ export interface ComposerModelMenuProps {
   defaultEffort?: string;
 }
 
+/** The model name's place while the options are unknown: one line tall, a short name wide (@@@unknown-slot). */
+const UNKNOWN_MODEL_NAME = {
+  display: 'inline-block', width: '5em', height: '1lh', verticalAlign: 'top',
+  borderRadius: 'var(--radius-control)', background: 'var(--muted)',
+} as const;
+
 export function ComposerModelMenu({
   panel,
   disabled = false,
   triggerTitle,
   modelItems,
   selectedModel,
+  modelUnknown = false,
   onModelChange,
   openRequest,
   settingNotice,
@@ -545,6 +557,8 @@ export function ComposerModelMenu({
                   selectedModelItem.shortName ?? selectedModelItem.name,
                   modelItems.map((m) => m.shortName ?? m.name)
                 )
+              : modelUnknown
+              ? <span aria-busy="true" data-unknown="" className="gg-unknown" style={UNKNOWN_MODEL_NAME} />
               : translate('composer.model')}
           </span>
           {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;

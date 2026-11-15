@@ -25,7 +25,7 @@ vi.mock('@/components/chat/useAgentsOnCloudComputer', () => ({ useShownAgentStat
 vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: (_id: unknown, _device: unknown, pick: (summary: undefined) => unknown) => pick(undefined) }));
 vi.mock('@renderer/features/automations/use-session-schedules', () => ({ useSessionSchedules: () => [] }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
-  useAgents: () => ({ data: [{ id: 'claude', name: 'Claude Code', capabilities: { hooks: { kind: 'native' }, sessions: { fork: [] } } }] }),
+  useAgents: () => ({ state: 'value', stale: false, error: null, value: [{ id: 'claude', name: 'Claude Code', capabilities: { hooks: { kind: 'native' }, sessions: { fork: [] } } }] }),
 }));
 vi.mock('@renderer/lib/components/agent-icon', () => ({ AgentIcon: ({ id }: { id: string }) => <span data-harness-icon={id} /> }));
 vi.mock('./sidebar-session-title', () => ({ SidebarSessionTitle: ({ title }: { title: string }) => <span>{title}</span> }));

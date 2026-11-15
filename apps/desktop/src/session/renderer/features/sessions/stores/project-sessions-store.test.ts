@@ -44,10 +44,6 @@ vi.mock('@renderer/lib/ipc', () => {
     on: vi.fn(() => () => {}),
   },
   rpc: {
-    // project-sessions-store 建任务时读这份清单拿 hooks kind(#6206 状态源判据的输入)。
-    agents: {
-      list: vi.fn(async () => [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }]),
-    },
     sessions: {
       getSessionsForProject: mocks.getSessionsForProject,
     },
@@ -65,6 +61,11 @@ vi.mock('@renderer/lib/ipc', () => {
   // 本机(null)那条线就是 events.on;测试里的项目都在本机。
   return { ...ipc, onMachineEvent: (_machine: unknown, event: never, cb: never) => (ipc.events.on as (...args: unknown[]) => () => void)(event, cb) };
 });
+
+// project-sessions-store 建任务时读 agent 名单拿 hooks kind(#6206 状态源判据的输入)。
+vi.mock('@renderer/lib/stores/agent-replicas', () => ({
+  agentsMetadata: { fetch: vi.fn(async () => [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }]) },
+}));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
   getProjectManagerStore: mocks.getProjectManagerStore,

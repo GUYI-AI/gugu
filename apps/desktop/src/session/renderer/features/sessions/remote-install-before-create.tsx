@@ -73,7 +73,8 @@ export function useRemoteInstallBeforeCreate(
   providerId: string | null | undefined
 ): { beforeCreate: (() => Promise<void>) | undefined; note: ReactElement | null } {
   const { translate } = useSessionMessages();
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const agent = agents?.find((candidate) => candidate.id === providerId) ?? null;
   const [remoteInstall, setRemoteInstall] = useState<RemoteInstall | null>(null);
   const beforeCreate =
