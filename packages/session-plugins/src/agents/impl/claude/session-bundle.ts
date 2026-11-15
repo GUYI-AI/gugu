@@ -610,7 +610,7 @@ function report(
     units: {
       mcp: loaded(),
       env: loaded(),
-      model: bundle.model
+      model: bundle.model?.model
         ? loaded()
         : { status: 'degraded', reason: { code: 'unverified', reason: 'No model was declared.' } },
       autonomy: { status: 'degraded', reason: degradedAutonomy },

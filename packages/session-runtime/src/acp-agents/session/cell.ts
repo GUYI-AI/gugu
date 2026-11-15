@@ -1132,6 +1132,9 @@ export class SessionCell {
         message: `Provider '${this.deps.providerId}' did not declare a live ${dimension} setting`,
       }));
     }
+    if (dimension === 'fast' && !configId) {
+      return Promise.resolve(fail({ name: 'FastModeUnavailable', message: 'The current model does not expose Fast' }));
+    }
     const turnToWait = this.activeTurnCompletion;
     if (turnToWait && !startupOnly && capability.busy === 'reject') {
       return Promise.resolve(fail({
@@ -1166,6 +1169,16 @@ export class SessionCell {
       }
       const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail);
       if (!result.success) {
+        // A rejected enable has no toggle path back to an already displayed Off value.
+        // Confirm Off once through the same native authority so a failed optional speed
+        // choice cannot strand the next user turn or leave an unconfirmed premium tier.
+        if (dimension === 'fast' && value === 'on') {
+          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail);
+          if (off.success && off.data.status === 'applied') {
+            this.settingsBlockedReasons.delete(dimension);
+            return result;
+          }
+        }
         // The provider's own sentence (`data.details`), not the JSON-RPC envelope's "Internal error".
         const causeMessage = 'cause' in result.error ? errorDetail(result.error.cause)?.split('\n')[0] : undefined;
         this.settingsBlockedReasons.set(dimension, causeMessage ?? result.error.message ?? `Unable to apply ${dimension}`);

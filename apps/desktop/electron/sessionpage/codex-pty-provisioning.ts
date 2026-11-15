@@ -112,6 +112,8 @@ export interface CodexPtyStartInfo {
    *  ❌ 别改成从 baseArgs 里反解:那是「重建 provider 命令」,会话页后端一改 flag 就漂(钩子契约自己写着)。 */
   model?: string | null
   effort?: string | null
+  /** Validated native Fast tier for this initial thread; absent means standard. */
+  serviceTier?: 'priority' | 'default'
   /** Composer permission tier, carried separately because the divert replaces provider argv. */
   permissionMode?: GuguPermissionMode
   /**
@@ -308,6 +310,7 @@ async function provisionAndOverrideOnce(
         dialect: 'codex-config-flags',
         model: info.model ?? undefined,
         reasoningEffort: info.effort ?? undefined,
+        serviceTier: info.serviceTier ?? 'default',
       },
       { permissionMode: resolveSessionPermissionMode(info) },
       !resumeThreadId,

@@ -187,7 +187,7 @@ export async function setSessionOption(input: {
   if (input.dimension === 'fast' || options.fast) {
     if (!(await (ops.canUseFast ?? defaultIo.canUseFast!)(input.conversationId))) {
       options.fast = null;
-      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', 'Fast is unavailable for this billing route');
+      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', 'Fast 模式目前只支持使用自己的厂商账号');
     }
   }
   if (input.dimension === 'fast' && input.value === 'off' && !options.fast) {

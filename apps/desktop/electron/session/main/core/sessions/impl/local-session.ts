@@ -664,6 +664,7 @@ export class LocalSessionProvider implements SessionProvider {
         model: session.model ?? undefined,
         effort: launchEffort ?? undefined,
         fastMode: platformModelForSpawn === null && session.fastMode === true,
+        userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),
         permissionMode,
         // @@@2503 composer 选的模型来源(平台 / harness),按会话记的那条。存量会话没有记录 →
         // undefined,宿主照旧回退 agent 级配置。

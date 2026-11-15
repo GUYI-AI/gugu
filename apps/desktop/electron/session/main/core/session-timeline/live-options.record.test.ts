@@ -60,7 +60,7 @@ describe('手机改选项:确认生效才写回记录', () => {
 
   it('rejects Fast before applying it when the billing route is not eligible', async () => {
     useIo({ status: 'applied', effectiveValue: 'on' });
-    await expect(setSessionOption({ conversationId: 'c1', dimension: 'fast', value: 'on' })).rejects.toThrow(/billing route/);
+    await expect(setSessionOption({ conversationId: 'c1', dimension: 'fast', value: 'on' })).rejects.toThrow(/自己的厂商账号/);
     expect(mocks.record).not.toHaveBeenCalled();
   });
 
