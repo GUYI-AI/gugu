@@ -28,6 +28,8 @@ function fakeCloud() {
   const notices = []
   const inboxRows = []
   const devices = []
+  const rooms = []
+  const memberships = []
   const users = [{ id: agentId, type: 'agent', owner_user_id: ownerId, device_id: deviceId, display_name: '手机 Agent', desired_status: 'online' }, { id: ownerId, type: 'human', display_name: '主人' }]
   let provision
   const identity = {
@@ -48,8 +50,9 @@ function fakeCloud() {
           if (patch) { calls.push(['update_device', { patch, filters }]); for (const device of matching) Object.assign(device, patch) }
           return { data: matching, error: null }
         }
-        if (table === 'chats') return { data: [{ id: groupId, kind: 'group', status: 'active' }], error: null }
-        if (table === 'active_members') return { data: [], error: null }
+        if (table === 'users') return { data: users.filter((entry) => filters.every(([key, value]) => entry[key] === value)), error: null }
+        if (table === 'chats') return { data: rooms.length ? rooms.filter((entry) => filters.every(([key, value]) => entry[key] === value)) : [{ id: groupId, kind: 'group', status: 'active' }], error: null }
+        if (table === 'active_members') return { data: memberships.filter((entry) => filters.every(([key, value]) => entry[key] === value)), error: null }
         if (table === 'agent_provisions') return { data: provision, error: null }
         if (table === 'gugu_device_commands') {
           const matching = commands.filter((command) => filters.every(([key, value]) => command[key] === value))
@@ -109,14 +112,17 @@ function fakeCloud() {
       if (name === 'complete_agent_provision') { assert.equal(provision.phase, 'ready'); provision.phase = 'completed'; return { already: false } }
       if (name === 'pull_agent_inbox_v2') return inboxRows
       if (name === 'mark_read_on_deliver') { inboxRows.splice(inboxRows.findIndex((row) => row.id === args.p_message_id), 1); return {} }
-      if (name === 'chat_facts') return [{ kind: 'dm', group_prompt: null, source_chat_id: null }]
+      if (name === 'chat_facts') return rooms.length ? rooms.filter((entry) => entry.id === args.p_chat_id) : [{ kind: 'dm', group_prompt: null, source_chat_id: null }]
       if (name === 'list_member_ids') return [{ user_id: agentId }, { user_id: ownerId }]
-      if (name === 'add_group_agent') return { chat_id: args.p_chat_id, status: 'pending_approval' }
-      if (name === 'send_message_idempotent') { if (!messages.some((message) => message.p_message_id === args.p_message_id)) messages.push(args); return [{ id: args.p_message_id }] }
+      if (name === 'add_group_agent') {
+        if (rooms.length) memberships.push({ chat_id: args.p_chat_id, user_id: args.p_agent_user_id })
+        return { chat_id: args.p_chat_id, status: rooms.length ? 'joined' : 'pending_approval' }
+      }
+      if (name === 'send_message_idempotent') { if (!messages.some((message) => message.p_message_id === args.p_message_id)) messages.push(args); return [{ id: args.p_message_id, chat_id: args.p_chat_id }] }
       throw new Error(`unexpected ${schema} RPC ${name}`)
     },
   }
-  return { cloud, commands, calls, messages, notices, inboxRows, devices, users }
+  return { cloud, commands, calls, messages, notices, inboxRows, devices, users, rooms, memberships }
 }
 
 async function fixture(runTurn, { nativeCall = async () => ({ ok: true }), cancelTurn = () => true, actionFactory = async () => ({ tools: () => [], confirmationForMessage: () => null, cancel: async () => undefined }), prepare = async () => undefined, onRpcStart = () => undefined, onSessionReply = () => undefined, preparationOptions = {} } = {}) {
@@ -914,6 +920,42 @@ test('revoking OS permission after a successful phone read prevents data from re
     assert.equal(typeof report.p_last_action_at, 'string')
     assert.equal(report.p_agent_status, 'error')
   } finally { releaseActionReports(); await fx.close() }
+})
+
+test('native topic task creation returns its card and the first reply quotes it in the topic with only source membership', async () => {
+  const topicId = '128eeed9-54db-415f-9e6e-12d76126d265'
+  let firstTurn
+  const fx = await fixture(async (command, hooks) => {
+    firstTurn = command
+    assert.match(command.prompt, /route="chat"/)
+    assert.match(command.prompt, /chat_kind="topic"/)
+    const source = command.prompt.match(/msg="(msg:[^"]+)/)[1]
+    await hooks.extraTools.find((tool) => tool.name === 'message_send').execute('topic-first-reply', {
+      chat_id: topicId, reply_to_message_id: source, to_user_ids: [`user:${ownerId}`], text: 'Topic task completed',
+    })
+    return { status: 'done', text: '[NO_REPLY]' }
+  }, { prepare: async ({ rooms }) => {
+    rooms.push({ id: groupId, kind: 'group', status: 'active', group_prompt: null },
+      { id: topicId, kind: 'topic', status: 'active', public_id: 225457, source_chat_id: groupId, group_prompt: null })
+  } })
+  try {
+    const args = [{ harness: 'pi', model: 'platform:free', chatId: groupId, taskChatId: topicId, prompt: 'Complete this topic task', clientRequestId: randomUUID() }]
+    const created = await fx.host.invoke('sessionTimeline.sessionCreate', args, randomUUID())
+    assert.ok(created.taskMessageId)
+    assert.equal(created.birthGroup.status, 'joined')
+    await until(() => fx.messages.some((message) => message.p_sender_user_id === agentId), fx.events)
+    await until(() => fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    assert.equal(firstTurn.sessionId, created.conversationId)
+    assert.deepEqual(fx.memberships, [{ chat_id: groupId, user_id: agentId }])
+    const card = fx.messages.find((message) => message.p_content_type === 'card')
+    const reply = fx.messages.find((message) => message.p_sender_user_id === agentId)
+    assert.equal(card.p_message_id, created.taskMessageId)
+    assert.equal(card.p_chat_id, topicId)
+    assert.equal(reply.p_chat_id, topicId)
+    assert.equal(reply.p_reply_to_message_id, card.p_message_id)
+    assert.equal((await fx.host.invoke('sessionTimeline.sessionCreate', args, randomUUID())).taskMessageId, created.taskMessageId)
+    assert.equal(fx.messages.length, 2)
+  } finally { await fx.close() }
 })
 
 test('native hostCall creation reuses clientRequestId across transports and reports a real pending group approval', async () => {
