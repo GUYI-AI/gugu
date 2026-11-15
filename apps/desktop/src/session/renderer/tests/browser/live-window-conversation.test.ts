@@ -8,13 +8,13 @@ const context = { conversationId: 'chat', deviceId: 'device', sessionId: 'sessio
 const source: LiveWindowResourceDescriptor = { id: 'page', type: 'task-page', sessionId: 'session', title: 'Actual page', size: { width: 640, height: 480 } };
 let conversation: LiveWindowConversation | undefined;
 afterEach(() => { conversation?.dispose(); conversation = undefined; document.body.replaceChildren(); });
-function setup() {
+function setup(descriptor: LiveWindowResourceDescriptor = source) {
   let emit: (watch: string, packet: ProjectionHostPacket) => void = () => {};
   let watch = '';
   const unwatch = vi.fn(async () => {}), report = vi.fn(), send = vi.fn(async () => {});
   const watched = vi.fn(async (args: { watchId: string }) => { watch = args.watchId; });
   const transport: LiveWindowTransport = {
-    list: vi.fn(async () => [source]), observe: vi.fn(async () => () => {}),
+    list: vi.fn(async () => [descriptor]), observe: vi.fn(async () => () => {}),
     picture: () => ({ projection: {
       create: vi.fn(), publish: vi.fn(), close: vi.fn(), closed: vi.fn(), inputResult: vi.fn(), send, unwatch,
       watch: watched,
@@ -61,6 +61,41 @@ describe('live conversation picture lifetime', () => {
     expect(image.src).toBe(last); expect(image.isConnected).toBe(true);
     expect(s.current.picture('page')!.querySelector('textarea')!.disabled).toBe(true);
     s.current.dispose(); expect(image.isConnected).toBe(false); expect(s.report).not.toHaveBeenCalled();
+  });
+  it('keeps the last Computer frame when a resumed watch ends before painting and the picture moves into a tab', async () => {
+    const s = setup({ ...source, type: 'app-projection', appId: 'computer-use', appVersion: '0.5.1' });
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    const picture = s.current.picture('page')!; document.body.append(picture);
+    await s.paint(1); const last = picture.querySelector('img')!.src;
+    s.current.setOperating(false);
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
+    s.current.setOperating(true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
+    s.current.setOperating(false);
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(2));
+    s.current.model.dispatch({ type: 'enlarge' }); s.current.model.dispatch({ type: 'show-tab' });
+    const tab = document.createElement('div'); document.body.append(tab); tab.append(picture);
+    expect(picture.querySelector('img')!.src === last).toBe(true);
+    expect(picture.querySelectorAll('img')).toHaveLength(1);
+    expect(picture.querySelector('textarea')!.disabled).toBe(true);
+    expect(s.report).not.toHaveBeenCalled();
+  });
+  it('replaces a frozen Computer picture only when the resumed watch has painted its new frame', async () => {
+    const s = setup({ ...source, type: 'app-projection', appId: 'computer-use', appVersion: '0.5.1' });
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    const picture = s.current.picture('page')!; document.body.append(picture);
+    await s.paint(1); const last = picture.querySelector('img')!.src;
+    s.current.setOperating(false);
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
+    s.current.setOperating(true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
+    expect(picture.querySelector('img')!.src === last).toBe(true);
+    await s.paint(2);
+    expect(picture.querySelectorAll('img')).toHaveLength(1);
+    expect(picture.querySelector('img')!.src === last).toBe(false);
+    expect(s.report).not.toHaveBeenCalled();
   });
   it('does not let a delayed read from the previous visibility overwrite a newly opened conversation', async () => {
     const s = setup(); const first = Promise.withResolvers<readonly LiveWindowResourceDescriptor[]>();

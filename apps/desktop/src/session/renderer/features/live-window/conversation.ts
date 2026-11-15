@@ -11,6 +11,7 @@ type Picture = {
   present: boolean;
   epoch: number;
   view: Awaited<ReturnType<typeof mountProjection>> | null;
+  viewPainted: boolean;
   opening: Promise<void> | null;
   frozenView: Awaited<ReturnType<typeof mountProjection>> | null;
 };
@@ -87,7 +88,7 @@ export class LiveWindowConversation {
             picture = { descriptor, source: { id: descriptor.id, kind: descriptor.type === 'task-page' ? 'browser' : 'computer',
               deviceId: this.context.deviceId, sessionId: this.context.sessionId, agentId: this.context.agentId,
               title: descriptor.title, size: descriptor.size, status: 'finished' },
-              element, present: true, epoch: 0, view: null, opening: null, frozenView: null };
+              element, present: true, epoch: 0, view: null, viewPainted: false, opening: null, frozenView: null };
             this.pictures.set(descriptor.id, picture);
           }
           picture.present = true; picture.descriptor = descriptor;
@@ -126,21 +127,38 @@ export class LiveWindowConversation {
         picture.source = { ...picture.source, title: page.title }; this.publish();
       });
       picture.opening = (async () => {
-        const previous = picture.frozenView; picture.frozenView = null;
-        if (previous) await previous.close();
-        const view = await mountProjection(host, picture.element, picture.descriptor.id, {
+        const previous = picture.frozenView;
+        const next = document.createElement('div');
+        next.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;visibility:hidden';
+        picture.element.append(next);
+        let painted = false;
+        picture.viewPainted = false;
+        let mounted: Awaited<ReturnType<typeof mountProjection>>;
+        try { mounted = await mountProjection(host, next, picture.descriptor.id, {
           interactive: false,
           localTouchViewing: this.model.platform === 'phone' && picture.source.kind === 'computer',
           painted: frame => {
             if (frame && !this.disposed && epoch === picture.epoch) {
+              if (!painted) {
+                painted = picture.viewPainted = true;
+                next.style.visibility = '';
+                picture.element.replaceChildren(next);
+                if (picture.frozenView === previous) picture.frozenView = null;
+                void previous?.close().catch(this.report);
+              }
               picture.source = { ...picture.source, size: { width: frame.width, height: frame.height } };
               this.publish();
             }
           },
           error: error => { if (!this.disposed && epoch === picture.epoch) this.report(error); },
-        });
+        }); } catch (error) { next.remove(); throw error; }
+        const view = { ...mounted, close: async () => { try { await mounted.close(); } finally { next.remove(); } } };
         if (this.disposed) { await view.close(); return; }
-        if (epoch !== picture.epoch || !this.context.shown || !this.operating) { picture.frozenView = view; await view.freeze(); return; }
+        if (epoch !== picture.epoch || !this.context.shown || !this.operating) {
+          if (painted) { picture.frozenView = view; await view.freeze(); }
+          else await view.close();
+          return;
+        }
         picture.view = view; this.inputState();
       })().catch(error => { if (!this.disposed && epoch === picture.epoch) this.report(error); }).finally(() => { picture.opening = null;
         if (!this.disposed && this.context.shown && this.operating && picture.present && epoch !== picture.epoch) this.startPictures();
@@ -162,9 +180,11 @@ export class LiveWindowConversation {
     picture.epoch++;
     const view = picture.view; picture.view = null;
     if (view) {
-      void view.freeze().catch(this.report);
-      // Retain the decoded image. Only a later operation or disposal removes this frozen surface.
-      picture.frozenView = view;
+      if (picture.viewPainted) {
+        void view.freeze().catch(this.report);
+        // A new watch replaces this surface only after it has actually painted a newer frame.
+        picture.frozenView = view;
+      } else void view.close().catch(this.report);
     }
   }
   dispose(): void {
