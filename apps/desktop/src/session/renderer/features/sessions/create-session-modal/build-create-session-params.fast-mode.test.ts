@@ -4,7 +4,7 @@ import { buildInitialSession } from './build-create-session-params';
 
 function draft(fastMode?: boolean, platformModel: string | null = null): InitialSessionState {
   return { provider: 'codex', sessionView: 'general', prompt: 'A short task', attachments: [],
-    permissionMode: 'default', model: 'native-model', effort: 'medium', platformModel, fastMode } as InitialSessionState;
+    permissionMode: 'edit', model: 'native-model', effort: 'medium', platformModel, fastMode } as InitialSessionState;
 }
 
 describe('new task Fast intent', () => {
