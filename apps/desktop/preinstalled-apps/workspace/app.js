@@ -3297,6 +3297,7 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   if (!cited) return
   try {
     await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
+    if (!whole) dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
@@ -3311,13 +3312,16 @@ async function send(current = state.current, picks = state.picks) {
   if (!cited || !at) return
   try {
     const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
-    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') {
-      document.getSelection()?.removeAllRanges()
-      showSelection([], null)
-    }
+    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// Cited or sent, the words are on their way: the selection and its bar go, as after a copy into somewhere else.
+function dropSelection() {
+  document.getSelection()?.removeAllRanges()
+  showSelection([], null)
 }
 
 // What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
