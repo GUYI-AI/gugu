@@ -1,3 +1,4 @@
+import { columnAgents, standaloneAgentAnchor } from './inner-sidebar-column';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import { motion } from 'framer-motion';
 import { observable, runInAction } from 'mobx';
@@ -44,7 +45,6 @@ import {
   openSessionAncestors,
   myAgentsInChat,
   subAgentsOf,
-  type AgentFamilies,
   type ChatAgentEntry,
 } from './chat-agents';
 import {
@@ -84,32 +84,6 @@ import { SidebarSessionItem } from './sidebar-session-item';
 // 智能体行是任务区那一行(SidebarSessionItem,行首换成 agent 自己的头像:agentAvatar),话题行由壳画进「话题」那一格(components/ChatListSlotHost.tsx →
 // InnerSidebarTopics,同一个动作行的样子)。这一列里 ❌ 找的框:找东西用列表顶上那个搜索(开着群时先搜这个群,sidebar-search-trigger)。
 // 这一列可以收起(inner-sidebar-fold):收起是全局的,正文左上角浮出展开钮(InnerSidebarRestore)。
-
-/**
- * 这一列「智能体」里的那些:群 / 项目里我的智能体,或一个独立智能体的子智能体(#2574;一个列表不再把它画成自己一行,
- * 这一列也就不在了)。
- */
-function columnAgents(
-  anchor: InnerSidebarAnchor,
-  families: AgentFamilies,
-  summaries: ReadonlyMap<string, ChatSummary>,
-  agentRows: OneListAgentRows | null
-): ChatAgentEntry[] {
-  if (anchor.kind !== 'agent') return myAgentsInChat(families.entries, chatScope(anchor, summaries));
-  return agentRows?.get(anchor.agentUserId)?.chatId === anchor.chatId ? subAgentsOf(families, anchor.agentUserId) : [];
-}
-
-/**
- * #2574 这条会话开出来的那个独立智能体的一列:这条会话是它自己的一条顶层会话(❌ 它挂在别人树下的分身)、一个列表把它画成了
- * 自己一行(OneListAgentRows:「有自己一行」只有列表那一份判法,❌ 这里再推一遍)、它至少有一个子智能体;否则 null(照今天的样子开)。
- */
-function standaloneAgentAnchor(sessionId: string, families: AgentFamilies, agentRows: OneListAgentRows | null): InnerSidebarAgentAnchor | null {
-  const entry = families.byId.get(sessionId);
-  const agentUserId = entry && !entry.parentSessionId ? entry.agentUserId : undefined;
-  const row = agentUserId ? agentRows?.get(agentUserId) : undefined;
-  if (!agentUserId || !row || subAgentsOf(families, agentUserId).length === 0) return null;
-  return { kind: 'agent', chatId: row.chatId, agentUserId };
-}
 
 /** 导航此刻在哪(读成内层侧栏要的样子)。 */
 function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarView {

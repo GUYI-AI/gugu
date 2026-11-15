@@ -1,3 +1,4 @@
+import { openPhoneSidebarSession } from './phone-sidebar-navigation'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
@@ -58,7 +59,7 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
           selected={topic.chat_id === current?.chatId} id={topic.chat_id} onClick={() => choose(topic)} />)}
       </div> : view === 'agents' ? <>
         {agents.map(profile => <RoomAgentChoice key={profile.id} profile={profile} userId={userId} opener={profileOpener}
-          onOpen={onOpenAgent ? target => { setView(null); onOpenAgent(target) } : undefined} />)}
+          onOpen={onOpenAgent ? target => { setView(null); if (!target.session || !openPhoneSidebarSession(target.session.sessionId, `chat:${chatId}`)) onOpenAgent(target) } : undefined} />)}
         {roster.failed ? <div role="alert" className="gg-phone-room-empty">{t('failed')} <Button variant="ghost" size="sm" onClick={roster.retry}>{t('retry')}</Button></div>
           : !roster.ready ? <p role="status" className="gg-phone-room-empty">{t('loading')}</p>
             : agents.length === 0 && <p className="gg-phone-room-empty">{t('noAgents')}</p>}

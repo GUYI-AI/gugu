@@ -1,3 +1,4 @@
+import { PhoneSessionSidebarControls } from '../chat/PhoneSessionSidebarControls'
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
@@ -72,6 +73,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   firstPrompt,
   draft,
   initialAppKind,
+  innerSidebarEntry,
   local = false,
   cleanedRecord = false,
   appPanel = false,
@@ -83,6 +85,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   firstPrompt?: FirstPrompt
   draft?: { text: string }
   initialAppKind?: string
+  innerSidebarEntry?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
   /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
@@ -277,6 +280,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
+          composerControls={mobile && !appPanel ? <PhoneSessionSidebarControls sessionId={session.conversationId} entry={innerSidebarEntry ?? null} /> : null}
           agentName={shownName}
           agentUserId={agentUserId}
           harness={session.harness}

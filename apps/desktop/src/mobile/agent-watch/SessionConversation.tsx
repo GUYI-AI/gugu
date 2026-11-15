@@ -77,7 +77,7 @@ import { rendererLogger } from '@/lib/log'
 /** The phone supplies session data and RPC actions to the same project conversation UI. */
 export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
-  onStop, stopping, footerNotice, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
+  onStop, stopping, footerNotice, composerControls, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
   historyReady = true, historyCursor, queueReady = false, unseen = false,
 }: {
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
@@ -96,7 +96,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
-  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
+  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
   onAtBottom?: () => void; onLoadToolImage?: (itemId: string, index: number) => Promise<void>; emptyNote?: ReactNode
   historyReady?: boolean; historyCursor?: number | null
   /** A live foreground snapshot, not a cached/offline history window. */
@@ -378,6 +378,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     {phoneHost ? <PhoneTaskDraftRecovery deviceId={deviceId} sessionId={sessionId} composer={recoveryComposer} sending={sending} /> : null}
     {queue.error ? <div role="alert">{queue.error}</div> : null}
     <input ref={input} type="file" hidden multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+    {composerControls}
     <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel ? {} : lockedHarness(harness))}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
       ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}
@@ -389,7 +390,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
       attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
-      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
+      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={!mobile && appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}

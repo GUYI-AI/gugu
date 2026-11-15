@@ -1,7 +1,7 @@
 import type { GitChange } from '@gugu/session-core/git';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { GrowingList } from '@gugu/session-ui/react/growing-list';
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from '@/lib/icons'
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   buildNestedVisibleRows,
   isChainExpanded,
@@ -39,7 +39,6 @@ export function VirtualizedChangesTree({
   activePath,
   className,
 }: VirtualizedChangesTreeProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
 
   const tree = useMemo(() => buildChangesTree(changes, rootPath), [changes, rootPath]);
@@ -68,30 +67,18 @@ export function VirtualizedChangesTree({
     });
   }, []);
 
-  const virtualizer = useVirtualizer({
-    count: visibleRows.length,
-    gap: 2,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ITEM_HEIGHT,
-    overscan: 5,
-  });
-
   return (
-    <div
-      ref={parentRef}
+    <GrowingList
       className={cn('h-full overflow-y-auto overflow-x-hidden py-2 px-1', className)}
-    >
-      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const row = visibleRows[virtualItem.index]!;
+      count={visibleRows.length}
+      getKey={(index) => `${visibleRows[index]!.node.type}:${visibleRows[index]!.node.path}`}
+      gap={2}
+      estimateSize={() => ITEM_HEIGHT}
+      overscan={5}
+      renderLine={(index) => {
+          const row = visibleRows[index]!;
           const node = row.node;
-          const style: React.CSSProperties = {
-            position: 'absolute',
-            top: virtualItem.start,
-            left: 0,
-            width: '100%',
-            height: ITEM_HEIGHT,
-          };
+          const style: React.CSSProperties = { height: ITEM_HEIGHT };
           if (node.type === 'directory') {
             const expanded = isChainExpanded(row.chain, expandedPaths);
             return (
@@ -120,9 +107,8 @@ export function VirtualizedChangesTree({
               style={style}
             />
           );
-        })}
-      </div>
-    </div>
+      }}
+    />
   );
 }
 
