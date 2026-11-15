@@ -1274,22 +1274,51 @@ export const modelEffortReset = style({
 });
 
 export const modelEffortAxis = style({
-  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
   boxSizing: 'border-box',
-  selectors: { '&[data-fast-mode]': { paddingInlineEnd: '1.125rem' } },
 });
 
 export const modelFastMode = style([modelEffortReset, {
-  position: 'absolute',
-  insetInlineEnd: '-0.375rem',
-  top: '-0.25rem',
+  flexShrink: 0,
+  width: 'auto',
+  height: '1.5rem',
+  borderRadius: tokenVars.radiusFull,
   margin: 0,
   cursor: 'pointer',
   selectors: {
     '&[aria-pressed="true"]': { color: 'var(--live)' },
+    '&[data-phone-fast]': { height: '2.75rem' },
+    '&:hover': { backgroundColor: 'transparent' },
     '&:disabled': { cursor: 'default' },
   },
 }]);
+
+/** Owner-approved Fast capsule dimensions; its phone hit area stays outside the visible pill. */
+export const modelFastModePill = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '0.25rem',
+  boxSizing: 'border-box',
+  height: '1.5rem',
+  paddingInline: '0.5rem',
+  border: `1px solid ${vars.borderPrimary}`,
+  borderRadius: tokenVars.radiusFull,
+  color: vars.foregroundMuted,
+  fontSize: '0.75rem',
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  selectors: {
+    [`${modelFastMode}[data-phone-fast] &`]: { height: '2rem', paddingInline: '0.75rem', fontSize: '0.8125rem' },
+    [`${modelFastMode}[aria-pressed="true"] &`]: {
+      color: 'var(--live)',
+      backgroundColor: 'color-mix(in srgb, var(--live) 18%, transparent)',
+      borderColor: 'transparent',
+    },
+  },
+});
 
 /** 圆钮比轨道大,需要一道投影把自己托起来。这是这颗控件唯一的投影,别再往别处加。 */
 const EFFORT_THUMB_LIFT = 'var(--shadow-lift)';
@@ -1347,6 +1376,7 @@ const EFFORT_THUMB_PRESS_SCALE = 1.143;
 export const modelEffortSlider = style({
   display: 'block',
   width: '100%',
+  minWidth: 0,
   vars: {
     [EFFORT_THUMB_VAR]: '1rem',
     // 位置过渡默认**关**:Base UI 头两帧还没量出圆钮宽度、位置是 0,

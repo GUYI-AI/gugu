@@ -42,6 +42,9 @@ async function renderMenu(props: Parameters<typeof Fixture>[0] = {}) {
   root.render(<Fixture {...props} />)
   await page.getByTestId('composer-model-trigger').click()
   await until('thinking slider mounted', () => document.querySelector('[data-slot="composer-effort-indicator"]') != null)
+  const panel = document.querySelector<HTMLElement>('[data-slot="combobox-content"]')!
+  await until('model menu entered', () => !panel.hasAttribute('data-starting-style'))
+  await Promise.all(panel.getAnimations().map(animation => animation.finished))
 }
 
 describe('Fast in the real thinking menu', () => {
@@ -92,7 +95,11 @@ describe('Fast in the real thinking menu', () => {
     const track = document.querySelector<HTMLElement>('[data-slot="composer-effort-indicator"]')!.parentElement!
     const trackBox = track.getBoundingClientRect(), buttonBox = fast()!.getBoundingClientRect()
     expect(Math.abs(trackBox.y + trackBox.height / 2 - buttonBox.y - buttonBox.height / 2)).toBeLessThan(1)
-    expect(buttonBox.x).toBeGreaterThanOrEqual(trackBox.right - 1)
+    expect(Math.abs(buttonBox.x - trackBox.right - 8)).toBeLessThan(0.5)
+    expect(buttonBox.height).toBe(24)
+    expect(fast()!.firstElementChild!.getBoundingClientRect().height).toBe(24)
+    expect(getComputedStyle(fast()!.firstElementChild!).fontSize).toBe('12px')
+    expect(fast()!.querySelector('svg')!.getBoundingClientRect().width).toBe(12)
     await page.getByRole('button', { name: 'Fast', exact: true }).hover()
     await expect.element(page.getByText('Faster, uses more quota', { exact: true })).toBeVisible()
   })
@@ -101,6 +108,10 @@ describe('Fast in the real thinking menu', () => {
     await page.viewport(390, 844)
     container.style.cssText = 'width:366px;position:absolute;left:12px;bottom:24px'
     await renderMenu({ mobile: true })
+    expect(fast()!.getBoundingClientRect().height).toBe(44)
+    expect(fast()!.firstElementChild!.getBoundingClientRect().height).toBe(32)
+    expect(getComputedStyle(fast()!.firstElementChild!).fontSize).toBe('13px')
+    expect(fast()!.querySelector('svg')!.getBoundingClientRect().width).toBe(14)
     await page.getByRole('button', { name: 'Fast', exact: true }).hover()
     expect(fast()?.hasAttribute('aria-describedby')).toBe(false)
     expect(document.querySelector('[role="tooltip"]')).toBeNull()
