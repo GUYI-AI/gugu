@@ -52,7 +52,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const ownerUserId = user?.id ?? null
   // One reading per agent: reopening the pane shows its tasks at once while they are read again.
   const reading = useReplica(agentScheduledTasks, [agent.id])
-  const tasks = reading.state === 'value' ? reading.value : []
+  const tasks = reading.state === 'value' ? reading.value : null
   const loading = reading.state === 'unknown'
   const [actionError, setError] = useState<string | null>(null)
   const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
@@ -111,7 +111,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
     <div className={agentSettingsPaneClass(true)} data-pane="tasks">
       <div className={asClass.tasksHead}>
         {/* Not read yet: the count's place is a placeholder, ❌「（0）」. */}
-        <div className={asClass.tasksHeading}>{reading.state === 'value' ? t('settings.tasks.title', { count: tasks.length }) : <>{t('settings.tasks.titleLabel')} <Unknown className="w-[2ch]" /></>}</div>
+        <div className={asClass.tasksHeading}>{reading.state === 'value' ? t('settings.tasks.title', { count: reading.value.length }) : <>{t('settings.tasks.titleLabel')} <Unknown className="w-[2ch]" /></>}</div>
         <button className={asClass.tasksAddButton} onClick={() => setShowForm((v) => !v)} data-testid="agent-task-add">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24">
             <g fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -169,8 +169,8 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
 
       {error && <div style={{ fontSize: 'var(--font-body)', color: 'var(--danger-fg)', marginBottom: 10 }}>{error}</div>}
 
-      {loading ? (
-        <div className={asClass.tasksLoading}>{t('settings.tasks.loading')}</div>
+      {tasks === null ? (
+        loading ? <div className={asClass.tasksLoading}>{t('settings.tasks.loading')}</div> : null
       ) : tasks.length === 0 ? (
         <div className={asClass.tasksEmpty}>
           <div className={asClass.tasksIconBox}>

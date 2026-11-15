@@ -739,8 +739,8 @@ function GroupChatDetailPane({
   const groupId = group?.id ?? null
   // The chat's roster replica (the IM library's copy first, the same write path): ❌ a loader of its own (open-flicker CH22).
   const roster = useReplica(groupRoster, groupId ? [groupId, 'group'] : null)
-  const members = roster.state === 'value' ? [...roster.value.humans, ...roster.value.agents] : []
-  const visibleMembers = members.slice(0, 12)
+  const members = roster.state === 'value' ? [...roster.value.humans, ...roster.value.agents] : null
+  const visibleMembers = members ? members.slice(0, 12) : []
   const memberNames = useShownAgentName(visibleMembers.map(member => ({ name: identitiesById[member.id]?.display_name ?? '', createdAt: member.type === 'agent' ? identitiesById[member.id]?.created_at ?? undefined : undefined })))
 
   if (!group) {
@@ -843,12 +843,12 @@ function GroupChatDetailPane({
                   </div>
                 </div>
               ))}
-              {members.length > visibleMembers.length ? (
+              {members && members.length > visibleMembers.length ? (
                 <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
-                  {ct('groupDetail.remainingMembers', { count: members.length - visibleMembers.length })}
+                  {ct('groupDetail.remainingMembers', { count: (members?.length ?? 0) - visibleMembers.length })}
                 </div>
               ) : null}
-              {group.member_count > members.length ? (
+              {members && group.member_count > members.length ? (
                 <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
                   {ct('groupDetail.pendingSync', { count: group.member_count - members.length })}
                 </div>

@@ -17,10 +17,10 @@ import { readRevisionResourceKey, type AccountRevisionEvent, type AccountRevisio
 
 const topicsLog = rendererLogger('chat/topics')
 
-const EMPTY_TOPICS: TopicSummary[] = []
 
 export interface UseTopicsOfChatResult {
-  topics: TopicSummary[]
+  /** null until read (`loading`). */
+  topics: TopicSummary[] | null
   /** 锚点卡按来源消息分组:一条来源消息可能长出多条话题,所以值是数组而非单条。 */
   bySourceMessageId: Map<string, TopicSummary[]>
   loading: boolean
@@ -99,7 +99,8 @@ export function useTopicsOfChat(
   const reading = useReplica(topicsOfChat, sourceChatId ? [sourceChatId] : null)
   const key = sourceChatId ? topicsOfChat.key(sourceChatId) : null
   const fetching = useIsFetching({ queryKey: key ?? ['topicsOfChat:none'], exact: true }, queryClient) > 0
-  const topics = reading.state === 'value' ? reading.value : EMPTY_TOPICS
+  // null until the line's topics are read: no anchor card and no topic list yet, ❌ an empty list that says「没有话题」.
+  const topics = reading.state === 'value' ? reading.value : null
   const failure = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
   const loading = !!sourceChatId && (reading.state === 'unknown' || fetching)
   // One topic's failed read: said on this line until the line's topics are updated after it (that topic read again, or
@@ -151,7 +152,7 @@ export function useTopicsOfChat(
 
   const bySourceMessageId = useMemo(() => {
     const index = new Map<string, TopicSummary[]>()
-    for (const topic of topics) {
+    for (const topic of topics ?? []) {
       const bucket = index.get(topic.source_message_id)
       if (bucket) bucket.push(topic)
       else index.set(topic.source_message_id, [topic])

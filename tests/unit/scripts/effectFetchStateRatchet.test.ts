@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { scanEffectFetchState, scanFile } from '../../../scripts/checks/effect-fetch-state.mts'
+import { literalDefaultLines, scanEffectFetchState, scanFile, scanLiteralDefaults } from '../../../scripts/checks/effect-fetch-state.mts'
 
 /**
  * @@@replica ratchet: the old shape (an effect reads, then puts the answer into component state) only goes down.
@@ -28,6 +28,7 @@ describe('effect-fetch-state ratchet', () => {
     'apps/desktop/src/session/renderer/features/settings/components/ExtensionsSettingsCard.tsx',
     'apps/desktop/src/components/settings/MobileAppsSection.tsx',
     'apps/desktop/src/components/settings/channels/useChatChannels.ts',
+    'apps/desktop/src/components/settings/AppsSection.tsx',
   ])
   it('the settings surfaces have none left', () => {
     const settings = Object.keys(actual).filter((file) => !OTHER_DOMAINS.has(file)
@@ -57,6 +58,16 @@ describe('what counts', () => {
     expect(scanFile('a.tsx', component('load()', 'function load() { read().then(setValue) }'))).toBe(1)
     expect(scanFile('a.tsx', component('outer()', 'const inner = async () => setValue(await read()); const outer = () => { void inner() }'))).toBe(1)
   })
+  it('a setter handed to a helper, and useReducer dispatch', () => {
+    expect(scanFile('a.tsx', component('load(setValue)'))).toBe(1)
+    expect(scanFile('a.tsx', `
+    import { useEffect, useReducer } from 'react'
+    export function Row() {
+      const [value, dispatch] = useReducer(reduce, null)
+      useEffect(() => { read().then((v) => dispatch({ v })) }, [])
+      return value
+    }`)).toBe(1)
+  })
   it('not a synchronous update, nor an answer that goes elsewhere', () => {
     expect(scanFile('a.tsx', component('reset()', 'const reset = () => setValue(null)'))).toBe(0)
     expect(scanFile('a.tsx', component('setValue(1)'))).toBe(0)
@@ -65,5 +76,23 @@ describe('what counts', () => {
   it('a flow says so with its reason; a bare marker still counts', () => {
     expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow - signing in'))).toBe(0)
     expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow'))).toBe(1)
+  })
+})
+
+describe('a reading collapsed to a literal default (@@@client-state-model)', () => {
+  it('none in the source: branch on the three states, or say why with @@@reading-default', () => {
+    expect(scanLiteralDefaults(), 'an unknown reading must not draw like a stored empty value — docs/design/client-state-model.md').toEqual({})
+  })
+  const lines = (code: string) => literalDefaultLines('a.ts', code)
+  it('counts the literal defaults', () => {
+    expect(lines("const xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
+    expect(lines("const n = r.state === 'value' ? r.value.length : 0")).toHaveLength(1)
+    expect(lines("const t = r.state === 'value' ? r.value : EMPTY_TOPICS")).toHaveLength(1)
+  })
+  it('not null (unknown in the consumer), not a value, and not a marked exception', () => {
+    expect(lines("const xs = r.state === 'value' ? r.value : null")).toHaveLength(0)
+    expect(lines("const x = r.state === 'value' ? r.value : other")).toHaveLength(0)
+    expect(lines("// @@@reading-default - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(0)
+    expect(lines("// @@@reading-default\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
   })
 })

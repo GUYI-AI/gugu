@@ -40,7 +40,7 @@ let seen: TopicSummary[] = []
 let seenError: string | null = null
 function Probe() {
   const state = useTopicsOfChat('line', subscribe)
-  seen = state.topics
+  seen = state.topics ?? []
   seenError = state.error
   return null
 }

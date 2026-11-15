@@ -40,13 +40,13 @@ const calleeName = (call: ts.CallExpression): string | null => {
   return null
 }
 
-/** `const [value, setValue] = useState(...)` setters declared directly in this function body. */
+/** `const [value, setValue] = useState(...)` setters (and `useReducer`'s `dispatch`) declared directly in this function body. */
 function stateSetters(fn: ts.FunctionLikeDeclaration): Set<string> {
   const setters = new Set<string>()
   const walk = (node: ts.Node): void => {
     if (node !== fn && isFunction(node)) return
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer
-      && ts.isCallExpression(node.initializer) && calleeName(node.initializer) === 'useState') {
+      && ts.isCallExpression(node.initializer) && ['useState', 'useReducer'].includes(calleeName(node.initializer) ?? '')) {
       const setter = node.name.elements[1]
       if (setter && ts.isBindingElement(setter) && ts.isIdentifier(setter.name)) setters.add(setter.name.text)
     }
@@ -101,6 +101,8 @@ function setsStateAfterRead(callback: ts.Node, setters: Set<string>, readers: Re
       const name = calleeName(node)
       if (deferred && name && setters.has(name) && ts.isIdentifier(node.expression)) { found = true; return }
       if (name && readers.has(name) && ts.isIdentifier(node.expression)) { found = true; return }
+      // A setter handed to any call (`load(setValue)`, `subscribe(setValue)`): whatever it reads lands in this state.
+      if (node.arguments.some((arg) => ts.isIdentifier(arg) && setters.has(arg.text)) && !(name && setters.has(name))) { found = true; return }
       if (name && ASYNC_CONTINUATIONS.has(name) && ts.isPropertyAccessExpression(node.expression)) {
         walk(node.expression, deferred)
         for (const arg of node.arguments) {
@@ -160,6 +162,55 @@ export function scanFile(path: string, text: string): number {
   return effectLines(path, text).length
 }
 
+/**
+ * A reading collapsed to a literal default (@@@client-state-model): `r.state === 'value' ? r.value : []` (or `0`, `''`,
+ * `false`, `{}`, an `EMPTY_*` constant), or `r.value ?? <that literal>` — the unknown reading then draws like a stored
+ * empty value. Branch on the reading's three states instead. `: null` is not a default: null is "unknown" in the
+ * consumer's type. Syntactic, so it sees readings by their `.state === 'value'` / `.value` shape.
+ */
+export function literalDefaultLines(path: string, text: string): number[] {
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const lines: number[] = []
+  const isLiteralDefault = (node: ts.Expression): boolean => {
+    const n = ts.isParenthesizedExpression(node) ? node.expression : node
+    if (ts.isArrayLiteralExpression(n) && n.elements.length === 0) return true
+    if (ts.isObjectLiteralExpression(n) && n.properties.length === 0) return true
+    if (ts.isNumericLiteral(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return true
+    if (n.kind === ts.SyntaxKind.FalseKeyword) return true
+    return ts.isIdentifier(n) && /^EMPTY_[A-Z0-9_]+$/.test(n.text)
+  }
+  const isValueCheck = (node: ts.Expression): boolean => ts.isBinaryExpression(node)
+    && node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+    && ts.isPropertyAccessExpression(node.left) && node.left.name.text === 'state'
+    && ts.isStringLiteral(node.right) && node.right.text === 'value'
+  // A justified exception says why on the line above: `@@@reading-default - <reason>` (a bare marker still counts).
+  const marked = (node: ts.Node) => {
+    let statement: ts.Node = node
+    while (statement.parent && !ts.isBlock(statement.parent) && !ts.isSourceFile(statement.parent)) statement = statement.parent
+    return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []).some((range) => /@@@reading-default\s*-\s*\S/.test(text.slice(range.pos, range.end)))
+  }
+  const visit = (node: ts.Node): void => {
+    if (ts.isConditionalExpression(node) && isValueCheck(node.condition) && isLiteralDefault(node.whenFalse) && !marked(node)) {
+      lines.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return lines
+}
+
+/** `{ relative path: lines }` for every non-test source file with a reading collapsed to a literal default. */
+export function scanLiteralDefaults(root = '.'): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    if (isTest(rel)) continue
+    const lines = literalDefaultLines(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
 /** `{ relative path: count }` for every non-test source file that still has the shape, sorted by path. */
 export function scanEffectFetchState(root = '.'): Record<string, number> {
   const out: Record<string, number> = {}
@@ -174,6 +225,10 @@ export function scanEffectFetchState(root = '.'): Record<string, number> {
 
 if (process.argv[1]?.endsWith('effect-fetch-state.mts')) {
   const hits = scanEffectFetchState()
+  if (process.argv.includes('--defaults')) {
+    for (const [file, lines] of Object.entries(scanLiteralDefaults())) console.log(`${file}: ${lines.join(', ')}`)
+    process.exit(0)
+  }
   if (process.argv.includes('--lines')) {
     for (const file of Object.keys(hits)) console.log(`${file}: ${effectLines(file, readFileSync(file, 'utf8')).join(', ')}`)
   }

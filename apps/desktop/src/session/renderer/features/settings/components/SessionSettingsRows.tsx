@@ -54,18 +54,17 @@ export const SessionTitleModelRow: React.FC = () => {
   const sessions = useAppSettingsKey('sessions');
   const catalog = useReplica(sessionTitleModels, []);
   const { translate } = useSessionMessages();
-  const options = catalog.state === 'value' ? catalog.value : [];
-  // 能选的排前面,要会员的排后面(各自保持目录里的顺序):免费档一打开就看得到自己能用的那几个。
-  const ordered = [
-    ...options.filter((option) => !option.requiresMembership),
-    ...options.filter((option) => option.requiresMembership),
-  ];
+  // 能选的排前面,要会员的排后面(各自保持目录里的顺序):免费档一打开就看得到自己能用的那几个。目录没读到 = null。
+  const ordered = catalog.state === 'value'
+    ? [...catalog.value.filter((option) => !option.requiresMembership), ...catalog.value.filter((option) => option.requiresMembership)]
+    : null;
   // 目录还没读到时,模型的名字画占位,❌ 画原始 id;读失败才只剩 id 可写。
   const labelOf = (value: string): React.ReactNode =>
     value === TITLE_MODEL_OFF
       ? translate('taskDefaults.titleModelOff')
-      : ordered.find((option) => option.id === value)?.displayName ??
-        (catalog.state === 'unknown' ? <Unknown className="w-24" /> : value);
+      : ordered !== null
+        ? ordered.find((option) => option.id === value)?.displayName ?? value
+        : catalog.state === 'unknown' ? <Unknown className="w-24" /> : value;
   const defaultLabel = SESSION_TITLE_DEFAULT_MODEL;
 
   return (
@@ -76,14 +75,16 @@ export const SessionTitleModelRow: React.FC = () => {
         <SettingValue reading={sessions.settings} placeholder="h-8 w-[252px]">
           {({ value }) => {
             const current = value.titleModel;
-            const listed = current && !ordered.some((option) => option.id === current)
-              ? [{ id: current, displayName: current, requiresMembership: false }, ...ordered]
-              : ordered;
+            // Options: the catalog's; the current choice too when the catalog does not list it (or is not read yet).
+            const known = ordered ?? [];
+            const listed: { id: string; requiresMembership: boolean }[] = current && !known.some((option) => option.id === current)
+              ? [{ id: current, requiresMembership: false }, ...known]
+              : known;
             return (
               <>
                 <ResetToDefaultButton
                   visible={sessions.isFieldOverridden('titleModel')}
-                  defaultLabel={ordered.find((option) => option.id === defaultLabel)?.displayName ?? defaultLabel}
+                  defaultLabel={ordered !== null ? ordered.find((option) => option.id === defaultLabel)?.displayName ?? defaultLabel : catalog.state === 'error' ? defaultLabel : undefined}
                   onReset={() => sessions.resetField('titleModel')}
                   disabled={sessions.isSaving}
                 />
@@ -99,7 +100,7 @@ export const SessionTitleModelRow: React.FC = () => {
                     {listed.map((option) => (
                       <SelectItem key={option.id} value={option.id} disabled={option.requiresMembership}>
                         <span className="flex items-center gap-2">
-                          {option.displayName}
+                          {labelOf(option.id)}
                           {option.requiresMembership ? (
                             <span className="text-xs text-muted-foreground">{translate('taskDefaults.titleModelMembership')}</span>
                           ) : null}

@@ -88,7 +88,7 @@ export function AddServerPanel({
   const { devices } = useDevicesStore()
   const [target, setTarget] = useState(relogin?.address ?? '')
   const hostsReading = useReplica(sshConfigHosts, desktopIpc() ? [] : null)
-  const hosts = useMemo(() => (hostsReading.state === 'value' ? hostsReading.value : []), [hostsReading])
+  const hosts = hostsReading.state === 'value' ? hostsReading.value : null
   const [runId, setRunId] = useState<string | null>(null)
   const [states, setStates] = useState<Record<string, ServerSshInstallState>>({})
   const [inputProblem, setInputProblem] = useState<InputProblem | null>(null)
@@ -168,7 +168,7 @@ export function AddServerPanel({
     setInputProblem(null)
     finishedRef.current = false
     const alias = value.trim()
-    nameRef.current = !remembered && hosts.some((host) => host.alias === alias) ? alias : null
+    nameRef.current = !remembered && hosts !== null && hosts.some((host) => host.alias === alias) ? alias : null
     const request: ServerSshInstallStartRequest = remembered ? { deviceId: remembered } : { target: value }
     const response = (await electron.invoke(SERVER_SSH_INSTALL_CHANNELS.start, request)) as ServerSshInstallStartResponse
     if ('error' in response) {
@@ -271,7 +271,7 @@ export function AddServerPanel({
       ) : (
         <SshTargetForm
           target={target}
-          hosts={hosts}
+          hosts={hosts ?? []} // not read yet: nothing to suggest
           problem={problemText}
           onTargetChange={(value) => { setTarget(value); setInputProblem(null) }}
           onSubmit={(value) => { setTarget(value); void start(value) }}

@@ -128,10 +128,11 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
   const fonts = useReplica(installedFonts, []);
-  const installedFontNames = useMemo(() => (fonts.state === 'value' ? fonts.value : []), [fonts]);
+  // Not read yet: no installed fonts are listed (the picker says it is still reading them, `loadingFonts`).
+  const installedFontNames = useMemo(() => (fonts.state === 'value' ? fonts.value : null), [fonts]);
   const loadingFonts = fonts.state === 'unknown';
   const shells = useReplica(shellAvailability, []);
-  const localShellAvailability = shells.state === 'value' ? shells.value : [];
+  const localShellAvailability = shells.state === 'value' ? shells.value : null;
   const { translate } = useSessionMessages();
 
   const defaultFontOption = useMemo<FontOption>(
@@ -146,12 +147,12 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
   const fontFamily = terminal.fontFamily ?? '';
   const fontSize = terminal.fontSize ?? TERMINAL_FONT_SIZE_DEFAULT;
   const { autoCopyOnSelection, macOptionIsMeta, defaultShell } = terminal;
-  const selectedShell = localShellAvailability.find((entry) => entry.id === defaultShell) ?? null;
+  const selectedShell = localShellAvailability?.find((entry) => entry.id === defaultShell) ?? null;
 
   const groups = useMemo<FontGroup[]>(() => {
     const popularSet = new Set(POPULAR_FONTS.map((f) => f.toLowerCase()));
 
-    const installedSet = new Set(installedFontNames.map((font) => font.toLowerCase()));
+    const installedSet = new Set((installedFontNames ?? []).map((font) => font.toLowerCase()));
     const popularItems: FontOption[] = [defaultFontOption];
     for (const font of POPULAR_FONTS) {
       if (installedSet.has(font.toLowerCase())) {
@@ -160,7 +161,7 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
     }
 
     const installedItems: FontOption[] = [];
-    for (const font of installedFontNames) {
+    for (const font of installedFontNames ?? []) {
       const lower = font.toLowerCase();
       if (popularSet.has(lower)) continue;
       installedItems.push({ value: font, label: font });
@@ -266,7 +267,7 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
               </SelectValue>
             </SelectTrigger>
             <SelectContent align="end" className="min-w-max">
-              {localShellAvailability.map((entry) => (
+              {shells.state === 'unknown' ? <Unknown className="m-2 w-24" /> : (localShellAvailability ?? []).map((entry) => (
                 <SelectItem
                   key={entry.id}
                   value={entry.id}

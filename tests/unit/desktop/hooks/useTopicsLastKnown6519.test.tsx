@@ -20,7 +20,7 @@ const firstRenderCounts: Record<string, number[]> = {}
 function Probe({ chatId }: { chatId: string }) {
   const { topics } = useTopicsOfChat(chatId)
   const seen = firstRenderCounts[chatId] ?? (firstRenderCounts[chatId] = [])
-  seen.push(topics.length)
+  seen.push(topics?.length ?? 0)
   return null
 }
 const auth = (user: AuthUser | null) => ({ user, loading: false, status: user ? 'authenticated' : 'unauthenticated', updateUser: () => {}, logout: async () => ({ success: true }) }) as never

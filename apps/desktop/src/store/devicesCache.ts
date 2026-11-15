@@ -23,6 +23,7 @@ export const devicesModel = replica({
 /** The last known machines of the signed-in account; empty until this device ever read them. For logic outside React. */
 export function readCachedDevices(): Device[] {
   const reading = devicesModel.peek()
+  // @@@reading-default - a lookup for callers outside React: a device not found is a device not known, read or not
   return reading.state === 'value' ? [...reading.value] : []
 }
 

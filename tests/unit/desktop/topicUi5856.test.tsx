@@ -831,7 +831,7 @@ describe('useTopicsOfChat', () => {
     const state = useTopicsOfChat(sourceChatId)
     reload = state.reload
     useEffect(() => {
-      observed = { topics: state.topics, loading: state.loading, error: state.error, byMessage: state.bySourceMessageId }
+      observed = { topics: state.topics ?? [], loading: state.loading, error: state.error, byMessage: state.bySourceMessageId }
     })
     return null
   }
