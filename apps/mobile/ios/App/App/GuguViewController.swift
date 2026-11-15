@@ -28,6 +28,7 @@ final class GuguViewController: CAPBridgeViewController {
             NSLog("Gugu native identity unavailable (%@)", code)
         }
         bridge?.registerPluginInstance(GuguTextSelectionPlugin())
+        bridge?.registerPluginInstance(GuguSharePlugin())
         bridge?.registerPluginInstance(GuguImageViewerChromePlugin())
     }
 

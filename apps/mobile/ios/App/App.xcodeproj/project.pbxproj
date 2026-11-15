@@ -85,6 +85,9 @@
 		3350D986E85A52F98039DA13 /* GuguIOSDeliveryCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */; };
 		2BABF54160516A5D66CD97E2 /* IOSHostLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */; };
 		1204DEE9D4D4EE28CFD14B46 /* IOSHostRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C955986AA6FDB36033DA88B /* IOSHostRecoveryTests.swift */; };
+		E72780000000000000000011 /* GuguSaveFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72780000000000000000001; };
+		E72780000000000000000012 /* GuguSharePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72780000000000000000002; };
+		E72780000000000000000033 = {isa = PBXBuildFile; fileRef = E72780000000000000000030; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -179,6 +182,10 @@
 		2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSDeliveryCommand.swift; sourceTree = "<group>"; };
 		A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSHostLoopTests.swift; sourceTree = "<group>"; };
 		4C955986AA6FDB36033DA88B /* IOSHostRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSHostRecoveryTests.swift; sourceTree = "<group>"; };
+		E72780000000000000000001 /* GuguSaveFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguSaveFileStore.swift; sourceTree = "<group>"; };
+		E72780000000000000000002 /* GuguSharePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguSharePlugin.swift; sourceTree = "<group>"; };
+		E72780000000000000000031 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E72780000000000000000032 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -204,6 +211,7 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				E72780000000000000000020 /* FileSave */,
 				E98E00000000000000000043 /* PhoneCalendar */,
 				E98E00000000000000000040 /* CalendarBridge */,
 				E98E00000000000000000080 /* OwnerSession */,
@@ -237,6 +245,7 @@
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
+				E72780000000000000000030 /* InfoPlist.strings */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				E98E00000000000000000030 /* HostRuntime */,
 				50B271D01FEDC1A000F3C39B /* public */,
@@ -350,6 +359,7 @@
 			path = ../PushNotifications;
 			sourceTree = "<group>";
 		};
+		E72780000000000000000020 /* FileSave */ = {isa = PBXGroup; children = (E72780000000000000000001, E72780000000000000000002); path = ../FileSave; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -413,6 +423,7 @@
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				"zh-Hans",
 				en,
 				Base,
 			);
@@ -442,6 +453,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
+				E72780000000000000000033 /* InfoPlist.strings in Resources */,
 				E98E00000000000000000130 /* HostRuntime in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
@@ -535,6 +547,8 @@
 				E98E00000000000000000101 /* GuguViewController.swift in Sources */,
 				275000000000000000000002 /* GuguTextSelectionPlugin.swift in Sources */,
 				275800000000000000000002 /* NativeRichText.swift in Sources */,
+				E72780000000000000000012 /* GuguSharePlugin.swift in Sources */,
+				E72780000000000000000011 /* GuguSaveFileStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -565,6 +579,7 @@
 			name = LaunchScreen.storyboard;
 			sourceTree = "<group>";
 		};
+		E72780000000000000000030 = {isa = PBXVariantGroup; children = (E72780000000000000000031, E72780000000000000000032); name = InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
