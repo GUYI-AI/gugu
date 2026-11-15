@@ -25,7 +25,7 @@ import { assertMcpToolDescriptionWithinBudget } from './mcp-tool-description-bud
  * 多数会话都会用到的(#6614 的读数)。不在这里的已注册工具只进目录,按原名 tools/call 仍然能调。
  */
 export const GUGU_LISTED_TOOLS: ReadonlySet<string> = new Set([
-  'message_send', 'message_send_as_owner', 'message_send_file_as_owner', 'message_send_file', 'message_history', 'message_search', 'message_members',
+  'message_send', 'message_send_as_owner', 'message_send_file_as_owner', 'message_send_file', 'message_download_file', 'message_history', 'message_search', 'message_members',
   'message_conversations', 'message_rules', 'message_invite', 'contact_friend', 'owner_friends_list',
   'topic_open', 'topic_list', 'profile_whoami',
   'session_message', 'session_spawn', 'session_open_in_tab', 'session_get', 'session_peers', 'session_children',

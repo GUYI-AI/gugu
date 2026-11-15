@@ -1942,7 +1942,7 @@ test('resolves files at run time, warns without blocking later text, and persist
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'original caption', files: [ref], clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 2 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);
     assert.match(prompts[1], /^original caption\n\n/);
-    assert.match(prompts[1], /File not saved/);
+    assert.ok(prompts[1].includes(`[Not on this computer. To read or change it: message_download_file {file: "gugu-file://${ref.itemId}?v=${ref.version}"}]`), prompts[1]);
     assert.ok(fx.events.some(event => event.type === 'host_log' && event.level === 'warn' && event.message.includes(ref.itemId) && event.message.includes(created.conversationId)));
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'following text', clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 3 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);

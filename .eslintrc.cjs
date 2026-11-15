@@ -57,6 +57,14 @@ const radixImportGate = {
     'radix-ui 只允许出现在 apps/desktop/src/session/renderer/lib/ui/assistant-ui/(vendored assistant-ui Elements，#3334 记的有界例外)。产品代码的原语一律用 Base UI —— 见 design-system spec 的「组件模板只有一套」。'
 }
 
+// @@@growing-list - a list whose length grows with the user's data mounts only its visible window, through the one
+// primitive (session-ui react/growing-list). Six lists each wired their own virtualizer before; the member page, @
+// candidates, search results and contacts had none and mounted every row.
+const growingListGate = {
+  group: ['@tanstack/react-virtual'],
+  message: '可增长的列表一律用 @gugu/session-ui/react/growing-list(useGrowingList / <GrowingList>),❌ 直接用 @tanstack/react-virtual。'
+}
+
 // Windows 上 GUI 进程起控制台子进程不带 windowsHide 就弹一个黑框;逐个调用点记着写总有漏的。
 // 起子进程一律经 @gugu/core/local/childProcess(windowsHide 默认 true);类型照旧从 node:child_process 导。
 const childProcessImportGate = ['node:child_process', 'child_process'].map((name) => ({
@@ -201,6 +209,13 @@ module.exports = {
       files: ['**/*.{ts,tsx,js,jsx,cjs,mjs}'],
       excludedFiles: ['apps/desktop/src/session/renderer/lib/ui/assistant-ui/**'],
       rules: {
+        'no-restricted-imports': ['error', { patterns: [radixImportGate, growingListGate], paths: childProcessImportGate }]
+      }
+    },
+    {
+      // The primitive itself is where the virtualizer lives (same rule, minus that one gate: overrides replace it whole).
+      files: ['packages/session-ui/src/react/primitives/growing-list/growing-list.tsx'],
+      rules: {
         'no-restricted-imports': ['error', { patterns: [radixImportGate], paths: childProcessImportGate }]
       }
     },
@@ -220,7 +235,7 @@ module.exports = {
         'playwright.config.mts'
       ],
       rules: {
-        'no-restricted-imports': ['error', { patterns: [radixImportGate] }]
+        'no-restricted-imports': ['error', { patterns: [radixImportGate, growingListGate] }]
       }
     },
     {

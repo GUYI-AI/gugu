@@ -172,7 +172,7 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
   const attach = [...host.querySelectorAll<HTMLButtonElement>('[data-slot="composer-actions-start"] > button')].find(button => button !== permission)!
   const input = host.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   const model = host.querySelector<HTMLElement>('[data-testid="composer-model-trigger"]')!
-  const controls = [permission, attach, input, model]
+  const controls = [permission, attach, model]
   for (const [index, control] of controls.entries()) {
     const box = control.getBoundingClientRect()
     expect(box.width).toBeGreaterThan(0)
@@ -185,4 +185,7 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
       expect(overlap, 'each option and the attachment button keeps its own visible target').toBe(false)
     }
   }
+  const editor = input.querySelector<HTMLElement>('[contenteditable]')!.getBoundingClientRect()
+  expect(editor.left).toBeGreaterThanOrEqual(attach.getBoundingClientRect().right)
+  expect(editor.right).toBeLessThanOrEqual(input.getBoundingClientRect().right - 44)
 })

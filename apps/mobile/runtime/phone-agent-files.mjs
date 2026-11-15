@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { downloadSessionFile } from '../../../packages/core/src/local/agent/sessionFileHandoff.ts'
 import { basename, join } from 'node:path'
 import { receivePhoneDeviceFile } from '../../desktop/electron/phone-device-file.ts'
 import { uploadAttachmentBytes, commitAttachment } from '../../../packages/core/src/cloud/attachmentsApi.ts'
 import { parseAttachmentContent } from '../../../packages/core/src/shared/ui/attachmentModels.ts'
+import { parseGroupFileLink } from '../../../packages/core/src/shared/ui/guguLink.ts'
 import { turnAttachmentText } from '../../../packages/core/src/shared/attachmentFolderLine.ts'
 import { createNodeFileResolver, saveFileHandle } from '../../../packages/core/src/local/files/fileSnapshots.ts'
 import { resolveAttachmentMimeType } from '../../../packages/core/src/shared/imageMime.mjs'
@@ -59,14 +59,13 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
   const turn = async (agent, refs, signal) => {
     const parts = []
     for (const ref of refs) {
-      let saved
+      let localPath = null
       try {
-        saved = { localPath: await localPathOf(agent, ref, signal) }
+        localPath = await localPathOf(agent, ref, signal)
       } catch (error) {
-        saved = { failure: error instanceof Error ? error.message : String(error) }
-        warn(`Task attachment could not be saved: sessionId=${agent.sessionId} itemId=${ref.itemId} reason=${saved.failure}`)
+        warn(`Task attachment could not be saved: sessionId=${agent.sessionId} itemId=${ref.itemId} reason=${error instanceof Error ? error.message : String(error)}`)
       }
-      parts.push(turnAttachmentText(ref, saved))
+      parts.push(turnAttachmentText(ref, localPath ? { localPath } : null))
     }
     return { text: parts.join('\n\n') }
   }
@@ -146,23 +145,29 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
       },
     },
     {
-      name: 'message_download_file', label: '读取聊天附件', description: '按聊天消息 source_message_id 或会话消息附件引用 source_attachment_id 下载完整文件到这台手机的 App 私有目录。只返回可供 message_send_file 复用的路径和hash，文件字节不进入文字上下文。',
-      parameters: { type: 'object', properties: { source_message_id: { type: 'string' }, source_attachment_id: { type: 'string' } } },
+      name: 'message_download_file', label: '读取聊天附件', description: '把一个文件存到这台手机的 App 私有目录，回 file_path 和 sha256；字节不进文字上下文。',
+      parameters: { type: 'object', properties: { source_message_id: { type: 'string' }, source_attachment_id: { type: 'string' }, file: { type: 'string', description: 'gugu-file://<item_id>?v=<n>' } } },
       execute: async (_callId, args, signal) => {
-        if (Boolean(args.source_message_id) === Boolean(args.source_attachment_id)) throw new Error('Provide exactly one attachment source')
-        if (args.source_attachment_id) {
-          const file = await downloadSessionFile(await cloud.attachmentEndpoint(), uuid(args.source_attachment_id), agent.agentUserId, join(store.directory, 'downloads', agent.sessionId), signal)
-          return result(await registerArtifact({ store, agent, groups: [], file: { file_path: file.file_path, name: file.file_name, size: file.size_bytes, sha256: file.sha256, mime_type: file.content_type } }))
+        if ([args.source_message_id, args.source_attachment_id, args.file].filter(Boolean).length !== 1) throw new Error('Provide exactly one of source_message_id, source_attachment_id, file')
+        let ref, name
+        if (args.source_message_id) {
+          const id = uuid(String(args.source_message_id).replace(/^msg:/, ''), 'source_message_id')
+          if (await cloud.rpc('chat', 'can_read_message', { p_message_id: id, p_user_id: agent.agentUserId }) !== true) throw new Error('这条附件消息对你不可见')
+          const { data: message, error } = await cloud.chat.from('messages').select('id,chat_id,content,content_type,file_item_id,file_version,file_blob_id').eq('id', id).single()
+          if (error) throw new Error(error.message)
+          const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
+          if (!attachment) throw new Error('这条消息没有附件')
+          ref = { message_id: id }; name = attachment.fileName
+        } else if (args.source_attachment_id) {
+          ref = { attachment_id: uuid(args.source_attachment_id) }
+        } else {
+          const link = parseGroupFileLink(String(args.file).trim())
+          if (!link) throw new Error(`file 要写成 gugu-file://<item_id>?v=<n>，不是 ${JSON.stringify(args.file)}`)
+          ref = { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }
         }
-        const id = uuid(String(args.source_message_id).replace(/^msg:/, ''), 'source_message_id')
-        if (await cloud.rpc('chat', 'can_read_message', { p_message_id: id, p_user_id: agent.agentUserId }) !== true) throw new Error('这条附件消息对你不可见')
-        const { data: message, error } = await cloud.chat.from('messages').select('id,chat_id,content,content_type,file_item_id,file_version,file_blob_id').eq('id', id).single()
-        if (error) throw new Error(error.message)
-        const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-        if (!attachment) throw new Error('这条消息没有附件')
-        const full = await files({ message_id: id }, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
-        if (full.status !== 'ready') throw new Error('这条消息的附件已删除或不可见')
-        const file = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), attachment.fileName)
+        const full = await files(ref, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
+        if (full.status !== 'ready') throw new Error('这个文件已删除或不可见')
+        const file = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), name)
         return result(await registerArtifact({ store, agent, groups: [], file: { file_path: file.file_path, name: file.file_name, size: file.size_bytes, sha256: file.sha256, mime_type: file.content_type } }))
       },
     },
