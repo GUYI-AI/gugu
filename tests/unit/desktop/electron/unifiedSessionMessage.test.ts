@@ -323,3 +323,24 @@ describe('durable assistant work admission precedes reachability', () => {
     expect(f.graphMessage).not.toHaveBeenCalled()
   })
 })
+
+// Owner 2026-11-15: `session:` and `aid:` both resolve a written prefix through the one resolver before any routing.
+describe('ids written as a prefix', () => {
+  it('routes the full session and agent a prefix resolved to, and reports by what was resolved', async () => {
+    const resolvePrefixes = vi.fn(async () => ({
+      sessions: new Map([['d5a9dac5', OTHER_SESSION]]),
+      agents: new Map([['ed2c760a', OTHER]]),
+    }))
+    const { deps, graphMessage } = makeDeps({ resolvePrefixes })
+    const result = await handleUnifiedSessionMessage({ to: ['session:d5a9dac5', 'aid:ed2c760a'], text: 'hi' }, deps)
+    expect(resolvePrefixes).toHaveBeenCalledWith({ sessionIds: ['d5a9dac5'], agentIds: ['ed2c760a'] })
+    expect(graphMessage).toHaveBeenCalledWith([OTHER_SESSION, OTHER_AGENT_SESSION], 'hi', {})
+    expect(result.recipients.map((entry) => entry.to)).toEqual([`session:${OTHER_SESSION}`, `user:${OTHER}`])
+  })
+
+  it('a prefix that matches several or none fails the whole call before anything is delivered', async () => {
+    const { deps, graphMessage } = makeDeps({ resolvePrefixes: async () => { throw new Error('session:d5a9dac5 matches 2 sessions') } })
+    await expect(handleUnifiedSessionMessage({ to: [`aid:${OTHER}`, 'session:d5a9dac5'], text: 'hi' }, deps)).rejects.toThrow('matches 2 sessions')
+    expect(graphMessage).not.toHaveBeenCalled()
+  })
+})

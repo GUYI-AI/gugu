@@ -20,13 +20,17 @@ export async function resolveSessionAttachment(endpoint: AttachmentsEndpoint, id
   return file
 }
 
-/** References are data, carried inside the existing durable message envelope. No signed URLs or bytes. */
+/**
+ * References are data, carried inside the existing durable message envelope. No signed URLs or bytes. The header says how
+ * the receiver gets the bytes (owner 2026-11-15: an agent that saw only the metadata found no way to fetch or forward the
+ * file): message_download_file returns a local file_path, which message_send_file and session_message files take.
+ */
 export function withSessionAttachments(text: string, files?: SessionAttachmentRef[]): string {
   if (!files?.length) return text
   if (files.length > 8 || files.some(file => !/^[0-9a-f-]{36}$/i.test(file.attachment_id)
     || !/^[0-9a-f]{64}$/.test(file.sha256) || !Number.isSafeInteger(file.size_bytes) || file.size_bytes < 0
     || typeof file.file_name !== 'string' || typeof file.content_type !== 'string')) throw new Error('Invalid session attachment references')
-  return `${text}\n\n附件（原件引用与校验信息；仅元数据）：\n${JSON.stringify(files)}`
+  return `${text}\n\n附件（原件引用与校验信息；仅元数据。取原件：message_download_file {source_attachment_id: 下列 attachment_id}，不在工具列表里就经 catalog_call 调；返回的 file_path 可直接交给 message_send_file 或 session_message 的 files 转发）：\n${JSON.stringify(files)}`
 }
 
 
