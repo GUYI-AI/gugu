@@ -51,7 +51,11 @@ export async function createSkills(input: { harness: string; projectId?: string 
     if (project && folder) roots.push(join(project.path, folder, 'skills'));
     if (bundle.nativeHome) roots.push(join(nativeHomeRoots(bundle.nativeHome, env, homedir())[0], 'skills'));
     if (input.harness === 'codex') roots.push(join(homedir(), '.agents', 'skills'));
-    if (input.harness === 'pi' && env.PI_CODING_AGENT_DIR) roots.push(join(env.PI_CODING_AGENT_DIR, 'skills'));
+    if (bundle.acpConfigRoot) {
+      const root = env[bundle.acpConfigRoot.envVar] || (process.env.GUGU_HOME ? join(process.env.GUGU_HOME, ...bundle.acpConfigRoot.guguHomePath) : null);
+      if (!root) throw new Error('Agent configuration directory is unavailable');
+      roots.push(join(root, 'skills'));
+    }
     return { ok: true as const, value: { skills: await readNativeCreationSkills(roots) } };
   } catch (error) {
     return { ok: false as const, error: { code: 'skills_unavailable', message: error instanceof Error ? error.message : String(error) } };
