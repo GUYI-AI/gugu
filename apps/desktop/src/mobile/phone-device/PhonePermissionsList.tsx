@@ -8,7 +8,8 @@ import { requirementGranted, type PhoneActionGroup, type PhoneOsState } from './
 import { HEALTH_TYPES } from './nativePhoneActions'
 import { connectPhoneActionGroupChoice, setPhoneActionGroup, usePhoneDeviceSettings } from './phoneDeviceSettings'
 import { openPhonePermissionSettings, requestPhoneRequirement } from './phonePermissionActions'
-import { readPhoneOsState, refreshPhoneDevice, usePhoneDevice } from './phoneDeviceRuntime'
+import { phoneOsState, readPhoneOsState, refreshPhoneDevice } from './phoneDeviceRuntime'
+import { useReplica } from '@/lib/replica'
 import { PHONE_PERMISSION_ROWS, type PhonePermissionRow } from './phonePermissionRows'
 import { usePhonePermissionReporter } from './usePhonePermissionReporter'
 
@@ -22,20 +23,17 @@ function unsupported(group: PhoneActionGroup, os: PhoneOsState): boolean {
 export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
   const settings = usePhoneDeviceSettings(ownerId)
   const report = usePhonePermissionReporter(ownerId)
-  const { os } = usePhoneDevice()
+  const osReading = useReplica(phoneOsState, [])
+  const os = osReading.state === 'value' ? osReading.value : null
   const systemRows = systemPermissionRows()
   const system = useSystemPermissionStates(systemRows.map(row => row.permission))
-  const [read, setRead] = useState<'loading' | 'ready' | 'failed'>('loading')
+  // Read on open (`fresh: 0`) and again on the way back from the system settings.
+  const read: 'loading' | 'ready' | 'failed' = osReading.state === 'value' ? 'ready' : osReading.state === 'error' ? 'failed' : 'loading'
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const refresh = useCallback(async () => {
-    setRead('loading')
-    try { await refreshPhoneDevice(); setRead('ready') } catch { setRead('failed') }
-  }, [])
-  useEffect(() => {
-    void refresh()
-    return platform.subscribeAppForeground(() => void refresh(), () => setRead('failed'))
-  }, [refresh])
+  // Re-reads the system and re-registers the device (a command); its answer lands in phoneOsState.
+  const refresh = useCallback(() => refreshPhoneDevice().catch(() => undefined), [])
+  useEffect(() => platform.subscribeAppForeground(() => { void refresh() }, () => undefined), [refresh])
   const act = async (key: string, action: () => Promise<void>) => {
     if (busy) return
     setBusy(key); setError(null)

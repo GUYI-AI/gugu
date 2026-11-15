@@ -6,10 +6,13 @@ import { createReactHarness } from '../../support/testHarness'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
 import { useSessionRestart } from '../../../apps/desktop/src/mobile/agent-watch/useSessionRestart'
 import { SessionLoadFailure } from '../../../apps/desktop/src/mobile/agent-watch/SessionLoadFailure'
+import { freshReplicaAccount } from '../../support/replicaAccount'
 
 const host = vi.hoisted(() => ({ read: vi.fn(), life: vi.fn(), restart: vi.fn(), retry: vi.fn(), ready: vi.fn() }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessions: { getUnarchivedSession: host.read, lifeView: host.life, restartSession: host.restart, lifeStart: host.retry } }),
+  // The life mirror follows the machine's pushes and link; none arrive in these cases.
+  onMachineEvent: () => () => undefined, onLinkChange: () => () => undefined,
 }))
 const view = (kind: LifeView['kind'], message?: string, version = kind === 'dormant' ? 0 : kind === 'starting' ? 1 : kind === 'failed' ? 2 : 3): LifeView => ({
   sessionId: 's', version, kind, stage: null, hold: kind === 'failed' ? 'start-failed' : null,
@@ -26,7 +29,8 @@ function Fixture({ code = 'record_not_found', id = 's' }: { code?: string; id?: 
 }
 const tick = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const freshButton = () => [...harness.container.querySelectorAll('button')].find(b => b.textContent === translateSessionMessage('transcript.condition.startFresh'))
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('owner')
   vi.useFakeTimers()
   host.read.mockReset().mockResolvedValue([{ firstUtterance: 'Original first message', providerSessionState: 'missing' }])
   host.life.mockReset().mockResolvedValue(view('dormant'))

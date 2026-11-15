@@ -12,7 +12,7 @@ vi.mock('@renderer/lib/ipc', () => ({
   },
 }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => host.machine } }));
-vi.mock('@renderer/lib/machine-clients', () => ({ machineClient: () => ({}) }));
+vi.mock('@renderer/lib/machine-clients', () => ({ machineClient: () => ({}), onMachineReconnected: () => () => undefined }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: host.toast }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (key: string) => key }));
 import { readSessionLife } from './session-life-views';

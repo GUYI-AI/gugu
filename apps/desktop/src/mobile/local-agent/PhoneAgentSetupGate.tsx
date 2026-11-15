@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { Sheet } from '@/components/ui/Sheet'
 import { SettingsNote, SettingsPage } from '@/components/settings/SettingsPrimitives'
 import { platform } from '@/platform'
-import { readPhoneInstallation } from '../phone-device/phoneInstallation'
-import { phoneInstallId } from '../phone-device/phoneDeviceSettings'
+import { phoneInstallation } from '../phone-device/phoneInstallation'
+import { useReplica } from '@/lib/replica'
 import { useTranslation } from 'react-i18next'
 import { usePhoneHostIdentity } from './usePhoneHostIdentity'
 import { retryPhoneHostPublication } from './phoneHostPublication'
@@ -30,40 +30,42 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   const dismissedBeforeIdentity = useRef<string | null>(null)
   const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === iosInstallationId) ? setup : null
 
+  // The installation (one read per account, phoneInstallation); on iOS the host binding names it. Its progress is read
+  // synchronously against it (progress belongs to the native installation, never a restored WebView identifier).
+  const phoneHost = platform.kind === 'capacitor' && !!(platform.capabilities?.phoneDevice || platform.capabilities?.phoneAgentHost)
+  const installation = useReplica(phoneInstallation, phoneHost && !identity.ios ? [] : null)
+  const installId = !phoneHost ? null : identity.ios ? iosInstallationId : installation.state === 'value' ? installation.value.installId : null
+  const installFailure = phoneHost && !identity.ios && installation.state === 'error' ? installation.error : null
   useEffect(() => {
-    if (platform.kind !== 'capacitor' || !(platform.capabilities?.phoneDevice || platform.capabilities?.phoneAgentHost)) return
-    let alive = true
+    if (!phoneHost) return
     setError(null)
     setVisible(false)
-    if (identity.ios && !iosInstallationId) { setSetup(null); return }
-    const installation = identity.ios ? Promise.resolve(iosInstallationId!)
-      : readPhoneInstallation(ownerId).then(info => phoneInstallId(info.install_key ?? '', info.registration_id ?? '', info.previous_install_key))
-    void installation.then((installId) => {
-      if (!alive) return
-      // Progress belongs to the native installation, never a restored WebView identifier.
-      try {
-        let progress = readPhoneAgentSetup(ownerId, installId)
-        if (dismissedBeforeIdentity.current === ownerId) {
-          progress = { ...progress, dismissed: true }
-          savePhoneAgentSetup(ownerId, installId, progress)
-          dismissedBeforeIdentity.current = null
-        }
-        setSetup({ ownerId, request: retry, installId, progress })
-        setError(null)
-        setVisible(!progress.dismissed && !progress.completed)
-      } catch (error) {
-        rendererLogger('actions/PhoneAgentSetupGate').error({ error: error }, 'action failed')
-        // Corrupt presentation progress never authorizes tools. Let a deliberate next/finish save it again.
-        setSetup({ ownerId, request: retry, installId, progress: { step: 'host', dismissed: false, completed: false } })
-        setError(messageForUser(error))
-        setVisible(true)
+    if (!installId) { setSetup(null); return }
+    try {
+      let progress = readPhoneAgentSetup(ownerId, installId)
+      if (dismissedBeforeIdentity.current === ownerId) {
+        progress = { ...progress, dismissed: true }
+        savePhoneAgentSetup(ownerId, installId, progress)
+        dismissedBeforeIdentity.current = null
       }
-    }).catch((error) => {
+      setSetup({ ownerId, request: retry, installId, progress })
+      setVisible(!progress.dismissed && !progress.completed)
+    } catch (error) {
       rendererLogger('actions/PhoneAgentSetupGate').error({ error: error }, 'action failed')
-      if (alive) { setError(messageForUser(error)); setVisible(true) }
-    })
-    return () => { alive = false }
-  }, [ownerId, retry, identity.ios, iosInstallationId])
+      // Corrupt presentation progress never authorizes tools. Let a deliberate next/finish save it again.
+      setSetup({ ownerId, request: retry, installId, progress: { step: 'host', dismissed: false, completed: false } })
+      setError(messageForUser(error))
+      setVisible(true)
+    }
+  }, [ownerId, retry, phoneHost, installId])
+  useEffect(() => {
+    if (!installFailure) return
+    rendererLogger('actions/PhoneAgentSetupGate').error({ error: installFailure }, 'action failed')
+    setError(messageForUser(installFailure))
+    setVisible(true)
+  }, [installFailure])
+  // Asking again (the retry): a failed installation read is read again.
+  useEffect(() => { if (retry > 0 && phoneHost && !identity.ios) void phoneInstallation.refresh() }, [retry, phoneHost, identity.ios])
 
   useEffect(() => {
     if (!requested || requested <= (handled.current.get(ownerId) ?? 0)) return
