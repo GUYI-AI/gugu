@@ -48,6 +48,7 @@ const state = vi.hoisted(() => ({
   projectChats: new Map<string, string>(),
   placementReads: 0,
   openChatOnScreen: vi.fn(),
+  navigateToGroupRoot: vi.fn(),
   openInfoTab: vi.fn(),
   closeInfoTab: vi.fn(),
   infoShown: false,
@@ -72,6 +73,8 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   },
 }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...args: unknown[]) => state.openChatOnScreen(...args) }));
+// The group head goes back to the group itself (#2709): whatever was opened from it and parked on its screen goes.
+vi.mock('@renderer/app/screen-layout-actions', async (original) => ({ ...(await original<Record<string, unknown>>()), navigateToGroupRoot: (...args: unknown[]) => state.navigateToGroupRoot(...args) }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: (...args: unknown[]) => state.openSessionWhenReady(...args),
 }));
@@ -172,6 +175,7 @@ beforeEach(() => {
     state.live.shownMore.clear();
   });
   state.openChatOnScreen.mockClear();
+  state.navigateToGroupRoot.mockClear();
   state.openInfoTab.mockClear();
   state.closeInfoTab.mockClear();
   state.infoShown = false;
@@ -258,13 +262,13 @@ describe('inner sidebar', () => {
     expect(head().getAttribute('aria-current')).toBeNull();
     // From one of its agents: back to the main chat, and only that (owner 11-14: the title is the way home, not the info).
     await act(async () => head().click());
-    expect(state.openChatOnScreen).toHaveBeenCalledWith('group', false);
+    expect(state.navigateToGroupRoot).toHaveBeenCalledWith('group');
     // With the info shown, the same click still only shows the chat.
     openChat('group');
     state.infoShown = true;
     await render();
     await act(async () => head().click());
-    expect(state.openChatOnScreen).toHaveBeenCalledTimes(2);
+    expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(2);
     expect(state.openInfoTab).not.toHaveBeenCalled();
     expect(state.closeInfoTab).not.toHaveBeenCalled();
     state.infoShown = false;
@@ -282,7 +286,7 @@ describe('inner sidebar', () => {
     await render();
     await pickNewAgent('shop-chat');
     expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
-    expect(state.openChatOnScreen).toHaveBeenLastCalledWith('shop-chat', false);
+    expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
 
   it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics and hides what sits below; ‹ Back brings it back', async () => {
