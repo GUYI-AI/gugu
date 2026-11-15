@@ -18,6 +18,8 @@ vi.mock('@renderer/lib/ipc', () => ({
     return () => listeners.delete(listener);
   } },
   rpc: { browser: { focusHost: native.focusHost } },
+  // The language runtime's device-preference store links the settings client (unused here: no desktop handover).
+  rpcOn: () => ({}),
 }));
 
 let harness: ReturnType<typeof createReactHarness> | null = null;

@@ -7,7 +7,7 @@
  *    读完就拆。
  */
 import { pickVariants, readVsix } from './theme-pack-vsix';
-import { modeOfBackground, OBSIDIAN_VARIABLES, packModes, paletteFromObsidian, paletteIsReadable, type ThemeMode, type ThemePack } from './theme-packs';
+import { modeOfBackground, OBSIDIAN_VARIABLES, packModes, paletteFromObsidian, paletteIsReadable, type ThemeMode, type ThemePack } from '@shared/theme/theme-packs';
 
 export type ThemeImportErrorCode = 'unsupported-url' | 'marketplace' | 'not-found' | 'no-themes' | 'unreadable' | 'network' | 'obsidian-incomplete';
 

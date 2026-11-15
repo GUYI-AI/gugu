@@ -1,5 +1,5 @@
 /**
- * 生成 apps/desktop/src/session/renderer/lib/theme/builtin-theme-packs.json —— 内置七族主题的上游配色(一族一行头、一个模式一行)。
+ * 生成 apps/desktop/src/session/shared/theme/builtin-theme-packs.json —— 内置七族主题的上游配色(一族一行头、一个模式一行)。
  *
  * 用法:先从 Open VSX 下载下面 FAMILIES 里写明版本的 .vsix 放进一个目录(文件名 <namespace>.<name>.vsix),再
  *   pnpm exec tsx scripts/theme-packs/generate-builtin-theme-packs.ts <vsix 目录>
@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pickVariants, readVsix } from '../../apps/desktop/src/session/renderer/lib/theme/theme-pack-vsix';
-import type { ThemeMode, ThemePack } from '../../apps/desktop/src/session/renderer/lib/theme/theme-packs';
+import type { ThemeMode, ThemePack } from '../../apps/desktop/src/session/shared/theme/theme-packs';
 
 const FAMILIES: Array<{ id: string; name: string; extension: string; version: string; author: string; prefer: Partial<Record<ThemeMode, string>> }> = [
   { id: 'tokyo-night', name: 'Tokyo Night', extension: 'enkia.tokyo-night', version: '1.1.2', author: 'enkia', prefer: { dark: 'Tokyo Night', light: 'Tokyo Night Light' } },
@@ -56,7 +56,7 @@ async function main() {
       },
     });
   }
-  const out = resolve(__dirname, '../../apps/desktop/src/session/renderer/lib/theme/builtin-theme-packs.json');
+  const out = resolve(__dirname, '../../apps/desktop/src/session/shared/theme/builtin-theme-packs.json');
   const line = (value: unknown) => JSON.stringify(value);
   const rows = packs.map(({ modes, ...head }) => {
     const modeRows = Object.entries(modes).map(([mode, palette]) => `    ${line(mode)}: ${line(palette)}`);

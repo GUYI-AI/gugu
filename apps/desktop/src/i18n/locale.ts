@@ -4,7 +4,6 @@ export { SUPPORTED_LOCALES, type SupportedLocale } from '@gugu/session-shared/fo
 export type LocalePreference = 'system' | SupportedLocale
 
 export const FALLBACK_LOCALE: SupportedLocale = 'zh-CN'
-export const LOCALE_STORAGE_KEY = 'gugu.locale.preference.v1'
 export const LOCALE_CHANGED_EVENT = 'gugu:locale-changed'
 
 export interface LocaleSnapshot {
@@ -56,9 +55,4 @@ export function resolveLocale(
   languages: readonly string[],
 ): SupportedLocale {
   return preference === 'system' ? resolveSystemLocale(languages) : preference
-}
-
-export function readLocalePreference(storage: Pick<Storage, 'getItem'>): LocalePreference {
-  const stored = storage.getItem(LOCALE_STORAGE_KEY)
-  return isLocalePreference(stored) ? stored : 'system'
 }

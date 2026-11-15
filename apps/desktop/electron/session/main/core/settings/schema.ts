@@ -56,12 +56,35 @@ export const terminalSettingsSchema = z.object({
   defaultShell: z.enum(TERMINAL_SHELL_IDS),
 });
 
+/**
+ * @@@device-preferences — the appearance preference (light / dark / system), this device's (shared/device-preferences.ts).
+ * Stored values from before it had a writer (`emlight` / `emdark`) and the retired `plain-white` read as their light /
+ * dark; anything else unrecognised is the factory light (@@@1424).
+ */
 export const themeSchema = z
-  .enum(['emlight', 'emdark'])
-  .nullable()
-  .catch(null)
-  .optional()
-  .default(null);
+  .preprocess(
+    (value) => (value === 'emlight' || value === 'plain-white' ? 'light' : value === 'emdark' ? 'dark' : value),
+    z.enum(['light', 'dark', 'system'])
+  )
+  .catch('light');
+
+/** The interface language: `system` follows the host's languages. */
+export const localeSchema = z.enum(['system', 'zh-CN', 'en-US']).catch('system');
+
+/** Which theme pack each appearance uses (ids of builtin or imported packs; empty = Gugu's own colours). */
+export const themePackSlotsSchema = z.object({ light: z.string().optional(), dark: z.string().optional() });
+
+/**
+ * @@@5301 the shell's chat notifications (new direct messages, mentions) and their sound. ❌ Folded into `notifications`:
+ * that one is the task page's agent chain, a separate panel.
+ */
+export const chatNotificationsSchema = z.object({ chatMessages: z.boolean(), sound: z.boolean() });
+
+/**
+ * #7199 the assistant's device preferences: the meeting reminder (it reads this computer's calendar) and the assistants
+ * whose composer ideas entry is hidden (assistant ids are global, so no account dimension is needed).
+ */
+export const assistantSettingsSchema = z.object({ meetingReminder: z.boolean(), hiddenIdeasEntries: z.array(z.string()) });
 
 /**
  * 出厂**不预选任何 agent**。
@@ -197,6 +220,12 @@ export const interfaceSettingsSchema = z.object({
    * group or project opens while the sidebar is expanded.
    */
   sidebarIntro: z.enum(['collapse', 'history', 'ended']),
+
+  /** @@@sidebar-tint the middle step of the three-column background ladder (off by default); applied before the first frame. */
+  sidebarTint: z.boolean(),
+
+  /** @@@5295 the tray / dock unread badge (on by default). Main reads it itself: at startup and when this key changes. */
+  trayBadge: z.boolean(),
 });
 
 export const changesViewModeSchema = z.object({
@@ -255,6 +284,10 @@ export const APP_SETTINGS_SCHEMA_MAP = {
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
   theme: themeSchema,
+  locale: localeSchema,
+  themePackSlots: themePackSlotsSchema,
+  chatNotifications: chatNotificationsSchema,
+  assistant: assistantSettingsSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,
@@ -273,6 +306,10 @@ export const appSettingsSchema = z.object({
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
   theme: themeSchema,
+  locale: localeSchema,
+  themePackSlots: themePackSlotsSchema,
+  chatNotifications: chatNotificationsSchema,
+  assistant: assistantSettingsSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,

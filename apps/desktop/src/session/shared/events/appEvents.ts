@@ -251,3 +251,6 @@ export const agentInstallProgressChannel = defineEvent<AgentInstallProgress>('ag
 
 /** A settings key of this device changed (any window, the main process, a reset): every window reads it again. */
 export const appSettingsChangedChannel = defineEvent<{ key: AppSettingsKey }>('app-settings:changed');
+
+/** This device's imported theme packs changed (imported, removed): every window reads the list and the stylesheet again. */
+export const importedThemePacksChangedChannel = defineEvent<void>('theme-packs:imported-changed');

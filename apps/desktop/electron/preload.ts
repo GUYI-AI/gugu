@@ -15,6 +15,7 @@ import {
 import { UI_EVENTS } from '../src/lib/uiEvents'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL } from '../shared/host-localization'
+import { DEVICE_SETTINGS_CHANNEL, DEVICE_SETTINGS_GLOBAL, takeDeviceSettings, type DeviceSettingsAnswer, type DeviceSettingsGlobal } from '../shared/device-preferences'
 import { VIEW_STATE_GLOBAL, VIEW_STATE_SNAPSHOT_CHANNEL, type ViewStateGlobal } from '../shared/view-state-snapshot'
 import {
   WINDOW_MATERIAL_CHANGED_CHANNEL,
@@ -145,10 +146,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setBadge: (count: number): void => {
     ipcRenderer.send('set-badge', count)
   },
-  // @@@5295 托盘数字角标的开关(app 设置 · 通用)。渲染层持有偏好,主进程只被告知。
-  setTrayBadgeEnabled: (enabled: boolean): void => {
-    ipcRenderer.send('set-tray-badge-enabled', enabled)
-  },
   syncResolvedLocale: async (locale: 'zh-CN' | 'en-US'): Promise<void> => {
     await ipcRenderer.invoke('locale:sync-resolved', locale)
   },
@@ -216,6 +213,14 @@ contextBridge.exposeInMainWorld('guguHostLocale', {
 contextBridge.exposeInMainWorld(VIEW_STATE_GLOBAL, {
   snapshot: ipcRenderer.sendSync(VIEW_STATE_SNAPSHOT_CHANNEL) as Record<string, unknown> | null,
 } satisfies ViewStateGlobal)
+
+// @@@device-preferences — theme, language, theme-pack stylesheet, sidebar tint and the other device preferences are in the
+// first frame: one synchronous request that also carries the old localStorage keys over (the one-time migration; this is
+// the only place on desktop that reads them). The renderer's settings replica starts from the same answer.
+contextBridge.exposeInMainWorld(DEVICE_SETTINGS_GLOBAL, takeDeviceSettings(
+  window.localStorage,
+  (legacy) => ipcRenderer.sendSync(DEVICE_SETTINGS_CHANNEL, legacy) as DeviceSettingsAnswer | null,
+) satisfies DeviceSettingsGlobal)
 
 // @@@822 frameless 自绘标题栏: Windows/Linux 无原生边框,窗口控制(最小化/最大化/关闭)走这里。
 // Mac 用原生交通灯(titleBarStyle:hiddenInset),不经此桥。通道名与 main 的 ipcMain handlers 对齐。

@@ -5,70 +5,178 @@
  *   - 选单模式主题:只填它那一格;当下生效的是另一种明暗时顺手把偏好切过去 —— 点一下就要看得见(owner 11-07 拍板);
  *   - 槽位空 = 那种明暗用咕咕默认。
  *
- * 落地是一段样式表(`<style id="gugu-theme-pack">`),同一段字符串存进 localStorage,index.html 的引导脚本首帧前就插上,
- * 不闪色。内置与导入走同一条路(themePackStylesheet),只是导入的配色存在本机。
+ * 落地是一段样式表(`<style id="gugu-theme-pack">`),由槽位 + 主题清单推出来(shared/theme/theme-packs.ts 的 slotsStylesheet),
+ * 只算不存。一个壳一份存储(lib/devicePreferences.ts 同一个选择):
+ *   - 桌面:槽位 = app 设置 `themePackSlots`;导入的主题 = 主进程 userData 下的文件;样式表由主进程算好,首帧前经 preload
+ *     交给 index.html 的引导脚本,之后跟着槽位 / 导入清单的变化再问主进程(下面两个 replica)。
+ *   - web / 手机:槽位与导入的主题在 localStorage;样式表在页里算,顺手缓存一份给引导脚本首帧前插(它没有主进程可问)。
  * 只作用于这台电脑上的咕咕 —— 资源库别的格是分机器的,这一格不是。
  */
-import builtinThemePacks from './builtin-theme-packs.json';
+import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
+import { useMemo } from 'react';
+import { createSelectStore, useSelect } from '@/lib/selectStore';
+import { devicePreferences, documentStorage, useDevicePreference } from '@/lib/devicePreferences';
+import { rendererLogger } from '@/lib/log';
+import { events, rpc } from '@renderer/lib/ipc';
+import { appSettingsChangedChannel, importedThemePacksChangedChannel } from '@shared/events/appEvents';
+import {
+  BUILTIN_THEME_PACKS,
+  isThemePack,
+  packModes,
+  slotsStylesheet,
+  validThemePackSlots,
+  type ThemeMode,
+  type ThemePack,
+} from '@shared/theme/theme-packs';
+import { PREFERENCE_STORAGE_KEYS, parseImportedThemePacks, type ThemePackSlots } from '../../../../../shared/device-preferences';
 import { notifyHostTheme, readEffectiveHostTheme, readThemePreference, writeThemePreference, type ThemePreference } from './host-theme';
-import { THEME_PACK_CSS_KEY, THEME_PACK_SLOTS_KEY, THEME_PACK_STYLE_ID } from './theme-pack-ids';
-import { packModes, themePackStylesheet, type ThemeMode, type ThemePack } from './theme-packs';
+import { THEME_PACK_STYLE_ID } from './theme-pack-ids';
 
-export { THEME_PACK_CSS_KEY, THEME_PACK_SLOTS_KEY, THEME_PACK_STYLE_ID };
-const IMPORTED_KEY = 'app-theme-packs-imported';
+export { THEME_PACK_STYLE_ID };
+export type { ThemePackSlots };
 
-/** 内置七族的上游配色:数据文件,由 scripts/theme-packs/generate-builtin-theme-packs.ts 从上游 .vsix 生成,❌ 手改。 */
-export const BUILTIN_THEME_PACKS = builtinThemePacks as readonly ThemePack[];
+const log = rendererLogger('theme/packs');
 
-export type ThemePackSlots = Partial<Record<ThemeMode, string>>;
+/** Where imported packs live and where the stylesheet comes from: one per shell. */
+type PackStore = {
+  imported(): Reading<ThemePack[]>;
+  useImported(): Reading<ThemePack[]>;
+  /** Import (or replace, same id) one pack. */
+  save(pack: ThemePack): Promise<void>;
+  /** Remove one; the store also empties a slot that named it. */
+  remove(id: string): Promise<void>;
+  /** The slots changed (this window or another): bring the stylesheet up to date. */
+  slotsChanged(): void;
+  subscribe(listener: () => void): () => void;
+};
 
-const listeners = new Set<() => void>();
+// ── desktop: main keeps the packs and derives the stylesheet ─────────────────────────────────────────────────────
 
-function readJson<T>(key: string, fallback: T): T {
-  if (typeof localStorage === 'undefined') return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    // 存坏了(被手改、旧版本)按没有处理;下一次写入会把它覆盖成好的。
-    return fallback;
-  }
+/** This device's imported theme packs (main's file). Read when the library shows them or a choice needs them. */
+export const importedThemePacksModel = replica({
+  name: 'importedThemePacks',
+  scope: 'device',
+  read: async () => (await rpc.themePacks.imported()) as ThemePack[],
+  fresh: Infinity,
+});
+
+const handedOverCss = typeof window === 'undefined' ? undefined : window.guguDeviceSettings?.handover?.themePackCss;
+
+/** The stylesheet main derives from the stored slots; its first value is preload's handover (what the boot script inserted). */
+export const themePackStylesheetModel = replica({
+  name: 'themePackStylesheet',
+  scope: 'device',
+  read: async () => (await rpc.themePacks.stylesheet()) as string,
+  fresh: Infinity,
+  local: () => handedOverCss,
+});
+
+function mainPackStore(): PackStore {
+  const changes = createSelectStore(0);
+  const changed = () => { changes.publish(changes.get() + 1); changes.notify(); };
+  // A slot or the imported list changed anywhere (this window's write comes back the same way): ask main again.
+  events.on(appSettingsChangedChannel, ({ key }) => { if (key === 'themePackSlots') void themePackStylesheetModel.refresh(); });
+  events.on(importedThemePacksChangedChannel, () => {
+    void importedThemePacksModel.refresh();
+    void themePackStylesheetModel.refresh();
+  });
+  // The stylesheet is applied whenever its value moves (DOM, a flow of a value in hand).
+  let applied: string | undefined;
+  const follow = () => {
+    const reading = themePackStylesheetModel.peek();
+    if (reading.state !== 'value' || reading.value === applied) return;
+    applied = reading.value;
+    applyStylesheet(reading.value);
+    changed();
+  };
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.query.queryKey[0] === themePackStylesheetModel.name && (event.type === 'added' || event.type === 'updated')) follow();
+  });
+  // Seeds from the handover at once (`local`) and asks main once more in the background.
+  void themePackStylesheetModel.prefetch();
+  return {
+    imported: () => importedThemePacksModel.peek(),
+    useImported: () => useReplica(importedThemePacksModel, []),
+    save: async (pack) => {
+      importedThemePacksModel.at().set(await rpc.themePacks.saveImported(pack) as ThemePack[]);
+      changed();
+    },
+    remove: async (id) => {
+      importedThemePacksModel.at().set(await rpc.themePacks.removeImported(id) as ThemePack[]);
+      changed();
+    },
+    // Main tells every window the slots changed (`appSettingsChangedChannel`, above): the stylesheet follows from there.
+    slotsChanged: () => {},
+    subscribe: changes.subscribe,
+  };
 }
 
-function isPack(value: unknown): value is ThemePack {
-  const pack = value as ThemePack | null;
-  return !!pack && typeof pack.id === 'string' && typeof pack.name === 'string' && !!pack.modes && !!pack.source
-    && packModes(pack).every((mode) => typeof pack.modes[mode]?.bg === 'string' && typeof pack.modes[mode]?.fg === 'string');
+// ── web / phone: localStorage ────────────────────────────────────────────────────────────────────────────────────
+
+function localPackStore(storage: Storage | null): PackStore {
+  const changes = createSelectStore(0);
+  const changed = () => { changes.publish(changes.get() + 1); changes.notify(); };
+  // Kept while what is stored stays the same: readers compare by identity.
+  let imported: { raw: string | null; packs: ThemePack[]; reading: Reading<ThemePack[]> } | null = null;
+  const stored = (): ThemePack[] => {
+    const raw = storage?.getItem(PREFERENCE_STORAGE_KEYS.importedThemePacks) ?? null;
+    if (!imported || imported.raw !== raw) {
+      // Nothing stored (or not understood) = no imported packs on this device.
+      const packs = parseImportedThemePacks(raw, isThemePack) ?? [];
+      imported = { raw, packs, reading: { state: 'value', value: packs, stale: false, error: null } };
+    }
+    return imported.packs;
+  };
+  const read = (): Reading<ThemePack[]> => {
+    stored();
+    return imported!.reading;
+  };
+  const write = (packs: ThemePack[]) => {
+    storage?.setItem(PREFERENCE_STORAGE_KEYS.importedThemePacks, JSON.stringify(packs));
+  };
+  /** Derive, apply, and keep the result for the boot script's first paint (it has no main process to ask). */
+  const derive = () => {
+    const slots = devicePreferences.read('themePackSlots');
+    if (slots.state !== 'value') return;
+    const packs = [...BUILTIN_THEME_PACKS, ...stored()];
+    const css = slotsStylesheet(validThemePackSlots(slots.value, packs), packs);
+    try {
+      if (css) storage?.setItem(PREFERENCE_STORAGE_KEYS.themePackCss, css);
+      else storage?.removeItem(PREFERENCE_STORAGE_KEYS.themePackCss);
+    } catch (error) {
+      log.error({ error: String(error) }, 'the theme stylesheet could not be kept for the next start');
+    }
+    applyStylesheet(css);
+    changed();
+  };
+  derive();
+  return {
+    imported: read,
+    useImported: () => useSelect(changes, () => read()),
+    save: async (pack) => {
+      write([...stored().filter((p) => p.id !== pack.id), pack]);
+      derive();
+    },
+    remove: async (id) => {
+      write(stored().filter((pack) => pack.id !== id));
+      const slots = readThemePackSlots();
+      if (slots.light === id || slots.dark === id) {
+        const next = { ...slots };
+        if (next.light === id) delete next.light;
+        if (next.dark === id) delete next.dark;
+        devicePreferences.write('themePackSlots', next);
+      }
+      derive();
+    },
+    slotsChanged: derive,
+    subscribe: changes.subscribe,
+  };
 }
 
-export function readImportedThemePacks(): ThemePack[] {
-  const list = readJson<unknown>(IMPORTED_KEY, []);
-  return Array.isArray(list) ? list.filter(isPack) : [];
-}
+// ── this shell's store ───────────────────────────────────────────────────────────────────────────────────────────
 
-export function allThemePacks(): ThemePack[] {
-  return [...BUILTIN_THEME_PACKS, ...readImportedThemePacks()];
-}
-
-export function findThemePack(id: string | undefined): ThemePack | undefined {
-  return id ? allThemePacks().find((pack) => pack.id === id) : undefined;
-}
-
-export function readThemePackSlots(): ThemePackSlots {
-  const slots = readJson<ThemePackSlots>(THEME_PACK_SLOTS_KEY, {});
-  const out: ThemePackSlots = {};
-  // 指向已经不存在的主题(导入的被删了)= 那一格回到默认。
-  for (const mode of ['dark', 'light'] as const) if (findThemePack(slots?.[mode])?.modes[mode]) out[mode] = slots[mode];
-  return out;
-}
-
-/** 把槽位落成样式表,插进(或更新)head 里那一个 style。 */
-export function applyThemePackSlots(slots: ThemePackSlots = readThemePackSlots()): void {
-  const css = themePackStylesheet({ dark: findThemePack(slots.dark), light: findThemePack(slots.light) });
-  if (typeof localStorage !== 'undefined') {
-    if (css) localStorage.setItem(THEME_PACK_CSS_KEY, css);
-    else localStorage.removeItem(THEME_PACK_CSS_KEY);
-  }
+/** 把样式表插进(或更新)head 里那一个 style;空 = 咕咕默认。 */
+function applyStylesheet(css: string): void {
   if (typeof document === 'undefined') return;
   let style = document.getElementById(THEME_PACK_STYLE_ID);
   if (!css) {
@@ -85,10 +193,30 @@ export function applyThemePackSlots(slots: ThemePackSlots = readThemePackSlots()
   notifyHostTheme();
 }
 
+const packStore: PackStore = devicePreferences.backend === 'appSettings'
+  ? mainPackStore()
+  : localPackStore(documentStorage());
+
+/** The pack a choice names (a one-moment decision; the page that offers it has the list read). */
+export function findThemePack(id: string | undefined): ThemePack | undefined {
+  if (!id) return undefined;
+  const builtin = BUILTIN_THEME_PACKS.find((pack) => pack.id === id);
+  if (builtin) return builtin;
+  const imported = packStore.imported();
+  if (imported.state !== 'value') throw new Error(`theme ${id}: the imported themes were not read yet`);
+  return imported.value.find((pack) => pack.id === id);
+}
+
+/** The slots now (a one-moment decision: a choice, an undo). Throws when they were never read. */
+export function readThemePackSlots(): ThemePackSlots {
+  const reading = devicePreferences.read('themePackSlots');
+  if (reading.state !== 'value') throw new Error('theme pack slots: not read yet');
+  return reading.value;
+}
+
 function writeSlots(slots: ThemePackSlots): void {
-  if (typeof localStorage !== 'undefined') localStorage.setItem(THEME_PACK_SLOTS_KEY, JSON.stringify(slots));
-  applyThemePackSlots(slots);
-  for (const listener of listeners) listener();
+  devicePreferences.write('themePackSlots', slots);
+  packStore.slotsChanged();
 }
 
 export type ThemePackChoice = { slots: ThemePackSlots; preference: ThemePreference };
@@ -117,34 +245,29 @@ export function resetThemePacks(): void {
   writeSlots({});
 }
 
-export function saveImportedThemePack(pack: ThemePack): void {
-  const rest = readImportedThemePacks().filter((p) => p.id !== pack.id);
-  if (typeof localStorage !== 'undefined') localStorage.setItem(IMPORTED_KEY, JSON.stringify([...rest, pack]));
-  for (const listener of listeners) listener();
+export async function saveImportedThemePack(pack: ThemePack): Promise<void> {
+  await packStore.save(pack);
 }
 
-export function removeImportedThemePack(id: string): void {
-  const slots = readThemePackSlots();
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(IMPORTED_KEY, JSON.stringify(readImportedThemePacks().filter((p) => p.id !== id)));
-  }
-  const next = { ...slots };
-  for (const mode of ['dark', 'light'] as const) if (next[mode] === id) delete next[mode];
-  writeSlots(next);
+export async function removeImportedThemePack(id: string): Promise<void> {
+  await packStore.remove(id);
 }
 
+/** The packs or the slots changed, or the stylesheet was applied anew (the terminal re-reads its colours then). */
 export function subscribeToThemePacks(onChange: () => void): () => void {
-  listeners.add(onChange);
-  return () => {
-    listeners.delete(onChange);
-  };
+  const offPacks = packStore.subscribe(onChange);
+  const offSlots = devicePreferences.subscribe(onChange);
+  return () => { offPacks(); offSlots(); };
 }
 
-/**
- * useSyncExternalStore 要一个**稳定**的快照:内容没变就返回同一个字符串。
- * 槽位 + 导入清单的原文拼起来就是。
- */
-export function themePackSnapshot(): string {
-  if (typeof localStorage === 'undefined') return '';
-  return `${localStorage.getItem(THEME_PACK_SLOTS_KEY) ?? ''}\n${localStorage.getItem(IMPORTED_KEY) ?? ''}`;
+/** 主题清单(内置在前、导入在后)与两个槽位,as a surface draws them. */
+export function useThemePackReading(): Reading<{ packs: ThemePack[]; slots: ThemePackSlots }> {
+  const imported = packStore.useImported();
+  const slots = useDevicePreference('themePackSlots');
+  return useMemo(() => {
+    if (imported.state !== 'value') return imported;
+    if (slots.state !== 'value') return slots;
+    const packs = [...BUILTIN_THEME_PACKS, ...imported.value];
+    return { ...slots, value: { packs, slots: validThemePackSlots(slots.value, packs) as Partial<Record<ThemeMode, string>> } };
+  }, [imported, slots]);
 }

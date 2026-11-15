@@ -37,7 +37,6 @@ interface Window {
       domain: import('./lib/rendererCommandProtocol').RendererCommandDomain
     ) => void
     setBadge: (count: number) => void
-    setTrayBadgeEnabled: (enabled: boolean) => void
     syncResolvedLocale: (locale: 'zh-CN' | 'en-US') => Promise<void>
     /** @@@window-tone 渲染层把主题真值告诉主进程,主进程据此改写无边框窗口的底色。 */
     syncWindowTone?: (tone: 'light' | 'dark', themeColors?: Record<string, string>) => void
@@ -58,6 +57,8 @@ interface Window {
   // @@@host-system-languages — 桌面宿主注入的真实系统语言列表(app.getPreferredSystemLanguages());
   // web/移动端为 undefined,那里 navigator.languages 本身就是系统语言。
   /** 「设置 → 聊天渠道 → 微信」;只有桌面版有(preload 暴露),web / 手机上没有。 */
+  /** @@@device-preferences — desktop only (preload): this device's preferences, handed over before the first frame. */
+  guguDeviceSettings?: import('../shared/device-preferences').DeviceSettingsGlobal
   guguHostLocale?: {
     /** preload 加载时取好的快照,供首帧同步解析「跟随系统」。 */
     systemLanguages: readonly string[]

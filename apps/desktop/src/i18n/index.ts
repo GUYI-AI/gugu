@@ -1,11 +1,9 @@
 export {
   FALLBACK_LOCALE,
   LOCALE_CHANGED_EVENT,
-  LOCALE_STORAGE_KEY,
   SUPPORTED_LOCALES,
   isLocalePreference,
   matchSupportedLocale,
-  readLocalePreference,
   resolveLocale,
   resolveSystemLocale,
   type LocalePreference,

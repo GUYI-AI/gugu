@@ -26,7 +26,8 @@ export function AppComposerRow({ ownerId, extensionId, assistant, chip }: {
   const offered = useCustomizeCardOffered(ownerId)
   const chipHidden = useIdeasEntryHidden(assistant.id)
   const { recording } = useVoiceNoteHandler()
-  const capsule = chip && !chipHidden && !recording ? chip : null
+  // Hidden for sure: no capsule; not read yet: the capsule draws its own placeholder (IdeasEntry).
+  const capsule = chip && !(chipHidden.state === 'value' && chipHidden.value) && !recording ? chip : null
   if (!offered && !capsule) return null
   const openCustomize = () => {
     void rpc.extensions.conversationCustomizeOpened({ ownerId, extensionId }).then((result) => {

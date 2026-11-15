@@ -13,12 +13,14 @@
  * 会话页的 provider 用 useSyncExternalStore 订阅它 —— 没有第二处可以漂。
  *
  * **偏好**(用户在设置里选的)与**真值**(当下到底是浅还是深)是两层。
- * 偏好存 localStorage `app-theme`,取值 `light` / `dark` / `system`;旧 `plain-white` 按浅色读取。真值永远是解析后的
+ * 偏好存在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `theme`,主进程的终端配色也读它;web / 手机 =
+ * localStorage `app-theme`),取值 `light` / `dark` / `system`;旧 `plain-white` 按浅色读取。真值永远是解析后的
  * `light` / `dark`,落在 `<html data-theme>` 上。选了 `system` 时真值随系统外观走,
  * 由 `startHostThemeSystemSync()` 一处负责改写属性 —— 两个 React 根都只是观察者。
  */
 import { appThemeColors } from './app-theme-colors';
 import { rendererLogger } from '@/lib/log';
+import { devicePreferences } from '@/lib/devicePreferences';
 
 const themeLog = rendererLogger('theme/native-appearance');
 
@@ -30,16 +32,8 @@ export type HostTheme = 'light' | 'dark';
 /** 偏好:用户在设置里选的那一项。`system` = 跟随系统外观。 */
 export type ThemePreference = HostTheme | 'system';
 
-const HOST_THEME_STORAGE_KEY = 'app-theme';
-
 /** @@@1424 首次启动仍是浅色 —— 三态只是把「跟随系统」重新给回用户,不改默认。 */
 const DEFAULT_PREFERENCE: ThemePreference = 'light';
-
-const preferenceListeners = new Set<() => void>();
-
-function notifyPreferenceChanged(): void {
-  for (const listener of preferenceListeners) listener();
-}
 
 function prefersDarkQuery(): MediaQueryList | null {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
@@ -57,12 +51,11 @@ export function resolveThemePreference(preference: ThemePreference): HostTheme {
   return preference;
 }
 
-/** 读用户选的那一项。存的值不认识(旧版本/被改过)时退回默认,❌ 不猜。 */
+/** 读用户选的那一项(存的值不认识时,读出来就是出厂的浅色:规则在 shared/device-preferences.ts 与主进程的 schema)。 */
 export function readThemePreference(): ThemePreference {
-  if (typeof localStorage === 'undefined') return DEFAULT_PREFERENCE;
-  const saved = localStorage.getItem(HOST_THEME_STORAGE_KEY);
-  if (saved === 'plain-white') return 'light';
-  return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : DEFAULT_PREFERENCE;
+  const reading = devicePreferences.read('theme');
+  // @@@reading-default - only when the desktop handover failed and settings are not read yet: what the inline boot script painted (the factory light)
+  return reading.state === 'value' ? reading.value : DEFAULT_PREFERENCE;
 }
 
 /**
@@ -98,10 +91,7 @@ function settledTheme(preference: ThemePreference, sync: Exclude<NativeAppearanc
  * ⇒ 偏好自带一条通知链,与属性那条并列。
  */
 export function subscribeToThemePreference(onChange: () => void): () => void {
-  preferenceListeners.add(onChange);
-  return () => {
-    preferenceListeners.delete(onChange);
-  };
+  return devicePreferences.subscribe(onChange);
 }
 
 function applyEffectiveTheme(theme: HostTheme, preference: ThemePreference): void {
@@ -151,11 +141,9 @@ export function writeThemePreference(preference: ThemePreference): HostTheme {
     throw new NativeAppearanceSyncError(`主进程没能同步主题偏好 ${preference};偏好与主题保持原样`);
   }
   const resolved = settledTheme(preference, sync);
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(HOST_THEME_STORAGE_KEY, preference);
-  }
+  // Attribute first: the follower below sees its own write already applied.
   applyEffectiveTheme(resolved, preference);
-  notifyPreferenceChanged();
+  devicePreferences.write('theme', preference);
   return resolved;
 }
 
@@ -199,11 +187,34 @@ export function startHostThemeSystemSync(): () => void {
   };
 }
 
+let following = false;
+
+/**
+ * 偏好在别处变了(另一个窗口、主进程):照样落到属性上。本窗口自己写的那一次属性已经落过,比对一下就跳过。
+ * 整个文档一份,幂等。
+ */
+function followThemePreference(): void {
+  if (following) return;
+  following = true;
+  devicePreferences.subscribe(() => {
+    if (typeof document === 'undefined') return;
+    const preference = readThemePreference();
+    if (document.documentElement.dataset.themePreference === preference) return;
+    const sync = syncNativeAppearance(preference);
+    if (sync.kind === 'failed') {
+      themeLog.error({ preference }, '别的窗口改了主题偏好,主进程没能同步;保留当前主题');
+      return;
+    }
+    applyEffectiveTheme(settledTheme(preference, sync), preference);
+  });
+}
+
 /**
  * 把存下来的偏好解析成真值落到属性上。
  * 属性缺失时❌不能默认浅色 —— 存的可能是「跟随系统」而系统正是深色。
  */
 export function hydrateHostTheme(): HostTheme {
+  followThemePreference();
   const preference = readThemePreference();
   const sync = syncNativeAppearance(preference);
   // 启动恢复时主进程没跟上:属性已经由 index.html 的引导脚本落过,保留它,只把失败报出来(❌ 在这里抛:会把整个壳拖垮)。

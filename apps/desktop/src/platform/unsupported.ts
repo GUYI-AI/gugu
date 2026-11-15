@@ -47,7 +47,6 @@ export function createUnsupportedPlatform(
     saveFile: async () => { throw unsupported('Save file') },
     writeClipboardText: async () => { throw unsupported('Clipboard') },
     setBadge: () => { throw unsupported('Badge updates') },
-    setTrayBadgeEnabled: () => { throw unsupported('Badge updates') },
     scanQrCode: async () => { throw unsupported('QR scan') },
     showNotification: async () => { throw unsupported('Notifications') },
     checkSystemPermission: async () => { throw unsupported('System permissions') },

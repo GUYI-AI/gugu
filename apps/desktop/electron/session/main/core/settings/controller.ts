@@ -4,11 +4,14 @@ import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-s
 import { events } from '@main/lib/events';
 import { appSettingsChangedChannel } from '@shared/events/appEvents';
 import { createRPCController } from '@shared/lib/ipc/rpc';
+import { settingsChanged } from './device-settings';
 import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
-async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
+export async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
   // Every window keeps this device's settings in its replica: say which key changed, each reads it again.
   events.emit(appSettingsChangedChannel, { key });
+  // Main's own followers (the host's tray badge reads `interface.trayBadge`).
+  settingsChanged(key);
   if (key === 'resourceMonitor') await reconcileResourceSampler();
   if (key === 'keyboard') {
     // Re-read the effective settings so runtime state observes service-side defaults or merges.

@@ -6,6 +6,7 @@ vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true,
   getPlatform: () => 'ios', isPluginAvailable: () => true }, registerPlugin: () => ({ authSession: state.authSession }) }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({
   getRendererSession: () => state.ownerId ? { user: { id: state.ownerId } } : null,
+  observeRendererSession: () => () => {},
 }))
 vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient', () => ({ prepareIOSSignOut: state.prepare }))
 import { phoneHostSignOut } from '../../../../apps/desktop/src/lib/phoneHostAuth'

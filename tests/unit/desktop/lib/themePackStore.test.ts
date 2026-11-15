@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readThemePreference, writeThemePreference } from '../../../../apps/desktop/src/session/renderer/lib/theme/host-theme'
 import {
-  applyThemePackSlots,
   chooseThemePack,
   readThemePackSlots,
   removeImportedThemePack,
@@ -13,11 +12,13 @@ import {
   restoreThemePackChoice,
   saveImportedThemePack,
   subscribeToThemePacks,
-  THEME_PACK_CSS_KEY,
-  THEME_PACK_SLOTS_KEY,
   THEME_PACK_STYLE_ID,
 } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-store'
-import type { ThemePack } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-packs'
+import { PREFERENCE_STORAGE_KEYS } from '../../../../apps/desktop/shared/device-preferences'
+
+// This shell (jsdom, no preload handover) keeps its device preferences in localStorage: the web / phone store.
+const THEME_PACK_CSS_KEY = PREFERENCE_STORAGE_KEYS.themePackCss
+import type { ThemePack } from '../../../../apps/desktop/src/session/shared/theme/theme-packs'
 
 const style = () => document.getElementById(THEME_PACK_STYLE_ID)
 
@@ -69,30 +70,30 @@ describe('theme pack slots', () => {
     expect(localStorage.getItem(THEME_PACK_CSS_KEY)).toBeNull()
   })
 
-  it('imported packs join the list; removing one empties the slot that pointed at it', () => {
+  it('imported packs join the list; removing one empties the slot that pointed at it', async () => {
     let notified = 0
     const off = subscribeToThemePacks(() => { notified += 1 })
-    saveImportedThemePack(imported)
+    await saveImportedThemePack(imported)
     chooseThemePack(imported.id)
     expect(readThemePackSlots()).toEqual({ light: imported.id })
-    removeImportedThemePack(imported.id)
+    await removeImportedThemePack(imported.id)
     expect(readThemePackSlots()).toEqual({})
     expect(notified).toBeGreaterThanOrEqual(3)
     off()
   })
 
-  it('a slot pointing at something that no longer exists reads as the default, and stale storage is ignored', () => {
-    localStorage.setItem(THEME_PACK_SLOTS_KEY, JSON.stringify({ dark: 'gone', light: 'tokyo-night' }))
-    expect(readThemePackSlots()).toEqual({ light: 'tokyo-night' })
-    localStorage.setItem(THEME_PACK_SLOTS_KEY, '{not json')
+  it('a slot pointing at something that no longer exists draws Gugu default for that mode; stale storage reads as no slots', () => {
+    restoreThemePackChoice({ slots: { dark: 'gone', light: 'tokyo-night' }, preference: 'light' })
+    expect(style()?.textContent).toContain(":root[data-theme='light']")
+    expect(style()?.textContent).not.toContain(":root[data-theme='dark']")
+    localStorage.setItem(PREFERENCE_STORAGE_KEYS.themePackSlots, '{not json')
     expect(readThemePackSlots()).toEqual({})
-    applyThemePackSlots()
-    expect(style()).toBeNull()
   })
 
   it('index.html first-paint script uses the same storage key and style id', () => {
     const html = readFileSync(join(__dirname, '../../../../apps/desktop/index.html'), 'utf8')
     expect(html).toContain(`localStorage.getItem('${THEME_PACK_CSS_KEY}')`)
+    expect(html).toContain('handover.themePackCss')
     expect(html).toContain(`style.id = '${THEME_PACK_STYLE_ID}'`)
   })
 })

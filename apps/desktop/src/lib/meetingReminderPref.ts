@@ -1,27 +1,20 @@
 // #7199 「入会提醒」开关(默认开):记在这台电脑上 —— 提醒读的就是这台电脑的日历。
-// 壳(提醒卡)与会话页(助理的设置页)是同一个 document 里的两个 bundle,localStorage 是两边共读的那一份;改了发一个 window 事件。
+// 存在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `assistant.meetingReminder`);壳(提醒卡)与会话页
+// (助理的设置页)读同一份,任一窗口改了,别的跟着变。
+import type { Reading } from './replica'
+import { devicePreferences, useDevicePreference } from './devicePreferences'
 
-const KEY = 'gugu.voiceNotes.meetingReminder'
-export const MEETING_REMINDER_PREF_EVENT = 'gugu:meeting-reminder-pref'
-
+/** 提醒这一刻要不要弹(一次性的判断)。 */
 export function meetingReminderEnabled(): boolean {
-  try {
-    return localStorage.getItem(KEY) !== 'off'
-  } catch {
-    return true
-  }
+  const reading = devicePreferences.read('meetingReminder')
+  // @@@reading-default - a reminder decided before the preference was read (only if the desktop handover failed): not shown; the next one asks again
+  return reading.state === 'value' && reading.value
 }
 
 export function setMeetingReminderEnabled(on: boolean): void {
-  try {
-    localStorage.setItem(KEY, on ? 'on' : 'off')
-  } catch {
-    // 记不住就照默认(开着)。
-  }
-  window.dispatchEvent(new Event(MEETING_REMINDER_PREF_EVENT))
+  devicePreferences.write('meetingReminder', on)
 }
 
-export function subscribeMeetingReminderPref(listener: () => void): () => void {
-  window.addEventListener(MEETING_REMINDER_PREF_EVENT, listener)
-  return () => window.removeEventListener(MEETING_REMINDER_PREF_EVENT, listener)
+export function useMeetingReminderPref(): Reading<boolean> {
+  return useDevicePreference('meetingReminder')
 }

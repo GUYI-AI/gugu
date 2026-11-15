@@ -1,37 +1,17 @@
 // #7199 「灵感」入口:输入框上方那颗「灵感」胶囊能隐藏,隐藏后「+」里的「获取灵感」照样在。
-// 隐藏与否记在这台设备上(按设备 + 账号记、不同步);localStorage 共读一份,改了发一个 window 事件。
-import { useSyncExternalStore } from 'react'
-
-const KEY_PREFIX = 'gugu.assistant.ideasEntry:'
-const PREF_EVENT = 'gugu:assistant-ideas-pref'
-
-export function ideasEntryHidden(assistantId: string): boolean {
-  try {
-    return localStorage.getItem(KEY_PREFIX + assistantId) === 'hidden'
-  } catch {
-    return false
-  }
-}
+// 隐藏了哪些助理的入口记在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `assistant.hiddenIdeasEntries`;
+// 助理 id 全局唯一,不需要再按账号分),不同步到云。
+import type { Reading } from './replica'
+import { devicePreferences, useDevicePreference } from './devicePreferences'
 
 export function setIdeasEntryHidden(assistantId: string, hidden: boolean): void {
-  try {
-    if (hidden) localStorage.setItem(KEY_PREFIX + assistantId, 'hidden')
-    else localStorage.removeItem(KEY_PREFIX + assistantId)
-  } catch {
-    // 记不住就照默认(露着)。
-  }
-  window.dispatchEvent(new Event(PREF_EVENT))
+  const reading = devicePreferences.read('hiddenIdeasEntries')
+  if (reading.state !== 'value') throw new Error('hidden ideas entries: not read yet')
+  const rest = reading.value.filter((id) => id !== assistantId)
+  devicePreferences.write('hiddenIdeasEntries', hidden ? [...rest, assistantId] : rest)
 }
 
-function subscribePref(listener: () => void): () => void {
-  window.addEventListener(PREF_EVENT, listener)
-  window.addEventListener('storage', listener)
-  return () => {
-    window.removeEventListener(PREF_EVENT, listener)
-    window.removeEventListener('storage', listener)
-  }
-}
-
-export function useIdeasEntryHidden(assistantId: string): boolean {
-  return useSyncExternalStore(subscribePref, () => ideasEntryHidden(assistantId))
+export function useIdeasEntryHidden(assistantId: string): Reading<boolean> {
+  const reading = useDevicePreference('hiddenIdeasEntries')
+  return reading.state === 'value' ? { ...reading, value: reading.value.includes(assistantId) } : reading
 }

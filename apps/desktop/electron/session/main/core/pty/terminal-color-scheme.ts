@@ -1,5 +1,6 @@
 import { nativeTheme } from 'electron';
 import { appSettingsService } from '@main/core/settings/settings-service';
+import { themeSchema } from '@main/core/settings/schema';
 import { log } from '@main/lib/logger';
 import type { Theme } from '@shared/core/app-settings';
 
@@ -14,8 +15,10 @@ const COLORFGBG_BY_SCHEME = {
   dark: '15;0',
 } as const;
 
+/** The person's appearance choice (`theme`, written by the renderer since device preferences moved into app settings). */
 export function resolveEffectiveTheme(theme: Theme, shouldUseDarkColors: boolean): EffectiveTheme {
-  if (theme === 'emlight' || theme === 'emdark') return theme;
+  if (theme === 'light') return 'emlight';
+  if (theme === 'dark') return 'emdark';
   return shouldUseDarkColors ? 'emdark' : 'emlight';
 }
 
@@ -31,7 +34,7 @@ export function resolveEffectiveTheme(theme: Theme, shouldUseDarkColors: boolean
  */
 export async function getTerminalColorEnv(): Promise<Record<string, string>> {
   try {
-    const appTheme = await appSettingsService.get('theme');
+    const appTheme = themeSchema.parse(await appSettingsService.get('theme'));
     const effective = resolveEffectiveTheme(appTheme, nativeTheme.shouldUseDarkColors);
     return {
       COLORFGBG: effective === 'emlight' ? COLORFGBG_BY_SCHEME.light : COLORFGBG_BY_SCHEME.dark,

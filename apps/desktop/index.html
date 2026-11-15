@@ -22,44 +22,44 @@
         [data-gugu-boot] [data-startup-poster-settled] { display: inline; }
       }
     </style>
-    <!-- @@@5293 首帧之前把偏好解析成真值,避免闪一下再改。规则必须与
-         `src/session/renderer/lib/theme/host-theme.ts` 里那份逐字一致:
-         存的是**偏好**(light / dark / system),明暗真值仍是 light / dark;
-         旧 plain-white 按浅色处理,data-theme-preference 同步归一。
-         认不出来的值退回浅色(@@@1424 的默认),❌ 不猜、也❌ 不在这里跟随系统——
-         「跟随系统」只有在用户显式选了 system 时才成立。 -->
+    <!-- @@@device-preferences 首帧之前把这台设备的偏好落到文档上:主题、主题包样式表、侧栏着色(避免闪一下再改)。
+         一个壳一份存储,与 `src/lib/devicePreferences.ts` 同一个选择(规则见 `shared/device-preferences.ts`):
+         桌面 = preload 交出的 `window.guguDeviceSettings`(主进程的设置;它也是设置读模型的首个值);
+         web / 手机 = localStorage(它们唯一的设备存储)。❌ 先读一份、读不到再读另一份。
+         @@@5293 存的是**偏好**(light / dark / system),明暗真值仍是 light / dark;旧 plain-white 按浅色处理,
+         data-theme-preference 同步归一。认不出来的值退回浅色(@@@1424 的默认),❌ 不猜、也❌ 在这里跟随系统——
+         「跟随系统」只有在用户显式选了 system 时才成立。
+         @@@theme-pack-slots 主题包样式表:桌面由主进程按槽位算好交过来,web / 手机是页里算好存下的那一段(key 与 style id
+         与 `src/session/renderer/lib/theme/theme-pack-store.ts` 逐字一致);这里只原样插,不解析、不计算。
+         @@@sidebar-tint 只有开着(桌面 true、web 存的字面量 'true')才落属性。 -->
     <script>
       (function() {
-        var pref = localStorage.getItem('app-theme');
+        var device = window.guguDeviceSettings;
+        var pref, css, tint;
+        if (device) {
+          var handover = device.handover;
+          pref = handover ? handover.settings.theme.value : null;
+          css = handover ? handover.themePackCss : '';
+          tint = handover ? handover.settings['interface'].value.sidebarTint === true : false;
+        } else {
+          pref = localStorage.getItem('app-theme');
+          css = localStorage.getItem('app-theme-pack-css');
+          tint = localStorage.getItem('gugu.sidebar-tint') === 'true';
+        }
+        if (pref === 'plain-white') pref = 'light';
         if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'light';
         var resolved = pref === 'system'
           ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
           : pref;
         document.documentElement.setAttribute('data-theme', resolved);
         document.documentElement.setAttribute('data-theme-preference', pref);
-      })();
-    </script>
-    <!-- @@@theme-pack-slots 资源库「主题」选过的配色:首帧之前插上,❌ 先闪咕咕默认色再换。
-         样式表是选主题时算好存下的(`src/session/renderer/lib/theme/theme-pack-store.ts`,key 与 style id 逐字一致);
-         这里只原样插,不解析、不计算。 -->
-    <script>
-      (function() {
-        var css = localStorage.getItem('app-theme-pack-css');
-        if (!css) return;
-        var style = document.createElement('style');
-        style.id = 'gugu-theme-pack';
-        style.textContent = css;
-        document.head.appendChild(style);
-      })();
-    </script>
-    <!-- @@@sidebar-tint 同理:侧栏渐进底色开着时,首帧之前就要落上属性,否则会先闪一下
-         未染色的侧栏。规则必须与 `src/lib/sidebarTint.ts` 逐字一致:只有存下来的字面量是
-         'true' 才算开,其余(缺失/旧值/被改过)一律算关。 -->
-    <script>
-      (function() {
-        if (localStorage.getItem('gugu.sidebar-tint') === 'true') {
-          document.documentElement.setAttribute('data-sidebar-tint', 'on');
+        if (css) {
+          var style = document.createElement('style');
+          style.id = 'gugu-theme-pack';
+          style.textContent = css;
+          document.head.appendChild(style);
         }
+        if (tint) document.documentElement.setAttribute('data-sidebar-tint', 'on');
       })();
     </script>
   </head>

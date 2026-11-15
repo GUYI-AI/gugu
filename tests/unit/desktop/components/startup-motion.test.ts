@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { commitStartupContent, retainStartupMotion, startStartupMotion, deferStartupMotion, discardStartupMotion, subscribeStartupContentReady, hasStartupMotion } from '../../../../apps/desktop/src/lib/startup-motion'
-import { LOCALE_CHANGED_EVENT, LOCALE_STORAGE_KEY } from '../../../../apps/desktop/src/i18n/locale'
+import { LOCALE_CHANGED_EVENT } from '../../../../apps/desktop/src/i18n/locale'
+import { PREFERENCE_STORAGE_KEYS } from '../../../../apps/desktop/shared/device-preferences'
+
+const LOCALE_STORAGE_KEY = PREFERENCE_STORAGE_KEYS.locale
 
 beforeEach(() => {
   const host = document.createElement('div')

@@ -2,14 +2,14 @@ import { createInstance, type Resource, type ResourceKey } from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import enUSCommon from './locales/en-US/common'
 import zhCNCommon from './locales/zh-CN/common'
+import { devicePreferences } from '../lib/devicePreferences'
+import { bootLocalePreference } from '../../shared/device-preferences'
 import {
   FALLBACK_LOCALE,
   LOCALE_CHANGED_EVENT,
-  LOCALE_STORAGE_KEY,
   isLocalePreference,
   isSupportedLocale,
   preferHostLanguages,
-  readLocalePreference,
   resolveLocale,
   type LocalePreference,
   type LocaleSnapshot,
@@ -35,17 +35,13 @@ function hostLanguages(refresh = false): readonly string[] {
   return preferHostLanguages(injected, navigatorLanguages())
 }
 
-function initialPreference(): LocalePreference {
-  if (typeof window === 'undefined') return 'system'
-  try {
-    return readLocalePreference(window.localStorage)
-  } catch (error) {
-    console.error('[localization] failed to read locale preference', error)
-    return 'system'
-  }
-}
-
-const preference = initialPreference()
+/**
+ * The language preference lives in this shell's device store (lib/devicePreferences.ts). Its first value is read here
+ * with the dependency-free boot reader — the same store: on desktop preload's handover (the settings replica's first
+ * value too), so the language is right from the first frame, the upgrade start included; on web / phone localStorage.
+ * ❌ `devicePreferences` at module evaluation: its chain (settings client → ipc → machine clients) imports this module.
+ */
+const preference = typeof window === 'undefined' ? 'system' : bootLocalePreference(window)
 let snapshot: LocaleSnapshot = {
   preference,
   resolvedLocale: resolveLocale(preference, hostLanguages()),
@@ -100,13 +96,6 @@ if (typeof window !== 'undefined') {
     }, true)
   })
 
-  window.addEventListener('storage', (event) => {
-    if (event.key !== LOCALE_STORAGE_KEY || !isLocalePreference(event.newValue)) return
-    applySnapshot({
-      preference: event.newValue,
-      resolvedLocale: resolveLocale(event.newValue, hostLanguages()),
-    }, false)
-  })
 
   window.addEventListener(LOCALE_CHANGED_EVENT, (event) => {
     const detail = (event as CustomEvent<LocaleChangeDetail>).detail
@@ -126,24 +115,34 @@ export function getLocaleSnapshot(): LocaleSnapshot {
   return snapshot
 }
 
+let following = false
+
+/** Changed elsewhere (another window, another tab of the web page, its first read after a failed handover). */
+function followStoredPreference(): void {
+  if (following) return
+  following = true
+  devicePreferences.subscribe(() => {
+    const reading = devicePreferences.read('locale')
+    if (reading.state !== 'value' || reading.value === snapshot.preference) return
+    applySnapshot({ preference: reading.value, resolvedLocale: resolveLocale(reading.value, hostLanguages()) }, false)
+  })
+}
+
 export function subscribeLocale(listener: () => void): () => void {
+  // Installed with the first subscriber (every entry's LocalizationProvider), after the module graph has evaluated.
+  followStoredPreference()
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
 
 export function setLocalePreference(next: LocalePreference): void {
   if (!isLocalePreference(next)) throw new Error(`Unsupported locale preference: ${String(next)}`)
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, next)
-    } catch (error) {
-      console.error('[localization] failed to persist locale preference', error)
-    }
-  }
+  // Applied first: the follower above then finds its own write already in place.
   applySnapshot({
     preference: next,
     resolvedLocale: resolveLocale(next, hostLanguages()),
   }, true)
+  devicePreferences.write('locale', next)
 }
 
 export function registerLocaleNamespace(namespace: string, catalog: LocaleCatalog): void {

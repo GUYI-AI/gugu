@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { setIdeasEntryHidden, useIdeasEntryHidden } from '@/lib/assistantIdeas';
+import { Unknown } from '@/components/ui/Unknown';
 import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { ideaGroups, type TodayFeedView, type TodayIdea } from './assistant-today-file';
@@ -20,7 +21,8 @@ import { AssistantEmpty } from './assistant-ui-parts';
 export function IdeasEntry({ assistantId, busy, onOpen, label, icon }: { assistantId: string; busy: boolean; onOpen: () => void; label?: string; icon?: ReactNode }) {
   const { t } = useTranslation('assistant');
   const hidden = useIdeasEntryHidden(assistantId);
-  if (hidden || busy) return null;
+  if (busy || (hidden.state === 'value' && hidden.value)) return null;
+  if (hidden.state !== 'value') return <Unknown className="h-7 w-20 rounded-[var(--radius-capsule)]" />;
   return (
     <button type="button" className="ta-ideas-pill" onClick={onOpen} data-testid="assistant-ideas-entry">
       {icon ?? <Sparkles />}
@@ -54,15 +56,17 @@ export function IdeasPanel({
   return (
     <div className="ta-ideas" data-layout={layout} data-testid="assistant-ideas">
       <div className="ta-ideas-head">
-        <button
-          type="button"
-          className="ta-pill-btn"
-          onClick={() => (hidden ? setIdeasEntryHidden(assistantId, false) : setConfirming(true))}
-          data-testid="assistant-ideas-toggle"
-        >
-          {hidden ? <Eye /> : <EyeOff />}
-          {hidden ? t('ideas.show') : t('ideas.hide')}
-        </button>
+        {hidden.state === 'value' ? (
+          <button
+            type="button"
+            className="ta-pill-btn"
+            onClick={() => (hidden.value ? setIdeasEntryHidden(assistantId, false) : setConfirming(true))}
+            data-testid="assistant-ideas-toggle"
+          >
+            {hidden.value ? <Eye /> : <EyeOff />}
+            {hidden.value ? t('ideas.show') : t('ideas.hide')}
+          </button>
+        ) : <Unknown className="h-7 w-24 rounded-[var(--radius-capsule)]" />}
         <h2 className="ta-dialog-title">{t('ideas.title')}</h2>
         <button type="button" className="ta-circle" aria-label={t('ideas.close')} onClick={onClose} data-testid="assistant-ideas-close">
           <X />

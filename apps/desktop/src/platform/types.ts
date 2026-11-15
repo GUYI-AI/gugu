@@ -160,7 +160,6 @@ export interface AppPlatform {
   saveFile: (blob: Blob, filename: string) => Promise<{ saved: boolean }>
   writeClipboardText: (value: string) => Promise<void>
   setBadge: (count: number) => void
-  setTrayBadgeEnabled: (enabled: boolean) => void
   // @@@scan (#537-A) - native camera QR/barcode scan; resolves the decoded raw string a user would
   // otherwise paste, or null if cancelled. Only the capacitor adapter implements it (capability gate).
   scanQrCode: () => Promise<string | null>

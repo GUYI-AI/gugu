@@ -47,7 +47,11 @@ export const SETTINGS_DEFAULTS = {
     macOptionIsMeta: false,
     defaultShell: 'system' as const
   },
-  theme: null,
+  theme: 'light' as const,
+  locale: 'system' as const,
+  themePackSlots: {},
+  chatNotifications: { chatMessages: true, sound: true },
+  assistant: { meetingReminder: true, hiddenIdeasEntries: [] as string[] },
   // 出厂不预选 agent —— 理由见 schema.ts 的 `defaultAgentSchema`。
   defaultAgent: null,
   // 新建会话框的记忆:出厂什么都没记(schema.ts 的 `newSessionMemorySchema`)。
@@ -68,7 +72,9 @@ export const SETTINGS_DEFAULTS = {
     chatView: 'double' as const,
     confirmBeforeArchive: true,
     confirmBeforeCancelAndSend: true,
-    sidebarIntro: 'collapse' as const
+    sidebarIntro: 'collapse' as const,
+    sidebarTint: false,
+    trayBadge: true
   },
   browserPreview: {
     enabled: true

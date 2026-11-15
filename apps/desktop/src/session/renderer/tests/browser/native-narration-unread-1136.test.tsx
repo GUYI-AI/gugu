@@ -11,7 +11,8 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 
 const rpc = vi.hoisted(() => ({ visible: vi.fn() }));
-vi.mock('@/session/renderer/lib/ipc', () => ({ rpc: {}, rpcOn: () => ({ sessionTimeline: { sessionVisible: rpc.visible } }) }));
+// `events`: the language runtime's device-preference store links the settings client (unused here: no desktop handover).
+vi.mock('@/session/renderer/lib/ipc', () => ({ rpc: {}, events: { on: () => () => {} }, rpcOn: () => ({ sessionTimeline: { sessionVisible: rpc.visible } }) }));
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }));
 
 let cleanup: (() => void) | undefined;

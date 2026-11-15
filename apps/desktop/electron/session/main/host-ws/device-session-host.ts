@@ -38,7 +38,7 @@ import { ptySessionRegistry } from '../core/pty/pty-session-registry';
  * 以及只在桌面那一侧才有意义的 SSH 直连 / 端口转发。挡在这里还有一层用处:渲染层把本该留在本机的调用
  * 错发过来时,当场报错而不是悄悄在这台机器上执行。
  */
-const REMOTE_DENIED_NAMESPACES = new Set(['browser', 'remotePorts', 'viewState', 'assistantHome']);
+const REMOTE_DENIED_NAMESPACES = new Set(['browser', 'remotePorts', 'viewState', 'assistantHome', 'themePacks']);
 const REMOTE_ALLOWED_APP = new Set([
   'app.getAppVersion',
   'app.getPlatform',

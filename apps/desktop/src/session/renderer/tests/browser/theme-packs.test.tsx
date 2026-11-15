@@ -3,10 +3,9 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { evaluateObsidianCss } from '@/session/renderer/lib/theme/theme-pack-import'
 import { chooseThemePack, resetThemePacks } from '@/session/renderer/lib/theme/theme-pack-store'
 import { writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
-import { resolvePalette } from '@/session/renderer/lib/theme/theme-packs'
+import { BUILTIN_THEME_PACKS, resolvePalette } from '@shared/theme/theme-packs'
 import { appThemeColors } from '@/session/renderer/lib/theme/app-theme-colors'
 import { applyThemeColors } from '@/session/app-runtime/theme-colors'
-import { BUILTIN_THEME_PACKS } from '@/session/renderer/lib/theme/theme-pack-store'
 import '@/styles/tokens.css'
 
 beforeEach(() => {

@@ -3,7 +3,8 @@ import { act, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantComposerEntries } from '../../../../apps/desktop/src/components/assistant/AssistantComposerEntries'
 import { offerCustomizeCard, useCustomizeCardOffered, customizeCardOffered } from '../../../../apps/desktop/src/lib/assistantSetupState'
-import { ideasEntryHidden, setIdeasEntryHidden } from '../../../../apps/desktop/src/lib/assistantIdeas'
+import { setIdeasEntryHidden } from '../../../../apps/desktop/src/lib/assistantIdeas'
+import { devicePreferences } from '../../../../apps/desktop/src/lib/devicePreferences'
 import { clickElement, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -56,7 +57,7 @@ describe('assistant composer entry row', () => {
   it('suppresses the ideas entry while recording without altering the saved preference', async () => {
     await renderWithAppProviders(harness, <Entries busy />)
     expect(row().childNodes.length).toBe(0)
-    expect(ideasEntryHidden('composer-assistant')).toBe(false)
+    expect(devicePreferences.read('hiddenIdeasEntries')).toMatchObject({ state: 'value', value: [] })
     await renderWithAppProviders(harness, <Entries />)
     expect(row().children.length).toBe(1)
   })

@@ -182,9 +182,6 @@ export const electronPlatform: AppPlatform = {
   setBadge(count) {
     electronApi()?.setBadge(count)
   },
-  setTrayBadgeEnabled(enabled) {
-    electronApi()?.setTrayBadgeEnabled(enabled)
-  },
   async scanQrCode() {
     throw unavailable('QR scan')
   },

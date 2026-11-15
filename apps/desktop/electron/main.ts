@@ -575,6 +575,7 @@ import {
   paintBadgeOnBitmap,
 } from './tray-badge'
 import { VIEW_STATE_SNAPSHOT_CHANNEL } from '../shared/view-state-snapshot'
+import { DEVICE_SETTINGS_CHANNEL, type LegacyDevicePreferences } from '../shared/device-preferences'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostCatalog, updateRestartCopy, type HostCatalog } from '../shared/host-localization'
 
 // ── Dual-instance support ────────────────────────────────────────────────────
@@ -2303,13 +2304,6 @@ ipcMain.on('set-badge', (_event, count: number) => {
   applyUnreadBadge()
 })
 
-// @@@5295 托盘角标开关(app 设置 · 通用)。关掉 = 角标一律不画,计数照常在内存里跟着走,
-// 重新打开立刻显示当前真值,❌ 不需要等下一条消息来触发。
-ipcMain.on('set-tray-badge-enabled', (_event, enabled: unknown) => {
-  trayBadgeEnabled = enabled !== false
-  applyUnreadBadge()
-})
-
 // @@@822 frameless 自绘标题栏的窗口控制 —— Windows/Linux 无原生边框时,renderer 的 <WindowControls> 经此驱动。
 // 用事件来源窗口(BrowserWindow.fromWebContents)而非全局 mainWindow,兼容多窗(widget)。
 ipcMain.on('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize())
@@ -2367,6 +2361,18 @@ ipcMain.on(VIEW_STATE_SNAPSHOT_CHANNEL, (event) => {
     event.returnValue = emdashBridgeModule?.viewStateSnapshot() ?? null
   } catch (error) {
     createLogger('view-state').error({ error: String(error) }, 'view state snapshot failed; the renderer starts without it')
+    event.returnValue = null
+  }
+})
+// @@@device-preferences — this device's preferences before the renderer's first frame (shared/device-preferences.ts):
+// preload sends what the old localStorage keys still hold, main adopts them where it has no value of its own, and answers
+// the settings the first frame draws. The session page module is loaded before the window (loadMainWindowContents);
+// a failed answer is logged and is null — the renderer then reads its settings as usual, after the first frame.
+ipcMain.on(DEVICE_SETTINGS_CHANNEL, (event, legacy: LegacyDevicePreferences) => {
+  try {
+    event.returnValue = emdashBridgeModule?.answerDeviceSettings(legacy ?? {}) ?? null
+  } catch (error) {
+    createLogger('device-settings').error({ error: String(error) }, 'device settings handover failed; the renderer reads them after its first frame')
     event.returnValue = null
   }
 })
@@ -6256,6 +6262,14 @@ app.whenReady().then(async () => {
       scheduleDiscovery: (work) => startupDiscovery.schedule(work),
     })
     sessionHostBoot = emdashBoot
+    // @@@5295 the tray badge setting is main's own (app settings `interface.trayBadge`): read once the backend is up,
+    // and again whenever that key changes (any window, a reset).
+    void emdashBoot.then(() => {
+      const follow = () => emdash.trayBadgeEnabled().then((enabled) => { trayBadgeEnabled = enabled; applyUnreadBadge() })
+        .catch((error: unknown) => createLogger('tray-badge').error({ error: String(error) }, 'The tray badge setting could not be read'))
+      emdash.onAppSettingsChanged((key) => { if (key === 'interface') void follow() })
+      return follow()
+    }).catch(() => undefined)
     platformCredentialsBoot = emdashBoot.catch(() => undefined)
     // Task names are projected during boot; adopting names (cloud, then the one-time legacy ones) follows it.
     void emdashBoot

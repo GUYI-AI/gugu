@@ -31,7 +31,14 @@ export function ThemeImportModal({ onSuccess, onClose }: BaseModalProps<void>) {
     try {
       const pack = await importThemeFromLink(link, controller.signal);
       if (controller.signal.aborted) return;
-      saveImportedThemePack(pack);
+      const saved = await saveImportedThemePack(pack).then(() => true, (cause: unknown) => {
+        log.error({ cause: String(cause) }, 'imported theme not kept');
+        return false;
+      });
+      if (!saved) {
+        setError(translate('themes.importSaveFailed', { name: pack.name }));
+        return;
+      }
       toast({ title: translate('themes.imported', { name: pack.name }) });
       onSuccess();
     } catch (cause) {

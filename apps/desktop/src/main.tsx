@@ -43,6 +43,11 @@ import '@gugu/session-shared/animation-visibility.css'
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
 import { installErrorSummaryConsent } from './lib/errorSummaryConsent'
+import { devicePreferences } from './lib/devicePreferences'
+import { rendererLogger } from './lib/log'
+import { prefetchAllAppSettings } from '@renderer/features/settings/app-settings-client'
+
+const shellLog = rendererLogger('shell/boot')
 
 // Before the first render: the phone's system font size decides the width everything is laid out in.
 installPageScale()
@@ -50,6 +55,13 @@ installPerfCounterResponder(window.electronAPI)
 installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.
 isAnimationWindowVisible()
+
+// @@@app-settings-read-model — the shell draws this device's settings too (its device preferences: theme, language, tint,
+// notifications, tray badge, assistant), so it reads the whole set at startup and follows changes from other windows,
+// as the task page's entry does. Web and phone keep their device preferences in localStorage and have no app settings.
+if (devicePreferences.backend === 'appSettings') {
+  prefetchAllAppSettings().catch((error: unknown) => shellLog.error({ error: String(error) }, 'this device\'s settings could not be read at startup'))
+}
 
 installPlatformLocaleSync(platform, {
   getSnapshot: getLocaleSnapshot,

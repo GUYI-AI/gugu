@@ -32,6 +32,7 @@ import { sessionTimelineController } from './core/session-timeline/controller';
 import { sessionHistoryController } from './core/session-history/controller';
 import { sessionImportController } from './core/session-import/controller';
 import { appSettingsController } from './core/settings/controller';
+import { themePacksController } from './core/settings/theme-packs-controller';
 import { providerSettingsController } from './core/settings/provider-settings-controller';
 import { sessionCreateController } from './core/sessions/create-controller';
 import { terminalsController } from './core/terminals/controller';
@@ -47,6 +48,7 @@ export const rpcRouter = createRPCRouter({
   assistantHome: assistantHomeController,
   automations: automationsController,
   appSettings: appSettingsController,
+  themePacks: themePacksController,
   providerSettings: providerSettingsController,
   browser: browserController,
   extensions: extensionsController,

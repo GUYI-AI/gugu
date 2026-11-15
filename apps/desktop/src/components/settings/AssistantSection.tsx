@@ -15,12 +15,11 @@ import { ChevronRight, Clock, Database, Monitor, Plug, MessageCircle, SidebarMin
 import { useAssistantHome } from '../../lib/useAssistantHome'
 import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'
-import { meetingReminderEnabled, setMeetingReminderEnabled, subscribeMeetingReminderPref } from '../../lib/meetingReminderPref'
+import { setMeetingReminderEnabled, useMeetingReminderPref } from '../../lib/meetingReminderPref'
 import { invokeOnMachine } from '../../session/renderer/lib/ipc'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
 import { useContactsStore } from '../../store/contactsContext'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
-import { useSyncExternalStore } from 'react'
 import '../../i18n/registerAssistantCatalog'
 import '../../i18n/registerVoiceNotesCatalog'
 
@@ -171,7 +170,7 @@ const meetingCalendar = replica({
 /** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/meetingReminderPref)。 */
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
-  const enabled = useSyncExternalStore(subscribeMeetingReminderPref, meetingReminderEnabled)
+  const enabled = useMeetingReminderPref()
   const reading = useReplica(meetingCalendar, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
@@ -179,7 +178,9 @@ function MeetingReminderGroup() {
         title={t('meeting.setting')}
         description={reading.state === 'unknown' ? <Unknown className="w-56" />
           : reading.state === 'value' && reading.value === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
-        control={<Switch checked={enabled} onCheckedChange={(on) => setMeetingReminderEnabled(on)} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />}
+        control={enabled.state === 'value'
+          ? <Switch checked={enabled.value} onCheckedChange={(on) => setMeetingReminderEnabled(on)} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />
+          : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
       />
     </SettingsGroup>
   )

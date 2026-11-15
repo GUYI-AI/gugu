@@ -9,7 +9,7 @@ import { sendTestNotification } from '../../lib/notificationDiagnostics'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
-import { setNotificationSettings, useNotificationSettings, type NotificationSettings } from '../../lib/notificationSettings'
+import { setNotificationSettings, useNotificationSettingsReading, type NotificationSettings } from '../../lib/notificationSettings'
 import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { Unknown } from '../ui/Unknown'
@@ -75,7 +75,7 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
   const { preference: themePreference, setTheme } = useTheme()
   const themePacks = useThemePackNames()
   const { preference, setPreference } = useLocale()
-  const notificationSettings = useNotificationSettings()
+  const notificationSettings = useNotificationSettingsReading()
   // product spec:手机上「通用 → 通知」同时如实显示系统权限;读不到真值的宿主上恒为空、不渲染。
   const {
     states: systemNotificationStates,
@@ -134,12 +134,14 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             title={t('settings.general.themePack')}
             control={(
               <>
-                <span className="gg-settings-row-value">
-                  {t('settings.general.themePackValue', {
-                    dark: themePacks.dark ?? t('settings.general.themePackDefault'),
-                    light: themePacks.light ?? t('settings.general.themePackDefault'),
-                  })}
-                </span>
+                {themePacks.state === 'value' ? (
+                  <span className="gg-settings-row-value">
+                    {t('settings.general.themePackValue', {
+                      dark: themePacks.value.dark ?? t('settings.general.themePackDefault'),
+                      light: themePacks.value.light ?? t('settings.general.themePackDefault'),
+                    })}
+                  </span>
+                ) : <Unknown className="w-40" />}
                 <ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />
               </>
             )}
@@ -179,13 +181,13 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             key={row.key}
             title={t(row.labelKey)}
             description={row.descriptionKey ? t(row.descriptionKey) : undefined}
-            control={(
+            control={notificationSettings.state === 'value' ? (
               <Toggle
-                checked={notificationSettings[row.key]}
+                checked={notificationSettings.value[row.key]}
                 onChange={(on) => setNotificationSettings({ [row.key]: on })}
                 ariaLabel={t(row.ariaKey)}
               />
-            )}
+            ) : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
           />
         ))}
         {/* @@@5301 自验出口。开关只表达「用户想不想收」,能不能真的弹出来由系统权限说了算。
@@ -225,13 +227,13 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
         <SettingsGroup title={t('settings.general.trayBadge')}>
           <SettingsRow
             title={t('settings.general.trayBadgeEnabled')}
-            control={(
+            control={trayBadgeEnabled.state === 'value' ? (
               <Toggle
-                checked={trayBadgeEnabled}
+                checked={trayBadgeEnabled.value}
                 onChange={setTrayBadgeEnabled}
                 ariaLabel={t('settings.general.trayBadgeAria')}
               />
-            )}
+            ) : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
           />
         </SettingsGroup>
       )}

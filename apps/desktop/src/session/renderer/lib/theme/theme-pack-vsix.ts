@@ -5,7 +5,7 @@
  */
 import JSZip from 'jszip';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
-import { modeOfBackground, modeOfUiTheme, paletteFromVSCode, type RawPalette, type ThemeMode } from './theme-packs';
+import { modeOfBackground, modeOfUiTheme, paletteFromVSCode, type RawPalette, type ThemeMode } from '@shared/theme/theme-packs';
 
 export type VsixTheme = { label: string; uiTheme: string; mode: ThemeMode | null; palette: RawPalette | null };
 

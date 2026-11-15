@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react'
+import type { Reading } from './replica'
+import { devicePreferences, useDevicePreference } from './devicePreferences'
 
 /**
  * @@@sidebar-tint owner 2026-09-10：三栏应该是一条底色阶梯 —— 最左的功能栏最深、中间的
@@ -13,60 +14,36 @@ import { useSyncExternalStore } from 'react'
  * 这一个 token,所以一处到位。会话页那棵 Shadow DOM 靠自定义属性的继承拿到同一个值,
  * ❌ 不需要第二条同步链。
  *
- * 首帧之前由 index.html 的引导脚本落一次属性(与主题同一个位置、同一套规则),避免开着这个
- * 选项启动时先闪一下白底再变灰。
+ * 存在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `interface.sidebarTint`,web / 手机 = localStorage)。
+ * 首帧之前由 index.html 的引导脚本按同一份值落一次属性(桌面读 preload 交出的值),避免开着这个选项启动时先闪一下白底再变灰。
  */
-const STORAGE_KEY = 'gugu.sidebar-tint'
-const DEFAULT_ENABLED = false
 const ATTRIBUTE = 'data-sidebar-tint'
 const ATTRIBUTE_ON = 'on'
 
-const listeners = new Set<() => void>()
-let current: boolean | null = null
-
-function readStored(): boolean {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) === 'true'
-  } catch {
-    return DEFAULT_ENABLED
-  }
-}
-
-export function readSidebarTintEnabled(): boolean {
-  if (typeof window === 'undefined') return DEFAULT_ENABLED
-  current ??= readStored()
-  return current
-}
-
-/** 把开关的当下值落到 `<html>` 属性上 —— 上色的唯一出口。 */
-export function applySidebarTint(enabled: boolean = readSidebarTintEnabled()): void {
+/** 把开关的值落到 `<html>` 属性上 —— 上色的唯一出口。还没读到(只在桌面交接失败时)= 不动属性。 */
+function applySidebarTint(): void {
   if (typeof document === 'undefined') return
-  if (enabled) document.documentElement.setAttribute(ATTRIBUTE, ATTRIBUTE_ON)
+  const reading = devicePreferences.read('sidebarTint')
+  if (reading.state !== 'value') return
+  if (reading.value) document.documentElement.setAttribute(ATTRIBUTE, ATTRIBUTE_ON)
   else document.documentElement.removeAttribute(ATTRIBUTE)
 }
 
 export function setSidebarTintEnabled(enabled: boolean): void {
-  if (readSidebarTintEnabled() === enabled) return
-  current = enabled
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(enabled))
-  } catch {
-    // 存不下(隐私模式/配额满)不该拦住这次视觉切换:本次会话照样生效,下次启动退回默认。
-  }
-  applySidebarTint(enabled)
-  for (const listener of listeners) listener()
+  devicePreferences.write('sidebarTint', enabled)
 }
 
-/** 把存下来的偏好落到属性上。引导脚本已经做过一次,这里兜住属性被别处清掉的情况。 */
+let following = false
+
+/** 属性跟着偏好走(本窗口改的、别的窗口改的):整个文档一份,幂等。 */
 export function hydrateSidebarTint(): void {
-  applySidebarTint(readSidebarTintEnabled())
+  if (!following) {
+    following = true
+    devicePreferences.subscribe(applySidebarTint)
+  }
+  applySidebarTint()
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-export function useSidebarTintEnabled(): boolean {
-  return useSyncExternalStore(subscribe, readSidebarTintEnabled, () => DEFAULT_ENABLED)
+export function useSidebarTintEnabled(): Reading<boolean> {
+  return useDevicePreference('sidebarTint')
 }

@@ -27,6 +27,7 @@ const LOCAL_ONLY_NAMESPACES = new Set([
   'browser',
   'remotePorts',
   'viewState',
+  'themePacks',
   'extensions',
   'resourceMonitor',
 ]);

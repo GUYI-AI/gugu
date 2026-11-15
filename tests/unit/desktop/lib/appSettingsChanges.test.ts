@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  */
 const ipc = vi.hoisted(() => {
   const listeners = new Set<(data: { key: string }) => void>()
-  const stored: Record<string, unknown> = { interface: { hideContextBar: false } }
+  const stored: Record<string, unknown> = { interface: { hideContextBar: false }, terminal: { enabled: true } }
   return {
     listeners,
     stored,
@@ -62,6 +62,7 @@ describe('appSettings changes made elsewhere', () => {
     for (let n = 0; n < 10; n += 1) await client.remoteAppSettingsModel.prefetch('localProject', `machine-${n}`)
     const kept = Object.values(JSON.parse(localStorage.getItem('gugu.readModel.v1:device') ?? '{}') as Record<string, { key: unknown[] }>)
     expect(kept.filter((entry) => entry.key[0] === 'remoteAppSettings')).toEqual([])
-    expect(kept.filter((entry) => entry.key[0] === 'appSettings').map((entry) => entry.key[2])).toEqual(['interface'])
+    // `interface` is a device preference preload hands over (its first value), ❌ kept in the snapshot.
+    expect(kept.filter((entry) => entry.key[0] === 'appSettings').map((entry) => entry.key[2])).toEqual(['terminal'])
   })
 })

@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import Color from 'colorjs.io'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { BUILTIN_THEME_PACKS } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-store'
 import { parseThemeLink, ThemeImportError } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-import'
 import { pickVariants, readVsix } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-vsix'
 import {
@@ -18,7 +17,8 @@ import {
   resolvePalette,
   themePackStylesheet,
   type PaletteRole,
-} from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-packs'
+  BUILTIN_THEME_PACKS,
+} from '../../../../apps/desktop/src/session/shared/theme/theme-packs'
 
 const root = join(__dirname, '../../../..')
 const tokens = readFileSync(join(root, 'apps/desktop/src/styles/tokens.css'), 'utf8')

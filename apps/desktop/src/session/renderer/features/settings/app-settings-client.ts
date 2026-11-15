@@ -1,8 +1,10 @@
 import { reportHandledError } from '@/lib/errorSummaryReporting';
+import { rendererLogger } from '@/lib/log';
 import { replica } from '@/lib/replica';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { appSettingsChangedChannel } from '@shared/events/appEvents';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
+import { HANDED_OVER_SETTINGS, type HandedOverSetting } from '../../../../../shared/device-preferences';
 
 export type SettingsMeta<K extends AppSettingsKey> = {
   value: AppSettings[K];
@@ -10,18 +12,26 @@ export type SettingsMeta<K extends AppSettingsKey> = {
   overrides: Partial<AppSettings[K]>;
 };
 
+const settingsLog = rendererLogger('settings');
+
 /** This device's host is `local`; another machine's settings (#6264, machine-scoped rows) are keyed by its device id. */
 export const LOCAL_SETTINGS_HOST_KEY = 'local';
 
 /**
- * The keys a surface draws from the first frame (the task page's composer, sidebar, sessions panel, terminal, changes
- * panel, project creation) and the Settings pages accepted in PR 2. Keys no surface draws (`keyboard` only binds
- * shortcuts and grows with rebinds; `theme`, `browserPreview` have no renderer reader) are read at startup, not kept.
+ * The keys a surface draws from the first frame (the task page's composer, sessions panel, terminal, changes panel,
+ * project creation) and the Settings pages accepted in PR 2. Keys no surface draws (`keyboard` only binds shortcuts and
+ * grows with rebinds; `browserPreview` has no renderer reader) are read at startup, not kept. The device preferences
+ * preload hands over (`theme`, `locale`, `interface`, `themePackSlots`, `chatNotifications`, `assistant`) are ❌ kept
+ * either: their first value is that handover (`local` below), and a snapshot of the last run could disagree with it.
  */
 const CARRIED_KEYS: ReadonlySet<AppSettingsKey> = new Set<AppSettingsKey>([
-  'interface', 'terminal', 'sessions', 'defaultAgent', 'newSessionMemory', 'changesViewMode', 'localProject', 'project',
+  'terminal', 'sessions', 'defaultAgent', 'newSessionMemory', 'changesViewMode', 'localProject', 'project',
   'notifications', 'browser', 'openIn', 'resourceMonitor',
 ]);
+
+/** Desktop: what preload handed over before the first frame (shared/device-preferences.ts); web / phone: nothing. */
+const handover = typeof window === 'undefined' ? null : window.guguDeviceSettings?.handover ?? null;
+const handedOver = (key: AppSettingsKey): key is HandedOverSetting => (HANDED_OVER_SETTINGS as readonly string[]).includes(key);
 
 /**
  * @@@app-settings-read-model — every settings key of this device is one entry of this model. The whole set is read once
@@ -41,11 +51,14 @@ export const appSettingsModel = replica({
     }
   },
   fresh: 5 * 60_000,
+  // The handed-over keys' first value is main's answer to preload: the same one the inline boot script painted with.
+  local: (_device, key: AppSettingsKey, host: string) =>
+    host === LOCAL_SETTINGS_HOST_KEY && handover && handedOver(key) ? handover.settings[key] as SettingsMeta<AppSettingsKey> : undefined,
   // `sessions` is the largest carried key: 1,204 with every field used (a 200-character title instruction); `browser`
   // grows with profiles (1,246 at 8). One entry per carried key.
   persist: {
     maxBytes: 1536,
-    maxEntries: 12,
+    maxEntries: 11,
     carry: (meta: SettingsMeta<AppSettingsKey>, key: AppSettingsKey, host: string) => (host === LOCAL_SETTINGS_HOST_KEY && CARRIED_KEYS.has(key) ? meta : undefined),
   },
 });
@@ -65,11 +78,22 @@ export function settingsModelOf(host: string): typeof appSettingsModel {
   return host === LOCAL_SETTINGS_HOST_KEY ? appSettingsModel : remoteAppSettingsModel;
 }
 
-/** Startup: the whole local set in one read, before the first frame of either entry. */
-export async function prefetchAllAppSettings(): Promise<void> {
+let startupRead: Promise<void> | null = null;
+
+/**
+ * Startup: the whole local set in one read, before the first frame of either entry (shell and task page share this
+ * module, so the set is read once per document; a failed read is tried again by the next entry that asks).
+ */
+export function prefetchAllAppSettings(): Promise<void> {
   watchAppSettingsChanges();
-  const all = await rpc.appSettings.getAll() as { [K in AppSettingsKey]: SettingsMeta<K> };
-  for (const key of Object.keys(all) as AppSettingsKey[]) appSettingsModel.set([key, LOCAL_SETTINGS_HOST_KEY], all[key]);
+  startupRead ??= (async () => {
+    const all = await rpc.appSettings.getAll() as { [K in AppSettingsKey]: SettingsMeta<K> };
+    for (const key of Object.keys(all) as AppSettingsKey[]) appSettingsModel.set([key, LOCAL_SETTINGS_HOST_KEY], all[key]);
+  })().catch((error: unknown) => {
+    startupRead = null;
+    throw error;
+  });
+  return startupRead;
 }
 
 /** Writes of this window still on their way, per key: their own broadcast must not read a key back over a newer edit. */
@@ -135,6 +159,28 @@ export function setAppSettingsValueInCache<K extends AppSettingsKey>(key: K, val
 
 export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
   return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.update(key, value as never) as Promise<void>;
+}
+
+/**
+ * Write a local key outside React (device preferences): shown at once, held against this window's own broadcast until
+ * its own read settles it (I4), put back and reported when main refuses. Throws when the key was never read.
+ */
+export function writeLocalAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K]): Promise<void> {
+  const reading = appSettingsModel.peek(key, LOCAL_SETTINGS_HOST_KEY);
+  if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
+  const prev = (reading.value as SettingsMeta<K>).value;
+  const done = beginAppSettingsWrite(key);
+  setAppSettingsValueInCache(key, value);
+  return updateAppSettingsRequest(key, value)
+    .catch((error: unknown) => {
+      setAppSettingsValueInCache(key, prev);
+      settingsLog.error({ key, error: String(error) }, `settings ${key}: main refused the write; the shown value is put back`);
+      throw error;
+    })
+    .finally(() => {
+      done();
+      invalidateAppSettingsKey(key);
+    });
 }
 
 export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K, host = LOCAL_SETTINGS_HOST_KEY): void {

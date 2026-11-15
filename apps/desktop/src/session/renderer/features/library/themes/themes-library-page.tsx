@@ -9,8 +9,11 @@ import {
   resetThemePacks,
   restoreThemePackChoice,
   type ThemePackChoice,
+  type ThemePackSlots,
 } from '@renderer/lib/theme/theme-pack-store';
+import { Unknown } from '@/components/ui/Unknown';
 import {
+  BUILTIN_THEME_PACKS,
   GUGU_DEFAULT_SWATCH,
   packModes,
   resolvePalette,
@@ -18,7 +21,7 @@ import {
   type ThemeMode,
   type ThemePack,
   type ThemeSwatch,
-} from '@renderer/lib/theme/theme-packs';
+} from '@shared/theme/theme-packs';
 import { useThemePacks } from '@renderer/lib/theme/use-theme-packs';
 import { readEffectiveHostTheme, readThemePreference, subscribeToHostTheme } from '@renderer/lib/theme/host-theme';
 import { Badge } from '@renderer/lib/ui/badge';
@@ -130,9 +133,45 @@ function ThemeCard({
  */
 export function ThemesLibraryPage() {
   const { translate } = useSessionMessages();
-  const { packs, slots } = useThemePacks();
+  const reading = useThemePacks();
   const effective = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, readEffectiveHostTheme);
   const showImport = useShowModal('themeImportModal');
+
+  return (
+    <div className="flex flex-col text-foreground">
+      <PageHeader
+        sticky
+        scope={null}
+        title={translate('themes.title')}
+        aside={(
+          <Button onClick={() => showImport({})}>
+            <Plus className="size-4" />
+            <span>{translate('themes.import')}</span>
+          </Button>
+        )}
+      />
+      {reading.state === 'value' ? (
+        <ThemeCards packs={reading.value.packs} slots={reading.value.slots} effective={effective} translate={translate} />
+      ) : reading.state === 'error' ? (
+        <p role="alert" className="py-4 text-sm text-muted-foreground">{translate('themes.loadFailed')}</p>
+      ) : (
+        <div className={GRID_CLASS} style={GRID_STYLE}>
+          {Array.from({ length: BUILTIN_THEME_PACKS.length + 1 }, (_, index) => <Unknown key={index} className="h-40 w-full rounded-lg" />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const GRID_CLASS = 'grid gap-4 py-4';
+const GRID_STYLE: CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' };
+
+function ThemeCards({ packs, slots, effective, translate }: {
+  packs: ThemePack[];
+  slots: ThemePackSlots;
+  effective: ThemeMode;
+  translate: Translate;
+}) {
   const resolved = useMemo(() => new Map(packs.map((pack) => [pack.id, resolvedModes(pack)])), [packs]);
 
   const offerUndo = (title: string, before: ThemePackChoice) =>
@@ -160,43 +199,32 @@ export function ThemesLibraryPage() {
   };
 
   return (
-    <div className="flex flex-col text-foreground">
-      <PageHeader
-        sticky
-        scope={null}
-        title={translate('themes.title')}
-        aside={(
-          <Button onClick={() => showImport({})}>
-            <Plus className="size-4" />
-            <span>{translate('themes.import')}</span>
-          </Button>
-        )}
+    <div className={GRID_CLASS} style={GRID_STYLE}>
+      <ThemeCard
+        pack={null}
+        resolved={{}}
+        previewMode={effective}
+        selected={!slots[effective]}
+        onChoose={reset}
+        translate={translate}
       />
-      <div className="grid gap-4 py-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+      {packs.map((pack) => (
         <ThemeCard
-          pack={null}
-          resolved={{}}
+          key={pack.id}
+          pack={pack}
+          resolved={resolved.get(pack.id) ?? {}}
           previewMode={effective}
-          selected={!slots[effective]}
-          onChoose={reset}
+          selected={slots[effective] === pack.id}
+          onChoose={() => choose(pack)}
+          onRemove={pack.source.kind === 'builtin' ? undefined : () => {
+            void removeImportedThemePack(pack.id).then(
+              () => toast({ title: translate('themes.removed', { name: pack.name }) }),
+              () => toast({ title: translate('themes.removeFailed', { name: pack.name }) }),
+            );
+          }}
           translate={translate}
         />
-        {packs.map((pack) => (
-          <ThemeCard
-            key={pack.id}
-            pack={pack}
-            resolved={resolved.get(pack.id) ?? {}}
-            previewMode={effective}
-            selected={slots[effective] === pack.id}
-            onChoose={() => choose(pack)}
-            onRemove={pack.source.kind === 'builtin' ? undefined : () => {
-              removeImportedThemePack(pack.id);
-              toast({ title: translate('themes.removed', { name: pack.name }) });
-            }}
-            translate={translate}
-          />
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
