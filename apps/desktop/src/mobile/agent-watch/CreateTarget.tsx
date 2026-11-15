@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { isPhoneDevice } from '@gugu/core/cloud/devices'
 import { Check, ChevronLeft, ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
-import { useReadModel } from '@/lib/readModel'
+import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
@@ -48,12 +48,12 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
       ? tm('agentWatch.create.modelLoading') : tm('agentWatch.create.modelDefault')))
   const phone = !!machine && isPhoneDevice(machine.device)
-  const skillCatalog = useReadModel(creationSkills, view === 'skills' && machine && !phone && configuration?.selection.harness
+  const skillCatalog = useReplica(creationSkills, view === 'skills' && machine && !phone && configuration?.selection.harness
     ? [machine.device.device_id, configuration.selection.harness, machine.localProjectId] : null)
   const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
   const title = view === 'project' ? t('project') : view === 'skills' ? skillCount === null ? t('skills') : t('skillsCount', { count: skillCount }) : t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
-  const compact = !!existingSession || view !== 'project' && view !== 'skills'
+  const compact = !!existingSession || view !== 'project'
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
       <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}

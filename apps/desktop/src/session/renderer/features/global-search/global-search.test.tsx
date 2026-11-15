@@ -19,6 +19,7 @@ import { dicebearAvatarDataUri } from '@/lib/dicebearAvatar'
 import { displayIdentity } from '../../../../../../../tests/support/testHarness'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { installPhoneImeDismiss } from '@/mobile/usePhoneImeDismiss'
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
 
 const remote = vi.hoisted(() => ({ opened: [] as unknown[], turns: vi.fn(), indexStatus: vi.fn(), messages: vi.fn(), firstOfDay: vi.fn(), viewFilters: [] as unknown[][], local: vi.fn(), desktop: false }))
 vi.mock('@/lib/guguLinks', () => ({ followLink: (target: unknown) => { remote.opened.push(target); return true } }))
@@ -81,7 +82,7 @@ beforeEach(() => {
   remote.messages.mockReset().mockResolvedValue({ data: rows, error: null })
   remote.firstOfDay.mockReset(); remote.viewFilters = []
   publishSelfIdentity({ userId: 'me-1', displayName: null, guguNumber: null })
-  localStorage.clear()
+  localStorage.clear(); viewStateCache.forget('view:')
   installIdentityDirectoryBridge()
   publishIdentityDirectory({}, ensureIdentity.mockReset())
   runInAction(() => sessionAgentBindings.bindings.clear())

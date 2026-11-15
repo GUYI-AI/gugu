@@ -135,6 +135,18 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
         stopped = true; generation &+= 1; gate.set(generation, active: false)
         heartbeatTimer?.cancel(); remoteConnected = false; startupComplete = false
     }
+    /// Retains the pre-confirm stop requirement without another remote request.
+    func sealForLocalAccountErase(ownerId: String) throws -> Bool {
+        try sync {
+            guard binding?.ownerId == ownerId else { return true }
+            if !stopping.isEmpty { return false }
+            guard stopped else { throw Self.failure("closure_not_prepared", "Original native host has not stopped") }
+            sealForNativeRetirement()
+            store = nil
+            return true
+        }
+    }
+
     func state(binding: GuguIOSHostBinding) throws -> [String: Any] { try sync { try snapshot(binding) } }
     func invoke(_ call: GuguIOSHostInvocation, completion: @escaping ([String: Any]) -> Void) { queue.async { self.route(call, completion) } }
     func reconcile(_ call: GuguIOSHostInvocation, completion: @escaping ([String: Any]) -> Void) { queue.async { self.route(call, completion) } }

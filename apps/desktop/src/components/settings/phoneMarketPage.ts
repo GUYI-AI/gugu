@@ -1,5 +1,5 @@
 import { reaction } from 'mobx'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { useEffect } from 'react'
 import { chatDb } from '@/lib/supabase'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
@@ -104,7 +104,7 @@ async function offeredVersions(): Promise<{ updates: Record<string, string>; gon
 }
 
 /** What the market says of the Apps installed here (an update, or delisted). 161 10-15: else their fixes never reach the phone. */
-const offeredVersionsModel = readModel({
+const offeredVersionsModel = replica({
   name: 'offeredVersions',
   scope: 'device',
   read: async () => {
@@ -112,13 +112,13 @@ const offeredVersionsModel = readModel({
     if (!offered) throw new Error('The market could not say which installed Apps have updates')
     return offered
   },
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 })
 
 /** `known` false until the market was asked once on this device: the rows then say nothing about versions yet. The market
  *  unreachable is an answer too: each row says the version it has, and offers nothing. */
 export function useOfferedVersions(): { updates: Record<string, string>; gone: readonly string[]; known: boolean } {
-  const reading = useReadModel(offeredVersionsModel, [])
+  const reading = useReplica(offeredVersionsModel, [])
   useEffect(() => {
     // 「更新到 vX」 from the index in hand at once; the download site is asked behind it, and when the index it brings is
     // another, the buttons are read again from that one (market-snapshot.ts).

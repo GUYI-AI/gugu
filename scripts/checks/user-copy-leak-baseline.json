@@ -121,11 +121,6 @@
   },
   {
     "rule": "copy-leaks-raw-error-field",
-    "file": "apps/desktop/src/store/contacts.tsx",
-    "count": 2
-  },
-  {
-    "rule": "copy-leaks-raw-error-field",
     "file": "packages/core/src/cloud/deviceRuntimeHost.ts",
     "count": 1
   },

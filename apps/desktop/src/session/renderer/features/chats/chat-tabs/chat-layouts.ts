@@ -12,7 +12,6 @@ import type { TabOpenIntent } from '@shared/view-state';
 import type { PaneStore } from '@renderer/features/tabs/pane-store';
 import { createTabView } from '@renderer/features/tabs/tab-view-factory';
 import { TabViewPersistor } from '@renderer/features/tabs/tab-view-persistor';
-import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { groupParticipantPanes } from '../group-participant-panes';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
@@ -54,13 +53,11 @@ export function chatLayoutOf(chatId: string): ChatLayout {
   const layout = chatTabView.createPaneLayoutStore({ viewId: `chat:${chatId}`, place: { kind: 'chat', chatId } }) as ChatLayout;
   layouts.set(chatId, layout);
   runInAction(() => {
-    // Saved state is only in the cache the session page loaded at boot; read before that (the phone has none), the
-    // strip starts empty and is not saved — saving it would write an empty strip over the one kept.
-    const persisted = viewStateCache.populated;
-    if (persisted) layout.hydrate();
+    // The saved strip is in the view state from the first frame, on every shell.
+    layout.hydrate();
     if (!chatTabOf(layout)) layout.open(CHAT_TAB_KIND, { chatId }, { from: null, intent: 'newTab' });
     layout.setViewActive(true);
-    if (persisted) layout.startPersistence();
+    layout.startPersistence();
   });
   // A page asked for (its tab, a topic's row) while the block has no room to draw it beside the chat: the participant
   // beside the group gives its width back. With room for all of them, nothing leaves.

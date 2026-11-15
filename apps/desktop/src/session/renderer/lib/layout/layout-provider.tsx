@@ -6,6 +6,7 @@ import {
   useTransform,
   type MotionValue,
 } from 'framer-motion';
+import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable';
 import {
   createContext,
   useCallback,
@@ -66,22 +67,17 @@ export function innerSidebarShownWidth(width: number, cardWidth: number | null):
   return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(innerSidebarMaxWidth(cardWidth), width));
 }
 
+// Pane widths are view state of the device (lib/viewStateTable), in the first frame; the old localStorage values move over.
+takeLegacyInterface(SIDEBAR_WIDTH_STORAGE_KEY, SIDEBAR_WIDTH_STORAGE_KEY, Number.parseFloat);
+takeLegacyInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, INNER_SIDEBAR_WIDTH_STORAGE_KEY, Number.parseFloat);
+
 function readStoredWidth(key: string, clamp: (width: number) => number, fallback: number): number {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw == null) return fallback;
-    return clamp(Number.parseFloat(raw));
-  } catch {
-    return fallback;
-  }
+  const width = readInterface<number>(key);
+  return width === undefined ? fallback : clamp(width);
 }
 
 function writeStoredWidth(key: string, width: number): void {
-  try {
-    localStorage.setItem(key, String(Math.round(width)));
-  } catch {
-    // 存储不可用:宽度这一项丢了就丢了,不该因此让侧栏用不了。
-  }
+  writeInterface(key, Math.round(width));
 }
 
 /**

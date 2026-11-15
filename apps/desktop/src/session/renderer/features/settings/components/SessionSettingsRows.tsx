@@ -1,6 +1,6 @@
 import React from 'react';
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { Input } from '@renderer/lib/ui/input';
@@ -37,13 +37,13 @@ const TITLE_MODEL_OFF = '__off__';
  * #7337 候选:这个账号此刻在 Chat Completions 上能用的在售模型(档位不够的也列出来)。问的是 model-access,
  * 所以跟账号走、跨重启留一份;取不到(没登录、断网、没有宿主)就是读失败,下拉里只剩当前选的那个与「不起名」。
  */
-const sessionTitleModels = readModel({
+const sessionTitleModels = replica({
   name: 'sessionTitleModels',
   scope: 'account',
   // async 包一层:没有宿主时 invoke 是**同步**抛的(浏览器测试、宿主还没接上),要让它也落进读失败。
   read: async () => parseSessionTitleModelOptions(await invokeOnMachine(null, SESSION_TITLE_MODELS_CHANNEL)),
   fresh: 10 * 60_000,
-  persist: true,
+  persist: { maxBytes: 4096, maxEntries: 1 },
 });
 
 /**
@@ -52,20 +52,19 @@ const sessionTitleModels = readModel({
  */
 export const SessionTitleModelRow: React.FC = () => {
   const sessions = useAppSettingsKey('sessions');
-  const catalog = useReadModel(sessionTitleModels, []);
+  const catalog = useReplica(sessionTitleModels, []);
   const { translate } = useSessionMessages();
-  const options = catalog.state === 'value' ? catalog.value : [];
-  // 能选的排前面,要会员的排后面(各自保持目录里的顺序):免费档一打开就看得到自己能用的那几个。
-  const ordered = [
-    ...options.filter((option) => !option.requiresMembership),
-    ...options.filter((option) => option.requiresMembership),
-  ];
+  // 能选的排前面,要会员的排后面(各自保持目录里的顺序):免费档一打开就看得到自己能用的那几个。目录没读到 = null。
+  const ordered = catalog.state === 'value'
+    ? [...catalog.value.filter((option) => !option.requiresMembership), ...catalog.value.filter((option) => option.requiresMembership)]
+    : null;
   // 目录还没读到时,模型的名字画占位,❌ 画原始 id;读失败才只剩 id 可写。
   const labelOf = (value: string): React.ReactNode =>
     value === TITLE_MODEL_OFF
       ? translate('taskDefaults.titleModelOff')
-      : ordered.find((option) => option.id === value)?.displayName ??
-        (catalog.state === 'unknown' ? <Unknown className="w-24" /> : value);
+      : ordered !== null
+        ? ordered.find((option) => option.id === value)?.displayName ?? value
+        : catalog.state === 'unknown' ? <Unknown className="w-24" /> : value;
   const defaultLabel = SESSION_TITLE_DEFAULT_MODEL;
 
   return (
@@ -76,14 +75,17 @@ export const SessionTitleModelRow: React.FC = () => {
         <SettingValue reading={sessions.settings} placeholder="h-8 w-[252px]">
           {({ value }) => {
             const current = value.titleModel;
-            const listed = current && !ordered.some((option) => option.id === current)
-              ? [{ id: current, displayName: current, requiresMembership: false }, ...ordered]
-              : ordered;
+            // Options: the catalog's, and the current choice when the catalog does not list it; catalog not read (or failed):
+            // the current choice alone, with the catalog's state said below it.
+            const own = current ? [{ id: current, requiresMembership: false }] : [];
+            const listed: { id: string; requiresMembership: boolean }[] = ordered === null
+              ? own
+              : current && !ordered.some((option) => option.id === current) ? [...own, ...ordered] : ordered;
             return (
               <>
                 <ResetToDefaultButton
                   visible={sessions.isFieldOverridden('titleModel')}
-                  defaultLabel={ordered.find((option) => option.id === defaultLabel)?.displayName ?? defaultLabel}
+                  defaultLabel={ordered !== null ? ordered.find((option) => option.id === defaultLabel)?.displayName ?? defaultLabel : catalog.state === 'error' ? defaultLabel : undefined}
                   onReset={() => sessions.resetField('titleModel')}
                   disabled={sessions.isSaving}
                 />
@@ -99,13 +101,16 @@ export const SessionTitleModelRow: React.FC = () => {
                     {listed.map((option) => (
                       <SelectItem key={option.id} value={option.id} disabled={option.requiresMembership}>
                         <span className="flex items-center gap-2">
-                          {option.displayName}
+                          {labelOf(option.id)}
                           {option.requiresMembership ? (
                             <span className="text-xs text-muted-foreground">{translate('taskDefaults.titleModelMembership')}</span>
                           ) : null}
                         </span>
                       </SelectItem>
                     ))}
+                    {catalog.state === 'unknown' ? <Unknown className="m-2 w-24" /> : catalog.state === 'error' ? (
+                      <div className="p-2 text-sm text-muted-foreground">{translate('taskDefaults.titleModelsLoadFailed')}</div>
+                    ) : null}
                     <SelectItem value={TITLE_MODEL_OFF}>{translate('taskDefaults.titleModelOff')}</SelectItem>
                   </SelectContent>
                 </Select>

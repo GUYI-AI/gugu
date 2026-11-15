@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { useTranslation } from 'react-i18next'
 import type { CreditUsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { formatNumber } from '@/i18n'
@@ -56,7 +56,7 @@ const DEFAULT_PAGE_SIZE = 20
  * 使用日志表 —— 时间 / 模型 / Tokens / 费用,顶上是「模型名称」筛选,底下是分页器
  * (❌ 一路往下滚的长列表)。总数是库里精确计数,翻页按页码取。
  */
-const ledgerPage = readModel({
+const ledgerPage = replica({
   name: 'usageLedgerPage',
   scope: 'account',
   read: (_userId, page: number, pageSize: number, model: string | null, from: string, to: string, _creditVersion: string | null) =>
@@ -88,7 +88,7 @@ function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: 
     setPage(1)
   }
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const reading = useReadModel(ledgerPage, [page, pageSize, model, range.from, range.to, creditVersion])
+  const reading = useReplica(ledgerPage, [page, pageSize, model, range.from, range.to, creditVersion])
   // 翻页时上一页先留在表里(半透明),新的一页到了再换,❌ 每翻一页闪一次骨架。
   const [shown, setShown] = useState<{ rows: LedgerRow[]; total: number } | null>(null)
   const result = reading.state === 'value' ? reading.value : null

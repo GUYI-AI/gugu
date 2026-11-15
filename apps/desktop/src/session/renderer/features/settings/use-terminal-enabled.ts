@@ -1,5 +1,5 @@
 import { observable, runInAction } from 'mobx';
-import { queryClient, useReadModel, type Reading } from '@/lib/readModel';
+import { queryClient, useReplica, type Reading } from '@/lib/replica';
 import { appSettingsModel, getAppSettingValueSnapshot, LOCAL_SETTINGS_HOST_KEY, type SettingsMeta } from './app-settings-client';
 
 /**
@@ -10,7 +10,7 @@ import { appSettingsModel, getAppSettingValueSnapshot, LOCAL_SETTINGS_HOST_KEY, 
  * 还没读到 = unknown:入口不画(与「关」同样不出现),开关画 `<Unknown/>`,❌ 画成「关」。
  */
 export function useTerminalEnabled(): Reading<boolean> {
-  const reading = useReadModel(appSettingsModel, ['terminal', LOCAL_SETTINGS_HOST_KEY]);
+  const reading = useReplica(appSettingsModel, ['terminal', LOCAL_SETTINGS_HOST_KEY]);
   return reading.state === 'value'
     ? { ...reading, value: (reading.value as SettingsMeta<'terminal'>).value.enabled === true }
     : reading;

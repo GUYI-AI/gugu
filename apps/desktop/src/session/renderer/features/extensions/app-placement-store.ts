@@ -1,4 +1,5 @@
 import { action, makeObservable, observable } from 'mobx';
+import { onViewStateAccount, readViewState, takeLegacyLocalStorageForAccount, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 
 /** 一个 App 摆在哪条会话里:那条会话页(项目 + 会话)。 */
 export interface AppPlacement {
@@ -16,9 +17,14 @@ export interface AppPlacement {
  * 只记**常驻的那一页**(App 为自己开的)。为某个文件开的那种不在这里:一个文件一枚,关就是关。
  * 没摆在任何会话里(从没放过、关掉了、退出了)= 没有记录;点左栏它的图标就整页打开。
  *
- * 按 App 的页签类型记。存在本机(和面板开合同一处):这是这台电脑上怎么摆的,不是 App 的数据。
+ * 按 App 的页签类型记。这是这个账号在这台电脑上怎么摆的视图状态(lib/viewStateTable),不是 App 的数据。以前存在
+ * localStorage 里、不分账号,搬一次进这时的账号。
  */
-const STORAGE_KEY = 'gugu.app-placement.v1';
+const LEGACY_KEY = 'gugu.app-placement.v1';
+const PLACEMENT: ViewPanel = { conversation: '', panel: 'app-placement' };
+type Stored = { placements: Record<string, AppPlacement> };
+takeLegacyLocalStorageForAccount((key) => key === LEGACY_KEY, (_, raw, account) =>
+  writeViewState<Stored>({ ...PLACEMENT, account }, { placements: JSON.parse(raw) as Record<string, AppPlacement> }));
 
 class AppPlacementStore {
   readonly placements = observable.map<string, AppPlacement>({}, { deep: false });
@@ -26,6 +32,11 @@ class AppPlacementStore {
   constructor() {
     makeObservable(this, { place: action, take: action });
     this.load();
+    // Another account signed in: its own placements.
+    onViewStateAccount(action(() => {
+      this.placements.clear();
+      this.load();
+    }));
   }
 
   /** 它摆在哪条会话里;没摆着 = undefined。 */
@@ -50,27 +61,14 @@ class AppPlacementStore {
   }
 
   private load(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      for (const [kind, at] of Object.entries(parsed)) {
-        const { projectId, sessionId } = (at ?? {}) as Partial<AppPlacement>;
-        if (typeof projectId === 'string' && typeof sessionId === 'string') this.placements.set(kind, { projectId, sessionId });
-      }
-    } catch {
-      // 读不出来就当哪都没摆:每条会话都不留 App 页签,点左栏图标整页打开。❌ 不让一条坏掉的记录把会话页拖垮。
+    for (const [kind, at] of Object.entries(readViewState<Stored>(PLACEMENT).placements ?? {})) {
+      const { projectId, sessionId } = (at ?? {}) as Partial<AppPlacement>;
+      if (typeof projectId === 'string' && typeof sessionId === 'string') this.placements.set(kind, { projectId, sessionId });
     }
   }
 
   private save(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(this.placements)));
-    } catch {
-      // 存不进去只是重启后忘了摆在哪,本次照常。
-    }
+    writeViewState<Stored>(PLACEMENT, { placements: this.placements.size ? Object.fromEntries(this.placements) : undefined });
   }
 }
 

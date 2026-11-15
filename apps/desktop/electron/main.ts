@@ -19,7 +19,6 @@ import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/fi
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
-import { fileStoreDirectory } from '@gugu/core/local/files/fileSnapshots'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
@@ -575,6 +574,7 @@ import {
   formatBadgeCount,
   paintBadgeOnBitmap,
 } from './tray-badge'
+import { VIEW_STATE_SNAPSHOT_CHANNEL } from '../shared/view-state-snapshot'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostCatalog, updateRestartCopy, type HostCatalog } from '../shared/host-localization'
 
 // ── Dual-instance support ────────────────────────────────────────────────────
@@ -1058,7 +1058,6 @@ function createDeviceSessionpageBridge() {
   }
   return {
     ...bridge,
-    downloadAttachment: desktopFiles.download,
     appInbox: {
       refusal: (source: string) => appInboxPort().refusal(source),
       pull: (agentUserId: string, required?: string) => appInboxPort().pull(agentUserId, required),
@@ -2361,6 +2360,16 @@ ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, str
 ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
   event.returnValue = app.getPreferredSystemLanguages()
 })
+// @@@view-state-snapshot — the renderer's view state before its first frame (shared/view-state-snapshot.ts). The window loads
+// after the session page module (loadMainWindowContents), so it is there; a failed read is logged and answered with null.
+ipcMain.on(VIEW_STATE_SNAPSHOT_CHANNEL, (event) => {
+  try {
+    event.returnValue = emdashBridgeModule?.viewStateSnapshot() ?? null
+  } catch (error) {
+    createLogger('view-state').error({ error: String(error) }, 'view state snapshot failed; the renderer starts without it')
+    event.returnValue = null
+  }
+})
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
 const betaTypingDiagnosticsEnabled = typingDiagnosticsEnabled(BETA_TYPING_DIAGNOSTICS_BUILD, process.env.GUGU_TYPING_DIAGNOSTICS)
@@ -2437,7 +2446,7 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
+  fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
@@ -3370,6 +3379,7 @@ const signalExit = createSignalExit({
   supervisedBy: () => process.env.GUGU_SERVER_SUPERVISED,
   markStopped: () => markStopped(process.env.GUGU_SERVER_HOME!),
   noteExitReason: () => noteExitReason(app.getPath('userData'), 'restart'),
+  flushStorage: () => emdashBridgeModule?.flushViewState(),
   killEngines: (label) => killEnginesOnCrash(label),
   exit: (code) => process.exit(code),
   host: () => deviceRuntimeHost,
@@ -3400,6 +3410,7 @@ process.on('uncaughtException', createFatalExit({
   record: (entry) => recordFatalSync({ dir: logDir, ...entry }),
   logger: createLogger('process'),
   reap: killEnginesOnCrash,
+  flushStorage: () => emdashBridgeModule?.flushViewState(),
   exit: (code) => process.exit(code),
 }))
 process.on('unhandledRejection', (reason) => {

@@ -281,7 +281,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding-bottom: var(--spacing-sm);
 }
 
 /* ── 会话 / 机器列表：形制照 orca 手机端 ────────────────────────────────

@@ -45,7 +45,7 @@ export function getHotkeyRegistration(
 }
 
 /**
- * The user's shortcut overrides from the settings read model; null until read. While null nothing is bound and no
+ * The user's shortcut overrides from the settings replica; null until read. While null nothing is bound and no
  * shortcut label is drawn — a default chord shown or bound before the user's own binding is known is a fake value.
  */
 export function useShortcutOverrides(): ShortcutOverrides | null {

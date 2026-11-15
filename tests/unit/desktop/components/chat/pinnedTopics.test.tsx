@@ -22,7 +22,7 @@ vi.mock('@/platform', async (original) => { const actual = await original<typeof
 
 const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions')
 const { PinnedTopicTabs } = await import('@/components/chat/PinnedTopicTabs')
-const { queryClient } = await import('@/lib/readModel')
+const { queryClient } = await import('@/lib/replica')
 const { unsubscribePrivateUserEventBus } = await import('@/lib/realtimeChannel')
 const { drainTopicSplitRequest } = await import('@/lib/topicSplitRequest')
 let harness: ReturnType<typeof createReactHarness>
@@ -222,7 +222,7 @@ describe('pinned topic tabs', () => {
   it('hides the entire strip when no topic is pinned, even when the group has topics', async () => {
     save([])
     await renderWithAppProviders(harness, strip(), options())
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'u', 'g'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'u', 'g'])).toEqual({ topicIds: [] }))
     expect(document.querySelector('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 

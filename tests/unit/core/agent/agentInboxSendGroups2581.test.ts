@@ -28,6 +28,8 @@ const base: AgentInboxUnreadRow = {
 const file = (seq: number, size = 3): AgentInboxUnreadRow =>
   ({ ...base, id: id(seq), seq, contentType: 'attachment', content: image(`p${seq}.png`), sendGroupId: 'send-1', sendGroupSize: size })
 const ids = (input: AgentInboxInjectionInput) => (input.sources ?? []).map((source) => source.row.id)
+/** The files a delivery names, each by the message that fetches it. */
+const fileRefs = (input: AgentInboxInjectionInput) => [...input.text.matchAll(/message_download_file \{source_message_id: "msg:([^"]+)"\}/g)].map((match) => match[1])
 const text = (seq: number, chatId = CHAT): AgentInboxUnreadRow => ({ ...base, chatId, id: id(seq), seq, content: `text ${seq}` })
 
 function inbox(rows: AgentInboxUnreadRow[]) {
@@ -39,7 +41,6 @@ function inbox(rows: AgentInboxUnreadRow[]) {
     fetchUnread: async () => rows.filter((row) => !read.has(row.id)),
     inject: async (input) => { injected.push(input); return 'accepted' },
     markRead: async ({ messageId }) => { read.add(messageId) },
-    downloadAttachment: async (_source, name) => ({ bytes: Uint8Array.from([1, 2]), localPath: `/tmp/${name}` }),
   }
   return { injected, read, deps }
 }
@@ -52,7 +53,8 @@ describe('#2581 a send of several files reaches the agent as one turn', () => {
     const { injected, read, deps } = inbox([file(1), file(2), file(3), text(4)])
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 4, injected: 4, verdict: 'accepted' })
     expect(injected).toHaveLength(2)
-    expect(injected[0]!.attachments?.map((attachment) => attachment.fileName)).toEqual(['p1.png', 'p2.png', 'p3.png'])
+    expect(fileRefs(injected[0]!)).toEqual([id(1), id(2), id(3)])
+    expect(injected[0]).not.toHaveProperty('attachments')
     for (const seq of [1, 2, 3]) expect(injected[0]!.text).toContain(`msg="msg:${id(seq)}"`)
     expect(ids(injected[0]!)).toEqual([id(1), id(2), id(3)])
     expect(injected[1]!.text).toContain('text 4')
@@ -68,7 +70,7 @@ describe('#2581 a send of several files reaches the agent as one turn', () => {
     rows.push(file(3))
     await pullAgentInbox(AGENT, deps)
     expect(injected.slice(1).map(ids)).toEqual([[id(1), id(2), id(3)], [id(5)]])
-    expect(injected[1]!.attachments).toHaveLength(3)
+    expect(fileRefs(injected[1]!)).toEqual([id(1), id(2), id(3)])
   })
 
   it('a file that never arrives does not hold the conversation: after the wait, what came goes as it is', async () => {
@@ -80,13 +82,13 @@ describe('#2581 a send of several files reaches the agent as one turn', () => {
     vi.setSystemTime(new Date(Date.parse('2026-11-13T00:00:00Z') + SEND_GROUP_WAIT_MS))
     await pullAgentInbox(AGENT, deps)
     expect(injected.map(ids)).toEqual([[id(1), id(2)], [id(5)]])
-    expect(injected[0]!.attachments).toHaveLength(2)
+    expect(fileRefs(injected[0]!)).toEqual([id(1), id(2)])
   })
 
   it('a file sent on its own is delivered as before, without waiting', async () => {
     const { injected, deps } = inbox([{ ...file(1), sendGroupId: null, sendGroupSize: null }])
     await pullAgentInbox(AGENT, deps)
     expect(injected).toHaveLength(1)
-    expect(injected[0]!.attachments).toHaveLength(1)
+    expect(fileRefs(injected[0]!)).toEqual([id(1)])
   })
 })

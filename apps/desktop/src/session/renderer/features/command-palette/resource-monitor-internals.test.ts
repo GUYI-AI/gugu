@@ -4,7 +4,7 @@ import type { ResourceSnapshot } from '@shared/resource-monitor';
 import { internalsRows } from './resource-monitor-internals';
 
 function counters(n: number): PerfCounters {
-  return { imTransactions: n, presenceBatches: n, presenceIds: n * 10, contactsProviderRenders: n };
+  return { imTransactions: n, presenceBatches: n, presenceIds: n * 10, contactsProviderRenders: n, snapshotRefusals: 0 };
 }
 
 function snap(timestamp: number, n: number, pid = 7): ResourceSnapshot {
@@ -22,7 +22,7 @@ function snap(timestamp: number, n: number, pid = 7): ResourceSnapshot {
 describe('internalsRows', () => {
   it('turns cumulative counters into per-second rates', () => {
     const [row] = internalsRows(snap(0, 100), snap(2000, 104));
-    expect(row.counterRates).toEqual({ imTransactions: 2, presenceBatches: 2, presenceIds: 20, contactsProviderRenders: 2 });
+    expect(row.counterRates).toEqual({ imTransactions: 2, presenceBatches: 2, presenceIds: 20, contactsProviderRenders: 2, snapshotRefusals: 0 });
   });
 
   it('has no rate on the first sample', () => {

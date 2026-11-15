@@ -6,7 +6,7 @@ import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaP
 import { chat, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { requestTopicSplit } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { pressBack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 
@@ -179,7 +179,7 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
   it('desktop: hides the pinned strip when no topics are pinned', async () => {
     pinPrefs.ids = []
     await render('g1', false)
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 

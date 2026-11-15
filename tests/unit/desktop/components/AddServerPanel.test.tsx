@@ -4,9 +4,9 @@
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 
-// The read model follows the signed-in account; every case starts from an empty cache.
+// The replica follows the signed-in account; every case starts from an empty cache.
 beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'u-1') })
 import type { Device } from '@gugu/core/shared/types/chat'
 // 远程隧道暂不开放(packages/core/src/cloud/remoteTunnel.ts)。它那套界面留着等开放,下面带「远程隧道」的几条照旧守着它,

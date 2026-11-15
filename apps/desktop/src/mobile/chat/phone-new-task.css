@@ -19,7 +19,7 @@
 .gg-phone-folder-picker { position: absolute; inset: 0; z-index: 20; display: flex; background: var(--ta-panel-bg); }
 
 /* Project tasks use the same compact control row and focus-preserving menus as new sessions. */
-.gg-phone-task-controls { display: flex; align-items: center; min-width: 0; gap: 4px; margin-bottom: 8px; }
+.gg-phone-task-controls { display: flex; align-items: center; min-width: 0; gap: 4px; }
 .gg-phone-task-controls > .gg-phone-create-controls { flex: 1; min-width: 0; }
 .gg-phone-task-controls > .gg-icon-btn { flex: 0 0 auto; }
 [data-chat-surface][data-phone-task-open] .gg-phone-room-controls { display: none; }

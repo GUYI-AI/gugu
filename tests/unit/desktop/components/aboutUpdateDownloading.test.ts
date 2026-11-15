@@ -6,7 +6,7 @@
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { createReactHarness } from '../../../support/testHarness'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 

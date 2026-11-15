@@ -17,7 +17,9 @@ import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CSSProperties } from 'react'
-import { chatService } from '../../lib/chat'
+import { useReplica } from '../../lib/replica'
+import { groupSettings, writeGroupSettings } from './useGroupChatSettings'
+import { Unknown } from '../ui/Unknown'
 import { rendererLogger } from '../../lib/log'
 import { useToast } from '../toastContext'
 import { parseAgentFloodThresholdDraft } from './agentFloodThresholdModels'
@@ -55,55 +57,36 @@ export function AgentFloodThresholdSetting({
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const saving = useRef(false)
-  const readSequence = useRef(0)
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState('')
-  const [editable, setEditable] = useState(false)
-  const [value, setValue] = useState<number | null>(null)
-  const [effective, setEffective] = useState<number | null>(null)
+  // The group's settings reading the chat already holds (❌ a read of its own): `revision` asks for a fresh one.
+  const reading = useReplica(groupSettings, [chatId])
+  const seenRevision = useRef(revision)
+  useEffect(() => {
+    if (seenRevision.current === revision) return
+    seenRevision.current = revision
+    void groupSettings.refresh(chatId)
+  }, [chatId, revision])
+  const settings = reading.state === 'value' ? reading.value : null
+  // ❌ 不静默:读不到就说读不到,失败本身也留在日志里。
+  useEffect(() => { if (reading.state === 'error') floodLog.error({ error: reading.error, chatId }, 'agent flood threshold load failed') }, [reading, chatId])
+  const failed = reading.state === 'error' ? messageForUser(reading.error) : ''
+  const editable = settings?.can_manage === true
+  const value = settings ? settings.agent_flood_threshold : null
   // null means no local edit; an empty string is the explicit inheritance draft.
   const [draft, setDraft] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    const sequence = ++readSequence.current
-    setFailed('')
-    chatService.getGroupChatSettings(chatId)
-      .then((settings) => {
-        if (cancelled || sequence !== readSequence.current) return
-        setEditable(settings.can_manage)
-        setValue(settings.agent_flood_threshold)
-        setEffective(settings.agent_flood_threshold_effective)
-      })
-      // ❌ 不静默:读不到就整行不画(effective 仍是 null),但失败本身要留在日志里。
-      .catch((error: unknown) => {
-        if (cancelled || sequence !== readSequence.current) return
-        floodLog.error({ error, chatId }, 'agent flood threshold load failed')
-        setFailed(messageForUser(error))
-      })
-    return () => { cancelled = true }
-  }, [chatId, revision])
 
   const commit = useCallback(() => {
     if (!editable || saving.current) return
     const next = parseAgentFloodThresholdDraft(draft ?? (value === null ? '' : String(value)))
     // 收不下的输入就还原成上一个有效值 —— ❌ 不弹错、也 ❌ 不把半截输入存进去。
     if (next === undefined || next === value) { setDraft(null); return }
-    readSequence.current += 1
     saving.current = true
     setBusy(true)
-    chatService.updateGroupChatSettings(chatId, { agent_flood_threshold: next })
-      .then((updated) => {
-        // Reads begun before this acknowledgement must not replace the saved value.
-        readSequence.current += 1
-        setValue(updated.agent_flood_threshold)
-        setDraft(null)
-        // 生效值可能跟着变(填了自己的数之后就不再跟上面那条线走),回填权威的那一份。
-        setEffective(updated.agent_flood_threshold_effective)
-        onSaved?.()
-      })
+    // The group's write rules (a read begun before this acknowledgement does not replace the saved value); the effective
+    // value comes back with it (once a line has its own number it no longer follows the line above).
+    writeGroupSettings(chatId, { agent_flood_threshold: next })
+      .then(() => { setDraft(null); onSaved?.() })
       .catch((error: unknown) => {
-        floodLog.error({ error, chatId }, 'agent flood threshold save failed')
         setDraft(null)
         toast(t('group.settings.agentFloodSaveFailed'), 'error', messageForUser(error))
       })
@@ -111,6 +94,10 @@ export function AgentFloodThresholdSetting({
   }, [chatId, draft, value, editable, onSaved, toast, t])
 
   if (failed) return <p role="alert">{failed}</p>
+  // Not read yet: the row's place is kept (❌ inserted later, pushing the rows below down).
+  if (!settings) return <div style={ROW_STYLE} data-testid="agent-flood-threshold-row"><div><div style={TITLE_STYLE}>{t('group.settings.agentFloodThreshold')}</div><div style={HINT_STYLE}><Unknown className="w-40" /></div></div></div>
+  const effective = settings.agent_flood_threshold_effective
+  // Read, and the server has no effective value: no row, ❌ a default number that looks normal.
   if (effective === null) return null
 
   return (

@@ -6,7 +6,7 @@ import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarCo
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
 import { AgentWatchScreen } from '@/mobile/agent-watch/AgentWatchChrome'
-import { followRendererSession } from '@/lib/readModel'
+import { followRendererSession } from '@/lib/replica'
 import '@/mobile/agent-watch/agent-watch.css'
 import '@/mobile/agent-watch/phone-conversation.css'
 import '@gugu/session-ui/styles/global'

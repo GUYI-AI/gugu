@@ -4,6 +4,8 @@ export interface PerfCounters {
   presenceBatches: number;
   presenceIds: number;
   contactsProviderRenders: number;
+  /** Replica entries not kept across restarts (src/lib/replica.ts persistence limits). */
+  snapshotRefusals: number;
 }
 
 /** Main window only, cumulative since the page loaded (src/lib/frameCounters.ts). */
