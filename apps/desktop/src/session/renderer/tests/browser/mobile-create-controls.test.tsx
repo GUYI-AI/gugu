@@ -8,6 +8,8 @@ import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import '@/i18n/registerMessagingCatalog'
 import { followRendererSession } from '@/lib/readModel'
+import { PhoneComposerControl, PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
+import { Monitor, Sparkles, Hash, Users } from '@/lib/icons'
 import { CreateTarget } from '@/mobile/agent-watch/CreateTarget'
 import { SelectedCreationSkills } from '@/mobile/agent-watch/CreateSkills'
 import type { CreationSkill } from '@/mobile/agent-watch/create-skills'
@@ -44,19 +46,22 @@ async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US'
   await page.viewport(390, 844)
   setLocalePreference(locale)
   document.documentElement.dataset.theme = theme
-  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''
-  host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:12px'
+  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''; host.className = 'gg-aw-create-host'
+  host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:16px'
   root = createRoot(host); root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Harness projectTask={projectTask} /></MessageProvider></SessionUiTheme></LocalizationProvider>)
   await until('composer', () => !!host?.querySelector('[contenteditable]'))
+  ;(host!.querySelector('[contenteditable]') as HTMLElement).blur()
+  await until('configuration controls visible', () => !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   return host.querySelector<HTMLElement>('[contenteditable]')!
 }
-it.each(['light', 'dark'] as const)('%s: all configuration transitions and a skill tag preserve the composing editor', async (theme) => {
+it.each(['light', 'dark'] as const)('%s: configuration transitions and a skill tag preserve the same editor and draft', async (theme) => {
   const editor = await mount(theme)
-  await page.getByTestId('chat-composer').fill('正在输入中文\n第二行')
+  await page.getByTestId('chat-composer').fill('正在输入中文\n第二行'); editor.blur()
   const s = getSelection()!, range = document.createRange(); range.setStart(editor.lastElementChild!.firstChild!, 2); range.collapse(true); s.removeAllRanges(); s.addRange(range)
   const before = { node: s.anchorNode, offset: s.anchorOffset, text: editor.textContent }
+  editor.blur()
+  await until('configuration controls visible', () => !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
-  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.getByRole('heading', { name: '工作', exact: true }).click()
   await page.getByRole('radio', { name: 'Cloud' }).click()
@@ -67,7 +72,7 @@ it.each(['light', 'dark'] as const)('%s: all configuration transitions and a ski
   await page.getByRole('checkbox', { name: /会议记录/ }).click()
   await until('skill tag', () => !!host?.querySelector('[data-testid="agent-watch-create-skill-tags"]'))
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
-  expect(document.activeElement).toBe(editor); expect(s.anchorNode).toBe(before.node); expect(s.anchorOffset).toBe(before.offset)
+  expect(document.activeElement).not.toBe(editor); expect(s.anchorNode).toBe(before.node); expect(s.anchorOffset).toBe(before.offset)
   expect(editor.textContent).toBe(before.text); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
   expect(editor.closest('[data-slot="composer-input"]')!.querySelector('[data-testid="agent-watch-create-skill-tags"]')).not.toBeNull()
   await page.getByRole('button', { name: '移除技能 会议记录' }).click()
@@ -98,7 +103,7 @@ it('does not reserve an attachment gutter when creation has no attachment adapte
 })
 it('hides the skills entry for a phone target and restores it for a computer without replacing the input', async () => {
   const editor = await mount()
-  await page.getByTestId('chat-composer').fill('保留这段草稿')
+  await page.getByTestId('chat-composer').fill('保留这段草稿'); editor.blur()
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.getByRole('radio', { name: 'Phone' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
@@ -127,12 +132,12 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   }
 })
 
-it('keeps narrow English controls on one horizontal scrolling line', async () => {
+it('keeps narrow English controls on one line without unnecessary scrolling', async () => {
   await mount('dark', 'en-US')
   await page.viewport(320, 640)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll('button')]
-  expect(row.scrollWidth).toBeGreaterThan(row.clientWidth)
+  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
   row.scrollLeft = row.scrollWidth
   await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1)
@@ -142,8 +147,7 @@ it('keeps narrow English controls on one horizontal scrolling line', async () =>
 it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'light']] as const)('%s %s: project tasks keep three controls and choose the agent inside Work', async (locale, theme) => {
   const editor = await mount(theme, locale, true)
   const blur = vi.fn(), end = vi.fn()
-  editor.focus(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
-  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll('button')]
@@ -159,7 +163,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   await expect.element(page.getByRole('radio', { name: 'Claude Code', exact: true })).toBeVisible()
   await page.getByRole('radio', { name: 'Claude Code', exact: true }).click()
   await until('selected agent shown in Work', () => harness()?.textContent?.includes('Claude Code') === true)
-  expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
+  expect(document.activeElement).not.toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
 })
 
@@ -175,4 +179,50 @@ it('omits search only for an actually empty skill catalog', async () => {
   await page.getByTestId('agent-watch-create-skills').click()
   await expect.element(page.getByText('没有可用的技能', { exact: true })).toBeVisible()
   expect(document.querySelector('[data-testid=agent-watch-create-controls-sheet] input[type=search]')).toBeNull()
+})
+
+
+it.each([360, 390])('%ipx: four shared controls retain equal padding and fit without scrolling', async width => {
+  await mount()
+  await page.viewport(width, 844)
+  root!.render(<PhoneComposerControlRow>{[
+    ['工作', <Monitor />], ['技能', <Sparkles />], ['话题', <Hash />], ['智能体', <Users />],
+  ].map(([label, icon], index) => <PhoneComposerControl key={index} label={String(label)} icon={icon} testId={`shared-control-${index}`} onClick={() => {}} />)}</PhoneComposerControlRow>)
+  await until('four shared controls', () => host!.querySelectorAll('[data-phone-composer-controls] button').length === 4)
+  const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  const buttons = [...row.querySelectorAll('button')]
+  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  for (const [index, button] of buttons.entries()) {
+    const box = button.getBoundingClientRect(), style = getComputedStyle(button)
+    const icons = button.querySelectorAll('svg'), icon = icons[0]!.getBoundingClientRect()
+    const label = button.querySelector('.gg-phone-composer-control-label')!.getBoundingClientRect()
+    expect(icons).toHaveLength(1)
+    expect([style.paddingLeft, style.paddingRight]).toEqual(['12px', '12px'])
+    expect(box.height).toBe(44)
+    expect(icon.left - box.left).toBe(12)
+    expect(label.left - icon.right).toBe(4)
+    expect(box.y).toBe(buttons[0]!.getBoundingClientRect().y)
+    if (index) expect(box.left - buttons[index - 1]!.getBoundingClientRect().right).toBe(8)
+  }
+})
+
+
+it.each([false, true])('project task=%s: controls fade on editor focus and return without moving the input', async projectTask => {
+  const editor = await mount('dark', 'zh-CN', projectTask)
+  const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  const input = host!.querySelector<HTMLElement>('[data-slot="composer-input"]')!
+  const top = input.getBoundingClientRect().top
+  expect(getComputedStyle(row).opacity).toBe('1')
+  editor.focus()
+  await until('controls hidden for editing', () => row.hasAttribute('data-editing'))
+  await Promise.all(row.getAnimations().map(animation => animation.finished))
+  expect(getComputedStyle(row).opacity).toBe('0')
+  expect(row.inert).toBe(true)
+  expect(input.getBoundingClientRect().top).toBe(top)
+  editor.blur()
+  await until('controls return after blur', () => !row.hasAttribute('data-editing'))
+  await Promise.all(row.getAnimations().map(animation => animation.finished))
+  expect(getComputedStyle(row).opacity).toBe('1')
+  expect(row.inert).toBe(false)
+  expect(input.getBoundingClientRect().top).toBe(top)
 })
