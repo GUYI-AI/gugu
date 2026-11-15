@@ -27,11 +27,13 @@ export function ComposerVerbs({ chatId, isGroupChat, draft, onCarried }: {
   const pick = (verb: ComposerVerb) => {
     if (inSlot) {
       const chat = chats.find((candidate) => candidate.id === chatId)
+      const source = chat?.kind === 'topic' ? chats.find(candidate => candidate.id === chat.source_chat_id && candidate.kind === 'group') : null
       const carry = draft()
       setComposerVerb(chatId, verb, carry, {
         name: chat?.name ?? '',
         joinable: chat?.kind === 'group',
         inGroup: chat?.kind === 'group' || chat?.kind === 'topic',
+        ...(source ? { birthChatId: source.id } : {}),
       })
       if (carry.trim()) onCarried()
       return

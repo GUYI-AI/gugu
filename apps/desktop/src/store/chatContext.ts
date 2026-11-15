@@ -237,8 +237,8 @@ type ChatStoreValue = ChatContextValue & ReturnType<typeof createDraftWriter>
 type ChatStoreHandle = { store: SelectStore<ChatStoreValue>; writer: ReturnType<typeof createDraftWriter> }
 
 function createChatStoreHandle(value: ChatContextValue, inheritedWriter?: ReturnType<typeof createDraftWriter>): ChatStoreHandle {
-  const { writeDraft, registerDraftEditor } = inheritedWriter ?? createDraftWriter(() => handle.store.get())
-  const writer = { writeDraft, registerDraftEditor }
+  const { readDraft, writeDraft, registerDraftEditor } = inheritedWriter ?? createDraftWriter(() => handle.store.get())
+  const writer = { readDraft, writeDraft, registerDraftEditor }
   const handle: ChatStoreHandle = { store: createSelectStore<ChatStoreValue>({ ...value, ...writer }), writer }
   return handle
 }

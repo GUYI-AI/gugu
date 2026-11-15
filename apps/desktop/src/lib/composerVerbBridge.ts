@@ -26,6 +26,8 @@ export interface ComposerVerbChat {
   joinable: boolean
   /** #2599 a group or one of its topics: an agent created here lives in that group, so the project field starts empty. */
   inGroup: boolean
+  /** A topic's Agent joins its source group; its card stays in the topic keyed by this entry. */
+  birthChatId?: string
 }
 
 const CHAT_KEY = '__GUGU_COMPOSER_VERB_CHATS__'

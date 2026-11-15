@@ -22,8 +22,8 @@ vi.mock('@renderer/localization/use-session-messages', async () => {
   };
 });
 vi.mock('./new-session-page', () => ({
-  NewSessionComposer: ({ placeholder, verb }: { placeholder?: string | ((agent: string) => string); verb?: { tag: (agentId?: string) => React.ReactNode } }) => (
-    <div data-composer-placeholder={typeof placeholder === 'function' ? placeholder('Claude') : placeholder}>{verb?.tag(undefined)}</div>
+  NewSessionComposer: ({ placeholder, verb, taskChatId, birthChatId }: { placeholder?: string | ((agent: string) => string); verb?: { tag: (agentId?: string) => React.ReactNode }; taskChatId?: string; birthChatId?: string }) => (
+    <div data-composer-placeholder={typeof placeholder === 'function' ? placeholder('Claude') : placeholder} data-task-chat={taskChatId} data-birth-chat={birthChatId}>{verb?.tag(undefined)}</div>
   ),
 }));
 vi.mock('./composer-tray', () => ({
@@ -66,6 +66,14 @@ const chip = () => host.querySelector<HTMLElement>('[data-testid="composer-birth
 const verbTag = () => host.querySelector<HTMLElement>('[data-composer-placeholder]')!.textContent;
 
 describe('TaskDispatchComposer copy', () => {
+  it('keeps the card in the current topic while joining its source group', async () => {
+    await act(async () => root.render(<TaskDispatchComposer chatId="topic-1" birthChatId="source-group" inGroup />));
+    const composer = host.querySelector<HTMLElement>('[data-composer-placeholder]')!;
+    expect(composer.dataset.taskChat).toBe('topic-1');
+    expect(composer.dataset.birthChat).toBe('source-group');
+    expect(chip()).toBeNull();
+  });
+
   it('in a group: asks 想让新智能体做点什么？ and the chip reads 进群：<群名>', async () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="group-1" chatName="产品讨论群" joinChat />));
     expect(placeholder()).toBe('想让新智能体做点什么？');
