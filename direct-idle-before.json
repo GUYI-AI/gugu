@@ -46,5 +46,5 @@
     "mIsInputViewShown=true mStatusIcon=0"
   ],
   "syntheticFixture": true,
-  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic test conversations; no model requests"
+  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic conversations; no model requests"
 }

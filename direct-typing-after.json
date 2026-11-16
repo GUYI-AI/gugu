@@ -1,5 +1,5 @@
 {
-  "head": "0.3.6-menu2858-8ece4eabb1",
+  "head": "0.3.6-menu2858-9f3510c134",
   "stage": "after",
   "context": "direct",
   "theme": "dark",
@@ -62,5 +62,6 @@
     "mIsInputViewShown=true mStatusIcon=0"
   ],
   "syntheticFixture": true,
-  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic test conversations; no model requests"
+  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic conversations; no model requests",
+  "sourceSha": "9f3510c1342a4d5a83ccca7edf7d8b2e65cc21c5"
 }

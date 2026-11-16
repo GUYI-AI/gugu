@@ -1,5 +1,5 @@
 {
-  "head": "8ece4eabb1d88ec45c8642c202cce9464e553e7a",
+  "head": "0.3.6-menu2858-9f3510c134",
   "theme": "dark",
   "row": {
     "x": 15.996621131896973,
@@ -20,6 +20,7 @@
   ],
   "hasInput": true,
   "width": 390,
-  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic test conversations; no model requests",
-  "limitation": "Menu applicability from a published synthetic account session directory; no live host timeline or skill execution verified."
+  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic conversations; no model requests",
+  "sourceSha": "9f3510c1342a4d5a83ccca7edf7d8b2e65cc21c5",
+  "limitation": "Menu applicability from a published synthetic session directory; no live host timeline or skill execution verified."
 }
