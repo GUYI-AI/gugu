@@ -6,6 +6,8 @@ import { MessageFilePreview, type PreviewFile } from '../../../../apps/desktop/s
 import { FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/fileResolver'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { queryClient } from '@/lib/replica'
+import { onlineManager } from '@tanstack/react-query'
 
 const io = vi.hoisted(() => ({ bytes: vi.fn(), preview: vi.fn(), image: vi.fn(), external: vi.fn(), download: vi.fn() }))
 vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
@@ -13,9 +15,13 @@ vi.mock('@/lib/download', () => ({ downloadBlob: io.download }))
 
 const file: PreviewFile = { kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, source: { kind: 'message', messageId: 'missing-preview' } }
 const translate = i18n.getFixedT('zh-CN', 'messaging')
+const originalQueryOptions = queryClient.getDefaultOptions()
+const originalOnline = onlineManager.isOnline()
 describe('file preview missing-object actions', () => {
   let harness: ReturnType<typeof createReactHarness>
   beforeEach(async () => {
+    onlineManager.setOnline(true)
+    queryClient.setDefaultOptions({ ...originalQueryOptions, queries: { ...originalQueryOptions.queries, retryDelay: 0 } })
     await i18n.changeLanguage('zh-CN')
     vi.stubGlobal('Blob', NodeBlob)
     Object.values(io).forEach(mock => mock.mockReset())
@@ -23,7 +29,7 @@ describe('file preview missing-object actions', () => {
     io.bytes.mockResolvedValue({ status: 'ready', blob: new Blob(['notes']) })
     harness = createReactHarness()
   })
-  afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
+  afterEach(() => { harness.cleanup(); queryClient.setDefaultOptions(originalQueryOptions); onlineManager.setOnline(originalOnline); vi.unstubAllGlobals() })
   const button = (label: string) => [...harness.container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.getAttribute('aria-label') === label)
   const download = () => button(translate('chatArea.filePreview.download'))
   const external = () => button(translate('chatArea.filePreview.openExternal'))
@@ -61,15 +67,30 @@ describe('file preview missing-object actions', () => {
     expect(io.external).not.toHaveBeenCalled()
     assertNoReadActions()
   })
+  it('starts the byte reader while the window is offline', async () => {
+    onlineManager.setOnline(false)
+    await render()
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
+    expect(io.bytes).toHaveBeenCalledTimes(1)
+  })
   it.each(['network', 'HTTP 403', 'HTTP 500', 'HTTP 503'])('retains an actual download retry after %s', async reason => {
-    io.bytes.mockRejectedValueOnce(new Error(reason))
+    for (let attempt = 0; attempt < 4; attempt++) io.bytes.mockRejectedValueOnce(new Error(reason))
     await render(); await settled(translate('attachmentView.fileUnavailable'))
+    expect(io.bytes).toHaveBeenCalledTimes(4)
     expect(download()?.disabled).toBe(false)
     expect(external()?.disabled).toBe(false)
     await act(async () => { download()!.click() })
-    expect(io.bytes).toHaveBeenCalledTimes(2)
+    expect(io.bytes).toHaveBeenCalledTimes(5)
     expect(io.download).toHaveBeenCalledTimes(1)
     expect(harness.container.textContent).not.toContain(translate('attachmentView.fileMissing'))
+  })
+  it('recovers a transient read silently before showing a failure or asking for a click', async () => {
+    io.bytes.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await render()
+    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
+    expect(io.bytes).toHaveBeenCalledTimes(2)
+    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
   })
   it.each(['download', 'external'] as const)('remembers a late missing result from the %s action', async action => {
     await render()

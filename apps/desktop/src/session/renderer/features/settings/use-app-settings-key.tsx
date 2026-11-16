@@ -27,7 +27,7 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
   // ❌ 动本机那一份(整个窗口都在读)。那台机器离线就不问(问不到,只会挂满超时)。
   const host = useSettingsHost();
   const remote = host.remote;
-  const settings = useReplica(appSettingsModel, !remote || remote.online ? [key, host.key] : null) as Reading<SettingsMeta<K>>;
+  const settings = useReplica(appSettingsModel, !remote || remote.online ? [key, host.key] : null, key === 'browser' ? { retry: 3 } : {}) as Reading<SettingsMeta<K>>;
   const current = settings.state === 'value' ? settings.value : undefined;
   const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
 
@@ -62,6 +62,11 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
 
   return {
     settings,
+    refresh: () => {
+      // A manual retry joins a read already running; cancelling a query cannot cancel its IPC request.
+      const queryKey = appSettingsModel.key(key, host.key);
+      return queryKey ? queryClient.refetchQueries({ queryKey, exact: true }, { cancelRefetch: false }) : Promise.resolve();
+    },
     /** Another machine cannot act now: offline, or its read failed (server too old / unreachable). Rows stay, controls grey. */
     unavailable: !!remote && (!remote.online || settings.state === 'error'),
     isSaving: updateMutation.isPending || resetMutation.isPending || resetFieldMutation.isPending,
