@@ -38,6 +38,7 @@ describe('Claude AI review prerequisites', () => {
     expect(modes('2.1.311', 'sonnet', 'Claude Sonnet 4.6')).toHaveLength(5);
     expect(modes('2.1.311', 'sonnet', 'Claude Sonnet 4.5')).toHaveLength(4);
     expect(modes('2.1.311', 'sonnet')).toHaveLength(4);
+    expect(modes('2.1.311', 'sonnet[1m]', 'Claude Sonnet 4.6')).toHaveLength(5);
   });
   it('sends native auto rather than the bypass flag', () => {
     const command = provider.behavior.prompt!.buildCommand({ cli: '/fixture/claude', model: 'claude-opus-5', permissionMode: 'ai-review' });
