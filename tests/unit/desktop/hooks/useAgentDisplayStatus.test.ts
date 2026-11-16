@@ -1,153 +1,135 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useAgentDisplayStatus, useAgentDisplayStatuses } from '../../../../apps/desktop/src/hooks/useAgentDisplayStatus'
-import { createNode, createReactHarness } from '../../../support/testHarness'
-import type { AgentPresenceState } from '../../../../apps/desktop/src/lib/agentPresenceStore'
-import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
-const mocks = vi.hoisted(() => ({
-  openAgentRuntime: vi.fn(),
-  wakeAgent: vi.fn(),
-  subscribeAgentPresence: vi.fn(),
-  getAgentPresenceSnapshot: vi.fn(),
-  listeners: [] as Array<(state: AgentPresenceState) => void>,
-  neverObserved: null as AgentPresenceState | null,
-  unsubscribes: [] as Array<() => void>,
-}))
-vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
-  chatService: {
-    openAgentRuntime: mocks.openAgentRuntime,
-    wakeAgent: mocks.wakeAgent,
+import { createNode, createReactHarness, deferred } from '../../../support/testHarness'
+
+// The hooks over the real agent presence store (and its `agentPresenceReadable` adapter); only the store's transport is
+// played here: the presence batch read (identity RPC) and no desktop host.
+const transport = vi.hoisted(() => ({ rpc: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ dataClient: { schema: () => ({ rpc: transport.rpc }) } }))
+vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => null }))
+vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }))
+const { useAgentDisplayStatus, useAgentDisplayStatuses } = await import('../../../../apps/desktop/src/hooks/useAgentDisplayStatus')
+const { agentPresenceReadable, getAgentPresenceSnapshot, prewarmAgentPresence, setLocalAgentStatus, setPresenceBusContext } = await import('../../../../apps/desktop/src/lib/agentPresenceStore')
+
+type Activity = 'idle' | 'running'
+const presence = (agentUserId: string, activity: Activity) => ({
+  status: 'presence',
+  presence: {
+    agent_user_id: agentUserId, account_status: 'active', runtime_status: 'online', desired_status: 'online', activity_status: activity,
+    device_id: 'dev-1', device_status: 'online', device_last_seen_at: new Date().toISOString(), updated_at: '2026-08-21T00:00:00Z',
   },
-}))
-vi.mock('../../../../apps/desktop/src/lib/agentPresenceStore', () => ({
-  subscribeAgentPresence: mocks.subscribeAgentPresence,
-  getAgentPresenceSnapshot: mocks.getAgentPresenceSnapshot,
-  // #3839 「从未观测过长什么样」由 store 单点定义,hook 从那里取 —— 所以 mock 也得给出这一条,
-  // ❌ 不在判据里另写一份中性态字面量(那正是被删掉的 emptyState 副本)。
-  // The hook reads the store through its `useSelect` adapter: the same get / subscribe as the mocked store.
-  agentPresenceReadable: (agentUserId: string) => ({
-    get: () => mocks.getAgentPresenceSnapshot(agentUserId) ?? mocks.neverObserved,
-    subscribe: (listener: () => void) => (agentUserId ? mocks.subscribeAgentPresence(agentUserId, () => listener()) : () => undefined),
-  }),
-  neverObservedAgentPresence: (agentUserId: string) => presenceState({
-    agentUserId,
-    status: 'pending',
-    deviceOnline: false,
-    source: 'pending',
-    lastSnapshotAt: null,
-  }),
-}))
+})
+/** The batch read answers every id it is asked about with `activity`. */
+const answer = (activity: Activity) => (_name: string, args: { p_agent_user_ids?: string[] }) =>
+  Promise.resolve({ data: { results: Object.fromEntries((args.p_agent_user_ids ?? []).map((id) => [id, presence(id, activity)])) }, error: null })
+
 let harness: ReturnType<typeof createReactHarness>
-function presenceState(overrides: Partial<AgentPresenceState> = {}): AgentPresenceState {
-  return {
-    agentUserId: 'agent-1',
-    status: 'idle',
-    presentation: presentAgentStatus({ reading: null, reachability: 'online' }),
-    reading: null,
-    local: null,
-    payload: null,
-    deviceOnline: true,
-    error: null,
-    source: 'snapshot',
-    lastUpdatedAt: Date.now(),
-    lastSnapshotAt: Date.now(),
-    lastEventAt: null,
-    ...overrides,
-  }
-}
+let account = 0
+// Each case: a fresh agent id under a fresh account (the store keeps what an account observed).
+let agent = ''
 beforeEach(() => {
   harness = createReactHarness()
-  mocks.listeners.length = 0
-  mocks.unsubscribes.length = 0
-  mocks.openAgentRuntime.mockReset()
-  mocks.wakeAgent.mockReset()
-  mocks.subscribeAgentPresence.mockReset()
-  mocks.getAgentPresenceSnapshot.mockReset()
-  mocks.getAgentPresenceSnapshot.mockReturnValue(presenceState())
-  mocks.neverObserved = presenceState({ agentUserId: '', status: 'pending', deviceOnline: false, source: 'pending', lastSnapshotAt: null })
-  mocks.subscribeAgentPresence.mockImplementation((_id: string, listener: (s: AgentPresenceState) => void) => {
-    // A push is the store's state changing: what `get` answers from now on.
-    mocks.listeners.push((state) => { mocks.getAgentPresenceSnapshot.mockReturnValue(state); listener(state) })
-    const unsubscribe = vi.fn()
-    mocks.unsubscribes.push(unsubscribe)
-    return unsubscribe
-  })
+  transport.rpc.mockReset().mockImplementation(answer('idle'))
+  setPresenceBusContext({ currentUserId: `owner-${++account}` })
+  agent = `agent-${account}`
 })
-afterEach(() => {
-  harness.cleanup()
-  vi.clearAllMocks()
-})
+afterEach(() => { harness.cleanup() })
+
 describe('useAgentDisplayStatus', () => {
-  it('reads the store snapshot for the initial status', async () => {
-    mocks.getAgentPresenceSnapshot.mockReturnValue(presenceState({ status: 'working' }))
-    await harness.render(createNode(StatusProbe, { agentUserId: 'agent-1' }))
+  it('reads the store for the initial status', async () => {
+    transport.rpc.mockImplementation(answer('running'))
+    await harness.render(createNode(StatusProbe, { agentUserId: agent }))
     await flush()
+    expect(transport.rpc).toHaveBeenCalledWith('get_agent_presence_batch', { p_agent_user_ids: [agent] })
     expect(statusText()).toBe('working')
   })
-  it('updates when the store pushes a new state', async () => {
-    await harness.render(createNode(StatusProbe, { agentUserId: 'agent-1' }))
+  it('updates when the store changes', async () => {
+    await harness.render(createNode(StatusProbe, { agentUserId: agent }))
     await flush()
     expect(statusText()).toBe('idle')
     await act(async () => {
-      mocks.listeners[0]?.(presenceState({ status: 'offline', deviceOnline: false }))
-      await Promise.resolve()
+      setLocalAgentStatus(agent, { sessionId: 's', reading: { status: 'working', detail: 'running', running: true, background: null },
+        unseen: false, reviewGate: null, providerBlocker: null, statusSourceFault: null, life: { kind: 'ready', stage: null } })
     })
-    expect(statusText()).toBe('offline')
+    expect(statusText()).toBe(getAgentPresenceSnapshot(agent)!.status)
+    expect(statusText()).toBe('working')
   })
-  it('unsubscribes from the store on unmount', async () => {
-    await harness.render(createNode(StatusProbe, { agentUserId: 'agent-1' }))
+  it('unsubscribes from the store on unmount: an account switch drops the entry nobody watches', async () => {
+    await harness.render(createNode(StatusProbe, { agentUserId: agent }))
     await flush()
-    expect(mocks.unsubscribes).toHaveLength(1)
     harness.cleanup()
-    expect(mocks.unsubscribes[0]).toHaveBeenCalled()
+    setPresenceBusContext({ currentUserId: `owner-${++account}` })
+    expect(getAgentPresenceSnapshot(agent)).toBeNull()
   })
   it('does not subscribe when agentUserId is missing', async () => {
-    mocks.getAgentPresenceSnapshot.mockReturnValue(null)
     await harness.render(createNode(StatusProbe, { agentUserId: null }))
     await flush()
-    expect(mocks.subscribeAgentPresence).not.toHaveBeenCalled()
+    expect(transport.rpc).not.toHaveBeenCalled()
     expect(statusText()).toBe('pending')
   })
 })
+
+describe('agentPresenceReadable', () => {
+  it('an agent never observed reads one stable pending state (a reader comparing by reference does not loop)', () => {
+    const readable = agentPresenceReadable(`${agent}-unseen`)
+    const first = readable.get()
+    expect(first).toMatchObject({ status: 'pending', source: 'pending' })
+    expect(readable.get()).toBe(first)
+    expect(agentPresenceReadable(`${agent}-unseen`)).toBe(readable)
+  })
+  it('an observed agent reads the stored state, and its listener hears the change', async () => {
+    const readable = agentPresenceReadable(agent)
+    const heard = vi.fn()
+    const stop = readable.subscribe(heard)
+    try {
+      await flush()
+      expect(readable.get()).toBe(getAgentPresenceSnapshot(agent))
+      expect(readable.get().status).toBe('idle')
+      heard.mockClear()
+      setLocalAgentStatus(agent, { sessionId: 's', reading: { status: 'working', detail: 'running', running: true, background: null },
+        unseen: false, reviewGate: null, providerBlocker: null, statusSourceFault: null, life: { kind: 'ready', stage: null } })
+      expect(heard).toHaveBeenCalled()
+      expect(readable.get().status).toBe('working')
+    } finally { stop() }
+  })
+  it('the empty id subscribes to nothing', async () => {
+    const stop = agentPresenceReadable('').subscribe(() => undefined)
+    await flush()
+    stop()
+    expect(transport.rpc).not.toHaveBeenCalled()
+  })
+})
+
 describe('useAgentDisplayStatuses', () => {
-  it('does not publish a new map when the initial snapshot is unchanged', async () => {
+  it('does not publish a new map when the stored state is unchanged', async () => {
+    prewarmAgentPresence([agent])
+    await flush()
+    expect(getAgentPresenceSnapshot(agent)?.status).toBe('idle')
     const renders: number[] = []
     function RenderCountProbe({ agentUserIds }: { agentUserIds: string[] }) {
       renders.push(1)
       const statuses = useAgentDisplayStatuses(agentUserIds)
       return createNode('output', { 'data-testid': 'status' }, JSON.stringify(statuses))
     }
-    await harness.render(createNode(RenderCountProbe, { agentUserIds: ['agent-1'] }))
+    await harness.render(createNode(RenderCountProbe, { agentUserIds: [agent] }))
     await flush()
-    expect(statusText()).toBe('{"agent-1":"idle"}')
+    expect(statusText()).toBe(JSON.stringify({ [agent]: 'idle' }))
     expect(renders).toHaveLength(1)
   })
-  it('does not expose the single-agent idle placeholder as a resolved group status', async () => {
-    mocks.getAgentPresenceSnapshot.mockReturnValue(presenceState({
-      source: 'pending',
-      deviceOnline: false,
-      lastSnapshotAt: null,
-    }))
-    await harness.render(createNode(StatusesProbe, { agentUserIds: ['agent-1'] }))
+  it('does not expose the never-observed pending state as a resolved group status', async () => {
+    const read = deferred<unknown>()
+    transport.rpc.mockReturnValueOnce(read.promise)
+    await harness.render(createNode(StatusesProbe, { agentUserIds: [agent] }))
     await flush()
+    expect(getAgentPresenceSnapshot(agent)?.source).toBe('pending')
     expect(statusText()).toBe('{}')
-    await act(async () => {
-      mocks.listeners[0]?.(presenceState({
-        source: 'pending',
-        deviceOnline: false,
-        lastSnapshotAt: null,
-      }))
-      await Promise.resolve()
-    })
-    expect(statusText()).toBe('{}')
-    await act(async () => {
-      mocks.listeners[0]?.(presenceState({ status: 'idle' }))
-      await Promise.resolve()
-    })
-    expect(statusText()).toBe('{"agent-1":"idle"}')
+    await act(async () => { read.resolve(await answer('idle')('get_agent_presence_batch', { p_agent_user_ids: [agent] })) })
+    await flush()
+    expect(statusText()).toBe(JSON.stringify({ [agent]: 'idle' }))
   })
 })
+
 function StatusProbe({ agentUserId }: { agentUserId: string | null }) {
   const { status } = useAgentDisplayStatus(agentUserId)
   return createNode('output', { 'data-testid': 'status' }, status)
@@ -159,8 +141,9 @@ function StatusesProbe({ agentUserIds }: { agentUserIds: string[] }) {
 function statusText(): string {
   return harness.container.querySelector('[data-testid="status"]')?.textContent ?? ''
 }
+/** The store's batch read (a microtask flush, then the dynamic import of its client and the answer) handed on to React. */
 async function flush() {
-  await act(async () => {
-    await Promise.resolve()
-  })
+  for (let turn = 0; turn < 3; turn += 1) {
+    await act(async () => { await vi.dynamicImportSettled() })
+  }
 }
