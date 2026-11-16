@@ -90,7 +90,7 @@ export function watchLife(route: LifeRoute, sessionId: string, wanted: () => boo
   };
 }
 
-/** Read the host's current view through this route; a failure in this epoch is the session's failure (no view). */
+/** Read the host's current view through this route; a failure in this epoch is said next to the view mirrored so far (❌ dropped). */
 export async function readLifeVia(route: LifeRoute, sessionId: string): Promise<LifeView> {
   const epoch = machines.get(route.key)?.epoch;
   const key = viewKey(route.key, sessionId);
@@ -99,7 +99,7 @@ export async function readLifeVia(route: LifeRoute, sessionId: string): Promise<
     if (machines.get(route.key)?.epoch === epoch) accept(route.key, view);
     return views.get(key) ?? view;
   } catch (error) {
-    if (machines.get(route.key)?.epoch === epoch) runInAction(() => { views.delete(key); failures.set(key, error instanceof Error ? error.message : String(error)); });
+    if (machines.get(route.key)?.epoch === epoch) runInAction(() => { failures.set(key, error instanceof Error ? error.message : String(error)); });
     throw error;
   }
 }

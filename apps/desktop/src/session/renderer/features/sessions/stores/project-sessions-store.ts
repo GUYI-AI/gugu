@@ -58,7 +58,9 @@ import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
  * 同一组输入,❌ 猜一个 hooks kind。
  */
 async function agentHooksKind(provider: string): Promise<string> {
-  const agents = await agentsMetadata.fetch(null);
+  // The list in hand (❌ read again past its 30 s, failing creation while it is right there); read only when none is.
+  const held = agentsMetadata.peek(null);
+  const agents = held.state === 'value' ? held.value : await agentsMetadata.fetch(null);
   const agent = agents.find((candidate) => candidate.id === provider);
   if (!agent) throw new Error(`session-manager: agent catalog has no '${provider}' at session creation`);
   return agent.capabilities.hooks.kind;
