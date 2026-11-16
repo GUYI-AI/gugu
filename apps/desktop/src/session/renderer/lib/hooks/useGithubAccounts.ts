@@ -1,20 +1,14 @@
 import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRead';
 import { useMutation } from '@tanstack/react-query';
 import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
-import { useLibraryHost, type LibraryGithubRpc, type LibraryHost } from '@renderer/features/library/library-host';
+import { keepLibraryHost, libraryHostOf, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { rpcOn } from '@renderer/lib/ipc';
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
 import { cachedDevicesAccount } from '@/store/devicesCache';
 import { refreshConnections } from '@/components/connections/connection-replicas';
 import type { GitHubAccountSummary } from '@shared/github';
 
-/**
- * Which machine's (or assistant panel's) GitHub API a key names. A library host is an object of functions, so the
- * replica is keyed by `host.key` and the host showing it registers its API under that key before reading.
- */
-const githubApis = new Map<string, { api: LibraryGithubRpc; assistantPanel: boolean }>();
-
-/** An assistant panel's store may still be settling right after it opened: such a failure is asked again twice. */
+/** An assistant panel's store may still be settling right after it opened: such a failure is asked again twice (1 s, 2 s). */
 const ASSISTANT_PANEL_READ_ATTEMPTS = 3;
 
 /**
@@ -27,13 +21,14 @@ export const githubAccounts = replica({
   name: 'githubAccounts',
   scope: 'device',
   read: async (_owner, hostKey: string): Promise<GitHubAccountSummary[]> => {
-    const host = githubApis.get(hostKey);
-    if (!host) throw new Error(`No GitHub API registered for ${hostKey}`);
+    // The host showing it is kept under its key (library-host.ts): a host is an object of functions, the key names it.
+    const host = libraryHostOf(hostKey);
     for (let attempt = 1; ; attempt++) {
       try {
-        return await host.api.listAccounts();
+        return await host.github.listAccounts();
       } catch (error) {
-        if (!host.assistantPanel || attempt >= ASSISTANT_PANEL_READ_ATTEMPTS || !isAssistantPanelReadRetryable(error)) throw error;
+        if (!host.assistantPanelExpected || attempt >= ASSISTANT_PANEL_READ_ATTEMPTS || !isAssistantPanelReadRetryable(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
     }
   },
@@ -59,8 +54,7 @@ export function refreshGitHubAccountState(): void {
 
 /** The GitHub accounts of the library's machine. */
 export function useGitHubAccounts(): Reading<GitHubAccountSummary[]> {
-  const host = useLibraryHost();
-  githubApis.set(host.key, { api: host.github, assistantPanel: !!host.assistantPanelExpected });
+  const host = keepLibraryHost(useLibraryHost());
   return useReplica(githubAccounts, askable(host) ? [host.key] : null);
 }
 

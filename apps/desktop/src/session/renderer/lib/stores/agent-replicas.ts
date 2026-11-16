@@ -24,6 +24,8 @@ import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 type Machine = string | null;
 
 const backoff = (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000);
+/** A failing read is asked again this often (1 s, 2 s, 4 s), then the reading is an error (❌ unknown for ever). */
+const RETRIES = 3;
 
 /** The agents a machine offers for new tasks (name, icon, capabilities, sessionpage integration). */
 export const agentsMetadata = replica({
@@ -50,7 +52,7 @@ export const managementAgent = replica({
   scope: 'account',
   networkMode: 'always',
   read: (_owner, machine: Machine, id: string) => rpcOn(machine).agents.getManagement(id) as Promise<AgentPayload | null>,
-  retry: true,
+  retry: RETRIES,
   retryDelay: backoff,
 });
 
@@ -114,7 +116,7 @@ export const agentInstallationStatus = replica({
   networkMode: 'always',
   read: (_owner, machine: Machine) => rpcOn(machine).agents.listAgentInstallationStatus() as Promise<AgentInstallationStatus[]>,
   fresh: 30_000,
-  retry: true,
+  retry: RETRIES,
   retryDelay: backoff,
 });
 
@@ -126,7 +128,7 @@ export const installSourceVersions = replica({
   read: (_owner, machine: Machine, id: string) =>
     rpcOn(machine).agents.getInstallSourceVersions(id as never) as Promise<InstallSourceVersions>,
   fresh: 30 * 60_000,
-  retry: true,
+  retry: RETRIES,
   retryDelay: backoff,
 });
 
