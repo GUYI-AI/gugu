@@ -77,10 +77,12 @@ const bindings = (ownerId = 'owner-a', entries: Record<string, string> = { today
   bindings: Object.fromEntries(Object.entries(entries).map(([id, chatId]) => [id, { ownerId, name: 'main', chatId, handle: `handle-${id}`, authority: `${authority}-${id}` }])) } });
 /** The next read stays out until answered. */
 const waiting = () => {
-  let answer!: (value: unknown) => void;
+  let answer: ((value: unknown) => void) | undefined;
   query.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
   return async (value: unknown) => {
-    await act(async () => answer(value));
+    if (!answer) throw new Error('[no read] main was not asked for the bindings again');
+    const give = answer;
+    await act(async () => give(value));
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   };
 };
@@ -203,12 +205,17 @@ describe('the native conversation beside an App\'s page', () => {
   it('switched off, uninstalled, updated or reinstalled from elsewhere, this App\'s column goes at once', async () => {
     await render();
     // Switched off, then on; uninstalled, then installed again: only a new read brings it back, not what was read before.
-    // Main names the App each time (its switch, its install): as on the desktop, a note comes with every change.
-    for (const [off, on] of [[() => { state.disabled = ['today']; }, () => { state.disabled = []; }], [() => { state.inventory = []; }, () => { state.inventory = [placing('today')]; }]]) {
+    // Main's notes as main sends them (controller.ts): a switch either way and an uninstall name the App; an install does not.
+    const changes = [
+      { off: () => { state.disabled = ['today']; }, on: () => { state.disabled = []; }, onNotes: true },
+      { off: () => { state.inventory = []; }, on: () => { state.inventory = [placing('today')]; }, onNotes: false },
+    ];
+    for (const { off, on, onNotes } of changes) {
       off(); await render(); expect(drawn()).toBeNull(); expect(published()).toEqual({});
       await note('today');
       const back = waiting();
-      on(); await note('today'); await render(); expect(drawn()).toBeNull();
+      on(); if (onNotes) await note('today');
+      await render(); expect(drawn()).toBeNull();
       await back(bindings()); expect(drawn()).not.toBeNull();
     }
     // Its update, or the same bundle from another publisher: gone before the read, drawn anew once main answers.
@@ -222,10 +229,12 @@ describe('the native conversation beside an App\'s page', () => {
       await read(bindings('owner-a', { today: CHAT }, `after-${index}`));
       expect(drawn()).not.toBeNull(); expect(composer()).not.toBe(typed);
     }
-    // Reinstalled as it was: main answers a new authority for it, so it is a new conversation instance.
+    // Reinstalled as it was (uninstall: main's note; install: none): main answers a new authority, a new conversation instance.
     const typed = composer();
+    state.inventory = []; await render(); await note('today');
+    expect(drawn()).toBeNull();
     query.mockResolvedValue(bindings('owner-a', { today: CHAT }, 'reinstalled'));
-    state.inventory = [placing('today', '2.0.0')]; await note('today'); await render();
+    state.inventory = [placing('today', '2.0.0')]; await render(); await render();
     expect(drawn()).not.toBeNull(); expect(composer()).not.toBe(typed);
   });
 

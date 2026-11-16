@@ -56,7 +56,7 @@ describe('native App rail unread source lifetime and scope', () => {
     state.chats = [{ id: 'chat-a', unread_count: 9 }, { id: 'chat-b', unread_count: 0 }];
     query.mockResolvedValue(result('owner-a', 'chat-b'));
     await note(); await act(async () => old(result())); await settle(); await render();
-    expect(element.textContent).toBe('read'); expect(query.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(element.textContent).toBe('read'); expect(query).toHaveBeenCalledTimes(2);
   });
   it('hides the old account immediately and ignores its late response after switching accounts', async () => {
     let old!: (value: ReturnType<typeof result>) => void;
