@@ -137,7 +137,7 @@
   {
     "rule": "copy-leaks-raw-error-slot",
     "file": "apps/desktop/src/components/AddFriendSearch.tsx",
-    "count": 2
+    "count": 1
   },
   {
     "rule": "copy-leaks-raw-error-slot",
