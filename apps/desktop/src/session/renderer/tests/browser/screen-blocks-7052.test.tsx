@@ -175,6 +175,132 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(blockWidths().every((w) => Math.abs(w - 500) < 10), JSON.stringify(blockWidths())).toBe(true);
   });
 
+  // 对话块的格子是壳画对话的落点(ChatSlotHost 的 portal):格子换了一个 div,整个对话跟着重建(落点、消息窗、每条 Markdown)。
+  it('分出一块、再收回,留下的对话块还是同一个格子', async () => {
+    screenLayout.show({ kind: 'chat', chatId: 'chat-stays' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    await until('chat block rendered', () => blockWidths().length === 1);
+    // 对话格子(ChatSlot)在这一块的占位里:占位重挂,格子跟着换。
+    const blockId = screenLayout.order[0];
+    const slot = () => document.querySelector(`[data-screen-block="${blockId}"]`);
+    const original = slot();
+    expect(original).not.toBeNull();
+    // 存下来的是 screenLayout.snapshot(布局树和份额);份额只在人拖线时写(setSplitSizes),库自己的布局不写。
+    const saved = JSON.stringify(screenLayout.snapshot);
+
+    screenLayout.showBeside(s('b'));
+    await until('两块铺开', () => blockWidths().length === 2 && blockWidths().every((w) => w > 400));
+    expect(slot(), '1 → 2').toBe(original);
+    screenLayout.placeAt({ kind: 'session', projectId: 'p', sessionId: 'c' }, screenLayout.blockOfSession('b')!, 'right');
+    await until('三块铺开', () => blockWidths().length === 3);
+    expect(slot(), '2 → 3').toBe(original);
+    screenLayout.forgetSession('c');
+    await until('收成两块', () => blockWidths().length === 2);
+    expect(slot(), '3 → 2').toBe(original);
+    screenLayout.forgetSession('b');
+    await until('收成一块', () => blockWidths().length === 1);
+    await nextFrames(5);
+    expect(slot(), '2 → 1').toBe(original);
+    expect(blockWidths()).toEqual([1000]);
+    expect(JSON.stringify(screenLayout.snapshot), '1 → 2 → 1 存下来的一个字节不差').toBe(saved);
+  });
+
+  // 一块也走分块那一套(一格的组):看上去、Tab 起来和直接摆一块一样 —— 占满、没有线、不多出一个能聚焦的东西。
+  it('只有一块:占满整屏,没有分界线,也不多出能 Tab 到的东西', async () => {
+    screenLayout.show({ kind: 'chat', chatId: 'chat-alone' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    await until('chat block rendered', () => blockWidths().length === 1);
+    await nextFrames(3);
+    const block = host!.querySelector<HTMLElement>('[data-screen-block]')!.getBoundingClientRect();
+    const frame = host!.querySelector<HTMLElement>('[data-screen-frame]')!.getBoundingClientRect();
+    expect([block.left, block.top, block.width, block.height]).toEqual([frame.left, frame.top, frame.width, frame.height]);
+    expect(separator()).toBeNull();
+    expect(host!.querySelectorAll('[data-screen-frame] [role="separator"], [data-screen-frame] [tabindex]:not([data-screen-block] *)').length).toBe(0);
+  });
+
+  it('只有一块时宽度一帧一帧地变(收侧栏、拖窗口):分块那一层一个属性都不写', async () => {
+    screenLayout.show({ kind: 'chat', chatId: 'chat-alone' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    await until('chat block rendered', () => blockWidths().length === 1);
+    await nextFrames(3);
+    const frame = host!.querySelector<HTMLElement>('[data-screen-frame]')!;
+    const writes: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const target = record.target as Element;
+        if (target.closest('[data-screen-block]') && target.closest('[data-screen-block]') !== target) continue;
+        writes.push(`${target.tagName}.${record.attributeName ?? record.type}`);
+      }
+    });
+    observer.observe(frame, { attributes: true, childList: true, subtree: true });
+    for (let width = 1000; width >= 760; width -= 24) {
+      host!.style.width = `${width}px`;
+      await nextFrames(1);
+    }
+    await nextFrames(3);
+    observer.disconnect();
+    expect(blockWidths()).toEqual([760]);
+    expect(writes).toEqual([]);
+  });
+
+  // 份额什么时候摆回 node.sizes:只在库为一组新的几块报来第一份布局时(开/收一块)。之后库自己改的(窗口变窄按最窄夹住)
+  // 不摆回去,也不来回打架;摆回去在画出来之前 —— 每一帧都量,❌ 有一帧新挂上的那块是 1%。
+  it('收起一块的那一帧起两块就各得一半,没有一帧是 1%', async () => {
+    screenLayout.show(s('a'));
+    screenLayout.showBeside(s('b'));
+    root!.render(<ScreenFrame />);
+    await until('两块铺开', () => blockWidths().length === 2 && blockWidths().every((w) => w > 400));
+    screenLayout.placeAt({ kind: 'session', projectId: 'p', sessionId: 'c' }, screenLayout.blockOfSession('b')!, 'bottom');
+    await until('三块铺开', () => blockWidths().length === 3);
+    await nextFrames(5);
+
+    const frames: number[][] = [];
+    let sampling = true;
+    const sample = () => { frames.push(blockWidths()); if (sampling) requestAnimationFrame(sample); };
+    requestAnimationFrame(sample);
+    screenLayout.forgetSession('c');
+    await until('收成两块', () => blockWidths().length === 2);
+    await nextFrames(10);
+    sampling = false;
+    const twoBlockFrames = frames.filter((widths) => widths.length === 2);
+    expect(twoBlockFrames.length).toBeGreaterThan(0);
+    expect(twoBlockFrames.filter((widths) => widths.some((w) => w < 400)), JSON.stringify(twoBlockFrames)).toEqual([]);
+  });
+
+  it('夹在两块中间新开一块,按 node.sizes 分(库把新的那块排在最后报)', async () => {
+    screenLayout.show(s('a'));
+    screenLayout.showBeside(s('c'));
+    root!.render(<ScreenFrame />);
+    await until('两块铺开', () => blockWidths().length === 2 && blockWidths().every((w) => w > 400));
+    screenLayout.placeAt({ kind: 'session', projectId: 'p', sessionId: 'b' }, screenLayout.blockOfSession('a')!, 'right');
+    await until('三块铺开', () => blockWidths().length === 3);
+    await nextFrames(10);
+    const split = screenLayout.layout!;
+    expect(split.type).toBe('split');
+    const wanted = (split as Extract<typeof split, { type: 'split' }>).sizes.map((size) => Math.round(size * 10));
+    const widths = blockWidths();
+    expect(widths.map((w, i) => Math.abs(w - wanted[i]) < 10), `${widths} vs ${wanted}`).toEqual([true, true, true]);
+  });
+
+  it('窗口变窄,库按最窄把一块夹住:不摆回 node.sizes,也不来回打架', async () => {
+    screenLayout.show(s('a'));
+    screenLayout.showBeside(s('b'));
+    root!.render(<ScreenFrame />);
+    await until('两块铺开', () => blockWidths().length === 2 && blockWidths().every((w) => w > 400));
+    const splitId = screenLayout.layout!.type === 'split' ? screenLayout.layout!.id : '';
+    screenLayout.setSplitSizes(splitId, [75, 25]);
+    await until('按 75/25 摆好', () => Math.abs(blockWidths()[1] - 250) < 5);
+
+    host!.style.width = '600px'; // 25% = 150px,比一格最窄 220px 还窄:库夹到 220
+    await nextFrames(5);
+    const clamped = blockWidths();
+    expect(clamped[1], JSON.stringify(clamped)).toBeGreaterThanOrEqual(219);
+    await nextFrames(20);
+    expect(blockWidths(), '夹住之后不再动').toEqual(clamped);
+    const split = screenLayout.layout!;
+    expect(split.type === 'split' && split.sizes, '库自己夹的不写回 node.sizes').toEqual([75, 25]);
+  });
+
   it('拖到一块的边上 = 分出一块;正中不接;块放不下两半(一格最窄 220px)就不给落点', async () => {
     screenLayout.show(s('a'));
     screenLayout.showBeside(s('b'));
