@@ -21,6 +21,7 @@ import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } f
 import { publishChatSummaries } from '@/lib/chatSummariesBridge'
 import { installOwnedAgentEntry } from '@/lib/ownedAgentConversation'
 import { APP_SHOW_SESSION_EVENT } from '@/session/shared/extensions/app-runtime-protocol'
+import { OPEN_LINK_TARGET, type LinkNavigation } from '@/lib/guguLinks'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chat, device, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
@@ -29,9 +30,8 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), followLink: vi.fn(() => true), topics: null as TopicSummary[] | null, topicError: null as string | null }))
+const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), topics: null as TopicSummary[] | null, topicError: null as string | null }))
 vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()), useTopicsOfChat: () => ({ topics: actions.topics, loading: actions.topics === null && actions.topicError === null, error: actions.topicError, reload: actions.reloadTopics }) }))
-vi.mock('@/lib/guguLinks', async original => ({ ...(await original<object>()), followLink: actions.followLink }))
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({ props: {
   modelOptions: { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: 'glm', onModelChange: actions.pickModel,
 }, confirmation: null, steers: false }) }))
@@ -59,16 +59,16 @@ const Conversation = observer((props: {sessionId: string; entry: string | null})
   composerControls={(modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} />}
  /></AgentWatchScreen>
 })
-async function mount(sessionId:string,entry:string|null,full=false){
+async function mount(sessionId:string,entry:string|null,full=false,width=390,theme:'light'|'dark'='dark'){
  followRendererSession('SIGNED_IN', 'owner')
- await page.viewport(390,844);document.documentElement.dataset.theme='dark';document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
+ await page.viewport(width,844);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
  const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'})]
  publishChatSummaries(chats);dispose=installOwnedAgentEntry({open:()=>false,owns:()=>true})
  publishDirectoryDevices([device('qa-device',[],{is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'16px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
-afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.followLink.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
  await mount('room-task','chat:room');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
@@ -89,16 +89,60 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  expect(trigger.textContent).toBe('话题')
  expect(trigger.getAttribute('aria-expanded')).toBe('false')
  expect(trigger.querySelectorAll('svg')).toHaveLength(1)
- await page.getByTestId('phone-room-topics').click()
+ const box=trigger.getBoundingClientRect(),icon=trigger.querySelector('svg')!.getBoundingClientRect()
+ await page.elementLocator(trigger).click({position:{x:icon.left+icon.width/2-box.left,y:icon.top+icon.height/2-box.top}})
  expect(trigger.getAttribute('aria-expanded')).toBe('true')
  const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
  const name=panel.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
  expect(name.textContent).toBe(topic.name)
  expect(getComputedStyle(name).whiteSpace).toBe('normal')
  expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth)
- await page.getByRole('button',{name:topic.name,exact:true}).click()
- expect(actions.followLink).toHaveBeenCalledExactlyOnceWith({kind:'chat',chatId:topic.chat_id})
- await until('topic navigation closes the panel',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+ const opened: LinkNavigation['target'][]=[]
+ const capture=(event:Event)=>{
+  event.preventDefault()
+  const detail=(event as CustomEvent<LinkNavigation>).detail
+  opened.push(detail.target)
+  detail.resolve()
+ }
+ window.addEventListener(OPEN_LINK_TARGET,capture)
+ try {
+  await page.getByRole('button',{name:topic.name,exact:true}).click()
+  await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id}]),{timeout:10000})
+  await until('topic navigation closes the panel',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+  await page.getByTestId('phone-room-topics').click()
+  await page.getByRole('button',{name:'群聊',exact:true}).click()
+  await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id},{kind:'chat',chatId:'room'}]),{timeout:10000})
+ } finally { window.removeEventListener(OPEN_LINK_TARGET,capture) }
+})
+
+it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one topic dropdown icon',async({width,theme})=>{
+ await mount('room-task','chat:room',true,width,theme)
+ await vi.waitFor(()=>{
+  const controls=harness!.container.querySelectorAll<HTMLElement>('[data-phone-composer-controls] .gg-phone-composer-control')
+  expect(controls).toHaveLength(4)
+  for(const button of controls){
+   expect(button.getBoundingClientRect().width,button.outerHTML).toBeGreaterThan(0)
+   expect(button.getBoundingClientRect().height,button.outerHTML).toBeGreaterThan(0)
+  }
+ },{timeout:10000})
+ await document.fonts.ready
+ const row=harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+ const buttons=[...row.querySelectorAll<HTMLElement>('.gg-phone-composer-control')]
+ expect(buttons.map(button=>button.textContent)).toEqual(['工作','技能','话题','智能体'])
+ expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+ for(const [index,button] of buttons.entries()){
+  const box=button.getBoundingClientRect(),style=getComputedStyle(button)
+  expect(box.y).toBe(buttons[0]!.getBoundingClientRect().y)
+  expect(box.right).toBeLessThanOrEqual(width-16)
+  expect([style.paddingLeft,style.paddingRight]).toEqual(['12px','12px'])
+  if(index)expect(box.left-buttons[index-1]!.getBoundingClientRect().right).toBe(8)
+  const label=button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
+  expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
+ }
+ const topic=buttons[2]!,label=topic.querySelector<HTMLElement>('.gg-phone-composer-control-label')!,icon=topic.querySelector('svg')!
+ expect(topic.querySelectorAll('svg')).toHaveLength(1)
+ expect(icon.getBoundingClientRect().left-label.getBoundingClientRect().right).toBe(4)
+ expect(topic.getBoundingClientRect().right-icon.getBoundingClientRect().right).toBe(12)
 })
 it('an unrelated task does not inherit room navigation',async()=>{
  await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()

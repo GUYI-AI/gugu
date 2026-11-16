@@ -27,7 +27,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
  const [handle]=useState(()=>Popover.createHandle<ActiveMemberProfile>())
  const [current,setCurrent]=useState(selected);showTopicExternally=setCurrent
  return <>
-  <PhoneRoomComposerControls chatId="room" topics={topics} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={onPick} members={state==='ready'?[member]:[]}
+  <PhoneRoomComposerControls chatId="room" topics={topics} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={topic=>{onPick(topic);setCurrent(topic)}} members={state==='ready'?[member]:[]}
    roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle,openedFrom:'main'}} onOpenAgent={onOpen} />
   <ChatComposer mobile editorOptions={{inputTestId:'room-editor'}} onSubmit={vi.fn()} />
   <MemberProfileRoot handle={handle}>{profile=><MemberProfilePopover profile={profile} onClose={()=>handle.close()} />}</MemberProfileRoot>
@@ -36,7 +36,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
 async function mount(theme:'light'|'dark'='dark',state:'ready'|'loading'|'failed'='ready',selected:TopicSummary|null=null,locale:'zh-CN'|'en-US'='zh-CN'){
  await page.viewport(360,780);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference(locale)
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'8px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3}),chat({id:'topic-1',kind:'topic',unread_count:1})]},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3}),chat({id:'topic-1',kind:'topic',unread_count:1})]},contacts:{contacts:[]}})
  await until('real composer',()=>!!harness?.container.querySelector('[contenteditable]'))
  return harness.container.querySelector<HTMLElement>('[contenteditable]')!
 }
@@ -117,7 +117,8 @@ it.each([['zh-CN','话题','智能体'],['en-US','Topics','Agents']] as const)('
  expect(trigger.getAttribute('aria-expanded')).toBe('false')
  expect(trigger.querySelectorAll('svg')).toHaveLength(1)
  await expect.element(page.getByRole('button',{name:agents,exact:true})).toBeVisible()
- await page.getByTestId('phone-room-topics').click()
+ const box=trigger.getBoundingClientRect(),icon=trigger.querySelector('svg')!.getBoundingClientRect()
+ await page.elementLocator(trigger).click({position:{x:icon.left+icon.width/2-box.left,y:icon.top+icon.height/2-box.top}})
  expect(trigger.getAttribute('aria-expanded')).toBe('true')
  const selected=document.querySelector<HTMLElement>('[data-topic-id="topic-1"]')!
  const name=selected.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
@@ -131,6 +132,10 @@ it.each([['zh-CN','话题','智能体'],['en-US','Topics','Agents']] as const)('
  await page.getByTestId('phone-room-topics').click()
  await page.getByRole('radio',{name:/设计讨论/}).click()
  expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(topics[0]!))
+ await until('chosen topic applied and menu closed',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+ await page.getByTestId('phone-room-topics').click()
+ expect(document.querySelector('[data-topic-id="topic-0"]')?.getAttribute('aria-checked')).toBe('true')
+ expect(document.querySelector('[data-topic-id="topic-1"]')?.getAttribute('aria-checked')).toBe('false')
 })
 
 it.each(['light','dark'] as const)('%s: the room sheet covers the editor at every opening frame',async theme=>{
