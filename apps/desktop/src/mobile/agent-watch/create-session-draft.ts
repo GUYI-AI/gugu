@@ -35,7 +35,7 @@ export function bindCreationDraft(composer: Composer, key: string) {
     chip: { id: attachment.id, name: attachment.name, kind: attachment.type === 'image' ? 'image' as const : 'file' as const },
   }] : [])
   const hydrate = async (attachments: readonly Attachment[] | typeof stored.pending) => {
-    if (!composer.addAttachment || !active || composerBindings.get(composer) !== lease) return
+    if (!composer.addAttachment || !active || !initialized || composerBindings.get(composer) !== lease) return
     const files = attachments.flatMap((entry) => entry.file ? [entry.file] : [])
       .filter((file) => !composer.getState().attachments?.some((entry) => entry.file === file))
     if (!files.length) return
@@ -83,7 +83,17 @@ export function bindCreationDraft(composer: Composer, key: string) {
     },
     async restore(text: string, attachments?: readonly Attachment[]) {
       submitted = false
-      if (active && !composer.getState().text) composer.setText(text)
+      if (!active) return
+      // Restoring the text notifies subscribers synchronously. Keep the submitted IDs available to the adapter
+      // until the original Files have returned, otherwise that notification replaces them with an empty list.
+      hydrating = true
+      try {
+        if (initialized && !composer.getState().text) composer.setText(text)
+        if (attachments) {
+          const original = pending(attachments), ids = new Set(original.map((entry) => entry.chip.id))
+          stored.setPending([...stored.pending.filter((entry) => !ids.has(entry.chip.id)), ...original])
+        }
+      } finally { hydrating = false }
       if (attachments) await hydrate(attachments)
     },
     dispose() {
