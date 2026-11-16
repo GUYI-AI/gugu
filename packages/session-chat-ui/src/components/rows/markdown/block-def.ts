@@ -17,6 +17,12 @@ export type BlockDef<B extends Block, L extends BlockLeafLayout> = {
    */
   margin(block: B): Margin;
   measure(block: B, ctx: MeasureCtx): Measured<L>;
+  /**
+   * What `Render` paints depends on the block's content only, not on the width it was measured at: a re-measure
+   * of the same source block (a width change) keeps its DOM, and `Render` reads the current measure from its props.
+   * Unset, a re-measured block remounts.
+   */
+  domFromContentOnly?: boolean;
   Render(props: { node: Measured<L> }): JSX.Element;
 };
 

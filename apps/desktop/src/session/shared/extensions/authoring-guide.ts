@@ -657,7 +657,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
 - A session's working copy, listing and changing it on its own machine: \`apps-working-copy\`.
 - \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.
-  Default \`intent: 'preview'\`; double-click: \`intent: 'pinned'\`.
+  \`intent\`: \`'navigate'\` (default), \`'newTab'\` (double-click), \`'beside'\`.
   \`{ at }\`: opener's \`link\` place. Unclaimed: preview, or details/download. \`{ peek: true }\`: beside this page
   (always for project files). Gone/unreadable: \`not-found\`.
 - \`gugu.files.openWith(entry, { tab: 'explore' })\`: your own tab claiming the chat file in \`opensFiles.chat\`;

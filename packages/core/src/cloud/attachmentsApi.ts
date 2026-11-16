@@ -10,6 +10,7 @@
 import { retryFileDownload } from './fileDownloadRetry'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
+import { sha256 as sha256Hash } from '@noble/hashes/sha2.js'
 
 export type AttachmentByteProgress = { loaded: number; total?: number }
 export type AttachmentUploadTransport = (url: string, init: {
@@ -63,6 +64,14 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
     : request()
 }
 
+/** The server's scoped plan for one upload (its staging key), before any byte goes up. */
+export async function planAttachmentUpload(endpoint: AttachmentsEndpoint, file: { size: number; contentType: string },
+  scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<AttachmentUploadPlan & { staging_key: string }> {
+  return await call(endpoint, 'upload', {
+    size_bytes: file.size, content_type: file.contentType, as: scope.as, chat_id: scope.chat_id, request_id: scope.request_id ?? crypto.randomUUID(),
+  }, signal) as AttachmentUploadPlan & { staging_key: string }
+}
+
 /** Uploads to the configured object store using the server-issued scoped upload plan. */
 export async function uploadAttachmentBytes(
   endpoint: AttachmentsEndpoint,
@@ -112,8 +121,88 @@ export async function uploadAttachmentPlan(endpoint: AttachmentsEndpoint, form: 
   }
 }
 
+/** The SHA-256 (hex) a send declares for its file, read in chunks. */
+export async function attachmentSha256(bytes: Uint8Array | Blob): Promise<string> {
+  const hash = sha256Hash.create()
+  if (bytes instanceof Uint8Array) hash.update(bytes)
+  else {
+    const reader = bytes.stream().getReader()
+    for (;;) { const chunk = await reader.read(); if (chunk.done) break; hash.update(chunk.value) }
+  }
+  return Array.from(hash.digest(), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Every send of a new file, a person's or an agent's (owner 11-15): the file's index (sha256, size) and its upload plan,
+ * for the message's commit. The message is complete with them; its bytes follow it (`finishDeclaredAttachment`).
+ */
+export type DeclaredAttachment = { staging_key: string; sha256: string; size_bytes: number; plan?: AttachmentUploadPlan }
+export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; contentType: string },
+  scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<DeclaredAttachment> {
+  const size = file.bytes instanceof Uint8Array ? file.bytes.byteLength : file.bytes.size
+  const [sha256, plan] = await Promise.all([attachmentSha256(file.bytes), planAttachmentUpload(endpoint, { size, contentType: file.contentType }, scope, signal)])
+  return { staging_key: plan.staging_key, sha256, size_bytes: size, plan }
+}
+
+/** How a sender follows its declared bytes up (all optional: an agent just waits for them). */
+export type DeclaredUploadHooks = {
+  keep?: FileKeep
+  /** Runs each upload attempt, e.g. inside a timed stage with its own endpoint and signal; by default it just runs. */
+  attempt?: (attempt: number, run: (endpoint: AttachmentsEndpoint, signal?: AbortSignal) => Promise<void>) => Promise<void>
+  /** The plan an attempt uploads under, once it has one. */
+  onPlan?: (plan: AttachmentUploadPlan) => void
+  onProgress?: (progress: AttachmentByteProgress, attempt: number) => void
+  /** Bytes can beat their message's commit: finish waits this long for the declaration (by default not at all). */
+  declarationWaitMs?: number
+  /** Nobody wants these bytes any more (their message was discarded): stop at the next step, finishing nothing. */
+  stopped?: () => boolean
+}
+const UPLOAD_ATTEMPTS = 3
+
+/**
+ * After its message committed: the declared bytes go up, three attempts, each after the first under a new plan (also
+ * when the first is gone, e.g. after a restart), and the server checks them against the declaration. Every sender's one
+ * path: the desktop composer in the background, agents waiting for it. False when stopped before finishing.
+ */
+export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, declared: Pick<DeclaredAttachment, 'staging_key' | 'size_bytes' | 'plan'>,
+  file: { bytes: Uint8Array | Blob; name: string; contentType: string }, message: { id: string; chat_id: string | null; as: string }, hooks: DeclaredUploadHooks = {}): Promise<boolean> {
+  let plan = declared.plan, uploadKey = plan ? declared.staging_key : null
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await (hooks.attempt ?? ((_, run) => run(endpoint)))(attempt, async (attemptEndpoint, signal) => {
+        if (!plan) { const fresh = await planAttachmentUpload(attemptEndpoint, { size: declared.size_bytes, contentType: file.contentType }, { chat_id: message.chat_id, as: message.as }, signal); plan = fresh; uploadKey = fresh.staging_key }
+        hooks.onPlan?.(plan)
+        await uploadAttachmentPlan(attemptEndpoint, plan, { ...file, name: file.name || 'file' }, attempt > 1, progress => hooks.onProgress?.(progress, attempt), signal)
+      })
+      break
+    } catch (error) {
+      if (attempt >= UPLOAD_ATTEMPTS || hooks.stopped?.()) throw error
+      plan = undefined; uploadKey = null // a new plan: the old one may have expired or its object be half written
+      await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+    }
+  }
+  const until = Date.now() + (hooks.declarationWaitMs ?? 0)
+  for (let wait = 500; ; wait = Math.min(wait * 2, 8000)) {
+    if (hooks.stopped?.()) return false
+    try {
+      await finishAttachment(endpoint, { staging_key: declared.staging_key, ...(uploadKey !== declared.staging_key ? { upload_key: uploadKey! } : {}),
+        file_name: file.name, content_type: file.contentType, message_id: message.id, ...(hooks.keep ? { keep: hooks.keep } : {}) })
+      return true
+    } catch (error) {
+      if (!(error instanceof AttachmentsError && error.code === 'upload_not_found') || Date.now() + wait > until) throw error
+      await new Promise(resolve => setTimeout(resolve, wait))
+    }
+  }
+}
+
 export interface CommitArgs {
   staging_key: string
+  /** The bytes this message declares (their SHA-256, hex, and size): it is sent now and they follow (`finishAttachment`). */
+  sha256?: string
+  size_bytes?: number
+  /** A declared image's size, so readers draw its place at that size while its bytes come. */
+  width?: number
+  height?: number
   message_id: string
   chat_id: string
   sender_user_id: string
@@ -142,6 +231,22 @@ export async function commitAttachment(endpoint: AttachmentsEndpoint, args: Comm
   const answer = await call(endpoint, 'commit', { ...args }) as { message: Record<string, unknown> | null }
   if (!answer.message) throw new AttachmentsError('commit', 500, 'failed', `no message came back for ${args.message_id}`)
   return answer.message
+}
+
+/**
+ * A declared attachment's bytes are up: under its own staging key, or `upload_key` when they went up again under a new
+ * plan (a resumed send). The server hashes them against the declaration; other bytes are refused (upload_mismatch).
+ */
+export async function finishAttachment(endpoint: AttachmentsEndpoint, args: { staging_key: string; upload_key?: string; file_name: string; content_type: string; message_id: string; keep?: FileKeep }, signal?: AbortSignal): Promise<void> {
+  await call(endpoint, 'finish', { ...args }, signal)
+}
+
+/** A declared attachment whose bytes have not reached the server, as its uploader's account lists them. */
+export type PendingAttachmentUpload = { staging_key: string; message_id: string; chat_id: string; as: string; sha256: string; size_bytes: number; content_type: string; file_name: string | null }
+
+/** The caller's declared attachments still waiting for their bytes: a restarted sender resumes those it still holds. */
+export async function pendingAttachmentUploads(endpoint: AttachmentsEndpoint): Promise<PendingAttachmentUpload[]> {
+  return ((await call(endpoint, 'pending', {})) as { uploads: PendingAttachmentUpload[] }).uploads
 }
 
 export interface OwnerSendArgs {

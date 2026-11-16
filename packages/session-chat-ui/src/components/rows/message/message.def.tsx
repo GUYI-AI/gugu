@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
 import { safeDeliveredBody, type DeliveryMessagePresentation } from '@session-chat/state/delivery-presentation';
 import { rowTranslator } from '../readable-label';
 import { ConversationMessage, conversationMessageHeight, isConversationMessage } from './ConversationMessage';
@@ -70,7 +71,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   if (sentMessages?.length) return { ...item, sentMessages, attachments: undefined };
   const sentFiles = item.sentAttachments ?? (item.sentAttachment ? [item.sentAttachment] : undefined);
   const ownerFiles: ChatMessage['attachments'] = item.ownerNotification?.files?.map(file => ({ id: `path:${file.path}`, name: file.name,
-    kind: file.mimeType.startsWith('image/') ? 'image' as const : 'file' as const }));
+    kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) }));
   const originalDelivery = item.guguDelivery ?? readDeliveryEnvelope(item.text);
   const originalAttachments = originalDelivery?.segments.flatMap(segment => deliveredMessage?.(segment.facts?.messageId?.replace(/^msg:/, '') ?? '')?.attachments ?? []);
   const segments = originalDelivery?.segments.map(segment => ({ ...segment, body: taskProtocolText(deliveredMessage?.(segment.facts?.messageId?.replace(/^msg:/, '') ?? '')?.text ?? safeDeliveredBody(segment.body)) }));
@@ -105,7 +106,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
   const files = (item.files ?? []).filter(file => !imageNames.has(file.name)).map(file => {
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
-    return { id: href, href, name: file.name, kind: file.mimeType.startsWith('image/') ? 'image' as const : 'file' as const };
+    return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) };
   });
   if (files.length) normalized.attachments = [...(normalized.attachments ?? []), ...files];
   return normalized;

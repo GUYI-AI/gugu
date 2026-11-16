@@ -9,6 +9,7 @@ import {
 } from './accountRevisionRuntime'
 import { ingestAccountMessage, imSelectors, recordMessageDeletion, type AccountImRepository, type ImRepositoryTransaction } from './imRepository'
 import { rendererLogger } from './log'
+import { noteAttachmentChanged } from './attachmentChanges'
 
 const coordinatorLog = rendererLogger('chat/account-revision')
 
@@ -32,6 +33,7 @@ export const ACCOUNT_REVISION_EVENTS = [
   'member_stream_read_changed',
   'message_created',
   'message_deleted',
+  'message_file_changed',
   'presence_changed',
   'reaction_changed',
   'workspace_changed',
@@ -293,6 +295,17 @@ export function createAccountRevisionCoordinator(
       } })
     claimCounts.set('message_created', 1)
   }
+
+  // A declared attachment's bytes arrived or were refused: the account owns this event (an unclaimed one would hold back
+  // every later revision); the message's bubbles read their file again.
+  registrations.add({ events: new Set(['message_file_changed']), consumed: new Set(), failures: 0, retryAt: null,
+    listener: operations => {
+      for (const operation of operations) {
+        const changed = readRevisionResourceKey(operation.payload, 'message_file_changed').entityId
+        if (changed) noteAttachmentChanged(changed)
+      }
+    } })
+  claimCounts.set('message_file_changed', 1)
 
   const isClaimed = (event: AccountRevisionEvent): boolean => (claimCounts.get(event) ?? 0) > 0
 

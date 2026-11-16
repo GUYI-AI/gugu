@@ -21,6 +21,7 @@ function attachmentsFake(uploads: string[], commits: Array<Record<string, unknow
       return new Response(JSON.stringify({ staging_key: `staging/o/${uploads.length + 1}`, url: 'https://oss.test/', fields: {}, max_bytes: 25 * 1024 * 1024 }))
     }
     if (url === 'https://oss.test/') { uploads.push(((init?.body as FormData).get('file') as File).name); return new Response(null, { status: 204 }) }
+    if (url.endsWith('/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     const args = JSON.parse(String(init?.body)) as Record<string, unknown>
     commits.push(args)
     return new Response(JSON.stringify({ message: { id: args.message_id, chat_id: args.chat_id } }))

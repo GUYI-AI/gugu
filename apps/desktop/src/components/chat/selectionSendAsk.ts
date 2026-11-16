@@ -8,6 +8,8 @@ export interface SelectionSendOptions {
   anchor: DOMRect | 'dock'
   /** The page under the selection: a click or a wheel on it closes Send (it cannot scroll away under the box). */
   cover?: DOMRect
+  /** The layer of the window the page is drawn in, when that is not this one (an App in a window of its own). */
+  container?: HTMLElement | null
   /** Left alone this long, it closes as cancelled (a caller waiting on a clock of its own). */
   closeAfterMs?: number
 }

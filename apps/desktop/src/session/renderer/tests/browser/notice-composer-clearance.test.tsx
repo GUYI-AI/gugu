@@ -1,8 +1,9 @@
 import { act } from 'react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { NoticeHost } from '@/components/NoticeHost'
 import { dismissNotice, notify } from '@/lib/notices'
+import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface'
 import { createReactHarness } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
@@ -70,4 +71,48 @@ it('keeps the real notice stack above visible composers as they grow, split, res
   await harness.render(<></>)
   await sleep(30)
   expect(document.querySelector('[data-sonner-toaster]')).toBeNull()
+})
+
+// A retained surface hides inline (RETAINED_SURFACE_HIDDEN_STYLE: content-visibility, transform), keeping its box: no
+// ResizeObserver entry. The style MutationObserver is what moves the notice.
+it('follows a retained surface shown or hidden by its inline style, box unchanged', async () => {
+  await page.viewport(1200, 800)
+  harness = createReactHarness()
+  await harness.render(<><NoticeHost />
+    <div data-testid="surface" style={{ position: 'fixed', inset: 0, ...RETAINED_SURFACE_HIDDEN_STYLE }}>
+      <div data-slot="composer" style={{ position: 'absolute', left: 200, right: 20, bottom: 200, height: 120 }} />
+    </div>
+  </>)
+  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', ongoing: true }) })
+  await until('notice subscribes', () => !!card())
+  const surface = document.querySelector<HTMLElement>('[data-testid="surface"]')!
+  const inner = surface.querySelector<HTMLElement>('[data-slot="composer"]')!
+  const hidden = surface.getAttribute('style')
+  await until('a hidden surface keeps the ordinary inset', () => window.innerHeight - card().getBoundingClientRect().bottom < 50)
+  surface.setAttribute('style', 'position: fixed; inset: 0px;')
+  await until('shown: the notice clears its composer', () => inner.getBoundingClientRect().top - card().getBoundingClientRect().bottom >= 7)
+  surface.setAttribute('style', hidden!)
+  await until('hidden again: back to the ordinary inset', () => window.innerHeight - card().getBoundingClientRect().bottom < 50)
+})
+
+// The sidebar spring writes its progress variables inline on an ancestor of every composer, every frame, and a fold that
+// slides the content writes a transform. Neither shows nor hides a composer: the style record must not read the composers
+// again before the next layout.
+it('does not re-read the composers for inline writes that neither show nor hide them', async () => {
+  await page.viewport(1200, 800)
+  harness = createReactHarness()
+  await harness.render(<Layout />)
+  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', ongoing: true }) })
+  await until('notice is 8px above the composer', () => !!card() && Math.abs(gap() - 8) < 1)
+  const ancestor = composer().parentElement!
+  const query = vi.spyOn(document, 'querySelectorAll')
+  for (let frame = 0; frame < 10; frame++) {
+    ancestor.style.setProperty('--gg-sidebar-progress', String(frame / 10))
+    ancestor.style.transform = `translateX(${frame}px)`
+    await new Promise(requestAnimationFrame)
+  }
+  await new Promise(requestAnimationFrame)
+  const reads = query.mock.calls.filter(([selector]) => selector === '[data-slot="composer"]').length
+  query.mockRestore()
+  expect(reads, 'composer reads caused by style writes that change no visibility').toBe(0)
 })

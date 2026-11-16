@@ -107,6 +107,7 @@ const STRINGS = {
     saveFailed: '{name} 没有保存：{e}',
     saveHeld: '{name} 在连不上的时候被别处改过，这次没有自动保存。两边的改动都合在这里，看过后再保存。',
     machineUnreachable: '此刻连不上「{machine}」。',
+    notNow: '咕咕暂时没能完成这一步，请稍后再试。',
     machineOutdated: '「{machine}」上的咕咕版本太旧，升级后才能用。',
     tooLarge: '这个文件有 {size}，打开可能很慢。',
     grewTooLarge: '这个文件在外面变大了（{size}），这里没有读进来；现在保存会盖掉外面的内容。',
@@ -352,6 +353,7 @@ const STRINGS = {
     saveFailed: '{name} was not saved: {e}',
     saveHeld: '{name} changed elsewhere while it could not be reached, so it was not saved automatically. Both changes are merged here: look them over, then save.',
     machineUnreachable: "{machine} can't be reached right now.",
+    notNow: "Gugu couldn't take this step just now. Try again in a moment.",
     machineOutdated: 'Gugu on {machine} is too old. Update it to use this file.',
     tooLarge: 'This file is {size}: opening it may be slow.',
     grewTooLarge: 'This file grew to {size} outside and was not read in. Saving now writes over what is there.',
@@ -4131,7 +4133,8 @@ function machineSays(error) {
   return error.code === 'unavailable' && machine ? fmt(state.t.machineUnreachable, { machine }) : null
 }
 
-const failureText = (error) => machineSays(error) ?? fmt(state.t.failed, { e: error.message })
+// `unavailable` with no machine named: gugu could not take it just now (its window was not ready) — said in words, not the host's English.
+const failureText = (error) => machineSays(error) ?? (error.code === 'unavailable' ? state.t.notNow : fmt(state.t.failed, { e: error.message }))
 
 function showBanner(message, tone, sticky = false) {
   const banner = document.body.classList.contains('show-doc') || document.body.classList.contains('no-list') ? $('banner') : $('list-banner')

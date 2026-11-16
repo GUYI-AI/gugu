@@ -27,17 +27,18 @@ async function pick(input: HTMLInputElement, files: File[]) {
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
 }
 
-describe('phone "+" panel (owner 11-05: photos and files are two different things)', () => {
+describe('phone input composer menu bar attachments', () => {
   it('offers Photos, Camera and File as separate entries, each opening its own picker', async () => {
     await mount()
-    await clickElement(q('[data-testid="chat-composer-attach-menu"]')!)
+    await clickElement(q('[data-testid="phone-menu-attachments"]')!)
+    expect(q('[data-testid="chat-composer-attach-menu"]'), 'no duplicate attachment inside the input').toBeNull()
     const panel = q('[data-testid="chat-composer-attach-panel"]')!
     expect([...panel.querySelectorAll('[data-testid^="chat-composer-attach-"]')].map((el) => el.getAttribute('data-testid')))
       .toEqual(['chat-composer-attach-photos', 'chat-composer-attach-camera', 'chat-composer-attach-file'])
     const opened: HTMLInputElement[] = []
     vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) { opened.push(this) })
     for (const id of ['photos', 'camera', 'file']) {
-      if (!q('[data-testid="chat-composer-attach-panel"]')) await clickElement(q('[data-testid="chat-composer-attach-menu"]')!)
+      if (!q('[data-testid="chat-composer-attach-panel"]')) await clickElement(q('[data-testid="phone-menu-attachments"]')!)
       await clickElement(q(`[data-testid="chat-composer-attach-${id}"]`)!)
       expect(q('[data-testid="chat-composer-attach-panel"]'), 'picking closes the panel').toBeNull()
     }

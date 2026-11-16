@@ -54,7 +54,7 @@ const Conversation = observer((props: {sessionId: string; entry: string | null})
  return <AgentWatchScreen title="验收任务" testId="existing-review" bodyFill><SessionConversation
   timeline={emptyAgentWatchTimeline()} deviceId="qa-device" sessionId={props.sessionId} agentName="Codex" harness="codex" nativeRecord sessionRuntime="acp"
   respondingItemId={null} onRespond={vi.fn()} onSend={actions.send} pendingSends={[]} sending={false} agentWorking={false} onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()}
-  composerControls={sidebar.anchor ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} /> : undefined}
+  composerControls={(modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} />}
  /></AgentWatchScreen>
 })
 async function mount(sessionId:string,entry:string|null,full=false){
@@ -79,8 +79,8 @@ it('a standalone Agent offers only its children and no Topics button',async()=>{
  expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('排版子智能体');expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
 })
-it('an unrelated task has neither control',async()=>{
- await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-session-sidebar-controls"]')).toBeNull()
+it('an unrelated task does not inherit room navigation',async()=>{
+ await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()
 })
 
 
@@ -108,6 +108,10 @@ it.each(['room-task', 'solo'])('%s: the shared row fades and returns with no com
  await until('existing controls fade', () => row.hasAttribute('data-editing'))
  await Promise.all(row.getAnimations().map(a=>a.finished))
  expect(getComputedStyle(row).opacity).toBe('0')
+  expect(row.getBoundingClientRect().height).toBe(0)
+  expect(getComputedStyle(row).marginBottom).toBe('0px')
+  expect(getComputedStyle(row).paddingTop).toBe('0px')
+  expect(getComputedStyle(row).paddingBottom).toBe('0px')
  expect(row.inert).toBe(true)
  expect(input.getBoundingClientRect().top).toBe(top)
  editor.blur()
@@ -138,4 +142,12 @@ it.each([null, '话题读取失败'])('an unread topic list stays explicit and r
  const panel=document.querySelector('[data-testid="phone-room-controls-sheet"]')!
  expect(panel.textContent).toContain(error ?? '正在读取话题')
  if(error){await page.getByRole('button',{name:'重试',exact:true}).click();expect(actions.reloadTopics).toHaveBeenCalledOnce()}
+})
+
+it('a childless Agent keeps actual Work and Skills without Topics or Agents', async()=>{
+ await mount('other',null,true)
+ await expect.element(page.getByTestId('agent-watch-create-model-device')).toBeVisible()
+ await expect.element(page.getByTestId('agent-watch-create-skills')).toBeVisible()
+ expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull()
+ expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()
 })

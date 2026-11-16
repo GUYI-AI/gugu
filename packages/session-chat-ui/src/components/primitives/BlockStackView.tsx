@@ -20,29 +20,33 @@ export type BlockStackViewProps = {
 export function BlockStackView(props: BlockStackViewProps) {
   const placed = () => props.node.layout.placed;
   const tops = createMemo(() => new Map(placed().map((p) => [p.child, p.top])));
+  // Key by the measured child. Block defs snapshot props.node.layout at mount, so a block whose layout changed must
+  // remount — and it does: a grown or re-measured block is a new Measured object. An unchanged block gets the same
+  // object back from measureBlockCached, so its row and DOM survive the chunk and only its position follows the stack.
+  // A def whose DOM depends on its content only is keyed by its source block instead: a width change re-measures it
+  // (new Measured, same block) without a remount, and it reads the current measure through `current`.
+  const keyOf = (child: Measured<BlockLeafLayout>): object =>
+    BLOCK_REGISTRY[child.layout.kind]?.domFromContentOnly ? child.layout.raw : child;
+  const current = createMemo(() => new Map(placed().map((p) => [keyOf(p.child as Measured<BlockLeafLayout>), p.child as Measured<BlockLeafLayout>])));
   return (
     <div style={{ position: 'relative', height: `${props.node.height}px`, width: '100%' }}>
-      {/*
-       * Key by the measured child. Block defs snapshot props.node.layout at
-       * mount, so a block whose layout changed must remount — and it does: a
-       * grown or re-measured block is a new Measured object. An unchanged block
-       * gets the same object back from measureBlockCached, so its row and DOM
-       * survive the chunk and only its position follows the stack.
-       */}
-      <For each={placed().map((p) => p.child)}>
-        {(child) => (
-          <div
-            style={{
-              position: 'absolute',
-              top: `${tops().get(child)}px`,
-              left: 0,
-              right: 0,
-              height: `${child.height}px`,
-            }}
-          >
-            <BlockLeafRender node={child as Measured<BlockLeafLayout>} />
-          </div>
-        )}
+      <For each={placed().map((p) => keyOf(p.child as Measured<BlockLeafLayout>))}>
+        {(key) => {
+          const child = () => current().get(key)!;
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                top: `${tops().get(child())}px`,
+                left: 0,
+                right: 0,
+                height: `${child().height}px`,
+              }}
+            >
+              <BlockLeafRender node={child()} />
+            </div>
+          );
+        }}
       </For>
     </div>
   );
