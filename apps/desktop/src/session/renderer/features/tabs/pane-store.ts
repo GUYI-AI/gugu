@@ -218,6 +218,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       adoptEntry: action,
       navigate: action,
       replaceCurrentPage: action,
+      discardCurrentPage: action,
       go: action,
       goTo: action,
       setPageViewState: action,
@@ -570,6 +571,20 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     const pages = [...entry.history.pages];
     pages[entry.history.index] = { ...pages[entry.history.index], kind: entry.kind, state: toJS(state) };
     entry.history = { pages, index: entry.history.index };
+  }
+
+  /**
+   * The page on screen in this tab is dropped from its history and the one before it is shown again: neither Back nor
+   * Forward reaches it any more. False (nothing done) when it is the tab's only page: closing the tab is the caller's.
+   * Its resources go as leaving a page does (`navigate`); the tab and its slot stay.
+   */
+  discardCurrentPage(tabId: string): boolean {
+    const entry = this.entries.get(tabId);
+    const history = entry?.history;
+    if (!entry || !history || history.index === 0) return false;
+    const pages = history.pages.filter((_page, index) => index !== history.index);
+    this._showPage(entry, { pages, index: history.index - 1 });
+    return true;
   }
 
   go(tabId: string, delta: -1 | 1): Promise<boolean> {

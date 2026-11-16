@@ -69,6 +69,12 @@ export type ExtensionHostAction =
   /** `gugu.showMessage` / `files.openWith`: the window that shows chats does it, bringing the chat up. */
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }
+  /**
+   * `files.openWith` on a chat file, before main resolves it: the file's waiting page, as the asking page's next page in
+   * its tab (the shell's waiting tab); `withdrawn`: that open came to no page here — its wait goes. The answer that follows
+   * carries `announced`. `fileName`: what the page named it, when it did.
+   */
+  | { kind: 'openingChatFile'; itemId: string; fileName?: string; intent?: TabOpenIntent; withdrawn?: true }
   /** A session's working-copy file (`files.openWith`): opened in that session's pane as a click there opens it. */
   | { kind: 'openSessionFolder'; folder: string }
   | { kind: 'openSessionFile'; sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean; intent?: TabOpenIntent; viewState?: Record<string, unknown> }

@@ -20,7 +20,7 @@ import { isInstallRefused } from '../../session/shared/extensions/attachment-ins
 import { groupPageSlot, isFolderItem, isUnresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { LoadingIndicator } from '../../lib/loading/LoadingIndicator'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
-import { closeChatTab, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen, closeChatTab, closeUnresolved, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
@@ -465,6 +465,12 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
                 navigation={entry.current ? navigation : { canBack: false, canForward: false }}
                 onNavigate={(delta) => entry.current && pane ? pane.go(tabId, delta) : Promise.resolve(false)}
                 onOpenWith={(detail) => onOpenWith(detail, tabId)}
+                // Its file's waiting page as this tab's next page, the shell's waiting tab — or taken back (main's on the desktop).
+                onOpening={(file) => {
+                  if (file.withdrawn) { closeUnresolved(chatId, file.itemId); return false }
+                  void askFileOpen(chatId, { itemId: file.itemId }, { ...(file.fileName ? { fileName: file.fileName } : {}), from: tabId, ...(file.intent ? { intent: file.intent } : {}) }, null).catch(() => undefined)
+                  return true
+                }}
                 tabId={groupPageSlot(chatId, entry.pageKey)}
                 commandRef={entry.current ? frameCommand : undefined}
                 testId="group-app-frame"

@@ -584,6 +584,11 @@ export interface AppOpenWithDetail {
   viewState?: Record<string, unknown>;
   /** Refresh this already-open App tab after it was shown; never activate a late validation result. */
   background?: boolean;
+  /**
+   * Host-only: this open was announced before it was resolved (`openingChatFile`, its waiting page up in this chat). The
+   * answer counts only while that wait is still there (`awaitingOpen`); otherwise the person moved on and it opens nothing.
+   */
+  announced?: true;
   /** Host-only, one-shot authorization carried to the file's binding. Contains no document content. */
   opening?: PreparedChatFile;
   chatId: string;

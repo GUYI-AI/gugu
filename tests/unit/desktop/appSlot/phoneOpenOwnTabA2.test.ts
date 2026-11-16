@@ -15,6 +15,7 @@ import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/
 const ORIGIN = 'https://data-lens.acct.apps.gugu.invalid'
 const { CHAT, SALES } = vi.hoisted(() => ({ CHAT: '0b000000-0000-4000-8000-0000000000c2', SALES: '0c000000-0000-4000-8000-0000000000c2' }))
 const apps = vi.hoisted(() => ({ manifests: [] as unknown[] }))
+const stub = vi.hoisted(() => ({ refuse: false }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
   installedExtensionsStore: {
     get manifests() { return apps.manifests },
@@ -36,7 +37,7 @@ vi.mock('../../../../apps/desktop/src/session/shared/extensions/app-files-core',
       const files = core.createAppFiles(...args)
       return new Proxy(files, {
         get: (target, key, receiver) => key === 'openTarget'
-          ? async () => ({ chatId: CHAT, itemId: SALES, name: 'sales.xlsx', typedName: 'sales.xlsx', file: { document: false, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', version: 2, size: 4096 } })
+          ? async () => stub.refuse ? Promise.reject(new core.AppFileError('not-found', 'No such file in a chat you are in')) : ({ chatId: CHAT, itemId: SALES, name: 'sales.xlsx', typedName: 'sales.xlsx', file: { document: false, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', version: 2, size: 4096 } })
           : Reflect.get(target, key, receiver),
       })
     },
@@ -214,5 +215,44 @@ describe('the phone: openWith(file, { tab }) opens its own tab (A2 T9)', () => {
   ])('T9/T6: %s — invalid, nothing opened', async (_name, options) => {
     expect(await call('filesOpenWith', { ref, ...options })).toMatchObject({ ok: false, code: 'invalid' })
     expect(opened).not.toHaveBeenCalled()
+  })
+})
+
+// The phone's half of a page's 「打开」 waiting first: the host says it to the slot before it resolves the file (`opening`),
+// as main does on the desktop; the answer is held to that wait (`announced`), and a refusal takes it back.
+describe('a page\'s 「打开」 on its chat\'s file: the waiting page first', () => {
+  let opening: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    stub.refuse = false
+    host?.dispose()
+    opening = vi.fn((file: { withdrawn?: true }) => !file.withdrawn)
+    host = hostAppFrame(frame,
+      { extensionId: 'data-lens', tabId: 'card-1', tabName: 'card', chatId: CHAT, capabilities: ['files:read'], locale: 'en-US', themeMode: 'light' },
+      { showMessage: vi.fn(), showSession: vi.fn(), openWith: opened, opening, peek: peeked, chrome: vi.fn() } as never)
+  })
+
+  it('said to the slot before it is resolved; the answer is held to that wait', async () => {
+    expect(await call('filesOpenWith', { ref: { ...ref, name: 'sales.xlsx' } })).toMatchObject({ ok: true })
+    expect(opening.mock.calls).toEqual([[{ itemId: SALES, fileName: 'sales.xlsx', intent: 'navigate' }]])
+    expect(opened.mock.calls[0]![0]).toMatchObject({ itemId: SALES, announced: true })
+    expect(opening.mock.invocationCallOrder[0]).toBeLessThan(opened.mock.invocationCallOrder[0]!)
+  })
+
+  it('refused: the wait is taken back, nothing opens', async () => {
+    stub.refuse = true
+    expect(await call('filesOpenWith', { ref })).toMatchObject({ ok: false })
+    expect(opening.mock.calls).toEqual([[{ itemId: SALES, intent: 'navigate' }], [{ itemId: SALES, intent: 'navigate', withdrawn: true }]])
+    expect(opened).not.toHaveBeenCalled()
+  })
+
+  it.each([['ask', { ask: true }], ['peek', { peek: true }]])('%s: no waiting page', async (_name, extra) => {
+    await call('filesOpenWith', { ref, ...extra })
+    expect(opening).not.toHaveBeenCalled()
+  })
+
+  it('a slot that shows no waiting page (a frame outside a chat\'s panel): the answer goes as before, not held to a wait', async () => {
+    opening.mockReturnValue(false)
+    expect(await call('filesOpenWith', { ref })).toMatchObject({ ok: true })
+    expect(opened.mock.calls[0]![0]).not.toHaveProperty('announced')
   })
 })

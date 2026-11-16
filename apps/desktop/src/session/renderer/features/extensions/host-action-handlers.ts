@@ -308,10 +308,21 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
         const detail = action.detail;
         updateFileNames([{ id: detail.itemId, filename: detail.name, content_type: detail.file.contentType }], installedExtensionsStore.manifests);
       });
-      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, chatPaneOf }) => {
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, chatPaneOf, pageAwaitsOpen }) => {
+        // Announced (its waiting page went up): counts only while that wait is here — another file took its place, or the
+        // person closed it, and this answer opens nothing.
+        if (action.detail.announced && !pageAwaitsOpen(tabId, action.detail.itemId)) return;
         const from = panelTabsOf(action.detail.chatId).find((tab) => groupPageSlot(action.detail.chatId, tab.tabId) === tabId)?.tabId;
         if (from && action.detail.viewState) chatPaneOf(action.detail.chatId, from)?.setPageViewState(from, action.detail.viewState);
         window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { ...action.detail, from } }));
+      });
+    // Main says it before resolving (or that it came to nothing): the shell's waiting tab, at the page that asked.
+    case 'openingChatFile':
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ announceFileOpen, withdrawFileOpen }) => {
+        if (action.withdrawn) return withdrawFileOpen(tabId, action.itemId);
+        // Told back where it waits: main holds the answer to that wait only when there is one.
+        const chat = announceFileOpen(tabId, { itemId: action.itemId, ...(action.fileName ? { fileName: action.fileName } : {}), ...(action.intent ? { intent: action.intent } : {}) });
+        return chat ? { chat } : undefined;
       });
     // An App's 「用 X 打开」 on a session's working-copy file: in that session's pane, by the resolver a click there goes
     // through (`openFileInSessionEditor`) — the same for a session on this computer and one on another.

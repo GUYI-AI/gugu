@@ -16,7 +16,7 @@ import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, isUnresolvedItem, unresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { keepRestore } from '../../session/renderer/features/chats/chat-tabs/chat-tab-restores'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
-import { openPanelItem, replacePanelItem, showChatTab, panelTabsOf, unresolvedTabOf, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, replacePanelItem, showChatTab, panelTabsOf, unresolvedTabOf, awaitingOpen, closeUnresolved, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
@@ -96,6 +96,8 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       if (from.from && detail.viewState) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
       if (detail.choice.kind === 'none') {
         if (!from.from && isRenderableImage(detail.name, detail.file.contentType)) {
+          // The viewer, not a page: a wait for it here goes.
+          closeUnresolved(detail.chatId, detail.itemId)
           await openAttachmentImage({ kind: 'item', itemId: detail.itemId, version: detail.file.version }, detail.name, from.message ? { chatId: from.message.chat_id, messageId: from.message.id } : { chatId: detail.chatId })
           noteOpened(detail.itemId)
           return
@@ -110,6 +112,8 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         const takeOpening = () => { const taken = opening; opening = undefined; return taken }
         return show(detail.chatId, { kind: candidate.tabKind, itemId: detail.itemId, title: displayNameOf(detail.name, candidate.suffix), fileName: detail.name, typedName: detail.typedName, takeOpening }, from)
       }
+      // The person picks who opens it: no page yet, so nothing waits for it here.
+      closeUnresolved(detail.chatId, detail.itemId)
       setPrompt({ ...detail, ...from })
     },
     [chatId, show],
@@ -124,6 +128,8 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail }))
         return
       }
+      // Announced before it was resolved (its waiting page went up): it counts only while that wait is still here.
+      if (detail.announced && !awaitingOpen(chatId, detail.itemId)) return
       // The person asked this chat for it (an App's page beside it): a link still waiting on its host gives way (`noteAsk`).
       noteAsk(detail.chatId)
       asking.current += 1
@@ -171,7 +177,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === ask.itemId && !isUnresolvedItem(tab.item))
         const shown = open
           ? (showChatTab(chatId, open.tabId), Promise.resolve(onShow?.(chatId, open.tabId)))
-          : show(chatId, unresolvedItem(ask.itemId, ask.unresolved.fileName || translateSessionMessage('task.loading'), ask.message), ask.message ? { message: ask.message } : {})
+          : show(chatId, unresolvedItem(ask.itemId, ask.unresolved.fileName || translateSessionMessage('task.loading'), ask.message), { ...(ask.message ? { message: ask.message } : {}), ...(ask.from ? { from: ask.from } : {}), ...(ask.intent ? { intent: ask.intent } : {}) })
         void shown.then(() => ask.receipt?.resolve(), error => ask.receipt?.reject(error)).finally(() => { if (ask.receipt) receipts.current.delete(ask.receipt) })
         return
       }

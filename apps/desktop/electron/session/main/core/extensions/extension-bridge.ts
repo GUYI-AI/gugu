@@ -2532,31 +2532,58 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           onlyIfOpen: `${current[1].extensionId}.${current[1].tabName}`, intent,
         }) : undefined;
         let resumed = tab === undefined ? await present() : undefined;
-        let target: Awaited<ReturnType<typeof files.openWithTarget>>;
+        // The file's waiting page before it is resolved, as a click on a file card shows it: a person's page opening one
+        // of its own chat's files by id, to open in that chat's panel — not asked to pick, not beside the page, not its own
+        // named tab, nothing brought forward already. Unsure is not said: then nothing waits, as before.
+        const mayWait = !resumed && tab === undefined && !ask && !peek && !isWorkspace(ref) && 'id' in ref && shown.operator.kind === 'person'
+          && (ref.chat ?? shown.conversation) !== null;
+        const named = (args.ref as { name?: unknown } | null)?.name;
+        const opening = (withdrawn?: true) => deliver(shown, {
+          kind: 'openingChatFile', itemId: (ref as { id: string }).id, ...(typeof named === 'string' && named ? { fileName: named } : {}),
+          ...(intent ? { intent } : {}), ...(withdrawn ? { withdrawn } : {}),
+        });
+        // The window says which chat the page's wait is in (none: the page is in no chat's panel there — nothing waits, and
+        // the answer goes as before). Said or not, the open goes on: the wait is the window's, not the answer.
+        const placed = mayWait ? await opening().catch((error: unknown) => { log.warn('The waiting page could not be shown:', error); return undefined; }) : undefined;
+        const waitIn = placed && typeof placed === 'object' && 'chat' in placed ? placed.chat : null;
+        let waiting = waitIn !== null;
         try {
-          target = await files.openWithTarget(page, { ref, ask, peek });
-        } catch (error) {
-          if (resumed && current && bindings.get(current[0]) === current[1]
-            && error instanceof files.AppFileError && (error.code === 'not-found' || error.code === 'denied')) {
-            void fileSync.revoke(current[0], 'removed-from-group', (grant) => grant.itemId === current[1].itemId);
+          let target: Awaited<ReturnType<typeof files.openWithTarget>>;
+          try {
+            target = await files.openWithTarget(page, { ref, ask, peek });
+          } catch (error) {
+            if (resumed && current && bindings.get(current[0]) === current[1]
+              && error instanceof files.AppFileError && (error.code === 'not-found' || error.code === 'denied')) {
+              void fileSync.revoke(current[0], 'removed-from-group', (grant) => grant.itemId === current[1].itemId);
+            }
+            throw error;
           }
-          throw error;
+          if (tab !== undefined && target.kind !== 'chat') throw Object.assign(new Error('openWith tab is only available for chat files'), { code: 'invalid' });
+          if (target.kind === 'session') return void (await deliver(shown, { kind: 'openSessionFile', ...target.target, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}) }));
+          if (target.kind === 'peek') return void (await deliver(shown, { kind: 'peek', target: target.target }));
+          const choice = tab === undefined
+            ? files.openerChoice(target.target.typedName, ask)
+            : files.ownTabChoice(target.target.typedName, page.extensionId, tab);
+          // An explicitly named tab must still claim this file before an existing replica is brought forward.
+          if (tab !== undefined) resumed = await present();
+          const { chatId, itemId } = target.target;
+          const place = placeFor(choice, (args as { at?: unknown }).at);
+          if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), chatId, itemId);
+          // Another chat's file (a forwarded one): nothing waits for it here; that chat comes up with it.
+          if (waiting && chatId !== waitIn) {
+            waiting = false;
+            await opening(true);
+          }
+          const detail = { ...target.target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}), ...(resumed ? { background: true } : {}), ...(waiting ? { announced: true as const } : {}) };
+          if (peek) return void (await deliver(shown, { kind: 'peek', target: { kind: 'chat', detail } }));
+          await deliver(shown, { kind: 'openWith', detail });
+          // Handed over: the window turns its wait into the page (or, not a page, takes the wait back itself).
+          waiting = false;
+          return undefined;
+        } finally {
+          // Every other way out — refused, a session's file, beside the page, failed to hand over — takes the wait back.
+          if (waiting) void opening(true).catch((error: unknown) => log.warn('The waiting page could not be taken back:', error));
         }
-        if (tab !== undefined && target.kind !== 'chat') throw Object.assign(new Error('openWith tab is only available for chat files'), { code: 'invalid' });
-        if (target.kind === 'session') return void (await deliver(shown, { kind: 'openSessionFile', ...target.target, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}) }));
-        if (target.kind === 'peek') return void (await deliver(shown, { kind: 'peek', target: target.target }));
-        const choice = tab === undefined
-          ? files.openerChoice(target.target.typedName, ask)
-          : files.ownTabChoice(target.target.typedName, page.extensionId, tab);
-        // An explicitly named tab must still claim this file before an existing replica is brought forward.
-        if (tab !== undefined) resumed = await present();
-        const { chatId, itemId } = target.target;
-        const place = placeFor(choice, (args as { at?: unknown }).at);
-        if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), chatId, itemId);
-        const detail = { ...target.target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}), ...(resumed ? { background: true } : {}) };
-        if (peek) return void (await deliver(shown, { kind: 'peek', target: { kind: 'chat', detail } }));
-        await deliver(shown, { kind: 'openWith', detail });
-        return undefined;
       }
       await deliver(shown, { kind: 'showMessage', detail: await files.messageToShow(args as never) });
       return undefined;

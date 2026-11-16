@@ -1,3 +1,4 @@
+import type { TabOpenIntent } from '@shared/view-state'
 import { followLink, openLinkTarget } from '../../lib/guguLinks'
 import { reaction } from 'mobx'
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
@@ -56,6 +57,7 @@ export function PhoneAppFrame({
   session,
   hidden = false,
   onOpenWith,
+  onOpening,
   commandRef,
   testId,
   missingTestId,
@@ -76,6 +78,8 @@ export function PhoneAppFrame({
   /** Under a file opened over it: kept running, as it was, for the way back. */
   hidden?: boolean
   onOpenWith: (detail: AppOpenWithDetail) => void
+  /** 「用 X 打开」 on a chat file before it is resolved (`hooks.opening`): the slot's waiting page — true when it shows one. */
+  onOpening?: (file: { itemId: string; fileName?: string; intent?: TabOpenIntent; withdrawn?: true }) => boolean
   /** Set while this frame is the one on screen: the slot's toolbar / menu reach it through this. */
   commandRef?: { current: ((commandId: string) => void) | null }
   testId: string
@@ -92,6 +96,8 @@ export function PhoneAppFrame({
   const [workingCopy, setWorkingCopy] = useState<{ path: string; readFileChunk: (input: SessionpageOpenedFileReadRequest) => Promise<SessionpageOpenedFileChunk> } | null>(null)
   const onOpenWithRef = useRef(onOpenWith)
   onOpenWithRef.current = onOpenWith
+  const onOpeningRef = useRef(onOpening)
+  onOpeningRef.current = onOpening
   // The person's computers, as the task tab lists them: `showSession` opens a row of that list.
   const { devices } = useDevicesStore()
   const devicesRef = useRef(devices)
@@ -173,6 +179,7 @@ export function PhoneAppFrame({
       navigate: (delta) => navigateRef.current?.(delta) ?? Promise.resolve(false),
       claimBack: setBackClaimed,
       openWith: (detail) => onOpenWithRef.current(detail),
+      opening: (file) => onOpeningRef.current?.(file) ?? false,
       openWorkingCopy: (path, read) => setWorkingCopy({ path, readFileChunk: ({ offset, length }) => read(offset, length) }),
       // The slot this frame is in draws it (AppPeekSlot), as main's peek on the desktop.
       peek: (target) => peekStore.open(null, bindingRef.current.tabId, target),
