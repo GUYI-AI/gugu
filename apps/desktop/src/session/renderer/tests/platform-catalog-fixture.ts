@@ -1,13 +1,13 @@
 import { followRendererSession } from '@/lib/replica';
 import { platformModels } from '@/lib/agentModelReplicas';
 import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
-import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
+import { harnessModelCatalog } from '@renderer/lib/stores/agent-replicas';
+import type { AgentModelCatalogAnswer, GuguModelsOffer } from '@main/core/agents/platform-model-catalog-hook';
 import type { PlatformModelProtocol } from '@shared/core/agents/platform-model';
 
 /**
- * Tests of a composer's Gugu group: the group derives from the account's catalog and the engine's sessionpage
- * integration on its machine (platform-model-catalog.ts). This signs an account in and puts both as read.
+ * Tests of a composer's Gugu group: the group derives from the account's catalog, offered or not as the engine's machine
+ * answers with its harness catalog (platform-model-catalog.ts). This signs an account in and puts both as read.
  */
 export type CatalogRow = {
   id: string;
@@ -35,19 +35,21 @@ export function accountCatalogRows(rows: readonly CatalogRow[]): PlatformCatalog
   }));
 }
 
-/** An agent whose both legs can carry a Gugu identity (the case a Gugu group is offered for). */
-export function routableAgent(id: string, name = id): AgentPayload {
-  const leg = { identity: 'addressable', messageTransport: 'router' };
-  return { id, name, capabilities: { sessionpage: { acp: leg, tui: leg } } } as unknown as AgentPayload;
+/** A machine's harness catalog answer for an engine's leg, with its gate for the Gugu group. */
+export function harnessAnswer(gugu: GuguModelsOffer = { offered: true }): AgentModelCatalogAnswer {
+  return { state: { kind: 'unknown' }, refreshing: false, gugu };
 }
 
 export function seedPlatformCatalog(input: {
   account?: string;
   rows: readonly CatalogRow[];
-  agents: readonly AgentPayload[];
+  /** Engines whose machine offers the Gugu group on both legs. */
+  providers: readonly string[];
   machine?: string | null;
 }): void {
   followRendererSession('SIGNED_IN', input.account ?? 'account-1');
   platformModels.set([], accountCatalogRows(input.rows));
-  agentsMetadata.set([input.machine ?? null], [...input.agents]);
+  for (const provider of input.providers) {
+    for (const leg of ['acp', 'tui'] as const) harnessModelCatalog.set([provider, leg, input.machine ?? null], harnessAnswer());
+  }
 }

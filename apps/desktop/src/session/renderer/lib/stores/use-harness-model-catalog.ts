@@ -2,10 +2,8 @@ import { useReplica } from '@/lib/replica';
 import { rpcOn } from '@renderer/lib/ipc';
 import { rendererLogger } from '@/lib/log';
 import { useLibraryHost } from '@renderer/features/library/library-host';
-import type {
-  HarnessCatalogLookup,
-  HarnessCatalogState,
-} from '@main/core/agents/harness-model-catalog';
+import type { HarnessCatalogState } from '@main/core/agents/harness-model-catalog';
+import type { AgentModelCatalogAnswer } from '@main/core/agents/platform-model-catalog-hook';
 
 /**
  * 四态**就是**主进程那份 —— 这里只做类型转出,❌ 不再手抄一份。
@@ -57,7 +55,7 @@ export async function forceRefreshHarnessModelCatalog(
 ): Promise<void> {
   const entry = harnessModelCatalog.at(providerId, leg, machine);
   try {
-    entry.set((await rpcOn(machine).agents.modelCatalog(providerId, leg, true)) as HarnessCatalogLookup);
+    entry.set((await rpcOn(machine).agents.modelCatalog(providerId, leg, true)) as AgentModelCatalogAnswer);
   } catch (error) {
     rendererLogger('agents/model-catalog').warn({ error, providerId, leg, machine }, 'forced model catalog refresh failed');
     await harnessModelCatalog.refresh(providerId, leg, machine);

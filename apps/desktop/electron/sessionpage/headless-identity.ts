@@ -26,7 +26,7 @@ import { createLocalDeviceIdResolver, detectDeviceCapabilities, type DeviceCapab
 import { makeIdentityClient } from '../supabase'
 import { setEmdashIdentityProvisioner, setEmdashMcpInjector } from '../session/main/core/acp/emdash-mcp-injector'
 import { setSessionIdentityHost } from '../session/main/core/sessions/session-identity-host'
-import { setPlatformModelCatalogResolver } from '../session/main/core/agents/platform-model-catalog-hook'
+import { setPlatformModelCatalogResolver, setPlatformModelGate } from '../session/main/core/agents/platform-model-catalog-hook'
 import {
   notifyProjectGroupBindingChanged,
   setProjectGroupHost,
@@ -46,7 +46,7 @@ import {
   applyPlatformToPtyLaunch,
   createSessionpagePlatformHooks,
 } from './sessionpage-platform-hooks'
-import { SESSIONPAGE_PLATFORM_CATALOG_CHANNEL } from './sessionpage-platform-catalog'
+import { SESSIONPAGE_PLATFORM_CATALOG_CHANNEL, sessionpagePlatformGate } from './sessionpage-platform-catalog'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../../src/session/shared/core/agents/platform-model'
 import { clearPlatformIssueBackoff } from './sessionpage-platform-model'
 import { adoptLegacyTaskNames, announceEmdashSession, emdashSessionProvisionInput, emdashProjectName, emdashSessionpageSessionFacts, emdashTakeBirthGroup, setTaskNamer, setTaskNameOwner } from '../session/main/embedded-boot'
@@ -139,6 +139,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
   // @@@4972 agent 自己用 `session_list_models` 查到的那一组。装进去的**就是**下面 composer 那条
   // 通道调的同一份实现 —— 只接下拉不接这一口,会让「用户看得到、agent 查不到」在网页版变成常态。
   setPlatformModelCatalogResolver((query) => platform.listModels(query))
+  setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: headlessAuthProvider }))
 
   // #6396 名字登记时已被占用 ⇒ 在这条会话的对话里画一行告知(与桌面主进程同一份,见 sessionpage-rename-announcement.ts)。
   // 名字不在 agent 的上下文里(要知道就调 profile_whoami,#6490);owner 改名同理,不需要另行告知。
@@ -215,6 +216,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       setEmdashPlatformRelease(null)
       setEmdashPlatformCheckpoint(null)
       setPlatformModelCatalogResolver(null)
+      setPlatformModelGate(null)
     },
   }
 }

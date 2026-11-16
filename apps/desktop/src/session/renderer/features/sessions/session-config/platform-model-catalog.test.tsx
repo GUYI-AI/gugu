@@ -4,14 +4,15 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The composer's Gugu group derives from the account's catalog (`platformModels`, kept across restarts) and the engine's
- * sessionpage integration on its machine; only a session's preselection is asked of the host (`sessionPlatformSelection`).
+ * The composer's Gugu group derives from the account's catalog (`platformModels`, kept across restarts), offered or not as
+ * the engine's machine answers with its harness catalog (`gugu`, the host's own gate: ❌ a renderer copy of the rule); only
+ * a session's preselection is asked of the host (`sessionPlatformSelection`).
  * ❌ a second catalog per surface and machine that every New task starts empty.
  */
 const io = vi.hoisted(() => ({
   catalog: vi.fn(),
   invoke: vi.fn(),
-  agents: vi.fn(),
+  harness: vi.fn(),
 }));
 vi.mock('@/lib/agentModelSelection', () => ({
   fetchPlatformModelCatalog: () => io.catalog(),
@@ -20,7 +21,7 @@ vi.mock('@/lib/agentModelSelection', () => ({
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   invokeOnMachine: (...args: unknown[]) => io.invoke(...args),
-  rpcOn: () => ({ agents: { list: () => io.agents() } }),
+  rpcOn: () => ({ agents: { modelCatalog: (provider: string, leg: string) => io.harness(provider, leg) } }),
   rpc: {},
   events: { on: () => () => {} },
 }));
@@ -34,7 +35,7 @@ vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () =
 import { notifyManager } from '@tanstack/react-query';
 import { followRendererSession, queryClient } from '@/lib/replica';
 import { PLATFORM_MODELS_CHANGED_EVENT } from '@shared/core/agents/platform-model';
-import { accountCatalogRows, routableAgent } from '@renderer/tests/platform-catalog-fixture';
+import { accountCatalogRows, harnessAnswer } from '@renderer/tests/platform-catalog-fixture';
 import { usePlatformModelCatalog, type PlatformModelCatalogState } from './platform-model-catalog';
 
 notifyManager.setScheduler((callback) => callback());
@@ -74,7 +75,8 @@ beforeEach(() => {
   frames.length = 0;
   followRendererSession('SIGNED_IN', 'account-1');
   io.catalog.mockReset().mockResolvedValue(ROWS);
-  io.agents.mockReset().mockResolvedValue([routableAgent('claude'), routableAgent('codex'), routableAgent('legless')]);
+  io.harness.mockReset().mockImplementation(async (provider: string) =>
+    harnessAnswer(provider === 'legless' ? { offered: false, reason: 'gugu-models:not-routable' } : { offered: true }));
   io.invoke.mockReset().mockResolvedValue({ models: [], agentDefault: { modelId: 'glm-5.3-flash' }, sessionSelection: { modelId: 'glm-5.3-flash' } });
 });
 
@@ -87,7 +89,7 @@ afterEach(() => {
 });
 
 describe('usePlatformModelCatalog — derived from the account catalog', () => {
-  it('is unknown (not an empty group) until the catalog and the agent list are read, then lists the engine protocol', async () => {
+  it('is unknown (not an empty group) until the catalog and the machine\'s answer are read, then lists the engine protocol', async () => {
     let answer!: (rows: unknown) => void;
     io.catalog.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
     mount(<Probe provider="claude" />);
@@ -131,16 +133,39 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     expect(current!.models[0]).toMatchObject({ creditMultiplier: 0.5 });
   });
 
-  it('says why the group is absent: an engine with no wire protocol, a leg without a Gugu identity', async () => {
+  it('says the reason the machine gives for not offering the group, though the account has the models', async () => {
     mount(<Probe provider="legless" />);
     await settle();
-    expect(current).toMatchObject({ known: true, models: [], catalogError: expect.stringContaining('not-routable') });
+    expect(current).toMatchObject({ known: true, models: [], catalogError: 'gugu-models:not-routable' });
     act(() => root!.unmount());
-    io.agents.mockResolvedValue([{ id: 'claude', capabilities: { sessionpage: { acp: { identity: 'none', messageTransport: 'none' } } } }]);
+    // An engine and leg the renderer has no facts about: only the machine's answer decides (runtime not connected there).
+    io.harness.mockResolvedValue(harnessAnswer({ offered: false, reason: 'gugu-models:runtime-not-connected' }));
     queryClient.clear();
     mount(<Probe provider="claude" />);
     await settle();
-    expect(current).toMatchObject({ known: true, models: [], catalogError: expect.stringContaining('no-identity-chat') });
+    expect(io.harness).toHaveBeenLastCalledWith('claude', 'acp');
+    expect(current).toMatchObject({ known: true, models: [], catalogError: 'gugu-models:runtime-not-connected', settled: true });
+  });
+
+  it('follows the machine\'s answer when it is read again, and a failed read of it says so with a retry that asks again', async () => {
+    mount(<Probe provider="claude" />);
+    await settle();
+    expect(current!.models.map((model) => model.id)).toEqual(['glm-5.3-flash', 'opus-5.5']);
+    io.harness.mockResolvedValue(harnessAnswer({ offered: false, reason: 'gugu-models:no-identity-chat' }));
+    await act(async () => { current!.refresh(); });
+    await settle();
+    expect(current).toMatchObject({ models: [], catalogError: 'gugu-models:no-identity-chat' });
+    act(() => root!.unmount());
+    queryClient.clear();
+    io.harness.mockRejectedValue(new Error('machine gone'));
+    mount(<Probe provider="claude" />);
+    await settle();
+    expect(current).toMatchObject({ known: true, models: [], settled: false, catalogError: expect.stringContaining('host-not-ready') });
+    io.harness.mockResolvedValue(harnessAnswer());
+    await act(async () => { current!.retry(); });
+    await settle();
+    expect(current!.models.map((model) => model.id)).toEqual(['glm-5.3-flash', 'opus-5.5']);
+    expect(current!.catalogError).toBeNull();
   });
 
   it('a session adds its preselection, read of the host for that session only', async () => {

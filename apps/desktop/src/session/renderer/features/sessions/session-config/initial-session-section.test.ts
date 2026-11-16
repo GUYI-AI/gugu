@@ -236,6 +236,8 @@ const READY_CATALOG = {
 // 可改写：四态里只有 ready 有模型可选，另外三态要能在这里摆出来，否则「没装也不说为什么」
 // 那个缺口（真机上抓到的）永远测不出。
 const harnessCatalogRef = vi.hoisted(() => ({ current: null as unknown }));
+/** The machine's own gate for the Gugu group, answered with its harness catalog (`agents.modelCatalog`'s `gugu`). */
+const guguOfferRef = vi.hoisted(() => ({ current: { offered: true } as { offered: true } | { offered: false; reason: string } }));
 /**
  * ⚠️ 参数是**真类型**,❌ 不是 `unknown`。
  *
@@ -503,8 +505,8 @@ vi.mock('@renderer/lib/ipc', () => {
     on: vi.fn(() => () => {}),
   },
   rpc: {
-    // The platform catalog's gate reads the machine's agent list (the same fixture the composer draws).
-    agents: { list: async () => agentFixtureRef.current },
+    // The Gugu group's gate is the machine's answer, read with its harness catalog.
+    agents: { modelCatalog: async () => ({ state: harnessCatalogRef.current, refreshing: false, gugu: guguOfferRef.current }) },
     sessions: { sendMessage: mocks.sendMessage },
     sessionTimeline: { sessionStart: async () => ({ ok: true }) },
     sessionCreate: { admitFirstMessages: async () => {} },
@@ -1616,6 +1618,7 @@ describe('InitialSessionField', () => {
     // 而红的地方与那条用例毫无关系(「selectedModel 是 undefined」),看起来像别的 bug。
     // ⇒ 用例之间的独立性不能靠「没人碰过」。
     harnessCatalog(READY_CATALOG);
+    guguOfferRef.current = { offered: true };
     harnessCredentialRef.current = 'unknown';
     harnessCredentialRef.lastArgs = null;
     harnessCredentialRef.refresh = undefined;
@@ -2079,6 +2082,36 @@ describe('InitialSessionField', () => {
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'guguCatalog.reason.host-not-ready', action: expect.objectContaining({ label: 'harnessCatalog.retry' }) }));
     expect(latestState?.retryPlatformCatalog).toBeTypeOf('function');
     expect(chatComposerProps().selectedModel).toBe('claude-opus-4-8');
+  });
+
+  // C-3: whether the group is offered is the machine's own answer (with its harness catalog), ❌ a renderer copy of the
+  // rule: a machine whose runtime is not connected withholds it and says why, though the account has the model.
+  it('hides the Gugu group and says the reason the machine gives when it does not offer it', async () => {
+    platformCatalog({ models: [GLM], agentDefault: null });
+    guguOfferRef.current = { offered: false, reason: 'gugu-models:runtime-not-connected' };
+
+    await renderField();
+    await guguCatalogAnswers();
+
+    expect(latestState?.platformModels).toEqual([]);
+    expect(latestState?.platformNotice).toBe('guguCatalog.reason.runtime-not-connected');
+    expect(chatComposerProps().selectedModel).toBe('claude-opus-4-8');
+  });
+
+  it('offers the Gugu group when the machine says it is offered, and withdraws it when the machine stops offering it', async () => {
+    platformCatalog({ models: [GLM], agentDefault: null });
+
+    await renderField();
+    await guguCatalogAnswers();
+    expect(latestState?.platformModels).toEqual([GLM]);
+    expect(latestState?.platformNotice).toBeNull();
+
+    guguOfferRef.current = { offered: false, reason: 'gugu-models:no-identity-chat' };
+    // The machine's answer is read again (as on every mount and focus): the group follows it.
+    await act(async () => { await queryClient.refetchQueries(); });
+    await guguCatalogAnswers();
+    expect(latestState?.platformModels).toEqual([]);
+    expect(latestState?.platformNotice).toBe('guguCatalog.reason.no-identity-chat');
   });
 
   // #137 owner 2026-10-23:「已经说了设备下线,这里有必要再说一个错误的提示吗」—— 目录是问那台机器要的,

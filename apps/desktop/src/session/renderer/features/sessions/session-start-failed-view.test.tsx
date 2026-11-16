@@ -9,7 +9,10 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 // #7092 免费号首启一条会员模型的任务,签票被拒。owner:「模型不能用，不能说任务不能启动吧」「只是个模型不能用」。
 const invoke = vi.fn();
 const openMembershipPage = vi.fn();
-vi.mock('@renderer/lib/ipc', () => ({ invokeOnMachine: (...args: unknown[]) => invoke(...args) }));
+vi.mock('@renderer/lib/ipc', () => ({
+  invokeOnMachine: (...args: unknown[]) => invoke(...args),
+  rpcOn: () => ({ agents: { modelCatalog: async () => ({ state: { kind: 'unknown' }, refreshing: false, gugu: { offered: true } }) } }),
+}));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ state: 'value', value: [], stale: false, error: null }) }));
@@ -22,7 +25,7 @@ import { SessionStartFailedView } from './session-start-failed-view';
 import type { SessionStartupFailure } from './stores/session-startup-failures';
 import { notifyManager } from '@tanstack/react-query';
 import { queryClient } from '@/lib/replica';
-import { routableAgent, seedPlatformCatalog } from '@renderer/tests/platform-catalog-fixture';
+import { seedPlatformCatalog } from '@renderer/tests/platform-catalog-fixture';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
 
@@ -61,7 +64,7 @@ function button(testId: string): HTMLButtonElement {
 
 beforeEach(() => {
   queryClient.clear();
-  seedPlatformCatalog({ rows: ROWS, agents: [routableAgent('codex', 'Codex')] });
+  seedPlatformCatalog({ rows: ROWS, providers: ['codex'] });
   invoke.mockReset().mockResolvedValue(CATALOG);
   openMembershipPage.mockReset();
 });

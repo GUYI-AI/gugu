@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  manager: { platform: 'macos', probe: vi.fn(), isPathResolutionConsistent: vi.fn(), getHostDependency: vi.fn(), install: vi.fn() },
+  manager: { platform: 'macos', get: vi.fn(), probe: vi.fn(), isPathResolutionConsistent: vi.fn(), getHostDependency: vi.fn(), install: vi.fn() },
   ensureProbed: vi.fn(),
   buildPayload: vi.fn(),
 }));
@@ -30,6 +30,8 @@ vi.mock('./harness-model-catalog-wiring', () => ({ wireHarnessModelCatalog: vi.f
 
 import { agentsController } from './controller';
 import { hasAgentInstallsInProgress } from './install-progress-ledger';
+import { lookupHarnessModelCatalog } from './harness-model-catalog';
+import { setPlatformModelGate } from './platform-model-catalog-hook';
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -78,5 +80,31 @@ describe('single registered harness queries', () => {
     await agentsController.get('gemini');
     await agentsController.get('gemini');
     expect(mocks.manager.probe).toHaveBeenCalledTimes(1);
+  });
+});
+
+// C-3: the composer reads whether the Gugu group is offered from this answer (the host's own gate), ❌ a renderer copy.
+describe('modelCatalog carries the Gugu group gate', () => {
+  beforeEach(() => {
+    mocks.ensureProbed.mockResolvedValue(undefined);
+    vi.mocked(lookupHarnessModelCatalog).mockResolvedValue({ state: { kind: 'unknown' }, refreshing: true });
+  });
+
+  it("answers the gate the host installed, for the engine and leg asked, with its reason when it withholds the group", async () => {
+    const gate = vi.fn((query: { providerId: string; surface: 'acp' | 'tui' }) =>
+      query.surface === 'acp' ? 'gugu-models:runtime-not-connected' : null);
+    setPlatformModelGate(gate);
+    await expect(agentsController.modelCatalog('claude', 'acp')).resolves.toEqual({
+      state: { kind: 'unknown' }, refreshing: true, gugu: { offered: false, reason: 'gugu-models:runtime-not-connected' },
+    });
+    await expect(agentsController.modelCatalog('claude', 'tui')).resolves.toMatchObject({ gugu: { offered: true } });
+    expect(gate).toHaveBeenCalledWith({ providerId: 'claude', surface: 'acp' });
+  });
+
+  it('a host that has not installed the gate cannot say: not offered, not ready', async () => {
+    setPlatformModelGate(null);
+    await expect(agentsController.modelCatalog('claude', 'acp')).resolves.toMatchObject({
+      gugu: { offered: false, reason: 'gugu-models:host-not-ready' },
+    });
   });
 });

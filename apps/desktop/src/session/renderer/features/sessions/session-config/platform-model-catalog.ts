@@ -3,9 +3,9 @@ import { replica, useReplica } from '@/lib/replica';
 import { catalogDetailed, followCatalogChanges, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
 import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
 import { useLibraryHost } from '@renderer/features/library/library-host';
-import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
+import { harnessModelCatalog } from '@renderer/lib/stores/agent-replicas';
+import type { GuguModelsOffer } from '@main/core/agents/platform-model-catalog-hook';
 import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-protocols';
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { onMachineReconnected } from '@renderer/lib/machine-clients';
@@ -209,18 +209,9 @@ export const sessionPlatformSelection = replica({
 });
 
 /**
- * Why the Gugu group is absent for this engine and leg, by the same facts the host's gate reads.
+ * The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. Only for a
+ * catalog as read (`catalogDetailed`): one restored from the snapshot carries no multipliers or levels.
  */
-function gateReason(providerId: string, surface: SessionpageSessionSurface, agent: AgentPayload | undefined): string | null {
-  if (!platformWireProtocol(providerId)) return guguCatalogReasonCode('not-routable');
-  const integration = agent?.capabilities.sessionpage?.[surface];
-  if (!integration || integration.identity !== 'addressable' || integration.messageTransport === 'none') {
-    return guguCatalogReasonCode(surface === 'acp' ? 'no-identity-chat' : 'no-identity-terminal');
-  }
-  return null;
-}
-
-/** Only for a catalog as read: one restored from the snapshot carries no multipliers or levels. */
 function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
   if (!catalogDetailed(catalog)) throw new Error('platformModelsFor needs the catalog as read (with its menu details)');
   const protocol = platformWireProtocol(providerId) as PlatformModelProtocol | null;
@@ -242,34 +233,40 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
 
 /**
  * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)时什么都不读。
- * Derived, not read per surface. A disconnected machine is not asked.
+ * Derived, not read per surface: the account's catalog (`platformModels`) filtered to the engine's protocol, offered or not
+ * as the machine's own gate answers (`gugu` in its harness model catalog, the reading the composer draws its own group
+ * from); a session adds its preselection. A disconnected machine is not asked.
  */
 export function usePlatformModelCatalog(
   providerId: string | null,
   surface: SessionpageSessionSurface,
   sessionId?: string | null
 ): PlatformModelCatalogState {
-  // #6264 会话 / 新建框在别的机器上:那台机器上这家的会话腿(身份、消息通道)由那台机器的名单说。
+  // #6264 会话 / 新建框在别的机器上:给不给咕咕那一组由那台机器自己的门说。
   const host = useLibraryHost().remote;
   const hostMachine = host?.deviceId ?? null;
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
   const online = machine === null || machine !== hostMachine || host?.online !== false;
   const catalog = useDetailedPlatformCatalog(providerId !== null);
-  const agents = useReplica(agentsMetadata, providerId ? [machine] : null, { read: online });
+  const harness = useReplica(harnessModelCatalog, providerId ? [providerId, surface, machine] : null, { read: online });
   const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
 
-  const agent = agents.state === 'value' ? agents.value.find((entry) => entry.id === providerId) : undefined;
-  const gate = providerId && agents.state === 'value' ? gateReason(providerId, surface, agent) : null;
+  // Offered or not is the machine's own gate (sessionpagePlatformGate), answered with its harness catalog. Not answered
+  // (the read failed, or a machine older than that answer): the group is absent, said as "not ready" with a retry.
+  const offer = harness.state === 'value' ? (harness.value.gugu as GuguModelsOffer | undefined) : undefined;
+  const gate = harness.state === 'unknown' || offer?.offered ? null : offer ? offer.reason : PLATFORM_CATALOG_RETRY_ERROR;
   const models = useMemo(
     () => (providerId && catalog.state === 'value' && !gate ? platformModelsFor(providerId, catalog.value) : []),
     [providerId, catalog, gate]
   );
   const refresh = () => {
     void platformModels.refresh();
+    if (providerId) void harnessModelCatalog.refresh(providerId, surface, machine);
     if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
   };
-  const failed = catalog.state === 'error' || (catalog.state === 'value' && catalog.error !== null) || selection.state === 'error';
-  const known = !providerId || (catalog.state !== 'unknown' && agents.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
+  // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).
+  const failed = catalog.state === 'error' || (catalog.state === 'value' && catalog.error !== null) || selection.state === 'error' || harness.state === 'error';
+  const known = !providerId || (catalog.state !== 'unknown' && harness.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
   const catalogError = gate ?? (failed ? PLATFORM_CATALOG_RETRY_ERROR : null);
   const agentDefault = selection.state === 'value' && selection.value.agentDefault
     && models.some((model) => model.id === selection.value.agentDefault!.modelId && offeredInModelPicker(model))

@@ -1,5 +1,5 @@
 import type { HarnessModelCredentialStatus } from '@gugu/session-core/agents/plugins';
-import type { HarnessCatalogLookup } from '@main/core/agents/harness-model-catalog';
+import type { AgentModelCatalogAnswer } from '@main/core/agents/platform-model-catalog-hook';
 import { replica } from '@/lib/replica';
 import { rendererLogger } from '@/lib/log';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
@@ -65,13 +65,13 @@ export const agentIcons = replica({
   fresh: Infinity,
 });
 
-/** Main owns invalidation and answers from memory, so every mount asks (#7081); `refreshing` is asked again until it settles. */
+/** Models a harness runs, and the host's own gate for the Gugu group (`gugu`). Main answers from memory: every mount asks (#7081). */
 export const harnessModelCatalog = replica({
   name: 'harnessModelCatalog',
   scope: 'account',
   networkMode: 'always',
   read: (_owner, providerId: string, leg: SessionpageLeg, machine: Machine) =>
-    rpcOn(machine).agents.modelCatalog(providerId, leg) as Promise<HarnessCatalogLookup>,
+    rpcOn(machine).agents.modelCatalog(providerId, leg) as Promise<AgentModelCatalogAnswer>,
   refreshOnFocus: true,
   refreshEvery: (lookup) => (lookup?.refreshing ? 700 : false),
 });
