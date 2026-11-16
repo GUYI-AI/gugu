@@ -46,6 +46,8 @@ import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptio
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
 import { createAttachmentDraftAdapter } from './create-attachment-adapter'
 import { creationThinking } from './creation-thinking'
+import { creationAttachmentPorts } from './create-attachment-rpc'
+import { completeAttachmentCreation, readAttachmentCreation, submitAttachmentCreation } from './create-attachment-submission'
 import './task-flow-catalog'
 import {
   createBlocker,
@@ -195,6 +197,7 @@ function CreateOnMachine({
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
+  const attachmentAttempt = ownerId ? readAttachmentCreation(mobileCreationDraftKey(ownerId)) : null
   const attachmentAdapter = useMemo(() => ownerId ? createAttachmentDraftAdapter(mobileCreationDraftKey(ownerId)) : undefined, [ownerId])
 
   // 机器离线时**不发 RPC**(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
@@ -208,9 +211,10 @@ function CreateOnMachine({
     readOptions(device.device_id)
       .then((next) => {
         if (cancelled) return
-        const attempt = phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null
+        const attempt = ownerId ? readAttachmentCreation(mobileCreationDraftKey(ownerId))
+          ?? (phone ? readPhoneSessionCreate(ownerId, device.device_id) : null) : null
         modelTouched.current = attempt !== null
-        setPhoneAttempt(attempt)
+        setPhoneAttempt(attempt && !('attachments' in attempt) ? attempt : null)
         setOptionCatalog({ key: catalogKey, value: next })
         setSelection(attempt ? { ...initialSelection(next), harness: attempt.harness, model: attempt.model ?? null } : initialSelection(next))
       })
@@ -284,12 +288,10 @@ function CreateOnMachine({
       const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
-        // Replaced by the dedicated attachment draft/admission protocol before this candidate can ship.
-        // Never send a text-only first turn while its local files are still awaiting placement.
-        if (files.length) throw new SessionpageRpcError('host_update_required', translateSessionMessage('composer.attachmentHostUpdateRequired'))
-        if (phone && !ownerId) throw new Error('请先登录后创建 Agent')
+        if ((phone || files.length) && !ownerId) throw new Error('请先登录后创建 Agent')
+        if (attachmentAttempt && !files.length) throw new Error('请保留原附件并继续同一次创建，不能只发送文字')
         if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error('上次创建尚未确认，请先发送原来的任务以继续同一次创建')
-        const request: SessionpageSessionCreateRequest = phoneAttempt ?? {
+        let request: SessionpageSessionCreateRequest = attachmentAttempt ?? phoneAttempt ?? {
           ...(phone ? { clientRequestId: crypto.randomUUID() } : {}),
           // 手机任务宿主跑它自己报的那个项目;电脑上不带 = 那台的任务工作区。
           ...(phone ? (options.projects[0] ? { projectId: options.projects[0].id } : {}) : projectId ? { projectId } : {}),
@@ -303,20 +305,29 @@ function CreateOnMachine({
           ...(creationThinking(models, selection).fastMode !== undefined ? { fastMode: creationThinking(models, selection).fastMode } : {}),
           ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
-        if (phone) {
+        if (phone && !files.length) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
           submittedPhoneRequest = request
           setPhoneAttempt(request)
         }
-        const result = await (phone ? createPhoneSession : createSession)(device.device_id, request)
+        let attachmentReceipt: Awaited<ReturnType<typeof submitAttachmentCreation>> | null = null
+        const result = files.length
+          ? (attachmentReceipt = await submitAttachmentCreation({ key: mobileCreationDraftKey(ownerId!), ownerId: ownerId!,
+              deviceId: device.device_id, request, files: files.map((entry) => {
+                if (!entry.file) throw new Error('The original attachment is no longer available')
+                return { id: entry.id, file: entry.file }
+              }), ports: creationAttachmentPorts(device.device_id, phone, ownerId!) })).result
+          : await (phone ? createPhoneSession : createSession)(device.device_id, request)
+        if (attachmentReceipt) request = attachmentReceipt.request
         if (phone) {
           if (!result.session?.supported || result.session.conversationId !== result.conversationId) throw new Error('手机尚未返回完整的任务记录，请继续同一次创建')
-          forgetPhoneSessionCreate(ownerId!, device.device_id, request)
+          if (!files.length) forgetPhoneSessionCreate(ownerId!, device.device_id, request)
           if (page.active) setPhoneAttempt(null)
         }
         submittedDraft?.accepted(originalText, files)
         if (page.active) skillDraft.update([])
         if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
+        if (attachmentReceipt) completeAttachmentCreation(mobileCreationDraftKey(ownerId!), attachmentReceipt.request)
       } catch (err) {
         // 机器那边装 agent 没装成:原因进日志,人看到的是能照做的下一步(按本端语言,❌ 机器那边拼的双语原文)。
         // 其余原因同理:按原因码归类说人话(remoteFailureKind),原文只进日志。
@@ -331,7 +342,7 @@ function CreateOnMachine({
         setPendingText(null)
         // 签咕咕额度被拒:那台机器报的是原因码(#7103),按原因说(与新建框咕咕那一组同一份文案)。
         const gugu = guguReasonInText(code)
-        setCreateError(phone || code === 'host_update_required' ? describe(err) : code === 'harness_install_failed'
+        setCreateError(phone || files.length || attachmentAttempt || code === 'host_update_required' ? describe(err) : code === 'harness_install_failed'
           ? t('agentWatch.create.agentInstallFailed')
           : code === 'harness_runtime_missing'
             ? t('agentWatch.create.agentRuntimeMissing')
@@ -390,12 +401,13 @@ function CreateOnMachine({
       {blocker ? t(`agentWatch.create.blocked.${blocker}`) : modelNotice}
     </div>
   ) : null
-  const pendingCreationNotice = phoneAttempt && !creating ? (
+  const pendingAttempt = attachmentAttempt ?? phoneAttempt
+  const pendingCreationNotice = pendingAttempt && !creating ? (
     <div className="gg-aw-create-blocker" role="status" data-testid="agent-watch-create-pending">
       <div>{tFlow('pendingCreation')}</div>
       <details>
         <summary className="min-h-[var(--control-h-touch)] cursor-pointer py-3">{tFlow('originalTask')}</summary>
-        <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words">{phoneAttempt.prompt}</div>
+        <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words">{pendingAttempt.prompt}</div>
       </details>
     </div>
   ) : null
@@ -484,7 +496,7 @@ function CreateOnMachine({
                   {pendingCreationNotice}
                   {lastUsedNotice}
                   {taskGroupNotice}
-                  {target(creating || phoneAttempt !== null, {
+                  {target(creating || pendingAttempt !== null, {
                     options, selection, models, modelsState, skills: skillDraft.skills, onSkills: skillDraft.update,
                     onChange: (next, modelPicked) => {
                       modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
