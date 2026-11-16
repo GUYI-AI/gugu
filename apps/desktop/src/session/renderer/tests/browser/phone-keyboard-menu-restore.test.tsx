@@ -21,7 +21,8 @@ let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => { harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell') })
 const keyboard = (visible: boolean) => window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible }))
 
-it.each([false, true])('native keyboard dismissal restores group=%s menu without blurring or committing composition', async group => {
+it.each([false, true])('native keyboard dismissal restores an empty menu but retains hiding a text draft=%s', async hasText => {
+  const group = true
   await page.viewport(390, 844)
   document.documentElement.setAttribute('data-phone-shell', '')
   harness = createReactHarness()
@@ -40,6 +41,11 @@ it.each([false, true])('native keyboard dismissal restores group=%s menu without
   const blur = vi.fn(), ended = vi.fn()
   editor.addEventListener('blur', blur); editor.addEventListener('compositionend', ended)
   editor.focus()
+  if (hasText) {
+    const engine = (editor as HTMLElement & { editor: { commands: { setContent: (text: string) => void } } }).editor
+    engine.commands.setContent('<p>仍有文字草稿</p>')
+    await until('real draft committed', () => editor.textContent === '仍有文字草稿')
+  }
   keyboard(true)
   await page.viewport(390, 500)
   await until('menu hidden during native input', () => row.hasAttribute('data-editing'))
@@ -47,7 +53,7 @@ it.each([false, true])('native keyboard dismissal restores group=%s menu without
   editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'zhong' }))
   keyboard(false)
   await page.viewport(390, 844)
-  await until('menu restored after native keyboard closes', () => !row.hasAttribute('data-editing') && row.getBoundingClientRect().height > 40)
+  await until('menu restored after native keyboard closes', () => row.hasAttribute('data-editing') === hasText && (hasText ? row.getBoundingClientRect().height === 0 : row.getBoundingClientRect().height > 40))
   expect(document.activeElement).toBe(editor)
   expect(input.querySelector('[contenteditable]')).toBe(editor)
   expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
@@ -56,7 +62,12 @@ it.each([false, true])('native keyboard dismissal restores group=%s menu without
   keyboard(true)
   await until('native keyboard reopens without a focus change', () => row.hasAttribute('data-editing'))
   keyboard(false)
-  await until('second dismissal restores the same menu', () => !row.hasAttribute('data-editing'))
+  await until('second dismissal respects whether text remains', () => row.hasAttribute('data-editing') === hasText)
   expect(document.activeElement).toBe(editor)
   expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
+  editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' }))
+  const engine = (editor as HTMLElement & { editor: { commands: { clearContent: (emit: boolean) => void } } }).editor
+  engine.commands.clearContent(true)
+  await until('clearing the text restores the menu with keyboard closed', () => !editor.textContent?.trim() && !row.hasAttribute('data-editing'))
+  expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(ended).toHaveBeenCalledTimes(1)
 })
