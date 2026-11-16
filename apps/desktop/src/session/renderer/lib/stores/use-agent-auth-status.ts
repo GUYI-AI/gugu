@@ -3,8 +3,8 @@ import {
   type AuthStatusModelState,
 } from '@gugu/session-core/workspace-server/agent-config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSelect, type Readable } from '@/lib/selectStore';
-import { agentConfigList, type AgentConfigListState } from './live/agent-config-list';
+import { useReplica } from '@/lib/replica';
+import { agentConfigList } from './live/agent-config-list';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { log } from '@renderer/utils/logger';
 import { expiredProviderIds } from './harness-auth-expiry';
@@ -65,7 +65,7 @@ export function useAgentAuthStatuses(
   const machine = options.machine ?? null;
   // 数组每次渲染都是新对象 —— 按内容做依赖(`undefined` = 主程序,记成空串)。
   const programsKey = programs.map((program) => program ?? '').join('\u0000');
-  const list = useSelect(agentConfigList(machine), (state) => state, Object.is);
+  const list = useReplica(agentConfigList, [machine]);
   /** 探不出来的那几个程序:落一个终局的「判不出」(只在还没有任何真读数时用)。 */
   const [probeFailures, setProbeFailures] = useState<{ key: string; messages: ReadonlyMap<number, string> }>({ key: '', messages: new Map() });
   const subject = `${machine ?? ''}\u0001${providerId ?? ''}\u0001${programsKey}`;
@@ -118,8 +118,7 @@ export function useAgentAuthStatuses(
  * 资源库图标网格一次读完用。null = 还没读到 / 读不到:图标上不画失效标记(只在知道失效时画)。
  */
 export function useExpiredAgentIds(enabled = true): ReadonlySet<string> | null {
-  const key = useSelect(enabled ? agentConfigList(null) : NO_LIST, (state) => (state.state === 'value' ? [...expiredProviderIds(state.value)].sort().join('\u0000') : null), Object.is);
+  const list = useReplica(agentConfigList, enabled ? [null] : null);
+  const key = list.state === 'value' ? [...expiredProviderIds(list.value)].sort().join('\u0000') : null;
   return useMemo(() => (key === null ? null : new Set(key ? key.split('\u0000') : [])), [key]);
 }
-
-const NO_LIST: Readable<AgentConfigListState> = { get: () => ({ state: 'unknown' }), subscribe: () => () => undefined };
