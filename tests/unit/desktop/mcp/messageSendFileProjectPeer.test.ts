@@ -34,7 +34,7 @@ function setup(options: { publish?: ReturnType<typeof vi.fn> } = {}) {
     attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch }),
   }
   const context = { supabaseUrl: '', anonKey: '', agentId: 'agent-1', chatId: CHAT, threadRootId: null, guguHome: dir,
-    getAccessToken: async () => 'token', ...(options.publish ? { publishFile: options.publish } : {}) }
+    getAccessToken: async () => `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`, ...(options.publish ? { publishFile: options.publish } : {}) }
   return { send: (args: Record<string, unknown>) => callToolImpl(context, 'message_send_file', { chat_id: CHAT, ...args }, deps), uploads }
 }
 

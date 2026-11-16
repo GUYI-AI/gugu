@@ -26,7 +26,7 @@ import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
 import { AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
-import { forgetAgentUpload, releaseAgentUpload, rememberAgentUpload, resumeAgentUploadsSoon, runAgentUpload } from '../../../../packages/core/src/local/agent/agentAttachmentUploads'
+import { agentUploadFailed, forgetAgentUpload, noteAgentUploadPlan, rememberAgentUpload, resumeAgentUploadsSoon, runAgentUpload } from '../../../../packages/core/src/local/agent/agentAttachmentUploads'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
@@ -2488,21 +2488,26 @@ async function handleFile(args, deps) {
         // 临时 / 保留:这份上传的副本留多久,和人在 ⋯ 里改的是同一个标记。不给就照这个群的规矩。
         ...(args.temporary === true ? { keep: 'temporary' } : {}),
       }
-      // Where these bytes are, before the message can go out: if this call gives up or this process dies, the host
+      // Where these bytes are, before the message can go out: if this call gives up or the host process dies, the host
       // uploads them later from here (agentAttachmentUploads). A refused commit leaves nothing to upload.
       const { target } = await uploadTarget('message_send_file', args)
       const account = parseJwtPayload(await deps.context.getAccessToken())?.sub
-      if (account) await rememberAgentUpload({ account, message_id: messageId, path: target, sha256: declared.sha256, size_bytes: declared.size_bytes,
-        content_type: contentType, file_name: fileName, ...(args.temporary === true ? { keep: 'temporary' } : {}) })
+      const home = String(deps.context.guguHome ?? '').trim()
+      if (!account || !home) throw new Error('message_send_file: the signed-in account or this host\'s home is unknown, so its file could not be finished later; nothing was sent')
+      await rememberAgentUpload(home, { account, message_id: messageId, path: target, sha256: declared.sha256, size_bytes: declared.size_bytes,
+        content_type: contentType, file_name: fileName, ...(args.temporary === true ? { keep: 'temporary' } : {}), ...(declared.plan?.parts ? { plan: declared.plan } : {}) })
       message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
-        await forgetAgentUpload(messageId)
+        await forgetAgentUpload(home, messageId)
         if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
       })
       if (message?.id) await runAgentUpload(message.id, () => finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
-        { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}))
-        .then(() => forgetAgentUpload(message.id), async (error) => {
-          await releaseAgentUpload(message.id)
+        { id: message.id, chat_id: chatId, as: deps.context.agentId },
+        { ...(args.temporary === true ? { keep: 'temporary' } : {}), onPlan: (plan) => { void noteAgentUploadPlan(home, message.id, plan) } }))
+        .then(() => forgetAgentUpload(home, message.id), async (error) => {
+          if (!await agentUploadFailed(home, message.id, error)) {
+            throw new Error(`message_send_file: message ${message.id} was sent, but its file was refused (${error?.message ?? error}); readers see it as unavailable`)
+          }
           resumeAgentUploadsSoon()
           throw new Error(`message_send_file: message ${message.id} was sent, and its file is still uploading: this host keeps uploading it in the background (${error?.message ?? error}). Do not send it again.`)
         })

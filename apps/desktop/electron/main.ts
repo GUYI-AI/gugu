@@ -2456,6 +2456,7 @@ function drainProjectFiles() { void desktopFiles.drain().catch(error => createLo
 // Agents' files sent before their bytes are this host's to finish (agentAttachmentUploads): the same moments that
 // reconcile project transfers (subscribed, resumed) resume them, and a failed upload retries by itself.
 setAgentUploadHost({
+  home: resolveGuguHome(process.env),
   signedIn: async () => {
     const auth = await desktopAuthProvider().getAuth()
     return auth?.userId && auth.accessToken ? { account: auth.userId, endpoint: { ...configuredEndpoint(auth.accessToken), signedParts: true } } : null

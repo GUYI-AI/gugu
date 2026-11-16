@@ -14,7 +14,7 @@ const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.prese
 const envelope = (size: number) => `[附件] GLM_Agent.pptx (${PPTX})\n[Size] ${size}\n[Kind] file`
 const CONTEXT = {
   supabaseUrl: '', anonKey: '', agentId: 'agent-1', chatId: CHAT, threadRootId: null,
-  guguHome: '/tmp/gugu-send-by-reference-test', getAccessToken: async () => 'token',
+  guguHome: '/tmp/gugu-send-by-reference-test', getAccessToken: async () => `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`,
 }
 const callTool = (name: string, args: Record<string, unknown>, deps: Record<string, unknown>) => callToolImpl(CONTEXT, name, args, deps)
 const localFile = (() => {

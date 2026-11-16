@@ -43,6 +43,7 @@ test('a file whose upload the call could not finish is left to the host, and the
   const records = readdirSync(join(home, 'agent-attachment-uploads')).filter(name => name.endsWith('.json'))
   expect(records).toHaveLength(1)
   const record = JSON.parse(readFileSync(join(home, 'agent-attachment-uploads', records[0]!), 'utf8'))
-  // Released: no live process owns it any more, so the host's next round takes it.
-  expect(record).toMatchObject({ account: OWNER, path: file, size_bytes: 12, pid: 0 })
+  // Nothing is uploading it any more, so the host's next round takes it. A one-request plan is not kept: it starts afresh.
+  expect(record).toMatchObject({ account: OWNER, path: file, size_bytes: 12 })
+  expect(record.plan).toBeUndefined()
 }, 20_000)

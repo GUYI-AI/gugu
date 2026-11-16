@@ -112,6 +112,11 @@ export async function uploadAttachmentBytes(
   }
 }
 
+/** A failure worth trying again: the network, a timeout or the server being busy (408, 429, 5xx), never a refusal. */
+export function retryableAttachmentError(error: unknown): boolean {
+  return error instanceof TypeError || error instanceof AttachmentsError && (error.status === 408 || error.status === 429 || error.status >= 500)
+}
+
 /** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
 export async function contentRequestId(...identity: string[]): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity.join('\n'))))
@@ -261,7 +266,8 @@ const UPLOAD_ATTEMPTS = 3
  */
 export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, declared: Pick<DeclaredAttachment, 'staging_key' | 'size_bytes' | 'plan'>,
   file: { bytes: Uint8Array | Blob; name: string; contentType: string }, message: { id: string; chat_id: string | null; as: string }, hooks: DeclaredUploadHooks = {}): Promise<boolean> {
-  let plan = declared.plan, uploadKey = plan ? declared.staging_key : null
+  // A plan handed back from an earlier attempt may be under its own staging key, not the declared one.
+  let plan = declared.plan, uploadKey = plan ? plan.staging_key ?? declared.staging_key : null
   for (let attempt = 1; ; attempt++) {
     try {
       await (hooks.attempt ?? ((_, run) => run(endpoint)))(attempt, async (attemptEndpoint, signal) => {

@@ -11,7 +11,8 @@ const stranger = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const agent = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const dm = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 const token = `x.${Buffer.from(JSON.stringify({ sub: owner })).toString('base64url')}.x`
-const context = { agentId: agent, threadRootId: null, personalAssistant: true, getAccessToken: async () => token }
+const home = mkdtempSync(join(tmpdir(), 'gugu-owner-dm-home-'))
+const context = { agentId: agent, threadRootId: null, personalAssistant: true, guguHome: home, getAccessToken: async () => token }
 
 /** The attachments function as core's client reaches it: upload → a form → OSS; commit → the message (kept in `commits`). */
 function attachmentsFake(uploads: string[], commits: Array<Record<string, unknown>>) {
@@ -81,3 +82,4 @@ describe('chat_id = the owner\'s address (#7351)', () => {
     expect(d.restInsert).not.toHaveBeenCalled()
   })
 })
+afterAll(() => { rmSync(home, { recursive: true, force: true }) })
