@@ -98,11 +98,7 @@ export function parseMemoryNote(file: string, text: string, hint?: { title: stri
 
 /** 删一条记忆时把索引里指向它的那一行一起拿掉(否则 MEMORY.md 里留一条指向空处的链接)。 */
 export function removeIndexEntry(index: string, file: string): string {
-  const target = `](${file})`;
-  const relativeTarget = `](./${file})`;
-  return index
-    .split('\n')
-    .filter((line) => !line.includes(target) && !line.includes(relativeTarget))
-    .join('\n');
+  const visible = visibleMemoryLines(index);
+  return index.split('\n').filter((_, line) => !memoryIndexHints(visible[line]).has(file)).join('\n');
 }
 

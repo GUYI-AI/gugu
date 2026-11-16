@@ -17,3 +17,5 @@ it('reads angle memory index destinations',()=>{expect(memoryIndexHints('[Plan](
 it('decodes memory index filenames once',()=>{expect(memoryIndexHints('[茶](tea%20notes.md)').get('tea notes.md')).toEqual({title:'茶'});expect(memoryIndexHints('[Literal](literal%2520.md)').has('literal%20.md')).toBe(true);expect(memoryIndexHints('[Nested](nested%2Fnote.md)').size).toBe(0);expect(memoryIndexHints('[Bad](bad%ZZ.md)').size).toBe(0);});
 
 it('ignores memory index code examples',()=>{const hints=memoryIndexHints('# 项目\n~~~md\n# 用户\n[Fake](fake.md)\n~~~\n- [Real](real.md)\nExample: `[Inline](inline.md)`');expect([...hints.keys()]).toEqual(['real.md']);expect(hints.get('real.md')?.kind).toBe('project');});
+
+it('removes parsed memory index entries',()=>{const index='~~~md\n[Example](tea%20notes.md)\n~~~\n- [Tea](<./tea notes.md> "Details")\n- [Other](other.md)\n';expect(removeIndexEntry(index,'tea notes.md')).toBe('~~~md\n[Example](tea%20notes.md)\n~~~\n- [Other](other.md)\n');expect(removeIndexEntry('Example: `[Tea](tea.md)`\n- [Tea](tea.md "Details")','tea.md')).toBe('Example: `[Tea](tea.md)`');});
