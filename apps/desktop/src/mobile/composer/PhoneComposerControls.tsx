@@ -12,7 +12,7 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
   const row = useRef<HTMLDivElement>(null)
   const [editing, setEditing] = useState(false)
   useLayoutEffect(() => {
-    const scope = row.current?.closest('[data-slot="composer"], [data-chat-composer], [data-chat-composer-host], .gg-aw-create-host')
+    const scope = row.current?.closest('[data-slot="composer"], [data-chat-composer], [data-chat-composer-host], [data-chat-bottom-dock], .gg-aw-create-host')
     if (!scope) return
     const update = () => setEditing(document.activeElement instanceof Element
       && scope.contains(document.activeElement)

@@ -437,6 +437,7 @@ export default {
     "attachmentSendTimedOut": "附件发送超时。",
     "attachmentPersistenceFailed": "附件 {{fileName}} 保存失败。",
     "attach": "添加",
+    "attachmentsMenu": "附件",
     "cancelQuote": "取消引用",
     "disabled": "当前对话不可发送",
     "exitWhisper": "退出悄悄话",

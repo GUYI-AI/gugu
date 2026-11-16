@@ -18,6 +18,7 @@ import { roomAgentEntry, roomTopicChoices } from './room-composer-models'
 import '../agent-watch/create-controls-catalog'
 import './room-composer-catalog'
 import './phone-room-composer.css'
+import { phoneMenuBar } from '../composer/phone-menu-bar'
 
 export type PhoneRoomComposerControlsProps = {
   chatId: string
@@ -41,6 +42,7 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
+  const menu = phoneMenuBar('room', { topics: true, agents: true })
   const selectedName = topics.find(topic => topic.chat_id === current?.chatId)?.name ?? current?.name
   const choose = (topic: TopicSummary | null) => {
     setView(null)
@@ -48,9 +50,9 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
   }
   return <div className="gg-phone-room-controls" data-testid="phone-room-composer-controls">
     <PhoneComposerControlRow>
-      <PhoneComposerControl label={selectedName ?? t('topics')} icon={<Hash />} active={!!current} dot={choices.hasUnread}
-        testId="phone-room-topics" onClick={() => setView('topics')} />
-      <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />
+      {menu.includes('topics') && <PhoneComposerControl label={selectedName ?? t('topics')} icon={<Hash />} active={!!current} dot={choices.hasUnread}
+        testId="phone-room-topics" onClick={() => setView('topics')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'topics' ? <div role="radiogroup" aria-label={t('topics')}>

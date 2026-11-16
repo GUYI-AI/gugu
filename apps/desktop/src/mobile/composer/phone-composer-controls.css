@@ -46,5 +46,6 @@
 .gg-phone-create-controls .gg-phone-composer-controls { flex-wrap: nowrap; }
 .gg-phone-create-controls .gg-phone-composer-control-label { max-width: none; overflow: visible; text-overflow: clip; }
 
-.gg-phone-composer-controls[data-editing] { opacity: 0; pointer-events: none; }
+.gg-phone-composer-controls[data-editing] { opacity: 0; pointer-events: none; height: 0; min-height: 0; padding-block: 0; margin-block: 0; overflow: hidden; }
+.gg-phone-composer-controls:empty { display: none; }
 @media (prefers-reduced-motion: reduce) { .gg-phone-composer-controls { transition: none; } }
