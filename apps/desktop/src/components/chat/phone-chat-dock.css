@@ -7,3 +7,4 @@
 .gg-phone-chat-dock .rtb-bar { padding-block: 0; }
 .gg-phone-chat-dock[data-running-status] :is([data-chat-composer], [data-topic-split-composer]) { padding-top: var(--spacing-sm) !important; }
 .gg-phone-chat-dock[data-running-status] [data-phone-composer-controls]:not([data-editing]) { padding-top: 0; }
+.gg-phone-chat-dock .rtb-more { display: inline-flex; align-items: center; }

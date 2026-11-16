@@ -88,7 +88,16 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
     if (token) {
       expect(rect(slot).height).toBe(rect(token.closest('.rtb-bar')!).height + parseFloat(getComputedStyle(slot).paddingTop))
       if (!keyboard) {
-        expect(data.pillToMenu).toBe(parseFloat(getComputedStyle(dock).getPropertyValue('--spacing-sm')))
+        const gap = parseFloat(getComputedStyle(dock).getPropertyValue('--spacing-sm'))
+        expect(data.pillToMenu).toBe(gap)
+        // A native button's inline line box can exceed the fixed pill height in
+        // fallback fonts. The visible pill-to-menu gap must stay the same.
+        const bar = token.closest<HTMLElement>('.rtb-bar')!
+        bar.style.fontFamily = 'Arial'
+        await document.fonts.ready
+        expect(rect(button).top - rect(token).bottom).toBe(gap)
+        expect(rect(bar.querySelector('.rtb-more')!).height).toBe(rect(token).height)
+        bar.style.removeProperty('font-family')
       }
     }
     if (keyboard) {
