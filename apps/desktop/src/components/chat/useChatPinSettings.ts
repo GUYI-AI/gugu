@@ -14,6 +14,8 @@ export const chatPins = replica({
   read: (owner: string, chatId: string): Promise<ChatPinSettings> => readChatPinSettings(owner, chatId),
   // Pushed: a value stays current until the watch says otherwise (the watch reads once more when it starts).
   fresh: Infinity,
+  // Back in the app after having left: read again (❌ on every focus of the main window: switching Gugu windows).
+  refreshOnFocus: true,
   watch: { group: (chatId) => chatId, start: (owner, chatId) => watchChatPinSettings(owner, chatId, () => { void chatPins.refresh(chatId) }) },
 })
 
