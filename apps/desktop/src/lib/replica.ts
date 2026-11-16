@@ -649,17 +649,19 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
         queryKey: [definition.name, owner],
         predicate: (query: { queryKey: QueryKey }) => args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
       }
-      // A first read already on its way (or waiting out a retry) began before what this refresh announces; react-query
-      // would fold the refresh into it. As a later read: dropped and read again now, its answer never drawn, and whoever
-      // awaits it gets the new read's (a silent cancel hands its promise on). A model that shares reads: once more after it.
+      // A first read already on its way began before what this refresh announces, and react-query folds the refresh into
+      // it (there is no value to keep meanwhile): read once more when it lands. One waiting out a retry after a failure has
+      // no attempt on its way: dropped and read now (its awaiters get the new read's answer: a silent cancel hands the
+      // promise on), ❌ the announcement waiting up to the backoff (30 s). A later read is cancelled and read again.
       const firstReads = queryClient.getQueryCache().findAll(filters)
         .filter((query) => query.state.fetchStatus !== 'idle' && query.state.data === undefined)
-      const restarted = definition.refreshJoinsRead ? [] : firstReads.map((query) => {
+      const backingOff = definition.refreshJoinsRead ? [] : firstReads.filter((query) => query.state.fetchFailureCount > 0)
+      const restarted = backingOff.map((query) => {
         void query.cancel({ silent: true })
         return query.fetch().catch(() => undefined)
       })
       await queryClient.invalidateQueries(filters, { cancelRefetch: !definition.refreshJoinsRead })
-      await Promise.all([...restarted, ...(definition.refreshJoinsRead ? firstReads : []).map((query) => query.promise?.catch(() => undefined)
+      await Promise.all([...restarted, ...firstReads.filter((query) => !backingOff.includes(query)).map((query) => query.promise?.catch(() => undefined)
         .then(() => queryClient.refetchQueries({ queryKey: query.queryKey, exact: true }, { cancelRefetch: false })))])
     },
   }
