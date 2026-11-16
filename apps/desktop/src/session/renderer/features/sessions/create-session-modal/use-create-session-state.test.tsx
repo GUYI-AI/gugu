@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The task-name suggestion is a command (an LLM call whose answer fills an editable input), fired once per request from
- * an effect (PLAN-REVIEW Q6): ❌ a cached read keyed by the request. Until the setting is read nothing is asked.
+ * an effect: ❌ a cached read keyed by the request. Until the setting is read nothing is asked.
  */
 const io = vi.hoisted(() => ({
   settings: null as null | { autoGenerateName: boolean },

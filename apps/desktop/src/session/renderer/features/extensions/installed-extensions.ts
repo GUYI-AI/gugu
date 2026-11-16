@@ -60,7 +60,7 @@ export interface RailApp {
   iconDataUrl: string | null;
 }
 
-/** The rail's dock kept for its first frame (PLAN v2 C4); a name over `DOCK_KEPT_NAME_MAX` is left out whole (null). */
+/** The rail's dock kept for its first frame; a name over `DOCK_KEPT_NAME_MAX` is left out whole (null). */
 export type KeptDock = { slots: ({ extensionId: string; name: string } | null)[]; count: number };
 
 /** `list` is absent only in a value restored from the snapshot: what is installed is not known yet, only the dock. */

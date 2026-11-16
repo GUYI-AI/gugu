@@ -235,7 +235,7 @@ describe('palette search reading', () => {
   });
 
   /**
-   * Review 4 Q5 (cell T7): typing three characters, the result area never goes rows → none → rows (each new key is unknown
+   * Typing three characters, the result area never goes rows → none → rows (each new key is unknown
    * until its read lands). The previous words' rows stay, dimmed, until the next words' arrive.
    */
   it('typing keeps the previous words\' rows (dimmed) until the next words\' land: never rows → none → rows', async () => {

@@ -161,7 +161,7 @@ describe('an App opened from the far-left rail', () => {
     expect(mocks.claims).toEqual([]);
   });
 
-  // A6 (PR 3): reload, then the rail's App clicked before what is installed is read — the page said 「已停用」 and the title was
+  // Reload, then the rail's App clicked before what is installed is read — the page said 「已停用」 and the title was
   // empty, then the App and its name appeared. Not read yet: the page held whole, the name's place held, nothing claimed.
   it('before what is installed is read, it never says switched off: the page and the name\'s place are held', () => {
     mocks.loaded = false;

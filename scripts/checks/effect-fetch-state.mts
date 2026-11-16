@@ -36,7 +36,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
- * The exemption categories (coordinator 2026-11-16, reviewed by the acceptance lane). Each: what it takes, and what it
+ * The exemption categories, a closed list so an exemption is a reason a reviewer can check. Each: what it takes, and what it
  * does not (printed with a finding). Nothing outside these lists is exempt.
  */
 export const EXEMPTIONS = {

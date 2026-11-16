@@ -309,7 +309,7 @@ describe('global search panel', () => {
   })
 
   /**
-   * Review 4 Q5 (cell T7): typing three characters, the results never go rows → none → rows and the list keeps its
+   * Typing three characters, the results never go rows → none → rows and the list keeps its
    * height: while the next words' readings are on their way, the previous words' rows stay, dimmed.
    */
   it('typing keeps the previous words\' results (dimmed) until the next words\' land: never rows → none → rows', async () => {

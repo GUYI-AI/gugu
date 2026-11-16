@@ -34,7 +34,7 @@ export function useAssistantPanel(ownerId: string | null, assistantId: string | 
   return useReplica(assistantPanel, ownerId && assistantId ? [assistantId] : null)
 }
 
-/** A panel's revision moved or it left; ❌ every cache event (readers that re-read on change would feed themselves, DE-1). */
+/** A panel's revision moved or it left; ❌ every cache event (readers that re-read on change would feed themselves). */
 export function onAssistantPanelChanged(assistantId: string | undefined, listener: () => void): () => void {
   const seen = new Map<string, string | null>()
   for (const entry of assistantPanel.entries(...(assistantId ? [assistantId] as [string] : []))) {

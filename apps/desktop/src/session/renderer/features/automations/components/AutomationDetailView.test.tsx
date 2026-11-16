@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Review 4 Q2 (cell U2 / AP10): a stored automation seeds its form once, its agent only from the machine's agent list.
+ * A stored automation seeds its form once, its agent only from the machine's agent list.
  * The form is not mounted until that list is read; meanwhile the sheet holds its place.
  */
 const io = vi.hoisted(() => ({

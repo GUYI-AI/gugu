@@ -60,7 +60,7 @@ describe('披露档位的写入 (W-08)', () => {
   });
 });
 
-describe('the dock kept across restarts (PLAN v2 C4)', () => {
+describe('the dock kept across restarts', () => {
   // What the snapshot keeps of a value put under a host's key (the definition's carry, as writing applies it).
   const carry = (value: unknown, hostKey = 'local') => {
     localStorage.clear();

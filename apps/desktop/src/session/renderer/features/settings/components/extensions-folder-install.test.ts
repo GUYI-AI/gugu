@@ -588,7 +588,7 @@ describe('市场页 (#7059)', () => {
     expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));
   });
 
-  // 重启:渲染进程是新的(查询缓存是空的),手上只有快照里的那份第一屏(`marketShelf` 的 carry,C2/D5)。
+  // 重启:渲染进程是新的(查询缓存是空的),手上只有快照里的那份第一屏(`marketShelf` 的 carry)。
   it('重启后第一帧:画快照里的第一屏(卡片原位、按钮和精选图是同尺寸占位);读到以后原位换上', async () => {
     const stored = new Map<string, string>();
     vi.stubGlobal('localStorage', {

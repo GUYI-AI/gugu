@@ -94,7 +94,7 @@ export const assistantIntegrationDetail = replica({
   local: (_owner: string, storeKey: string, id: string, _catalogVersion: string | null, locale: string) =>
     peekAssistantPanelIntegration(stores.get(storeKey), id, locale),
   fresh: Infinity,
-  // Not retried by itself: a store nobody registered is a failure said at once (C7), and the page offers a retry.
+  // Not retried by itself: a store nobody registered is a failure said at once, and the page offers a retry.
 })
 
 export function useAssistantIntegrationDetail(store: ConnectionMetadataStore | undefined, summary: IntegrationMetadata | null | undefined, locale: string) {

@@ -264,7 +264,7 @@ const AssistantAppItem = observer(function AssistantAppItem({ apps, app, chatId,
   )
 })
 
-/** The dock as last read, drawn before what is installed is read this run (PLAN v2 C4): the real items take these places. */
+/** The dock as last read, drawn before what is installed is read this run: the real items take these places. */
 function KeptDockRail({ dock }: { dock: KeptDock }) {
   const assistant = dock.slots.find((slot) => slot?.extensionId === ASSISTANT_APP_ID) ?? null
   const slots = [...dock.slots.filter((slot) => slot?.extensionId !== ASSISTANT_APP_ID), ...Array.from({ length: Math.max(0, dock.count - dock.slots.length) }, () => null)]
