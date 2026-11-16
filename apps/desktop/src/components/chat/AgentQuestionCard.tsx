@@ -8,6 +8,7 @@ import { useToast } from '../toastContext'
 import { Markdown } from '../markdown/Markdown'
 import { agentQuestionDraftKey, questionAnswerReady } from '../../lib/agentQuestion'
 import { AgentQuestionAnswers } from './AgentQuestionAnswers'
+import '../../i18n/registerAssistantCatalog'
 import './agent-question-card.css'
 
 type Draft = { step: number; answers: QuestionAnswer[]; custom: boolean[]; deferred: boolean; reviewing: boolean }
