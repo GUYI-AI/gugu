@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { confirmDanger } from '../../lib/confirmDanger'
 import { useTranslation } from 'react-i18next'
 import type { AgentDisplayStatus, GroupChatSettings, GroupCollabSnapshot, GroupMemberRole, ListenMode } from '@gugu/core/shared/types/chat'
 import { MoreHorizontal } from '@/lib/icons'
@@ -102,9 +103,13 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const setListenMode = useCallback((profile: MemberProfileCardModel, mode: ListenMode) => (
     runMutation(() => chatService.setAgentListenMode(chatId, profile.id, mode))
   ), [chatId, runMutation])
+  // Removing someone from a group or topic (or leaving it) asks first, from the member menu and the profile card alike.
   const remove = useCallback(async (profile: MemberProfileCardModel) => {
+    const title = !isGroup ? topicRemovalLabel(profile) : ownsAgent(profile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')
+    const description = !isGroup ? topicRemovalHint(profile) : t('group.settings.removeMember', { name: profile.displayName })
+    if (!(await confirmDanger({ title, description, confirmLabel: title }))) return
     if (await runMutation(() => chatService.removeGroupMember(chatId, profile.id))) profileCard.close()
-  }, [chatId, profileCard, runMutation])
+  }, [chatId, isGroup, ownsAgent, profileCard, runMutation, t, topicRemovalHint, topicRemovalLabel])
 
   const editControlsFor = useCallback((profile: MemberProfileCardModel): MemberProfileEditControls | undefined => {
     const manageable = canManage(profile)

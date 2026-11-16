@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next'
 import { Clock, Copy, Download, ExternalLink, GitFork, MessageSquare, Pencil, Pin, Reply, Share, SquareCheck, TextCursorInput, Trash, type IconComponent } from '@/lib/icons'
 import { SELECTED_MESSAGE_QUOTES_ENABLED } from '../../lib/messageQuoteRollout'
+import { confirmDanger } from '../../lib/confirmDanger'
 
 export type MessageActionTarget = {
   isRetracted: boolean
@@ -69,7 +70,11 @@ export function messageActionItems(input: MessageActionTarget, t: TFunction<'mes
     !!target.onEditMessage && { key: 'editMessage', icon: Pencil, label: t('message.actions.editMessage'), onSelect: target.onEditMessage },
     !!target.onForkTask && { key: 'forkTask', icon: GitFork, label: t('message.actions.forkTask'), onSelect: target.onForkTask },
     !!target.onSelect && { key: 'select', icon: SquareCheck, label: t('message.actions.select'), onSelect: target.onSelect, fold: true },
-    !!target.onDelete && { key: 'delete', icon: Trash, label: t('message.actions.delete'), onSelect: target.onDelete, danger: true, fold: true },
+    // Deleting cannot be undone (it may delete for everyone): it asks first, from every surface this table serves.
+    !!target.onDelete && { key: 'delete', icon: Trash, label: t('message.actions.delete'), danger: true, fold: true, onSelect: () => {
+      void confirmDanger({ title: t('message.actions.deleteTitle'), description: t('message.actions.deleteConfirm'), confirmLabel: t('message.actions.delete') })
+        .then((ok) => { if (ok) target.onDelete!() })
+    } },
   ]
   return items.filter((item): item is MessageActionItem => item !== false)
 }

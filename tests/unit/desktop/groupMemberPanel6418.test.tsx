@@ -9,6 +9,9 @@
 //   ⑤ Agent owners and source-group managers may edit listen mode; role/removal protection stays separate.
 import { act, Fragment, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Destructive actions ask first (lib/confirmDanger); here the person confirms.
+const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true))
+vi.mock('../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
 import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMemberItem } from '../../../packages/core/src/shared/types/chat'
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
 import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
