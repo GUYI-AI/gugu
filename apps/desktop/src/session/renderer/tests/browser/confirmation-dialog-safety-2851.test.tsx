@@ -80,6 +80,31 @@ for (const locale of ['zh-CN', 'en-US'] as const) {
   }
 }
 
+for (const locale of ['zh-CN', 'en-US'] as const) {
+  for (const width of [1100, 390]) it.each(['a<br>b.md', 'a<strong>b.md', 'a<file>b.md'])(`%s remains literal in the ${locale} save confirmation at ${width}px`, async (fileName) => {
+    await mount(locale, width, width === 390);
+    const onSuccess = vi.fn();
+    const onClose = vi.fn();
+    showModal('unsavedChangesModal', { fileName, onSuccess, onClose });
+    await settled();
+    await until('safe initial focus', () => document.activeElement === buttons()[1]);
+    const content = document.querySelector('[data-slot="dialog-content"] p')!;
+    const file = content.querySelector('strong')!;
+    expect(content.textContent).toBe(locale === 'zh-CN'
+      ? `要保存对「${fileName}」的更改吗？`
+      : `Do you want to save the changes to ${fileName}?`);
+    expect(file.textContent).toBe(fileName);
+    expect(file.childNodes).toHaveLength(1);
+    expect(file.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+    expect(content.querySelectorAll('br, file, strong strong')).toHaveLength(0);
+    expect(onSuccess).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledExactlyOnceWith();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(modalStore.isOpen).toBe(false);
+  });
+}
+
 it.each([
   ['zh-CN', 1100, false],
   ['en-US', 1100, false],

@@ -9,7 +9,7 @@
 // 两侧 key 集合必须逐字相等，所以中文侧照样写满两个形态。
 export const enUSSessionWorkflowMessages = {
   'file.unsavedChangesTitle': 'Unsaved changes',
-  'file.unsavedChangesDescription': 'Do you want to save the changes to <file>{fileName}</file>?',
+  'file.unsavedChangesDescription': 'Do you want to save the changes to <file/>?',
   'file.discardChanges': 'Discard',
   'transcript.copySelection': 'Copy selected text',
   'sessionImport.title': 'Import session',
@@ -618,7 +618,7 @@ export const enUSSessionWorkflowMessages = {
 
 export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflowMessages, string> = {
   'file.unsavedChangesTitle': '未保存的更改',
-  'file.unsavedChangesDescription': '要保存对「<file>{fileName}</file>」的更改吗？',
+  'file.unsavedChangesDescription': '要保存对「<file/>」的更改吗？',
   'file.discardChanges': '不保存',
   'transcript.copySelection': '复制所选文字',
   'sessionImport.title': '导入会话',

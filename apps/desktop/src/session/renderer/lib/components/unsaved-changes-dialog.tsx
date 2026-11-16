@@ -31,9 +31,7 @@ export function UnsavedChangesDialog({ fileName, onSuccess }: Props) {
             i18n={i18n}
             ns="session"
             i18nKey="file.unsavedChangesDescription"
-            values={{ fileName }}
-            tOptions={{ interpolation: { prefix: '{', suffix: '}' } }}
-            components={{ file: <strong /> }}
+            components={{ file: <strong>{fileName}</strong> }}
           />
         </p>
       </DialogContentArea>
