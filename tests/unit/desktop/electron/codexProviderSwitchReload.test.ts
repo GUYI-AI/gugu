@@ -4,11 +4,12 @@
  * (provider `gugu_platform`) must leave a task that takes the next turn with the conversation so far.
  *
  * Codex binds a thread to the provider it was created with: since 0.166 app-server refuses `thread/resume` under
- * another one, in both directions, whatever `modelProvider` the request carries. `thread/fork` run by the new
- * route's app-server does carry the thread's history onto that process's provider. The host's cross-route reload asks
- * the provider's descriptor (`credentialLifecycle.acp.sourceChangeSession`) what to do with the native session; this
- * drives the real bridge with that answer, the way the runtime issues it, against an app-server that keeps Codex's
- * rules (threads persist across adapter processes; a thread that never took a turn has no rollout to fork).
+ * another one, in both directions, whatever `modelProvider` the request carries. A `thread/fork` would carry the old
+ * route's encrypted reasoning, which the other account's upstream cannot decrypt (real OpenAI: 400
+ * `invalid_encrypted_content` on every later turn). The host's cross-route reload asks the provider's descriptor
+ * (`credentialLifecycle.acp.sourceChangeSession`) what to do with the native session; this drives the real bridge with
+ * that answer, the way the runtime issues it, against an app-server that keeps Codex's rules and writes rollouts
+ * (threads persist across adapter processes; a thread that never took a turn has no rollout).
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +23,7 @@ import { awaitFact } from '../../../support/awaitFact';
 const ADAPTER = resolve('apps/desktop/electron/runtime/codex-app-server-acp.mjs');
 const FAKE_CODEX = `#!/usr/bin/env node
 const fs = require('node:fs');
+const path = require('node:path');
 const store = process.env.FAKE_STORE;
 const provider = process.env.FAKE_PROVIDER;
 const load = () => fs.existsSync(store) ? JSON.parse(fs.readFileSync(store, 'utf8')) : {};
@@ -29,6 +31,15 @@ const save = (threads) => fs.writeFileSync(store, JSON.stringify(threads));
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
 const opened = (id) => ({ thread: { id, historyMode: 'paginated', ephemeral: false }, model: 'm', reasoningEffort: 'medium', modelProvider: provider });
 const noRollout = (id) => ({ code: -32600, message: 'no rollout found for thread id ' + id });
+// The rollout codex writes: a session_meta line, the thread's own context preamble, then per turn a turn_context line and
+// the turn's response items (server ids; this provider's encrypted reasoning).
+const rolloutPath = (id) => path.join(path.dirname(store), 'rollout-' + id + '.jsonl');
+const append = (id, line) => fs.appendFileSync(rolloutPath(id), JSON.stringify(line) + '\\n');
+const begin = (id) => {
+  append(id, { type: 'session_meta', payload: { id, model_provider: provider } });
+  append(id, { type: 'response_item', payload: { type: 'message', role: 'developer', id: 'dev-' + id, content: [{ type: 'input_text', text: 'instructions of ' + id }] } });
+  append(id, { type: 'response_item', payload: { type: 'message', role: 'user', id: 'ctx-' + id, content: [{ type: 'input_text', text: '<environment_context/>' }] } });
+};
 require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
   if (m.id === undefined) return;
@@ -39,7 +50,13 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
     const id = 'thread-' + (Object.keys(threads).length + 1);
     threads[id] = { provider, inputs: [], injected: [], rollout: false };
     save(threads);
+    begin(id);
     return out({ id: m.id, result: opened(id) });
+  }
+  if (m.method === 'thread/read') {
+    const t = threads[m.params.threadId];
+    if (!t?.rollout) return out({ id: m.id, error: { code: -32600, message: 'thread not loaded: ' + m.params.threadId } });
+    return out({ id: m.id, result: { thread: { id: m.params.threadId, path: rolloutPath(m.params.threadId) } } });
   }
   if (m.method === 'thread/resume') {
     const saved = threads[m.params.threadId];
@@ -53,23 +70,35 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   if (m.method === 'thread/fork') {
     const source = threads[m.params.threadId];
     if (!source?.rollout) return out({ id: m.id, error: noRollout(m.params.threadId) });
+    if (m.params.ephemeral) return out({ id: m.id, result: { thread: { id: 'ephemeral-fork', ephemeral: true }, modelProvider: provider } });
     const id = 'thread-' + (Object.keys(threads).length + 1);
-    threads[id] = { provider, inputs: [...source.inputs], injected: [], rollout: true, forkedFrom: m.params.threadId, ephemeral: m.params.ephemeral };
+    threads[id] = { provider, inputs: [...source.inputs], injected: [], rollout: true, forkedFrom: m.params.threadId };
     save(threads);
     return out({ id: m.id, result: opened(id) });
   }
   if (m.method === 'thread/inject_items') {
-    threads[m.params.threadId].injected.push(...m.params.items);
+    const t = threads[m.params.threadId];
+    t.injected.push(...m.params.items);
+    t.rollout = true;
     save(threads);
+    append(m.params.threadId, { type: 'turn_context', payload: {} });
+    for (const item of m.params.items) append(m.params.threadId, { type: 'response_item', payload: item });
     return out({ id: m.id, result: {} });
   }
   if (m.method === 'turn/start') {
     const thread = threads[m.params.threadId];
-    thread.inputs.push(m.params.input.map((part) => part.text).join(''));
+    const text = m.params.input.map((part) => part.text).join('');
+    thread.inputs.push(text);
     // The user message reaches the rollout even when the model call is refused (codex 0.169).
     thread.rollout = true;
     save(threads);
     const failed = process.env.FAKE_REFUSE_TURNS === '1';
+    append(m.params.threadId, { type: 'turn_context', payload: {} });
+    append(m.params.threadId, { type: 'response_item', payload: { type: 'message', role: 'user', id: 'msg_user_' + m.id, content: [{ type: 'input_text', text }] } });
+    if (!failed) {
+      append(m.params.threadId, { type: 'response_item', payload: { type: 'reasoning', id: 'rs_' + provider + '_' + m.id, summary: [], encrypted_content: 'sealed-to-' + provider } });
+      append(m.params.threadId, { type: 'response_item', payload: { type: 'message', role: 'assistant', id: 'msg_' + provider + '_' + m.id, content: [{ type: 'output_text', text: 'reply to ' + text }] } });
+    }
     const turn = failed
       ? { id: 'turn-' + m.id, status: 'failed', error: { message: 'unexpected status 401 Unauthorized', codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 401 } } } }
       : { id: 'turn-' + m.id, status: 'completed' };
@@ -96,7 +125,7 @@ afterEach(async () => {
 });
 
 type Reply = { result?: Record<string, unknown>; error?: { message?: string } };
-type Thread = { provider: string; inputs: string[]; injected: unknown[]; forkedFrom?: string; ephemeral?: boolean };
+type Thread = { provider: string; inputs: string[]; injected: Array<Record<string, unknown>>; forkedFrom?: string };
 
 function setUp() {
   dir = realpathSync(mkdtempSync(join(tmpdir(), 'gugu-codex-provider-switch-')));
@@ -168,16 +197,32 @@ async function switchRoute(from: string, to: string, firstTurn: Record<string, s
   return { original, current, threads: threads() };
 }
 
+const userText = 'before the switch';
+/** The conversation the new route's thread was given: the earlier turn, nothing sealed to the old route's account. */
+function expectInheritedHistory(thread: Thread, from: string, replied: boolean) {
+  expect(thread.injected).toEqual([
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: userText }] },
+    ...(replied ? [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `reply to ${userText}` }] }] : []),
+  ]);
+  const sent = JSON.stringify(thread.injected);
+  expect(sent).not.toContain('encrypted_content');
+  expect(sent).not.toContain(`sealed-to-${from}`);
+  expect(sent).not.toContain('"id"');
+  expect(sent).not.toContain('instructions of');
+}
+
 describe('Codex task switching between the own route and a platform model', () => {
   it.each([
     ['own (openai) -> platform (gugu_platform)', 'openai', 'gugu_platform'],
     ['platform (gugu_platform) -> own (openai)', 'gugu_platform', 'openai'],
-  ])('%s: the next turn runs on the new route with the conversation so far', async (_label, from, to) => {
+  ])('%s: the next turn runs on a new thread of the new route with the conversation so far', async (_label, from, to) => {
     const { original, current, threads } = await switchRoute(from, to);
     expect(current).not.toBe(original);
-    // The new route's thread carries the earlier turn, as the same agent: no "you are a forked agent" handoff.
-    expect(threads[current]).toMatchObject({ provider: to, inputs: ['before the switch', 'after the switch'], injected: [], ephemeral: false });
-    expect(threads[current].forkedFrom).toBe(original);
+    // A new thread on the new route (not a codex fork, which would carry the old route's encrypted reasoning), given
+    // the earlier turn without anything sealed to the old route's account; the same agent, so no fork handoff.
+    expect(threads[current]).toMatchObject({ provider: to, inputs: ['after the switch'] });
+    expect(threads[current].forkedFrom).toBeUndefined();
+    expectInheritedHistory(threads[current], from, true);
     // The old thread is left as it was on its own route.
     expect(threads[original]).toMatchObject({ provider: from, inputs: ['before the switch'] });
   });
@@ -190,8 +235,17 @@ describe('Codex task switching between the own route and a platform model', () =
   });
 
   it('a thread whose first turn was refused (401) switches over and keeps that message', async () => {
-    const { original, current, threads } = await switchRoute('gugu_platform', 'openai', { FAKE_REFUSE_TURNS: '1' });
-    expect(threads[current]).toMatchObject({ provider: 'openai', inputs: ['before the switch', 'after the switch'], injected: [] });
-    expect(threads[current].forkedFrom).toBe(original);
+    const { current, threads } = await switchRoute('gugu_platform', 'openai', { FAKE_REFUSE_TURNS: '1' });
+    expect(threads[current]).toMatchObject({ provider: 'openai', inputs: ['after the switch'] });
+    expectInheritedHistory(threads[current], 'gugu_platform', false);
+  });
+
+  it('a route switch of a thread that never took a turn reports the missing rollout the host classifies', async () => {
+    setUp();
+    const before = await adapterOn('openai');
+    const original = String((await before('session/new', open())).result?.sessionId);
+    const after = await adapterOn('gugu_platform');
+    const reopened = await reopen(after, original, true);
+    expect(reopened.error?.message).toBe(`no rollout found for thread id ${original}`);
   });
 });

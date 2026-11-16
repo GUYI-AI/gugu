@@ -361,16 +361,19 @@ async function provisionAndOverrideOnce(
     // thread 就是咕咕载入的,排队的消息会立刻起轮、TUI 又成了「中途加入」。于是在一台**临时**
     // app-server 上 fork(fork 出来的 thread 当场落盘,codex 的设计如此),拆掉它,再把这条已在盘上的
     // thread 当成 resume 交给 TUI 载入 —— 与「重新打开」走同一条路。代价:fork 时多起一次 app-server。
-    // 换计费路的分叉(`routeSwitchThreadId`)走同一台临时 app-server:它带着新路的 provider,fork 出来的 thread
-    // 就落在新路上;同一个 agent 接着干,❌ 补交接。
-    const forkOnScratchAppServer = async (source: string, handoff: boolean): Promise<string> => {
+    // 换计费路(`routeSwitchThreadId`)也在同一台临时 app-server 上做:它带着新路的 provider,新 thread 就落在新路上;
+    // 同一个 agent 接着干,❌ 补交接。
+    const forkOnScratchAppServer = async (source: string, routeSwitch: boolean): Promise<string> => {
       const scratch = new CodexAppServerSession(`${provisioned!.guguAgentUserId}:fork-scratch`, codexBin!)
       try {
-        const forked = await scratch.start(info.cwd, { ...engineOptions, forkFromThreadId: source })
+        // 换计费路:❌ `thread/fork`(它把旧路的加密推理原样带过来,见 @@@route-switch-history)—— 新线程 + 注入
+        // 去掉封存内容的历史,与 ACP 桥同一个 helper。新线程注入后即落盘,TUI 照常 resume 它。
+        const forked = await scratch.start(info.cwd, routeSwitch ? { ...engineOptions } : { ...engineOptions, forkFromThreadId: source })
         if (!forked) throw new Error('codex scratch app-server fork returned no thread id')
+        if (routeSwitch) await scratch.inheritRouteSwitchHistory(source)
         // @@@fork-identity 新 agent 的身份指令 codex 不认(openai/codex#19045)⇒ 趁还在临时 app-server 上,
         // 往历史末尾补一条只含身份差异与交接说明的开发者消息;它随 thread 落盘,TUI 载入后照样生效。
-        if (handoff) await scratch.injectItems(codexForkHandoffItems(engineOptions.developerInstructions))
+        else await scratch.injectItems(codexForkHandoffItems(engineOptions.developerInstructions))
         return forked
       } finally {
         await scratch.dispose()
@@ -378,7 +381,7 @@ async function provisionAndOverrideOnce(
     }
     const tuiResumeThreadId = forkThreadId || routeSwitchThreadId
       ? await awaitStartupPhase(
-        forkOnScratchAppServer((forkThreadId ?? routeSwitchThreadId)!, !routeSwitchThreadId),
+        forkOnScratchAppServer((forkThreadId ?? routeSwitchThreadId)!, Boolean(routeSwitchThreadId)),
         signal,
         (ms) => { codexSteps['scratch-fork'] = ms },
       )

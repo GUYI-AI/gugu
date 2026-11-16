@@ -181,9 +181,9 @@ export const codexSessionBundleDescriptor = {
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
       // A Codex thread keeps the model provider it was created on: since codex 0.166 app-server refuses
-      // `thread/resume` under another one (openai/codex#57840, tightened in #59503). `thread/fork` run by
-      // the new route's process does take the thread's history onto that process's provider, so a
-      // cross-route reload forks the thread and the agent keeps its context.
+      // `thread/resume` under another one (openai/codex#57840, tightened in #59503). A cross-route reload
+      // therefore continues on a new thread of the new route that is given the conversation so far, without
+      // the old route's encrypted reasoning (the bridge's @@@route-switch-history), and the agent keeps its context.
       sourceChangeSession: 'fork',
     },
     'app-server': {

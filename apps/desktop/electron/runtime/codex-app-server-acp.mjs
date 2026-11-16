@@ -12,6 +12,7 @@ import { GUGU_MCP_CONFIG_KEY, normalizeGuguToolName } from '../mcp/gugu-mcp-name
 import { joinPromptText, promptInputItems } from './codex-app-server-prompt.mjs'
 import { historyUnknownError, replayHistoryWithinBudget, resumeReplayRequest } from './codex-app-server-history.mjs'
 import { codexForkHandoffItems } from './codex-fork-handoff.mjs'
+import { routeSwitchHistory } from './codex-route-history.mjs'
 import { memoizeSuccess, writeCodexModelCatalog } from './codex-model-catalog.mjs'
 // esbuild 把它打进 dist-electron/runtime;单测里 node 直接跑这份源码,所以写 `.ts` 全路径。
 import { spawnOwnedChild } from '../../../../packages/session-core/src/exec/owned-child.ts'
@@ -2222,27 +2223,42 @@ async function handleAcpRequest(message) {
     // ❌ 不许把缺省当成「一定是运行时分叉」:那样持久分叉会开出一条重开即消失的会话,
     //    而症状要到用户下次打开它时才出现。
     const ephemeralFork = params?._meta?.gugu?.ephemeralFork !== false
-    const forked = await appRequest('thread/fork', {
-      serviceTier: 'default',
-      threadId: params.sessionId,
-      ephemeral: ephemeralFork,
-      excludeTurns: true,
-      cwd: params.cwd,
-      ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
-      ...developerInstructionsFrom(params),
-    })
-    sessionId = String(forked?.thread?.id ?? '')
-    if (!sessionId) throw new Error('local Codex thread/fork returned no thread id')
-    // @@@fork-identity 持久分叉 = 新 agent。codex 不认 thread/fork 带的新指令(openai/codex#19045),
-    // 模型仍读到源会话的身份 ⇒ 在历史末尾补一条只含身份差异与交接说明的开发者消息(见 codex-fork-handoff)。
-    // 运行时分叉(侧边聊天)是同一个 agent,身份没变,❌ 不注入。换计费路的分叉(`forkKeepsAgent`,见
-    // @@@resume-provider)也是同一个 agent 接着干,只是换了计费路,同样 ❌ 不注入。
+    // 换计费路的分叉(`forkKeepsAgent`):同一个 agent 接着干,只是换了计费路。❌ `thread/fork` —— 它把旧路的加密推理
+    // 原样带过来,另一个账号的上游解不开(见 @@@route-switch-history);在这条路上开新线程,注入去掉封存内容的历史。
     const keepsAgent = params?._meta?.gugu?.forkKeepsAgent === true
-    if (!ephemeralFork && !keepsAgent) {
-      await appRequest('thread/inject_items', {
-        threadId: sessionId,
-        items: codexForkHandoffItems(developerInstructionsFrom(params).developerInstructions),
+    let forked
+    if (keepsAgent) {
+      const history = await routeSwitchHistory(appRequest, params.sessionId)
+      forked = await startThread({
+        cwd: params.cwd,
+        ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
+        ...(requestedPermission ? requestedPermission.threadStart : {}),
+        ...developerInstructionsFrom(params),
       })
+      sessionId = String(forked?.thread?.id ?? '')
+      if (!sessionId) throw new Error('local Codex thread/start returned no thread id')
+      if (history.length) await appRequest('thread/inject_items', { threadId: sessionId, items: history })
+    } else {
+      forked = await appRequest('thread/fork', {
+        serviceTier: 'default',
+        threadId: params.sessionId,
+        ephemeral: ephemeralFork,
+        excludeTurns: true,
+        cwd: params.cwd,
+        ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
+        ...developerInstructionsFrom(params),
+      })
+      sessionId = String(forked?.thread?.id ?? '')
+      if (!sessionId) throw new Error('local Codex thread/fork returned no thread id')
+      // @@@fork-identity 持久分叉 = 新 agent。codex 不认 thread/fork 带的新指令(openai/codex#19045),
+      // 模型仍读到源会话的身份 ⇒ 在历史末尾补一条只含身份差异与交接说明的开发者消息(见 codex-fork-handoff)。
+      // 运行时分叉(侧边聊天)是同一个 agent,身份没变,❌ 不注入。
+      if (!ephemeralFork) {
+        await appRequest('thread/inject_items', {
+          threadId: sessionId,
+          items: codexForkHandoffItems(developerInstructionsFrom(params).developerInstructions),
+        })
+      }
     }
     if (requestedPermission) {
       await appRequest('thread/settings/update', {
@@ -2363,8 +2379,8 @@ async function handleAcpRequest(message) {
     // 这座桥不按报错文字判断 —— 各版本说法不同,而是否换了计费路是宿主早就知道的事。
     //
     // ⇒ 换计费路由宿主决定:codex descriptor 声明 `sourceChangeSession: 'fork'`,宿主重开时不 resume 原线程,
-    // 而是让新路的这个进程 `session/fork` 它(`_meta.gugu.forkKeepsAgent`):`thread/fork` 把历史带到这个进程的
-    // provider 上(0.169 实测两个方向都通、新线程里有之前的对话、之后在这条路上 resume 正常)。
+    // 而是让新路的这个进程 `session/fork` 它(`_meta.gugu.forkKeepsAgent`):在新路上开新线程、注入去掉封存内容的
+    // 历史(见 @@@route-switch-history;0.169 实测两个方向都通、新线程里有之前的对话、之后在这条路上 resume 正常)。
     // 所以到这里的 resume 永远是同一条路,用 rollout 里那个 provider 就对,❌ 不再带 `modelProvider` 覆盖。
     const resumed = await appRequest('thread/resume', {
       serviceTier: 'default',
