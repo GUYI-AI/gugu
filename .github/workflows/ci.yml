@@ -346,6 +346,19 @@ jobs:
           container-image: ${{ env.PLAYWRIGHT_IMAGE }}
       - run: node scripts/test-infra/vitest-browser-shards.mjs --project session-browser --shard-group=${{ matrix.shard }}/3 --shards-per-group=4
         shell: bash .github/actions/setup-playwright/run-in-container.sh {0}
+      - name: Capture native skill files through the real creation page
+        if: ${{ always() && !cancelled() && matrix.shard == 3 }}
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          skills_capture_root="$(mktemp -d "${TMPDIR:-/tmp}/gugu-skills-capture.XXXXXX")"
+          trap 'rm -rf -- "$skills_capture_root"' EXIT
+          mkdir -p "$skills_capture_root/gugu-home" "$skills_capture_root/user-data"
+          export GUGU_SKILLS_CAPTURE_ROOT="$skills_capture_root"
+          export GUGU_HOME="$skills_capture_root/gugu-home"
+          export GUGU_USER_DATA_DIR="$skills_capture_root/user-data"
+          pnpm exec vitest run --config capture-tools/native-skills/vitest.config.ts --project=session-browser --maxWorkers=1
+        shell: bash .github/actions/setup-playwright/run-in-container.sh {0}
       - name: Upload phone regression screenshots
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -355,6 +368,9 @@ jobs:
             apps/desktop/src/session/renderer/tests/browser/**/owner-phone-regression/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/mobile-create-model-copy.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-work-model-copy.test.tsx/**/*.png
+            apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-composer-two-line-height.test.tsx/**/*.png
+            apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-composer-height-real-entries.test.tsx/**/*.png
+            capture-tools/native-skills/__screenshots__/**/*.png
           if-no-files-found: ignore
           retention-days: 14
   web-smoke:
