@@ -1,3 +1,4 @@
+import { isAssistantPanelReadRetryable, retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead'
 import { isCloudComputerNotOpen } from '@gugu/core/cloud/cloudComputer'
 import type { ChatChannelList } from '@gugu/core/cloud/chatChannels'
 import { ConnectionError } from '@gugu/core/cloud/connections'
@@ -93,6 +94,17 @@ export type IntegrationAccounts =
   /** The host is older than accounts per provider (#7240): the detail draws one account. */
   | { supported: false }
 
+/**
+ * How a host's connection reads are asked again (as before PR 3): a host behind the assistant panel retries a failure that
+ * may pass (its computer waking) twice and, while it fails so, asks again every 30 s; a fixed fact (unprepared, signed out…)
+ * fails at once. This desktop's own IPC and another machine are not retried (an offline machine would only hang).
+ */
+const panelHost = (hostKey: string) => !!peekLibraryHost(hostKey)?.assistantPanelExpected
+const hostRetry = (failures: number, error: Error, hostKey: string) => panelHost(hostKey) && retryAssistantPanelRead(failures, error)
+const hostRecheck = (_value: unknown, error: Error | null, hostKey: string) =>
+  error && panelHost(hostKey) && isAssistantPanelReadRetryable(error) ? 30_000 : false
+const hostReadPolicy = { retry: hostRetry, retryDelay: connectionReadDelay, refreshEvery: hostRecheck }
+
 const legacyPanelView = (hostKey: string, locale: string) => {
   const host = peekLibraryHost(hostKey)
   return host?.assistantPanel ? peekAssistantPanelIntegrations(host.assistantPanel, locale) : undefined
@@ -104,8 +116,7 @@ export const integrationsCatalog = replica({
   read: (_owner: string, hostKey: string, locale: string): Promise<IntegrationList> => libraryHostOf(hostKey).integrations.list(locale),
   // A host's catalog changes with its build or its panel's publication: both signal.
   fresh: Infinity,
-  retry: 2,
-  retryDelay: connectionReadDelay,
+  ...hostReadPolicy,
   local: (_owner, hostKey, locale) => legacyPanelView(hostKey, locale)?.items as IntegrationList | undefined,
 })
 
@@ -115,8 +126,7 @@ export const integrationStatuses = replica({
   read: (_owner: string, hostKey: string): Promise<ConnectionStatuses> => libraryHostOf(hostKey).integrations.checkAllConnections(),
   fresh: 30_000,
   refreshOnFocus: true,
-  retry: 2,
-  retryDelay: connectionReadDelay,
+  ...hostReadPolicy,
   local: (_owner, hostKey) => legacyPanelView(hostKey, 'en-US')?.statuses as ConnectionStatuses | undefined,
 })
 
@@ -125,8 +135,7 @@ export const configuredConnections = replica({
   scope: 'device',
   read: (_owner: string, hostKey: string): Promise<ConfiguredConnections> => libraryHostOf(hostKey).integrations.checkConfiguredConnections(),
   fresh: Infinity,
-  retry: 2,
-  retryDelay: connectionReadDelay,
+  ...hostReadPolicy,
   local: (_owner, hostKey) => legacyPanelView(hostKey, 'en-US')?.configured as ConfiguredConnections | undefined,
 })
 
@@ -143,6 +152,7 @@ export const integrationAccounts = replica({
   },
   fresh: 30_000,
   refreshOnFocus: true,
+  ...hostReadPolicy,
 })
 
 export const integrationAccountChecks = replica({
@@ -151,6 +161,7 @@ export const integrationAccountChecks = replica({
   read: (_owner: string, hostKey: string, integrationId: string) => libraryHostOf(hostKey).integrations.checkAccounts(integrationId),
   fresh: 30_000,
   refreshOnFocus: true,
+  ...hostReadPolicy,
 })
 
 /** What a connection change (made here or heard from the owner's bus) reads again: every model above. */

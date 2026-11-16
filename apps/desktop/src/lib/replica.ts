@@ -72,8 +72,11 @@ type Definition<A extends unknown[], V> = {
   refreshOnFocus?: boolean
   /** `refresh` shares a read already on its way instead of cancelling it (for reads that are retried and polled). */
   refreshJoinsRead?: boolean
-  /** Read again this often while a surface shows it (ms); a function of the value shown decides per value (false = not now). */
-  refreshEvery?: number | ((value: V | undefined) => number | false)
+  /**
+   * Read again this often while a surface shows it (ms); a function of the value shown, the last read's failure and the
+   * entry's arguments decides per entry (false = not now).
+   */
+  refreshEvery?: number | ((value: NoInfer<V> | undefined, error: Error | null, ...args: Later<A>) => number | false)
   /**
    * `always`: read even while the browser says it is offline — a read that goes to this device (its main process, the
    * local library; main reaching another machine is main's to answer), so it fails loud instead of waiting unknown. A
@@ -91,8 +94,8 @@ type Definition<A extends unknown[], V> = {
     group?: (...args: Later<A>) => unknown
     start: (owner: string, ...args: Later<A>) => () => void
   }
-  /** How many times a failed read is retried before the reading is an error. Default 0: fail loud. */
-  retry?: number | true
+  /** How many times a failed read is retried before the reading is an error (or, per failure and entry, whether). Default 0: fail loud. */
+  retry?: number | true | ((failures: number, error: Error, ...args: Later<A>) => boolean)
   retryDelay?: (attempt: number) => number
   /**
    * A first source on this device (the IM library's own copy): asked once when a key is first wanted, its answer shows
@@ -574,9 +577,9 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     queryKey: key,
     staleTime: definition.fresh ?? 0,
     gcTime: definition.keep ?? Infinity,
-    retry: definition.retry ?? false,
+    retry: typeof definition.retry === 'function' ? retryOf(definition.retry, key) : definition.retry ?? false,
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
-    ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery) } : {}),
+    ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery, key) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
     networkMode: typeof definition.networkMode === 'function' ? definition.networkMode(...(key.slice(2) as Later<A>))
       : definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
@@ -677,9 +680,13 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   }
 }
 
-/** react-query asks the interval of the query; a definition asks it of the value shown. */
-function refetchIntervalOf<V>(every: number | ((value: V | undefined) => number | false)) {
-  return typeof every === 'number' ? every : (query: { state: { data: unknown } }) => every(query.state.data as V | undefined)
+/** react-query asks the interval and the retry of the query; a definition asks them of the value shown, the failure and its arguments. */
+function refetchIntervalOf<A extends unknown[], V>(every: number | ((value: V | undefined, error: Error | null, ...args: A) => number | false), key: QueryKey) {
+  return typeof every === 'number' ? every
+    : (query: { state: { data: unknown; error: Error | null } }) => every(query.state.data as V | undefined, query.state.error, ...(key.slice(2) as A))
+}
+function retryOf<A extends unknown[]>(retry: (failures: number, error: Error, ...args: A) => boolean, key: QueryKey) {
+  return (failures: number, error: Error) => retry(failures, error, ...(key.slice(2) as A))
 }
 
 function readingOfState(state: { data: unknown; error: Error | null; fetchFailureReason: Error | null; status: string } | undefined, stale: boolean, key: QueryKey): Reading<never> {

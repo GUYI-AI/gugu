@@ -36,18 +36,18 @@ function Probe() { api = useMcpLibrary(); return null }
 
 it('refused, and the read again fails too: back to the groups read before the click', async () => {
   await h.render(<Probe />)
-  await vi.waitFor(() => expect(api.provided?.guguToolsOff).toEqual([]))
+  await vi.waitFor(() => expect((api.provided.state === 'value' ? api.provided.value.guguToolsOff : null)).toEqual([]))
   library.setGuguToolsOff.mockRejectedValue(new Error('refused'))
   library.provided.mockRejectedValue(new Error('host gone'))
   await act(async () => { await expect(api.setGuguToolsOff(['files'] as never)).rejects.toThrow('refused') })
-  expect(api.provided?.guguToolsOff).toEqual([])
+  expect((api.provided.state === 'value' ? api.provided.value.guguToolsOff : null)).toEqual([])
 })
 
 it('refused, and the read again lands: what the host says now', async () => {
   await h.render(<Probe />)
-  await vi.waitFor(() => expect(api.provided?.guguToolsOff).toEqual([]))
+  await vi.waitFor(() => expect((api.provided.state === 'value' ? api.provided.value.guguToolsOff : null)).toEqual([]))
   library.setGuguToolsOff.mockRejectedValue(new Error('refused'))
   library.provided.mockResolvedValue({ builtIn: ['gugu'], servers: [], guguToolsOff: ['web'] })
   await act(async () => { await expect(api.setGuguToolsOff(['files'] as never)).rejects.toThrow('refused') })
-  expect(api.provided?.guguToolsOff).toEqual(['web'])
+  expect((api.provided.state === 'value' ? api.provided.value.guguToolsOff : null)).toEqual(['web'])
 })

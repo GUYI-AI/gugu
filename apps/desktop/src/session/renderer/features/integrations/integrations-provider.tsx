@@ -97,10 +97,10 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   const ownerReading = useOwnerConnectionsReading(ownerMode ? host.connectionMetadata : undefined);
   useConnectionReadNotice(`snapshot:${host.key}`, ownerReading.state === 'value', ownerMode && ownerReading.state === 'error' ? Infinity : 0);
   const ownerView = useMemo(() => ownerReading.state === 'value' ? ownerConnectionMetadataView(ownerReading.value, locale) : null, [ownerReading, locale]);
-  const asked = !ownerMode && enabled;
-  const listReading = useReplica(integrationsCatalog, asked ? [host.key, locale] : null);
-  const statusReading = useReplica(integrationStatuses, asked ? [host.key] : null);
-  const configuredReading = useReplica(configuredConnections, asked ? [host.key] : null);
+  // Not owner mode: this host's own reads; while it cannot be asked (offline) what was read of it stays drawn.
+  const listReading = useReplica(integrationsCatalog, ownerMode ? null : [host.key, locale], { read: enabled });
+  const statusReading = useReplica(integrationStatuses, ownerMode ? null : [host.key], { read: enabled });
+  const configuredReading = useReplica(configuredConnections, ownerMode ? null : [host.key], { read: enabled });
 
   const listData: IntegrationMetadata[] | null = ownerMode ? ownerView?.items ?? builtinConnectionCatalog(locale)
     : listReading.state === 'value' ? listReading.value : null;
@@ -274,8 +274,9 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
         connectionCheckError: metadataExpected && statusData !== null && isAssistantPanelReadRetryable(connectionReadError) ? null : connectionReadError,
         configuredConnectionsError: metadataExpected && configuredData !== null && isAssistantPanelReadRetryable(configuredConnectionsError) ? null : configuredConnectionsError,
         configuredConnections: configuredData,
-        isCheckingConfiguredConnections: configuredData === null && !configuredConnectionsError,
-        isCheckingConnections: statusData === null && !connectionReadError,
+        // Checking = a read on its way or due: ❌ for a host not asked now (offline), whose answer never comes.
+        isCheckingConfiguredConnections: configuredData === null && !configuredConnectionsError && (ownerMode || enabled),
+        isCheckingConnections: statusData === null && !connectionReadError && (ownerMode || enabled),
         reloadConnections: invalidateStatuses,
         connectIntegration,
         disconnectIntegration,

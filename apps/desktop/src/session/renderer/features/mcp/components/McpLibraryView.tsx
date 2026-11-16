@@ -23,6 +23,7 @@ import { GuguToolGroups } from './gugu-tool-groups';
 import { McpLibraryRow } from './mcp-library-row';
 import { harnessMcpServers, useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
 import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 
 /**
@@ -91,36 +92,45 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
           <div className="flex flex-col gap-6 py-8">
             <section data-slot="mcp-library-gugu" className="flex flex-col">
               <SectionLabel className="!px-0">{translate('mcpLibrary.ownGroup')}</SectionLabel>
-              {library.provided?.builtIn.map((name) => (
-                <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
-              ))}
-              <ProvidedGroup
-                slot="mcp-library-integrations"
-                title={translate('mcpLibrary.integrationsGroup')}
-                servers={library.provided?.servers.filter((server) => server.group === 'integrations') ?? []}
-                action={{
-                  label: translate('mcpLibrary.manageIntegrations'),
-                  onClick: onOpenIntegrations,
-                }}
-                keepEmpty
-                library={library}
-                onFail={fail}
-              />
-              <ProvidedGroup
-                slot="mcp-library-apps"
-                title={translate('mcpLibrary.appsGroup')}
-                servers={library.provided?.servers.filter((server) => server.group === 'apps') ?? []}
-                {...(appsHere
-                  ? {
-                      action: {
-                        label: translate('mcpLibrary.manageApps'),
-                        onClick: () => appsHere!.openAppsPage(),
-                      },
-                    }
-                  : {})}
-                library={library}
-                onFail={fail}
-              />
+              {/* Its three groups not read: a placeholder, or what failed with a retry (❌ an empty 「集成」 as if none were there). */}
+              {library.provided.state === 'unknown' ? (
+                <Unknown className="my-2 h-8 w-full" />
+              ) : library.provided.state === 'error' ? (
+                <ReadFailedLine message={messageForUser(library.provided.error)} onRetry={library.reload} className="my-2" />
+              ) : (
+                <>
+                  {library.provided.value.builtIn.map((name) => (
+                    <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
+                  ))}
+                  <ProvidedGroup
+                    slot="mcp-library-integrations"
+                    title={translate('mcpLibrary.integrationsGroup')}
+                    servers={library.provided.value.servers.filter((server) => server.group === 'integrations')}
+                    action={{
+                      label: translate('mcpLibrary.manageIntegrations'),
+                      onClick: onOpenIntegrations,
+                    }}
+                    keepEmpty
+                    library={library}
+                    onFail={fail}
+                  />
+                  <ProvidedGroup
+                    slot="mcp-library-apps"
+                    title={translate('mcpLibrary.appsGroup')}
+                    servers={library.provided.value.servers.filter((server) => server.group === 'apps')}
+                    {...(appsHere
+                      ? {
+                          action: {
+                            label: translate('mcpLibrary.manageApps'),
+                            onClick: () => appsHere!.openAppsPage(),
+                          },
+                        }
+                      : {})}
+                    library={library}
+                    onFail={fail}
+                  />
+                </>
+              )}
             </section>
             <section data-slot="mcp-library-own" className="flex flex-col">
               <SectionLabel
@@ -330,7 +340,7 @@ function BuiltInRow({
         check ? (
           <GuguToolGroups
             tools={check.tools}
-            off={library.provided?.guguToolsOff}
+            off={library.provided.state === 'value' ? library.provided.value.guguToolsOff : undefined}
             disabled={disabled}
             onChange={(off) => void library.setGuguToolsOff(off).catch(onFail)}
           />

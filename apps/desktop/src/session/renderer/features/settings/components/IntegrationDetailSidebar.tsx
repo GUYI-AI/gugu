@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/toolti
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { GitHubAccountSummary } from '@shared/github';
 import { Unknown } from '@/components/ui/Unknown';
+import { messageForUser } from '@/lib/userFacingError';
 import type { Reading } from '@/lib/replica';
 import { githubAccounts as githubAccountsModel } from '@renderer/lib/hooks/useGithubAccounts';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
@@ -225,8 +226,8 @@ function StatusDot({ tone }: { tone: StatusDotTone }) {
 /** 一个账号的那一家(状态 / 连接时间 / 账号三行);连接时间读得到才列。 */
 function SingleAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
-  const { accounts } = useIntegrationAccounts(integration.id, integration.isConfigured);
-  const account = accounts?.[0];
+  const { accounts, retry } = useIntegrationAccounts(integration.id, integration.isConfigured);
+  const account = accounts.state === 'value' && accounts.value.supported ? accounts.value.accounts[0] : undefined;
   // 凭据还存着、检查却不通过(令牌被撤 / 过期):说检查的原话(悬停),给「重新连接」(同一个连接弹窗)。
   const failed = integration.connectionError;
   return (
@@ -253,8 +254,9 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
         <InfoRow label={translate('integrations.accountRowLabel')}>
           <span className="truncate">
             {integration.displayName ??
-              (accounts === null && integration.isConfigured ? <Unknown className="w-24" /> : account?.displayName ??
-              translate('integrations.accountFallbackName', { name: integration.name }))}
+              (accounts.state === 'unknown' && integration.isConfigured ? <Unknown className="w-24" />
+                : accounts.state === 'error' ? <ReadFailedLine message={messageForUser(accounts.error)} onRetry={retry} />
+                : account?.displayName ?? translate('integrations.accountFallbackName', { name: integration.name }))}
           </span>
         </InfoRow>
       </div>
@@ -288,36 +290,36 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
 /** 一家连了几个账号(邮箱):逐个列、逐个查、逐个断,底下「添加另一个账号」(多账号那一组)。 */
 function MultiAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
-  const { supported, accounts, checks, isChecking, error, retry } = useIntegrationAccounts(
-    integration.id,
-    integration.isConfigured
-  );
-  if (!error && (accounts === null || supported === null)) return <LoadingIndicator size="inline" className="text-foreground-muted" />;
-  // 读不到账号:说出来、给重试。❌ 落回单账号的样子 —— 那里的「断开连接」会一次删掉所有邮箱。
-  if (error) {
-    return (
-      <div className="flex items-center justify-between gap-3 rounded-lg bg-background-2 p-3">
-        <p className="min-w-0 text-xs text-foreground-warning" role="alert">
-          {/* @@@raw detail — 读账号失败的原话。 */}
-          {error instanceof Error ? error.message : String(error)}
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={retry}>
-          {translate('integrations.cliRetry')}
-        </Button>
-      </div>
-    );
-  }
+  const { accounts, checks, reachable, retry } = useIntegrationAccounts(integration.id, integration.isConfigured);
+  // Not read: being read, or that machine cannot be asked now (it says so above the page).
+  if (accounts.state === 'unknown') return reachable ? <LoadingIndicator size="inline" className="text-foreground-muted" /> : null;
+  // 读不到账号(或重读、逐个查没成):说出来、给重试。❌ 落回单账号的样子 —— 那里的「断开连接」会一次删掉所有邮箱。
+  const failure = accounts.error ?? (checks.state === 'unknown' ? null : checks.error);
+  const failed = failure ? (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-background-2 p-3">
+      <p className="min-w-0 text-xs text-foreground-warning" role="alert">
+        {/* @@@raw detail — 读账号失败的原话。 */}
+        {failure.message}
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={retry}>
+        {translate('integrations.cliRetry')}
+      </Button>
+    </div>
+  ) : null;
+  if (accounts.state === 'error') return failed;
   // 那台机器比多账号老(只有这一种才回落):照旧按一个账号画。
-  if (!supported) return <SingleAccountConnection integration={integration} />;
+  if (!accounts.value.supported) return <SingleAccountConnection integration={integration} />;
+  const checked = checks.state === 'value' ? new Map(checks.value.map((one) => [one.accountId, one])) : null;
   return (
     <div className="space-y-2">
-      {(accounts ?? []).map((account) => (
+      {failed}
+      {accounts.value.accounts.map((account) => (
         <AccountRow
           key={account.accountId}
           integration={integration}
           account={account}
-          check={checks?.get(account.accountId)}
-          checking={isChecking}
+          check={checked?.get(account.accountId)}
+          checking={checks.state === 'unknown' && reachable}
         />
       ))}
       {!integration.readOnly && (

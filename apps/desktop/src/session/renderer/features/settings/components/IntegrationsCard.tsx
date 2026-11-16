@@ -4,6 +4,9 @@ import { keptByPlatform } from '@renderer/features/integrations/integration-setu
 import { integrationSections } from '@renderer/features/integrations/integration-sections';
 import { useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
 import { PageLoading } from '@renderer/lib/components/page-layout';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { messageForUser } from '@/lib/userFacingError';
 import type { IntegrationAccountSummary } from '@renderer/features/integrations/use-integration-accounts';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -257,12 +260,15 @@ const IntegrationsCard: React.FC = () => {
 
   // 别的机器此刻给不出清单(离线且没读过 / server 太旧 / 问不通):只说那一句,❌ 画一排「可连接」冒充它上面什么都没连。
   if (notice && !hasList) return <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />;
-  // 清单还在读:画加载态(读到了才知道哪些连着)。
-  if ((!hasList || !integrationMetadata) && !listError) return <PageLoading />;
+  // 清单还在读:画加载态(读到了才知道哪些连着);读不到:说出来、给重试(❌ 一个空的「可用」冒充什么都没有)。
+  if (!integrationMetadata) {
+    return listError ? <ReadFailedLine message={messageForUser(listError)} onRetry={reloadList} /> : <PageLoading />;
+  }
 
   return (
     <TooltipProvider delay={150}>
-      {notice && <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />}
+      {notice ? <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />
+        : <RefreshFailed error={listError instanceof Error ? listError : null} onRetry={reloadList} />}
       <div className="space-y-8">
         {connectedIntegrations.length > 0 && (
           <IntegrationSection title={translate('integrations.sectionAdded')}>

@@ -40,7 +40,7 @@ export const harnessMcpServers = replica({
  */
 export function useHarnessMcpServers(agentId: string, enabled: boolean): Reading<LibraryMcpHarnessServer['server'][]> {
   const host = keepLibraryHost(useLibraryHost());
-  return useReplica(harnessMcpServers, enabled && host.remote?.online !== false ? [host.key, agentId] : null);
+  return useReplica(harnessMcpServers, enabled ? [host.key, agentId] : null, { read: host.remote?.online !== false });
 }
 
 /**
@@ -50,9 +50,10 @@ export function useHarnessMcpServers(agentId: string, enabled: boolean): Reading
 export function useMcpLibrary() {
   const host = keepLibraryHost(useLibraryHost());
   const reachable = host.remote?.online !== false;
-  const list = useReplica(mcpLibraryServers, reachable ? [host.key] : null);
+  // That machine offline: not asked; what was read of it stays drawn (read-only).
+  const list = useReplica(mcpLibraryServers, [host.key], { read: reachable });
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
-  const provided = useReplica(mcpProvided, reachable ? [host.key] : null);
+  const provided = useReplica(mcpProvided, [host.key], { read: reachable });
   const agents = useManagementAgents();
   const installed = useMemo(
     () => (agents.data ?? []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
@@ -93,7 +94,8 @@ export function useMcpLibrary() {
   return {
     /** gugu's own servers there; null while not read (❌ "none added"). */
     servers: list.state === 'value' ? list.value : null,
-    provided: provided.state === 'value' ? provided.value : null,
+    /** The built-in, integration and App groups there (a reading: unknown and failed are drawn as such). */
+    provided,
     /** 装了的那几家,各一个折叠的段头;配置等展开才读。 */
     installed,
     /**
