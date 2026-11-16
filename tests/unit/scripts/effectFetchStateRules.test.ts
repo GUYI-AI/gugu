@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { literalDefaultLines, reactQueryLines, scanEffectFetchState, scanFile, scanLiteralDefaults, scanReactQuery } from '../../../scripts/checks/effect-fetch-state.mts'
+import { EXEMPTIONS, literalDefaultLines, parseMarker, reactQueryLines, scanEffectFetchState, scanFile, scanLiteralDefaults, scanMarkers, scanReactQuery } from '../../../scripts/checks/effect-fetch-state.mts'
 
 /**
  * @@@client-state-model hard rules (open-flicker PR 3 cleared the last of them; there is no baseline): no effect reads
@@ -11,6 +11,7 @@ describe('the source', () => {
   it('has no effect that fills component state with a read', () => { expect(scanEffectFetchState(), rule).toEqual({}) })
   it('has no reading collapsed to a literal default', () => { expect(scanLiteralDefaults(), rule).toEqual({}) })
   it('reaches react-query only through the replica', () => { expect(scanReactQuery(), rule).toEqual({}) })
+  it('has every exemption marker in a listed category, with its reason', () => { expect(scanMarkers(), 'see EXEMPTIONS in scripts/checks/effect-fetch-state.mts').toEqual({}) })
 })
 
 describe('react-query past the replica (what counts)', () => {
@@ -77,9 +78,17 @@ describe('what counts', () => {
     expect(scanFile('a.tsx', component('setValue(1)'))).toBe(0)
     expect(scanFile('a.tsx', component('read().then((v) => store.put(v))'))).toBe(0)
   })
-  it('a flow says so with its reason; a bare marker still counts', () => {
-    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow - signing in'))).toBe(0)
+  it('a flow says its category and reason; a marker without either still counts', () => {
+    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow(command) - signing in'))).toBe(0)
     expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow'))).toBe(1)
+    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow - signing in'))).toBe(1)
+    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow(sync) - signing in'))).toBe(1)
+    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow(command) -'))).toBe(1)
+  })
+  it('an event exemption puts no pushed data in state (a setter handed to a listener, or its payload set, counts)', () => {
+    expect(scanFile('a.tsx', component('return bus.on(setValue)', '// @@@effect-flow(event) - the share sheet'))).toBe(1)
+    expect(scanFile('a.tsx', component('return bus.on((payload) => setValue(payload.rows))', '// @@@effect-flow(event) - a revision listener'))).toBe(1)
+    expect(scanFile('a.tsx', component('return bus.on(() => setValue(true))', '// @@@effect-flow(event) - a local flag when the share sheet opens'))).toBe(0)
   })
 })
 
@@ -109,10 +118,36 @@ describe('a reading collapsed to a literal default (@@@client-state-model)', () 
   it('not null (unknown in the consumer), not a value, and not a marked exception', () => {
     expect(lines("const xs = r.state === 'value' ? r.value : null")).toHaveLength(0)
     expect(lines("const x = r.state === 'value' ? r.value : other")).toHaveLength(0)
-    expect(lines("// @@@reading-default - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(0)
+    expect(lines("// @@@reading-default(moment) - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(0)
     expect(lines("// @@@reading-default\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
+    expect(lines("// @@@reading-default - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
     // `??` on what is not a reading: an ordinary default.
     expect(lines("const value = props.value ?? ''\nconst xs = list ?? []")).toHaveLength(0)
     expect(lines("const fonts = r.state === 'value' ? r.value : null\nconst shown = fonts ?? null")).toHaveLength(0)
+  })
+})
+
+describe('exemption markers (coordinator 2026-11-16: a fixed list of categories)', () => {
+  it('no category, a category not in the list, an empty reason: each is a finding', () => {
+    expect(parseMarker('// @@@effect-flow - signing in')?.problem).toBe('no category')
+    expect(parseMarker('// @@@reading-default - a lookup')?.problem).toBe('no category')
+    expect(parseMarker('// @@@effect-flow(subscribe) - a listener')?.problem).toMatch(/not one of/)
+    expect(parseMarker('// @@@reading-default(contract) - a list')?.problem).toMatch(/not one of/)
+    expect(parseMarker('// @@@effect-flow(command) - ')?.problem).toBe('no reason')
+    expect(parseMarker('// @@@reading-default(moment)')?.problem).toBe('no reason')
+  })
+  it('an outbox exemption says it merges into PR 4; a paired one names its flag', () => {
+    expect(parseMarker('// @@@effect-flow(outbox) - queued input released')?.problem).toMatch(/PR 4/)
+    expect(parseMarker('// @@@effect-flow(outbox) - queued input released; merges into the PR 4 outbox')?.problem).toBeNull()
+    expect(parseMarker('// @@@reading-default(paired) - the list carries a status')?.problem).toMatch(/flag/)
+    expect(parseMarker('// @@@reading-default(paired) - `known` says whether it was read')?.problem).toBeNull()
+  })
+  it('each listed category is a valid exemption', () => {
+    const legal: Record<string, string> = { outbox: 'merges into PR 4', paired: '`ready` says whether it was read' }
+    for (const [kind, categories] of Object.entries(EXEMPTIONS)) {
+      for (const category of Object.keys(categories)) {
+        expect(parseMarker(`// @@@${kind}(${category}) - ${legal[category] ?? 'a reason'}`), `${kind}(${category})`).toMatchObject({ category, problem: null })
+      }
+    }
   })
 })
