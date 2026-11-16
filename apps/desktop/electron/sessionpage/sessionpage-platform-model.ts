@@ -172,6 +172,7 @@ export function configurePlatformRelayPersistence(input: { dataDir: string; log:
 
 /** Test seam. */
 export function resetPlatformRelayPersistenceForTest(): void {
+  platformClosureReleaseProofs.clearForTest()
   relayPersistence = null
   relayRestore = null
   beginRelayRestore = null
