@@ -218,7 +218,7 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   return (
     <TabBarActionRow atWindowEdge={atScreenEdge}>
       <SessionMachineStatus />
-      <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} />
+      <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} paneLayout={paneLayout} />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。
           从没起过的会话只在首启失败时摆(#7092:会员模型被拒,换一个再起);正在首启的那段不摆,换了也赶不上这一次。 */}
       {session && sessionId && sessionViewOfRuntime(session.data.runtime ?? 'pty') === 'code'
