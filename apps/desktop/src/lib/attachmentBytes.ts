@@ -117,10 +117,10 @@ const attachmentShown = replica({
   read: async (_owner: string, key: string, source: AttachmentSource): Promise<ShownBytes> => {
     const bytes = await attachmentBytes(source, 'shown', undefined, undefined, (done, total) => { for (const hear of shownProgress.get(key) ?? []) hear(done, total) })
     if (bytes.status !== 'ready') throw new Error(bytes.status)
-    // The server withdrew what is shown (its acknowledgement failed): the entry goes, and a surface still showing it
-    // reads again.
+    // The server withdrew what is shown (its acknowledgement failed): the entry goes (the read finishing now does not put
+    // it back), so the next preview reads again.
     const acknowledged = bytes.acknowledged?.catch((error: unknown) => {
-      void attachmentShown.reset(key, source)
+      attachmentShown.forget(key, source)
       throw error
     })
     return { blob: bytes.blob, ...(acknowledged ? { acknowledged } : {}) }

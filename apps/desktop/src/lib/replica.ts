@@ -437,6 +437,8 @@ export type Replica<A extends unknown[], V> = {
   isFetching(...args: A): boolean
   /** Drop what is shown for these arguments (unknown again) and read again where it is shown; never throws. */
   reset(...args: A): Promise<void>
+  /** Forget this entry altogether (a read finishing now does not put it back); the next reader starts from unknown. */
+  forget(...args: A): void
   /** @internal */ options(key: QueryKey): object
 }
 
@@ -513,6 +515,10 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     isFetching: (...args) => {
       const k = key(...args)
       return !!k && queryClient.getQueryState(k)?.fetchStatus === 'fetching'
+    },
+    forget: (...args) => {
+      const k = key(...args)
+      if (k) queryClient.removeQueries({ queryKey: k, exact: true })
     },
     reset: async (...args) => {
       const k = key(...args)
