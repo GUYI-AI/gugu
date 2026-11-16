@@ -12,6 +12,7 @@ const HOME_DIR_PATTERNS: Array<[RegExp, string]> = [
   [/\/Users\/[^/\s]+/g, '/Users/~'],
   [/\/home\/[^/\s]+/g, '/home/~'],
   [/([A-Z]:\\Users\\)[^\\\s]+/gi, '$1~'],
+  [/([A-Z]:\/Users\/)[^/\s]+/gi, '$1~'],
 ];
 
 /** Rewrite home-directory paths to a fixed placeholder. Not a secret regex — purely deterministic. */
