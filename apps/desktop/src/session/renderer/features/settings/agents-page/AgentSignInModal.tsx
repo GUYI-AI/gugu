@@ -222,7 +222,7 @@ function LinkSignIn({
   onSuccessRef.current = onSuccess;
   const remoteDeviceId = remote?.deviceId ?? null;
 
-  // @@@effect-flow(command) - starting the sign-in this window runs.
+  // @@@effect-flow(command) - starts this window's own login run and follows that run's status (pushed, ❌ polled)
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | null = null;

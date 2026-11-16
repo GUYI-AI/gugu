@@ -545,6 +545,8 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
   // Judged once the defining module has run (a microtask, before anything renders): its `carry` may read what that module
   // declares below the model — at definition time those are in their temporal dead zone (the app would start blank).
+  // In that window synchronous code can `peek` a kept entry not judged yet; an entry the judgement drops is removed
+  // whatever happened to it meanwhile (only a carried one checks it was not read again first).
   if (first) queueMicrotask(() => pruneSnapshot(definition as Definition<unknown[], unknown>))
   queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
   const options = (key: QueryKey) => ({
