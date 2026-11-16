@@ -10,7 +10,8 @@ import type { ChatItem } from '../../../packages/core/src/shared/types/chat'
 import { formatAttachmentMetadata } from '../../../packages/core/src/shared/ui/attachmentModels'
 import { formatVoiceAttachmentMetadata } from '../../../packages/core/src/shared/ui/voiceAttachmentModels'
 import { resolveSharePlan, sharePayloadForMessage, sharePayloadForMessages } from '../../../apps/desktop/src/lib/shareToApps'
-import { mergeShareIntoDraft, shareTargetChats } from '../../../apps/desktop/src/mobile/share-intake/shareTargets'
+import { mergeShareIntoDraft } from '../../../apps/desktop/src/mobile/share-intake/shareTargets'
+import { sendableConversations } from '../../../apps/desktop/src/components/chat/forwardMessageUtils'
 import type { IncomingShare } from '../../../apps/desktop/src/platform/types'
 
 const native = vi.hoisted(() => ({
@@ -122,6 +123,8 @@ describe('「发送到」页列哪些会话', () => {
     chat({ id: 'topic', name: '话题', kind: 'topic', last_message_at: '2026-09-25T00:00:00Z' }),
   ]
   const context = { query: '', displayName: (c: ChatItem) => c.name ?? '', activeChatId: null, drafts: {} }
+  const shareTargetChats = (list: ChatItem[], q: typeof context & { drafts: Record<string, string> }) =>
+    sendableConversations(list, { ...q, ownerId: 'me', identitiesById: {}, topics: false }).chats
 
   it('与会话列表同一个「列不列」判据;话题不在;置顶在前,其余按活动时间', () => {
     expect(shareTargetChats(chats, context).map((c) => c.id)).toEqual(['pinned', 'new', 'old'])
