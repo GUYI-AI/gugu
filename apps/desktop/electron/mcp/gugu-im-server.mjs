@@ -2635,7 +2635,7 @@ export const TOOL_DEFS = [
   {
     name: 'message_history',
     messageRows: true,
-    description: 'Read a chat\'s main timeline, or one thread with thread_root_id. Rows carry seq; page back with limit and before_seq.',
+    description: 'Read a chat\'s main timeline, or one thread with thread_root_id, including the messages just before one you were sent. Rows carry seq; page back with limit and before_seq.',
     schema: z.object({
       chat_id: chatIdSchema,
       thread_root_id: z.string().optional(),
