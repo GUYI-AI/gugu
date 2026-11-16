@@ -7,10 +7,7 @@ import { desktopIpc } from '../platform/desktopIpc'
 
 const log = rendererLogger('device-actions')
 
-/**
- * 这台电脑「能做的事」此刻的样子(主进程现读,device)。主进程变了就推 `changed`:推送喂的,`fresh: Infinity`。
- * 只在桌面上有;不持久化(设置页,不是首屏)。
- */
+/** 这台电脑「能做的事」(主进程现读,device;推送 `changed` 喂的)。只在桌面上有;不持久化。 */
 const thisDeviceActions = replica({
   name: 'thisDeviceActions',
   scope: 'device',

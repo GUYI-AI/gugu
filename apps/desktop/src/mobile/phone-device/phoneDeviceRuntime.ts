@@ -113,19 +113,13 @@ export async function readPhoneOsState(): Promise<PhoneOsState> {
   return { runtime, special, health, data }
 }
 
-/**
- * What the system grants this phone right now (device): the one holder of the OS permission state — the settings page
- * reads it, the device runtime builds its capability from it. Read on open, on the way back to the foreground and before
- * a heartbeat. ❌ Kept across restarts: what is shown is what the system was just asked; a read that fails says so, ❌ the
- * earlier answer shown as now (review A2, as `systemPermission`).
- */
+/** What the system grants this phone now (device): the one holder of the OS permission state. ❌ Persisted (review A2). */
 export const phoneOsState = replica({
   name: 'phoneOsState',
   scope: 'device',
   read: () => readPhoneOsState(),
 })
 
-/** The OS state as last read (this run: it is not kept across restarts), for the runtime's decisions (outside rendering). */
 function osNow(): PhoneOsState | null {
   const reading = phoneOsState.peek()
   return reading.state === 'value' ? reading.value : null
@@ -138,8 +132,7 @@ async function readLatestOs(isCurrent: () => boolean): Promise<boolean> {
   try {
     os = await readPhoneOsState()
   } catch (error) {
-    // The system did not answer: it is asked again through its model, so a failure is the reading's (the page says it
-    // could not read), ❌ the earlier answer left standing as now.
+    // A failure is the reading's (the page says so), ❌ the earlier answer left standing as now.
     if (revision === osReadRevision) void phoneOsState.prefetch()
     throw error
   }

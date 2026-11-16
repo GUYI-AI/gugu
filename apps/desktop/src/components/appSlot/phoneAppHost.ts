@@ -174,17 +174,13 @@ const relay = new FileSyncRelay({
   warn: (message, data) => log.warn(data ?? {}, message),
 })
 
-/**
- * What is installed on this phone as an App's call is answered (one moment, ❌ a render): an App runs only once the list
- * was read, so a call meeting it unread is refused loudly (❌ answered as if nothing were installed).
- */
+/** What is installed, as an App's call is answered (one moment): a call meeting it unread is refused loudly. */
 function installedNow(): InstalledApps {
   const installed = peekInstalledApps(PHONE_HOST)
   if (!installed) throw new Error('The Apps on this phone are not read yet')
   return installed
 }
 
-/** The Apps on this phone — shipped and installed from chats (phoneApps.ts tells the replica) — that may be opened. */
 function appsHereNow(): ExtensionManifest[] {
   const installed = installedNow()
   return installed.manifests.filter((manifest) => installed.isEnabled(manifest.id))

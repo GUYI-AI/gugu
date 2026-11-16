@@ -5,10 +5,8 @@ import {assistantWork,useAssistantWorkTitles} from './assistant-work-records'
 type Detail=Awaited<ReturnType<typeof assistantWork.fetch>>
 
 /**
- * One work as its window draws it (replica `assistantWork`, read again on the work signal). The address check (owner,
- * assistant, work id, the session among its executors) is a derivation on the reading: a work that does not match is
- * said as unreadable, ❌ drawn. `titleKnown: false` = its placeholder title's evidence is not known yet (draw a placeholder).
- * Neither executor admission nor a host connection gates the page's first paint.
+ * One work as its window draws it. A work not matching the address (owner, assistant, work id, the session among its
+ * executors) is said as unreadable, ❌ drawn. Neither executor admission nor a host connection gates the first paint.
  */
 export function useAssistantWorkDetail(ownerId:string,assistantId:string,workId:string,sessionId:string):{detail:(Detail&{titleKnown:boolean})|null;error?:unknown}{
  const reading=useReplica(assistantWork,[assistantId,workId])

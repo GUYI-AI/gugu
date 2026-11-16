@@ -11,18 +11,13 @@ import { Unknown } from '../ui/Unknown'
 import './assistant-task-chat.css'
 import { assistantWork, useAssistantWorkRecords } from './assistant-work-records'
 
-/**
- * The task chat's exchanges (the account's collaboration ledger), read only while the chat is shown: the work ids from the
- * ledger (`assistantWorkRecords`, or the one the task names), then each work's events (`assistantWork`, the same entry
- * the task window reads). Unknown draws a row-high placeholder; a failed read says collaboration is unavailable.
- */
+/** The task chat's exchanges (the work ids from the ledger, then each work's events), read only while the chat is shown. */
 export function useTaskChatRows(messages: readonly MessageItem[], ownerId: string | undefined, agentId: string | null | undefined, visible: boolean) {
   const task = useSyncExternalStore(subscribeAssistantTaskChats, () => readAssistantTaskChat(ownerId, agentId))
   const { t } = useTranslation('assistant')
   const key = task ? JSON.stringify([ownerId,task]) : ''
   const [history,setHistory] = useState({ key: '',count: 80 })
   const shown = !!task && !!ownerId && visible
-  // A task without a work id: its works are the ledger's that this session executes for this coordinator.
   const ledger = useAssistantWorkRecords(shown && task && !task.workId ? ownerId : null, task?.assistantId ?? '')
   const workIds = useMemo(() => {
     if (!shown || !task) return null

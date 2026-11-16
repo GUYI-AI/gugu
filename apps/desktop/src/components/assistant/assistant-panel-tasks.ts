@@ -20,16 +20,12 @@ export function assistantPanelTaskChat(scope:Pick<Scope,'assistantId'>,task:Omit
 export function openAssistantPanelTask(scope:Pick<Scope,'assistantId'>,task:AssistantPanelTask) {
   window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT,{detail:assistantPanelTaskChat(scope,task)}))
 }
-/**
- * `loading`: not read yet, or the list is not there yet (the assistant's setup is finishing: 42501, read again until it is).
- * `error` with `data`: the shown list, its last refresh failed (retried by itself); `error` with none: never read.
- */
+/** `loading` includes a list not there yet (42501); `error` with `data`: the shown list's refresh failed. */
 export type AssistantWorkTasksRead = {state:'loading'} | {state:'error';error:unknown;data:AssistantPanelTask[]} | {state:'ok';data:AssistantPanelTask[]}
 export function useAssistantWorkTasks(ownerId:string|null|undefined,assistantId:string):AssistantWorkTasksRead & {reload:()=>void} {
   const reading=useAssistantWorkRecords(ownerId,assistantId)
   const titled=useAssistantWorkTitles(ownerId,reading.state==='value'?reading.value:null)
   const [presenceRevision,revision]=useState(0)
-  // The task agents whose presence draws a status (none while the list is not read).
   const agents=JSON.stringify(titled?[...new Set(titled.flatMap(work=>work.executors.flatMap(executor=>executor.agent_user_id ? [executor.agent_user_id] : [])))].sort():[])
   useEffect(()=>{
     const stops=(JSON.parse(agents) as string[]).map(agentId=>subscribeAgentPresence(agentId,()=>revision(n=>n+1)))

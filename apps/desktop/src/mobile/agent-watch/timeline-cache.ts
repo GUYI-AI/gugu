@@ -430,13 +430,11 @@ export function forgetInMemoryTimelines(): void {
   memory.clear()
   nativeMemory.clear()
   nativeStored.clear()
-  // The sessions' live stream state is the in-memory layer of the same engine.
   for (const store of [streams, nativeStreams, sessionpageFacts]) {
     if (store.get().size > 0) { store.publish(new Map()); store.notify() }
   }
 }
 
-/** Put one entry of a keyed stream store; `undefined` removes it. */
 function putEntry<T>(store: SelectStore<ReadonlyMap<string, T>>, id: string, next: T | undefined): void {
   if (next === store.get().get(id)) return
   const map = new Map(store.get())
@@ -448,12 +446,9 @@ function putEntry<T>(store: SelectStore<ReadonlyMap<string, T>>, id: string, nex
 
 // ── a session's live stream state (the stream engine's own state, @@@client-state-model §1) ──────────────────────────
 
-/** The link to the session's host: (re)snapshotting + subscribing / subscribed / unreadable, catch-up failed or window closed. */
 export type TimelineLink = 'connecting' | 'ok' | 'lost'
-/** Where the session's first picture stands: still loading, shown, or could not be read (and nothing to show). */
 export type AgentWatchPhase = 'loading' | 'ready' | 'error'
 
-/** What a session page draws of a session's stream: its timeline and how the stream to its host stands. */
 export type SessionStreamState = {
   timeline: AgentWatchTimeline
   phase: AgentWatchPhase
@@ -464,30 +459,24 @@ export type SessionStreamState = {
 }
 
 /**
- * The live state of each session stream, keyed per session (deviceId + sessionId): the subscription that follows a
- * session (use-timeline-session) writes it, readers select their session with `useSelect`. A session absent from the
- * map has not been read in this run (its first frame comes from the timeline cache above); present with an empty
- * timeline = read, and empty. Owner: the signed-in account — cleared on sign-out or another account (with the
- * in-memory timeline layers; the on-disk cache is per device and keyed by device and session).
+ * Each session stream's live state, keyed per session: absent = not read in this run (first frame from the cache above);
+ * present with an empty timeline = read, empty. Owner: the signed-in account (cleared on sign-out / account switch).
  */
 const streams = createSelectStore<ReadonlyMap<string, SessionStreamState>>(new Map())
 export const sessionStreams: Readable<ReadonlyMap<string, SessionStreamState>> = streams
 
 export const sessionStreamKey = (key: TimelineCacheKey) => `${key.deviceId}\u0000${key.sessionId}`
 
-/** The first picture of a session not followed yet in this run: the cached timeline (in memory), else empty and loading. */
 export function initialSessionStream(key: TimelineCacheKey, boundedWindow = false): SessionStreamState {
   const timeline = (boundedWindow ? null : readCachedTimeline(key)) ?? emptyAgentWatchTimeline()
   return { timeline, phase: timeline.cursor ? 'ready' : 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
 }
 
-/** Write one session's stream state (from its subscription). */
 export function updateSessionStream(key: TimelineCacheKey, change: (current: SessionStreamState) => SessionStreamState, boundedWindow = false): void {
   const id = sessionStreamKey(key)
   putEntry(streams, id, change(streams.get().get(id) ?? initialSessionStream(key, boundedWindow)))
 }
 
-/** A session no page follows any more: its stream state goes (the timeline stays in the memory cache). */
 export function forgetSessionStream(key: TimelineCacheKey): void {
   putEntry(streams, sessionStreamKey(key), undefined)
 }
@@ -504,7 +493,6 @@ observeRendererSession(({ event, session }) => {
   }
 })
 
-/** A native session record's stream state (useNativeSessionRecord): the record held and how the last read went. */
 export type NativeRecordStreamState = {
   record: NativeSessionRecord | null
   error: string | null
@@ -515,10 +503,7 @@ export type NativeRecordStreamState = {
   confirmed: { key: string; epoch: number } | null
 }
 
-/**
- * Each native record stream's state, keyed per session like `sessionStreams` (same owner, same clearing): absent = not
- * followed in this run (the first frame is the cached record, or null).
- */
+/** Native record streams (useNativeSessionRecord), keyed and owned like `sessionStreams`. */
 const nativeStreams = createSelectStore<ReadonlyMap<string, NativeRecordStreamState>>(new Map())
 export const nativeRecordStreams: Readable<ReadonlyMap<string, NativeRecordStreamState>> = nativeStreams
 
@@ -531,20 +516,15 @@ export function updateNativeRecordStream(key: TimelineCacheKey, change: (current
   putEntry(nativeStreams, id, change(nativeStreams.get().get(id) ?? initialNativeRecordStream(key, enabled)))
 }
 
-/** What the chat page reads of a desktop task session's timeline: its recent actions and its open settlements. */
 type SessionpageTimelineFacts = {
   recentActions: { actions: string[]; lastActionAt: string | null } | null
   settlements: Readonly<Record<string, Settlement>>
 }
 
-/**
- * Each desktop task session's timeline facts (useSessionpageSessionTimeline), keyed by session: absent = not read in
- * this run; present = what its subscription has. Same owner and clearing as `sessionStreams`.
- */
+/** Desktop task sessions' timeline facts (useSessionpageSessionTimeline), keyed by session, owned like `sessionStreams`. */
 const sessionpageFacts = createSelectStore<ReadonlyMap<string, SessionpageTimelineFacts>>(new Map())
 export const sessionpageTimelineFacts: Readable<ReadonlyMap<string, SessionpageTimelineFacts>> = sessionpageFacts
 
-/** Write a session's facts; `undefined` from `change` forgets them (the session is not followed any more). */
 export function updateSessionpageFacts(sessionId: string, change: (current: SessionpageTimelineFacts | undefined) => SessionpageTimelineFacts | undefined): void {
   putEntry(sessionpageFacts, sessionId, change(sessionpageFacts.get().get(sessionId)))
 }

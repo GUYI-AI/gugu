@@ -20,10 +20,8 @@ export const devicesModel = replica({
   scope: 'account',
   // 读的那一段在 devicesRead.ts,按需载入:这个文件是很多非 React 读者的叶子模块,❌ 把聊天服务拉进它们的依赖。
   read: async (owner) => (await import('./devicesRead')).readDevices(owner),
-  // An active account's rows with their session digests (≤ 50 summaries per row, ~28 K for one active computer) do not
-  // fit: then no row's digest is carried (a whole field, ❌ cut short), and its readers take a row without it as "not
-  // known yet", ❌ as no sessions. A small account keeps the digests. Rows still grow with machines and their recorded
-  // projects: a heavy account can pass the limit (a known issue).
+  // An active account's digests do not fit: then no row's digest is carried (a whole field, ❌ cut short); readers take a
+  // row without it as "not known yet". A heavy account can pass the limit (a known issue).
   persist: {
     maxBytes: 8192,
     maxEntries: 1,

@@ -31,10 +31,7 @@ const lazyPanelClient = {
   pending: async (...args: Parameters<AssistantPanelClient['pending']>) => (await panelCloud()).pending(...args),
 } as unknown as AssistantPanelClient
 
-/**
- * The App as installed on this phone: its manifest, switch and the record of where it came from (phoneApps.ts). A
- * one-moment answer (the binding host asks as an App calls; a surface asks once its reading is a value).
- */
+/** The App as installed on this phone (phoneApps.ts), a one-moment answer. */
 export function phoneInstalledApp(extensionId: string): PhoneInstalledApp | null {
   const installed = peekInstalledApps(PHONE_HOST)
   // @@@reading-default(moment) - a binding asked before the phone's list was read answers "not installed here": the call is refused, not drawn

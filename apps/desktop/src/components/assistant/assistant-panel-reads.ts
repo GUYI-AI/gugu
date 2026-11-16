@@ -11,12 +11,7 @@ import { CONNECTIONS_CHANGED, peekOwnerConnectionMetadata, readOwnerConnectionMe
 import { peekAssistantPanelIntegration, peekAssistantPanelIntegrations, readAssistantPanelIntegration, readAssistantPanelIntegrations } from './assistant-panel-integrations'
 import { onAssistantPanelChanged, useAssistantPanel } from './assistant-panel-replica'
 
-/**
- * Reads through a connection store or a panel machine. Those are live objects (a cloud client, an account guard), so the
- * replicas below are keyed by the store's key and find the object in this registry (replica queries are key-only). A
- * surface registers the store it holds before it reads; a key nobody registered is a failed read (❌ a hang, ❌ an empty
- * value). The latest object registered under a key serves.
- */
+// Live objects (stores, machines) the key-only replicas below find by key; an unregistered key is a failed read (❌ a hang).
 const stores = new Map<string, ConnectionMetadataStore>()
 const machines = new Map<string, AssistantMachine>()
 
@@ -33,12 +28,8 @@ function storeOf(key: string): ConnectionMetadataStore {
 }
 
 /** 同一个工作区(机器、项目、工作区、记忆夹)= 同一个键;重新打开过的工作区换键重读。 */
-export function machineKey(machine: AssistantMachine): string {
-  return `${machine.panel?.ownerId ?? ''}|${machine.panel?.assistantId ?? ''}|${machine.deviceId}|${machine.projectId}|${machine.workspaceId}|${machine.paths.memoryDir}`
-}
-
-export function registerAssistantMachine(machine: AssistantMachine): string {
-  const key = machineKey(machine)
+function registerAssistantMachine(machine: AssistantMachine): string {
+  const key = `${machine.panel?.ownerId ?? ''}|${machine.panel?.assistantId ?? ''}|${machine.deviceId}|${machine.projectId}|${machine.workspaceId}|${machine.paths.memoryDir}`
   machines.set(key, machine)
   return key
 }
@@ -49,13 +40,9 @@ function machineOf(key: string): AssistantMachine {
   return machine
 }
 
-export type ConnectionList = Awaited<ReturnType<typeof readAssistantPanelIntegrations>>
+type ConnectionList = Awaited<ReturnType<typeof readAssistantPanelIntegrations>>
 
-/**
- * The applications a connection store lists (owner connections, or a legacy assistant panel), for a locale. Signal tier:
- * read again when the panel it comes from changes, and on `CONNECTIONS_CHANGED` (`useConnectionList`). Its first value
- * is what the store already holds (`local`). Not kept across restarts.
- */
+/** The applications a connection store lists. Signal tier: its panel's changes and `CONNECTIONS_CHANGED` (`useConnectionList`). */
 export const connectionList = replica({
   name: 'connectionList',
   scope: 'account',
@@ -72,7 +59,6 @@ export const connectionList = replica({
   refreshOnFocus: true,
 })
 
-// Subscription ownership only: per store key, a listener on the panel the store reads and on local connection changes.
 const listWatches = new Map<string, { users: number; stop: () => void }>()
 function watchConnectionList(store: ConnectionMetadataStore): () => void {
   const key = connectionMetadataKey(store)
@@ -96,10 +82,7 @@ export function useConnectionList(store: ConnectionMetadataStore | undefined, ow
   return reading
 }
 
-/**
- * One application's full catalog entry, read from its body (content-addressed by `catalogVersion` = the body's sha:
- * read once). Its first value is the kept body (`local`); bodies are the content cache (`lib/assistantPanelBodies`).
- */
+/** One application's full catalog entry, content-addressed by `catalogVersion` (read once). */
 export const assistantIntegrationDetail = replica({
   name: 'assistantIntegrationDetail',
   scope: 'account',
@@ -114,7 +97,6 @@ export const assistantIntegrationDetail = replica({
   // Not retried by itself: a store nobody registered is a failure said at once (C7), and the page offers a retry.
 })
 
-/** The full catalog entry of a metadata-only summary; any other summary is already full. */
 export function useAssistantIntegrationDetail(store: ConnectionMetadataStore | undefined, summary: IntegrationMetadata | null | undefined, locale: string) {
   const key = store ? registerConnectionStore(store) : null
   const reading = useReplica(assistantIntegrationDetail, key && summary?.metadataOnly ? [key, summary.id, summary.catalogVersion ?? null, locale] : null)
@@ -122,7 +104,7 @@ export function useAssistantIntegrationDetail(store: ConnectionMetadataStore | u
 }
 
 /** One memory note's text, for its revision (immutable for that revision: read once). */
-export const assistantMemoryBody = replica({
+const assistantMemoryBody = replica({
   name: 'assistantMemoryBody',
   scope: 'account',
   read: (_owner: string, workspace: string, entry: MemoryEntry): Promise<MemoryEntry> =>
@@ -137,11 +119,7 @@ export function useAssistantMemoryBody(machine: AssistantMachine | undefined, en
   return useReplica(assistantMemoryBody, key && entry.contentPending ? [key, entry] : null)
 }
 
-/**
- * One collection of the machine's panel, derived at render from the `assistantPanel` snapshot (❌ a read of its own):
- * unknown while the snapshot is; a collection the home has not prepared, a failed application or stale rows are the
- * reading's error (the same rule the panel files read by). `derive` must be stable (a module function or a memoized one).
- */
+/** One collection of the machine's panel, derived from the `assistantPanel` snapshot (❌ a read of its own); `derive` stable. */
 export function useAssistantPanelCollection<T>(machine: AssistantMachine | null | undefined, domain: AssistantPanelDomain,
   derive: (rows: AssistantPanelItem[]) => T): Reading<T> {
   const panel = machine?.panel

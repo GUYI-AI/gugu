@@ -40,19 +40,13 @@ import '../../i18n/registerAssistantCatalog'
 const log = rendererLogger('assistant/close')
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
 
-/** Where the assistant being closed lives, as far as this desktop can reach it. */
 type Home = { kind: 'local' } | { kind: 'cloud'; deviceId: string } | { kind: 'server'; deviceId: string }
 type Open = { assistantId: string; name: string } & (Home | { kind: 'elsewhere'; device: string })
 
-/** The machine its sessions are on: this computer, its cloud computer, or the server it lives on. */
 const sessionsHost = (kind: Home['kind'], deviceId: string | null) => kind === 'server' && deviceId ? machineRpc(deviceId) : rpcOn(kind === 'cloud' ? deviceId : null)
 const listHomeSessions = async (kind: Home['kind'], deviceId: string | null) => (await sessionsHost(kind, deviceId).sessionTimeline.sessionsList()).sessions
 
-/**
- * The sessions the close confirmation shows: its own and the ones it started (the box's count and list). Read once the
- * home has been woken and checked (a command of the dialog's); held only while the dialog shows it. The confirm closes
- * exactly the plan the person saw.
- */
+/** The sessions the close confirmation shows, read once the home is woken and checked; the confirm closes exactly this plan. */
 const assistantClosePlan = replica({
   name: 'assistantClosePlan',
   scope: 'account',
@@ -205,7 +199,6 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
   // 读不到它开过哪些会话 = 不知道那个勾在说什么、也不知道它自己的会话在哪:❌ 照着空清单关。
   const unreadable = woken === 'failed' || reading.state === 'error'
 
-  // The plan the person is looking at when they confirm is the one closed (❌ one read again behind the dialog).
   const confirm = async (plan: LocalClosePlan) => {
     setClosing(true)
     setFailure(null)

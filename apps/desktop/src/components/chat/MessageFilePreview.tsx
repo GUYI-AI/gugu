@@ -58,7 +58,6 @@ export interface HostedPreviewSource {
 }
 export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { source: HostedPreviewSource; document?: undefined }
 
-/** What the shown bytes are read from: plain data, and for a hosted file the read its opener gave. */
 type BytesOf = { source: AttachmentSource | Pick<HostedPreviewSource, 'kind' | 'key' | 'read'>; document?: boolean; mimeType: string }
 type ShownBytes = { blob: Blob; acknowledged?: Promise<void> }
 
@@ -83,7 +82,7 @@ async function previewBytes(file: BytesOf, options: { shown?: true; progress?: (
   return bytes
 }
 
-/** A preview's read that failed, and the machine it waits for when that is why (asked afresh after this failure). */
+/** A failed preview read, and the machine it waits for when that is why. */
 class UnreadPreview extends Error {
   constructor(readonly failure: unknown, readonly holder: OfflineHolder | null) { super(failure instanceof Error ? failure.message : String(failure)) }
 }
@@ -92,10 +91,7 @@ async function unreadPreview(source: BytesOf['source'], failure: unknown): Promi
   return new UnreadPreview(failure, source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null)
 }
 
-/**
- * How far the bytes a preview is reading have come (0–1), per preview key: written by the read in flight and removed when
- * it settles (the read owns its entry; nothing outlives a read). Absent: not known (the provider has not said).
- */
+/** Per preview key, 0–1; owned by the read in flight (removed when it settles). Absent: not known. */
 const previewProgress = createSelectStore<ReadonlyMap<string, number>>(new Map())
 function noteProgress(key: string, fraction: number | null): void {
   const now = previewProgress.get()
@@ -107,10 +103,8 @@ function noteProgress(key: string, fraction: number | null): void {
 }
 
 /**
- * The bytes a preview shows (review A3): every opening reads them and the server acknowledges that read (`fresh: 0`), and
- * nothing is kept once no preview shows them (`keep: 0`) — a withdrawn file, or a member removed from the group, never keeps
- * showing what the server would now refuse. `attempt`: the same preview reading again (its machine is back). Never waits
- * for the network: a read that cannot be done says so, as the preview always did.
+ * The bytes a preview shows (review A3): every opening reads them and the server acknowledges it (`fresh: 0`); nothing kept
+ * once unshown (`keep: 0`), so a withdrawn file never keeps showing. `attempt`: read again (its machine is back).
  */
 // `bytesOf` carries a hosted file's own `read` (a function): it drops out of the key's hash, which still holds the file's
 // `key`, and nothing of it is kept (`keep: 0`, no `persist`). A model's arguments are data otherwise — ❌ copy this.
@@ -120,7 +114,6 @@ const previewShown = replica({
   read: async (_owner: string, key: string, _attempt: number, file: BytesOf): Promise<ShownBytes> => {
     try {
       const bytes = await previewBytes(file, { shown: true, progress: (done, total) => { if (total > 0) noteProgress(key, done / total) } })
-      // Whoever draws these bytes hears a refusal; one that nobody draws any more is not an unhandled rejection.
       bytes.acknowledged?.catch(() => undefined)
       return bytes
     } catch (error) {
@@ -173,7 +166,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   // The machine the files beside it wait for: when the device list sees it go from off to on, the file is read again by itself.
   const [besideWaiting, setBesideWaiting] = useState<{ deviceId: string; itemId?: string; version?: number } | null>(null)
   const [attempt, setAttempt] = useState(0)
-  /** This opening of this file: a read again (the machine back) is a new one. */
   const opening = `${attempt}:${key}`
   // A video streams from its signed link unless its bytes are already here (a working copy, a file this device sent this run).
   const streamed = useMemo(() => kind === 'video' && file.source.kind !== 'hosted' && (!!file.document || !sentFileCopy(file.source)),
@@ -181,10 +173,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     [key, kind, file.document])
   const bytesOf: BytesOf = { source: file.source.kind === 'hosted' ? { kind: 'hosted', key: file.source.key, read: file.source.read } : file.source, document: file.document, mimeType: file.mimeType }
   const bytes = useReplica(previewShown, kind === 'unsupported' || streamed ? null : [key, attempt, bytesOf])
-  /** How far the bytes being read have come (0–1); unknown until the provider carrying them says. */
   const fraction = useSelect(previewProgress, (progress) => progress.get(key))
   const shownBytes = bytes.state === 'value' ? bytes.value : null
-  /** What the bytes in hand became for the viewer; drawn only for those bytes. */
   const [drawn, setDrawn] = useState<{ of: ShownBytes; read: PreviewRead } | null>(null)
   // @@@effect-flow(render) - turns the bytes in hand into what the viewer draws (an image's or a video's object URL, revoked
   // with them; text; an ArrayBuffer; the MPEG-TS sniff); the server refusing the read it acknowledges takes that down and says why
@@ -193,7 +183,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     let live = true, refused = false, release: (() => void) | undefined
     const draw = (next: PreviewRead) => { if (live) setDrawn({ of: shownBytes, read: next }) }
     const { blob, acknowledged } = shownBytes
-    // Shown before the server acknowledged the read: a refusal takes it down and says why.
     acknowledged?.catch((error: unknown) => { refused = true; release?.(); release = undefined; draw(previewFailure(error, t)) })
     const content = async (): Promise<PreviewRead> => {
       if (kind === 'image' || kind === 'video') {
@@ -201,15 +190,13 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
         release = () => URL.revokeObjectURL(url)
         return kind === 'image' ? { content: url } : { content: null, videoUrl: url, expiresAt: Infinity }
       }
-      // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is
-      // shown like any video this preview cannot play.
+      // A `.ts` / `.mts` is TypeScript or a recording whatever its stored type; only its bytes tell.
       if (kind === 'text' && await isMpegTsVideo(file.fileName, blob)) return { content: null, binary: true }
       return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer() }
     }
     void content().then((next) => { if (!refused) draw(next) }, (error: unknown) => { if (!refused) draw(previewFailure(error, t)) })
     return () => { live = false; release?.() }
   }, [shownBytes, kind, file.fileName, t])
-  /** A streamed video's link for this opening, or why it could not be had (and the machine that keeps it, when that is why). */
   const [stream, setStream] = useState<{ opening: string; read: PreviewRead; holder: OfflineHolder | null } | null>(null)
   // @@@effect-flow(lifecycle) - a streamed video holds its signed preview (renewed when the link expires, disposed when the
   // preview closes) for the preview's life; state holds only its link, or why it could not be had
@@ -240,7 +227,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     return () => { live = false; void release?.() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the opening names the source and the attempt
   }, [opening, streamed])
-  /** What this opening learnt since it drew: the file missing (a download or an open said so), or its video failing. */
+  /** What this opening learnt since it drew: the file missing, or its video failing. */
   const [noted, setNoted] = useState<{ opening: string; read: PreviewRead } | null>(null)
   const read: PreviewRead | null = noted?.opening === opening ? noted.read
     : kind === 'unsupported' ? null
@@ -248,7 +235,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     : bytes.state === 'unknown' ? null
     : bytes.state === 'error' ? previewFailure(bytes.error, t)
     : drawn?.of === bytes.value ? drawn.read : null
-  // The machine a failed read waits for: when it is back, the file is read again by itself.
   const failedHolder = streamed ? (stream?.opening === opening ? stream.holder : null) : bytes.state === 'error' && bytes.error instanceof UnreadPreview ? bytes.error.holder : null
   useHolderBack(besideWaiting ?? failedHolder, () => { setBesideWaiting(null); setBesideOffline(null); setAttempt((n) => n + 1) })
   const itemId = file.source.kind === 'item' ? file.source.itemId : null

@@ -28,10 +28,8 @@ export function tellFilePlace(itemId: string, at: FilePlace): void {
 
 /** The place last told for this chat file's preview; undefined until one is. */
 export function useFilePlace(itemId: string | null): FilePlace | undefined {
-  // A place told longer than WAIT_MS before this preview opened is not taken.
   const [opened] = useState(() => Date.now())
   const told = useSelect(places, (map) => (itemId ? map.get(itemId) : undefined), Object.is)
-  // Taken by this preview: it leaves with it, so the next preview of the file does not jump there again.
   useEffect(() => (itemId ? () => put(itemId, null) : undefined), [itemId])
   return told && told.until >= opened ? told.at : undefined
 }

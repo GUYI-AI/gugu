@@ -50,10 +50,7 @@ export function backgroundTaskRosters(
   }
 }
 
-/**
- * Which of a session's background tasks its machine still runs (this computer's own runtime when `local`). No push: asked
- * every BACKGROUND_TASKS_POLL_MS while a surface shows a candidate that may be running.
- */
+/** Which of a session's background tasks its machine still runs. No push: polled while a candidate may be running. */
 export const sessionBackgroundTasks = replica({
   name: 'sessionBackgroundTasks',
   scope: 'account',
@@ -88,8 +85,7 @@ export function usePhoneBackgroundTasks(
   const reading = useReplica(sessionBackgroundTasks, asking ? [deviceId, sessionId, local] : null)
   return useMemo(() => {
     if (!asking) return { commands: [], subagents: [], canStop: false }
-    // Not answered yet, or that computer cannot tell (now: its last answer is not what runs now): every candidate is
-    // listed unfiltered and nothing offers a stop key.
+    // Not answered yet, or that computer cannot tell: every candidate unfiltered, no stop key.
     if (reading.state !== 'value' || reading.error) return { commands: candidates.commands, subagents: candidates.subagents, canStop: false }
     const ids = reading.value.runningCommandTaskIds
     const commands = ids === null ? candidates.commands : candidates.commands.filter((entry) => ids.includes(entry.taskId))

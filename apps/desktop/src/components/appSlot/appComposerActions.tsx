@@ -11,17 +11,13 @@ import { appComposerActions } from './appBindingReplicas'
 import type { ComposerActionIcon, ComposerActionView } from '@/session/shared/extensions/composer-actions'
 
 const log = rendererLogger('app-composer-actions')
-// One empty list, so a menu not yet read (or not readable) keeps one identity across renders.
 /** The host's icons an App's entry may name (composer-actions.ts), the same glyphs as the built-in entries. */
 const ICONS: Record<ComposerActionIcon, ReactNode> = {
   sparkles: <Sparkles />, mic: <Mic />, upload: <ArrowUpToLine />, lightbulb: <Lightbulb />, pencil: <Pencil />, heart: <Heart />,
   checklist: <ListChecks />, document: <FileText />, book: <BookOpen />, image: <Image />, message: <MessageSquare />,
 }
 
-/**
- * The entries as the 「+」 menu draws them: the App's words in the person's language, the voice note greyed while recording.
- * `views` null = not read (or unreadable): no App entry yet, the built-in ones stay; they join when read.
- */
+/** The 「+」 menu's entries; `views` null = not read (or unreadable): only the built-in ones meanwhile. */
 export function composerMenu(
   views: readonly ComposerActionView[] | null,
   { zh, recording, run }: { zh: boolean; recording: boolean; run: (id: string) => void },
@@ -64,7 +60,6 @@ export function useAppComposerEntries({ ownerId, extensionId, authority, chatId 
   const { recording } = useVoiceNoteHandler()
   // The language when the draft lands, not when the menu was drawn.
   const zhNow = useCallback(() => i18n.language.startsWith('zh'), [i18n])
-  // Read for this column's App and authority; main's notes (a grant withdrawn, say) read it again.
   const reading = useReplica(appComposerActions, [extensionId, authority])
   const run = useCallback((actionId: string) => {
     void rpc.extensions.runConversationComposerAction({ ownerId, extensionId, authority, actionId }).then((result) => {

@@ -184,7 +184,6 @@ function CreateOnMachine({
   const optionsError = optionsReading.state === 'error' ? describe(optionsReading.error) : null
   /** 手机上没确认完的那次创建(本机发件记录,同步读):沿用它的 harness / 模型,发的也只能是它。 */
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(() => (phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null))
-  /** 人选的那一套;null = 还没动过(这时选的是从读数算出来的那一套)。 */
   const [chosen, setChosen] = useState<CreateSelection | null>(null)
   /** 人动过选择没有 —— 动过之后「上次那一套没沿用上」就不再说(那是人自己的改动)。 */
   const touched = chosen !== null
@@ -192,13 +191,11 @@ function CreateOnMachine({
   const modelTouched = useRef(phoneAttempt !== null)
   const derived = options ? (phoneAttempt ? { ...initialSelection(options), harness: phoneAttempt.harness, model: phoneAttempt.model ?? null } : initialSelection(options)) : null
   const picked = chosen ?? derived ?? NO_SELECTION
-  // 目录跟着 harness 走；复用这次读数定默认，不另发可用性探针。
   // 展示不由手机选:那台电脑按自己的「终端」开关定。
   const harness = picked.harness
   const model = picked.model
   const modelsReading = useReplica(sessionCreateModels, online && harness ? [device.device_id, harness, null, model, via] : null)
-  // 推理档跟着模型走(桌面同一条),所以换模型也重读;但同一家同一腿只是换模型时**不清空**清单 ——
-  // 清了列表会在人刚点完那一下闪没,而且 reconcile 会把刚选的模型判成「不在目录里」清掉。新读数到之前画上一份。
+  // 同一家同一腿只是换模型时**不清空**清单(清了会闪没,reconcile 还会把刚选的模型清掉):新读数到之前画上一份。
   const [lastModels, setLastModels] = useState<SessionpageSessionCreateModels | null>(null)
   if (modelsReading.state === 'value' && modelsReading.value !== lastModels) setLastModels(modelsReading.value)
   const models = modelsReading.state === 'value' ? modelsReading.value : lastModels && lastModels.harness === harness ? lastModels : null

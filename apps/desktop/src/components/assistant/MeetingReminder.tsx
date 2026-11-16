@@ -72,10 +72,8 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
   const seen = useRef<Set<string> | null>(null)
   const { recording } = useVoiceNoteHandler()
 
-  // The preference not read yet: the calendar is not read either (nothing to remind of before it is known to be wanted).
   const pref = useMeetingReminderPref()
   const reminding = pref.state === 'value' && pref.value
-  // The calendar is read (and read again every 30 s, on focus) only while there is someone to remind.
   const calendar = useReplica(deviceMeetings, enabled && reminding ? [] : null)
   const meetings = calendar.state === 'value' ? calendar.value.meetings : undefined
   // The clock the reminder window is judged by: a meeting enters its window as time passes, not only when the calendar changes.
@@ -83,7 +81,6 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
 
   // @@@effect-flow(event) - raises a one-time reminder (card + system notification) for a meeting that enters its window; the calendar is the deviceMeetings replica
   useEffect(() => {
-    // No meetings in hand (not read yet, a restored status without them, a failed read): nothing to remind of.
     if (!meetings) return
     seen.current ??= readSeen()
     const next = meetingToRemind(meetings, now, seen.current)

@@ -8,11 +8,7 @@ import { chatChannels, watchConnections } from '@/components/connections/connect
 
 export type ChatChannelsStatus = 'loading' | 'ready' | 'absent' | 'failed'
 
-/**
- * The WeChat (chat channel) connection: the `chatChannels` replica (account scope, connection-replicas.ts). `status` is the
- * reading said in this surface's words: unknown → `loading`, the cloud computer not open → `absent`, failed with nothing
- * read → `failed`; a refresh that fails over a value keeps it and says `error`.
- */
+/** The WeChat (chat channel) connection; `status` is the `chatChannels` reading in this surface's words. */
 export function useChatChannels(): {
   client: ChatChannelsClient | null; list: ChatChannelList | null; status: ChatChannelsStatus; error: string
   refresh: () => Promise<void>; apply: (next: ChatChannelList) => void
@@ -21,8 +17,7 @@ export function useChatChannels(): {
   const client = useMemo(() => rendererChatChannelsClient(), [])
   const reading = useReplica(chatChannels, [])
   useEffect(() => watchConnections(), [])
-  // A change this surface made answers with the whole list after an await: put it in the account this render drew (the
-  // handler holds this `apply` across its await), ❌ whichever account is signed in when it answers.
+  // A change's answer lands in the account this render drew, ❌ whichever is signed in when it answers.
   const owner = chatChannels.key()?.[1] ?? null
   const entry = useMemo(() => (owner ? chatChannels.at() : null), [owner])
   const apply = useCallback((next: ChatChannelList) => { entry?.set(next) }, [entry])

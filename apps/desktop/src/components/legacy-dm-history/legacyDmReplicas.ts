@@ -5,10 +5,7 @@ type LegacyDmListValue = { scope: LegacyDmScope | null; rows: LegacyDm[]; after:
 
 const data = () => import('./data');
 
-/**
- * The legacy DM archive (the account's, or one session's agent's): first page plus pages appended by `at(...).set`.
- * Frozen, so **never refreshed** (a refresh would drop the appended pages). No verifiable identity: `{ scope: null }`.
- */
+/** The legacy DM archive: first page plus pages appended by `at(...).set`. Frozen, so **never refreshed** (it drops them). */
 export const legacyDmList = replica({
   name: 'legacyDmList',
   scope: 'account',
@@ -23,7 +20,7 @@ export const legacyDmList = replica({
   keep: 5 * 60_000,
 });
 
-/** One legacy DM's latest page, older pages prepended as the reader asks. Frozen like the list: never refreshed. */
+/** One legacy DM's latest page, older pages prepended as asked. Frozen: never refreshed. */
 export const legacyDmMessages = replica({
   name: 'legacyDmMessages',
   scope: 'account',
@@ -35,7 +32,7 @@ export const legacyDmMessages = replica({
   keep: 5 * 60_000,
 });
 
-/** Whether a session has old chats to offer in its menu: read when the menu was first opened, again after five minutes. */
+/** Whether a session has old chats to offer in its menu (read on first open, again after five minutes). */
 export const legacyDmHistoryAvailable = replica({
   name: 'legacyDmHistoryAvailable',
   scope: 'account',

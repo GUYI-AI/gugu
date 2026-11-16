@@ -7,10 +7,7 @@ import { desktopIpc } from '../../platform/desktopIpc'
 
 const log = rendererLogger('assistant/quick-chat')
 
-/**
- * 快捷键此刻的样子(category ②:主进程的设备设置,渲染层只读)。主进程现读;变了它推一声(`changed`)⇒ 再读;开关的回答就是新值。
- * 跨重启留一份:齿轮页「快速聊天」那一组冷开就在(❌ 晚插)。
- */
+/** 快捷键此刻的样子(category ②:主进程的设备设置,渲染层只读)。跨重启留一份:齿轮页「快速聊天」冷开就在(❌ 晚插)。 */
 export const quickChatState = replica({
   name: 'quickChatState',
   scope: 'device',
@@ -20,7 +17,6 @@ export const quickChatState = replica({
     return (await ipc.invoke(QUICK_CHAT_CHANNELS.state)) as QuickChatState
   },
   fresh: Infinity,
-  // Two flags, a registered flag and an accelerator: ~150 B.
   persist: { maxBytes: 256, maxEntries: 1 },
   watch: { start: () => desktopIpc()!.eventOn(QUICK_CHAT_CHANNELS.changed, () => { void quickChatState.refresh() }) },
 })

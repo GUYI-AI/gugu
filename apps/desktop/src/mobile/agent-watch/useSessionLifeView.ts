@@ -18,11 +18,7 @@ export function phoneLifeRoute(deviceId: string, local: boolean): LifeRoute {
       }
 }
 
-/**
- * Same host lifecycle as the desktop, from the one mirror (session-life-views): subscribed before reading, released on
- * navigation; a link that comes back is a new epoch (read again when the page wants it: `readInitial`, or a pending
- * input).
- */
+/** Same host lifecycle as the desktop (session-life-views); a link that comes back is a new epoch, read when the page wants. */
 export function useSessionLifeView(deviceId: string, sessionId: string, local: boolean, enabled: boolean, readInitial = true) {
   const route = useMemo(() => phoneLifeRoute(deviceId, local), [deviceId, local])
   const life = useSelect(useMemo(() => lifeReadable(route, sessionId), [route, sessionId]), (value) => value)

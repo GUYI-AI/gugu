@@ -2,9 +2,7 @@ import { replica, useReplica } from '../lib/replica'
 import { parseSessionpageAgentContext, type SessionpageAgentContext } from '../lib/sessionpageAgentProjection'
 import { desktopIpc } from '../platform/desktopIpc'
 
-// @@@3911 投影自带主体 —— 一份投影只描述 `agentUserId` 这一个 agent。The reading is keyed by the agent, so the frame
-// that switches agents reads the new agent's entry (unknown until answered), ❌ the previous agent's answer: owner 报的
-// 「点过运行中的 agent 再点闲置 agent,闲置的也变运行中」(#3911) cannot come back.
+// @@@3911 投影自带主体 —— keyed by the agent, so switching agents ❌ shows the previous agent's answer (#3911).
 //
 // 这份投影只答「这个 agent 映射到会话页哪条会话」与只在会话面显形的平台恢复。它的状态、审阅门、provider
 // 阻塞是宿主按 agent 的流里的读数(agentPresenceStore 的 `local`),❌ 在这里再订一遍会话页的按会话通道 ——
@@ -17,11 +15,7 @@ type ProjectionState = (
   | { kind: 'error'; context: SessionpageAgentContext | null; error: string }
 ) & ProjectionSubject
 
-/**
- * Which task-page session an agent maps to on this computer, with its platform recovery (null = not mapped). Pushed by
- * the host: the task page switching its view (`session:changed` with a runtime) and a platform recovery changing are
- * read again by its watch.
- */
+/** Which task-page session an agent maps to here, with its platform recovery (null = not mapped). Host-pushed. */
 export const agentSessionContext = replica({
   name: 'agentSessionContext',
   scope: 'device',
@@ -52,7 +46,6 @@ export function useSessionpageAgentProjection(agentUserId: string | null): Proje
   if (reading.state === 'unknown') return { kind: 'pending', context: null, error: null, agentUserId }
   if (reading.state === 'error') return { kind: 'error', context: null, error: reading.error.message, agentUserId }
   const context = reading.value
-  // A refresh that failed: say so, with what was last known.
   if (reading.error) return { kind: 'error', context, error: reading.error.message, agentUserId }
   if (!context) return { kind: 'unmapped', context: null, error: null, agentUserId }
   if (context.projectionError) return { kind: 'error', context, error: context.projectionError, agentUserId }

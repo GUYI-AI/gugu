@@ -11,18 +11,13 @@ const log = rendererLogger('assistant/panel')
 const newer = (shown: AssistantPanelSnapshot, next: AssistantPanelSnapshot) => (BigInt(shown.revision) > BigInt(next.revision) ? shown : next)
 
 /**
- * The assistant's panel (@@@client-state-model, signal tier): the cloud snapshot of its collections, versioned by the server
- * head `revision`; a landing read or write never replaces a newer one (`merge` keeps the higher revision, I3). Read again
- * on `assistant_panel_changed` and each resubscription of the private bus (its `watch`), on focus, after local
- * commits (the panel files read through `fetch`). Its first value on this device is the IndexedDB copy (`local`, async:
- * a cold start is one frame late only when it opens straight on the panel; otherwise the session restore prefetches it,
- * below). Not in the localStorage snapshot: it grows (the 1 MB synchronous mirror it once needed is gone).
+ * The assistant's panel (@@@client-state-model, signal tier), versioned by the server `revision`: `merge` keeps the higher
+ * one (I3). First value: the IndexedDB copy (`local`). Not in the localStorage snapshot: it grows.
  */
 export const assistantPanel = replica({
   name: 'assistantPanel',
   scope: 'account',
   read: async (owner: string, assistantId: string): Promise<AssistantPanelSnapshot> => {
-    // The shell's cloud client, through the panel bridge (this module also loads with the session page, which holds no credentials).
     const snapshot = await withAssistantPanelReadDeadline(() => requireAssistantPanelBridge().panelSnapshot(owner, assistantId))
     assistantPanelBodies.forgetUnlisted(owner, assistantId, snapshot)
     void writeAssistantPanelSnapshotCopy(owner, assistantId, snapshot).catch((error: unknown) => log.warn({ error: String(error) }, 'panel copy not kept on this device'))
@@ -39,11 +34,7 @@ export function useAssistantPanel(ownerId: string | null, assistantId: string | 
   return useReplica(assistantPanel, ownerId && assistantId ? [assistantId] : null)
 }
 
-/**
- * A panel changed: its revision moved (a newer snapshot read or written) or it left (an account switch). ❌ every cache
- * event: a read starting or landing with the same revision is no change, and readers that read the panel again on a
- * change would otherwise feed themselves (review DE-1). `assistantId` undefined = any assistant's panel.
- */
+/** A panel's revision moved or it left; ❌ every cache event (readers that re-read on change would feed themselves, DE-1). */
 export function onAssistantPanelChanged(assistantId: string | undefined, listener: () => void): () => void {
   const seen = new Map<string, string | null>()
   for (const entry of assistantPanel.entries(...(assistantId ? [assistantId] as [string] : []))) {
@@ -62,15 +53,12 @@ export function onAssistantPanelChanged(assistantId: string | undefined, listene
 const SETTLE_MS = 1_000
 const preparing = (value: AssistantPanelSnapshot | null) =>
   !!value && (['memory', 'integrations', 'voice-notes', 'files', 'skills'] as AssistantPanelDomain[]).some((domain) => {
-    // Being filled: rows already published, the collection not marked ready yet.
     try { const collection = assistantPanelCollection(value, domain); return collection.state === 'unprepared' && collection.items.length > 0 } catch { return false }
   })
 
-// One bus listener per (owner, assistant) while shown or held (`hold`, the panel files).
 function watchPanel(ownerId: string, assistantId: string): () => void {
   let settle: ReturnType<typeof setTimeout> | undefined
-  // Read again now even where only the panel files hold it (no surface subscribed): their readers peek the entry. A read
-  // the refresh started for a shown entry is shared, ❌ a second one.
+  // prefetch too: the panel files may hold it with no surface subscribed (they peek the entry).
   const readAgain = () => { void assistantPanel.refresh(assistantId); void assistantPanel.prefetch(assistantId) }
   const refresh = () => {
     clearTimeout(settle)
@@ -78,7 +66,6 @@ function watchPanel(ownerId: string, assistantId: string): () => void {
     if (preparing(shown.state === 'value' ? shown.value : null)) settle = setTimeout(readAgain, SETTLE_MS)
     else readAgain()
   }
-  // The shell's private-bus subscription (`assistant_panel_changed`, and each resubscription with no payload).
   const stopBus = requireAssistantPanelBridge().subscribeChanges(ownerId, (payload) => {
     const about = (payload as { assistantId?: string } | null | undefined)?.assistantId
     if (!about || about === assistantId) refresh()
@@ -86,10 +73,7 @@ function watchPanel(ownerId: string, assistantId: string): () => void {
   return () => { clearTimeout(settle); stopBus() }
 }
 
-/**
- * The panel files' local copies (core `AssistantPanelReadCache`): the snapshot is this replica's entry (a newer one is
- * never replaced), the bodies are the content cache. Bound to the account that opened the files.
- */
+/** The panel files' local copies (core `AssistantPanelReadCache`), bound to the account that opened the files. */
 export function assistantPanelReadCache(ownerId: string, assistantId: string): AssistantPanelReadCache {
   const mine = () => assistantPanel.key(assistantId)?.[1] === ownerId
   const entry = () => assistantPanel.at(assistantId)

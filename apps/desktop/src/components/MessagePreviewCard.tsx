@@ -52,7 +52,6 @@ function usePromptMessages(
   const missing = ids.filter((id) => !byId.has(id))
   const readings = useReplicas(messageById, missing.map((id) => [id] as [string]))
   const missingKey = missing.join(',')
-  // Only a prompt of this card that was deleted is read again (❌ every prompt for any deletion in the account).
   useEffect(() => missingKey ? subscribeAccountRevision('message_deleted', (operations) => {
     const shown = new Set(missingKey.split(','))
     for (const operation of operations) {

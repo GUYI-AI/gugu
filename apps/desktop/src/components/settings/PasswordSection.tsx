@@ -53,7 +53,6 @@ const secretMark = (label: string, secret: boolean, change: (value: boolean) => 
     title={secret ? '保密：智能体看不到值，只能由咕咕代填。点一下改为不保密' : '不保密：授权过的智能体能读到。点一下改为保密'}>{secret ? <Lock /> : <LockOpen />}</IconButton>
 
 export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLElement | null } = {}) {
-  // The vault's state is its reading (fed by the vault's push); a command's reply puts the next state into it.
   const vault = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
   const snapshot = vault.state === 'value' ? vault.value : undefined
   const { busy, error, run, clear } = usePasswordCommand()
@@ -83,7 +82,6 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
   if (view.kind === 'form') return <><CredentialForm key={view.id ?? 'new'} item={item} {...props} />{offer}</>
   if (view.kind === 'request') return <><RequestedForm key={view.requestId} requestId={view.requestId} {...props} />{offer}</>
   if (view.kind === 'detail' && item) return <><CredentialDetail key={item.reference.id} item={item} {...props} />{offer}</>
-  // An item is only found in a vault state that is there.
   if (view.kind === 'grants' && item && snapshot) return <><GrantsPage {...props} item={item} snapshot={snapshot} />{offer}</>
   const add = <Button variant="primary" disabled={busy} onClick={() => go({ kind: 'form' })}>添加</Button>
   const slot = actionsHost?.()
@@ -112,10 +110,7 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
   </SettingsPage>
 }
 
-/**
- * The form an Agent's save request opens: what it proposed is read for the request (passwordSaveDraft) and handed to the
- * form once; until then the form's place waits, a failed read says so, and a request no longer waiting says that.
- */
+/** The form an Agent's save request opens, with what it proposed (passwordSaveDraft) handed to it once. */
 function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: string }) {
   const draft = useReplica(passwordSaveDraft, [requestId])
   const credentialId = draft.state === 'value' ? draft.value?.credentialId : undefined

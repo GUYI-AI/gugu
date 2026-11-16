@@ -264,12 +264,7 @@ const AssistantAppItem = observer(function AssistantAppItem({ apps, app, chatId,
   )
 })
 
-/**
- * The dock as it was last read, drawn before what is installed is read this run (PLAN v2 C4): each kept App as its monogram
- * (its icon is not kept) with its name, not opened yet; an App left out of what was kept (a long name), and the Apps past the
- * kept ones, as an icon-sized placeholder. The assistant App heads the group as it will once read. When the list lands the
- * real items take these places in the same order: nothing moves.
- */
+/** The dock as last read, drawn before what is installed is read this run (PLAN v2 C4): the real items take these places. */
 function KeptDockRail({ dock }: { dock: KeptDock }) {
   const assistant = dock.slots.find((slot) => slot?.extensionId === ASSISTANT_APP_ID) ?? null
   const slots = [...dock.slots.filter((slot) => slot?.extensionId !== ASSISTANT_APP_ID), ...Array.from({ length: Math.max(0, dock.count - dock.slots.length) }, () => null)]
@@ -294,7 +289,6 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   // The assistant App heads the group (AssistantAppItem), so it is not a second icon among the pinned ones.
   const target = useAssistantEntryTarget()
   const installed = useInstalledApps(LOCAL_HOST)
-  // Before the list is read, the dock as it was last read (kept across restarts): the rail's first frame (PLAN v2 C4).
   const kept = useReplica(installedExtensions, [LOCAL_HOST])
   const updates = useReplica(marketUpdates, [LOCAL_HOST])
   const apps = installed.state === 'value' ? installed.value : null
@@ -302,9 +296,7 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   const assistantApp = apps && target.kind === 'app' ? apps.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
   const docked = apps ? apps.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID)) : null
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
-  // Not read yet: no menu (nothing to list that would not be a guess).
   const openable = apps ? apps.openableApps : null
-  // Not known yet (or unreadable): null, and no badge is drawn.
   const updateCount = apps && updates.state === 'value' && updates.value.summary ? updateCountOf(updates.value.summary, apps) : null
   const open = (appId?: string) => {
     showSessions()

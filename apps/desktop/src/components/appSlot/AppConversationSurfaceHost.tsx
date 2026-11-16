@@ -46,23 +46,19 @@ export function AppConversationSurfaceHost({ visible, ...handlers }: {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
   const installedReading = useInstalledApps(LOCAL_HOST)
-  /** What is installed here; null while not known: nothing is read for it, and nothing verified lapses meanwhile. */
   const installed = installedReading.state === 'value' ? installedReading.value : null
   const inventory = installed?.manifests
   // Unknown: no column is placed yet (it comes with the list), and `lapsed` below keeps what was verified meanwhile.
   const placing = installed ? installed.manifests.filter((manifest) => manifest.contributes.conversationSurface && installed.isEnabled(manifest.id)) : []
   const wanted = placing.length > 0
-  // main's verified bindings for this account (`appSurfaceBindings`): read while an App places a column, read again when
-  // main says an App changed — that App undrawn at once, until the new read lands (appBindingReplicas.ts).
-  // Followed (main's notes reach it) for the account even while no App places a column, so an App uninstalled and
-  // installed again is drawn only after a new read; asked of main only while one does.
+  // main's verified bindings (`appSurfaceBindings`), followed for the account even while no App places a column, so an App
+  // reinstalled is drawn only after a new read; asked of main only while one does.
   const reading = useReplica(appSurfaceBindings, ownerId ? [] : null, { read: wanted })
-  // Not read yet, or unreadable: no column (an authority not verified draws nothing). A read that failed after a value keeps
-  // that value (the reading's `error`): it takes nothing back that it could not check.
+  // Not read yet, or unreadable: no column (an authority not verified draws nothing).
   const current = reading.state === 'value' ? reading.value : null
   // An App switched off, uninstalled, or not as it was installed when read: not drawn — only a new read brings it back.
   const lapsed = current && installed ? Object.keys(current.bindings).filter((id) => !placing.some((manifest) => manifest.id === id && current.installed[id] === installedAs(installed, manifest))) : []
-  // What is installed changed and a column lapsed for it: read again, once per list (main's note usually comes first).
+  // What is installed changed and a column lapsed for it: read again, once per list.
   const lapsedOn = useRef<object | null>(null)
   useEffect(() => {
     if (lapsed.length === 0 || !inventory || lapsedOn.current === inventory) return

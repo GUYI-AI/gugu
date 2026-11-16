@@ -2,10 +2,7 @@ import { replica, useReplica, type Reading } from '../../lib/replica'
 import type { MarketOffer } from '../extensionBundle/installOffers'
 import { appsHere } from './appsHere'
 
-/**
- * The market's Apps this device can install (161 10-15), read from the index in hand (never fetched for a file). Pushed by
- * `appsHere.onMarketChanged`. Unreadable is the reading's error (❌ an empty market). Not kept (≈1.7 KB per App).
- */
+/** The market's Apps this device can install (161 10-15), from the index in hand, pushed by `appsHere.onMarketChanged`. */
 export const marketOffers = replica({
   name: 'marketOffers',
   scope: 'device',
@@ -20,7 +17,6 @@ export const marketOffers = replica({
 })
 
 
-/** What the market offers here, while `asked` (false: nothing asked, unknown). */
 export function useMarketOffers(asked: boolean): Reading<MarketOffer[]> {
   return useReplica(marketOffers, asked && appsHere ? [] : null)
 }

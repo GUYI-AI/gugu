@@ -65,13 +65,11 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
     : reading.state === 'error' || reading.error ? { ownerId, kind: 'failed', message: failureMessage(reading.error) }
     : { ownerId, kind: 'ready', status: reading.value, ...(shownChange?.kind === 'settled' && shownChange.message ? { message: shownChange.message } : {}) }
 
-  // Read again (the reload button, the App back in front): the shown state is dropped while it is checked.
   const recheck = useCallback(() => {
     // The permission sheet can foreground the App before native finish completes.
     if (mutation.current) return
     setChange(null)
     setObserverFailure(null)
-    // Dropped (unknown) until the native answer lands; a read on its way is replaced.
     void iosCalendarConnection.reset()
   }, [])
 
@@ -126,8 +124,7 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
     }
   }
 
-  // The App back in front (the person may have changed the grant in system settings): read again. A failed observer
-  // means later changes would go unnoticed: say so, and show nothing read after it.
+  // A failed foreground observer means later grant changes go unnoticed: say so, show nothing read after it.
   useEffect(() => {
     let alive = true
     const unsubscribe = platform.subscribeAppForeground(() => { if (alive) recheck() }, cause => {

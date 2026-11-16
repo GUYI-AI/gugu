@@ -118,7 +118,6 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   const desktop = platform.kind === 'electron'
   const { user } = useAuth()
   const installedReading = useInstalledApps(HERE_HOST)
-  /** What is installed here; null while not known (no offer, no takeover, no update bar is decided on it then). */
   const installed = installedReading.state === 'value' ? installedReading.value : null
   const pane = chatPaneOf(chatId, tabId)
   // 「返回」 goes to the tab whose page opened this one (owner 10-24): its own history, else the page it was opened from.
@@ -135,31 +134,21 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   const [rawShown, setRawShown] = useState(false)
   /** The App's error spelled out under the header, when the person asked (摩擦单 F63). */
   const [errorShown, setErrorShown] = useState(false)
-  /**
-   * This chat's newest shared package of each App (摩擦单 F15): the data file can be in the group before its App's card (the
-   * card goes out once the App passed its check, L5 S1 — ~2 s); when that card arrives the replica reads the chat again
-   * (log push, ExtensionForwardHost) and a file already open gets its offer then.
-   */
+  // 摩擦单 F15: the file can be in the group before its App's card; the card's arrival reads the chat again (ExtensionForwardHost).
   const sharedReading = useReplica(sharedAppPackages, appsHere && user?.id ? [chatId] : null)
   const shared = sharedReading.state === 'value' ? sharedReading.value : null
-  // The market's Apps for this device, from the index in hand (161 10-15), never fetched for a file.
   const typedName = item.kind ? item.typedName ?? null : null
   const marketReading = useMarketOffers(!!appsHere && !!typedName)
-  // The market unreadable (null): an App is offered from what is shared in this chat only (as before the market was asked).
+  // The market unreadable (null): offered from what is shared in this chat only.
   const market = marketReading.state === 'value' ? marketReading.value : null
   const marketKnown = marketReading.state !== 'unknown'
-  // Offer an App ahead of anything installed (`openerAhead`): shared here first (F15), else the market's (161 10-15). Decided
-  // once all three are known (the market's from the index in hand, a replica: usually there when the file opens).
+  // Decided once all three are known.
   const offer = useMemo(() => appsHere && typedName && shared && marketKnown && installed
     ? offerFor(typedName, shared, market, enabledApps(installed), installed.manifests, installed.origins, installed.locale) : null,
   [typedName, shared, market, marketKnown, installed])
   useEffect(() => setOfferFailed(null), [typedName, chatId])
   useEffect(() => setRawShown(false), [item.itemId, chatId])
-  /**
-   * A file opened before what decides its offer is read (this chat's packages, what is installed, the market): held back
-   * for that moment, so an offer is not preceded by its raw JSON. Only while unknown: a read that failed decides "no
-   * offer from it" and the page is drawn (❌ held back for good).
-   */
+  // Held back until its offer is decided (❌ raw JSON then an offer); a failed read decides "no offer" (❌ held back for good).
   const offerUnknown = appsHere !== null && !!item.kind && !!item.itemId
     && (sharedReading.state === 'unknown' || installedReading.state === 'unknown' || (!!typedName && marketReading.state === 'unknown'))
   /** The open file's raw page folds under an offer for it (not under one for a file nobody here opens). */
@@ -210,7 +199,6 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
         setOfferFailed(refusedLine(result.data))
         return
       }
-      // Installed: the list reads it, and the offer (derived from it) goes.
     } catch (error) {
       log.error({ error }, 'the App offered for a file did not install')
       setOfferFailed(messageForUser(error))

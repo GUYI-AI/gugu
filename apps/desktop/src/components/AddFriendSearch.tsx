@@ -137,8 +137,7 @@ export function AddFriendSearch({
 
   const { toast } = useToast()
   const [query, setQuery] = useState('')
-  // The search the person asked for (Enter, or a scanned code): what was typed, and what is looked up for it. The hits
-  // are that search's reading; a query only typed asks nothing and says nothing.
+  // The search the person asked for (Enter, or a scanned code); a query only typed asks nothing.
   const [submitted, setSubmitted] = useState<Submission | null>(null)
   const found = useReplica(userSearch, submitted ? [submitted.query] : null)
   // @@@1505 点「添加」先开附言 Dialog 收集申请附言（选填），再发申请（加好友先附言、再发申请）。
@@ -173,7 +172,6 @@ export function AddFriendSearch({
 
   const handleSearch = () => {
     const next = submissionOf(query)
-    // The same search asked again reads again (someone may have just signed up).
     if (next && next.query === submitted?.query) void userSearch.refresh(next.query)
     setSubmitted(next)
   }

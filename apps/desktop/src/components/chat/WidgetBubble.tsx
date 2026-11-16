@@ -120,15 +120,13 @@ function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; 
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState('')
   const canOffer = reason === 'missing' || reason === 'view'
-  // Asked once the bubble is on screen: this chat's shared packages (refreshed when one is sent) and the market's Apps.
   const asked = shown && canOffer && !!appsHere && !!user?.id
   const shared = useReplica(sharedAppPackages, asked ? [chatId] : null)
   const marketReading = useMarketOffers(asked)
-  // The market unreadable: the offer is looked for among what is shared here only (null market), and the failure is said below.
+  // The market unreadable: the offer is looked for among what is shared here only; the failure is said below.
   const offer = asked && shared.state === 'value' && marketReading.state !== 'unknown' && installed.state === 'value'
     ? widgetInstallOffer(availableInstallOffers(shared.value, marketReading.state === 'value' ? marketReading.value : null, installed.value.manifests, installed.value.origins),
       widget.app, widget.view, platform.kind === 'electron' ? 'desktop' : 'phone') : null
-  /** Asked and not answered yet: the offer's place is held at its size. */
   const offerUnknown = asked && (shared.state === 'unknown' || marketReading.state === 'unknown' || installed.state === 'unknown')
   const readFailed = shared.state === 'error' ? shared.error : marketReading.state === 'error' ? marketReading.error : null
   const install = async () => {

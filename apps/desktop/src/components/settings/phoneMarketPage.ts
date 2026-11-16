@@ -11,10 +11,7 @@ import { phoneApps } from '../appSlot/phoneApps'
 export { PHONE_HOST }
 
 
-/**
- * The phone's market, as the market replicas read it (market-replicas.ts `marketShelf('phone', locale)` …): only transport
- * differs from the desktop — the same catalog and home rules, its entries from the phone's App store.
- */
+/** The phone's market shelf: the desktop's catalog and home rules, its entries from the phone's App store. */
 async function readPhoneShelf() {
   return phoneShelfOf(phoneMarketRows(await phoneApps.market.entries(), ''))
 }
@@ -28,7 +25,6 @@ export function phoneMarketRows(entries: Awaited<ReturnType<typeof phoneApps.mar
   )
 }
 
-/** A search over the shelf as read (its rows are the entries, as the market lists them). */
 export function phoneSearchRows(items: readonly MarketListItem[], query: string): MarketListItem[] {
   return phoneMarketRows(items.map(({ manifest, cloud }) => ({ manifest, ...cloud }) as CloudMarketEntry), query)
 }
@@ -65,11 +61,7 @@ export const phoneProductApi: ProductPageApi = {
   },
 }
 
-/**
- * The version the market offers this phone for each App installed here from it, and the ones no longer in the market (owner
- * 10-19, as the desktop says): `marketUpdates('phone')`, the one model the desktop reads too (it absorbed `offeredVersions`).
- * Since owner 10-19 they also update by themselves (phoneApps `autoUpdate`); here the person sees one is waiting.
- */
+/** `marketUpdates('phone')` (owner 10-19): the offered version per App installed from the market, and ones no longer there. */
 export function useOfferedVersions(): Reading<MarketUpdates> {
   const reading = useReplica(marketUpdates, [PHONE_HOST])
   useEffect(() => {

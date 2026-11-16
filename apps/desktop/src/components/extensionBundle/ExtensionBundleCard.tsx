@@ -96,7 +96,6 @@ function PermissionsFold({ text, strong, muted }: { text: string; strong: string
  */
 function PackageReading({ card, muted }: { card: PackageCard; muted: string }) {
   const key = packageKey(card)
-  // Nothing reported yet: the bar is indeterminate and no byte count is said.
   const read = useSelect(packageProgress, (progress) => progress[key] ?? null)
   const t = translateSessionMessage
   return (
@@ -256,8 +255,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   const manifest = summary?.ok ? summary.manifest : null
   const { resolvedLocale: locale } = useLocale()
   const name = manifest ? localizedManifestText(manifest, locale).name : null
-  // Already here — the same App at the same version — is installed, however it got here (a folder an agent installed, a
-  // card in a chat, the market, 摩擦单 F4), and where it came from (E-05). Follows the installed list as it changes.
+  // Already here — the same App at the same version — is installed, however it got here (摩擦单 F4, E-05).
   const installedHere = useInstalledApps(HERE_HOST)
   const hereManifest = manifest && installedHere.state === 'value' ? installedHere.value.manifestFor(manifest.id) : undefined
   const here = hereManifest && installedHere.state === 'value' ? { version: hereManifest.version, origin: installedHere.value.origins[hereManifest.id] } : null
@@ -267,8 +265,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   const newer = manifest && newest && compareExtensionVersions(newest.manifest.version, manifest.version) > 0 ? newest : null
   // What the card offers follows what is installed here, always — installed, updated, uninstalled (摩擦单 F66): the one
   // answer the desktop and the phone share (`cardOffer`).
-  // Not known yet what is installed here: no offer is made (the button's place holds a placeholder), ❌ 「安装」 for an App
-  // that may well be installed.
+  // Not known yet what is installed here: no offer, ❌ 「安装」 for an App that may be installed.
   const offer = manifest && installedHere.state === 'value'
     ? cardOffer({ installedVersion, installedOrigin: here?.origin, cardVersion: manifest.version, ...(newer ? { newestVersion: newer.manifest.version } : {}) })
     : null

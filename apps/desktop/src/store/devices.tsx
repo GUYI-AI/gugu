@@ -75,7 +75,6 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     if (!userId) return
     let asking = false
     return cloudComputer.subscribe([], ({ reading, fetching }) => {
-      // Once per answer of the manager (a read landing), ❌ for every change of the entry (a refresh marking it, a write).
       const answered = asking && !fetching
       asking = fetching
       if (!answered || reading.state !== 'value' || !reading.value.available) return

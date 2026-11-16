@@ -34,7 +34,6 @@ type Props = {
   onCancel?: () => void
 }
 
-/** A folder the picker goes to (the listing is the `remoteDirectory` reading of it). */
 type Place = { path: string; hidden: boolean }
 
 /**
@@ -50,8 +49,7 @@ type NewFolderState = { name: string; busy: boolean; error: string | null }
 
 function navErrorOf(path: string, error: Error): NavError {
   if (error instanceof RemoteDirectoryError) return { kind: 'rpc', path, error: error.rpcError }
-  // @@@remote-dir-timeout-hint (#670) - surface the device-RPC timeout as an actionable message
-  // (host unreachable / old build) instead of the raw "设备 RPC timed out after Nms" string.
+  // @@@remote-dir-timeout-hint (#670) - the device-RPC timeout as an actionable message, ❌ the raw timeout string.
   return { kind: error.name === 'DeviceRpcTimeoutError' ? 'timeout' : 'unreachable', path }
 }
 
@@ -86,16 +84,14 @@ function entryIcon(kind: DeviceFsEntry['kind']) {
 
 export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCancel }: Props) {
   const { t } = useTranslation('agents')
-  /** Where the picker is going (view state); the folder's entries are the `remoteDirectory` reading of it. */
   const [target, setTarget] = useState<Place>({ path: initialPath, hidden: false })
-  /** Where it stood when it set off: still shown (and usable) while `target` is being read or could not be read. */
+  /** Where it stood when it set off: still shown while `target` is read or failed. */
   const [from, setFrom] = useState<Place | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const [filter, setFilter] = useState('')
   const [confirmBroad, setConfirmBroad] = useState<'root' | 'home' | null>(null)
   const [newFolder, setNewFolder] = useState<NewFolderState | null>(null)
 
-  // A new device or first path is a new picker.
   const [opened, setOpened] = useState({ deviceId, initialPath })
   if (opened.deviceId !== deviceId || opened.initialPath !== initialPath) {
     setOpened({ deviceId, initialPath })
@@ -104,29 +100,24 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
   }
 
   const asked = useReplica(remoteDirectory, [deviceId, target.path, target.hidden])
-  // 首次打开:先去调用方给的起点;那里去不了(被删了、没权限)就退回主目录,❌ 停在一片空白上。A derivation, not a
-  // second navigation: the first place shown is the home folder while the asked one is not a place to stand.
+  // 首次打开的起点去不了(被删了、没权限)就退回主目录,❌ 停在一片空白上。
   const fellBack = from === null && target.path === initialPath && target.path !== '~' && asked.state === 'error'
     && asked.error instanceof RemoteDirectoryError && UNREACHABLE_PATH_CODES.includes(asked.error.rpcError.code)
   const current: Place = useMemo(() => (fellBack ? { path: '~', hidden: target.hidden } : target), [fellBack, target])
   const reading = useReplica(remoteDirectory, fellBack ? [deviceId, current.path, current.hidden] : [deviceId, target.path, target.hidden])
-  // Already read (it was shown): held as it is, ❌ read again for standing on it.
   const standing = useReplica(remoteDirectory, from ? [deviceId, from.path, from.hidden] : null, { read: false })
   // An older machine reports its home only when `~` is listed: what a listing of `~` said, if one was read.
   const tilde = useReplica(remoteDirectory, [deviceId, '~', false], { read: false })
 
-  /** The folder shown: the one asked for once it is read, until then the one stood on. */
   const listing: RemoteDirectory | null = reading.state === 'value' ? reading.value : standing.state === 'value' ? standing.value : null
-  // A folder read again (refresh) is loading too: dimmed, its seconds counted; a refresh that failed is said beside the
-  // listing still shown (❌ the old listing as if it were current).
+  // A refresh is loading too; a failed one is said beside the listing still shown (❌ the old listing as if current).
   const refreshing = useReplicaFetching(remoteDirectory, [deviceId, current.path, current.hidden])
   const loading = reading.state === 'unknown' || refreshing
   const navError = reading.state !== 'unknown' && reading.error ? navErrorOf(current.path, reading.error) : null
   const home = listing?.home ?? (tilde.state === 'value' ? tilde.value.home : null)
   const truncatedCount = listing?.truncated ?? null
 
-  // @@@remote-dir-progress (#848) - show elapsed seconds while loading so the wait for the remote
-  // device-RPC never reads as a frozen "永远 loading" (the call times out after 20 s). A view timer, not a read.
+  // @@@remote-dir-progress (#848) - elapsed seconds while loading, ❌ a frozen "永远 loading". A view timer, not a read.
   const [loadElapsed, setLoadElapsed] = useState(0)
   useEffect(() => {
     setLoadElapsed(0)
@@ -164,7 +155,6 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
   const completionDir = draftSplit?.dir ?? null
   // 正在看的就是这个目录:直接用手上的读数,不再跨云问一趟。
   const completingShown = completionDir !== null && listing !== null && (completionDir === listing.path || (completionDir === '~' && home === listing.path))
-  // The address bar asks the machine once typing pauses (the key is a debounced view value; the read is the replica's).
   const [askedDir, setAskedDir] = useState<string | null>(null)
   useEffect(() => {
     if (completionDir === null || completingShown) { setAskedDir(null); return }
@@ -438,7 +428,6 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             ))}
           </ul>
         ) : null}
-        {/* Completion could not list that folder: no suggestions, and why (❌ an empty list that reads as "nothing there"). */}
         {completionError ? (
           <span role="status" data-testid="remote-folder-path-completion-error" className="absolute top-full right-2 left-9 z-10 mt-1 truncate rounded-[var(--radius-surface)] bg-[var(--popover)] px-2 py-1 text-[length:var(--font-caption)] text-[var(--danger-fg)] shadow-[var(--shadow-lift)]">
             {navErrorMessage(completionError, t)}

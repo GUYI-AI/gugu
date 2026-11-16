@@ -13,12 +13,8 @@ export function iosCalendarClient(): IOSCalendarPermissionClient {
 }
 
 /**
- * This phone's calendar for the signed-in account (native owner binding): the OS authorization and whether the
- * calendar category is connected for this owner. Account scope (the owner is the account). Read on open; a command
- * (connect / disconnect) puts the snapshot it answered. An environment fact (signal tier): the panel reads it again
- * when the App comes back to the foreground, dropping the shown value first so a revoked grant is never shown as
- * connected while it is checked. ❌ Kept across restarts: the panel shows and changes only what native answered in this
- * run (a grant revoked in Settings while the App was closed is never drawn as connected, its binding never used).
+ * This phone's calendar for the account (native owner binding). Signal tier: the panel drops the shown value and reads again
+ * on foreground, so a revoked grant is never shown as connected. ❌ Persisted (only what native answered in this run).
  */
 export const iosCalendarConnection = replica({
   name: 'iosCalendarConnection',

@@ -83,11 +83,7 @@ export const topicsOfChat = replica({
   },
 })
 
-/**
- * Where a topic was opened from, for its split header (@@@5856): `readable` with the source line's preview, `gone`
- * (deleted), or `unreadable` (the source is there but not for this reader — ❌ said as deleted). No push: read on open,
- * kept a while for switching back. A failed read is an error reading (❌ "deleted").
- */
+/** Where a topic was opened from (@@@5856): `readable`, `gone` (deleted), or `unreadable` (❌ said as deleted). Read on open. */
 export const topicSource = replica({
   name: 'topicSource',
   scope: 'account',
@@ -143,7 +139,7 @@ export function useTopicsOfChat(
         entry.set((shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
       } catch (err) {
         if (!current()) return
-        // One topic could not be read: read the whole line again (I1), its failure is the line's reading.
+        // One topic could not be read: read the whole line again (I1).
         topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed; reading the line again')
         reload()
       }
@@ -152,8 +148,7 @@ export function useTopicsOfChat(
       for (const operation of operations) {
         const { chatId, entityId } = readRevisionResourceKey(operation.payload, 'chat_changed')
         if (chatId !== sourceChatId || !entityId) continue
-        // The whole-line read still in flight may predate this change: read the line again instead (a one-moment look
-        // at the replica's own entry, outside rendering).
+        // The whole-line read still in flight may predate this change: read the line again instead.
         if (topicsOfChat.isFetching(sourceChatId)) reload()
         else void refresh(entityId)
       }

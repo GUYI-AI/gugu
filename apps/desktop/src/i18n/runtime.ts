@@ -35,12 +35,8 @@ function hostLanguages(refresh = false): readonly string[] {
 }
 
 /**
- * The language preference lives in this shell's device store (lib/devicePreferences.ts). Its first value is read here
- * with the dependency-free boot reader — the same store: on desktop preload's handover (the settings replica's first
- * value too), so the language is right from the first frame, the upgrade start included; on web / phone localStorage.
- * This module does not import the device store (i18n/preference.ts does): the store's chain (settings client → ipc →
- * machine clients → localization) imports this module, and a static cycle back through ipc deadlocked a test that mocks
- * ipc with a factory awaiting the original (the settings browser tests hung at start).
+ * The language preference's first value, read with the dependency-free boot reader (lib/devicePreferences.ts store), so the
+ * language is right from the first frame. ❌ Import the device store here: a static cycle back through ipc deadlocked tests.
  */
 const preference = typeof window === 'undefined' ? 'system' : bootLocalePreference(window)
 let snapshot: LocaleSnapshot = {

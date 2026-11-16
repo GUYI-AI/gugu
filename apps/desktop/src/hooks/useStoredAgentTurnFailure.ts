@@ -9,11 +9,7 @@ import { replica, useReplica } from '../lib/replica'
 
 const log = rendererLogger('agent/stored-turn-failure')
 
-/**
- * The persisted outcome of agents' turns (failures the owner should hear of), per scope (a chat / thread, or every chat)
- * and agent set. Signal tier: no revision log, so the private bus, each bus (re)subscription, focus and a recovered
- * backend read it again (useStoredAgentTurnFailure). A failed read is retried with backoff (1 s … 30 s).
- */
+/** Agents' persisted turn failures per scope and agent set. Signal tier; a failed read is retried with backoff (1 s … 30 s). */
 export const storedAgentTurnFailures = replica({
   name: 'storedAgentTurnFailures',
   scope: 'account',
@@ -73,14 +69,12 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
       return pending.length ? { ...now, ...Object.fromEntries(pending.map((row) => [row.commandId, { revision: row.revision, at: Date.now() }])) } : null
     })
   }, [read, changeDismissals])
-  // Signal tier: the private bus says a delivery changed (and each (re)subscription may have missed some), focus and a
-  // recovered backend read again. Only the status is reread: a failed read never resends an agent's command.
+  // Only the status is reread: a failed read never resends an agent's command.
   useEffect(() => {
     if (!asks || !user?.id || scopeKey === null) return
     const where = JSON.parse(scopeKey) as StoredFailureScope
     const refresh = () => { void storedAgentTurnFailures.refresh(scopeKey, ids) }
-    // The bus says it is subscribed right after this mount; the mount's own read began after that subscription was asked
-    // for, so the first notice adds nothing (reading again there sent every open twice). Later ones (resubscribed) read.
+    // The first subscribed notice follows the mount's own read (❌ every open read twice); later ones (resubscribed) read.
     let opened = true
     const subscribed = () => {
       const first = opened

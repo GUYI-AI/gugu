@@ -7,15 +7,10 @@ import { assistantIntegrationDetail,registerConnectionStore } from './assistant-
 
 export const EMPTY_INTEGRATION_SUMMARIES: IntegrationMetadata[] = []
 
-/** A metadata-only row whose list text is missing: its name and description are read from its full entry. */
 const lacksSummary = (item: IntegrationMetadata,locale: string) =>
   item.metadataOnly && !builtinIntegrationSummary(item.id,locale) && (!item.description || item.name === item.id || item.summaryNameMissing)
 
-/**
- * The list's missing names and descriptions, from the same entry the detail page reads (replica
- * `assistantIntegrationDetail`: one body read per catalog version, ❌ a second holder of it). Optional enrichment: a row
- * whose entry is not read yet, or cannot be, keeps the text it has.
- */
+/** The list's missing names and descriptions, from the detail's own entry (`assistantIntegrationDetail`); optional enrichment. */
 export function useAssistantIntegrationSummaries(panel: ConnectionMetadataStore | undefined,items: IntegrationMetadata[],locale: string): IntegrationMetadata[] {
   const storeKey = panel ? registerConnectionStore(panel) : null
   const missing = storeKey ? items.filter(item => lacksSummary(item,locale)) : []

@@ -6,18 +6,15 @@ import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/m
 import type { ComposerActionView } from '@/session/shared/extensions/composer-actions'
 import type { GrantedSurfaceBinding, StoredUnreadBinding } from '@/session/shared/extensions/unread-binding'
 
-/**
- * #1925 / #1927 What main grants this account's Apps over its conversations. Pushed by main's inventory channel
- * (each model's `watch`). Not kept across restarts: an authority stamp is checked again after a restart.
- */
+// #1925 / #1927 What main grants this account's Apps over its conversations. Not persisted: an authority stamp is checked again.
 
-/** One App as installed here: what its update, or a reinstall from another publisher, changes. Another App's never does. */
+/** One App as installed here: what its update, or a reinstall from another publisher, changes. */
 export function installedAs(installed: InstalledApps, manifest: ExtensionManifest): string {
   return JSON.stringify([manifest, installed.origins[manifest.id] ?? null, installed.publishers[manifest.id] ?? null])
 }
 
-/** Each App's binding as main verified it, and each App as installed when it was read (a later change lapses it). */
-export type SurfaceBindings = { bindings: Record<string, GrantedSurfaceBinding>; installed: Record<string, string> }
+/** `installed`: each App as installed when read (a later change lapses its binding). */
+type SurfaceBindings = { bindings: Record<string, GrantedSurfaceBinding>; installed: Record<string, string> }
 
 export const appSurfaceBindings = replica({
   name: 'appSurfaceBindings',

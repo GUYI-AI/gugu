@@ -8,10 +8,7 @@ import { PHONE_HEALTH_REFRESH_MS, readPhoneHealthView, type PhoneHealthView } fr
 /** 与桌面健康页、手机的 health.summary 默认同一段:最近 7 天(含今天)。 */
 const HEALTH_DAYS = 7
 
-/**
- * This phone's health data, read natively (Health Connect / HealthKit) — device scope, no push: read again on its interval
- * while the page shows a summary (none while it asks for access), and when the window comes back. Not kept (health data).
- */
+/** This phone's health data, read natively (device scope, no push: polled while shown). Not kept (health data). */
 export const phoneHealth = replica({
   name: 'phoneHealth',
   scope: 'device',

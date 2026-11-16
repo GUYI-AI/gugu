@@ -15,10 +15,8 @@ import { connectionReadDelay } from './connection-read-policy'
 import { CONNECTIONS_CHANGED } from './owner-connection-metadata'
 
 /**
- * @@@connection-replicas — the connections library's data (@@@client-state-model): the owner's connection snapshot
- * (`ownerConnections`, owner mode), the chat channels, and per library host key (`libraryHostOf`, not owner mode) the
- * integrations' catalog, statuses and accounts. Signal tier: `CONNECTIONS_CHANGED` and assistant panel changes refresh
- * them (`watchConnections`), focus too. Host-keyed ones are device scope (a host bound to an account carries its owner).
+ * @@@connection-replicas — the connections library's data (@@@client-state-model). Signal tier: `CONNECTIONS_CHANGED` and
+ * panel changes refresh them (`watchConnections`). Host-keyed ones are device scope (a host bound to an account carries its owner).
  */
 
 /** No cloud computer: the channels live there, so there are none to list — an answer, not a failure. */
@@ -51,7 +49,6 @@ function fitsKept(value: ChatChannelsValue): boolean {
 }
 const CHAT_CHANNEL_KINDS = 4
 
-/** The route epoch a key was read under is still the owner's route now (else the key is stale: refused). */
 function ownerRoute(epoch: string) {
   const route = connectionBridge().routing.peek()
   if (route?.mode !== 'owner' || route.epoch !== epoch) throw new ConnectionError('route-changed', 'CONNECTION_ROUTE_CHANGED')
@@ -63,7 +60,6 @@ export const ownerConnections = replica({
   scope: 'account',
   read: (owner: string, epoch: string, deviceId: string | null): Promise<ConnectionMetadataSnapshot> =>
     connectionBridge().metadata(owner, deviceId, ownerRoute(epoch)).snapshot(),
-  // Signal-fed and polled: a confirmation under way is asked about every 3 s, else every 15 s.
   fresh: Infinity,
   refreshOnFocus: true,
   refreshEvery: (value) => (value?.application.some(connectionNeedsConfirmation) ? 3_000 : 15_000),
@@ -72,7 +68,6 @@ export const ownerConnections = replica({
   retryDelay: connectionReadDelay,
 })
 
-/** Warm the channels and (owner route) the owner snapshot after the session is restored; a failure is the reading's. */
 export function prefetchConnections(): void {
   void chatChannels.prefetch()
   void connectionRoute.fetch().then((route) => {
@@ -80,7 +75,6 @@ export function prefetchConnections(): void {
   }, () => {})
 }
 
-/** The owner snapshot an owner-connection store (its route epoch and device) reads into; unknown for any other store. */
 export function useOwnerConnectionsReading(store: ConnectionMetadataStore | undefined): Reading<ConnectionMetadataSnapshot> {
   return useReplica(ownerConnections, store?.authorityEpoch && !store.assistantId ? [store.authorityEpoch, store.deviceId ?? null] : null)
 }
@@ -94,16 +88,13 @@ export type IntegrationAccounts =
   /** The host is older than accounts per provider (#7240): the detail draws one account. */
   | { supported: false }
 
-/**
- * How a host's connection reads are asked again (as before PR 3): a host behind the assistant panel retries a failure that
- * may pass (its computer waking) twice and, while it fails so, asks again every 30 s; a fixed fact (unprepared, signed out…)
- * fails at once. This desktop's own IPC and another machine are not retried (an offline machine would only hang).
- */
+// Only a host behind the assistant panel retries (its computer waking); another machine is not (an offline one would only hang).
 const panelHost = (hostKey: string) => !!peekLibraryHost(hostKey)?.assistantPanelExpected
 const hostRetry = (failures: number, error: Error, hostKey: string) => panelHost(hostKey) && retryAssistantPanelRead(failures, error)
 const hostRecheck = (_value: unknown, error: Error | null, hostKey: string) =>
   error && panelHost(hostKey) && isAssistantPanelReadRetryable(error) ? 30_000 : false
 const hostReadPolicy = { retry: hostRetry, retryDelay: connectionReadDelay, refreshEvery: hostRecheck }
+const hostPolled = { fresh: 30_000, refreshOnFocus: true, ...hostReadPolicy }
 
 const legacyPanelView = (hostKey: string, locale: string) => {
   const host = peekLibraryHost(hostKey)
@@ -114,7 +105,6 @@ export const integrationsCatalog = replica({
   name: 'integrationsCatalog',
   scope: 'device',
   read: (_owner: string, hostKey: string, locale: string): Promise<IntegrationList> => libraryHostOf(hostKey).integrations.list(locale),
-  // A host's catalog changes with its build or its panel's publication: both signal.
   fresh: Infinity,
   ...hostReadPolicy,
   local: (_owner, hostKey, locale) => legacyPanelView(hostKey, locale)?.items as IntegrationList | undefined,
@@ -124,9 +114,7 @@ export const integrationStatuses = replica({
   name: 'integrationStatuses',
   scope: 'device',
   read: (_owner: string, hostKey: string): Promise<ConnectionStatuses> => libraryHostOf(hostKey).integrations.checkAllConnections(),
-  fresh: 30_000,
-  refreshOnFocus: true,
-  ...hostReadPolicy,
+  ...hostPolled,
   local: (_owner, hostKey) => legacyPanelView(hostKey, 'en-US')?.statuses as ConnectionStatuses | undefined,
 })
 
@@ -150,21 +138,16 @@ export const integrationAccounts = replica({
       throw error
     }
   },
-  fresh: 30_000,
-  refreshOnFocus: true,
-  ...hostReadPolicy,
+  ...hostPolled,
 })
 
 export const integrationAccountChecks = replica({
   name: 'integrationAccountChecks',
   scope: 'device',
   read: (_owner: string, hostKey: string, integrationId: string) => libraryHostOf(hostKey).integrations.checkAccounts(integrationId),
-  fresh: 30_000,
-  refreshOnFocus: true,
-  ...hostReadPolicy,
+  ...hostPolled,
 })
 
-/** What a connection change (made here or heard from the owner's bus) reads again: every model above. */
 export function refreshConnections(): void {
   void chatChannels.refresh()
   void ownerConnections.refresh()
@@ -175,7 +158,6 @@ export function refreshConnections(): void {
   void integrationAccountChecks.refresh()
 }
 
-/** One host's statuses changed (a connect, a disconnect, an authorization settled): its statuses and accounts again. */
 export function refreshConnectionStatuses(hostKey: string): void {
   void integrationStatuses.refresh(hostKey)
   void configuredConnections.refresh(hostKey)
@@ -185,7 +167,7 @@ export function refreshConnectionStatuses(hostKey: string): void {
 
 let watchers = 0
 let stopPanels: (() => void) | null = null
-/** The window's connection signals while any surface shows connections (ref-counted); starting with values reads once. */
+/** Ref-counted; starting with values reads once. */
 export function watchConnections(): () => void {
   if (watchers++ === 0) {
     window.addEventListener(CONNECTIONS_CHANGED, refreshConnections)

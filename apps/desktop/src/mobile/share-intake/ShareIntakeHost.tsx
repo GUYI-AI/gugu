@@ -11,10 +11,7 @@ import { ShareIntakeContent } from './ShareIntakeSheet'
  * 没登录时分享进来的那一份由宿主留着,这里一订阅就补发过来 —— 登录完直接到「发送到」页。
  * 上一份还没选会话时又来一份,以新的为准:用户最后一次点的分享才是他此刻要发的。
  */
-/**
- * The share the person last sent here and has not finished (or, once the sheet closes, what to run after it): this
- * device's, owned by the host below; one at a time, the newest wins.
- */
+/** The share last sent here and not finished: this device's, owned by the host below; the newest wins. */
 const pending = createSelectStore<IncomingShare | (() => void) | null>(null)
 const put = (share: IncomingShare | (() => void) | null) => { pending.publish(share); pending.notify() }
 

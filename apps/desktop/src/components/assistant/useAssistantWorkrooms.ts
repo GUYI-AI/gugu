@@ -15,16 +15,12 @@ const log = rendererLogger('assistant/workrooms')
 
 type WorkroomSources = { sessions: SessionpageSessionSummary[]; bindings: { projectId: string; chatId: string }[] }
 
-/**
- * The assistant's home host's own session identities and project-group bindings (host push: a binding changed, a session
- * was created). `machine` null = this computer. A phone has no session-page host line to listen on: read on each look.
- */
+/** The assistant's home host's session identities and project-group bindings (host push). `machine` null = this computer. */
 export const assistantWorkroomSources = replica({
   name: 'assistantWorkroomSources',
   scope: 'account',
   networkMode: platform.capabilities.agentRuntime ? 'always' : 'online',
   read: async (_owner: string, machine: string | null): Promise<WorkroomSources> => {
-    // A phone reads the home through that machine's pipe (`machine` is never null there).
     const rpc = platform.capabilities.agentRuntime ? rpcOn(machine) : machineRpc(machine!)
     const [listed, bound] = await Promise.all([rpc.sessionTimeline.sessionsList(), rpc.projects.listProjectGroupBindings()])
     if (!bound.success) {
@@ -34,7 +30,6 @@ export const assistantWorkroomSources = replica({
     return { sessions: listed.sessions, bindings: bound.data }
   },
   fresh: platform.capabilities.agentRuntime ? Infinity : 0,
-  // One pair of host listeners per machine while shown; a value read while nobody listened is read again when it starts.
   watch: {
     group: (machine) => machine,
     start: (_owner, machine) => {
@@ -47,11 +42,7 @@ export const assistantWorkroomSources = replica({
   },
 })
 
-
-/**
- * Which groups are the assistant's workrooms, from its home host's actual session identities and project bindings. Never
- * inferred from a group name. null = not read (or unreadable): no group is hidden meanwhile.
- */
+/** Which groups are the assistant's workrooms (❌ inferred from a group name). null = not read: no group hidden meanwhile. */
 export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, membershipKey: string): AssistantWorkrooms | null {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
@@ -59,11 +50,11 @@ export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, memb
   const home = shell?.home
   const deviceId = home?.deviceId ?? null
   const local = home?.kind === 'computer' && home.thisDevice
-  // 推送在助理所在的那台机器上订(本机 = null);手机上没有会话页宿主线,只读不订(手机经那台机器的管道读它,❌ 当成本机)。
+  // 推送在助理所在的那台机器上订(本机 = null);手机经那台机器的管道读它,只读不订。
   const machine = local && platform.capabilities.agentRuntime ? null : deviceId
   const subject = ownerId && assistantId && deviceId ? [machine] as [string | null] : null
   const reading = useReplica(assistantWorkroomSources, subject)
-  // A membership change (a group joined / left) can change which bindings count: read again then (❌ on the first render).
+  // A membership change can change which bindings count: read again then (❌ on the first render).
   const lastMembership = useRef(membershipKey)
   useEffect(() => {
     if (lastMembership.current === membershipKey) return

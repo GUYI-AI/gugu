@@ -45,9 +45,7 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
   const { translate, locale } = useSessionMessages()
   const { theme } = useTheme()
   const skin = sessionSkinClassName(theme)
-  // `marketShelf('phone', locale)`: kept in memory for the run; on a cold start its first screen is kept (the snapshot), drawn
-  // until the shelf is read. A shelf drawn is replaced only once its featured pictures are decoded; one that cannot be read
-  // keeps the drawn shelf (the reading says so).
+// A shelf drawn is replaced only once its featured pictures are decoded.
   const shelfReading = useReplica(marketShelf, [PHONE_HOST, locale])
   const full = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null
   const first = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null
@@ -63,7 +61,6 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
     setMarketFrom(null)
   }
   const offered = useOfferedVersions()
-  // What is installed here (`installedExtensions('phone')`; its read waits for the phone's App store index).
   const installedReading = useInstalledApps(PHONE_HOST)
   const store = installedReading.state === 'value' ? installedReading.value : null
   const [query, setQuery] = useState('')
@@ -88,11 +85,9 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
 
   const sentinel = useRef<HTMLDivElement | null>(null)
   const retryShelf = () => void marketShelf.refresh(PHONE_HOST, locale)
-  // Searched in the shelf as read (the phone has no search on a server); nothing to search while it is not read.
   const rows = full ? (query.trim() === '' ? full.items : phoneSearchRows(full.items, query.trim())) : null
   const hasMore = rows !== null && pages * MARKET_PAGE_SIZE < rows.length
 
-  // The index could not be read whole (what can be read is drawn, nothing is changed), or the list could not be read at all.
   const unreadable = installedReading.state === 'error' || (installedReading.state === 'value' && installedReading.value.unreadable !== null)
   const readAgain = () => {
     void phoneApps.reload().then(() => installedExtensions.refresh(PHONE_HOST), (error: unknown) => {

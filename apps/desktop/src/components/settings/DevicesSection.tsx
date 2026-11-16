@@ -126,8 +126,7 @@ export function DevicesSection({
   // 远程 SSH 的机器:在线与否、要不要先登录,只看这台电脑到它的设备连接(与侧栏、顶上卡片同一个读数)。
   const linkProblems = useSshLinkProblems()
   const upgrades = useSshUpgrades()
-  // Which machines this desktop reaches over SSH: not read yet, each offline row's state waits; unreadable, said once above
-  // the list with a retry and the rows say what they know without it (❌ a placeholder forever).
+  // SSH machines unreadable: said once above the list with a retry (❌ a placeholder forever).
   watchSshMachineAddresses()
   const sshMachines = useReplica(sshMachineAddresses, [])
   const sshMachineIds = sshMachines.state === 'value' ? sshMachineIdsOf(sshMachines.value) : null

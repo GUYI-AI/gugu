@@ -44,11 +44,8 @@ export function sourceOfPackageKey(key: string): AttachmentSource {
 }
 
 /**
- * What a package holds, read from its bytes. `sha256`: the message's own record of the bytes — a copy this device already
- * keeps (sent from here, or read before — `attachmentBytes` keeps every full read) is read from disk, as a thumbnail is: no
- * signing, no download. The install still reads the package again, authorized. One that is not a package this build reads
- * is an answer (`ok: false`); bytes not there (deleted from the group folder, expired, missing) throw
- * `PackageUnavailableError`, a read that failed (the network) throws: neither is kept, the next read asks again.
+ * What a package holds, read from its bytes. A copy this device keeps (`sha256`) is read from disk: no signing, no download.
+ * `ok: false` (not a package this build reads) is an answer; bytes not there throw `PackageUnavailableError`; neither is kept.
  */
 export async function readPackageSummary(key: string, sha256: string | null, progress: (done: number, total: number) => void): Promise<ExtensionBundleSummary> {
   const kept = await cachedAttachmentCopy(sha256).catch(() => null)
@@ -73,7 +70,7 @@ export interface SharedPackage {
   card: PackageCard
 }
 
-/** The `.guguext` cards among this chat's attachments (its own attachments: no table of its own), newest first. */
+/** The `.guguext` cards among this chat's attachments, newest first. */
 export async function chatPackageCards(chatId: string, userId: string): Promise<PackageCard[]> {
   return (await chatService.getChatFiles(chatId, userId)).flatMap((file) =>
     /\.guguext$/i.test(file.fileName) && file.source.kind !== 'gone' ? [{ source: file.source, messageId: file.messageId }] : [],

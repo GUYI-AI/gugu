@@ -187,8 +187,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         void Promise.resolve(show(chatId, folderItem(), {})).catch(error => setUnopened(String(error)))
         return
       }
-      // Which page it opens is decided on what is installed here: at once when known, else once it is read (❌ "no such
-      // page" while unknown).
+      // Decided on what is installed here once known (❌ "no such page" while unknown).
       const decide = (installed: InstalledApps) => {
         if (!live || asked !== asking.current) return
         const page = ask.tab ? installed.allTabContributions.find((entry) => entry.kind === `${ask.app}.${ask.tab}`) : installed.mainTabOf(ask.app)

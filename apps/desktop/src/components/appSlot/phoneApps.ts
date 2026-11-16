@@ -178,7 +178,7 @@ function rememberedAll(): Record<string, string> {
  */
 const cspOf = (manifest: ExtensionManifest) => extensionContentSecurityPolicy(`${location.origin} ${gateOrigin(manifest.id)}`, manifest.permissions?.network ?? [])
 
-/** What is installed here, in the shape main lists it (L9): the list the `installedExtensions('phone')` replica holds. */
+/** What is installed here, in the shape main lists it (L9). */
 function listed(): InstalledExtensionsList {
   const installed = Object.values(index.installed)
   // Each installed App read with the desktop's one check, as the desktop reads its folders: one this build no longer runs
@@ -210,12 +210,11 @@ function listed(): InstalledExtensionsList {
   }
 }
 
-/** Every change of what is installed here is told to the replica (a host push): the cards, the panel and settings follow. */
 let toldVersions: string | null = null
 function tell(): void {
   const list = listed()
   tellInstalled(PHONE_HOST, list)
-  // What is installed changed (an App updated by itself, owner 10-19): what the market has to say about it is read again.
+  // An App updated by itself (owner 10-19): what the market says of it is read again.
   const versions = list.extensions.map((manifest) => `${manifest.id}@${manifest.version}`).join(' ')
   if (toldVersions !== null && versions !== toldVersions) void marketUpdatesReplica.refresh(PHONE_HOST)
   toldVersions = versions

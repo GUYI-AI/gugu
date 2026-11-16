@@ -38,8 +38,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   const observed = useRef<RestartAttempt | null>(null)
   const restarted = useRef<RestartAttempt | null>(null)
   const route = useMemo(() => phoneLifeRoute(deviceId, local), [deviceId, local])
-  // The session's row (its provider session missing, its first utterance) and its lifecycle (the one life mirror),
-  // read when the record is missing and the machine is there; whether "start fresh" is offered is derived from both.
+  // Whether "start fresh" is offered derives from the session's row and its lifecycle.
   const asking = missing && online
   const rowReading = useReplica(restartSessionRow, asking ? [deviceId, local, projectId, sessionId] : null)
   const lifeNow = useSelect(useMemo(() => lifeReadable(route, sessionId), [route, sessionId]), (value) => value.view)
