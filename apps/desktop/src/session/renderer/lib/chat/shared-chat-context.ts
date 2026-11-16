@@ -65,9 +65,12 @@ export function createSessionChatContext(): ChatContext {
     // session:<id> 画这条会话的属主 agent(宿主花名册回答会话 → agent),所以两张表变了都要重读。
     senderAvatar: (fromId) => senderAvatarUrl(fromId),
     subscribeSenderAvatars,
-    // App 代发的投递卡写 App 的名字:这台装着的 App、界面语言(store 的 appName);没装就是 null,卡上写 id。
-    // @@@reading-default - the card's contract has no "not known yet": before the list is read it writes the id, and the subscription below redraws it with the name once read
-    appName: (appId) => peekInstalledApps(LOCAL_HOST)?.appName(appId) ?? null,
+    // App 代发的投递卡写 App 的名字:这台装着的 App、界面语言(store 的 appName);没装就是 null,卡上写 id;
+    // 装着的还没读到就是 undefined,卡先不写这一段,下面的订阅读到后补上。
+    appName: (appId) => {
+      const installed = peekInstalledApps(LOCAL_HOST);
+      return installed ? installed.appName(appId) : undefined;
+    },
     subscribeAppNames: (listener) => {
       const stopList = watchInstalled(LOCAL_HOST, () => listener());
       const stopLocale = subscribeLocale(listener);

@@ -254,3 +254,13 @@ describe('plain session delivery contract', () => {
   });
 
 });
+
+describe('the App a delivery came through', () => {
+  const translate = ((key: string, values?: Record<string, string>) => `${key}:${values?.app ?? ''}`) as never
+  it('names it when the host knows it, writes the id when the host has no such App, and leaves it out while not known yet', async () => {
+    const { viaAppLabel } = await import('./DeliveryCard')
+    expect(viaAppLabel('Notes', 'notes-app', translate)).toBe('transcript.deliveryViaApp:Notes')
+    expect(viaAppLabel(null, 'notes-app', translate)).toBe('transcript.deliveryViaApp:notes-app')
+    expect(viaAppLabel(undefined, 'notes-app', translate)).toBeNull()
+  })
+})

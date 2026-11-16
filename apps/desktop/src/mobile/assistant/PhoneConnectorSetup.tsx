@@ -571,7 +571,7 @@ function CliSetup({
       ) : state.phase === 'starting' ? (
         <>
           <Waiting>{t('connectors.setup.cliPreparing', { name: item.name })}</Waiting>
-          <CliInstallProgress read={readProgress} />
+          <CliInstallProgress source={`phone:${deviceId}:${item.id}`} read={readProgress} />
           <Button variant="ghost" className="ta-pill-btn" onClick={() => handle.current?.cancel()} data-testid="assistant-connector-cancel">
             {t('common.cancel')}
           </Button>
