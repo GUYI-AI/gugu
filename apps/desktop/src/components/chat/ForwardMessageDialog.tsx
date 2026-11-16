@@ -93,9 +93,9 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
   const rows = useMemo(() => sendablePickRows(sendable, forwardTargetName, identitiesById, { expanded, searching: query.trim() !== '' }),
     [sendable, forwardTargetName, identitiesById, expanded, query])
   // Someone with no conversation yet: drawn as the private chat that sending opens (useResolveTargets).
-  const people = useMemo(() => sendablePeople(contacts, sendable.chats, { ownerId, query })
+  const people = useMemo(() => sendablePeople(contacts, sendable.chats, { ownerId, query, source: chats.find((chat) => chat.id === sourceChatId) })
     .map((contact) => ({ row: personPickRow(contact), chat: { ...createOptimisticDmChat(`${PERSON_ROW}${contact.id}`, contact.id), peer_alias: contact.alias || contact.display_name } })),
-  [contacts, sendable, ownerId, query])
+  [contacts, sendable, ownerId, query, chats, sourceChatId])
 
   const labels = { attachment: t('forward.preview.attachment'), card: t('forward.preview.card'), empty: t('forward.preview.empty') }
   const said = (message: MessageItem) => `${identitiesById[message.sender_user_id ?? '']?.display_name ?? ''}：${forwardPreview(message, labels)}`

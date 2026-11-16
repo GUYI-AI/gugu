@@ -90,9 +90,10 @@ export function sendableConversations(chats: readonly ChatItem[], q: SendableQue
  * The people this account can write to who have no conversation above: friends, and its own agents, not archived. A
  * pick of one is `person:<id>`; the private chat is found, or opened, when the forward is sent (useResolveTargets).
  */
-export function sendablePeople(contacts: readonly ContactUser[], shown: readonly ChatItem[], q: Pick<SendableQuery, 'ownerId' | 'query'>): ContactUser[] {
+export function sendablePeople(contacts: readonly ContactUser[], shown: readonly ChatItem[], q: Pick<SendableQuery, 'ownerId' | 'query'> & { source?: ChatItem }): ContactUser[] {
   const needle = q.query.trim().toLocaleLowerCase()
-  const inList = new Set(shown.flatMap((chat) => (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id ? [chat.peer_user_id] : []))
+  // The source's peer is no one to forward to: their private chat is where the words come from.
+  const inList = new Set([...shown, ...(q.source ? [q.source] : [])].flatMap((chat) => (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id ? [chat.peer_user_id] : []))
   return contacts.filter((contact) => contact.id !== q.ownerId && !contact.removed_at && !inList.has(contact.id)
     && (contact.type !== 'agent' || (!!q.ownerId && contact.owner_user_id === q.ownerId && !contact.session_archived_at))
     && (!needle || `${contact.alias ?? ''} ${contact.display_name}`.toLocaleLowerCase().includes(needle)))

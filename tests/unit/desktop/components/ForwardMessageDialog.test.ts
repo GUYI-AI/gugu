@@ -146,6 +146,7 @@ describe('forward helpers', () => {
     const shown = [chat({ id: 'c', peer_user_id: 'talked', last_message_at: '2026-01-01T00:00:00Z' })]
     expect(sendablePeople(contacts, shown, { ownerId: 'me', query: '' }).map((c) => c.id)).toEqual(['quiet', 'mine'])
     expect(sendablePeople(contacts, shown, { ownerId: 'me', query: 'q' }).map((c) => c.id)).toEqual(['quiet'])
+    expect(sendablePeople(contacts, shown, { ownerId: 'me', query: '', source: chat({ id: 'from', peer_user_id: 'quiet' }) }).map((c) => c.id)).toEqual(['mine'])
   })
 })
 let container: HTMLDivElement
