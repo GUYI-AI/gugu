@@ -85,13 +85,15 @@ async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { sh
  * a peek beside an App (AppPeek) read it this one way.
  */
 type PreviewRead = { content: string | ArrayBuffer | null; binary?: boolean; acknowledged?: Promise<void>; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; release?: () => Promise<void>; error?: string; retryable?: boolean; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
+class OfflinePreviewRead extends Error {
+  constructor(readonly holder: NonNullable<Awaited<ReturnType<typeof offlineHolder>>>, cause: unknown) { super(holderOfflineText(holder), { cause }) }
+}
 function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   const status = (error as { status?: number } | null)?.status
   const retryable = errorStatus === 'failed' && !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429)
-  const reason = errorStatus === 'failed' && error instanceof Error && error.message !== 'failed' ? messageForUser(error) : undefined
-  return { content: null, errorStatus, retryable, error: reason || t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
+  return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
 async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
   // A video read whole from here (a working copy, or a file this device sent this run) plays from its own bytes.
@@ -178,9 +180,16 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     const source = file.source
     const queryKey = ['file-preview-read', reader, key, kind, attempt]
     if (kind !== 'unsupported') void queryClient.fetchQuery({
-      queryKey, gcTime: 0, retry: (failures, error) => failures < 3 && previewFailure(error, t).retryable === true,
+      queryKey, gcTime: 0, retry: (failures, error) => failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true,
       queryFn: async ({ signal }) => {
-        const done = await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) })
+        let done: PreviewRead
+        try { done = await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }) }
+        catch (error) {
+          if (signal.aborted) throw signal.reason
+          const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
+          if (holder) throw new OfflinePreviewRead(holder, error)
+          throw error
+        }
         if (signal.aborted) { void done.acknowledged?.catch(() => {}); await done.release?.(); throw signal.reason }
         return done
       },
@@ -194,7 +203,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       },
       async (error) => {
         // A project file kept on a machine that is off now says so, from a fresh read of where it is kept.
-        const offline = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
+        const offline = error instanceof OfflinePreviewRead ? error.holder : source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
         if (!live) return
         setWaitingFor(offline)
         setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
