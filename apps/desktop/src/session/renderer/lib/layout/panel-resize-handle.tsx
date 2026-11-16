@@ -13,7 +13,8 @@ function stripStyle(edge: 'start' | 'end', offset: MotionValue<number>) {
   return {
     width: HIT_STRIP_PX,
     ...(edge === 'end'
-      ? { left: offset, marginLeft: -HIT_STRIP_PX / 2 }
+      ? // Moved by transform: ❌ left, which lays the strip out again in every frame of a fold.
+        { left: 0, x: offset, marginLeft: -HIT_STRIP_PX / 2 }
       : { right: offset, marginRight: -HIT_STRIP_PX / 2 }),
   };
 }
