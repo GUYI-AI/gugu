@@ -1152,6 +1152,7 @@ function renderList() {
   if (state.folder && !state.listing && heardOf && !state.entries.some((e) => e.id === state.folder)) state.folder = null
   renderCrumbs()
   if (!state.root) return
+  $('files-retry').hidden = true
   const choosing = inWorkspace() && !copyOf()
   document.querySelector('.files').classList.toggle('choosing-folder', choosing)
   if (choosing) {
@@ -2858,6 +2859,24 @@ function offerRetry(handed, maxBytes) {
   const retry = Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: again })
   $('doc-message').append(document.createElement('br'), retry)
   state.retryWatch = handed.workspace ? gugu.files.onChanged({ workspace: handed.workspace, id: handed.id }, (change) => { if (change.kind === 'resync') again() }) : null
+}
+
+// No context yet (the host could not read this page's chat — offline, say): where the list would be, why, and a way to try
+// again — and again by itself when the network is back. ❌ Said in the hidden document pane, which left the page blank.
+function contextUnread(error, failed) {
+  const again = () => {
+    window.removeEventListener('online', again)
+    $('files-retry').hidden = true
+    $('files-empty').hidden = true
+    gugu.getContext().then(applyContext).catch(failed)
+  }
+  window.addEventListener('online', again)
+  $('file-list').replaceChildren()
+  $('files-empty-progress').hidden = $('empty-upload').hidden = true
+  $('files-empty-message').textContent = failureText(error)
+  $('files-empty-detail').textContent = ''
+  Object.assign($('files-retry'), { textContent: state.t.retry, onclick: again, hidden: false })
+  $('files-empty').hidden = false
 }
 
 function stopRetry() {
@@ -4589,7 +4608,8 @@ function start() {
   window.addEventListener('pagehide', () => { for (const one of [state.current, ...state.parked.values()]) one?.source?.flush() })
   gugu.onLink(goTo)
   setMode(state.mode)
-  const contextFailed = (error) => showDocMessage(failureText(error))
+  // A context read before stays drawn, the failure said next to it; none read yet: the list's place says so (contextUnread).
+  const contextFailed = (error) => (state.ctx ? showBanner(failureText(error), 'error') : contextUnread(error, contextFailed))
   gugu.onContextChanged((ctx) => applyContext(ctx).catch(contextFailed))
   gugu.getContext().then(applyContext).catch(contextFailed)
   const bar = document.querySelector('.files-toolbar')
