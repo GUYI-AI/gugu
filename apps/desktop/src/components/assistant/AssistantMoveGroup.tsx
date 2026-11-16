@@ -8,7 +8,9 @@ import { membershipSettingsSection } from '../../lib/billing/settingsDestination
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import { moveRecovery, type MoveEnv } from '@renderer/features/assistant/assistant-move-wire'
-import { useReplica } from '../../lib/replica'
+import { useReplica, type Reading } from '../../lib/replica'
+import { canSetUpCloudAssistant, cloudComputer, type CloudComputerState } from '../../lib/cloudComputer'
+import { Unknown } from '../ui/Unknown'
 import '../../i18n/registerAssistantCatalog'
 import { billingLinksAvailable } from '../../lib/appLinks'
 
@@ -19,8 +21,8 @@ export type AssistantMoveGroupProps = {
   home: AssistantHomePlace
   /** 这台电脑的设备 id;网页 / 手机 = null(搬不回来:没有「这台电脑」可住)。 */
   localDeviceId: string | null
-  /** 管家那扇门开着吗(没开放 / 没配 = 搬上云不可用)。 */
-  cloudAvailable: boolean
+  /** 管家那扇门(`cloudComputer` 的读数):没读到 = 等它;开着、这一读没失败 = 能搬上云;读不到 = 说一句、给重试。 */
+  cloud: Reading<CloudComputerState>
 }
 
 function openMembership() {
@@ -33,7 +35,9 @@ function openMembership() {
  * 这里只有设置里的那几行;弹窗是 AssistantMoveDialog(挂在壳上,状态在 assistant-move-controller),
  * 编排与测试在 features/assistant/assistant-move.ts。
  */
-export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, home, localDeviceId, cloudAvailable }: AssistantMoveGroupProps) {
+export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, home, localDeviceId, cloud }: AssistantMoveGroupProps) {
+  const cloudAvailable = canSetUpCloudAssistant(cloud)
+  const cloudFailed = cloud.state === 'error' || (cloud.state === 'value' && !!cloud.error)
   const { t, i18n } = useTranslation('assistant')
   // 会员档(账号额度那一份 replica):没读到 = null(不当成非会员),读不到如实说并给重试。管家那扇门没开 = 不问。
   const spending = useSpendingPower(cloudAvailable ? { id: ownerUserId } : null)
@@ -107,13 +111,16 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
         <SettingsRow
           stack
           title={t('move.toCloudTitle')}
-          description={member === false ? t('move.toCloudNeedsMember') : !cloudAvailable ? t('move.cloudUnavailable') : t('move.toCloudBody')}
+          description={member === false ? t('move.toCloudNeedsMember') : cloud.state === 'unknown' ? <Unknown className="w-48" />
+            : !cloudAvailable ? t('move.cloudUnavailable') : t('move.toCloudBody')}
           control={
             member === false ? (billingLinksAvailable() ? (
               <Button size="sm" onClick={openMembership} data-testid="assistant-move-member">
                 {t('move.memberLink')}
               </Button>
-            ) : null) : (
+            ) : null) : cloudFailed ? (
+              <Button size="sm" onClick={() => void cloudComputer.refresh()} data-testid="assistant-move-cloud-retry">{t('setup.retry')}</Button>
+            ) : (
               <Button
                 size="sm"
                 disabled={busy || !!pending || recoveryFailed || recoveryUnknown || member === null || !cloudAvailable}

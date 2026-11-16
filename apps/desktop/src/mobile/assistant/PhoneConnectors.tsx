@@ -72,7 +72,7 @@ function ConnectorLists({ data, scope, open }: { data: PhoneIntegrations; scope:
   const settings = useTranslation('settings').t
   const chats = useChatChannels()
   const stateFor = (id: string) => connectorState(!!data.configured[id], data.statuses?.[id], data.statusError, true)
-  const apps = assistantConnectedApps(connectorOrder(data.items, i18n.language), chats.list, id => settings(`channels.${id}`), t('connectors.wechatDescription'), stateFor, data.configured)
+  const apps = assistantConnectedApps(connectorOrder(data.items, i18n.language), chats, id => settings(`channels.${id}`), t('connectors.wechatDescription'), stateFor, data.configured)
   return <ConnectedAppsCatalog apps={apps} scope={scope} open={open} mobile panelNavigation
     icon={(app, size) => app.integration ? <ConnectorIcon integration={app.integration} size={size} />
       : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null} />

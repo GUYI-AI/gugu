@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useReplica } from '../../lib/replica'
 import { deviceMeetings } from '../../lib/deviceMeetings'
 import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
+import { ReadFailedLine } from '@/session/renderer/lib/ui/read-failed-line'
 import { useTranslation } from 'react-i18next'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import { AssistantStatusGroups, OnboardingSlot } from '../assistant/AssistantShellHost'
@@ -47,7 +49,7 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   const name = contact?.display_name ?? t('rail')
   const move: AssistantMoveGroupProps | null =
     user?.id && contact && home && platform.capabilities.agentRuntime
-      ? { ownerUserId: user.id, assistantId: contact.id, assistantName: contact.display_name, home, localDeviceId, cloudAvailable: cloudComputer.state === 'value' && cloudComputer.value.available }
+      ? { ownerUserId: user.id, assistantId: contact.id, assistantName: contact.display_name, home, localDeviceId, cloud: cloudComputer }
       : null
 
   const [lookOpen, setLookOpen] = useState(false)
@@ -167,7 +169,10 @@ function MeetingReminderGroup() {
       <SettingsRow
         title={t('meeting.setting')}
         description={reading.state === 'unknown' ? <Unknown className="w-56" />
-          : reading.state === 'value' && reading.value.status === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+          // Unreadable: said, with a retry (❌ the line a connected calendar gets).
+          : reading.state === 'error' ? <ReadFailedLine message={t('meeting.calendarUnreadable')} onRetry={() => void deviceMeetings.refresh()} />
+          : <>{reading.value.status === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+            <RefreshFailed error={reading.error} onRetry={() => void deviceMeetings.refresh()} /></>}
         control={enabled.state === 'value'
           ? <Switch checked={enabled.value} onCheckedChange={(on) => setMeetingReminderEnabled(on)} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />
           : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}

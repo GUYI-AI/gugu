@@ -47,12 +47,12 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
   // Owner mode: the list is the built-in catalog (always known); which are saved and how they are is the snapshot's.
   const configured = data.configuredConnections
   const snapshot = useOwnerConnectionsReading(host.connectionMetadata)
-  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations ?? [],i18n.language),channels.list,
+  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations ?? [],i18n.language),{ list: channels.list,status: channels.status },
     id => settings(`channels.${id}`),t('connectors.wechatDescription'),
     id => connectorState(configured ? !!configured[id] : undefined,data.connectionStatus?.[id],undefined,true),configured ?? undefined).map(app => {
       const status = snapshot.state === 'value' ? connectionApplicationStatus(snapshot.value,app.id,snapshot.value.application) : null
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
-    }),[data,configured,snapshot,i18n.language,channels.list,settings,t,copy])
+    }),[data,configured,snapshot,i18n.language,channels.list,channels.status,settings,t,copy])
   const selected = openId ? apps.find(app => app.id === openId) : null
   if (selected) return <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation} onBack={() => setOpenId(null)} />
   return <SettingsPage data-testid="owner-connectors">

@@ -73,13 +73,15 @@ afterEach(() => harness.cleanup())
 const computer: AssistantHomePlace = { kind: 'computer', deviceId: 'dev-mac', thisDevice: true, label: 'MacBook', online: true, known: true }
 const cloud: AssistantHomePlace = { kind: 'cloud', deviceId: 'dev-cloud' }
 
+/** The steward's door as read: open, and the last read did not fail. */
+const CLOUD_OPEN = { state: 'value', value: { available: true, snapshot: {} }, stale: false, error: null }
 const groupProps = (home: AssistantHomePlace, over: Record<string, unknown> = {}) => ({
   ownerUserId: 'owner-1',
   assistantId: 'agent-1',
   assistantName: '小满',
   home,
   localDeviceId: 'dev-mac',
-  cloudAvailable: true,
+  cloud: CLOUD_OPEN,
   ...over,
 })
 // 弹窗挂在壳上(不在搬家那一组里):测试里把两者并排画,与生产一致。
@@ -128,6 +130,18 @@ describe('搬家入口', () => {
     expect((q('assistant-move-to-cloud') as HTMLButtonElement).disabled).toBe(false)
     expect(q('assistant-move-expired')).toBeNull()
     expect(q('assistant-move-to-computer')).toBeNull()
+  })
+
+  it('住这台电脑 + 管家那扇门还没读到:说明处占位、按钮等着,❌ 先说「云不可用」', async () => {
+    await render(computer, { cloud: { state: 'unknown' } })
+    expect(q('assistant-move-to-cloud-row')?.textContent).not.toContain('暂时不可用')
+    expect((q('assistant-move-to-cloud') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('住这台电脑 + 管家读不到:说云这会儿用不了,给重试(❌ 一个点不动的按钮)', async () => {
+    await render(computer, { cloud: { state: 'error', error: new Error('steward down') } })
+    expect(q('assistant-move-cloud-retry')).not.toBeNull()
+    expect(q('assistant-move-to-cloud')).toBeNull()
   })
 
   it('住这台电脑 + 非会员:不给搬,指向会员', async () => {

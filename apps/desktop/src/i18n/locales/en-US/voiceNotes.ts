@@ -78,6 +78,7 @@ export default {
     "error": "Couldn't start recording. Try again.",
     "setting": "Meeting reminders",
     "settingDescription": "Remind you to record when a meeting on this computer's calendar is about to start.",
-    "needsCalendar": "Connect Calendar first in Connected apps → This device."
+    "needsCalendar": "Connect Calendar first in Connected apps → This device.",
+    "calendarUnreadable": "Couldn't read this computer's calendar."
   }
 } as const;

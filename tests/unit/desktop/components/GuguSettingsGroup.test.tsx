@@ -180,6 +180,21 @@ describe('咕咕的设置页(资料,画在它 App 的面板上)', () => {
     expect(q('settings-assistant-voice')).not.toBeNull()
   })
 
+  it('这台电脑的日历读不到:那一行说读不到、给重试(❌ 和连上了一样的说明)', async () => {
+    mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
+    const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
+    queryClient.removeQueries({ queryKey: ['deviceMeetings'] })
+    invoke.mockResolvedValue({ ok: false, code: 'calendar-crashed' } as never)
+    try {
+      await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), awake)
+      await vi.waitFor(() => expect(q('settings-assistant-voice')?.querySelector('[data-read-failed]')).not.toBeNull())
+      expect(q('settings-assistant-voice')?.textContent).not.toMatch(/快开始时|is about to start/)
+    } finally {
+      invoke.mockResolvedValue({ ok: true } as never)
+      queryClient.removeQueries({ queryKey: ['deviceMeetings'] })
+    }
+  })
+
   it('还没开通:这一页只说开通(流程在引导格里),不画名字 / 状态那些', async () => {
     await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), cloudValue({ available: true, snapshot: { state: 'none', deviceId: null, error: null, since: null } }) as never)
     expect(q('onboarding-slot')).not.toBeNull()

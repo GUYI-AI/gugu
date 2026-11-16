@@ -66,7 +66,7 @@ it.each(['electron', 'capacitor'] as const)('onboarding membership action reache
 
 it.each(['electron', 'capacitor'] as const)('expired assistant membership renewal reaches the credit card on %s', async kind => {
   state.kind = kind
-  await render(<AssistantMoveGroup ownerUserId="purchase-986" assistantId="assistant" assistantName="Gugu" home={{ kind: 'cloud', deviceId: 'cloud' }} localDeviceId={null} cloudAvailable />)
+  await render(<AssistantMoveGroup ownerUserId="purchase-986" assistantId="assistant" assistantName="Gugu" home={{ kind: 'cloud', deviceId: 'cloud' }} localDeviceId={null} cloud={{ state: 'value', value: { available: true, snapshot: {} }, stale: false, error: null } as never} />)
   await until('renew action is ready', () => !!document.querySelector('[data-testid="assistant-move-renew"]'))
   await clickElement(button('assistant-move-renew'))
   expect(destinations).toEqual([kind === 'capacitor' ? 'account' : 'subscriptions'])

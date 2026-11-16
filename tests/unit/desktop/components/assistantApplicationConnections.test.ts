@@ -5,7 +5,7 @@ import { assistantConnectedApps, assistantApplicationCounts } from '../../../../
 
 it('normalizes actual product connections into one app model', () => {
   const items = [{ id: 'feishu', name: '飞书', description: '文档' }, { id: 'dingtalk', name: '钉钉' }] as IntegrationMetadata[]
-  const apps = assistantConnectedApps(items, { kinds: ['wechat'], channels: [], suggestedAgentId: null }, () => '微信', '在微信里和咕咕聊天')
+  const apps = assistantConnectedApps(items, { list: { kinds: ['wechat'], channels: [], suggestedAgentId: null }, status: 'ready' }, () => '微信', '在微信里和咕咕聊天')
   expect(apps.map(app => app.id)).toEqual(['feishu', 'dingtalk', 'wechat'])
   expect(apps[2]).toMatchObject({ name: '微信', state: 'notConnected', saved: false })
   expect(apps.every(app => !('chatKind' in app) && !('channel' in app))).toBe(true)
@@ -14,14 +14,16 @@ it('normalizes actual product connections into one app model', () => {
 it('does not count starting, retrying, paused or broken connections as connected', () => {
   for (const state of ['starting', 'retrying', 'paused', 'broken'] as const) {
     const services = { kinds: ['wechat'], channels: [{ kind: 'wechat', health: { state } }] } as ChatChannelList
-    const apps = assistantConnectedApps([], services, id => id, '')
+    const apps = assistantConnectedApps([], { list: services, status: 'ready' }, id => id, '')
     expect(apps[0]!.state).not.toBe('connected')
     expect(apps[0]!.saved).toBe(true)
   }
 })
 
-it('retains the known WeChat entry while its account state is unavailable', () => {
-  expect(assistantConnectedApps([], null, () => '微信', '聊天')).toMatchObject([{ id: 'wechat', name: '微信', state: 'notConnected' }])
+it('retains the known WeChat entry: no cloud computer is not connected; not read yet is checking; unreadable is a failed check', () => {
+  expect(assistantConnectedApps([], { list: null, status: 'absent' }, () => '微信', '聊天')).toMatchObject([{ id: 'wechat', name: '微信', state: 'notConnected' }])
+  expect(assistantConnectedApps([], { list: null, status: 'loading' }, () => '微信', '聊天')).toMatchObject([{ id: 'wechat', state: 'checking' }])
+  expect(assistantConnectedApps([], { list: null, status: 'failed' }, () => '微信', '聊天')).toMatchObject([{ id: 'wechat', state: 'checkFailed' }])
 })
 
 it('counts connected products once, without treating saved unverified grants as connected', () => {
