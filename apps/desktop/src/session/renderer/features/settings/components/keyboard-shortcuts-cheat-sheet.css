@@ -1,0 +1,12 @@
+.gg-shortcuts-content { container-type: inline-size; }
+.gg-shortcuts-grid {
+  grid-template-areas: "kbd kbd" "nav sessions" "vtabs vtabs";
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container (max-width: 560px) {
+  .gg-shortcuts-grid {
+    grid-template-areas: "kbd" "nav" "sessions" "vtabs";
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gg-shortcuts-secondary { grid-template-columns: minmax(0, 1fr); gap: var(--spacing-lg); }
+}

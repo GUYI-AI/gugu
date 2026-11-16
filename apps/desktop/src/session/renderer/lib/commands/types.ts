@@ -4,6 +4,9 @@ export interface AppCommand {
   id: CommandId | `extension:${string}`;
   label?: string;
   description?: string;
+  /** Live providers may choose state-specific translations without replacing their handlers. */
+  labelKey?: string;
+  descriptionKey?: string;
   /**
    * When false the palette hides the command and the hotkey dispatcher skips
    * it, falling through to the next scope.

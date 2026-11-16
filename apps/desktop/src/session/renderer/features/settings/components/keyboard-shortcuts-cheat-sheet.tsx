@@ -7,6 +7,8 @@ import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
+import { commandPresentation } from '@renderer/lib/commands/presentation';
+import './keyboard-shortcuts-cheat-sheet.css';
 
 // ---------------------------------------------------------------------------
 // Types & Constants
@@ -83,12 +85,13 @@ const CONFIGURABLE_SHORTCUTS: ShortcutEntry[] = (
   Object.entries(COMMANDS) as ShortcutEntry[]
 ).filter(([, def]) => !def.hideFromSettings);
 
-function getCategoryEntries(cat: string, query: string): ShortcutEntry[] {
-  return CONFIGURABLE_SHORTCUTS.filter(([, def]) => {
+function getCategoryEntries(cat: string, query: string, translate: ReturnType<typeof useSessionMessages>['translate']): ShortcutEntry[] {
+  return CONFIGURABLE_SHORTCUTS.filter(([id, def]) => {
     if (def.category !== cat) return false;
     if (!query) return true;
     const q = query.toLowerCase();
-    return def.label.toLowerCase().includes(q) || def.description.toLowerCase().includes(q);
+    const text = commandPresentation(id, translate);
+    return [text.label, text.description, def.label].some(value => value.toLowerCase().includes(q));
   });
 }
 
@@ -325,6 +328,7 @@ const ShortcutRow: React.FC<ShortcutRowProps> = ({
 }) => {
   return (
     <div
+      data-shortcut-id={shortcutKey}
       onMouseEnter={() => onActivate(shortcutKey)}
       onMouseLeave={() => onActivate(null)}
       onClick={() => onActivate(isActive ? null : shortcutKey)}
@@ -335,7 +339,7 @@ const ShortcutRow: React.FC<ShortcutRowProps> = ({
           : 'hover:bg-row-hover'
       )}
     >
-      <span className="truncate text-[length:var(--font-body)] text-foreground">{label}</span>
+      <span className="min-w-0 flex-1 whitespace-normal break-words text-[length:var(--font-body)] text-foreground">{label}</span>
       <Shortcut hotkey={hotkey as any} variant="keycaps" />
     </div>
   );
@@ -363,6 +367,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   activeShortcut,
   onActivate,
 }) => {
+  const { translate } = useSessionMessages();
   if (!entries.length) return null;
   return (
     <div>
@@ -375,15 +380,15 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         </span>
         <span className="text-micro text-foreground-muted/60">{entries.length}</span>
       </div>
-      <div className="flex flex-col gap-0.5">
-        {entries.map(([key, def]) => {
+      <div className="flex flex-col gap-1">
+        {entries.map(([key]) => {
           const hotkey = getEffectiveHotkey(key, keyboard);
           if (!hotkey) return null;
           return (
             <ShortcutRow
               key={key}
               shortcutKey={key}
-              label={def.label}
+              label={commandPresentation(key, translate).label}
               hotkey={hotkey}
               isActive={activeShortcut === key}
               onActivate={onActivate}
@@ -422,15 +427,15 @@ const TabNavSection: React.FC<TabNavSectionProps> = ({
         </span>
         <span className="text-micro text-foreground-muted/60">{entries.length}</span>
       </div>
-      <div className="grid grid-cols-2 gap-x-2">
-        {entries.map(([key, def]) => {
+      <div className="flex flex-col gap-1">
+        {entries.map(([key]) => {
           const hotkey = getEffectiveHotkey(key, keyboard);
           if (!hotkey) return null;
           return (
             <ShortcutRow
               key={key}
               shortcutKey={key}
-              label={def.label}
+              label={commandPresentation(key, translate).label}
               hotkey={hotkey}
               isActive={activeShortcut === key}
               onActivate={onActivate}
@@ -459,10 +464,10 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
     return parseHotkeyToKeys(hotkey);
   }, [activeShortcut, keyboard]);
 
-  const navEntries  = useMemo(() => getCategoryEntries(NAV_CATEGORY,  searchQuery), [searchQuery]);
-  const viewEntries = useMemo(() => getCategoryEntries(VIEW_CATEGORY, searchQuery), [searchQuery]);
-  const sessionEntries = useMemo(() => getCategoryEntries(SESSION_CATEGORY, searchQuery), [searchQuery]);
-  const tabEntries  = useMemo(() => getCategoryEntries(TAB_CATEGORY,  searchQuery), [searchQuery]);
+  const navEntries  = useMemo(() => getCategoryEntries(NAV_CATEGORY, searchQuery, translate), [searchQuery, translate]);
+  const viewEntries = useMemo(() => getCategoryEntries(VIEW_CATEGORY, searchQuery, translate), [searchQuery, translate]);
+  const sessionEntries = useMemo(() => getCategoryEntries(SESSION_CATEGORY, searchQuery, translate), [searchQuery, translate]);
+  const tabEntries  = useMemo(() => getCategoryEntries(TAB_CATEGORY, searchQuery, translate), [searchQuery, translate]);
 
   return (
     <div className="flex max-h-[80vh] flex-col">
@@ -496,17 +501,13 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
       </div>
 
       {/* Content: complex grid layout */}
-      <div className="overflow-hidden p-4 flex-1 min-h-0">
+      <div className="gg-shortcuts-content overflow-y-auto p-4 flex-1 min-h-0">
         <div
-          className="grid gap-4"
-          style={{
-            gridTemplateAreas: '"nav kbd sessions" "nav vtabs sessions"',
-            gridTemplateColumns: '1fr 2fr 1fr',
-          }}
+          className="gg-shortcuts-grid grid gap-4"
         >
-          {/* Navigation (left, spans 2 rows, independently scrollable) */}
+          {/* Navigation commands */}
           <div
-            style={{ gridArea: 'nav', maxHeight: 'calc(80vh - 130px)', overflowY: 'auto' }}
+            style={{ gridArea: 'nav' }}
             className="pr-1"
           >
             <CategorySection
@@ -519,15 +520,15 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
             />
           </div>
 
-          {/* Keyboard SVG (center-top, sticky) */}
-          <div style={{ gridArea: 'kbd' }} className="sticky top-4 flex flex-col items-start gap-2">
+          {/* Keyboard diagram */}
+          <div style={{ gridArea: 'kbd' }} className="flex min-w-0 flex-col items-start gap-2">
             <p className="text-tiny text-foreground-muted">{translate('keyboard.hoverHint')}</p>
             <MacKeyboard highlightedKeys={highlightedKeys} />
           </div>
 
-          {/* Task View (right, spans 2 rows, independently scrollable) */}
+          {/* Agent view commands */}
           <div
-            style={{ gridArea: 'tasks', maxHeight: 'calc(80vh - 130px)', overflowY: 'auto' }}
+            style={{ gridArea: 'sessions' }}
             className="pl-1"
           >
             <CategorySection
@@ -540,8 +541,8 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
             />
           </div>
 
-          {/* View + Tab Navigation (center-bottom, side by side) */}
-          <div style={{ gridArea: 'vtabs' }} className="grid grid-cols-2 gap-x-4 items-start">
+          {/* View and tab navigation commands */}
+          <div style={{ gridArea: 'vtabs' }} className="gg-shortcuts-secondary grid grid-cols-2 gap-x-4 items-start">
             <CategorySection
               category={VIEW_CATEGORY}
               categoryLabel={translate('keyboard.categoryView')}
