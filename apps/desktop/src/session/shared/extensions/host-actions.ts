@@ -1,5 +1,6 @@
 import type { TabOpenIntent } from '@shared/view-state';
 import type { GuguLinkTarget, LinkPlace } from '@gugu/core/shared/ui/guguLink';
+import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { AppComposeDetail, AppForwardFilesDetail, AppOpenWithDetail, AppShowMessageDetail, PeekTarget } from './app-runtime-protocol';
 import type { ExtensionManifest } from './manifest';
 import type { MarketCodeSource } from './market';
@@ -78,7 +79,7 @@ export type ExtensionHostAction =
   | { kind: 'peek'; target: PeekTarget }
   /** A link's or a banner's click (no page asked): the App in a chat's panel, or — naming no chat — on its own page. */
   | { kind: 'openApp'; extensionId: string; tab?: string; chatId?: string }
-  | { kind: 'openLinkTarget'; target: GuguLinkTarget }
+  | { kind: 'openLinkTarget'; target: GuguLinkTarget; source?: { message?: MessageItem } }
   /** An install could not give the chat it was asked for (main's own, no page asks it): the window says so, with the App's page. */
   | { kind: 'notGivenAt'; extensionId: string; chat: { id: string; name: string } }
   /** A banner's click naming a chat's file: opened in its chat, as a link to it is. */

@@ -43,6 +43,8 @@ async function mount(tabId: string) {
 
 it('a tab\'s page is clear until its first paint, then drawn', async () => {
   const { key, guest, box } = await mount('panel-tab')
+  // From the moment the page is asked for, before its guest is ready: the mark is there (a waiting tab's ends as this starts).
+  expect(box.querySelector('[data-testid="page-loading"]')).not.toBeNull()
   act(() => guest.dispatchEvent(new Event('dom-ready')))
   expect(guest.className).toContain('opacity-0')
   expect(box.className).not.toContain('bg-background')

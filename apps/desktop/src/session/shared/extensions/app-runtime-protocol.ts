@@ -586,6 +586,8 @@ export interface AppOpenWithDetail {
   background?: boolean;
   /** Host-only, one-shot authorization carried to the file's binding. Contains no document content. */
   opening?: PreparedChatFile;
+  /** Window-only: the waiting page this answer turns into the file (`beginWait`). */
+  wait?: string;
   chatId: string;
   itemId: string;
   name: string;

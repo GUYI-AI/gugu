@@ -140,7 +140,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       });
       return openLinkTarget({ kind: 'file', itemId: action.itemId });
     case 'openLinkTarget':
-      return openLinkTarget(action.target);
+      return openLinkTarget(action.target, action.source);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
       const app = installedExtensionsStore.manifests.find((manifest) => manifest.id === action.extensionId)?.name ?? action.extensionId;

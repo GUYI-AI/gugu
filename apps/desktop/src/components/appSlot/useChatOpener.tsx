@@ -13,8 +13,9 @@ import { openAttachmentImage } from '../../lib/attachmentBytes'
 import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
-import { folderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { folderItem, isWaitingItem, waitingItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { openPanelItem, showChatTab, panelTabsOf, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
@@ -25,7 +26,7 @@ const log = rendererLogger('app-slot/group')
 
 /** How an open came: the tab whose page asked (its 上一页), and what closing it hands back (a link's message). `at`: the
  *  place a link named, for the host's preview (an App that opens the file is told by main, `groupFileOpener`). */
-type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; at?: FilePlace }
+type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; at?: FilePlace; wait?: string }
 
 /**
  * A file the person opened beside a chat (every way in ends here: the folder's list, a link, a card, 「用 X 打开」), kept
@@ -69,10 +70,10 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     // A pending message is not tab state: neither JSON nor structured-clone snapshots carry it.
     if (item.takeOpening) Object.defineProperty(shown, 'takeOpening', { get: () => item.takeOpening, enumerable: false })
     if (mobile) chatLayoutOf(target).setNarrow(true)
-    const tabId = openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}) })
+    const tabId = openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}), ...(from.wait ? { wait: from.wait } : {}) })
     if (!tabId) throw new Error('The file panel could not be opened')
     await onShow?.(target, tabId)
-    if (item.itemId) noteOpened(item.itemId)
+    if (item.itemId && !isWaitingItem(item)) noteOpened(item.itemId)
   }, [onShow, mobile])
 
   // The file asked last is the one opened: a pill clicked, then another (or a file in an App's list), before the first's
@@ -80,7 +81,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   const openResolved = useCallback(
     async (detail: AppOpenWithDetail, from: OpenFrom = {}) => {
       if (detail.chatId !== chatId) throw new Error('The file belongs to a different conversation')
-      from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent }
+      from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent, ...(detail.wait ? { wait: detail.wait } : {}) }
       if (from.from && detail.viewState) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
       if (detail.choice.kind === 'none') {
         if (!from.from && isRenderableImage(detail.name, detail.file.contentType)) {
@@ -151,6 +152,17 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       receipts.current.clear()
       // A page beside the chat asked: the tab on screen is the 上一页 of what it opens (owner 10-24).
       const source = 'from' in ask ? ask.from : undefined
+      // Asked before its host answered: its waiting page now — or, the file open here already, that tab in front.
+      if ('waiting' in ask) {
+        const { waitId, itemId, fileName, message, from, intent } = ask.waiting
+        const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === itemId)
+        if (open) {
+          showChatTab(chatId, open.tabId)
+          void Promise.resolve(onShow?.(chatId, open.tabId)).catch(error => log.warn({ error: String(error) }, 'the open file could not be shown'))
+        } else void show(chatId, waitingItem(itemId, fileName || translateSessionMessage('task.loading'), waitId, message), { ...(message ? { message } : {}), ...(from ? { from } : {}), ...(intent ? { intent } : {}) })
+          .catch(error => log.warn({ error: String(error) }, 'the waiting page could not be shown'))
+        return
+      }
       if ('itemId' in ask) {
         if (ask.receipt) receipts.current.add(ask.receipt)
         const from: OpenFrom = { ...(ask.message ? { message: ask.message } : {}), ...(ask.restore ? { restore: ask.restore } : {}), ...(source ? { from: source } : {}), ...(ask.at ? { at: ask.at } : {}) }
@@ -218,7 +230,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       pendingReceipts.clear()
       window.removeEventListener(UI_EVENTS.chatAsked, take)
     }
-  }, [chatId, openGroupFile, openResolved, show])
+  }, [chatId, onShow, openGroupFile, openResolved, show])
 
   const content = chatId && (prompt?.choice.kind === 'choose' || unopened || (appFiles && appFiles.chatId === chatId)) ? (
     <div className="flex flex-col gap-3 !p-4" data-testid="group-app-open-with-sheet">

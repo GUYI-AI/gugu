@@ -5,7 +5,7 @@ import { appContextMenuOf } from '../../session/shared/extensions/app-context-me
 import { fileBlob } from '@gugu/core/shared/fileResolver'
 import { guguLink, guguLinkScheme, linkTargetOf, type OpenTarget } from '@gugu/core/shared/ui/guguLink'
 import { openLinkWith } from '../../session/shared/extensions/open-link'
-import { openLinkTarget } from '../../lib/guguLinks'
+import { openLinkTarget, type LinkSource } from '../../lib/guguLinks'
 import { resourceChatIdOf } from '../../session/shared/extensions/app-files-core'
 import { readCachedDevices } from '../../store/devicesCache'
 import { directoryRows, listedSession, liveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
@@ -1050,7 +1050,7 @@ declare const __GUGU_TIER__: string
 export const phoneLinkScheme = () => guguLinkScheme({ tier: typeof __GUGU_TIER__ === 'undefined' ? undefined : __GUGU_TIER__, devLaunch: false })
 
 /** Host facts and transports only; target parsing and opening order are shared with main. */
-export async function openPhoneLink(target: string | OpenTarget) {
+export async function openPhoneLink(target: string | OpenTarget, source?: Pick<LinkSource, 'message'>) {
   if (platform.capabilities.mobileApps) await phoneApps.ready()
   return openLinkWith({
     installed: () => installedExtensionsStore.manifests.map((manifest) => ({ manifest })),
@@ -1074,7 +1074,7 @@ export async function openPhoneLink(target: string | OpenTarget) {
       if (!opened) throw new Error('The App did not open')
       return opened
     },
-    openResource: (resource) => openLinkTarget(resource),
+    openResource: (resource) => openLinkTarget(resource, source),
     bringUp: async ({ sessionId }) => {
       const listed = listedSession(readCachedDevices(), liveDeviceSessions(), sessionId)
       if (!('row' in listed)) throw new Error('Session is not in your task list')
