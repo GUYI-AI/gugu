@@ -2382,13 +2382,12 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* @@@unknown-slot — the read model's placeholder (components/ui/Unknown.tsx): it holds the value's place from the first
-   frame but is drawn only after 150 ms, so a read that answers sooner shows nothing in between (❌ a flash of a bar). */
-@keyframes gg-unknown-appear { to { opacity: 1; } }
-.gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
-@media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
-
-/* @@@stale-results — a search surface's previous words' results while the typed words' are on their way:
-   the same 150 ms rule as the unknown slot, so a read that answers sooner changes nothing on screen; dimmed after that. */
-@keyframes gg-stale-dim { to { opacity: 0.6; } }
-.gg-stale { animation: gg-stale-dim 0s linear 150ms forwards; }
+/* @@@reveal — how what stands for a value not read yet appears: the read model's placeholder (components/ui/Unknown.tsx,
+   `.gg-unknown`), a loading line (`.gg-reveal`), a search's previous results dimmed (`.gg-stale`). Nothing for 150 ms (a
+   read that answers sooner leaves nothing drawn in between), then fading in over 250 ms, so a read that answers just after
+   is replaced while still faint (❌ a flash of a bar). The same with reduced motion: an opacity change, no movement. */
+:root { --gg-reveal-delay: 150ms; --gg-reveal-duration: 250ms; }
+@keyframes gg-reveal { from { opacity: 0; } to { opacity: 1; } }
+.gg-unknown, .gg-reveal { animation: gg-reveal var(--gg-reveal-duration) linear var(--gg-reveal-delay) both; }
+@keyframes gg-stale-dim { from { opacity: 1; } to { opacity: 0.6; } }
+.gg-stale { animation: gg-stale-dim var(--gg-reveal-duration) linear var(--gg-reveal-delay) both; }

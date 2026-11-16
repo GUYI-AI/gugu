@@ -312,16 +312,11 @@ describe('ProjectFolderCard', () => {
     expect(onDropFolder).toHaveBeenCalledWith(file);
   });
 
-  it('shows loading instead of zero folders (only after 150 ms, as a placeholder) and waits before allowing the card to open', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      await renderCard(stateOf({ folders: null, chosen: null }));
-      // A read that answers within 150 ms shows nothing in between.
-      expect(container.textContent).not.toContain('正在读取文件夹');
-      expect(container.textContent).not.toContain('0 个文件夹');
-      await act(async () => { vi.advanceTimersByTime(150); });
-      expect(container.textContent).toContain('正在读取文件夹');
-    } finally { vi.useRealTimers(); }
+  it('shows loading instead of zero folders (fading in as a placeholder does) and waits before allowing the card to open', async () => {
+    await renderCard(stateOf({ folders: null, chosen: null }));
+    // As a placeholder (@@@reveal): drawn faded out, appearing only after 150 ms — a read that answers sooner shows nothing.
+    const loading = [...container.querySelectorAll('.gg-reveal')].find((node) => node.textContent?.includes('正在读取文件夹'));
+    expect(loading).toBeDefined();
     expect(container.textContent).not.toContain('0 个文件夹');
     await act(async () => container.querySelector<HTMLElement>('[data-testid="project-folder-card"]')?.click());
     expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
