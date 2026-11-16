@@ -1,3 +1,4 @@
+import { nativeAndroidAccountClosure } from './androidAccountClosure'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import type { PermissionState } from '@capacitor/core'
@@ -188,6 +189,7 @@ function ensureNotificationChannels(): Promise<void> {
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
+  accountClosure: nativeAndroidAccountClosure,
   accountOAuthBrowser: {
     openBrowser,
     openLinkBrowser: async (url) => openBrowser(googleIdentityLinkUrl(url, getSupabaseUrl())),
