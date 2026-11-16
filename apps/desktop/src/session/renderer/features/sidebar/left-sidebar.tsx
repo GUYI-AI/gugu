@@ -6,7 +6,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { sidebarRailLayout, sidebarRailTextOpacity, useLeftRailLayout, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { sidebarRailTextOpacity, useLeftRailLayout, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { cn } from '@renderer/utils/utils';
@@ -44,17 +44,27 @@ const BOTTOM_FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.5rem), 
  * avatars' column stays, everything right of it takes the names' opacity. One element's own style per frame, ❌ an opacity
  * on every name: that restyled the whole list each frame.
  */
-function followNamesMask(scroll: HTMLElement, progress: number) {
+function followNamesMask(scroll: HTMLElement, progress: number, railLayout: boolean) {
   const text = sidebarRailTextOpacity(progress);
   if (text >= 1) {
     scroll.style.removeProperty('mask-image');
     scroll.style.removeProperty('mask-composite');
     return;
   }
-  const edge = sidebarRailLayout(progress) ? RAIL_NAMES_START_PX : NAMES_START_PX;
+  const edge = railLayout ? RAIL_NAMES_START_PX : NAMES_START_PX;
   // The names' opacity in 255ths: the 8-bit alpha an rgb() literal painted, so the fade's pixels are unchanged.
   scroll.style.setProperty('mask-image', `linear-gradient(to right, black ${edge}px, color-mix(in srgb, black ${(Math.round(text * 255) / 2.55).toFixed(3)}%, transparent) ${edge}px), ${BOTTOM_FADE_MASK}`);
   scroll.style.setProperty('mask-composite', 'intersect');
+}
+
+/** The rail is the sidebar's attribute, written in the frame the edge lands with the layer's width, not by a re-render. */
+function followRail(list: HTMLElement, _progress: number, railLayout: boolean) {
+  list.toggleAttribute('data-sidebar-rail', railLayout);
+}
+
+/** The hint re-renders when the rail flips, on its own, not the whole sidebar with its rows. */
+function RailHint({ list }: { list: React.RefObject<HTMLElement | null> }) {
+  return <RailRowHint list={list} enabled={useLeftRailLayout()} />;
 }
 
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
@@ -103,8 +113,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   }, [railed, notificationsOpen]);
   // What the rows look like follows the open/close progress, not the open state: the state flips the moment collapsing
   // starts (or only on release, for a drag), the progress is what is on screen.
-  const railLayout = useLeftRailLayout();
-  const listRef = React.useRef<HTMLDivElement>(null);
+  const listRef = useSidebarProgressFollow<HTMLDivElement>(followRail);
   const scrollRef = useSidebarProgressFollow<HTMLDivElement>(followNamesMask);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
@@ -147,8 +156,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // #2548 a row's text (name, preview, time, its unread count) follows the open/close progress through the scroll
         // box's mask (followNamesMask: text only in the second half). On the rail the unread count sits on the avatar's
         // top-right corner instead (the muted bell stays out) and fades in as it takes that place. The count changes place
-        // only at rest on the rail (sidebarRailLayout: the last frame of a collapse, the first of an expand). The rows narrow
-        // with the sidebar, so the selected background ends the size of the avatar's cell.
+        // only where the edge lands on the rail (sidebarRailLayout: the last frame of a collapse, the first of an expand).
         // The rail is one attribute (data-sidebar-rail) under fixed rules, each ending in the count's own elements (the muted
         // bell by its class): turning it on restyles those only. ❌ a rule ending in a tag (`span:not(.gg-chip)` restyled every
         // span in the rows, 11.6k elements against 2.4k), ❌ a rule ending in `*`, ❌ an inherited property there (the old
@@ -157,7 +165,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         'data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:animate-in data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:fade-in data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:duration-150',
         'data-[sidebar-rail]:[&_.gg-chat-row-muted]:hidden'
       )}
-      data-sidebar-rail={railLayout || undefined}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
@@ -172,7 +179,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         </div>
       )}
       {/* The one-time bubble (C9) on the head comes up when the inner sidebar appears: a group, a project or the sample. */}
-      <RailRowHint list={listRef} enabled={railLayout} />
+      <RailHint list={listRef} />
       <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>

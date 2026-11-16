@@ -16,6 +16,7 @@ const {
   INNER_SIDEBAR_WIDTH_STORAGE_KEY,
   sidebarEdgeDrag,
   sidebarEdgeSnapsOpen,
+  SIDEBAR_LANDED_PX,
   sidebarOccupiedWidth,
   sidebarRailLayout,
   sidebarRailTextOpacity,
@@ -122,12 +123,19 @@ describe('collapsing', () => {
 });
 
 describe('the rail layout switches where the names cannot be seen', () => {
-  it('the count changes place (row end ↔ avatar corner) only at rest on the rail, outside the motion', () => {
-    expect(sidebarRailLayout(1)).toBe(false);
-    expect(sidebarRailLayout(0.5)).toBe(false);
-    expect(sidebarRailLayout(0.01)).toBe(false);
-    expect(sidebarRailLayout(0)).toBe(true);
+  it('the count changes place (row end ↔ avatar corner) only where the edge lands on the rail, outside the motion', () => {
+    const rail = 72;
+    const drawn = (progress: number) => sidebarOccupiedWidth(progress, 240, rail);
+    expect(sidebarRailLayout(drawn(1), rail)).toBe(false);
+    expect(sidebarRailLayout(drawn(0.5), rail)).toBe(false);
+    // the first frame of an expand moves the edge a pixel or more: the rows leave the rail there
+    expect(sidebarRailLayout(drawn(0.01), rail)).toBe(false);
+    // the spring's sub-pixel tail is already the rail, ❌ waiting for its formal rest
+    expect(sidebarRailLayout(rail + SIDEBAR_LANDED_PX / 2, rail)).toBe(true);
+    expect(sidebarRailLayout(drawn(0), rail)).toBe(true);
     expect(sidebarRailTextOpacity(0.01)).toBe(0);
+    // no rail, no rail layout
+    expect(sidebarRailLayout(0, 0)).toBe(false);
   });
 });
 

@@ -6,8 +6,10 @@ import {
   INNER_SIDEBAR_MIN_WIDTH_PX,
   innerSidebarMaxWidth,
   innerSidebarShownWidth,
+  SIDEBAR_LANDED_PX,
   SIDEBAR_MIN_WIDTH_PX,
   sidebarOccupiedWidth,
+  sidebarRailLayout,
 } from '@renderer/lib/layout/layout-provider';
 import { panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
@@ -69,6 +71,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
+    leftLayoutWidth,
     leftRail,
     leftRailWidth,
     workspaceRootRef,
@@ -94,8 +97,28 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     observer.observe(root);
     return () => observer.disconnect();
   }, [workspaceRootRef, workspaceWidth]);
-  // #2642 内层栏的右边缘 = 列表占位宽 + 内层栏画出来的宽(内层栏紧挨列表,左右都不留缝,desktop-shell.css)。
+  // @@@overlay-collapse - during a fold the page keeps its laid-out width (leftLayoutWidth) and follows the list's drawn edge
+  // by transform, so its left edge stays where the list ends, as when the width animated. Landed, it stays put through the
+  // spring's sub-pixel tail.
+  const pageShift = useTransform([leftAnimatedWidth, leftLayoutWidth], ([drawn, laidOut]: number[]) =>
+    Math.abs(drawn - laidOut) < SIDEBAR_LANDED_PX ? 0 : drawn - laidOut
+  );
+  // #2642 内层栏的右边缘 = 列表画出来的边 + 内层栏画出来的宽(内层栏紧挨列表,左右都不留缝,desktop-shell.css)。
   const innerEdge = useTransform([leftAnimatedWidth, innerShownWidth], ([left, inner]: number[]) => left + inner);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const move = (shift: number) => {
+      const transform = shift ? `translateX(${shift}px)` : '';
+      content.style.transform = transform;
+      // The inner sidebar is the page's previous sibling (WorkspaceLayout renders it there; InnerSidebar owns the element).
+      const inner = content.previousElementSibling;
+      if (inner instanceof HTMLElement && inner.dataset.region === 'inner-sidebar') inner.style.transform = transform;
+    };
+    move(pageShift.get());
+    return pageShift.on('change', move);
+  }, [pageShift]);
   const showInnerHandle = innerSidebarShown && !sidebarHidden;
 
   // 浮出预览用自己的一条进度:它从左缘滑入,而不是把主区推开。
@@ -121,10 +144,15 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   const dockedContent = (progress: number, width: number) =>
     panelContentLayout(progress, width, SIDEBAR_CONTENT_MIN_PX);
   const contentWidth = useTransform([leftProgress, leftWidth, leftRailWidth], (latest: number[]) =>
+    // On a rail the layer keeps the list's width through the fold (clipped at the drawn edge); the rail width where the edge
+    // lands on it, with the rows' rail layout (sidebarRailLayout).
     latest[2] > 0
-      ? sidebarOccupiedWidth(latest[0], latest[1], latest[2])
+      ? (sidebarRailLayout(sidebarOccupiedWidth(latest[0], latest[1], latest[2]), latest[2]) ? latest[2] : latest[1])
       : latest[0] <= 0 ? latest[1] : dockedContent(latest[0], latest[1]).width
   );
+  // On a rail the list is clipped at its drawn edge, ❌ resized: a width there re-laid out the aside in every frame of a fold.
+  const asideWidth = useTransform([contentWidth, leftAnimatedWidth, leftRailWidth], ([layer, drawn, rail]: number[]) => (rail > 0 ? layer : drawn));
+  const asideClip = useTransform([asideWidth, leftAnimatedWidth], ([width, drawn]: number[]) => `inset(0 ${Math.max(0, width - drawn)}px 0 0)`);
   const contentOpacity = useTransform(
     [leftProgress, peekProgress, leftWidth, leftRailWidth],
     (latest: number[]) =>
@@ -141,7 +169,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   /** #2642 内层栏与正文合起来那张卡片此刻的宽;null = 还没量到。与画这一列的变换读同一个会话页宽(workspaceWidth)。 */
   const innerCardWidth = () => {
     const rootWidth = workspaceWidth.get();
-    return rootWidth > 0 ? rootWidth - leftAnimatedWidth.get() : null;
+    return rootWidth > 0 ? rootWidth - leftLayoutWidth.get() : null;
   };
   /** 内层栏此刻画出来的宽,由源头现算:innerShownWidth 是变换,下一帧才更新,连按两下方向键第二下会读到旧值、吞掉一步(浏览器用例实测)。 */
   const innerShownNow = () => innerSidebarShownWidth(innerWidth.get(), innerCardWidth());
@@ -157,10 +185,13 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       // #2548 the content is a card stacked on the one list only while the list is beside it (desktop-shell.css).
       data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}
     >
+      {/* @@@overlay-collapse - the list's place in the layout. The list itself (the aside) is drawn over the page, clipped at
+          its drawn edge: a fold re-lays out the page once (at the start of a collapse, where an expand lands), not each frame. */}
+      <motion.div aria-hidden className="h-full shrink-0" style={{ width: sidebarHidden ? 0 : leftLayoutWidth }} />
       <motion.aside
         data-workspace-left-panel=""
         className={cn(
-          'relative h-full shrink-0',
+          'absolute inset-y-0 left-0',
           // 停靠时 z-40 与顶栏那层同档(它们不重叠);浮出时必须抬到 z-50 压过顶栏 —— 预览是盖在
           // 主区**之上**的一层,主区左上角那块面包屑/项目名不抬就会透出来压在侧栏内容上
           // (顶栏也是 z-40,而且排在 DOM 后面,同档就赢)。开关钮同样 z-50 但更靠后,仍在最上面。
@@ -170,7 +201,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         )}
         // A place without the task list (资源库, App) hides it as a retained surface, ❌ display:none: that drops every
         // row's layout box and the way back restyles the whole list (@@@retained-places, lib/retainedSurface.ts).
-        style={sidebarHidden ? { width: leftAnimatedWidth, ...RETAINED_SURFACE_HIDDEN_STYLE } : { width: leftAnimatedWidth }}
+        style={{ width: asideWidth, clipPath: isPeekVisible ? 'none' : asideClip, ...(sidebarHidden ? RETAINED_SURFACE_HIDDEN_STYLE : {}) }}
       >
         <motion.div
           // #7333 停靠 / 浮出两态的材质不同:停靠时这一层在 mac 原生材质下让出底色,浮出预览盖在正文上仍是不透明面
@@ -247,7 +278,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
           #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
       {sidebarHidden ? null : innerSidebar}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
+      <div ref={contentRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
         {mainContent}
         {sidebarHidden ? null : innerSidebarRestore}
       </div>

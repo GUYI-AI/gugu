@@ -175,7 +175,7 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   expect([...new Set(written)]).toEqual([]);
   // The rail is the attribute alone under fixed rules: a class swap there restyled every row (rules ending in `*`, and an
   // inherited pointer-events on every row body).
-  expect(sidebar.hasAttribute('data-sidebar-rail')).toBe(true);
+  await expect.poll(() => sidebar.hasAttribute('data-sidebar-rail'), { timeout: 1000 }).toBe(true);
   expect(sidebar.className).toBe(listClasses);
   // The rules end in the count's own elements: the bell by its class; ❌ by tag (a span rule restyled every span in the rows).
   const [bell, chip, other] = [...trailing.children].map((child) => getComputedStyle(child).display);
@@ -189,4 +189,36 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
   await expect.poll(() => scroll.style.maskImage, { timeout: 3000 }).toBe('');
+});
+
+it('the rail flips in the frame the list\'s layer takes the rail\'s width, both ways: one paint, ❌ a re-render after it', async () => {
+  await page.viewport(1000, 700);
+  harness = createReactHarness();
+  await harness.render(
+    <SessionLocalizationProvider>
+      <WorkspaceLayoutContextProvider>
+        <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+      </WorkspaceLayoutContextProvider>
+    </SessionLocalizationProvider>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
+  // One mutation batch is one task: the frame loop's writes land together, a React commit lands in a batch of its own.
+  const batches: { width: string; rail: boolean; flipped: boolean }[] = [];
+  const observer = new MutationObserver((records) => batches.push({
+    width: aside.style.width,
+    rail: sidebar.hasAttribute('data-sidebar-rail'),
+    flipped: records.some((record) => record.attributeName === 'data-sidebar-rail'),
+  }));
+  observer.observe(aside, { subtree: true, attributes: true, attributeFilter: ['style', 'data-sidebar-rail'] });
+  for (const [direction, rail] of [['collapse', true], ['expand', false]] as const) {
+    batches.length = 0;
+    document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+    await expect.poll(() => sidebar.hasAttribute('data-sidebar-rail'), { timeout: 3000 }).toBe(rail);
+    await new Promise(requestAnimationFrame);
+    const flip = batches.findIndex((batch) => batch.flipped);
+    const narrow = batches.findIndex((batch) => (batch.width === '72px') === rail);
+    expect(flip, `${direction}: ${batches.map((batch) => `${batch.width}${batch.rail ? ' rail' : ''}`).join(' | ')}`).toBe(narrow);
+  }
+  observer.disconnect();
 });

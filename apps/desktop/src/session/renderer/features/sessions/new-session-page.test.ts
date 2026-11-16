@@ -179,6 +179,7 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({
     isLeftOpen: true,
     isLeftPeeking: false,
     leftAnimatedWidth: motionValue(260),
+    leftLayoutWidth: motionValue(260),
     setCollapsed: vi.fn(),
     setTriggerHovered: vi.fn()
   })
