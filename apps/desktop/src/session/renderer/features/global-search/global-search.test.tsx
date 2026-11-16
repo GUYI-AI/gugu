@@ -513,12 +513,11 @@ describe('global search panel', () => {
     expect(closed).toBe(0)
   })
 
-  it('opening a message hit starts the trail over the message hits and remembers the words for this conversation', async () => {
+  it('opening a message hit opens it, leaves no search state behind but the selection, and remembers the words for this conversation', async () => {
     await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
     await render('回滚')
     await act(async () => options()[1]!.click())
-    const { trail } = JSON.parse(JSON.stringify(sessionSnapshot()))
-    expect(trail).toEqual({ hits: [{ chatId: GROUP, messageId: NEW }, { chatId: OTHER, messageId: OLD }], index: 1, query: '回滚' })
+    expect(Object.keys(sessionSnapshot()!).sort()).toEqual(['chips', 'facet', 'selectedId', 'text'])
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()
