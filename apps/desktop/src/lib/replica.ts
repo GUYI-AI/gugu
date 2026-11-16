@@ -63,7 +63,8 @@ type Definition<A extends unknown[], V> = {
      * What of a value is carried across restarts (default: all of it). Whole fields left out, or `undefined` = this key is
      * not kept by definition (not a refusal); never a value cut short or rewritten. A field left out must be one the
      * value's type already has as optional and every reader already reads as "not known yet". The limits apply to what
-     * is carried. Applied again to what a snapshot holds when it is restored, so it must give the same answer twice.
+     * is carried. Applied again to what a snapshot holds when it is restored: a value carried as it was kept (the same
+     * fields) is not written again.
      */
     carry?: (value: V, ...args: A) => V | undefined
   }
@@ -414,7 +415,9 @@ function admitted(definition: Definition<unknown[], unknown>, entries: SnapshotE
   // What this definition carries of each kept value (an older build may have kept fields it no longer carries).
   const carried = entries.flatMap((entry) => {
     const value = carry ? carry(entry.value, ...entry.key.slice(2)) : entry.value
-    return value === undefined ? [] : [{ entry, as: value === entry.value ? entry : { ...entry, value } }]
+    // Carried as it was kept (by content: a carry that returns a new object of the same fields changes nothing).
+    const same = value === entry.value || JSON.stringify(value) === JSON.stringify(entry.value)
+    return value === undefined ? [] : [{ entry, as: same ? entry : { ...entry, value } }]
   })
   return carried
     .filter(({ as }) => JSON.stringify(as).length <= maxBytes)

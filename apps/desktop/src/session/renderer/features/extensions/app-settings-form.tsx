@@ -10,6 +10,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { AppSettings } from '@shared/extensions/app-settings';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import './app-settings-page.css';
+import { log } from '@renderer/utils/logger';
 
 type SettingsReply = { success: boolean; data?: AppSettings; error?: string };
 
@@ -37,7 +38,8 @@ export function AppSettingsForm({ manifest, active, hostKey, save: write, id, hi
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const values = draft ?? stored;
   const [saveError, setSaveError] = useState<string | null>(null);
-  const error = saveError ?? (reading.state === 'error' ? reading.error.message || t('appSettings.readFailed') : null);
+  // Why a read failed goes to the log (the replica's read says it); the person reads that it failed, with what was kept.
+  const error = saveError ?? (reading.state === 'error' || (reading.state === 'value' && reading.error) ? t('appSettings.readFailed') : null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(stored);
@@ -56,7 +58,8 @@ export function AppSettingsForm({ manifest, active, hostKey, save: write, id, hi
       setDraft(null);
       setSaved(true);
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : String(cause));
+      log.warn('App settings save failed', { extensionId: manifest.id, error: String(cause) });
+      setSaveError(t('appSettings.saveFailed'));
     } finally {
       setSaving(false);
     }

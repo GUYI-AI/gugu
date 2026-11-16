@@ -502,3 +502,16 @@ describe('core batch: device reads and change feeds', () => {
     harness.cleanup({ keepReads: true })
   })
 })
+
+describe('carry by content (review A6)', () => {
+  it('a carry that returns a new object of the same fields does not rewrite the snapshot at each start', async () => {
+    const define = () => rm.replica({ name: 'test-carry-same', scope: 'device', read: async () => ({ status: 'ok', meetings: [1, 2] }),
+      persist: { maxBytes: 256, maxEntries: 1, carry: ({ status }: { status: string; meetings?: number[] }) => ({ status }) } })
+    await define().prefetch()
+    rm = await freshStart()
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    define()
+    expect(writes.mock.calls.filter(([key]) => key === 'gugu.readModel.v1:device')).toEqual([])
+    writes.mockRestore()
+  })
+})

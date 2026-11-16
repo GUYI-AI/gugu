@@ -7,7 +7,7 @@ import { openApp } from '../appSlot/useOpenApp'
 import { RailAppIcon } from '../RailAppIcon'
 import { LayoutGrid } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
-import { MenuFold, MenuItem, MenuSearch, MenuSeparator, useMenuSearch } from '../ui/Menu'
+import { MenuFold, MenuItem, MenuRow, MenuSearch, MenuSeparator, useMenuSearch } from '../ui/Menu'
 import { appIsRunning } from '../../session/renderer/features/extensions/app-dock'
 
 /**
@@ -24,9 +24,9 @@ export function OpenAppMenuItems({ chatId, separated }: {
   // No Apps on this platform (the web): nothing to open.
   if (!HERE_HOST) return null
   // Not known yet: the fold's row holds its place (❌ no fold, then one appearing under the pointer).
-  if (installed.state === 'unknown') return <>{separated && <MenuSeparator />}<div className="px-2 py-1.5"><Unknown className="w-32" /></div></>
+  if (installed.state === 'unknown') return <>{separated && <MenuSeparator />}<MenuRow><Unknown className="w-32" /></MenuRow></>
   if (installed.state === 'error') {
-    return <>{separated && <MenuSeparator />}<div className="px-2 py-1.5"><RefreshFailed error={installed.error} onRetry={() => { if (HERE_HOST) void installedExtensions.refresh(HERE_HOST) }} /></div></>
+    return <>{separated && <MenuSeparator />}<MenuRow><RefreshFailed error={installed.error} onRetry={() => { if (HERE_HOST) void installedExtensions.refresh(HERE_HOST) }} /></MenuRow></>
   }
   return <OpenAppFold chatId={chatId} separated={separated} apps={installed.value.openableApps} />
 }

@@ -289,7 +289,14 @@ const unwrap = <T,>(result: { success: boolean; data?: T; error?: string }, what
 export const extensionSettings = replica({
   name: 'extensionSettings',
   scope: 'device',
-  read: async (_owner: string, hostKey: string, extensionId: string): Promise<AppSettings> => unwrap(await extensionsApiOf(hostKey).settings({ extensionId }), 'App settings'),
+  read: async (_owner: string, hostKey: string, extensionId: string): Promise<AppSettings> => {
+    try {
+      return unwrap(await extensionsApiOf(hostKey).settings({ extensionId }), 'App settings');
+    } catch (error) {
+      log.warn('App settings read failed', { hostKey, extensionId, error: String(error) });
+      throw error;
+    }
+  },
 });
 
 /**

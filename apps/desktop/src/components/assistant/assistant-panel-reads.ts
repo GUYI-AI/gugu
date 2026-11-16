@@ -9,7 +9,7 @@ import type { IntegrationMetadata } from '@/session/renderer/features/integratio
 import { connectionMetadataKey, type ConnectionMetadataStore } from '../connections/connection-metadata'
 import { CONNECTIONS_CHANGED, peekOwnerConnectionMetadata, readOwnerConnectionMetadata } from '../connections/owner-connection-metadata'
 import { peekAssistantPanelIntegration, peekAssistantPanelIntegrations, readAssistantPanelIntegration, readAssistantPanelIntegrations } from './assistant-panel-integrations'
-import { assistantPanel, onAssistantPanelChanged, useAssistantPanel } from './assistant-panel-replica'
+import { onAssistantPanelChanged, useAssistantPanel } from './assistant-panel-replica'
 
 /**
  * Reads through a connection store or a panel machine. Those are live objects (a cloud client, an account guard), so the

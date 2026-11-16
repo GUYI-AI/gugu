@@ -87,7 +87,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/SharePosterDialog.tsx",
-    "count": 2
+    "count": 1
   },
   {
     "rule": "console-member",
@@ -97,11 +97,6 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/chat/useConversationScrollMemory.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/components/contacts/GroupInvite.tsx",
     "count": 1
   },
   {
@@ -157,11 +152,6 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/lib/realtimeSessionManager.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/lib/runtimeCapabilityPolicy.ts",
     "count": 1
   },
   {

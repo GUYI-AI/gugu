@@ -232,7 +232,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
   const openExtensionsSettings = () => navigate('apps');
 
   const renderAction = (entry: WorkspacePanelAction, className?: string) => {
-    if (entry.unknown) return <div className={cn('flex min-h-10 w-full items-center px-2.5 py-2', className)}><Unknown className="w-28" /></div>;
+    if (entry.unknown) return <div className={cn(ACTION_BOX, className)}><Unknown className="w-28" /></div>;
     const enabledIndex = enabledEntries.indexOf(entry);
     return (
       <PaneEmptyStateAction
@@ -305,6 +305,9 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
 });
 
 /** 空态清单的一行(别的机器上的会话的工作区空态也用这一行,#6264)。 */
+/** An action's box; its placeholder while not known takes the same one. */
+const ACTION_BOX = 'flex min-h-10 w-full items-center px-2.5 py-2';
+
 export function PaneEmptyStateAction({
   icon,
   label,
@@ -334,7 +337,7 @@ export function PaneEmptyStateAction({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       className={cn(
-        'flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-foreground-muted transition-colors',
+        ACTION_BOX, 'justify-between gap-2 rounded-md text-foreground-muted transition-colors',
         disabled ? 'opacity-50' : 'hover:bg-row-hover hover:text-foreground',
         isSelected && `bg-background-1 text-foreground hover:bg-background-1 ${STATE_LAYERS}`,
         className
