@@ -69,7 +69,10 @@ describe('appSettings changes made elsewhere', () => {
   })
 
   it('another machine\'s settings are not kept across restarts, and do not push this device\'s keys out', async () => {
+    const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+    followRendererSession('SIGNED_IN', 'owner-a')
     for (let n = 0; n < 10; n += 1) await client.remoteAppSettingsModel.prefetch('localProject', `machine-${n}`)
+    expect(client.remoteAppSettingsModel.peek('localProject', 'machine-0').state).toBe('value')
     const kept = Object.values(JSON.parse(localStorage.getItem('gugu.readModel.v1:device') ?? '{}') as Record<string, { key: unknown[] }>)
     expect(kept.filter((entry) => entry.key[0] === 'remoteAppSettings')).toEqual([])
     // No preload handover here (web): `interface` keeps its first frame from the snapshot; on desktop it is handed over.
@@ -83,5 +86,17 @@ describe('what of the settings is kept across restarts (review B1-3)', () => {
     const keys = Object.values(block).filter((entry) => entry.key[0] === 'appSettings').map((entry) => entry.key[2])
     expect(keys).toContain('terminal')
     expect(keys).not.toContain('browser')
+  })
+})
+
+describe("another machine's settings are the account's (coordinator 11-16)", () => {
+  it("after A signs out and B signs in, A's machine settings are not B's (unknown until read for B)", async () => {
+    const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+    followRendererSession('SIGNED_IN', 'owner-a')
+    await client.remoteAppSettingsModel.prefetch('localProject', 'machine-1')
+    expect(client.remoteAppSettingsModel.peek('localProject', 'machine-1').state).toBe('value')
+    followRendererSession('SIGNED_OUT', null)
+    followRendererSession('SIGNED_IN', 'owner-b')
+    expect(client.remoteAppSettingsModel.peek('localProject', 'machine-1')).toEqual({ state: 'unknown' })
   })
 })

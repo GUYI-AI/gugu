@@ -73,7 +73,7 @@ export function routeRemoteSettings(route: (host: string) => SettingsRpc): void 
 /** Another machine's settings (#6264): ❌ persisted — they would push this device's keys out of the snapshot. */
 export const remoteAppSettingsModel = replica({
   name: 'remoteAppSettings',
-  scope: 'device',
+  scope: 'account',
   read: async (_device, key: AppSettingsKey, host: string) => await remoteSettingsRoute(host).appSettings.getWithMeta(key) as SettingsMeta<AppSettingsKey>,
   fresh: 5 * 60_000,
 });
