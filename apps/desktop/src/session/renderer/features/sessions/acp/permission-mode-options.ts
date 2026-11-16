@@ -77,7 +77,7 @@ function reportedIdFor(
  * 所以:**声明了映射表就只摆它声明过的那几档**(id 仍是原生 id,发下去照样认);
  * **没声明表就一个字都不动** —— 猜着改一半正是混杂的来源。
  *
- * ⚠️ 收敛的代价:同归一档的其余原生档(claude 的 `auto` / `dontAsk`)不再单列。
+ * Native dontAsk remains a read-only alias. Eligible auto is a separate AI-review row, filtered by the host first.
  */
 /** 咕咕四档的显示名(下拉、确认框共用这一份)。 */
 export const PERMISSION_TIER_LABEL_KEYS = {

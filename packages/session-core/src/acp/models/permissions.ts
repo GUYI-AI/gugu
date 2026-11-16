@@ -191,10 +191,8 @@ export function isAutoApproveIntent(intent: { permissionMode?: GuguPermissionMod
  *
  * 三个真实的家把这条规则的三格各钉死一个,少了任何一格都会坏:
  *
- * · **claude**:四档全声明。它还报一个 `auto`(交给模型分类器判批准/拒绝),咕咕**故意不映射**
- *   ——那不是「能改多少」这条轴上的刻度而是「谁来决定」,会话页下拉也不摆它。但按名字猜会
- *   把它算成 `edit`,而 claude 把它排在档位表**第一个** ⇒ 不挡,用户选「编辑」时启动侧会
- *   选中 `auto`,选中的还是个下拉里不存在的选项。这一侧要求:**edit 已声明 ⇒ 只认 acceptEdits**。
+ * Claude: native auto represents ai-review after executable/model admission, never edit.
+ * Edit's representative remains acceptEdits; a different reviewer must be selected explicitly.
  *
  * · **droid**:只声明有据的一档(`auto-high` = 完全访问,#4482 探针读数),
  *   `normal/spec/auto-low/auto-medium` 在两轴上怎么落没有读数、❌ 不猜,故意留空由启发式填
