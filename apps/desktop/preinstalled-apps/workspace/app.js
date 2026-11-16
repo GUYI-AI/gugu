@@ -2661,6 +2661,7 @@ function askReplace(name) {
     li.append(actions)
     $('conflict-list').replaceChildren(li)
     $('conflicts-done').hidden = false
+    $('conflicts-done').parentElement.hidden = false
     $('conflicts-done').dataset.choice = 'skip'
     $('conflicts-done').textContent = t.skipAll
     $('conflicts-done').onclick = answered('skip')
@@ -2710,6 +2711,7 @@ function askAboutNames(arrived, before) {
   // One clash has only its two explicit choices. With several, keeping the rest is a named choice, never "OK".
   const remainingChoice = () => {
     $('conflicts-done').hidden = $('conflict-list').children.length < 2
+    $('conflicts-done').parentElement.hidden = $('conflicts-done').hidden
     $('conflicts-done').dataset.choice = 'keep-remaining'
     $('conflicts-done').textContent = t.keepRemainingBoth
   }
