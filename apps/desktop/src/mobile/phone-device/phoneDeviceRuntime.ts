@@ -125,7 +125,7 @@ export const phoneOsState = replica({
   read: () => readPhoneOsState(),
 })
 
-/** The OS state as last read, for the runtime's decisions (outside rendering). */
+/** The OS state as last read (this run: it is not kept across restarts), for the runtime's decisions (outside rendering). */
 function osNow(): PhoneOsState | null {
   const reading = phoneOsState.peek()
   return reading.state === 'value' ? reading.value : null

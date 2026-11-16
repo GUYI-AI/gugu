@@ -78,6 +78,28 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+describe('the OS state the runtime decides on (F2-3)', () => {
+  it('registers no action from the last run\'s kept OS state when this run cannot read the system', async () => {
+    vi.resetModules()
+    const runtime = await import('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime')
+    const settings = await import('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings')
+    // As restored from the last run's snapshot: calendar granted then (revoked since).
+    runtime.phoneOsState.set([], { runtime: { calendar: 'granted' }, special: {}, health: {}, data: {} } as never)
+    test.checkPermissions.mockRejectedValue(new Error('system unreadable'))
+    settings.setPhoneDeviceEnabled(test.ownerId, true)
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const stopRun = runtime.startPhoneDevice({ userId: test.ownerId, hostEnabled: false, noticeLabel: () => 'test', claimNotice: () => () => {} })
+    try {
+      // The boot's read fails; the heartbeat goes on and builds the action list from the OS state it has.
+      await vi.waitFor(() => expect(runtime.usePhoneDevice().link.state).toBe('error'))
+      await vi.advanceTimersByTimeAsync(runtime.PHONE_HEARTBEAT_MS)
+      await vi.waitFor(() => expect(test.checkPermissions.mock.calls.length).toBeGreaterThanOrEqual(2))
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+      expect(test.upsert).not.toHaveBeenCalled()
+    } finally { stopRun() }
+  })
+})
+
 describe('one phone endpoint owns registration and RPC', () => {
   it.each([false, true])('restarts after native exit without reading or removing the device row (snapshot unreadable: %s)', async (unreadable) => {
     const exiting = deferred()
