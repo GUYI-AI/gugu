@@ -2738,36 +2738,6 @@ ipcMain.on('device-runtime:scheduled-tasks-changed', () => {
 // @@@local-device-self - The renderer should not ask the cloud whether its own machine
 ipcMain.handle('device:get-self-snapshot', () => getLocalDeviceSelfSnapshot())
 
-// @@@share-card-rename 改名也有两半,云端与本机。
-// 云端那半是 identity.users.display_name(聊天页 / 通讯录 / 名片海报读它);本机那半是花名册 agents.json
-// 上的 name,会话页读它(分享按钮的提示、分享卡片里那个名字、按名字寻址)。provisioning 复用花名册上的
-// existing.name 且**从不**回读云端,所以只改云端 = 同一个 agent 在两页叫两个名字,而这正是
-// sessionpage-agent-card 注释里写明要避免的那件事。
-// 渲染层在云端改名**成功之后**调它(同 release 的次序:云端认了,才轮得到本机跟上)。
-// 本机没有花名册记录不是失败(那个 agent 是在别的设备上开的户,这台机器上本来就没有它的那一半)→ 回 false。
-ipcMain.handle('owned-agent:rename-local-footprint', async (_e, arg: unknown) => {
-  const input = (arg ?? {}) as { agentUserId?: unknown; name?: unknown }
-  const agentUserId = typeof input.agentUserId === 'string' ? input.agentUserId.trim() : ''
-  const name = typeof input.name === 'string' ? input.name.trim() : ''
-  if (!agentUserId) throw new Error('owned-agent rename 缺 agentUserId')
-  // 空名不是「不改」,是一个会把花名册写坏的值 —— 调用方本就不该发出来,发出来就响亮拒绝。
-  if (!name) throw new Error('owned-agent rename 缺 name')
-  const { listAgents, writeAgentName } = await import('@gugu/core/local/state/agents')
-  // includeGuests:会话页会话的身份可能还挂在 guest 记录上,漏掉它就等于「这台机器上没有」而静默不改。
-  const roster = await listAgents(process.env, { includeGuests: true })
-  const existing = roster.find((agent) => agent.gugu_user_id === agentUserId)
-  if (!existing) return false
-  // The cloud already took this person's rename: it is this device's latest name and it is published.
-  await writeAgentName(agentUserId, name, 'local', process.env)
-  await writeAgentName(agentUserId, name, 'published', process.env)
-  // The roster write renames the bound task (task-name.ts announces it to every surface). Its agent is told
-  // only when it has a session to hear it (no session binding = nothing is running under that name yet).
-  const sessionId = existing.cache?.[SESSION_CACHE_KEY]
-  if (typeof sessionId === 'string' && sessionId && existing.name !== name) tellRenamedAgentsSession({ agentUserId, displayName: name })
-  return true
-})
-
-
 ipcMain.handle('dialog:select-file', async () => {
   const options: OpenDialogOptions = { properties: ['openFile'] }
   const result = mainWindow
