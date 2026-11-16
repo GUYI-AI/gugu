@@ -9,3 +9,5 @@ it('reads memory frontmatter inline comments',()=>{const note=parseMemoryNote('n
 it('decodes quoted memory metadata escapes',()=>{expect(readFrontmatter('---\nname: "Plan\\u0020A"\ndescription: "line\\nnext\\tstep"\n---\nBody').fields).toEqual({name:'Plan A',description:'line\nnext\tstep'});});
 
 it('ignores fenced headings in memory titles',()=>{expect(parseMemoryNote('note.md','~~~md\n# Example\n~~~\n# Actual title').title).toBe('Actual title');expect(parseMemoryNote('note.md','````md\n# Example\n```\n# Still example\n````\n## Actual').title).toBe('Actual');});
+
+it('reads memory index links with titles',()=>{expect(memoryIndexHints('# 项目\n- [Plan](./plan.md "Details")').get('plan.md')).toEqual({title:'Plan',kind:'project'});expect(memoryIndexHints("[Plan](plan.md 'Details')").has('plan.md')).toBe(true);});
