@@ -380,6 +380,7 @@ export default {
     "senderUploading": "The sender is still uploading",
     "senderUploadFailed": "The sender's upload did not complete",
     "uploading": "Uploading",
+    "notUploaded": "Not uploaded yet",
     "uploadFailed": "Upload failed, tap to retry",
     "newerInFolder": "Newer version in the folder",
     "retry": "Retry"

@@ -14,7 +14,7 @@ import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
 import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
-import { useAttachmentUploadProgress } from '../../lib/attachmentUploadProgress'
+import { useAttachmentUploadProgress, type AttachmentUploadProgress } from '../../lib/attachmentUploadProgress'
 import { useAttachmentChange } from '../../lib/attachmentChanges'
 import { SentMessageSurface } from './sentMessageSurface'
 import { useNearViewport } from './useNearViewport'
@@ -50,7 +50,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
   if (metadata.data?.status === 'pending' || metadata.data?.status === 'failed') return <div ref={box} className={FIT_BUBBLE} data-attachment-pending={metadata.data.status === 'pending' || undefined}>
     <FileAttachmentCard file={meta} isMine={isMine} onOpen={upload?.failed ? upload.retry : undefined}
-      details={t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : isMine ? 'attachmentView.uploading' : 'attachmentView.senderUploading')} />{caption}</div>
+      details={t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
   if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine}
@@ -82,6 +82,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const near = useNearViewport(box, !onMount) || onMount
   const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata, messageId)
   const img = useRef<HTMLImageElement>(null)
+  const upload = useAttachmentUploadProgress(messageId)
   const holder = view.status === 'failed' ? view.holder : null
   useHolderBack(holder, view.retry)
   // Bytes still on their way: the size their sender declared (owner 11-15), so the bubble does not jump when they arrive.
@@ -137,7 +138,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
     )
   }
   if (view.status === 'pending') return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} data-attachment-pending
-    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{t(isMine ? 'attachmentView.uploading' : 'attachmentView.senderUploading')}</span></div>
+    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{t(pendingLabel(isMine, upload))}</span></div>
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
 }
 
@@ -160,3 +161,6 @@ function inlineImageStyle(size?: { width: number; height: number }): CSSProperti
   return { width: fitted.width, height: 'auto', aspectRatio: `${fitted.width} / ${fitted.height}`, maxWidth: 'min(100%, calc(100cqw - 24px))' }
 }
 
+/** Bytes still to come: the sender reads "uploading" only while this device is uploading them, else that they are not up yet. */
+const pendingLabel = (isMine: boolean, upload: AttachmentUploadProgress | undefined) =>
+  !isMine ? 'attachmentView.senderUploading' : upload && !upload.failed ? 'attachmentView.uploading' : 'attachmentView.notUploaded'

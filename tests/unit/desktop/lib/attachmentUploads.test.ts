@@ -74,6 +74,20 @@ describe('attachment bytes go up behind their message', () => {
     await vi.waitFor(() => expect(resumingCopy('message-1')).toBeNull())
   })
 
+  it('a restart whose question to the server fails asks again by itself, then resumes', async () => {
+    vi.useFakeTimers()
+    try {
+      copies.set('c'.repeat(64), new Blob(['bytes']))
+      server.pending.mockRejectedValueOnce(refuse(503, 'unavailable')).mockResolvedValue({ uploads: [pending('message-6', 'c'.repeat(64))] })
+      server.plan.mockResolvedValue(plan('upload/asked-again'))
+      await expect(resumeAttachmentUploads()).rejects.toThrow()
+      expect(server.store).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(server.pending).toHaveBeenCalledTimes(2)
+      expect(server.finish).toHaveBeenCalledWith(expect.objectContaining({ staging_key: 'pending/message-6', upload_key: 'upload/asked-again' }))
+    } finally { vi.useRealTimers() }
+  })
+
   it('bytes that do not go up fail the attachment (not the message) with a retry that uploads them again', async () => {
     server.store.mockRejectedValue(new TypeError('connection lost'))
     server.plan.mockResolvedValue(plan('upload/retry'))

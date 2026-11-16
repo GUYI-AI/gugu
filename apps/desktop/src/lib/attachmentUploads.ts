@@ -5,7 +5,7 @@
 // what it sent, kept by content before the commit (keepSentAttachment). A restart asks the server and resumes each one
 // this device still holds. Progress is the attachment's state, keyed by its message id (attachmentUploadProgress): the
 // bubble draws it, the message's delivery and reads never see it.
-import { AttachmentsError, finishDeclaredAttachment, pendingAttachmentUploads, type AttachmentUploadPlan } from '@gugu/core/cloud/attachmentsApi'
+import { AttachmentsError, finishDeclaredAttachment, pendingAttachmentUploads, type AttachmentUploadPlan, type PendingAttachmentUpload } from '@gugu/core/cloud/attachmentsApi'
 import { attachmentAttemptEndpoint, attachmentSendTiming } from './attachmentSendTiming'
 import { failAttachmentUploadProgress, setAttachmentUploadProgress } from './attachmentUploadProgress'
 import { noteAttachmentChanged } from './attachmentChanges'
@@ -25,6 +25,8 @@ const resuming = new Map<string, Blob>()
 const dropped = new Set<string>()
 /** Failed uploads waiting to try again by themselves: a connection that comes back is used without anyone pressing retry. */
 const again = new Map<string, { timer: ReturnType<typeof setTimeout>; delay: number }>()
+/** The server's list could not be read (offline, a passing 5xx): it is asked again by itself, on the same schedule. */
+let askAgain: { timer: ReturnType<typeof setTimeout>; delay: number } | null = null
 
 /** Starts (once per message) uploading a declared attachment's bytes under the plan its commit names. */
 export function beginAttachmentUpload(task: AttachmentUploadTask, file: Blob, plan: AttachmentUploadPlan | null): Promise<void> {
@@ -55,9 +57,19 @@ export function resumingCopy(messageId: string): Blob | null {
  * holds goes up again under a new plan and finishes its declaration. Another device's sends are left to it.
  */
 export async function resumeAttachmentUploads(): Promise<void> {
-  const endpoint = await uploadsEndpoint()
+  let uploads: PendingAttachmentUpload[]
+  try {
+    uploads = await pendingAttachmentUploads(await uploadsEndpoint())
+  } catch (error) {
+    const delay = Math.min(askAgain ? askAgain.delay * 2 : RETRY_FIRST_MS, RETRY_MAX_MS)
+    if (askAgain) clearTimeout(askAgain.timer)
+    askAgain = { delay, timer: setTimeout(() => { void resumeAttachmentUploads().catch(() => undefined) }, delay) }
+    log.warn({ error: String(error), retryInMs: delay }, 'pending attachment uploads not read')
+    throw error
+  }
+  if (askAgain) { clearTimeout(askAgain.timer); askAgain = null }
   const { cachedAttachmentCopy } = await import('./attachmentBytes')
-  for (const pending of await pendingAttachmentUploads(endpoint)) {
+  for (const pending of uploads) {
     if (running.has(pending.message_id)) continue
     const file = await cachedAttachmentCopy(pending.sha256)
     if (!file) continue
