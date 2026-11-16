@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/mobile/agent-watch/sessionpage-rpc'
 import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
 import { replica, useReplica, type Reading } from './replica'
+import { rendererLogger } from './log'
 import { PLATFORM_MODELS_CHANGED_EVENT } from '@shared/core/agents/platform-model'
 import type { PlatformCatalogModel } from './agentModelSelection'
 
@@ -41,7 +42,10 @@ export function followCatalogChanges(refresh: () => void): () => void {
   // Loaded on first use: the billing module (and its credit reads) stays out of this module's importers' graph.
   let stopPlan: (() => void) | null = null
   let stopped = false
-  void import('./billing/useSpendingPower').then(({ onPlanChange }) => { if (!stopped) stopPlan = onPlanChange(refresh) })
+  void import('./billing/useSpendingPower').then(
+    ({ onPlanChange }) => { if (!stopped) stopPlan = onPlanChange(refresh) },
+    (error: unknown) => { rendererLogger('model-catalog').error({ error: String(error) }, 'the billing module could not load: the catalog does not follow plan changes') },
+  )
   return () => {
     stopped = true
     window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
