@@ -85,6 +85,30 @@ describe('phone task Skill configuration', () => {
     expect((node('phone-skills-save') as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('F2-4: opened again, the skills kept from the last open are not editable until this open\'s read lands', async () => {
+    await show()
+    harness.cleanup({ keepReads: true }); harness = createReactHarness()
+    let answer!: (value: PhoneTaskSkillsSnapshot) => void
+    rpc.read.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    await harness.render(createNode(PhoneSkillsManager, { deviceId: 'this-phone', sessionId, busy: false, onClose: vi.fn() }))
+    await waitForCondition(() => rpc.read.mock.calls.length === 2, 'read again on open')
+    expect((node('phone-skill-add') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => answer(initial()))
+    await waitForCondition(() => !(node('phone-skill-add') as HTMLButtonElement).disabled, 'editable once read')
+  })
+
+  it('F2-4: a newer revision read while editing keeps the draft, and its save names the revision it started from', async () => {
+    await show()
+    await editName('我的修改')
+    rpc.read.mockResolvedValueOnce({ ...initial(), revision: 7 })
+    const { phoneTaskSkills } = await import('../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills')
+    await act(async () => { await phoneTaskSkills.refresh('this-phone', sessionId) })
+    expect((node('phone-skill-name') as HTMLInputElement).value).toBe('我的修改')
+    await clickElement(node('phone-skills-save'))
+    await waitForCondition(() => rpc.save.mock.calls.length === 1, 'saved')
+    expect(rpc.save.mock.calls[0]![2]).toBe(4)
+  })
+
   it('does not discard an edited document when the sheet is dismissed', async () => {
     const close = await show()
     await editName('尚未保存')

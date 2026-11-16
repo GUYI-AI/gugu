@@ -88,8 +88,9 @@ export function usePhoneBackgroundTasks(
   const reading = useReplica(sessionBackgroundTasks, asking ? [deviceId, sessionId, local] : null)
   return useMemo(() => {
     if (!asking) return { commands: [], subagents: [], canStop: false }
-    // Not answered yet, or that computer cannot tell: every candidate is listed unfiltered and nothing offers a stop key.
-    if (reading.state !== 'value') return { commands: candidates.commands, subagents: candidates.subagents, canStop: false }
+    // Not answered yet, or that computer cannot tell (now: its last answer is not what runs now): every candidate is
+    // listed unfiltered and nothing offers a stop key.
+    if (reading.state !== 'value' || reading.error) return { commands: candidates.commands, subagents: candidates.subagents, canStop: false }
     const ids = reading.value.runningCommandTaskIds
     const commands = ids === null ? candidates.commands : candidates.commands.filter((entry) => ids.includes(entry.taskId))
     return { commands, subagents: candidates.subagents, canStop: true }

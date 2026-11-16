@@ -13,7 +13,7 @@ import { phoneAgentAvailable } from './nativeAgent'
 import { thisPhoneDeviceId } from '../phone-device/phoneDeviceSettings'
 import { PhoneSkillFields } from './PhoneSkillFields'
 import { PhoneSheetHandle } from '../PhoneSheetHandle'
-import { useReplica } from '@/lib/replica'
+import { useReplica, useReplicaFetching } from '@/lib/replica'
 import { importPhoneTaskSkill, phoneTaskSkills, savePhoneTaskSkills, validatePhoneTaskSkills, type PhoneTaskSkill, type PhoneTaskSkillsSnapshot } from './phoneTaskSkills'
 import './phone-task-skills.css'
 
@@ -36,12 +36,16 @@ export function PhoneTaskSkills({ deviceId, sessionId, online, busy = false }: {
 export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { deviceId: string; sessionId: string; busy: boolean; onClose: () => void }) {
   const reading = useReplica(phoneTaskSkills, [deviceId, sessionId])
   const loaded = reading.state === 'value' ? reading.value : null
-  // ③ The draft the person edits, on top of the revision it started from; none = the read skills as they are.
+  // ③ The draft the person edits, on top of the revision it started from; none = the read skills as they are. A newer
+  // revision read meanwhile keeps the draft (❌ dropped without a word): its save names the revision it started from, and
+  // the host refuses it if that moved (said, with reload).
   const [edited, setEdited] = useState<{ base: PhoneTaskSkillsSnapshot['revision']; skills: PhoneTaskSkill[] } | null>(null)
-  const draft = edited && loaded && edited.base === loaded.revision ? edited.skills : loaded ? loaded.skills : NO_SKILLS
-  const setDraft = (change: (items: PhoneTaskSkill[]) => PhoneTaskSkill[]) => { if (loaded) setEdited({ base: loaded.revision, skills: change(draft) }) }
+  const draft = edited ? edited.skills : loaded ? loaded.skills : NO_SKILLS
+  const setDraft = (change: (items: PhoneTaskSkill[]) => PhoneTaskSkill[]) => { if (loaded) setEdited({ base: edited?.base ?? loaded.revision, skills: change(draft) }) }
   const [editId, setEditId] = useState<string | null>(null)
   const loading = reading.state === 'unknown'
+  // The skills kept from an earlier open are shown while this open reads them again, not edited until it lands.
+  const rereading = useReplicaFetching(phoneTaskSkills, [deviceId, sessionId])
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
   // A save or import's failure; a failed read is the reading's.
@@ -51,7 +55,7 @@ export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { dev
   const fileInput = useRef<HTMLInputElement>(null)
   const alive = useRef(true)
   const dirty = loaded !== null && JSON.stringify(draft) !== JSON.stringify(loaded.skills)
-  const disabled = saving || importing || loading || busy || loaded?.busy === true || loaded?.editable !== true
+  const disabled = saving || importing || loading || rereading || busy || loaded?.busy === true || loaded?.editable !== true
   const selected = draft.find((skill) => skill.id === editId)
   const reload = () => { setEdited(null); setEditId(null); setDiscard(null); setError(null); void phoneTaskSkills.refresh(deviceId, sessionId) }
 
@@ -70,7 +74,7 @@ export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { dev
     setSaving(true); setError(null)
     const entry = phoneTaskSkills.at(deviceId, sessionId)
     try {
-      const value = await savePhoneTaskSkills(deviceId, sessionId, loaded.revision, draft)
+      const value = await savePhoneTaskSkills(deviceId, sessionId, edited?.base ?? loaded.revision, draft)
       entry.set(value)
       if (!alive.current) return
       setEdited(null); onClose()

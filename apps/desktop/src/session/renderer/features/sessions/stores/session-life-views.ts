@@ -30,7 +30,7 @@ export type LifeRoute = {
   /** The link to that machine closed (false) or opened again (true): a new epoch either way. */
   onLink?: (change: (open: boolean) => void) => () => void;
 };
-type MachineEntry = { readers: number; stop: () => void; epoch: number; connected: boolean; wants: Map<string, Set<() => boolean>> };
+type MachineEntry = { readers: number; stop: () => void; epoch: number; connected: boolean; wants: Map<string, Set<() => boolean>>; waiting: Set<string> };
 const machines = new Map<string, MachineEntry>();
 const viewKey = (machine: string, sessionId: string) => `${machine}\u0000${sessionId}`;
 
@@ -60,8 +60,13 @@ function dropMachine(machine: string): void {
 function newEpoch(route: LifeRoute, entry: MachineEntry, open: boolean): void {
   entry.epoch += 1;
   entry.connected = open;
+  // A session whose host had input waiting is read again when the link is back too (that input may have moved meanwhile),
+  // however many epochs the link was down for.
+  for (const sessionId of entry.wants.keys()) if (views.get(viewKey(route.key, sessionId))?.pending.items.length) entry.waiting.add(sessionId);
   dropMachine(route.key);
-  if (open) for (const [sessionId, wants] of entry.wants) if ([...wants].some((want) => want())) void readLifeVia(route, sessionId).catch(() => undefined);
+  if (!open) return;
+  for (const [sessionId, wants] of entry.wants) if (entry.waiting.has(sessionId) || [...wants].some((want) => want())) void readLifeVia(route, sessionId).catch(() => undefined);
+  entry.waiting.clear();
 }
 
 /**
@@ -71,7 +76,7 @@ function newEpoch(route: LifeRoute, entry: MachineEntry, open: boolean): void {
 export function watchLife(route: LifeRoute, sessionId: string, wanted: () => boolean): () => void {
   let entry = machines.get(route.key);
   if (!entry) {
-    const created: MachineEntry = { readers: 0, stop: () => undefined, epoch: 0, connected: true, wants: new Map() };
+    const created: MachineEntry = { readers: 0, stop: () => undefined, epoch: 0, connected: true, wants: new Map(), waiting: new Set() };
     const stopEvents = route.listen((view) => accept(route.key, view));
     const stopLink = route.onLink?.((open) => newEpoch(route, created, open)) ?? (() => undefined);
     created.stop = () => { stopEvents(); stopLink(); };
