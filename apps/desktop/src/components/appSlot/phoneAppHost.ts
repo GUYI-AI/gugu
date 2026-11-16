@@ -28,6 +28,8 @@ import {
   APP_FRAME_MARKER,
   SYNC_PORT_WINDOW_MESSAGE,
   fileRefOf,
+  openingNameOf,
+  opensAsLink,
   openWithTabOf,
   openWithIntentOf,
   fileSearchOf,
@@ -780,6 +782,17 @@ export function hostAppFrame(
             { id: id!, deviceId: listed.row.deviceId, deviceLabel: device?.label ?? null, online: device?.is_online },
             ref, hooks.openWorkingCopy,
           )
+        }
+        // A plain open of a chat file: a link to it, opened as main has the desktop window open it (its tab waiting meanwhile).
+        if (opensAsLink(ref, { ask: args.ask === true, peek: args.peek === true, tab })) {
+          files.mayName(surface(), ref.id, 'opening')
+          const named = openingNameOf(args)
+          const action = { kind: 'openChatFile' as const, itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+            ...(args.at && typeof args.at === 'object' ? { at: args.at as Record<string, string> } : {}),
+            ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}) }
+          return import('../../session/renderer/features/extensions/host-action-handlers')
+            .then(({ applyExtensionHostAction }) => applyExtensionHostAction({ origin: { pageId: null, extensionId: hosted.binding.extensionId, sessionId: null, tabId: hosted.binding.tabId }, action }))
+            .then(() => undefined)
         }
         return files.openTarget(surface(), { ref: chatRef(args.ref) }).then((target) => {
           const choice = tab === undefined

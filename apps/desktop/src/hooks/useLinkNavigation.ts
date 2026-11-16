@@ -73,17 +73,18 @@ export function useLinkNavigation(input: {
           const row = id ? state.chats().find((chat) => chat.id === id) : undefined
           return row ? (row.kind === 'topic' ? row.source_chat_id ?? null : row.id) : null
         }
-        // Clicked in a chat: the file's waiting page there at once, before the host is asked.
-        const here = panelChat(request.message?.chat_id)
-        const wait = here ? beginWait(here, { itemId: target.itemId, ...(request.fileName ? { fileName: request.fileName } : {}), ...(request.message ? { message: request.message } : {}) }) : null
+        // Asked in a chat (a message's, or an App page's beside it): the file's waiting page there at once.
+        const { from, intent } = request
+        const here = from?.chatId ?? panelChat(request.message?.chat_id)
+        const wait = here ? beginWait(here, { itemId: target.itemId, ...(request.fileName ? { fileName: request.fileName } : {}), ...(request.message ? { message: request.message } : {}), ...(from ? { from: from.tabId } : {}), ...(intent ? { intent } : {}) }) : null
         const mark = asksSoFar()
         try {
           // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
           const { appsHere } = await import('../components/appSlot/appsHere')
           if (!appsHere) throw new Error('The file opener is unavailable')
-          const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(target.at ? { at: target.at } : {}) })
+          const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(request.chatId ? { chatId: request.chatId } : {}), ...(target.at ? { at: target.at } : {}) })
           if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
-          if (!found.success || !found.data) throw new Error(found.error || 'File reference is unavailable')
+          if (!found.success || !found.data) throw Object.assign(new Error(found.error || 'File reference is unavailable'), 'code' in found && found.code ? { code: found.code } : {})
           const chatId = panelChat(found.data.chatId)
           if (!chatId) throw new Error('File reference is unavailable')
           // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
@@ -91,7 +92,7 @@ export function useLinkNavigation(input: {
           if (askedSince(chatId, mark)) throw new OpenSuperseded()
           // Another chat's file (a forwarded one): nothing waits here; that chat comes up with it.
           if (wait && chatId !== here) endWait(here!, wait)
-          await state.openFile(chatId, target, request, { ...found.data, ...(wait && chatId === here ? { wait } : {}) })
+          await state.openFile(chatId, target, request, { ...found.data, ...(wait && chatId === here ? { wait } : {}), ...(intent ? { intent } : {}), ...(from?.chatId === chatId ? { from: from.tabId } : {}) })
           window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
           return
         } finally {

@@ -61,6 +61,7 @@ const readyWaitersByDomain = new Map<RendererCommandDomain, Set<RendererReadyWai
 interface RendererRpcErrorResult {
   __rendererRpcError: true
   error: string
+  code?: string
 }
 
 function isRendererRpcErrorResult(result: unknown): result is RendererRpcErrorResult {
@@ -180,7 +181,7 @@ function makeInvoker(
         accept: (result) => {
           clearTimeout(timer)
           if (isRendererRpcErrorResult(result)) {
-            reject(new Error(result.error))
+            reject(Object.assign(new Error(result.error), result.code ? { code: result.code } : {}))
             return
           }
           resolve(result)

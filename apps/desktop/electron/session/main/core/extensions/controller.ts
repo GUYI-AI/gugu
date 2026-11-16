@@ -343,7 +343,7 @@ export const extensionsController = createRPCController({
       return { success: true as const, data: { ...target, choice } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), ...(error instanceof (await import('@main/core/extensions/app-files')).AppFileError ? { code: error.code } : {}) };
     }
   },
 

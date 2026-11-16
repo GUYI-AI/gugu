@@ -83,7 +83,9 @@ export type ExtensionHostAction =
   /** An install could not give the chat it was asked for (main's own, no page asks it): the window says so, with the App's page. */
   | { kind: 'notGivenAt'; extensionId: string; chat: { id: string; name: string } }
   /** A banner's click naming a chat's file: opened in its chat, as a link to it is. */
-  | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
+  | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen: string; intent?: TabOpenIntent }
+  /** A chat file opened as a link to it is (`chatId`: only where the asker named it); `fileName` titles its waiting tab. */
+  | { kind: 'openChatFile'; chatId?: string; itemId: string; intent?: TabOpenIntent; viewState?: Record<string, unknown>; fileName?: string; at?: Record<string, string> }
   /**
    * #1925 One of the host's own screens for the person's assistant (`gugu.assistant.open`): its own pages over the App's
    * panel (`ASSISTANT_LAYER_SCREENS`, app-host-layer.tsx), the rest by their existing entry (lib/assistantAppHost.ts); and

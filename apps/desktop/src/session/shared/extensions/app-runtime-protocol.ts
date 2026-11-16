@@ -331,6 +331,16 @@ export function sessionIdOf(value: unknown): string {
   return value;
 }
 
+/** The name a page's `files.openWith` came with (the entry's own), for the waiting tab's title only: its last segment. */
+export function openingNameOf(args: { fileName?: unknown }): string | undefined {
+  return (typeof args.fileName === 'string' ? args.fileName.split('/').filter(Boolean).at(-1) : undefined) || undefined;
+}
+
+/** A page's `files.openWith` that is a plain open of a chat file by id (no pick, not beside it, not its own tab): a link to it. */
+export function opensAsLink(ref: AppFileRef, call: { ask: boolean; peek: boolean; tab: string | undefined }): ref is { chat?: string; id: string } {
+  return !call.ask && !call.peek && call.tab === undefined && !isWorkspace(ref) && 'id' in ref;
+}
+
 /**
  * A file as a page passed it: an entry from `files.list(place)`, `ctx.file`, `{ workspace, id | name }`, a chat file's
  * `{ id }`, or `{ chat, name }`.
