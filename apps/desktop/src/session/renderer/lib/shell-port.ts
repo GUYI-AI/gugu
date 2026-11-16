@@ -12,7 +12,8 @@ import {
   type SessionShellInvoke,
   type SessionShellPort,
 } from '@shared/lib/ipc/shell-port'
-import { sessionpageAgentProvisionedEvent } from '@shared/lib/ipc/sessionpage-identity-contract'
+import { sessionpageAgentProvisionedEvent, sessionpageBirthGroupJoinEvent } from '@shared/lib/ipc/sessionpage-identity-contract'
+import type { SessionShellBirthGroupJoin } from '@shared/lib/ipc/shell-port'
 import { electronApi, findSessionHostBridge, type SessionHostBridge } from './electron-api'
 import { invokeOnMachine, onMachineEvent } from './ipc'
 import { onEachMachine } from './machine-clients'
@@ -30,6 +31,17 @@ function machinePort(machine: string): SessionShellPort {
  */
 export function onSessionpageIdentityEvent(cb: (event: SessionShellAgentName) => void): () => void {
   const listen = (machine: string | null) => onMachineEvent(machine, sessionpageAgentProvisionedEvent, cb)
+  const offLocal = listen(null)
+  const offMachines = onEachMachine(listen)
+  return () => {
+    offLocal()
+    offMachines()
+  }
+}
+
+/** A session's born-in-chat join failed or settled — from this machine and every connected one. Returns unsubscribe. */
+export function onBirthGroupJoinEvent(cb: (event: { conversationId: string; join: SessionShellBirthGroupJoin | null }) => void): () => void {
+  const listen = (machine: string | null) => onMachineEvent(machine, sessionpageBirthGroupJoinEvent, cb)
   const offLocal = listen(null)
   const offMachines = onEachMachine(listen)
   return () => {
@@ -62,6 +74,15 @@ export function machineAwareShellPort(local: SessionShellPort): SessionShellPort
     },
     fatalBoot: (message) => local.fatalBoot(message),
     sessionPeers: (...args) => local.sessionPeers(...args),
+    // The join and its roster record live on the machine that runs the session.
+    birthGroupJoin: (sessionId) => {
+      const machine = machineOf(sessionId)
+      return machine ? machinePort(machine).birthGroupJoin(sessionId) : local.birthGroupJoin(sessionId)
+    },
+    retryBirthGroupJoin: (sessionId) => {
+      const machine = machineOf(sessionId)
+      return machine ? machinePort(machine).retryBirthGroupJoin(sessionId) : local.retryBirthGroupJoin(sessionId)
+    },
   }
 }
 
