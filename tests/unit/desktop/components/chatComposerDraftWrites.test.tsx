@@ -126,7 +126,7 @@ describe('chat editor draft writes', () => {
     try {
       await renderWithAppProviders(harness, <Host />)
       await act(async () => { writeComposer(input(), 'phone task draft'); startPhoneNewTask('chat') })
-      await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!)
+      await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!)
       await send()
       expect(created).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'chat', prompt: 'phone task draft' }))
       expect(readComposer(input())).toBe('')

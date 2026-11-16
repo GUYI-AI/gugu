@@ -43,7 +43,7 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark']) {
     } })
     const header = () => harness!.container.querySelector<HTMLElement>('[data-chat-area-header]')!
     await until('actual source header', () => header()?.dataset.chatContextId === 'context-room')
-    await page.getByTestId('phone-room-topics').click()
+    await page.getByTestId('session-chat-panel').getByTestId('phone-room-topics').click()
     await page.getByTestId('phone-topics-search').fill('同名')
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/J-real-room-${width}-${theme}.png` })
     await page.elementLocator(document.querySelector<HTMLElement>('[data-topic-id="context-topic-b"][role="radio"]')!).click()
@@ -51,7 +51,8 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark']) {
     expect(header().textContent).toContain('同名话题')
     expect(harness.container.querySelector('[data-testid="topic-split-pane"]')?.getAttribute('data-topic-id')).toBe('context-topic-b')
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-b-${width}-${theme}.png` })
-    await page.getByTestId('phone-room-topics').click()
+    // The underlying room and its topic both retain their real controls; select the visible topic pane explicitly.
+    await page.getByTestId('topic-split-pane').getByTestId('phone-room-topics').click()
     await page.elementLocator(document.querySelector<HTMLElement>('[data-topic-id="context-topic-a"][role="radio"]')!).click()
     await until('actual A route and title', () => topicTabOf(group.id)?.topic.topicChatId === 'context-topic-a' && header()?.dataset.chatContextId === 'context-topic-a')
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-a-${width}-${theme}.png` })
