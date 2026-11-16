@@ -126,6 +126,13 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  } finally { window.removeEventListener(OPEN_LINK_TARGET,capture) }
 })
 
+function controlTextRect(button:HTMLElement){
+ const label=button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
+ const range=document.createRange()
+ range.selectNodeContents(label)
+ return range.getBoundingClientRect()
+}
+
 it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one topic dropdown icon',async({width,theme})=>{
  await mount('room-task','chat:room',true,width,theme)
  await vi.waitFor(()=>{
@@ -138,12 +145,17 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
  },{timeout:10000})
  await document.fonts.ready
  const row=harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+ const items=row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
  const buttons=[...row.querySelectorAll<HTMLElement>('.gg-phone-composer-control')]
  expect(buttons.map(button=>button.textContent)).toEqual(['工作','技能','话题','智能体'])
- expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+ // The items own horizontal scrolling; the sibling arrow keeps its full 44px hit area.
+ expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
+ expect(items.scrollLeft).toBe(0)
+ expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
  for(const [index,button] of buttons.entries()){
   const box=button.getBoundingClientRect(),style=getComputedStyle(button)
   expect(box.y).toBe(buttons[0]!.getBoundingClientRect().y)
+  expect(box.height).toBe(44)
   expect(box.right).toBeLessThanOrEqual(width-16)
   expect([style.paddingLeft,style.paddingRight]).toEqual(['12px','12px'])
   if(index)expect(box.left-buttons[index-1]!.getBoundingClientRect().right).toBe(8)
@@ -154,11 +166,23 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
  expect(topic.querySelectorAll('svg')).toHaveLength(1)
  expect(icon.getBoundingClientRect().left-label.getBoundingClientRect().right).toBe(4)
  expect(topic.getBoundingClientRect().right-icon.getBoundingClientRect().right).toBe(12)
+ const toggle=row.querySelector<HTMLElement>('[data-testid="phone-composer-menu-toggle"]')!
+ const visual=toggle.getBoundingClientRect(),pseudo=getComputedStyle(toggle,'::after')
+ const touch={left:visual.left+parseFloat(pseudo.left),right:visual.right-parseFloat(pseudo.right),top:visual.top+parseFloat(pseudo.top),bottom:visual.bottom-parseFloat(pseudo.bottom)}
+ expect(touch.right-touch.left).toBe(44)
+ expect(touch.bottom-touch.top).toBe(44)
+ expect(touch.left).toBeGreaterThanOrEqual(0)
+ expect(touch.right).toBeLessThanOrEqual(width)
+ expect(touch.top).toBeGreaterThanOrEqual(0)
+ expect(touch.bottom).toBeLessThanOrEqual(window.innerHeight)
+ const hit={x:(visual.right+touch.right)/2,y:visual.top+visual.height/2}
+ expect(document.elementFromPoint(hit.x,hit.y)?.closest('button')).toBe(toggle)
+ await page.elementLocator(toggle).click({position:{x:hit.x-visual.left,y:hit.y-visual.top}})
+ await vi.waitFor(()=>expect(toggle.getAttribute('aria-expanded')).toBe('false'))
 })
 it.each([320,360].flatMap(width=>[14,21].map(fontSize=>({width,fontSize}))))('$width/English/$fontSize: every fixed-size control remains reachable without widening the page',async({width,fontSize})=>{
  await mount('room-task','chat:room',true,width,'dark','en-US')
  harness!.container.style.setProperty('--font-body',`${fontSize}px`)
- harness!.container.style.fontFamily='Arial, sans-serif'
  await document.fonts.ready
  const row=()=>harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
  await vi.waitFor(()=>{
@@ -183,16 +207,37 @@ it.each([320,360].flatMap(width=>[14,21].map(fontSize=>({width,fontSize}))))('$w
   expect(style.fontSize).toBe(`${fontSize}px`)
   if(index)expect(box.left-buttons[index-1]!.getBoundingClientRect().right).toBe(8)
  }
- items.scrollLeft=items.scrollWidth
  const last=buttons.at(-1)!
+ // Reproduce B234's missing scroll path in the narrow, enlarged-text case.
+ if(width===320 && fontSize===21){
+  const originalOverflow=items.style.overflowX
+  try {
+   items.style.overflowX='visible'
+   items.scrollLeft=items.scrollWidth
+   expect(items.scrollLeft).toBe(0)
+   expect(controlTextRect(last).right).toBeGreaterThan(width)
+  } finally { items.style.overflowX=originalOverflow }
+ }
+ items.scrollLeft=items.scrollWidth
+ let hit={x:0,y:0}
  await vi.waitFor(()=>{
   expect(items.scrollLeft).toBeGreaterThan(0)
-  const visible=items.getBoundingClientRect(),box=last.getBoundingClientRect()
-  expect(box.left).toBeGreaterThanOrEqual(visible.left)
-  expect(box.right).toBeLessThanOrEqual(visible.right)
-  expect(document.elementFromPoint(box.left+box.width/2,box.top+box.height/2)?.closest('button')).toBe(last)
+  const visible=items.getBoundingClientRect(),box=last.getBoundingClientRect(),text=controlTextRect(last)
+  // CSSOM scrollWidth is integral; visible text and the actual hit region retain fractional bounds.
+  expect(text.width).toBeGreaterThan(0)
+  expect(text.left).toBeGreaterThanOrEqual(visible.left)
+  expect(text.right).toBeLessThanOrEqual(visible.right)
+  expect(text.top).toBeGreaterThanOrEqual(visible.top)
+  expect(text.bottom).toBeLessThanOrEqual(visible.bottom)
+  const left=Math.max(box.left,visible.left),right=Math.min(box.right,visible.right)
+  const top=Math.max(box.top,visible.top),bottom=Math.min(box.bottom,visible.bottom)
+  expect(right-left).toBeGreaterThanOrEqual(44)
+  expect(bottom-top).toBeGreaterThanOrEqual(44)
+  hit={x:(left+right)/2,y:(top+bottom)/2}
+  expect(document.elementFromPoint(hit.x,hit.y)?.closest('button')).toBe(last)
  })
- await page.elementLocator(last).click()
+ const box=last.getBoundingClientRect()
+ await page.elementLocator(last).click({position:{x:hit.x-box.left,y:hit.y-box.top}})
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
 })
