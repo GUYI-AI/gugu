@@ -26,11 +26,14 @@ describe('native creation skills', () => {
 
   it('uses actual peer/client versions before calling a missing method an outdated host', () => {
     const missing = new Error("No handler registered for 'sessionTimeline.sessionCreateSkills'")
-    expect(creationSkillsHostTooOld(missing, 'old-build', 'current-build')).toBe(true)
-    expect(creationSkillsHostTooOld(missing, 'current-build', 'current-build')).toBe(false)
-    expect(creationSkillsHostTooOld(missing, undefined, 'current-build')).toBe(false)
-    expect(creationSkillsHostTooOld(missing, 'old-build')).toBe(false)
-    expect(creationSkillsHostTooOld(Object.assign(new Error('denied'), { code: 'forbidden' }), 'old-build', 'current-build')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, '0.3.5-beta.43597758170.1', '0.3.6-beta.43892205063.1')).toBe(true)
+    expect(creationSkillsHostTooOld(missing, '0.3.8', '0.3.6')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, '0.3.6-beta.old', '0.3.6-beta.new')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, '0.3.6', '0.3.6')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, 'unknown-build', '0.3.6')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, undefined, '0.3.6')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, '0.3.5')).toBe(false)
+    expect(creationSkillsHostTooOld(Object.assign(new Error('denied'), { code: 'forbidden' }), '0.3.5', '0.3.6')).toBe(false)
   })
 
   it('distinguishes a missing host route from permission, offline and scanning failures', () => {

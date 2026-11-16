@@ -19,7 +19,18 @@ export function creationSkillsHostMethodMissing(error: Error): boolean {
 
 /** A same-build routing failure or an unknown peer version must not be diagnosed as an old installation. */
 export function creationSkillsHostTooOld(error: Error, peerVersion?: string, clientVersion?: string): boolean {
-  return !!peerVersion && !!clientVersion && peerVersion !== clientVersion && creationSkillsHostMethodMissing(error)
+  if (!creationSkillsHostMethodMissing(error)) return false
+  const core = (version?: string) => {
+    const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.+-]+)?$/.exec(version ?? '')
+    const parts = match?.slice(1, 4).map(Number)
+    return parts?.every(Number.isSafeInteger) ? parts : null
+  }
+  const peer = core(peerVersion), client = core(clientVersion)
+  if (!peer || !client) return false
+  // Build labels and prerelease ordering do not prove method availability. Equal release cores remain
+  // a missing-method failure; only a strictly older release core can support the update diagnosis.
+  const different = peer.findIndex((part, index) => part !== client[index])
+  return different >= 0 && peer[different]! < client[different]!
 }
 
 /** Read the selected harness's native skills on its execution computer, never installed Apps. */
