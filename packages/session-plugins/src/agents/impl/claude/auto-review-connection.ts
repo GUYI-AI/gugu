@@ -7,7 +7,7 @@ import { claudeReviewConfig, claudeAutoReviewAvailable } from './auto-review';
 
 /** A connection is pinned to the actual executable selected at launch, including after reconnect. */
 export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string): AcpAgentApi {
-  const denied = new Set<string>();
+  const denied = new Map<string, Set<string>>();
   const configs = new Map<string, readonly SessionConfigOption[]>();
   const filter = (id: string, options: readonly SessionConfigOption[]) => {
     const filtered = claudeReviewConfig(options, version);
@@ -17,12 +17,24 @@ export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFac
   const api = connectStdioAcpV2(io, agent => {
     const client = toClient(agent);
     return { ...client, sessionEvent(params) {
-      const trace = params.trace as { _meta?: { claudeCode?: { toolName?: string; toolResponse?: { decisionReason?: string } } } } | undefined;
-      const reason = trace?._meta?.claudeCode?.toolResponse?.decisionReason;
-      if (params.event.kind === 'tool_update' && reason && !denied.has(params.event.toolCallId)) {
-        denied.add(params.event.toolCallId);
-        const line = `${trace?._meta?.claudeCode?.toolName ?? params.event.toolName ?? 'Action'}: ${reason}`.replace(/\s+/g, ' ');
-        client.sessionEvent({ sessionId: params.sessionId, event: { kind: 'session_notice', code: 'provider-notice', title: line, detail: line } });
+      const event = params.event;
+      if (event.kind === 'tool_update' && event.status === 'failed') {
+        // The pinned bridge's v2 renderer puts the reason in content, and may omit
+        // decisionReason/message from metadata. Read the decoded event, never diagnostic trace.
+        const claude = event._meta?.claudeCode as { toolName?: string; toolResponse?: {
+          decisionReason?: string; decisionReasonType?: string; message?: string;
+        } } | undefined;
+        const response = claude?.toolResponse;
+        const contentReason = event.outputText?.match(/^Permission denied:\s*([\s\S]+)$/)?.[1];
+        const reason = response && (response.decisionReason ?? contentReason
+          ?? (response.decisionReasonType ? response.message : undefined));
+        let sessionDenied = denied.get(params.sessionId);
+        if (reason && !sessionDenied?.has(event.toolCallId)) {
+          if (!sessionDenied) denied.set(params.sessionId, sessionDenied = new Set());
+          sessionDenied.add(event.toolCallId);
+          const line = `${event.toolName ?? claude?.toolName ?? 'Action'}: ${reason}`.replace(/\s+/g, ' ');
+          client.sessionEvent({ sessionId: params.sessionId, event: { kind: 'session_notice', code: 'provider-notice', title: line, detail: line } });
+        }
       }
       client.sessionEvent(params.event.kind === 'config'
         ? { ...params, event: { ...params.event, options: filter(params.sessionId, params.event.options) } }

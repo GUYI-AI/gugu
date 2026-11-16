@@ -1,4 +1,4 @@
-import { meetsReviewModeRequirements, permissionModeSupportsBillingRoute } from '@gugu/session-core/acp/client';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -325,10 +325,8 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
-        ...((state.kind === 'ready' || state.kind === 'auth-required')
-          && permissionModeSupportsBillingRoute('ai-review', agent.capabilities?.autoApprove?.modes, platformModel ? 'platform' : 'own') && (platformModel
-          ? state.reviewerAvailable === true && !!agent.capabilities?.autoApprove.modes?.['ai-review'] && meetsReviewModeRequirements(agent.capabilities.autoApprove.modes['ai-review'].reviewRequirements, { cliVersion: state.cliVersion, model: requestedModel?.replace(/^platform:/, '') })
-          : state.kind === 'ready' && state.autoReview === true && !!state.selected)
+        ...(catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : 'own', requestedModel ?? (state.kind === 'ready' ? state.selected : null))
           ? { autoReview: { model: platformModel ? requestedModel! : state.kind === 'ready' ? state.selected! : '' } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,

@@ -1,4 +1,4 @@
-import { meetsReviewModeRequirements, permissionModeSupportsBillingRoute } from '@gugu/session-core/acp/client';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -1119,12 +1119,9 @@ export function useInitialSessionState(
       : undefined
   );
   const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
-  const reviewEntry = capabilities?.autoApprove.modes?.['ai-review'];
-  const autoReviewAvailable = !unattended && !!reviewEntry
-    && permissionModeSupportsBillingRoute('ai-review', capabilities?.autoApprove.modes, platformModel ? 'platform' : 'own') && (platformModel
-    ? (reviewCatalog.kind === 'ready' || reviewCatalog.kind === 'auth-required') && reviewCatalog.reviewerAvailable === true
-      && meetsReviewModeRequirements(reviewEntry.reviewRequirements, { cliVersion: reviewCatalog.cliVersion, model: platformModel.replace(/^platform:/, '') })
-    : reviewCatalog.kind === 'ready' && reviewCatalog.selected === model && reviewCatalog.autoReview === true);
+  const autoReviewAvailable = !unattended && catalogAllowsAutoReview(
+    capabilities?.autoApprove.modes, reviewCatalog, platformModel ? 'platform' : 'own', platformModel ?? model,
+  );
   const autoApproveSupported = agentSupportsAutoApprove(capabilities);
   const grokStructuralFullAccess = providerId === 'grok';
   // @@@5597-draft-decides — **草稿上显示的档 = 落库的档 = 进程里生效的档**,三者同一个事实。
