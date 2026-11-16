@@ -250,10 +250,13 @@ const fallbackMessages = {
   'transcript.cancelEdit': 'Cancel',
   'transcript.sendEdit': 'Send',
   // turn-outcome 的动作（#3498）。文案必须与它真做的事逐字相同：它**只**把指令放回输入框。
-  // ❌ 不许改成 Retry / Try again / 继续 —— 那三个词在本仓后端都没有对应能力
-  //（证据链见 turn-outcome.def.tsx 顶部），换上去按钮就开始骗人。
+  // ❌ 不许改成 Retry / Try again / 继续 —— 不能退回的 agent 没有这些能力
+  //（证据链见 turn-outcome.def.tsx 顶部），换上去按钮就开始骗人。能退回时是下面的 rewindTurn。
   'transcript.restorePrompt': 'Restore prompt',
   'transcript.restorePromptHint': 'Put this prompt back in the composer (it is not re-sent)',
+  // #7304 on a failed turn whose agent can step back: opens the message's editor; sending removes this turn first.
+  'transcript.rewindTurn': 'Rewind and edit',
+  'transcript.rewindTurnHint': 'Edit this message and send it again; the agent forgets this turn and everything after it',
   // turn-outcome 的失败原因（#3498）。**纯描述，不含行动建议** ——
   // send_failed 是启动前仍在宿主队列里的消息，它的重试在已有条件行；
   // 其余失败仍没有重试能力。原因只描述事实，动作由各自已有入口说明。

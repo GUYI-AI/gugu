@@ -119,14 +119,14 @@ export function isViewerInput(item: ChatItem, viewerId?: string): boolean {
  * 条目（工具回灌的合成消息），把那种东西塞回输入框会让用户看到一条自己没写过的指令。
  * 取**第一条**而不是最后一条：一个 turn 的开场白才是它在跑的那条指令。
  */
-function turnPromptText(turn: TranscriptTurn): string | undefined {
+function turnPrompt(turn: TranscriptTurn): { text: string; itemId: string } | undefined {
   if (turn.initiator !== 'user') return undefined;
   for (const item of turn.items as readonly ChatItem[]) {
     if (!itemIsUser(item)) continue;
     // 别的 agent 投递进来的那条不是「你写的指令」—— 塞回输入框等于让你重发别人的话。
     if (isDeliveredFromAgent(item)) continue;
     const text = (item as ChatMessage).text.trim();
-    if (text) return text;
+    if (text) return { text, itemId: item.id };
   }
   return undefined;
 }
@@ -646,13 +646,13 @@ export function flattenTier(
     }
 
     if (!ctx.active && turn.outcome && turn.outcome.kind !== 'done') {
-      const prompt = turnPromptText(turn);
+      const prompt = turnPrompt(turn);
       processItem({
         kind: 'turn-outcome',
         id: `${turn.id}:outcome`,
         turnId: turn.id,
         outcome: turn.outcome,
-        ...(prompt ? { prompt } : {}),
+        ...(prompt ? { prompt: prompt.text, promptItemId: prompt.itemId } : {}),
       });
     }
   }

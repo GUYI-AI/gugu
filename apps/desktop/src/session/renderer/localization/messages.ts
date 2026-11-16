@@ -1087,6 +1087,9 @@ const enUSCoreMessages = {
   'acpFailure.revert': 'Could not revert conversation',
   'transcript.restorePrompt': 'Restore prompt',
   'transcript.restorePromptHint': 'Put this prompt back in the composer (it is not re-sent)',
+  // #7304 on a failed turn whose agent can step back: opens the message's editor; sending removes this turn first.
+  'transcript.rewindTurn': 'Rewind and edit',
+  'transcript.rewindTurnHint': 'Edit this message and send it again; the agent forgets this turn and everything after it',
   'transcript.reasonPromptFailed': 'the reply could not be completed',
   'transcript.reasonSendFailed': 'Could not send',
   'transcript.reasonSignInRequired': 'sign-in needed',
@@ -2250,6 +2253,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'acpFailure.revert': '回退对话失败',
   'transcript.restorePrompt': '取回指令',
   'transcript.restorePromptHint': '把这条指令放回输入框（不会自动重发）',
+  'transcript.rewindTurn': '退回重新编辑',
+  'transcript.rewindTurnHint': '改这条消息再发；智能体会忘掉这一轮和之后的内容',
   'transcript.reasonPromptFailed': '未能完成',
   'transcript.reasonSendFailed': '发送失败',
   'transcript.reasonSignInRequired': '需要登录',

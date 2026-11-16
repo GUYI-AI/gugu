@@ -1661,7 +1661,9 @@ function turnOutcome(turn) {
   const _meta = historyCanRevert ? { guguRevert: { before: String(turn.id) } } : undefined
   if (status === 'interrupted') return { stopReason: 'cancelled', ...(_meta ? { _meta } : {}) }
   if (status === 'completed' && !failure) return { stopReason: 'end_turn', ...(_meta ? { _meta } : {}) }
-  return { stopReason: 'error', error: { code: -32603,
+  // A failed turn is the one a person most needs to step back from: a refused turn stays in the context and
+  // every later turn is refused with it. Its receipt carries the revert point like any other.
+  return { stopReason: 'error', ...(_meta ? { _meta } : {}), error: { code: -32603,
     message: status === 'failed' ? String(turn?.error?.message ?? 'local Codex turn failed')
       : failure ? `local Codex turn had a failed Gugu tool call: ${failure.tool} (${failure.itemId}): ${failure.details}`
       : `unexpected local Codex turn status: ${status}`,

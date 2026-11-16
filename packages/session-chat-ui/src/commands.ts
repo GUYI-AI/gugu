@@ -167,8 +167,8 @@ export type ChatCommands = {
    *
    * # ⚠️ 这**不是** retry，也**不是** continue —— 名字必须说实话
    *
-   * 上游 `elements-error-state` 的 retry 在本仓后端**不存在**（协议里没有 rewind / truncate，
-   * 证据链见 `turn-outcome.def.tsx` 顶部）。所以这个回调的语义被刻意收窄成一件**能被证实**的事：
+   * 上游 `elements-error-state` 的 retry 只在 agent 能退回时存在（`_session/revert`，那时失败行给的是
+   * `onEditMessage` 的「退回重新编辑」，见 `turn-outcome.def.tsx` 顶部）；不能退回时没有 rewind / truncate。所以这个回调的语义被刻意收窄成一件**能被证实**的事：
    * **把那条指令还给输入框**。要不要真的再跑一次，由用户看过之后自己按发送 ——
    * 副作用的风险归判断得了它的那个人。
    *
@@ -192,7 +192,7 @@ export type ChatCommands = {
    *
    * 两件事的差别不在「发不发」，在**发的是哪一条、发进哪个上下文**：
    * - `onRestorePrompt` 是把**出错那一轮的原指令**重新发一遍。那一轮抛出来之前 agent 可能
-   *   已经写过文件、调过工具，而协议里没有 rewind ⇒ 再发一次是在一段**已经含着那次失败与
+   *   已经写过文件、调过工具，而不能退回的 agent 没有 rewind ⇒ 再发一次是在一段**已经含着那次失败与
    *   它的副作用**的上下文后面追加第二条同样的指令。**重发不是重试**，所以那条至今不许接。
    * - 这个回调发的是一条**新的、意思是「接着往下」的指令**，而 `cancel` 之后会话是活的、
    *   上下文里带着刚才那半截输出 ⇒ agent 读到的是「你写到一半被打断了，继续」。
