@@ -11,7 +11,7 @@ import { harnessModelCredential } from './agent-replicas';
  * 读失败 = `'unknown'`(判不出):这条读数的诚实退化就是维持自家默认,失败本身在读数里、记了日志。
  * 没有要问的模型(这家目录没就绪)= `'unknown'`,不发请求。
  *
- * 登录动作之后整家重读:`refreshHarnessModelCredential(providerId)`(登录改变的是这家的整个凭据面)。
+ * 登录动作之后整家重读:`harnessModelCredential.refresh(providerId)`(登录改变的是这家的整个凭据面)。
  */
 export function useHarnessModelCredential(
   providerId: string | null | undefined,
@@ -26,9 +26,4 @@ export function useHarnessModelCredential(
   if (reading.state === 'unknown') return null;
   // @@@reading-default - a failed read is "cannot tell" ('unknown', the domain's own value): the default preselection stays the harness's own, as before (a preselection has no room to say the failure)
   return reading.state === 'value' ? reading.value : 'unknown';
-}
-
-/** A sign-in finished: every model of this provider is read again (on every machine it was read for). */
-export function refreshHarnessModelCredential(providerId: string): Promise<void> {
-  return harnessModelCredential.refresh(providerId);
 }

@@ -15,7 +15,7 @@ vi.mock('@renderer/lib/theme/host-theme', async (importOriginal) => ({
   subscribeToHostTheme: () => () => {},
 }));
 
-// 图标表经 `agents.listIcons` 从主进程来(useAgentIcons);这里直接放进 query 缓存,❌ 起 RPC。
+// 图标表经 `agents.listIcons` 从主进程来(useAgentIcon);这里直接放进 query 缓存,❌ 起 RPC。
 // 两枚样本按行为命名,❌ 借真家的图:哪家有暗色原图、哪家靠反色,随插件的图改
 // (grok 就从「反色」换成了自带暗色原图,这个文件从前按 grok 判反色)。
 const ICONS: Record<string, AgentIconAsset> = {

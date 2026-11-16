@@ -36,7 +36,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useLibraryHost } from '@renderer/features/library/library-host'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog'
-import { refreshHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential'
+import { harnessModelCredential } from '@renderer/lib/stores/agent-replicas'
 import { resolveSignInMethod } from '../agents-page/agent-account'
 import { useAgentSignIn } from '../agents-page/use-agent-sign-in'
 import { dropIfNeverSignedIn } from './drop-unsigned-connection'
@@ -155,7 +155,7 @@ export function SubscriptionConnections({
   const canAdd = accountMethod !== null || apiKeyMethod
   const refresh = () => {
     refreshSubscriptionReadings(machine, agent.id)
-    void refreshHarnessModelCredential(agent.id)
+    void harnessModelCredential.refresh(agent.id)
   }
   const action = useMutation({
     mutationFn: async ({

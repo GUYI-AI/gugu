@@ -51,7 +51,6 @@ export function RunHistory({ automation }: RunHistoryProps) {
     <section className="flex h-full flex-col rounded-lg bg-background-1">
       <div className="flex w-full gap-1.5 border-b p-2">
         {filters.map(({ value, label }) => {
-
           return (
             <button
               key={value}

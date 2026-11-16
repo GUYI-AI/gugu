@@ -12,7 +12,6 @@ import {
   automationRunCounts,
   automationRunPage,
   automations as automationsModel,
-  noteAsked,
   refreshAutomationRuns,
   watchAutomations,
   type AutomationMachine,
@@ -36,7 +35,6 @@ function useMachineReplica<A extends [AutomationMachine, ...unknown[]], V>(
   const machine = machineOf(host);
   // Declared before the read: a watcher starting here reads again only what was already here, ❌ a first read twice.
   useEffect(() => watchAutomations(machine), [machine]);
-  if (args) noteAsked(model, args);
   return useReplica(model, args, { read: host.remote?.online !== false });
 }
 

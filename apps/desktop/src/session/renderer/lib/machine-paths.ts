@@ -3,7 +3,7 @@ import { rpcOn } from '@renderer/lib/ipc';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 
 /** A machine of the account: `'local'` = this computer (the session host it runs), otherwise its device id. */
-export type MachineArg = string;
+type MachineArg = string;
 const machineOf = (machine: MachineArg): string | null => (machine === 'local' ? null : machine);
 
 /**

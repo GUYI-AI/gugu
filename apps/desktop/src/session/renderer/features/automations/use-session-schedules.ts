@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useReplica, type Reading } from '@/lib/replica';
 import { schedulesBySession, type SessionSchedule } from '@shared/core/automations/session-schedule';
-import { noteAsked, sessionSchedules, watchAutomations } from './automation-replicas';
+import { sessionSchedules, watchAutomations } from './automation-replicas';
 
 // 任务页上「这个任务还会回来」(侧栏行上的时钟、输入框上方的托盘)读的那一份:那台机器上每条会话给自己排的定时。
 // 一台机器一个 replica 条目,变化靠那台机器推来的 automation:* 事件(排上、取消、到点、没送到都经过它们),❌ 轮询。
@@ -20,7 +20,6 @@ export function useSessionSchedules(
 ): Reading<readonly SessionSchedule[]> {
   const key = machine ?? 'local';
   useEffect(() => (enabled ? watchAutomations(key) : undefined), [key, enabled]);
-  if (enabled) noteAsked(sessionSchedules, [key]);
   const reading = useReplica(sessionSchedules, enabled ? [key] : null);
   const all = reading.state === 'value' ? reading.value : null;
   const bySession = useMemo(() => (all ? schedulesBySession(all) : null), [all]);

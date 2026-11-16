@@ -33,6 +33,9 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
   const current = settings.state === 'value' ? settings.value : undefined;
   const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
 
+  // Every write of this window holds the key against its own broadcast until its own read settles it.
+  const holdWrite = () => (host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {});
+  const settle = (_d: unknown, _e: unknown, _v: unknown, ctx?: { done: () => void }) => { ctx?.done(); invalidateAppSettingsKey(key, host.key); };
   const updateMutation = useMutation<void, Error, Partial<AppSettings[K]>, { prev: AppSettings[K]; done: () => void }>({
     mutationFn: (partial) => {
       const reading = model.peek(key, host.key);
@@ -43,31 +46,26 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
       const reading = model.peek(key, host.key);
       if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
       const prev = (reading.value as SettingsMeta<K>).value;
-      const done = host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {};
+      const done = holdWrite();
       setAppSettingsValueInCache(key, mergeAppSettingsValue<K>(prev, partial), host.key);
       return { prev, done };
     },
     onError: (_err, _partial, ctx) => {
       if (ctx) setAppSettingsValueInCache(key, ctx.prev, host.key);
     },
-    onSettled: (_data, _err, _partial, ctx) => {
-      ctx?.done();
-      invalidateAppSettingsKey(key, host.key);
-    },
+    onSettled: settle,
   }, queryClient);
 
-  // Every write of this window holds the key against its own broadcast until its own read settles it.
-  const holdWrite = () => ({ done: host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {} });
   const resetMutation = useMutation<void, Error, void, { done: () => void }>({
     mutationFn: () => api.reset(key) as Promise<void>,
-    onMutate: holdWrite,
-    onSettled: (_data, _err, _vars, ctx) => { ctx?.done(); invalidateAppSettingsKey(key, host.key); },
+    onMutate: () => ({ done: holdWrite() }),
+    onSettled: settle,
   }, queryClient);
 
   const resetFieldMutation = useMutation<void, Error, keyof AppSettings[K], { done: () => void }>({
     mutationFn: (field) => api.resetField(key, field as string) as Promise<void>,
-    onMutate: holdWrite,
-    onSettled: (_data, _err, _vars, ctx) => { ctx?.done(); invalidateAppSettingsKey(key, host.key); },
+    onMutate: () => ({ done: holdWrite() }),
+    onSettled: settle,
   }, queryClient);
 
   return {

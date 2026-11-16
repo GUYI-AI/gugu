@@ -1,5 +1,4 @@
-// #6264 这台电脑上每台机器此刻转着的端口(主进程那张表),与那台机器上此刻有程序在听的端口。
-// 「端口」页签与浏览器页签的地址栏读同一份:按机器订一次,主进程报「端口表变了」时重读(事件驱动,❌ 定时问)。
+// #6264 「端口」页签与浏览器页签的地址栏读同一份:按机器订一次,主进程报「端口表变了」时重读(❌ 定时问)。
 import { replica } from '@/lib/replica';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { remotePortsChangedChannel, type RemotePortsSnapshot } from '@shared/remote-ports';
@@ -14,17 +13,14 @@ export const remotePortForwards = replica({
     if (!result.success) throw new Error(`remote ports of ${deviceId} not listed (${result.error.type})`, { cause: result.error });
     return result.data;
   },
-  // Pushed: current until main says the table changed (the watch below).
   fresh: Infinity,
 });
-
-export type ListeningPorts = { supported: boolean; ports: SessionpageListeningPort[] };
 
 /** What programs listen on that machine right now: asked each time the ports tab opens or the table changes. */
 export const machineListeningPorts = replica({
   name: 'machineListeningPorts',
   scope: 'account',
-  read: async (_owner, deviceId: string): Promise<ListeningPorts> => {
+  read: async (_owner, deviceId: string): Promise<{ supported: boolean; ports: SessionpageListeningPort[] }> => {
     const result = await rpcOn(deviceId).machine.listeningPorts();
     if (!result.success) throw new Error(result.error.message, { cause: result.error });
     return { supported: result.data.supported, ports: result.data.ports };
@@ -32,7 +28,7 @@ export const machineListeningPorts = replica({
   fresh: 0,
 });
 
-// Subscription ownership only (one per machine however many tabs and browser panes show it); the values live above.
+// One subscription per machine however many tabs and browser panes show it.
 const watches = new Map<string, { users: number; off: () => void }>();
 
 /** Follow a machine's forwards while something shows them; returns stop. */
@@ -63,10 +59,7 @@ export function watchRemotePorts(deviceId: string): () => void {
   };
 }
 
-/**
- * The machine's port a local forward stands for (the browser tab's address bar shows `localhost:<that port>`). A
- * one-moment answer for a URL presenter: a table not read yet is "no forward known" (null), which shows the URL as it is.
- */
+/** The machine's port a local forward stands for (one-moment, for the address bar); not read yet = none known. */
 export function remoteForLocalPort(deviceId: string, localPort: number): number | null {
   const reading = remotePortForwards.peek(deviceId);
   if (reading.state !== 'value') return null;

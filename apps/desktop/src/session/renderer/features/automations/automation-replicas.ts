@@ -9,16 +9,15 @@ import {
 import type { SessionSchedule } from '@shared/core/automations/session-schedule';
 
 /**
- * What 已安排 (the automations page) and a task's own schedules show of one machine: replicas keyed by the machine
- * (`'local'` = this computer, otherwise its device id). Each machine pushes its changes (automation:changed,
- * automation:run-changed), so every model here is `fresh: Infinity` and refreshed by the watcher below, ❌ polled.
+ * What 已安排 and a task's own schedules show of one machine. Each machine pushes its changes, so every model here is
+ * `fresh: Infinity` and refreshed by the watcher below, ❌ polled.
  */
 
 /** `'local'` = this computer; another machine by its device id. */
 export type AutomationMachine = string;
 
-const apiOf = (machine: AutomationMachine) => rpcOn(machine === 'local' ? null : machine).automations;
-const eventMachineOf = (machine: AutomationMachine) => (machine === 'local' ? null : machine);
+const hostOf = (machine: AutomationMachine) => (machine === 'local' ? null : machine);
+const apiOf = (machine: AutomationMachine) => rpcOn(hostOf(machine)).automations;
 
 export const RUN_PAGE_SIZE = 25;
 export type RunStatusFilter = 'done' | 'failed' | 'skipped' | 'all';
@@ -74,15 +73,6 @@ export const sessionSchedules = replica({
 type AnyModel = Replica<[AutomationMachine, ...never[]], unknown>;
 const MODELS = [automations, automationNextRun, automationLatestRun, automationRunPage, automationRunCounts, sessionSchedules] as unknown as AnyModel[];
 
-/** The arguments surfaces asked each model for, so a watcher starting again knows which values went unwatched. */
-const asked = new Map<string, Map<string, unknown[]>>();
-
-export function noteAsked(model: { name: string }, args: readonly unknown[]): void {
-  let byArgs = asked.get(model.name);
-  if (!byArgs) asked.set(model.name, (byArgs = new Map()));
-  byArgs.set(JSON.stringify(args), [...args]);
-}
-
 /** Every run model of one automation (or of every automation of the machine) read again where shown. */
 export function refreshAutomationRuns(machine: AutomationMachine, automationId?: string): void {
   void automationNextRun.refresh(machine, automationId);
@@ -91,15 +81,14 @@ export function refreshAutomationRuns(machine: AutomationMachine, automationId?:
   void automationRunCounts.refresh(machine, automationId);
 }
 
-// Subscription ownership only (the values live in the replicas): one pair of listeners per machine, however many rows,
-// pages and composers read it; the last reader gone takes them off.
+// One pair of listeners per machine, however many readers; the last reader gone takes them off.
 const watchers = new Map<AutomationMachine, { readers: number; stop: () => void }>();
 
 export function watchAutomations(machine: AutomationMachine): () => void {
   const existing = watchers.get(machine);
   if (existing) existing.readers += 1;
   else {
-    const eventMachine = eventMachineOf(machine);
+    const eventMachine = hostOf(machine);
     const offChanged = onMachineEvent(eventMachine, automationChangedChannel, ({ automationId }) => {
       void automations.refresh(machine);
       void automationNextRun.refresh(machine, automationId);
@@ -116,11 +105,7 @@ export function watchAutomations(machine: AutomationMachine): () => void {
     watchers.set(machine, { readers: 1, stop: () => { offChanged(); offRun(); } });
     // Values already here were read while nobody listened to this machine: read them again now.
     for (const model of MODELS) {
-      for (const args of asked.get(model.name)?.values() ?? []) {
-        if (args[0] !== machine) continue;
-        const typed = args as [AutomationMachine, ...never[]];
-        if (model.peek(...typed).state === 'value') void model.refresh(...typed);
-      }
+      for (const { args, reading } of model.entries(machine)) if (reading.state === 'value') void model.refresh(...args);
     }
   }
   return () => {

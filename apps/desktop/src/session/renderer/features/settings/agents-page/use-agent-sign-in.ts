@@ -3,8 +3,7 @@ import { useLibraryHost, type LibraryRemoteDevice } from '@renderer/features/lib
 import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { refreshHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
-import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
+import { harnessModelCredential, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload';
 import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccountRow } from './agent-account';
@@ -107,7 +106,7 @@ export function useAgentSignIn(
       refreshSubscriptionReadings(machine, agent.id);
       if (!touchesMain) return;
       void forceRefreshHarnessModelCatalog(agent.id);
-      void refreshHarnessModelCredential(agent.id);
+      void harnessModelCredential.refresh(agent.id);
     };
     showSignIn({
       providerId: agent.id,

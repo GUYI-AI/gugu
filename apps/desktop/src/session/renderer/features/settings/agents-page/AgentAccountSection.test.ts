@@ -48,9 +48,6 @@ vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({
   usePlatformModelCatalog: () => ({ models: mocks.platformModels }),
 }));
-vi.mock('@renderer/lib/stores/use-harness-model-credential', () => ({
-  refreshHarnessModelCredential: vi.fn(async () => {}),
-}));
 vi.mock('@renderer/features/settings/subscriptions/subscription-queries', async importOriginal => ({
   ...(await importOriginal<typeof import('@renderer/features/settings/subscriptions/subscription-queries')>()),
   subscriptionKey: (machine: string | null, agentId?: string) => ['subscriptions', machine ?? 'local', ...(agentId ? [agentId] : [])],

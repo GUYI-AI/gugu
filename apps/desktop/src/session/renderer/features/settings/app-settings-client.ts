@@ -18,11 +18,9 @@ const settingsLog = rendererLogger('settings');
 export const LOCAL_SETTINGS_HOST_KEY = 'local';
 
 /**
- * The keys a surface draws from the first frame (the task page's composer, sessions panel, terminal, changes panel,
- * project creation) and the Settings pages accepted in PR 2. Keys no surface draws (`keyboard` only binds shortcuts and
- * grows with rebinds; `browserPreview` has no renderer reader) are read at startup, not kept. The device preferences
- * preload hands over (`theme`, `locale`, `interface`, `themePackSlots`, `chatNotifications`, `assistant`) are ❌ kept
- * either: their first value is that handover (`local` below), and a snapshot of the last run could disagree with it.
+ * The keys a surface draws from the first frame. Not kept: keys no surface draws (`keyboard`, `browserPreview`), and the
+ * device preferences preload hands over — their first value is that handover (`local` below), which a snapshot of the
+ * last run could contradict.
  */
 const CARRIED_KEYS: ReadonlySet<AppSettingsKey> = new Set<AppSettingsKey>([
   'terminal', 'sessions', 'defaultAgent', 'newSessionMemory', 'changesViewMode', 'localProject', 'project',
@@ -34,10 +32,9 @@ const handover = typeof window === 'undefined' ? null : window.guguDeviceSetting
 const handedOver = (key: AppSettingsKey): key is HandedOverSetting => (HANDED_OVER_SETTINGS as readonly string[]).includes(key);
 
 /**
- * @@@app-settings-read-model — every settings key of this device is one entry of this model. The whole set is read once
- * at startup (`prefetchAllAppSettings`, one IPC); the keys surfaces draw are kept in this device's snapshot, so the first
- * frame after a restart has the stored values, never the schema defaults. A change from any window or the main process
- * arrives as `appSettingsChangedChannel` and the key is read again (`watchAppSettingsChanges`).
+ * @@@app-settings-read-model — one entry per settings key of this device, all read once at startup
+ * (`prefetchAllAppSettings`); the drawn keys are kept in the device snapshot so the first frame after a restart has the
+ * stored values, never the schema defaults. Changes elsewhere re-read the key (`watchAppSettingsChanges`).
  */
 export const appSettingsModel = replica({
   name: 'appSettings',
@@ -51,36 +48,28 @@ export const appSettingsModel = replica({
     }
   },
   fresh: 5 * 60_000,
-  // The handed-over keys' first value is main's answer to preload: the same one the inline boot script painted with.
+  // Handed-over keys start from main's answer to preload (what the boot script painted with).
   local: (_device, key: AppSettingsKey, host: string) =>
     host === LOCAL_SETTINGS_HOST_KEY && handover && handedOver(key) ? handover.settings[key] as SettingsMeta<AppSettingsKey> : undefined,
-  // `sessions` is the largest carried key: 1,204 with every field used (a 200-character title instruction); `browser`
-  // grows with profiles (1,246 at 8). One entry per carried key.
+  // Largest carried keys: `sessions` 1,204 with every field used, `browser` 1,246 at 8 profiles. One entry per key.
   persist: {
     maxBytes: 1536,
     maxEntries: 12,
-    // Where preload hands nothing over (web: the connected server's settings), `interface` keeps its first frame from
-    // the snapshot as before.
+    // Web (no handover): `interface` keeps its first frame from the snapshot.
     carry: (meta: SettingsMeta<AppSettingsKey>, key: AppSettingsKey, host: string) =>
       (host === LOCAL_SETTINGS_HOST_KEY && (CARRIED_KEYS.has(key) || (!handover && key === 'interface')) ? meta : undefined),
   },
 });
 
-/**
- * Another machine's settings (#6264, machine-scoped rows): read when its Settings page shows them, ❌ kept across
- * restarts (they would push this device's keys out of the snapshot) — that page draws placeholders on a cold open.
- */
 type SettingsRpc = Pick<ReturnType<typeof rpcOn>, 'appSettings'>;
 let remoteSettingsRoute: (host: string) => SettingsRpc = (host) => rpcOn(host);
 
-/**
- * How another machine's settings are reached in this shell: a desktop asks over its machine client (`rpcOn`); the phone has
- * none and reaches machines through its session-page channel, so its shell sets that route once (mobile/partners/projectRpc.ts).
- */
+/** The phone has no machine client (`rpcOn`): its shell routes through its session-page channel (projectRpc.ts). */
 export function routeRemoteSettings(route: (host: string) => SettingsRpc): void {
   remoteSettingsRoute = route;
 }
 
+/** Another machine's settings (#6264): ❌ persisted — they would push this device's keys out of the snapshot. */
 export const remoteAppSettingsModel = replica({
   name: 'remoteAppSettings',
   scope: 'device',
@@ -94,10 +83,7 @@ export function settingsModelOf(host: string): typeof appSettingsModel {
 
 let startupRead: Promise<void> | null = null;
 
-/**
- * Startup: the whole local set in one read, before the first frame of either entry (shell and task page share this
- * module, so the set is read once per document; a failed read is tried again by the next entry that asks).
- */
+/** Startup: the whole local set in one read, once per document; a failed read is tried again by the next caller. */
 export function prefetchAllAppSettings(): Promise<void> {
   watchAppSettingsChanges();
   startupRead ??= (async () => {
@@ -125,9 +111,8 @@ export function beginAppSettingsWrite(key: AppSettingsKey): () => void {
 let watching: (() => void) | null = null;
 
 /**
- * Follow changes made elsewhere (another window, the main process). A key this window is writing is left alone: its
- * write settles with a read of its own (I4 — the write is a layer; a read landing mid-edit would put an older value
- * over the newer one being typed).
+ * Follow changes made elsewhere. A key this window is writing is left alone: its write settles with its own read (I4 —
+ * a read landing mid-edit would put an older value over the newer one being typed).
  */
 export function watchAppSettingsChanges(): void {
   if (watching) return;
@@ -175,10 +160,7 @@ export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value
   return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.update(key, value as never) as Promise<void>;
 }
 
-/**
- * Write a local key outside React (device preferences): shown at once, held against this window's own broadcast until
- * its own read settles it (I4), put back and reported when main refuses. Throws when the key was never read.
- */
+/** Write a local key outside React (device preferences): optimistic, held as in I4, put back when main refuses. */
 export function writeLocalAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K]): Promise<void> {
   const reading = appSettingsModel.peek(key, LOCAL_SETTINGS_HOST_KEY);
   if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);

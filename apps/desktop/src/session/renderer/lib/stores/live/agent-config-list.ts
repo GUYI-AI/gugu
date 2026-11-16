@@ -8,16 +8,9 @@ import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-
 import { log } from '@renderer/utils/logger';
 
 /**
- * A machine's agent configuration list (`agents.list` live state of its agent-config worker: each harness with its
- * `auth` / `programAuth` readings), held once per machine for every surface that reads it (@@@client-state-model §1:
- * a host stream, kept in its engine's module and exposed through `createSelectStore`, the shape of running-sessions).
- *
- * The value says "not read yet" (`unknown`) apart from "read" (`value`) and "could not subscribe" (`error`): a reader
- * never draws the first as an empty list. One live subscription per machine while anyone reads it (reference counted);
- * the last value stays shown (it is the last thing that machine said) while a new subscription starts.
- *
- * Owner: the signed-in account (the worker answers for the account signed in on that machine). Signing out or another
- * account signing in clears every machine's list.
+ * A machine's agent configuration list (`agents.list` live state of its agent-config worker), a host stream held once
+ * per machine (@@@client-state-model §1): one ref-counted live subscription while anyone reads it; the last value stays
+ * shown while a new one starts. Owner: the signed-in account — sign-out or another account clears every machine's list.
  */
 export type AgentConfigListState =
   | { state: 'unknown' }
@@ -57,41 +50,27 @@ function open(machine: string | null, entry: Entry): () => void {
   };
 }
 
-function entryOf(machine: string | null): Entry {
-  const key = machine ?? '';
-  let entry = lists.get(key);
-  if (!entry) {
-    const store = createSelectStore<AgentConfigListState>(UNKNOWN);
-    const created: Entry = {
-      store,
-      readers: 0,
-      stop: null,
-      readable: {
-        get: store.get,
-        subscribe: (listener) => {
-          const off = store.subscribe(listener);
-          if (created.readers++ === 0) created.stop = open(machine, created);
-          return () => {
-            off();
-            if (--created.readers === 0) { created.stop?.(); created.stop = null; }
-          };
-        },
-      },
-    };
-    entry = created;
-    lists.set(key, entry);
-  }
-  return entry;
-}
-
 /** The agent configuration list of a machine (null = this computer), for `useSelect`. */
 export function agentConfigList(machine: string | null): Readable<AgentConfigListState> {
-  return entryOf(machine).readable;
+  const key = machine ?? '';
+  const known = lists.get(key);
+  if (known) return known.readable;
+  const store = createSelectStore<AgentConfigListState>(UNKNOWN);
+  const entry: Entry = { store, readers: 0, stop: null, readable: { get: store.get, subscribe: (listener) => {
+    const off = store.subscribe(listener);
+    if (entry.readers++ === 0) entry.stop = open(machine, entry);
+    return () => {
+      off();
+      if (--entry.readers === 0) { entry.stop?.(); entry.stop = null; }
+    };
+  } } };
+  lists.set(key, entry);
+  return entry.readable;
 }
 
 let account: string | null = null;
-/** Signing out or another account: every machine's list is the previous account's; drop it and read again where shown. */
-export function forgetAgentConfigLists(): void {
+/** Drop every machine's list and read again where shown. */
+function forgetAgentConfigLists(): void {
   for (const [machine, entry] of lists) {
     entry.stop?.();
     entry.stop = null;
@@ -99,8 +78,7 @@ export function forgetAgentConfigLists(): void {
     if (entry.readers > 0) entry.stop = open(machine || null, entry);
   }
 }
-// As the replica's account (lib/replica.ts): only a real sign-out or another person clears; an absent session (boot
-// restore, a refresh that cannot reach the network) holds.
+// As the replica's account (lib/replica.ts): only a real sign-out or another person clears; an absent session holds.
 observeRendererSession(({ event, session }) => {
   const next = session?.user.id ?? null;
   if (next) {

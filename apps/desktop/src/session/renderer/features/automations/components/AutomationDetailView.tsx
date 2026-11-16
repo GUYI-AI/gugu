@@ -89,7 +89,6 @@ const AutomationSettingsForm = observer(function AutomationSettingsForm({
     { value: 'settings', label: translate('automations.tabSettings') },
   ];
 
-
   const { formState, setCronExpr, handlePromptBlur, handleNameBlur, saveError } =
     useAutomationSettingsAutoSave(automation);
   const { name, setName } = formState;

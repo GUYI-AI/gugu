@@ -15,14 +15,10 @@ import { agentInstallationStatusUpdatedChannel } from '@shared/events/appEvents'
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 
 /**
- * @@@agent-readings — what a machine says about its agents, one replica per kind (@@@replica, lib/replica.ts). Keyed by
- * the machine (null = this computer): a session, the new-task composer or the library looking at another machine read
- * that machine's answers, ❌ this computer's under the same entry.
- *
- * Everything here derives from the machine's install state, so an install, update, uninstall or re-probe refreshes the
- * whole family (`refreshAgentReadings`): the one place that lists its members. (Before, a prefix invalidation of
- * `['agents', …]` stood for the list; four leaks — #2802, #5605, #5719 and the source versions — were each a member it
- * did not cover.)
+ * @@@agent-readings — what a machine says about its agents, one replica per kind, keyed by the machine (null = this
+ * computer; another machine's answers ❌ under this computer's entry). All derive from the machine's install state, so an
+ * install, update, uninstall or re-probe refreshes the whole family (`refreshAgentReadings`, the one list of members;
+ * the old `['agents', …]` prefix invalidation leaked #2802, #5605, #5719 and the source versions).
  */
 type Machine = string | null;
 
@@ -71,10 +67,8 @@ export const agentIcons = replica({
 });
 
 /**
- * Which models an agent's harness can run, as its machine answers. The main process owns invalidation (harness version,
- * TTL) and answers from memory without waiting for the harness, so every surface mount asks (`fresh: 0`, #7081) and a
- * `refreshing` answer is asked again until the probe settles. Returning to the window asks too: another machine's
- * harness changes by what someone did in its terminal, and this computer's lookup is a memory read.
+ * Which models an agent's harness can run. The main process owns invalidation and answers from memory, so every mount
+ * asks (`fresh: 0`, #7081), focus asks, and a `refreshing` answer is asked again every 700 ms until the probe settles.
  */
 export const harnessModelCatalog = replica({
   name: 'harnessModelCatalog',
@@ -82,11 +76,8 @@ export const harnessModelCatalog = replica({
   read: (_owner, providerId: string, leg: SessionpageLeg, machine: Machine) =>
     rpcOn(machine).agents.modelCatalog(providerId, leg) as Promise<HarnessCatalogLookup>,
   refreshOnFocus: true,
-  refreshEvery: (lookup) => (lookup?.refreshing ? HARNESS_CATALOG_REFRESHING_POLL_MS : false),
+  refreshEvery: (lookup) => (lookup?.refreshing ? 700 : false),
 });
-
-/** While the main process says it is still probing: ask again this often (a memory read, it stops by itself). */
-export const HARNESS_CATALOG_REFRESHING_POLL_MS = 700;
 
 /** Whether the provider of one of a harness's own models has a credential on its machine (#4956). */
 export const harnessModelCredential = replica({
@@ -131,10 +122,7 @@ export const agentSettings = replica({
   fresh: 60_000,
 });
 
-/**
- * Read the whole family again for a machine (after an install, update, uninstall, re-probe or sign-in). `keepStatus`: the
- * install state was just patched from the push, so it is not read again over the patch.
- */
+/** Read the whole family again for a machine. `keepStatus`: the install state was just patched from the push. */
 export function refreshAgentReadings(machine: Machine, options: { keepStatus?: boolean } = {}): Promise<void> {
   return Promise.all([
     agentsMetadata.refresh(machine),
@@ -149,10 +137,7 @@ export function refreshAgentReadings(machine: Machine, options: { keepStatus?: b
   ]).then(() => undefined);
 }
 
-/**
- * This computer's pushes about its agents, wired once per document: an ACP handshake reporting fork changes the payloads
- * (fork-legs.ts); an install-state event carries the agent's full status.
- */
+/** This computer's pushes about its agents, wired once per document (fork changes; an agent's full install status). */
 export function wireAgentReadings(): () => void {
   const offs = [
     events.on(agentCapabilitiesChangedChannel, () => {
