@@ -290,7 +290,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   return (
     <PhoneLiveWindowConversation enabled={mobile && !phoneHost && appKind === null} deviceId={device.device_id}
       sessionId={session.conversationId} conversationId={session.chatId} agentId={agentUserId}
-      connected={online} operating={online && (attention === 'running' || attention === 'waiting')}>
+      connected={connection === 'online'} operating={online && (attention === 'running' || attention === 'waiting')}>
     {live => (
     <AgentWatchScreen
       {...taskHeader}
