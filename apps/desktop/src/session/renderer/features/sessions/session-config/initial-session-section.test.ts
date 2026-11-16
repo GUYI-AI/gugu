@@ -2291,6 +2291,11 @@ describe('InitialSessionField', () => {
       const trigger = document.createElement('button');
       trigger.textContent = 'Go sign in'; container.append(trigger);
       expect(latestState?.harnessSignIn).toBeTypeOf('function');
+      // The row inside the model menu that a signed-out catalog (`auth-required`) turns into.
+      expect(latestState?.harnessModelUnlock).toMatchObject({
+        groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
+        label: `harnessCatalog.unlockModels|${provider}`,
+      });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state
       // request; agent-connection-panel.test.tsx exercises its actual menu/form.
