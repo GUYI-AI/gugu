@@ -138,10 +138,11 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     cache.set(rows)
     if (removed.size > 0) void desktopIpc()?.invoke(SERVER_SSH_MACHINES_CHANNELS.reconcile, { owner: userId, present: rows.map((row) => row.device_id) }).catch(() => undefined)
   }, [userId])
-  // The feed of `devices` (fresh: Infinity) starts with the account: starting over rows already held reads them once (what
-  // changed while nobody listened, e.g. the shell was inactive); a read already on its way is that read.
+  // The feed of `devices` (fresh: Infinity) starts with the account: starting over rows held as current reads them once
+  // (what changed while nobody listened, e.g. the shell was inactive). Rows kept from before are stale: the mount reads them.
   useEffect(() => {
-    if (userId && devicesModel.peek().state === 'value' && !devicesModel.isFetching()) void devicesModel.refresh()
+    const held = devicesModel.peek()
+    if (userId && held.state === 'value' && !held.stale && !devicesModel.isFetching()) void devicesModel.refresh()
   }, [userId])
   useEffect(() => {
     if (!userId) return
