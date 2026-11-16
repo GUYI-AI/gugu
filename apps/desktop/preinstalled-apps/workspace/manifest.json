@@ -30,7 +30,6 @@
         "title": "文件",
         "icon": "icon.png",
         "opensFiles": { "chat": [".md", ".json", ".txt"], "session": ["*"] },
-        "fileIcons": { ".md": "md.png", ".json": "json.png" },
         "sideWidth": 480
       }
     ],

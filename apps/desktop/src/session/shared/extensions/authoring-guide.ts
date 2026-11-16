@@ -85,7 +85,7 @@ More \`guide_read\` topics:
         "name": "main",          // stable machine name, lowercase
         "title": "CSV",          // <= 48 chars
         "opensFiles": { "session": [".csv"] },  // claim: a session's .csv opens THIS tab
-        "fileIcons": { ".csv": "csv.png" },  // icon per claim (else generic)
+        "fileIcons": { ".csv": "csv.png" },  // own formats only (else a tile)
         "menu":    [{ "id": "reload",  "title": "Reload" }],   // <= 8
         "toolbar": [{ "id": "export",  "title": "Export" }]    // <= 6
       }
