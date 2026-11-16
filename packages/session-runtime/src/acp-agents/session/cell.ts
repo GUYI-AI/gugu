@@ -912,7 +912,7 @@ export class SessionCell {
     this.deps.callbacks?.onSessionStateChanged?.();
   }
 
-  async revertSession(anchor: string): Promise<Result<{ providerSessionId: string }, AcpSendPromptError>> {
+  async revertSession(anchor: string, restoreFiles = false): Promise<Result<{ providerSessionId: string }, AcpSendPromptError>> {
     if (this.reverting || this.machine.isWorking || this.activeTurnCompletion
       || this.machine.queuedPrompts.length || this.settingsInFlight
       || this.lastRunningAgentCount || this.lastRunningCommandTaskIds.length) {
@@ -923,7 +923,7 @@ export class SessionCell {
     this.reverting = true;
     this.deps.callbacks?.onSessionStateChanged?.();
     try {
-      const result = await this.agent.extMethod('_session/revert', { sessionId: this.acpSessionId, before: anchor });
+      const result = await this.agent.extMethod('_session/revert', { sessionId: this.acpSessionId, before: anchor, ...(restoreFiles ? { files: 'restore' } : {}) });
       if (result.sessionId !== this.acpSessionId) throw new Error('Revert changed the provider session ID.');
       this.transcript.revertBefore(anchor);
       this.emitTranscriptChanged();
@@ -1555,8 +1555,8 @@ export class SessionCell {
     const cycle = this.activeTurnCompletion;
     const finish = () => {
       if (this.activeTurnCompletion !== cycle) return;
-      const anchor = (event._meta?.guguRevert as { before?: unknown } | undefined)?.before;
-      if (typeof anchor === 'string' && anchor) this.transcript.setActiveRevertAnchor(anchor);
+      const revert = event._meta?.guguRevert as { before?: unknown; files?: unknown } | undefined;
+      if (typeof revert?.before === 'string' && revert.before) this.transcript.setActiveRevertAnchor(revert.before, revert.files === true);
       this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId,
         stopReason: event.stopReason, ...(event.error ? { error: toSerializedError(Object.assign(new Error(event.error.message), event.error)) } : {}) });
       if (event.error || event.stopReason === 'error') {
@@ -1587,9 +1587,9 @@ export class SessionCell {
 
   private applyReceiptMetadata(requestId: string, meta: SessionPromptReceipt['_meta']): void {
     const request = this.requests.get(requestId);
-    const anchor = (meta?.guguRevert as { before?: unknown } | undefined)?.before;
-    if (request && typeof anchor === 'string' && anchor) {
-      this.transcript.setRevertAnchor(request.messageId, anchor);
+    const revert = meta?.guguRevert as { before?: unknown; files?: unknown } | undefined;
+    if (request && typeof revert?.before === 'string' && revert.before) {
+      this.transcript.setRevertAnchor(request.messageId, revert.before, revert.files === true);
       this.emitTranscriptChanged();
     }
   }

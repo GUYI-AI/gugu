@@ -255,6 +255,7 @@ const fallbackMessages = {
   'transcript.restorePrompt': 'Restore prompt',
   'transcript.restorePromptHint': 'Put this prompt back in the composer (it is not re-sent)',
   // #7304 on a failed turn whose agent can step back: opens the message's editor; sending removes this turn first.
+  'transcript.restoreFiles': 'Also restore the files it changed',
   'transcript.rewindTurn': 'Rewind and edit',
   'transcript.rewindTurnHint': 'Edit this message and send it again; the agent forgets this turn and everything after it',
   // turn-outcome 的失败原因（#3498）。**纯描述，不含行动建议** ——
@@ -302,6 +303,7 @@ const fallbackMessages = {
     '{running} may show raw tool-call markers in its replies. The tools still run; another model avoids them',
   // #6396 会话起来时的名字在登记时已经用过(序号只增不减)⇒ 换成了下一个。行上只说「用过了」:
   // 多数是另一台设备先用了,但刚开 app 一秒内建的会话也可能撞上以前删掉的号,❌ 不断言是哪一种。
+  'transcript.sessionNotice.historyReverted': 'Rewound {count} turns',
   'transcript.sessionNotice.agentRenamed': '{previous} is now {running} — that name had already been used',
   'transcript.condition.harnessMissing': 'This engine is not installed yet',
   'transcript.condition.harnessUpdating': 'The engine is updating — it will be back in a few seconds',

@@ -168,8 +168,8 @@ export class AcpRuntime {
 
   finishHistoryRevert(sessionId: string): void { this.manager.finishHistoryRevert(sessionId); }
 
-  revertSession(sessionId: string, anchor: string) {
-    return this.manager.revertSession(sessionId, anchor);
+  revertSession(sessionId: string, anchor: string, restoreFiles?: boolean) {
+    return this.manager.revertSession(sessionId, anchor, restoreFiles);
   }
 
   stopBackgroundTask(

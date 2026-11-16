@@ -163,8 +163,8 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       return runtime.cancelTurn(input.sessionId);
     },
     finishHistoryRevert(input: { sessionId: string }): void { runtime.finishHistoryRevert(input.sessionId); },
-    revertSession(input: { sessionId: string; anchor: string }) {
-      return runtime.revertSession(input.sessionId, input.anchor);
+    revertSession(input: { sessionId: string; anchor: string; restoreFiles?: boolean }) {
+      return runtime.revertSession(input.sessionId, input.anchor, input.restoreFiles);
     },
     stopBackgroundTask(input: {
       sessionId: string;

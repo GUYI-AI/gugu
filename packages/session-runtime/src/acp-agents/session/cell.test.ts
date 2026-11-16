@@ -3077,6 +3077,7 @@ describe('native in-place conversation revert', () => {
     expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-2' });
     expect(cell.history().committed).toHaveLength(1);
     expect(cell.history().committed[0].items[0]).toMatchObject({ text: 'keep' });
+    expect(cell.history().committed[0].items.at(-1)).toMatchObject({ kind: 'session-notice', code: 'history-reverted', effectiveValue: '2' });
     expect(await cell.prompt({ text: 'cannot race persistence' })).toMatchObject({ success: false, error: { type: 'session_busy' } });
     cell.finishHistoryRevert();
     expect(await cell.prompt({ text: 'replacement' })).toMatchObject({ success: true });

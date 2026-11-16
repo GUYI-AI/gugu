@@ -508,6 +508,7 @@ function decodeEntityContentUpdate(update: SessionUpdate): NormalizedEvent | nul
       messageId: raw.messageId, text: messageContentText(content ?? []), contentMode: 'replace',
       ...(raw.sessionUpdate === 'user_message' && raw._meta?.guguSteering === true ? { steering: true } : {}),
       ...(typeof raw._meta?.guguRevertAnchor === 'string' ? { revertAnchor: raw._meta.guguRevertAnchor } : {}),
+      ...(raw._meta?.guguRevertFiles === true ? { revertFiles: true as const } : {}),
       ...(content !== undefined ? { content } : {}),
       ...(raw._meta !== undefined ? { _meta: raw._meta } : {}),
     } as NormalizedEvent;
@@ -607,6 +608,7 @@ function decodeStandardSessionUpdate(raw: unknown): NormalizedEvent {
         content: [update.content as EntityContent],
         contentMode: 'append',
         ...(typeof update._meta?.guguRevertAnchor === 'string' ? { revertAnchor: update._meta.guguRevertAnchor } : {}),
+        ...(update._meta?.guguRevertFiles === true ? { revertFiles: true as const } : {}),
         ...(update._meta?.guguSteering === true ? { steering: true } : {}),
       };
     }

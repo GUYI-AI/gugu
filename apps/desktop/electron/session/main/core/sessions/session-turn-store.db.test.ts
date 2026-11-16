@@ -205,6 +205,9 @@ describe('conversation-turn-store', () => {
       { text: 'message-0', revertAnchor: 'native-0' }, { text: 'replacement' },
     ]);
     expect(reopened.turns.map((t) => t.id)).toEqual(['c1:turn:s0', 'c1:turn:s1']);
+    // Where it was cut: one line on the last kept turn, counting the removed turns; it outlives the reopen.
+    expect(reopened.turns[0]!.items.filter((item) => item.kind === 'session-notice'))
+      .toMatchObject([{ code: 'history-reverted', effectiveValue: '2' }]);
   });
 
   it('找不到回退点时保留已落盘历史,不会按位置猜测 (#7304)', async () => {

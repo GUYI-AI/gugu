@@ -26,6 +26,8 @@ export const transcriptMessageSchema = z.object({
   }).optional(),
   /** Native provider boundary; never a display index or a text match. */
   revertAnchor: z.string().optional(),
+  /** The provider can also restore the files changed from this message on when reverting to it (#7304). */
+  revertFiles: z.literal(true).optional(),
   /** Attachment metadata only; bytes are served separately by the runtime. */
   attachments: z.array(attachmentRefSchema).optional(),
   files: z.array(transcriptFileRefSchema).optional(),

@@ -692,6 +692,7 @@ function foldItemContent(
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),
         ...(event.files?.length ? { files: event.files } : {}),
         ...(event.revertAnchor ? { revertAnchor: event.revertAnchor } : {}),
+        ...(event.revertFiles ? { revertFiles: true as const } : {}),
         // 只在**新建**这条消息时写:它说的是这条消息什么时候开始到的,后面的分片不该把它往后推。
         ...(stampAt !== undefined ? { at: stampAt } : {}),
       }, event);
@@ -949,6 +950,7 @@ function updateStreamedItem(
         return foldMessageContent({
           ...message,
           ...(event.revertAnchor ? { revertAnchor: event.revertAnchor } : {}),
+          ...(event.revertFiles ? { revertFiles: true as const } : {}),
           ...(event.files ? { files: event.files } : {}),
           ...(event.attachments && (event.attachments.length || event.attachmentsMode === 'replace')
             ? { attachments: event.attachmentsMode === 'replace' ? event.attachments : [...(message.attachments ?? []), ...event.attachments] }

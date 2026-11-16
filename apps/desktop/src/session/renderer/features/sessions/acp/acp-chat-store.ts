@@ -208,7 +208,7 @@ export class AcpChatStore {
   private _senderInputs: readonly SessionInput[] = [];
   private _queueEditTimer: ReturnType<typeof setTimeout> | null = null;
   reverting = false;
-  messageEdit: { itemId: string; text: string } | null = null;
+  messageEdit: { itemId: string; text: string; restoreFiles?: boolean } | null = null;
   /**
    * 运行时最近一次报的「本进程里还在跑」的后台任务 id(#6582);`null` = 对面没报这一格(旧运行时)。
    * 只由挂着的活会话的 sessionState 写 —— 读它走 `runningBackgroundTaskIds`。
@@ -759,7 +759,17 @@ export class AcpChatStore {
   }
 
   changeMessageEdit(itemId: string, text: string): void {
-    if (this.messageEdit?.itemId === itemId && !this.reverting) this.messageEdit = { itemId, text };
+    if (this.messageEdit?.itemId === itemId && !this.reverting) this.messageEdit = { ...this.messageEdit, text };
+  }
+
+  /** Whether reverting to this message can also restore the files changed from it on (the provider says so per message). */
+  canRestoreFiles(itemId: string): boolean {
+    const item = this.revertMessageItem(itemId);
+    return item?.kind === 'message' && item.revertFiles === true;
+  }
+
+  changeMessageEditRestoreFiles(itemId: string, restoreFiles: boolean): void {
+    if (this.messageEdit?.itemId === itemId && !this.reverting) this.messageEdit = { ...this.messageEdit, restoreFiles };
   }
 
   cancelMessageEdit(itemId: string): void {
@@ -787,13 +797,13 @@ export class AcpChatStore {
       attachments = (item.attachments ?? []).map((attachment) => ({ ref: { type: 'attachment', ...attachmentRefSchema.parse(attachment) } }));
     } catch (error) { this._toastError('acpFailure.attachment', error); return; }
     const session = this.session;
-    if (!await this.revertMessage(itemId, false) || this.session !== session) return;
+    if (!await this.revertMessage(itemId, false, edit.restoreFiles === true && this.canRestoreFiles(itemId)) || this.session !== session) return;
     runInAction(() => { this.messageEdit = null; });
     // History is already cut back: a send that fails keeps the edited words in the draft.
     await this.submitPrompt(edit.text, attachments, item.files).catch(() => this.setDraftText([edit.text, this.draftText].filter(Boolean).join('\n')));
   }
 
-  async revertMessage(itemId: string, restoreDraft = true): Promise<boolean> {
+  async revertMessage(itemId: string, restoreDraft = true, restoreFiles = false): Promise<boolean> {
     const item = this.revertMessageItem(itemId);
     const session = this.session;
     if (!session || item?.kind !== 'message' || !item.revertAnchor || !this.canRevertMessage(itemId)) return false;
@@ -801,7 +811,7 @@ export class AcpChatStore {
     const generation = ++this._historyGeneration;
     runInAction(() => { this.reverting = true; });
     try {
-      const result = await session.revertSession(item.revertAnchor);
+      const result = await session.revertSession(item.revertAnchor, restoreFiles);
       if (!result.success) { this._toastError('acpFailure.revert', result.error); return false; }
       if (this.session !== session || generation !== this._historyGeneration) return false;
       this._resetOwnerNotificationRead();
