@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { i18n, setLocalePreference } from '@/i18n';
+import { readMobileShell } from '@/hooks/useMobileShell';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { ModalRenderer } from '@renderer/lib/modal/modal-renderer';
 import { showModal } from '@renderer/lib/modal/modal-provider';
@@ -14,6 +15,7 @@ import '@gugu/session-ui/theme/theme.css';
 import '@gugu/session-ui/theme/semantic.css';
 import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
+import '@/mobile/phone-shell.css';
 import '@renderer/index.css';
 
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
@@ -33,11 +35,13 @@ afterEach(async () => {
   root = null;
   host = null;
   document.body.className = previousClass;
+  document.documentElement.removeAttribute('data-phone-shell');
   setLocalePreference(previousLanguage === 'zh-CN' ? 'zh-CN' : 'en-US');
 });
 
 async function mount(locale: 'zh-CN' | 'en-US', width: number) {
   await page.viewport(width, 844);
+  if (readMobileShell()) document.documentElement.setAttribute('data-phone-shell', '');
   setLocalePreference(locale);
   document.body.classList.add('gugu-skin', 'emlight');
   host = document.body.appendChild(document.createElement('div'));
@@ -98,5 +102,7 @@ it.each([
     expect(rect.width).toBeGreaterThan(0);
     expect(rect.height).toBe(phone ? 44 : 32);
   }
-  expect(document.querySelectorAll('[data-slot="dialog-footer"] [data-slot="kbd"]').length > 0).toBe(!phone);
+  const keycaps = [...document.querySelectorAll<HTMLElement>('[data-slot="dialog-footer"] [data-slot="kbd"]')];
+  expect(keycaps.length).toBeGreaterThan(0);
+  expect(keycaps.some(keycap => keycap.getClientRects().length > 0)).toBe(!phone);
 });

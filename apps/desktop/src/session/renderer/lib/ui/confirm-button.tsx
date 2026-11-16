@@ -2,7 +2,6 @@ import type { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { useHotkey } from '@tanstack/react-hotkeys';
 import type { VariantProps } from 'class-variance-authority';
 import { useRef } from 'react';
-import { useMobileShell } from '@/hooks/useMobileShell';
 import {
   getEffectiveHotkey,
   getHotkeyRegistration, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
@@ -13,7 +12,6 @@ type ConfirmButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVari
 
 export function ConfirmButton({ disabled, children, ...props }: ConfirmButtonProps) {
   const ref = useRef<HTMLButtonElement>(null);
-  const mobile = useMobileShell();
   const keyboard = useShortcutOverrides();
   const confirmHotkey = getEffectiveHotkey('app.confirm', keyboard);
 
@@ -25,7 +23,7 @@ export function ConfirmButton({ disabled, children, ...props }: ConfirmButtonPro
     <Button ref={ref} disabled={disabled} {...props}>
       <span className="flex items-center gap-2">
         {children}
-        {!mobile && <BoundShortcut commandId="app.confirm" variant="keycaps" />}
+        <BoundShortcut className="gg-confirm-shortcut" commandId="app.confirm" variant="keycaps" />
       </span>
     </Button>
   );

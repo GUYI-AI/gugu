@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react';
-import { useMobileShell } from '@/hooks/useMobileShell';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
@@ -62,7 +61,6 @@ export function ConfirmActionDialog({
   onClose,
 }: Props) {
   const { translate } = useSessionMessages();
-  const mobile = useMobileShell();
   const [dontAskAgain, setDontAskAgain] = useState(false);
   const [scopeChecked, setScopeChecked] = useState(false);
   const [optionChecked, setOptionChecked] = useState(option?.defaultChecked ?? false);
@@ -91,7 +89,7 @@ export function ConfirmActionDialog({
           </label>
         ) : null}
       </DialogContentArea>
-      <DialogFooter className="sm:flex-wrap">
+      <DialogFooter className="gg-confirm-action-footer sm:flex-wrap">
         {dontAskAgainLabel ? (
           // 页脚里**自占一行**(basis-full),按钮组折到下一行靠右:它是这次确认的一部分,不是正文里的
           // 又一句说明,但❌ 与按钮抢同一行。xs 确认框只有 320px,复选框 + 取消 + 带键帽的确认钮放不下;
@@ -105,10 +103,10 @@ export function ConfirmActionDialog({
             <span className="min-w-0">{dontAskAgainLabel}</span>
           </label>
         ) : null}
-        <Button className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} variant="outline" onClick={onCancel ?? onClose}>
+        <Button variant="outline" onClick={onCancel ?? onClose}>
           {cancelLabel ?? translate('common.cancel')}
         </Button>
-        <ConfirmButton className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} disabled={confirmDisabled} variant={variant} onClick={() => onSuccess({ dontAskAgain, scopeChecked, optionChecked })}>
+        <ConfirmButton disabled={confirmDisabled} variant={variant} onClick={() => onSuccess({ dontAskAgain, scopeChecked, optionChecked })}>
           {confirmLabel ?? translate('common.confirm')}
         </ConfirmButton>
       </DialogFooter>
