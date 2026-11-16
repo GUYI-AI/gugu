@@ -127,12 +127,15 @@ describe('main applies theme and language from its own settings (@@@device-prefe
   it('reads both from the settings, an adopted old value included; nothing stored = the factory values', async () => {
     fixture = await openFixture('empty'); h.db = fixture.db;
     const store = new SettingsStore();
-    expect(hostPreferencesNow(store)).toEqual({ theme: 'light', locale: 'system' });
+    expect(hostPreferencesNow(store)).toEqual({ theme: 'light', locale: 'system', trayBadge: true });
     answerDeviceSettings({ theme: 'dark', locale: 'en-US' }, store);
-    expect(hostPreferencesNow(store)).toEqual({ theme: 'dark', locale: 'en-US' });
+    expect(hostPreferencesNow(store)).toEqual({ theme: 'dark', locale: 'en-US', trayBadge: true });
     await store.update('theme', 'system');
     await store.update('locale', 'zh-CN');
-    expect(hostPreferencesNow(store)).toEqual({ theme: 'system', locale: 'zh-CN' });
+    expect(hostPreferencesNow(store)).toEqual({ theme: 'system', locale: 'zh-CN', trayBadge: true });
+    // The tray badge is read with them (review B1-4: one read, before the contents load).
+    answerDeviceSettings({ trayBadge: 'false' }, new SettingsStore());
+    expect(hostPreferencesNow(store).trayBadge).toBe(false);
   });
 
   it('a value stored before the theme key had its writer reads as what it meant', async () => {

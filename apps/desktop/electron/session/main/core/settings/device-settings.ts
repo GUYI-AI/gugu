@@ -90,15 +90,15 @@ export function settingsChanged(key: AppSettingsKey): void {
  * these keys. A database without the settings table yet (a first start, before its migrations) stores nothing: the
  * factory values are what is stored.
  */
-export function hostPreferencesNow(store: SettingsStore = appSettingsService): { theme: AppSettings['theme']; locale: AppSettings['locale'] } {
-  if (!hasSettingsTable()) return { theme: getDefaultForKey('theme'), locale: getDefaultForKey('locale') };
+export function hostPreferencesNow(store: SettingsStore = appSettingsService): { theme: AppSettings['theme']; locale: AppSettings['locale']; trayBadge: boolean } {
+  if (!hasSettingsTable()) return { theme: getDefaultForKey('theme'), locale: getDefaultForKey('locale'), trayBadge: getDefaultForKey('interface').trayBadge };
   // Parsed: a value stored before the key had its writer (`emdark`) reads as what it meant.
-  return { theme: themeSchema.parse(store.getWithMetaNow('theme').value), locale: localeSchema.parse(store.getWithMetaNow('locale').value) };
-}
-
-/** @@@5295 the tray badge setting, for the host (it has no renderer storage to read). */
-export async function trayBadgeEnabled(): Promise<boolean> {
-  return (await appSettingsService.get('interface')).trayBadge;
+  return {
+    theme: themeSchema.parse(store.getWithMetaNow('theme').value),
+    locale: localeSchema.parse(store.getWithMetaNow('locale').value),
+    // @@@5295 the tray badge setting is the host's own too (it has no renderer storage to read).
+    trayBadge: store.getWithMetaNow('interface').value.trayBadge,
+  };
 }
 
 // ── handover + one-time migration ────────────────────────────────────────────────────────────────────────────────

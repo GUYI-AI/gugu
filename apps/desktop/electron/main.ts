@@ -1381,9 +1381,10 @@ function applyHostLocale(preference: LocalePreference): void {
  */
 function applyHostPreferences(): void {
   if (!emdashBridgeModule) return
-  const { theme, locale } = emdashBridgeModule.hostPreferencesNow()
+  const { theme, locale, trayBadge } = emdashBridgeModule.hostPreferencesNow()
   if (!SERVER_MODE) applyNativeThemePreference(process.platform, nativeTheme, theme)
   applyHostLocale(locale)
+  if (trayBadge !== trayBadgeEnabled) { trayBadgeEnabled = trayBadge; applyUnreadBadge() }
 }
 
 function currentHostLocale(): string {
@@ -4667,7 +4668,7 @@ app.whenReady().then(async () => {
     }
   }
   applyPreferencesLogged()
-  emdashBridgeModule.onAppSettingsChanged((key) => { if (key === 'theme' || key === 'locale') applyPreferencesLogged() })
+  emdashBridgeModule.onAppSettingsChanged((key) => { if (key === 'theme' || key === 'locale' || key === 'interface') applyPreferencesLogged() })
   // 「跟随系统」的语言:系统语言改了(改完回到咕咕)再解析一次 —— 设置没变,系统变了。
   app.on('browser-window-focus', applyPreferencesLogged)
   hydrateLoginShellPath()
@@ -6292,14 +6293,6 @@ app.whenReady().then(async () => {
       scheduleDiscovery: (work) => startupDiscovery.schedule(work),
     })
     sessionHostBoot = emdashBoot
-    // @@@5295 the tray badge setting is main's own (app settings `interface.trayBadge`): read once the backend is up,
-    // and again whenever that key changes (any window, a reset).
-    void emdashBoot.then(() => {
-      const follow = () => emdash.trayBadgeEnabled().then((enabled) => { trayBadgeEnabled = enabled; applyUnreadBadge() })
-        .catch((error: unknown) => createLogger('tray-badge').error({ error: String(error) }, 'The tray badge setting could not be read'))
-      emdash.onAppSettingsChanged((key) => { if (key === 'interface') void follow() })
-      return follow()
-    }).catch(() => undefined)
     platformCredentialsBoot = emdashBoot.catch(() => undefined)
     // Task names are projected during boot; adopting names (cloud, then the one-time legacy ones) follows it.
     void emdashBoot
