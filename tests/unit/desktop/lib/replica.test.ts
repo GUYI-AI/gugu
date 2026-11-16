@@ -515,3 +515,35 @@ describe('carry by content (review A6)', () => {
     writes.mockRestore()
   })
 })
+
+describe('seeded and restored values are read again (independent review, core)', () => {
+  it('a local first value of a push-fed model (fresh: Infinity) is replaced by a real read', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const reads = vi.fn(async () => 'read')
+    const model = rm.replica({ name: 'test-local-infinity', scope: 'account', fresh: Infinity, read: reads, local: () => 'local copy' })
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    for (let i = 0; i < 5; i += 1) await Promise.resolve()
+    expect(reads).toHaveBeenCalled()
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'read' })
+    harness.cleanup({ keepReads: true })
+  })
+
+  it('a restored entry patched by a write (an updater) is still read again by the next surface', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const define = (read: () => Promise<string[]>) => rm.replica({ name: 'test-restored-patch', scope: 'account', fresh: Infinity, read, persist: { maxBytes: 256, maxEntries: 1 } })
+    await define(async () => ['a']).prefetch()
+    rm = await freshStart()
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const reads = vi.fn(async () => ['a', 'b', 'server'])
+    const model = define(reads)
+    model.set([], (old) => [...(old ?? []), 'b'])
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    for (let i = 0; i < 5; i += 1) await Promise.resolve()
+    expect(reads).toHaveBeenCalledTimes(1)
+    harness.cleanup({ keepReads: true })
+  })
+})

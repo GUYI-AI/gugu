@@ -179,8 +179,13 @@ function releaseFeed(id: string): void {
  * must still be there when a surface opens later. A model not registered yet (its chunk loads later) is kept likewise.
  */
 function putValue(key: QueryKey, value: unknown): void {
-  const next = typeof value === 'function' ? (value as (old: unknown) => unknown)(queryClient.getQueryData(key)) : value
-  if (next !== undefined) putEntry(key, next)
+  const patch = typeof value === 'function'
+  const next = patch ? (value as (old: unknown) => unknown)(queryClient.getQueryData(key)) : value
+  if (next === undefined) return
+  // A patch of a value still to be read again (restored, seeded) is still to be read again: only a whole answer is current.
+  const pending = patch && !!queryClient.getQueryState(key)?.isInvalidated
+  putEntry(key, next)
+  if (pending) void queryClient.invalidateQueries({ queryKey: key, exact: true, refetchType: 'none' })
 }
 
 /** Putting back what the snapshot kept: not written back to it (it is already there). */
@@ -210,8 +215,13 @@ function seedFromLocal(key: QueryKey): void {
   const [name, owner, ...args] = key as [string, string, ...unknown[]]
   const local = definitions.get(name)?.local
   if (!local || queryClient.getQueryData(key) !== undefined) return
-  // Dated 0: shown as stale, and the read already on its way (or the next mount) replaces it.
-  const put = (value: unknown) => { if (value !== undefined && queryClient.getQueryData(key) === undefined) putEntry(key, value, 0) }
+  // Marked to be read again whatever `fresh` says (as a restored entry, I5): the read already on its way, or the next
+  // mount, replaces it; a surface showing it now reads at once.
+  const put = (value: unknown) => {
+    if (value === undefined || queryClient.getQueryData(key) !== undefined) return
+    putEntry(key, value, 0)
+    void queryClient.invalidateQueries({ queryKey: key, exact: true }, { cancelRefetch: false })
+  }
   const fail = (error: unknown) => { replicaLog.error({ model: name, error }, `${name}: the local copy could not be read`) }
   let answer: unknown
   try { answer = local(owner, ...args) } catch (error) { fail(error); return }
