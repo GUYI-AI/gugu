@@ -266,6 +266,24 @@ describe('one phone endpoint owns registration and RPC', () => {
     } finally { old.resolve({ install_key: 'stale-install' }) }
   })
 
+  it('a re-read that fails is the reading\'s failure, ❌ the earlier answer left standing as now (review A2)', async () => {
+    await refreshPhoneDevice()
+    expect(osShown()?.runtime.calendar).toBe('granted')
+    test.checkPermissions.mockRejectedValue(new Error('the system did not answer'))
+    await expect(refreshPhoneDevice()).rejects.toThrow('the system did not answer')
+    await vi.waitFor(() => {
+      const reading = phoneOsState.peek()
+      expect(reading.state === 'value' ? reading.error?.message : reading.state).toBe('the system did not answer')
+    })
+  })
+
+  it('keeps nothing of the OS state across restarts (review A2)', async () => {
+    await refreshPhoneDevice()
+    expect(osShown()?.runtime.calendar).toBe('granted')
+    const kept = Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index)!) ?? '')
+    expect(kept.filter((value) => value.includes('phoneOsState'))).toEqual([])
+  })
+
   it('lets a foreground refresh wait for boot without superseding or blocking initial registration', async () => {
     const boot = deferred<{ calendar: string }>()
     test.checkPermissions.mockReturnValueOnce(boot.promise)

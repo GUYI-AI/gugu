@@ -182,6 +182,17 @@ describe('phone permission actions and real Android state', () => {
     expect(readPhoneDeviceSettings(mocks.owner).groups.recordings).toBe(false)
     expect(mocks.dataRequest).not.toHaveBeenCalled()
   })
+  it('a re-read that fails after an earlier answer says it could not read, ❌ the earlier answer as now (review A2)', async () => {
+    mocks.os!.runtime.calendar = 'granted'; setPhoneActionGroup(mocks.owner, 'calendar', true); setPhoneDeviceEnabled(mocks.owner, true)
+    await render()
+    await waitForCondition(() => byId('phone-device-group-calendar')?.textContent?.includes('已开启') ?? false, 'first answer drawn')
+    // Back from the system settings, the system does not answer.
+    mocks.osError = new Error('the system did not answer')
+    await act(async () => { for (const f of mocks.foreground) f() })
+    await waitForCondition(() => byId('phone-device-group-calendar')?.textContent?.includes('查不到') ?? false, 'failed re-read drawn')
+    expect(byId('phone-device-group-calendar')?.textContent).not.toContain('已开启')
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
+  })
   it('keeps unreadable rows visible and reports one combined failure', async () => {
     mocks.osError = new Error('read failed'); mocks.check.mockRejectedValue(new Error('system failed')); await render()
     expect(byId('phone-device-group-photos')?.textContent).toContain('查不到')
