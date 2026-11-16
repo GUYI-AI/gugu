@@ -29,16 +29,24 @@ class NativeTaskPageScreen extends EventEmitter implements TaskPageScreenTarget 
     this.page.once('destroyed', this.destroyed);
     this.page.on('did-start-loading', this.changed).on('did-stop-loading', this.changed).on('did-navigate', this.changed)
       .on('did-navigate-in-page', this.changed).on('page-title-updated', this.changed);
+    let captureFailed = false;
     const capture = async () => {
       if (generation !== this.generation || this.page.isDestroyed()) return;
       try {
-        const image = await this.page.capturePage(undefined, { stayHidden: true });
+        const image = await lease.snapshot();
         const viewport = await this.page.executeJavaScript('({width:innerWidth,height:innerHeight})') as { width: number; height: number };
         const dimensions = image.getSize();
         const scale = Math.min(1, 1600 / Math.max(dimensions.width, dimensions.height));
         const frame = scale < 1 ? image.resize({ width: Math.round(dimensions.width * scale), height: Math.round(dimensions.height * scale) }) : image;
         if (generation === this.generation && !frame.isEmpty()) publish({ data: frame.toJPEG(75).toString('base64'), ...viewport });
-      } catch (error) { if (generation === this.generation) { log.warn('Could not watch the task browser tab', { error: String(error) }); this.emit('destroyed'); } return; }
+        captureFailed = false;
+      } catch (error) {
+        if (generation !== this.generation || this.page.isDestroyed()) return;
+        // A live tab can briefly reject capture during native frame initialization/navigation.
+        // Keep its existing screen loop alive; only the actual destroyed event ends the source.
+        if (!captureFailed) log.warn('Could not watch the task browser tab', { error: String(error) });
+        captureFailed = true;
+      }
       if (generation === this.generation) { this.timer = setTimeout(() => { void capture(); }, 250); this.timer.unref?.(); }
     };
     await capture();

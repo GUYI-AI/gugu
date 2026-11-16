@@ -157,6 +157,7 @@ export type ChatToolCall = {
   kind: 'tool';
   id: string;
   name: string;
+  toolNames?: readonly string[];
   status: ToolStatus;
   awaitingPermission?: boolean;
   /**
@@ -593,6 +594,7 @@ export type ToolRunItem = {
   label: string;
   /** 折进去的行数。 */
   stepCount: number;
+  toolNames?: readonly string[];
   /** 这一段里还有在跑的调用（活动层）⇒ 头上微光。 */
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */

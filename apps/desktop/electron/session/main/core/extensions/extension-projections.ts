@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { liveWindowSourcesChanged } from './live-window-source-changes';
 import {
   projectionFrame, projectionViewerPacket, isProjectionRelease,
   type ProjectionFrame, type ProjectionInput, type ProjectionInputOutcome,
@@ -63,6 +64,7 @@ export class ExtensionProjections {
     access.signal.addEventListener('abort', abort, { once: true });
     resource.off = () => access.signal.removeEventListener('abort', abort);
     this.resources.set(id, resource);
+    liveWindowSourcesChanged(principal.sessionId);
     if (access.signal.aborted) {
       abort();
       access.signal.throwIfAborted();
@@ -76,11 +78,22 @@ export class ExtensionProjections {
         const frame = projectionFrame(raw);
         if (frame.sequence <= resource.sequence) throw new Error('Projection frame sequence must increase');
         resource.sequence = frame.sequence;
+        const changed = resource.geometry?.width !== frame.width || resource.geometry?.height !== frame.height;
         resource.geometry = { width: frame.width, height: frame.height };
+        if (changed) liveWindowSourcesChanged(resource.principal.sessionId);
         for (const viewer of resource.viewers) viewer.publish(frame);
       },
       close: () => this.close(id, resource),
     };
+  }
+
+  /** Trusted host metadata for one real session; not an App bridge verb or an enumeration grant. */
+  describeSession(sessionId: string) {
+    return [...this.resources.entries()].filter(([, resource]) => resource.principal.sessionId === sessionId).map(([id, resource]) => {
+      this.authorize(resource.principal);
+      resource.controller.signal.throwIfAborted();
+      return { id, ...resource.principal, size: resource.geometry && { ...resource.geometry } };
+    });
   }
 
   /** Internal host authority: resolve the real resource, never treat signaling payloads as a grant. */
@@ -212,6 +225,7 @@ export class ExtensionProjections {
     let reject!: (reason: unknown) => void;
     resource.closing = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
     this.resources.delete(id);
+    liveWindowSourcesChanged(resource.principal.sessionId);
     resource.off();
     resource.controller.abort(new Error('Projection closed'));
     for (const viewer of resource.viewers) viewer.close('Projection closed');

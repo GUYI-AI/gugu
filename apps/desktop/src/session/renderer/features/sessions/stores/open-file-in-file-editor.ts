@@ -24,6 +24,7 @@ import { fileTabTarget, hostFileTabTarget } from '../file-view/file-view-kinds';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import type { BrowserTabResource } from '@renderer/features/browser/browser-tab-resource';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
+import { prepareBackgroundBrowserPage } from '../../live-window/background-browser-page';
 
 const sessionLog = rendererLogger('gugu-session');
 
@@ -440,6 +441,11 @@ export function openHostRequestedExtensionInSessionWhenReady({
         const session = asProvisioned(getSessionPageStore(projectId, sessionId));
         try {
           if (!session?.viewModel) throw new Error('target session pane is unavailable');
+          if (ifAbsent && tabKind === 'computer-use.preview') {
+            const { revealLiveWindow } = await import('../../live-window/reveal-live-window');
+            await revealLiveWindow(projectId, sessionId, 'computer');
+            onResult({ success: true }); return;
+          }
           // 刚装上的扩展,渲染层得先登记过它的页签,`kind` 才认得出来。设置页那条路装完自己
           // 会补一次登记(ExtensionsSettingsCard),而 agent 那条路整个装在主进程里,渲染层
           // 压根没听说过这次安装 —— 不补这一下,「装上、马上打开」必然打不开。补登记是幂等的。
@@ -534,7 +540,7 @@ export function openHostRequestedBrowserInSessionWhenReady({
   intent: TabOpenIntent;
   onResult: (result: { success: boolean; error?: string; browserId?: string; created?: boolean }) => void;
   timeout?: number;
-  acquire?: { browserId?: string; createIfMissing: boolean; deadline: number };
+  acquire?: { browserId?: string; createIfMissing: boolean; deadline: number; mapped?: true };
 }): () => void {
   const lifetime = new AbortController();
   const dispose = when(
@@ -582,7 +588,7 @@ export function openHostRequestedBrowserInSessionWhenReady({
 async function acquireBrowserPage(
   view: WorkspaceViewModel,
   url: string,
-  request: { browserId?: string; createIfMissing: boolean; deadline: number },
+  request: { browserId?: string; createIfMissing: boolean; deadline: number; mapped?: true },
   signal: AbortSignal,
 ): Promise<{ browserId: string; created: boolean }> {
   const checkDeadline = () => {
@@ -598,6 +604,7 @@ async function acquireBrowserPage(
     ?? existing.find(({ tab }) => tab.isActive)
     ?? existing[0];
   const created = !chosen;
+  if (!chosen && request.mapped) return prepareBackgroundBrowserPage(view, url, request, signal);
   if (!chosen) {
     if (!request.createIfMissing) throw new Error('This session has no browser tab. Use browser_navigate with a URL first.');
     view.showPage(url, { reload: false, beside: true, activate: false });
