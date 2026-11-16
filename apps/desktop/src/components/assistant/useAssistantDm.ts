@@ -1,7 +1,9 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { useEffect, useRef } from 'react'
+import { createOptimisticDmChat } from '@gugu/core/shared/ui/chatModels'
 import { useReplica } from '../../lib/replica'
 import { assistantDm } from '../../lib/assistantDm'
-import { useChatStoreSelect } from '../../store/chatContext'
+import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
 
 export type AssistantDm = { chatId: string | null; failed: { error: string } | null; retry: () => void }
 
@@ -16,6 +18,17 @@ export function useAssistantDm(assistantId: string | null): AssistantDm {
     : null)
   const reading = useReplica(assistantDm, assistantId && !existing ? [assistantId] : null)
   const chatId = existing ?? (reading.state === 'value' ? reading.value : null)
+  // A chat the list does not have yet (just made by open_dm): put into the list at once and the list read again, as every
+  // other open_dm caller does (❌ the shell holding a chat id the chat list does not know). Once per chat.
+  const { upsertChat, refreshChats } = useChatStore('upsertChat', 'refreshChats')
+  const listed = useRef<string | null>(null)
+  const unlisted = !existing && assistantId && reading.state === 'value' ? reading.value : null
+  useEffect(() => {
+    if (!unlisted || !assistantId || listed.current === unlisted) return
+    listed.current = unlisted
+    upsertChat(createOptimisticDmChat(unlisted, assistantId))
+    void refreshChats()
+  }, [unlisted, assistantId, upsertChat, refreshChats])
   return {
     chatId,
     failed: chatId === null && reading.state === 'error' ? { error: messageForUser(reading.error) } : null,
