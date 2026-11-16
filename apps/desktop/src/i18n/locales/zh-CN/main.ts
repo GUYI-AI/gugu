@@ -407,6 +407,15 @@ export default {
     "subtitle": "登录你的账号，开始与 AI 协作",
     "brandSubtitle": "你想做的，咕咕帮你做到。",
     "emailLabel": "邮箱",
+    "signup": {
+      "start": "新用户注册",
+      "back": "返回登录",
+      "agree": "同意并继续",
+      "disagree": "不同意",
+      "declined": "不同意就没法使用咕咕。你的邮箱不会发给我们。",
+      "saveFailed": "未能保存本次同意，请重试。",
+      "consentRequired": "请升级到新版咕咕再注册。"
+    },
     "otpLabel": "验证码",
     "or": "或",
     "invalidEmail": "邮箱地址格式不正确",

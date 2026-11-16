@@ -15,6 +15,11 @@ import { GoogleMark } from './login/GoogleMark'
 import { retainStartupMotion } from '../lib/startup-motion'
 import { loginOtpRequestPending, subscribeLoginOtpRequests } from '../lib/loginOtpTransport'
 import { useLoginOtpSend } from './login/useLoginOtpSend'
+import { LoginError } from './login/LoginError'
+import { SignupConsentStep } from './login/SignupConsentStep'
+import { signupConsentAdapter } from './login/signupConsentRuntime'
+import { validSignupConsent, type SignupConsent } from '@/lib/signupConsent'
+import type { LoginOtpIntent } from '@/lib/loginOtpTransport'
 import './login/login.css'
 
 const APP_LOGO_URL = publicAssetPath('/assets/app/gugu-icon-512.png')
@@ -31,7 +36,7 @@ function PrimaryButton({ disabled, loading, label }: { disabled: boolean; loadin
 }
 
 export function LoginPage() {
-  const { t } = useTranslation('main')
+  const { t, i18n } = useTranslation('main')
   const [googleEnabled, setGoogleEnabled] = useState<boolean | null>(null)
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
@@ -39,6 +44,15 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [submitFailed, setSubmitFailed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [registering, setRegistering] = useState(false)
+  const [consent, setConsent] = useState<SignupConsent>()
+  const language = i18n.resolvedLanguage?.startsWith('en') ? 'en' : 'zh'
+  const consentLanguage = consent?.document_version.endsWith('-en') ? 'en' : 'zh'
+  const confirmedConsent = validSignupConsent(consent)
+    && consent.document_version === signupConsentAdapter.documentVersion(consentLanguage) ? consent : undefined
+  const showConsent = signupConsentAdapter.enabled && registering && !confirmedConsent
+  const otpIntent: LoginOtpIntent | undefined = !signupConsentAdapter.enabled ? undefined
+    : registering && confirmedConsent ? { kind: 'signup', consent: confirmedConsent } : { kind: 'login' }
   const otpSend = useLoginOtpSend()
   const otpRequestPending = useSyncExternalStore(subscribeLoginOtpRequests, loginOtpRequestPending)
   const verifying = useRef(false)
@@ -56,7 +70,7 @@ export function LoginPage() {
 
   const handleRequestOtp = (e: React.FormEvent) => {
     e.preventDefault()
-    if (google.busy || loading) return
+    if (google.busy || loading || showConsent) return
     const address = email.trim()
     if (!address) { setError(t('auth.emailRequired')); return }
     const input = (e.currentTarget as HTMLFormElement).querySelector<HTMLInputElement>('input[type="email"]')
@@ -65,7 +79,7 @@ export function LoginPage() {
     setStep('otp')
     setError('')
     setSubmitFailed(false)
-    void otpSend.send(address)
+    void otpSend.send(address, otpIntent)
   }
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -94,14 +108,14 @@ export function LoginPage() {
   }
 
   const handleResendOtp = () => {
-    if (loading || google.busy || otpSend.phase === 'sending' || otpSend.countdown > 0) return
+    if (showConsent || loading || google.busy || otpSend.phase === 'sending' || otpSend.countdown > 0) return
     setError('')
     setSubmitFailed(false)
-    void otpSend.send(email)
+    void otpSend.send(email, otpIntent)
   }
 
   return <main className="gugu-auth-page">
-    <section className="gugu-auth-shell" aria-labelledby={googleEnabled === null ? undefined : "gugu-auth-title"} aria-busy={googleEnabled === null}>
+    <section className="gugu-auth-shell" aria-labelledby={googleEnabled === null ? undefined : showConsent ? 'gugu-signup-consent-title' : 'gugu-auth-title'} aria-busy={googleEnabled === null}>
       <aside className="gugu-auth-brand" aria-label={t('brand.name')}>
         <AuthBrandMotion />
         <div className="gugu-auth-brand-copy">
@@ -109,7 +123,9 @@ export function LoginPage() {
           <p className="gugu-auth-brand-sub">{t('auth.brandSubtitle')}</p>
         </div>
       </aside>
-      <div className="gugu-auth-pane">{googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : <div className="gugu-auth-login">
+      <div className={`gugu-auth-pane${showConsent ? ' gugu-signup-consent-pane' : ''}`}>{googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : showConsent ? <SignupConsentStep key={language} language={language} adapter={signupConsentAdapter}
+        onAccepted={confirmed => { setConsent(confirmed); setStep('email'); setEmail(''); setOtpCode(''); otpSend.reset() }}
+        onBack={() => { setRegistering(false); setConsent(undefined); setStep('email'); setEmail(''); setOtpCode(''); setError(''); otpSend.reset() }} /> : <div className="gugu-auth-login">
         <header className="gugu-auth-heading">
           <img className="gugu-auth-logo" src={APP_LOGO_URL} alt={t('brand.name')} draggable={false} />
           <h1 id="gugu-auth-title">{t('auth.welcome')}</h1>
@@ -117,20 +133,20 @@ export function LoginPage() {
         </header>
         <AnimatePresence initial={false}>
           {step === 'email' && <motion.form key="email" {...stepMotion(reduceMotion, -10)} onSubmit={handleRequestOtp} className="gugu-auth-form">
-            {googleLogin.available && (googleEnabled || (google.busy && google.phase !== 'failed')) && <Button type="button" variant="secondary" size="xl" className="gugu-auth-google"
+            {!registering && googleLogin.available && (googleEnabled || (google.busy && google.phase !== 'failed')) && <Button type="button" variant="secondary" size="xl" className="gugu-auth-google"
                 disabled={loading || otpRequestPending || google.phase === 'restoring' || google.phase === 'accepting' || (google.busy && google.phase === 'failed')}
                 onClick={() => { setError(''); void (google.busy ? googleLogin.cancel() : googleLogin.start()) }}>
                 <GoogleMark />{t(google.busy && google.phase !== 'failed' ? 'auth.google.cancel' : 'auth.google.signIn')}
             </Button>}
             {google.busy && google.phase !== 'failed' && <p role="status" className="gugu-auth-status">{t(google.phase === 'authorizing' ? 'auth.google.waiting' : 'auth.google.exchanging')}</p>}
-            {google.failure && <p role="alert" className="gugu-auth-error">{t(`auth.google.${google.failure}`)}</p>}
-            {google.notice && <p role="alert" className="gugu-auth-error">{t('auth.google.staleCallback')}</p>}
-            {googleLogin.available && googleEnabled && <div className="gugu-auth-divider">{t('auth.or')}</div>}
+            {google.failure && <LoginError message={t(`auth.google.${google.failure}`)} />}
+            {google.notice && <LoginError message={t('auth.google.staleCallback')} />}
+            {!registering && googleLogin.available && googleEnabled && <div className="gugu-auth-divider">{t('auth.or')}</div>}
             <label htmlFor="gugu-auth-email" className="gugu-auth-label">{t('auth.emailLabel')}</label>
             <input id="gugu-auth-email" className="gugu-auth-input" type="email" inputMode="email" autoComplete="email"
               value={email} placeholder={t('auth.emailPlaceholder')}
               onChange={(event) => { setEmail(event.target.value); setError(''); setSubmitFailed(false) }} />
-            {error && <p role="alert" className="gugu-auth-error">{error}</p>}
+            {error && <LoginError message={error} />}
             <PrimaryButton disabled={loading || google.busy || !email} loading={loading} label={t(submitFailed ? 'auth.retry' : 'auth.continue')} />
           </motion.form>}
           {step === 'otp' && <motion.form key="otp" {...stepMotion(reduceMotion, 10)} onSubmit={handleVerifyOtp} className="gugu-auth-form">
@@ -141,7 +157,7 @@ export function LoginPage() {
             <input id="gugu-auth-otp" className="gugu-auth-input gugu-auth-otp" type="text" inputMode="numeric" maxLength={6}
               value={otpCode} autoComplete="one-time-code" placeholder={t('auth.otpPlaceholder')}
               onChange={(event) => { setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); setSubmitFailed(false) }} />
-            {(otpSend.error || error) && <p role="alert" className="gugu-auth-error">{otpSend.error || error}</p>}
+            {(otpSend.error || error) && <LoginError message={otpSend.error || error} />}
             <PrimaryButton disabled={otpSend.phase !== 'sent' || otpCode.length !== 6 || loading || google.busy} loading={loading} label={t(submitFailed ? 'auth.retry' : 'auth.login')} />
             <div className="gugu-auth-actions">
               <Button type="button" variant="ghost" size="md" disabled={loading} onClick={handleChangeEmail}>{t('auth.changeEmail')}</Button>
@@ -151,6 +167,16 @@ export function LoginPage() {
             </div>
           </motion.form>}
         </AnimatePresence>
+        {signupConsentAdapter.enabled && !registering && step === 'email' && <div className="gugu-signup-consent-entry">
+          <Button type="button" variant="ghost" size="sm" disabled={loading || google.busy || otpRequestPending} onClick={() => {
+            otpSend.reset(); setEmail(''); setOtpCode(''); setError(''); setConsent(undefined); setRegistering(true)
+          }}>{t('auth.signup.start')}</Button>
+        </div>}
+        {registering && step === 'email' && <div className="gugu-signup-consent-entry">
+          <Button type="button" variant="ghost" size="sm" disabled={loading || otpRequestPending} onClick={() => {
+            otpSend.reset(); setRegistering(false); setConsent(undefined); setEmail(''); setOtpCode(''); setError('')
+          }}>{t('auth.signup.back')}</Button>
+        </div>}
         <p className="gugu-auth-legal"><Trans i18nKey="auth.legal" ns="main" components={{
           terms: <a href="https://gugu.nextmind.space/zh/terms.html" target="_blank" rel="noreferrer" />,
           privacy: <a href="https://gugu.nextmind.space/zh/privacy.html" target="_blank" rel="noreferrer" />,

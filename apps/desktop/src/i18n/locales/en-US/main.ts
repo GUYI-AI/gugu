@@ -413,6 +413,15 @@ export default {
     "subtitle": "Sign in and start working with AI",
     "brandSubtitle": "What you want to do, Gugu helps you get done.",
     "emailLabel": "Email",
+    "signup": {
+      "start": "Create an account",
+      "back": "Back to sign-in",
+      "agree": "Agree and continue",
+      "disagree": "Disagree",
+      "declined": "You cannot use Gugu without agreeing. Your email address will not be sent to us.",
+      "saveFailed": "Could not save your consent. Try again.",
+      "consentRequired": "Update Gugu before creating an account."
+    },
     "otpLabel": "Verification code",
     "or": "or",
     "invalidEmail": "Enter a valid email address.",

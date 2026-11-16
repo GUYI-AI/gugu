@@ -6,7 +6,8 @@ import { userVisibleAuthError } from './authErrors'
 import { rendererLogger } from './log'
 import { i18n } from '@/i18n'
 import { readDisplayIdentities } from './identityReadAdapter'
-import { runLoginOtpRequest, type LoginOtpMetadata } from './loginOtpTransport'
+import { loginOtpRequestKey, runLoginOtpRequest, type LoginOtpIntent, type LoginOtpMetadata } from './loginOtpTransport'
+import { signupConsentRequired, validSignupConsent } from './signupConsent'
 
 const authLog = rendererLogger('auth/otp')
 
@@ -27,7 +28,7 @@ export interface AuthResult {
   error?: string
 }
 
-export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number }
+export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number; reason?: 'signup_consent_required' }
 function loginOtpFailure(error: unknown, metadata: LoginOtpMetadata): LoginOtpResult {
   const detail = error as { status?: number; code?: string; message?: string } | undefined
   const status = metadata.status ?? detail?.status
@@ -37,7 +38,8 @@ function loginOtpFailure(error: unknown, metadata: LoginOtpMetadata): LoginOtpRe
     ? { status, code: detail?.code, message: detail?.message ?? String(error) } : error)
   return {
     success: false,
-    error: userVisibleAuthError(cause, 'sendOtp'),
+    error: signupConsentRequired(error, status) ? i18n.t('auth.signup.consentRequired', { ns: 'main' }) : userVisibleAuthError(cause, 'sendOtp'),
+    ...(signupConsentRequired(error, status) ? { reason: 'signup_consent_required' as const } : {}),
     ...(status === undefined ? {} : { status }),
     ...(detail?.code ? { code: detail.code } : {}),
     ...(limited ? { retryAfterSeconds: Math.max(1, metadata.retryAfterSeconds ?? (bodyWait ? Number(bodyWait) : 30)) } : {}),
@@ -72,16 +74,22 @@ export async function hydrateIdentityAuthUser(user: User, signal: AbortSignal): 
 }
 
 export const authService = {
-  requestLoginOtp(email: string): Promise<LoginOtpResult> {
+  requestLoginOtp(email: string, intent?: LoginOtpIntent): Promise<LoginOtpResult> {
+    if (intent?.kind === 'signup' && !validSignupConsent(intent.consent)) {
+      return Promise.resolve({ success: false, reason: 'signup_consent_required', error: i18n.t('auth.signup.consentRequired', { ns: 'main' }) })
+    }
     return runLoginOtpRequest(email, async (metadata) => {
       const nickname = email.split('@')[0] || 'User'
       const data: Record<string, unknown> = { nickname, display_name: nickname }
-      const referrer = consumePendingReferrer()
+      const referrer = intent?.kind === 'login' ? undefined : consumePendingReferrer()
       if (referrer) data.referrer_gugu_number = referrer
+      if (intent?.kind === 'signup') data.cross_border_consent = {
+        document_version: intent.consent.document_version, accepted_at: intent.consent.accepted_at,
+      }
       try {
         const { error } = await supabase.auth.signInWithOtp({
           email,
-          options: { shouldCreateUser: true, data }
+          options: { shouldCreateUser: intent?.kind !== 'login', data }
         })
         if (error)
           return loginOtpFailure(error, metadata)
@@ -93,7 +101,7 @@ export const authService = {
         )
         return loginOtpFailure(error, metadata)
       }
-    })
+    }, loginOtpRequestKey(email, intent))
   },
 
   async verifyLoginOtp(email: string, token: string): Promise<AuthResult> {
