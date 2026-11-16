@@ -40,6 +40,10 @@ describe('native creation skills', () => {
     expect(creationSkillsHostMethodMissing(Object.assign(new Error('EACCES: SKILL.md'), { code: 'skills_unavailable' }))).toBe(false)
     expect(creationSkillsHostMethodMissing(Object.assign(new Error('offline'), { code: 'unreachable' }))).toBe(false)
     expect(creationSkillsHostMethodMissing(new Error("No handler registered for 'another.route'"))).toBe(false)
+    for (const code of ['skills_unavailable', 'remote_call_refused', 'unreachable', 'EACCES']) {
+      expect(creationSkillsHostMethodMissing(Object.assign(new Error("No handler registered for 'sessionTimeline.sessionCreateSkills'"), { code }))).toBe(false)
+    }
+    expect(creationSkillsHostMethodMissing(new Error("Bad metadata: No handler registered for 'sessionTimeline.sessionCreateSkills'"))).toBe(false)
   })
 
 })
