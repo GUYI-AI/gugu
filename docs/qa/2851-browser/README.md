@@ -4,11 +4,11 @@
 
 These are controlled macOS browser renders of the real components, using the approved review fixtures. They are not native-app or physical-phone acceptance. Settings and IPC are controlled at their fixture boundary; no real external page, profile clearing or user account is used.
 
-After source: `769013b8aee3e8f3a6d240bcf62f7c237a39c27c`. This source also clears stale draft errors when the actual page URL changes; that transition is covered in the same focused behavior batch. The final spacing correction uses the existing integer spacing scale and all 24 cases were recaptured.
+After source: `c574674d519adec10d3e6eb86a7e98c628f74064`. This source also clears stale draft errors when the actual page URL changes; that transition is covered in the same focused behavior batch. The final spacing correction uses the existing integer spacing scale. Phone cells render the actual `PhoneBrowserToolbar` entry used by `PhoneTaskBrowser`; desktop cells keep `BrowserToolbar`. Touch geometry belongs to the phone entry, and the task renderer desktop-only guard is unchanged. All 24 cases were recaptured at this boundary.
 
 | Verified check | Result |
 | --- | --- |
-| Browser behavior tests on capture source | 8 passed |
+| Browser behavior tests on this phone-entry source | 8 passed |
 | TypeScript on production UI change | Passed |
 | Real component captures | 24 passed in 2 files |
 | Rejected address, desktop 800 CSS px | Visible alert, height 37px, clip auto; navigation button 28×28px |
@@ -16,3 +16,5 @@ After source: `769013b8aee3e8f3a6d240bcf62f7c237a39c27c`. This source also clear
 | Phone normal/loading, 360/390 CSS px, light/dark | All 3 navigation targets at least 44×44px, assertions passed |
 
 The [raw DOM observations](observations.json) retain measured dimensions. Exact-head PR CI remains the authority for the full repository checks.
+
+The final 8-test and 24-capture batches completed under the existing periodic resource guard; both child exits were zero and neither batch triggered a resource stop. Final exact-head CI is reported in PR checks.
