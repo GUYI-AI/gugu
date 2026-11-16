@@ -367,6 +367,7 @@ jobs:
           path: |
             apps/desktop/src/session/renderer/tests/browser/**/owner-phone-regression/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/mobile-create-model-copy.test.tsx/**/*.png
+            apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-create-thinking-fast-real-page.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-work-model-copy.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-composer-two-line-height.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-composer-height-real-entries.test.tsx/**/*.png
