@@ -1,9 +1,9 @@
-import { replica } from '../../lib/replica'
+import { replica, replicaAccount } from '../../lib/replica'
 import { createSelectStore } from '../../lib/selectStore'
 import { observeRendererSession } from '../../lib/sessionPublication'
 import { newestPackageOf } from '../../session/shared/extensions/app-card-state'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
-import { chatPackageCards, newestSharedPackages, packageKey, readPackageSummary, type PackageCard, type SharedPackage } from './sharedPackages'
+import { chatPackageCards, newestSharedPackages, packageKey, PackageUnavailableError, readPackageSummary, type PackageCard, type SharedPackage } from './sharedPackages'
 import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
 
 /** @@@chat-packages — App packages sent in chats (#6646, 摩擦单 F15 / F21 / F66), as replicas (@@@client-state-model). */
@@ -48,7 +48,10 @@ export function noteKeptCopy(key: string, sha256: string | null): void {
   if (sha256) keptCopies.set(key, sha256)
 }
 
-/** A package's summary by its source key; the bytes never change, so read once. `{ok: false}` is an answer, not an error. */
+/**
+ * A package's summary by its source key; the bytes never change, so read once. `{ok: false}` (not a package this build
+ * reads) is an answer; bytes not there or not read are an error, read again on retry (❌ remembered as unreadable).
+ */
 export const extensionPackageSummary = replica({
   name: 'extensionPackageSummary',
   scope: 'account',
@@ -71,8 +74,17 @@ export const sharedAppPackages = replica({
   scope: 'account',
   read: async (owner: string, chatId: string): Promise<SharedAppPackage[]> => {
     const cards = await chatPackageCards(chatId, owner)
-    const read = await Promise.all(cards.map(async (card) => ({ card, summary: await extensionPackageSummary.fetch(packageKey(card)) })))
-    const packages: SharedPackage[] = read.flatMap(({ card, summary }) => (summary.ok ? [{ manifest: summary.manifest, card }] : []))
+    // The summaries are read and kept for the account signed in now: another one since the cards were read ⇒ ❌ go on.
+    if (replicaAccount().id !== owner) throw new Error('The account changed while the chat\'s packages were read')
+    // A package whose bytes are not there offers no App (as one this build cannot read); any other failure fails the list.
+    const read = await Promise.all(cards.map(async (card) => ({
+      card,
+      summary: await extensionPackageSummary.fetch(packageKey(card)).catch((error: unknown) => {
+        if (error instanceof PackageUnavailableError) return null
+        throw error
+      }),
+    })))
+    const packages: SharedPackage[] = read.flatMap(({ card, summary }) => (summary?.ok ? [{ manifest: summary.manifest, card }] : []))
     return newestSharedPackages(packages).map(({ manifest, card }) => ({ appId: manifest.id, manifest, card }))
   },
   fresh: Infinity,

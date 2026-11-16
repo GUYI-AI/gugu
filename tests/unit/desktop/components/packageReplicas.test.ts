@@ -127,6 +127,39 @@ describe('extensionPackageSummary', () => {
   })
 })
 
+describe('a package whose bytes are not there (F1-4)', () => {
+  it('is the reading\'s error, read again on retry (❌ remembered as unreadable for ever)', async () => {
+    const { extensionPackageSummary } = await load()
+    const vote = pkg('vote', '1.0.0')
+    const key = `url:${vote.source.url}`
+    download.mockResolvedValueOnce({ status: 'expired' } as never)
+    await expect(extensionPackageSummary.fetch(key)).rejects.toThrow()
+    expect(extensionPackageSummary.peek(key).state).toBe('error')
+    await extensionPackageSummary.refresh(key)
+    expect(await extensionPackageSummary.fetch(key)).toMatchObject({ ok: true })
+  })
+
+  it('offers no App in the chat\'s list, the others still listed (❌ the whole list failed)', async () => {
+    const { sharedAppPackages } = await load()
+    files.set('chat-1', [pkg('vote', '1.0.0'), pkg('poll', '2.0.0')])
+    download.mockImplementationOnce(async () => ({ status: 'gone' }) as never)
+    expect((await sharedAppPackages.fetch('chat-1')).map((shared) => shared.appId)).toEqual(['poll'])
+  })
+
+  it('a chat\'s list read across an account switch does not go on (❌ the summaries read and kept for the next account)', async () => {
+    const { sharedAppPackages, replica } = await load()
+    files.set('chat-1', [pkg('vote', '1.0.0')])
+    let release!: () => void
+    getChatFiles.mockImplementationOnce(async (chatId: string) => { await new Promise<void>((resolve) => { release = resolve }); return files.get(chatId) ?? [] })
+    const read = sharedAppPackages.fetch('chat-1')
+    await vi.waitFor(() => expect(getChatFiles).toHaveBeenCalled())
+    replica.followRendererSession('SIGNED_IN', 'other')
+    release()
+    await expect(read).rejects.toThrow()
+    expect(download).not.toHaveBeenCalled()
+  })
+})
+
 describe('one summary per package, whoever asks', () => {
   // The card knows the message's sha256, a chat's list does not: both read the one entry of the package, one download.
   it('the card (with the bytes\' record) and the chat list (without) share one read', async () => {

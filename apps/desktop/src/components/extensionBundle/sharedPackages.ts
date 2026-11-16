@@ -46,16 +46,25 @@ export function sourceOfPackageKey(key: string): AttachmentSource {
 /**
  * What a package holds, read from its bytes. `sha256`: the message's own record of the bytes — a copy this device already
  * keeps (sent from here, or read before — `attachmentBytes` keeps every full read) is read from disk, as a thumbnail is: no
- * signing, no download. The install still reads the package again, authorized. A package deleted from the group folder, or
- * one that is not a package this build reads, is an answer (`ok: false`); a read that failed (the network) throws.
+ * signing, no download. The install still reads the package again, authorized. One that is not a package this build reads
+ * is an answer (`ok: false`); bytes not there (deleted from the group folder, expired, missing) throw
+ * `PackageUnavailableError`, a read that failed (the network) throws: neither is kept, the next read asks again.
  */
 export async function readPackageSummary(key: string, sha256: string | null, progress: (done: number, total: number) => void): Promise<ExtensionBundleSummary> {
   const kept = await cachedAttachmentCopy(sha256).catch(() => null)
   const bytes = kept ? null : await attachmentBytes(sourceOfPackageKey(key), 'full', undefined, undefined, progress)
-  if (bytes && bytes.status !== 'ready') return { ok: false, problem: 'the package was deleted from the group folder' }
+  if (bytes && bytes.status !== 'ready') throw new PackageUnavailableError(bytes.status)
   const summary = await summarizeExtensionBundle(new Uint8Array(await (kept ?? bytes!.blob).arrayBuffer()), __APP_VERSION__)
   if (!summary.ok) log.warn({ package: key, problem: summary.problem }, 'extension package in chat could not be read')
   return summary
+}
+
+/** A package's bytes are not there (deleted from the group folder, expired, missing): no App to offer from it. */
+export class PackageUnavailableError extends Error {
+  constructor(status: string) {
+    super(`the package is not in the group folder (${status})`)
+    this.name = 'PackageUnavailableError'
+  }
 }
 
 /** A package somebody sent in a chat: the App it holds, and its card. */
