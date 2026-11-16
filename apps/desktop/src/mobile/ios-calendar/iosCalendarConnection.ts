@@ -1,7 +1,6 @@
 import { replica } from '@/lib/replica'
 import { iosCalendarPermissions, type IOSCalendarPermissionClient, type IOSCalendarSnapshot } from './iosCalendarPermissions'
 
-/** The native calendar client the replica and the connection commands use; a test sets its own (`setIOSCalendarClientForTesting`). */
 let client: IOSCalendarPermissionClient = iosCalendarPermissions
 
 /** Test seam: the native client behind the replica and the commands (undefined = the real one). */
@@ -27,8 +26,3 @@ export const iosCalendarConnection = replica({
   fresh: 0,
   persist: { maxBytes: 512, maxEntries: 1 },
 })
-
-/** Read again from scratch: what was shown is dropped (unknown) until the native answer lands; a read on its way is replaced. */
-export function recheckIOSCalendarConnection(): Promise<void> {
-  return iosCalendarConnection.reset()
-}

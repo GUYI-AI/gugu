@@ -68,11 +68,7 @@ function rpcErrorCode(err: unknown): string | null {
 /** A new session's first prompt and the client message id its create request gave it. */
 export type FirstPrompt = { id: string; text: string; sentAt: number }
 
-/**
- * 和那台机器的链路(TimelineLink):connecting —— 正在(重新)快照 + 订阅;ok —— 订阅上了,窗口通着;
- * lost —— 读不出来 / 补缺口失败 / 窗口断了。状态本身在 timeline-cache.ts 的会话流 store 里。
- */
-export type { AgentWatchPhase, TimelineLink } from './timeline-cache'
+export type { AgentWatchPhase } from './timeline-cache'
 
 
 export type AgentWatchSession = {
@@ -155,22 +151,15 @@ export function useTimelineSession(
   firstPrompt?: FirstPrompt,
 ): AgentWatchSession {
   /*
-   * 内存里有上次看到的那一份就拿它当**初值**:第一帧就是完整的时间线。❌ 先画一帧空线程、再在下面的 effect 里换上 ——
-   * 那一帧(真机几百 ms)里写的是「Nothing in this task yet」,随后整段历史从透明淡入、再跳到底:
-   * owner 10-12「进运行中的任务页,一进去就颤两下」。下面 effect 里那次读照旧,换会话时靠它。
-   */
-  /*
-   * 这条会话流的状态在 timeline-cache.ts 的会话流 store 里(按会话分键,流引擎自己的状态):重挂载、换页回来都从
-   * 上次那一份接着画,❌ 先画一帧空线程。还没跟过这条会话时,首帧是内存里上次看到的那一份(或空 + loading)。
+   * 这条会话流的状态在 timeline-cache.ts 的会话流 store 里(按会话分键):重挂载、换页回来都从上次那一份接着画;还没跟过
+   * 这条会话时,首帧是内存里上次看到的那一份(或空 + loading)。❌ 先画一帧空线程 —— 那一帧里写的是「Nothing in this
+   * task yet」,随后整段历史淡入、再跳到底:owner 10-12「进运行中的任务页,一进去就颤两下」。
    */
   const streamKey = useMemo(() => (deviceId && sessionId ? { deviceId, sessionId } : null), [deviceId, sessionId])
   const followed = useSelect(sessionStreams, (map) => (streamKey ? map.get(sessionStreamKey(streamKey)) : undefined), Object.is)
   const initial = useMemo(() => (streamKey ? initialSessionStream(streamKey, client.boundedWindow) : NO_STREAM), [streamKey, client.boundedWindow])
-  const stream = followed ?? initial
-  const { timeline, phase, error, link, errorCode, waitingForRecord } = stream
-  // The subscription writes into the store (one writer per session stream).
-  const writers = useMemo(() => streamWriters(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
-  const { setTimeline } = writers
+  const { timeline, phase, error, link, errorCode, waitingForRecord } = followed ?? initial
+  const { setTimeline } = useMemo(() => streamWriters(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
   // 动作失败与读失败分开存:两者的标题、位置、能做的补救都不是一回事 ——
   // 发送失败时时间线好端端在那儿,套上「打不开时间线 + 重新读取」是在骗人。
   const [actionError, setActionError] = useState<string | null>(null)
@@ -196,7 +185,6 @@ export function useTimelineSession(
     if (deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled })
   }, [client, deviceId, sessionId, enabled])
 
-  // The session's host stream is followed once, however many pages show it (ref-counted, `attachSessionFollow`).
   useEffect(() => {
     if (!deviceId || !sessionId) return
     return attachSessionFollow({ client, deviceId, sessionId, enabled }, () => { olderGeneration.current++ })
@@ -308,9 +296,9 @@ export function useTimelineSession(
     const body = text.trim()
     if (!body) return
     // 按下发送就画出来(pending-sends.ts 说了为什么):那台机器上的 agent 没在跑时,这次往返要先等它起来。
-    // 还没和机器对过账就不画(syncedRef 那条注释):认不准回显的乐观行宁可不要,退回等记录回来。
+    // 还没和机器对过账就不画(SessionFollow.synced):认不准回显的乐观行宁可不要,退回等记录回来。
     const key = `${deviceId}/${sessionId}`
-    const pendingId = deviceId && sessionId && sessionFollowSynced({ client, deviceId, sessionId, enabled }) ? `pending:${newLocalId()}` : null
+    const pendingId = deviceId && sessionId && follows.get(followKey({ client, deviceId, sessionId, enabled }))?.synced ? `pending:${newLocalId()}` : null
     // 受理/失败回来时人可能已经换到别的会话、在那边又发了一句:只动还是这条会话的那一份,❌ 把别人的清掉。
     const update = (next: (sends: readonly PendingSend[]) => readonly PendingSend[]) =>
       setPendingState((current) => (current.key === key ? { key, sends: next(current.sends) } : current))
@@ -375,8 +363,6 @@ export function useTimelineSession(
   }
 }
 
-// ── following a session's host stream: once per session, however many pages show it ─────────────────────────────
-
 type FollowParams = { client: SessionpageTimelineClient; deviceId: string; sessionId: string; enabled: boolean }
 /**
  * One follow of a session's host stream (its subscription, catch-up and retries), shared by every page that shows the
@@ -423,7 +409,7 @@ function streamWriters(streamKey: { deviceId: string; sessionId: string } | null
 }
 
 /** Follow a session's host stream from one more page; returns the detach. `onOlderReset` hears a reset / resolution. */
-export function attachSessionFollow(params: FollowParams, onOlderReset: () => void): () => void {
+function attachSessionFollow(params: FollowParams, onOlderReset: () => void): () => void {
   const key = followKey(params)
   let follow = follows.get(key)
   if (!follow) {
@@ -447,16 +433,11 @@ export function attachSessionFollow(params: FollowParams, onOlderReset: () => vo
 }
 
 /** Start the session's follow over (a snapshot generation change, a reopened link, the reload button). */
-export function restartSessionFollow(params: FollowParams): void {
+function restartSessionFollow(params: FollowParams): void {
   const follow = follows.get(followKey(params))
   if (!follow) return
   follow.stop()
   follow.stop = runSessionFollow(follow)
-}
-
-/** Whether the followed session has been squared with its machine once (see SessionFollow.synced). */
-function sessionFollowSynced(params: FollowParams): boolean {
-  return follows.get(followKey(params))?.synced === true
 }
 
 function runSessionFollow(follow: SessionFollow): () => void {
@@ -514,7 +495,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的读失败按既有退避自动补几次，
    * 耗尽才交统一出口，期间不把重试按钮留给用户；窗口重开、回前台也能重新驱动。
    * 失败耗尽后仍如实报原文，补上了就收回这一条 —— 别的路报的错(比如订阅没订上)不归这里管。
-   * 补上一次就算和那台机器对过账了(syncedRef)。
+   * 补上一次就算和那台机器对过账了(follow.synced)。
    */
   let catchUpReported = false
   let catchUpRunning = false

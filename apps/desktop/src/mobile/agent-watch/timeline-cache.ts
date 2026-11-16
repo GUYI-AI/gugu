@@ -5,7 +5,7 @@ import { emptyAgentWatchTimeline } from './agent-watch-store'
 import { getAgentWatchStore, type AgentWatchLocalStore, type LocalRow } from '@/session/shared/remote-sessions/local-store'
 import { isDeepEqual } from '@gugu/session-shared'
 import { mergeNativeRecordPage } from './native-record-state'
-import { createSelectStore, type Readable } from '@/lib/selectStore'
+import { createSelectStore, type Readable, type SelectStore } from '@/lib/selectStore'
 import { observeRendererSession } from '@/lib/sessionPublication'
 
 /**
@@ -431,14 +431,24 @@ export function forgetInMemoryTimelines(): void {
   nativeMemory.clear()
   nativeStored.clear()
   // The sessions' live stream state is the in-memory layer of the same engine.
-  if (streams.get().size > 0) { streams.publish(new Map()); streams.notify() }
-  if (nativeStreams.get().size > 0) { nativeStreams.publish(new Map()); nativeStreams.notify() }
-  if (sessionpageFacts.get().size > 0) { sessionpageFacts.publish(new Map()); sessionpageFacts.notify() }
+  for (const store of [streams, nativeStreams, sessionpageFacts]) {
+    if (store.get().size > 0) { store.publish(new Map()); store.notify() }
+  }
+}
+
+/** Put one entry of a keyed stream store; `undefined` removes it. */
+function putEntry<T>(store: SelectStore<ReadonlyMap<string, T>>, id: string, next: T | undefined): void {
+  if (next === store.get().get(id)) return
+  const map = new Map(store.get())
+  if (next === undefined) map.delete(id)
+  else map.set(id, next)
+  store.publish(map)
+  store.notify()
 }
 
 // ── a session's live stream state (the stream engine's own state, @@@client-state-model §1) ──────────────────────────
 
-/** Whether this side is linked to the session's host stream right now. */
+/** The link to the session's host: (re)snapshotting + subscribing / subscribed / unreadable, catch-up failed or window closed. */
 export type TimelineLink = 'connecting' | 'ok' | 'lost'
 /** Where the session's first picture stands: still loading, shown, or could not be read (and nothing to show). */
 export type AgentWatchPhase = 'loading' | 'ready' | 'error'
@@ -474,26 +484,17 @@ export function initialSessionStream(key: TimelineCacheKey, boundedWindow = fals
 /** Write one session's stream state (from its subscription). */
 export function updateSessionStream(key: TimelineCacheKey, change: (current: SessionStreamState) => SessionStreamState, boundedWindow = false): void {
   const id = sessionStreamKey(key)
-  const current = streams.get().get(id) ?? initialSessionStream(key, boundedWindow)
-  const next = change(current)
-  if (next === streams.get().get(id)) return
-  streams.publish(new Map(streams.get()).set(id, next))
-  streams.notify()
-}
-
-/** Sign-out / another account: every session's stream state and in-memory timeline belonged to the previous one. */
-export function forgetSessionStreams(): void {
-  forgetInMemoryTimelines()
+  putEntry(streams, id, change(streams.get().get(id) ?? initialSessionStream(key, boundedWindow)))
 }
 
 let streamAccount: string | null = null
 observeRendererSession(({ event, session }) => {
   const next = session?.user.id ?? null
   if (next) {
-    if (streamAccount && streamAccount !== next) forgetSessionStreams()
+    if (streamAccount && streamAccount !== next) forgetInMemoryTimelines()
     streamAccount = next
   } else if (event === 'SIGNED_OUT') {
-    if (streamAccount) forgetSessionStreams()
+    if (streamAccount) forgetInMemoryTimelines()
     streamAccount = null
   }
 })
@@ -522,15 +523,11 @@ export function initialNativeRecordStream(key: TimelineCacheKey, enabled: boolea
 
 export function updateNativeRecordStream(key: TimelineCacheKey, change: (current: NativeRecordStreamState) => NativeRecordStreamState, enabled = true): void {
   const id = sessionStreamKey(key)
-  const current = nativeStreams.get().get(id) ?? initialNativeRecordStream(key, enabled)
-  const next = change(current)
-  if (next === nativeStreams.get().get(id)) return
-  nativeStreams.publish(new Map(nativeStreams.get()).set(id, next))
-  nativeStreams.notify()
+  putEntry(nativeStreams, id, change(nativeStreams.get().get(id) ?? initialNativeRecordStream(key, enabled)))
 }
 
 /** What the chat page reads of a desktop task session's timeline: its recent actions and its open settlements. */
-export type SessionpageTimelineFacts = {
+type SessionpageTimelineFacts = {
   recentActions: { actions: string[]; lastActionAt: string | null } | null
   settlements: Readonly<Record<string, Settlement>>
 }
@@ -544,12 +541,5 @@ export const sessionpageTimelineFacts: Readable<ReadonlyMap<string, SessionpageT
 
 /** Write a session's facts; `undefined` from `change` forgets them (the session is not followed any more). */
 export function updateSessionpageFacts(sessionId: string, change: (current: SessionpageTimelineFacts | undefined) => SessionpageTimelineFacts | undefined): void {
-  const current = sessionpageFacts.get().get(sessionId)
-  const next = change(current)
-  if (next === current) return
-  const map = new Map(sessionpageFacts.get())
-  if (next === undefined) map.delete(sessionId)
-  else map.set(sessionId, next)
-  sessionpageFacts.publish(map)
-  sessionpageFacts.notify()
+  putEntry(sessionpageFacts, sessionId, change(sessionpageFacts.get().get(sessionId)))
 }

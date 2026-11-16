@@ -9,6 +9,7 @@ import { replica, useReplica } from '@/lib/replica'
 import { useSelect } from '@/lib/selectStore'
 import { lifeReadable, readLifeVia, watchLife } from '@renderer/features/sessions/stores/session-life-views'
 import { phoneLifeRoute } from './useSessionLifeView'
+import { recoverTimelineRead } from './timeline-read-recovery'
 
 /** A session's row on its machine, as far as a restart needs it (PR 5 folds the session rows into one store). */
 const restartSessionRow = replica({
@@ -20,7 +21,6 @@ const restartSessionRow = replica({
   },
   fresh: 0,
 })
-import { recoverTimelineRead } from './timeline-read-recovery'
 
 type RestartAttempt = { key: string; afterVersion: number }
 

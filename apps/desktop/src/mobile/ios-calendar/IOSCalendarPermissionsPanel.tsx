@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { platform } from '@/platform'
 import { IOSCalendarPermissionError, type IOSCalendarSnapshot } from './iosCalendarPermissions'
-import { iosCalendarClient, iosCalendarConnection, recheckIOSCalendarConnection } from './iosCalendarConnection'
+import { iosCalendarClient, iosCalendarConnection } from './iosCalendarConnection'
 import { useReplica } from '@/lib/replica'
 import { waitForCalendarAppActive } from './waitForCalendarAppActive'
 
@@ -62,8 +62,7 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
     : shownChange?.kind === 'failed' ? { ownerId, kind: 'failed', message: shownChange.message }
     : shownFailure ? { ownerId, kind: 'failed', message: shownFailure.message }
     : reading.state === 'unknown' ? { ownerId, kind: 'loading' }
-    : reading.state === 'error' ? { ownerId, kind: 'failed', message: failureMessage(reading.error) }
-    : reading.error ? { ownerId, kind: 'failed', message: failureMessage(reading.error) }
+    : reading.state === 'error' || reading.error ? { ownerId, kind: 'failed', message: failureMessage(reading.error) }
     : { ownerId, kind: 'ready', status: reading.value, ...(shownChange?.kind === 'settled' && shownChange.message ? { message: shownChange.message } : {}) }
 
   // Read again (the reload button, the App back in front): the shown state is dropped while it is checked.
@@ -72,7 +71,8 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
     if (mutation.current) return
     setChange(null)
     setObserverFailure(null)
-    void recheckIOSCalendarConnection()
+    // Dropped (unknown) until the native answer lands; a read on its way is replaced.
+    void iosCalendarConnection.reset()
   }, [])
 
   const changeConnection = async (operation: 'connect' | 'disconnect') => {

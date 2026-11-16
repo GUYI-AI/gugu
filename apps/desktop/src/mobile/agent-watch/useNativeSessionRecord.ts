@@ -22,7 +22,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
   const followed = useSelect(nativeRecordStreams, (map) => map.get(sessionStreamKey(streamKey)), Object.is)
   const initial = useMemo(() => initialNativeRecordStream(streamKey, enabled), [streamKey, enabled])
   const { record, error, errorCode, unreachable, confirmed } = followed ?? initial
-  const writers = useMemo(() => {
+  const { setRecord, setError, setErrorCode, setUnreachable, setConfirmed } = useMemo(() => {
     const field = <K extends keyof NativeRecordStreamState>(name: K) =>
       (value: NativeRecordStreamState[K] | ((current: NativeRecordStreamState[K]) => NativeRecordStreamState[K])) =>
         updateNativeRecordStream(streamKey, (current) => {
@@ -31,7 +31,6 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
         }, enabled)
     return { setRecord: field('record'), setError: field('error'), setErrorCode: field('errorCode'), setUnreachable: field('unreachable'), setConfirmed: field('confirmed') }
   }, [streamKey, enabled])
-  const { setRecord, setError, setErrorCode, setUnreachable, setConfirmed } = writers
   const epoch = useRef(0)
   const recoveryAbort = useRef(new AbortController())
   const key = `${deviceId}/${sessionId}`
