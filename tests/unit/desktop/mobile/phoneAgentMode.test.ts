@@ -78,9 +78,6 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-describe('the OS state the runtime decides on (F2-3)', () => {
-})
-
 describe('one phone endpoint owns registration and RPC', () => {
   it.each([false, true])('restarts after native exit without reading or removing the device row (snapshot unreadable: %s)', async (unreadable) => {
     const exiting = deferred()
