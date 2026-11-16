@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { page } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
@@ -80,7 +80,7 @@ async function mount() {
   await renderWithAppProviders(harness, <LocalizationProvider><SessionUiTheme theme="dark"><Conversation /></SessionUiTheme></LocalizationProvider>,
     { auth: { id: 'owner' }, chat: { chats }, contacts: { contacts: [] } })
   await page.getByTestId('agent-watch-create-model-device').click()
-  await until('phone Work reads native thinking options', () => !!document.querySelector('[data-testid="agent-watch-create-controls-sheet"] [data-slot="composer-effort-row"]'))
+  await until('phone Work reads native thinking options', () => !!document.querySelector('[data-testid="agent-watch-create-controls-sheet"] [data-testid="phone-thinking-options"]'))
   await until('phone Work is fully visible', () => getComputedStyle(document.querySelector('[data-testid="agent-watch-create-controls-sheet"]')!).opacity === '1')
   await Promise.all(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-controls-sheet"]')!.getAnimations().map(animation => animation.finished))
   await document.fonts.ready
@@ -94,40 +94,41 @@ afterEach(() => {
   host.set.mockClear(); host.supported = true; host.fast = 'off'; host.effort = 'medium'
 })
 
-it('the actual phone Work entry receives Fast and thinking settings, uses the shared axis and sends real setting actions', async () => {
+it('the actual phone Work entry receives Fast and thinking settings, uses advertised text choices and sends real setting actions', async () => {
   await mount()
   const panel = page.getByTestId('agent-watch-create-controls-sheet')
   const toggle = panel.getByRole('button', { name: '快速', exact: true })
   await expect.element(toggle).toHaveAttribute('aria-pressed', 'false')
   expect(document.querySelector('[data-testid="composer-model-trigger"]')).toBeNull()
   const button = document.querySelector<HTMLElement>('[data-testid="agent-watch-create-controls-sheet"] [data-fast-mode-toggle]')!
-  const track = document.querySelector<HTMLElement>('[data-slot="composer-effort-indicator"]')!.parentElement!
-  const a = button.getBoundingClientRect(), b = track.getBoundingClientRect()
-  expect(Math.abs(a.y + a.height / 2 - b.y - b.height / 2)).toBeLessThan(1)
-  expect(Math.abs(a.x - b.right - 8)).toBeLessThan(0.5)
+  expect(document.querySelector('[data-testid="phone-thinking-options"] input[type="range"]')).toBeNull()
+  const a = button.getBoundingClientRect()
   expect(a.height).toBe(44)
   expect(button.firstElementChild!.getBoundingClientRect().height).toBe(32)
   expect(getComputedStyle(button.firstElementChild!).fontSize).toBe('13px')
   expect(button.querySelector('svg')!.getBoundingClientRect().width).toBe(14)
-  await page.screenshot({ path: '__screenshots__/phone-work-fast-off.png' })
+  await page.screenshot({ path: '__screenshots__/owner-phone-regression/G-existing-fast-off.png' })
   await toggle.click()
   await expect.element(toggle).toHaveAttribute('aria-pressed', 'true')
   expect(host.set).toHaveBeenCalledWith('fast', 'on')
-  await page.screenshot({ path: '__screenshots__/phone-work-fast-on.png' })
-  const range = document.querySelector<HTMLInputElement>('[data-slot="composer-effort-row"] input[type="range"]')!
-  range.focus()
-  await userEvent.keyboard('{ArrowRight}')
+  await page.screenshot({ path: '__screenshots__/owner-phone-regression/G-existing-fast-on.png' })
+  const high = document.querySelector<HTMLElement>('[data-testid="phone-thinking-options"] [data-option-id="high"]')!
+  await page.elementLocator(high).click()
   await until('phone Work commits native effort', () => host.set.mock.calls.some(([dimension, value]) => dimension === 'effort' && value === 'high'))
   await expect.element(toggle).toHaveAttribute('aria-pressed', 'true')
   expect(host.set.mock.calls.filter(([dimension]) => dimension === 'model')).toHaveLength(0)
   expect(document.querySelector('[data-slot="composer-toolbar"] [data-fast-mode-toggle]')).toBeNull()
   expect(document.body.textContent).not.toContain('更快，消耗更多额度')
+  await page.screenshot({ path: '__screenshots__/owner-phone-regression/F-existing-thinking-high.png' })
+  await toggle.click()
+  await expect.element(toggle).toHaveAttribute('aria-pressed', 'false')
+  expect(host.set).toHaveBeenCalledWith('fast', 'off')
 })
 
 it('the same phone Work entry retains thinking but hides Fast when the host advertises no eligible capability', async () => {
   host.supported = false
   await mount()
   expect(document.querySelector('[data-testid="agent-watch-create-controls-sheet"] [data-fast-mode-toggle]')).toBeNull()
-  expect(document.querySelector('[data-slot="composer-effort-indicator"]')).not.toBeNull()
+  expect(document.querySelectorAll('[data-testid="phone-thinking-options"] [role="radio"]')).toHaveLength(3)
   expect(host.set).not.toHaveBeenCalled()
 })
