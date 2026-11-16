@@ -17,9 +17,9 @@ export function setInnerSidebarFolded(folded: boolean): void {
 }
 
 /**
- * 正文左上角此刻浮着一枚展开钮,那里那条页签条要给它让车道:左边列表整列让开(没有收起宽)时的「展开侧栏」,
- * 或内层栏收起时的「展开内层栏」。读 mobx,调用方是 observer。
+ * 正文左上角此刻浮着一枚展开钮,那里那条页签条要给它让车道:内层栏收起时的「展开内层栏」(左边列表收起成一列头像,
+ * 从不整列让开,所以没有「展开侧栏」那一枚)。读 mobx,调用方是 observer。
  */
-export function shellRestoreLaneTaken(isLeftOpen: boolean, leftRail: number): boolean {
-  return (!isLeftOpen && leftRail === 0) || innerSidebarFoldedAway.get();
+export function shellRestoreLaneTaken(): boolean {
+  return innerSidebarFoldedAway.get();
 }
