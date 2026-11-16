@@ -62,3 +62,12 @@ it('a failed foreground subscription does not fail the read the page made on ope
   await act(async () => { read.resolve('granted') })
   expect(value()).toEqual({ states: { notifications: 'granted' }, failed: false })
 })
+
+it('a check that fails after an earlier answer says it failed and stops showing the earlier answer (❌ it as the state now)', async () => {
+  mocks.check.mockResolvedValueOnce('granted').mockRejectedValueOnce(new Error('the system did not answer'))
+  await render(['notifications'])
+  await vi.waitFor(() => expect(value()).toEqual({ states: { notifications: 'granted' }, failed: false }))
+  // The person switched it off in system settings; coming back, the check fails.
+  await act(async () => { mocks.foreground!() })
+  await vi.waitFor(() => expect(value()).toEqual({ states: {}, failed: true }))
+})

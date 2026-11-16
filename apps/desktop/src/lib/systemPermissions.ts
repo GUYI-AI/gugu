@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { rendererLogger } from './log'
 import { replica, useReplicas } from './replica'
 import { platform } from '../platform'
@@ -73,31 +73,23 @@ export async function changeSystemPermission(permission: SystemPermission, state
 
 export type SystemPermissionStates = Partial<Record<SystemPermission, SystemPermissionState>>
 
+const permissionLog = rendererLogger('system-permissions')
+
 /**
  * 一项系统权限此刻的真值(device):挂上时读,App 每次回到前台再读(信号档:用户从系统设置改完回来,这里立刻重读)。
- * 留一份跨重启的值只为首帧有东西画(标成 stale,同时重读),❌ 拿它冒充当下:挂上就重读(`fresh: 0`)。
+ * ❌ 缓存 / 持久化:显示的永远是刚问过系统的那一份;读不到就明说读不到,❌ 留着上一次的值冒充当下。
  */
 export const systemPermission = replica({
   name: 'systemPermission',
   scope: 'device',
   read: (_device: string, permission: SystemPermission): Promise<SystemPermissionState> => platform.checkSystemPermission(permission),
-  persist: { maxBytes: 160, maxEntries: 8 },
-})
-
-const permissionLog = rendererLogger('system-permissions')
-// The foreground watch is shared: on while any surface shows a permission.
-let foregroundWatchers = 0
-let stopForeground: (() => void) | null = null
-function watchForeground(): () => void {
-  if (foregroundWatchers++ === 0) {
-    stopForeground = platform.subscribeAppForeground(() => { void systemPermission.refresh() }, (error) => {
+  // The foreground watch is shared: on while any surface shows a permission.
+  watch: {
+    start: () => platform.subscribeAppForeground(() => { void systemPermission.refresh() }, (error) => {
       permissionLog.error({ error: String(error) }, 'could not watch the app coming back to the foreground; permissions are read on open only')
-    })
-  }
-  return () => {
-    if (--foregroundWatchers === 0) { stopForeground?.(); stopForeground = null }
-  }
-}
+    }),
+  },
+})
 
 /**
  * 读系统真值(见 `systemPermission`)。没有 `systemPermissions` 能力位的宿主上什么都不读,`states` 恒为空。
@@ -111,18 +103,19 @@ export function useSystemPermissionStates(permissions: readonly SystemPermission
   // 只读宿主报得出的那几项 —— 调用方问了别的(例如「通用 → 通知」在桌面问通知),
   // 读不到就是读不到,❌ 不去试一把再吞掉异常。
   const key = permissions.filter((permission) => platform.systemPermissions.includes(permission)).join(',')
-  const enabled = key !== ''
   const wanted = useMemo(() => (key ? key.split(',') as SystemPermission[] : []), [key])
   const readings = useReplicas(systemPermission, wanted.map((permission) => [permission] as [SystemPermission]))
-  useEffect(() => (enabled ? watchForeground() : undefined), [enabled])
   const refresh = useCallback(async () => {
     await Promise.all(wanted.map((permission) => systemPermission.refresh(permission)))
   }, [wanted])
+  // 读不到就明说读不到(调用方渲染提示):一次重读失败也是读不到,这时不交上一次的值。
+  const failed = readings.some((reading) => reading.state === 'error' || (reading.state === 'value' && !!reading.error))
   const states: SystemPermissionStates = {}
-  wanted.forEach((permission, index) => {
-    const reading = readings[index]!
-    if (reading.state === 'value') states[permission] = reading.value
-  })
-  // 读不到就明说读不到(调用方渲染提示)。
-  return { states, refresh, failed: readings.some((reading) => reading.state === 'error') }
+  if (!failed) {
+    wanted.forEach((permission, index) => {
+      const reading = readings[index]!
+      if (reading.state === 'value') states[permission] = reading.value
+    })
+  }
+  return { states, refresh, failed }
 }
