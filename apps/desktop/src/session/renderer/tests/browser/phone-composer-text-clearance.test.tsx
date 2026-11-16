@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
@@ -52,15 +52,48 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light'] as const) 
     const editor = composer.querySelector<HTMLElement>('[contenteditable]')!
     const input = composer.querySelector<HTMLElement>('[data-slot="composer-input"]')!
     const engine = (editor as HTMLElement & { editor: { commands: { setContent: (value: string) => void } } }).editor
+    const readDom = () => ({
+      connected: composer.isConnected && editor.isConnected,
+      textMatches: editor.textContent === text,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      phoneCapsule: composer.hasAttribute('data-phone-capsule'),
+      controls: ['editor-toggle', 'attachment', 'send'].map(key => {
+        const button = composer.querySelector<HTMLElement>(`[data-phone-${key}]`)
+        const box = button?.getBoundingClientRect()
+        return { key, exists: !!button, width: box?.width ?? 0, height: box?.height ?? 0,
+          display: button ? getComputedStyle(button).display : null }
+      }),
+      html: composer.outerHTML,
+    })
+    let lastDom = readDom()
+    onTestFailed(({ task }) => {
+      const reason = new Error(`Phone composer DOM at failure: ${JSON.stringify(lastDom)}`)
+      task.result?.errors?.push({ name: reason.name, message: reason.message, stack: reason.stack })
+    })
     engine.commands.setContent(`<p>${text}</p>`)
-    await until('dense text rendered with its attachment control', () => editor.textContent === text
-      && getComputedStyle(composer.querySelector<HTMLElement>('[data-phone-attachment]')!).display !== 'none')
+    // Text can commit before the multiline controls mount. Wait on the actual boxes, not a frame delay.
+    try {
+      await vi.waitFor(() => {
+        lastDom = readDom()
+        expect(lastDom.connected && lastDom.textMatches).toBe(true)
+        expect(lastDom.viewport.width).toBe(width)
+        for (const control of lastDom.controls) {
+          expect(control.exists, `${control.key} exists`).toBe(true)
+          expect(control.width, `${control.key} width`).toBeGreaterThan(0)
+          expect(control.height, `${control.key} height`).toBeGreaterThan(0)
+          expect(control.display, `${control.key} display`).not.toBe('none')
+        }
+      }, { interval: 16, timeout: 45_000 })
+    } catch (cause) {
+      lastDom = readDom()
+      throw new Error(`Phone controls did not become measurable: ${JSON.stringify(lastDom)}`, { cause })
+    }
     await document.fonts.ready
-    await new Promise(requestAnimationFrame)
     input.scrollTop = 0
     const glyphs = visibleGlyphs(editor, input.getBoundingClientRect())
     expect(glyphs.length).toBeGreaterThan(0)
     for (const key of ['editor-toggle', 'attachment', 'send']) {
+      lastDom = readDom()
       const button = composer.querySelector<HTMLElement>(`[data-phone-${key}]`)!
       expect(button).not.toBeNull()
       expect(getComputedStyle(button).display).not.toBe('none')
