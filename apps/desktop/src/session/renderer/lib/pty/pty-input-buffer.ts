@@ -214,10 +214,10 @@ class LineEditor {
           this.cursor = this.lineBuffer.length;
           break;
         case 'move-left':
-          this.cursor = Math.max(0, this.cursor - action.count);
+          for (let step = 0; step < action.count && this.cursor > 0; step += 1) this.cursor = this.previousOffset(this.cursor);
           break;
         case 'move-right':
-          this.cursor = Math.min(this.lineBuffer.length, this.cursor + action.count);
+          for (let step = 0; step < action.count && this.cursor < this.lineBuffer.length; step += 1) this.cursor = this.nextOffset(this.cursor);
           break;
       }
     }

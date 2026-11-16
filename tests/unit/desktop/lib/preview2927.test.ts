@@ -22,3 +22,5 @@ it('resolves terminal URLs across wrapped rows',()=>{const url='https://example.
 it('backspaces supplementary terminal input',()=>{const input=new SubmittedInputBuffer();expect(input.feed('fix 😀\u007fnow\r')).toEqual(['fix now']);});
 
 it('deletes supplementary terminal input',()=>{const input=new SubmittedInputBuffer();expect(input.feed('😀fix\u0001\u0004\r')).toEqual(['fix']);});
+
+it('moves across supplementary terminal input',()=>{const input=new SubmittedInputBuffer();expect(input.feed('a😀b\u0001\u001b[2Cx\r')).toEqual(['a😀xb']);const next=new SubmittedInputBuffer();expect(next.feed('a😀b\u001b[2Dx\r')).toEqual(['ax😀b']);});
