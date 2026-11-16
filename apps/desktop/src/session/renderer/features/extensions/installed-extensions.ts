@@ -386,6 +386,8 @@ async function readUpdates(hostKey: string): Promise<MarketUpdatesSummary> {
 }
 
 /** What the market says of a host's installed Apps (#5410). Push-fed; ❌ polled. */
+/** How many Apps the kept market updates may name (see `persist` below). */
+const KEPT_UPDATES = 16;
 export const marketUpdates = replica({
   name: 'marketUpdates',
   scope: 'device',
@@ -400,11 +402,11 @@ export const marketUpdates = replica({
     maxBytes: 1024,
     maxEntries: 1,
     carry: (value: MarketUpdates, hostKey: string) => (hostKey.startsWith('remote:')
-      || Object.keys(value.offered).length + value.gone.length > KEPT_UPDATES ? undefined
+      // Also applied to what an older build kept (it may lack a field).
+      || Object.keys(value.offered ?? {}).length + (value.gone?.length ?? 0) > KEPT_UPDATES ? undefined
       : value.summary ? { offered: value.offered, gone: value.gone } : value),
   },
 });
-const KEPT_UPDATES = 16;
 
 /** The 「App」 badge: enabled Apps with an update, yanked or deprecated ones, each once; pinned ones count (owner 10-19). */
 export function updateCountOf(summary: MarketUpdatesSummary, apps: InstalledApps): number {
