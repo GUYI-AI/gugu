@@ -355,21 +355,29 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   }, [detailId]);
 
   /**
-   * 一个扩展当前在市场上的那一版:先看已经取到的页,没有就定点问一次。
-   * 清单是分页的,装着的那个未必在已取到的页里;连不上就 undefined。
+   * 一个扩展当前在市场上的那一版:先看已经取到的页(清单是分页的),没有就定点问一次。
+   * null = 市场里没有它;市场读不到就 reject —— 两者对人说的不一样。
    */
   const shelfItemFor = useCallback(
-    async (extensionId: string): Promise<ShelfItem | undefined> => {
-      const loaded = fullShelf?.items.find((item) => item.manifest.id === extensionId);
-      if (loaded) return loaded;
-      // @@@reading-default - one action's moment (a reinstall offer, 「在市场查看」): the market not reachable is said as not in it
-      return marketEntry.fetch(hostKeyRef.current, extensionId).then((item) => item ?? undefined, (error: unknown) => {
-        log.warn('market entry unreadable:', error);
-        return undefined;
-      });
-    },
+    async (extensionId: string): Promise<ShelfItem | null> =>
+      fullShelf?.items.find((item) => item.manifest.id === extensionId) ?? (await marketEntry.fetch(hostKeyRef.current, extensionId)),
     [fullShelf]
   );
+  /** Acts on an App's market entry; "not in the market" and "the market could not be read" (with a retry) are told apart. */
+  const withShelfItem = async (extensionId: string, name: string, act: (item: ShelfItem) => void): Promise<void> => {
+    try {
+      const item = await shelfItemFor(extensionId);
+      if (item) act(item);
+      else toast({ title: translate('extensions.notInMarket', { name }), tier: 'error' });
+    } catch (error) {
+      log.warn('market entry unreadable:', error);
+      toast({
+        title: translate('extensions.marketUnavailable'),
+        tier: 'error',
+        action: { label: translate('extensions.retry'), onClick: () => void withShelfItem(extensionId, name, act) },
+      });
+    }
+  };
 
   // 下载站那一趟回来了(打开这一页时去的那趟,或者别处 —— 启动、安装 —— 去的):变了,市场这一块和「有新版 / 被撤回」
   // 一起从新的那份重读(两边永远是同一刻,10-08 的一致性);没变什么都不重画;没取到,照旧画手上那份、页头写「上次更新于 …」。
@@ -816,16 +824,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // Uninstall is the one irreversible action here. When the bundle is on the
       // shelf the way back is one click on the toast; a hand-picked folder has
       // no shelf copy, so the toast only reports.
-      const onShelf = await shelfItemFor(app.id);
+      // The market unreadable is said as such; its 「重新安装」 asks the market again on the click.
+      const onShelf = await shelfItemFor(app.id).catch((error: unknown) => {
+        log.warn('market entry unreadable:', error);
+        return 'unreadable' as const;
+      });
+      const reinstall = () => void withShelfItem(app.id, app.name, (item) => void installFromShelf(item.ref, app.id));
       toast({
         title: translate('extensions.uninstalled', { name: app.name }),
         tier: 'success',
-        ...(onShelf && {
-          action: {
-            label: translate('extensions.reinstall'),
-            onClick: () => void installFromShelf(onShelf.ref, app.id),
-          },
-        }),
+        ...(onShelf === 'unreadable'
+          ? { description: translate('extensions.reinstallMarketUnreadable'), action: { label: translate('extensions.reinstall'), onClick: reinstall } }
+          : onShelf && { action: { label: translate('extensions.reinstall'), onClick: () => void installFromShelf(onShelf.ref, app.id) } }),
       });
     } catch (error) {
       toast({
@@ -1002,14 +1012,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       });
   };
   /** 设置页上的「在市场查看」:问一次市场上的那一版,返回回到设置页。 */
-  const viewInMarket = async (manifest: ExtensionManifest, from: AppDetail) => {
-    const item = await shelfItemFor(manifest.id);
-    if (!item) {
-      toast({ title: translate('extensions.marketUnavailable'), tier: 'error' });
-      return;
-    }
-    setDetail({ page: 'market', subject: { manifest: item.manifest, installRef: item.ref, cloud: item.cloud }, from });
-  };
+  const viewInMarket = (manifest: ExtensionManifest, from: AppDetail) =>
+    withShelfItem(manifest.id, localizedManifestText(manifest, locale).name, (item) =>
+      setDetail({ page: 'market', subject: { manifest: item.manifest, installRef: item.ref, cloud: item.cloud }, from }));
   const setTabHidden = async (manifest: ExtensionManifest, name: string, hidden: boolean) => {
     try {
       const result = await api.setTabHidden({ extensionId: manifest.id, tab: name, hidden });

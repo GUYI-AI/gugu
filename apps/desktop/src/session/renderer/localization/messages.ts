@@ -385,6 +385,8 @@ const enUSCoreMessages = {
   'extensions.marketOfflineUnreachable': 'Cannot reach the App market. Installed Apps keep working.',
   // The cause goes to the log, not into copy: what failed inside is nothing the person can act on.
   'extensions.marketUnavailable': 'The App market could not be read. Try again; if it persists, send us the log.',
+  'extensions.notInMarket': '{name} is not in the App market.',
+  'extensions.reinstallMarketUnreadable': 'The App market could not be read, so it cannot be reinstalled from here yet.',
   'extensions.marketEmpty': 'No apps',
   'extensions.marketInvalid': '{name} could not be listed: its bundle is unreadable (details in the log)',
   'extensions.official': 'gugu official',
@@ -1575,6 +1577,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.marketPrepareFailed': '这个包没取下来，或者没通过完整性校验。什么都没装上。',
   'extensions.marketOfflineUnreachable': '连不上 App 市场。已经装着的 App 照常能用。',
   'extensions.marketUnavailable': 'App 市场没读出来。再试一次；还不行就把日志发给我们。',
+  'extensions.notInMarket': 'App 市场里没有「{name}」。',
+  'extensions.reinstallMarketUnreadable': 'App 市场没读出来，暂时没法从这里重新安装。',
   'extensions.marketEmpty': '还没有 App',
   'extensions.marketInvalid': '{name} 列不出来：包读不出来（原因在日志里）',
   'extensions.official': '咕咕官方',
