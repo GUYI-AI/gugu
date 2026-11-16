@@ -23,6 +23,8 @@ export const storedAgentTurnFailures = replica({
   },
   retry: true,
   retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 30_000),
+  // Back in the app after having left (lib/foregroundReturn.ts): read again, ❌ on every focus (switching Gugu windows).
+  refreshOnFocus: true,
 })
 
 function loadDismissals(userId: string | undefined): AgentTurnFailureDismissals {
@@ -97,15 +99,10 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
       })
       refresh()
     }, { onSubscribed: subscribed })
-    const visible = () => { if (document.visibilityState === 'visible') refresh() }
-    window.addEventListener('focus', refresh)
     const stopRecovered = subscribeBackendRecovered(refresh) // the backend came back: read the failure rows again
-    document.addEventListener('visibilitychange', visible)
     return () => {
       unsubscribePrivateUserEventBus(handle)
-      window.removeEventListener('focus', refresh)
       stopRecovered()
-      document.removeEventListener('visibilitychange', visible)
     }
   }, [asks, user?.id, scopeKey, ids, changeDismissals])
 

@@ -4,6 +4,7 @@ import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/mobile/agent-watc
 import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
 import { replica, useReplica, type Reading } from './replica'
 import { PLATFORM_MODELS_CHANGED_EVENT } from '@shared/core/agents/platform-model'
+import { onPlanChange } from './billing/useSpendingPower'
 import type { PlatformCatalogModel } from './agentModelSelection'
 
 const MENU_DETAILS = ['creditMultiplier', 'creditMultipliers', 'contextWindow', 'reasoningEfforts'] as const
@@ -31,26 +32,17 @@ export const platformModels = replica({
   },
 })
 
-/** Back in the foreground: focus and visibilitychange often arrive together, one switch reads once. */
-const FOREGROUND_REFRESH_MIN_MS = 5_000
-
-/** The catalog may have changed: a models-changed signal (#7092) or the window coming back (#7056: bought on the web, no push). */
+/**
+ * The catalog may have changed: a models-changed signal (#7092), or the account's plan changed (#7056: a membership
+ * bought on the web; the credits read it on the return, nothing pushes here). ❌ Every focus or return: the catalog read is
+ * the costly one, and a return with the same plan changes nothing in it.
+ */
 export function followCatalogChanges(refresh: () => void): () => void {
-  let lastAt = Date.now()
-  const onForeground = () => {
-    if (document.visibilityState === 'hidden') return
-    const now = Date.now()
-    if (now - lastAt < FOREGROUND_REFRESH_MIN_MS) return
-    lastAt = now
-    refresh()
-  }
   window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
-  window.addEventListener('focus', onForeground)
-  document.addEventListener('visibilitychange', onForeground)
+  const stopPlan = onPlanChange(refresh)
   return () => {
     window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
-    window.removeEventListener('focus', onForeground)
-    document.removeEventListener('visibilitychange', onForeground)
+    stopPlan()
   }
 }
 

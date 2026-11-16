@@ -103,6 +103,19 @@ function watchBilling(userId: string): () => void {
   }
 }
 
+/** The account's plan changed (a membership bought, renewed or lapsed — read on a return or pushed): what it unlocks may differ. */
+export function onPlanChange(listener: () => void): () => void {
+  const planOf = (reading: ReturnType<typeof creditAccount.peek>): string | null =>
+    (reading.state === 'value' ? JSON.stringify(reading.value.plan ?? null) : null)
+  let seen = planOf(creditAccount.peek())
+  return creditAccount.subscribe([], ({ reading }) => {
+    const plan = planOf(reading)
+    if (plan === null) return
+    if (seen !== null && plan !== seen) listener()
+    seen = plan
+  })
+}
+
 /** 手动催一次(充值回来、用户点刷新)。 */
 export function refreshSpendingPower(): void {
   refreshAll()

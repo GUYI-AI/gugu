@@ -31,6 +31,9 @@ vi.mock('@renderer/lib/machine-clients', () => ({
   onMachineReconnected: (machine: string, cb: () => void) => { reconnect.set(machine, cb); return () => { reconnect.delete(machine); }; },
 }));
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
+// The account's plan changing is the credits' business (lib/billing/useSpendingPower.ts): here only that it was heard.
+const plan = vi.hoisted(() => ({ listeners: new Set<() => void>() }));
+vi.mock('@/lib/billing/useSpendingPower', () => ({ onPlanChange: (listener: () => void) => { plan.listeners.add(listener); return () => { plan.listeners.delete(listener); }; } }));
 
 import { notifyManager } from '@tanstack/react-query';
 import { followRendererSession, queryClient } from '@/lib/replica';
@@ -193,19 +196,22 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     expect(current!.catalogError).toBeNull();
   });
 
-  it('a models-changed signal and coming back to the window read the catalog again (once per switch)', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
+  it('a models-changed signal or the account\'s plan changing reads the catalog again; a focus or a return does not', async () => {
     mount(<Probe provider="claude" />);
     await settle();
     expect(io.catalog).toHaveBeenCalledTimes(1);
     await act(async () => { window.dispatchEvent(new Event(PLATFORM_MODELS_CHANGED_EVENT)); });
     await settle();
     expect(io.catalog).toHaveBeenCalledTimes(2);
-    vi.setSystemTime(Date.now() + 10_000);
+    // Switching between Gugu windows, or back from elsewhere with the same plan: the costly catalog is not read.
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
-      document.dispatchEvent(new Event('visibilitychange'));
+      document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
     });
+    await settle();
+    expect(io.catalog).toHaveBeenCalledTimes(2);
+    // A membership bought on the web (#7056): the credits, read on the return, say the plan changed.
+    await act(async () => { plan.listeners.forEach((listener) => listener()); });
     await settle();
     expect(io.catalog).toHaveBeenCalledTimes(3);
   });
