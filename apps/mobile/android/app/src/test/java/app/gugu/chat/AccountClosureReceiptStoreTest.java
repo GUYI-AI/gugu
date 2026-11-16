@@ -107,4 +107,41 @@ public class AccountClosureReceiptStoreTest {
         reject("invalid_scope", () -> new AccountClosureReceiptStore.Scope(A, "\ud800"));
         reject("invalid_scope", () -> f.open().put(f.a(), "\ud800"));
     }
+    @Test public void cancelledOldScopeCannotReleaseOrEraseANewPreparation() throws Exception {
+        Fixture f = new Fixture(); final String[] generation = {"preparation-one"};
+        AccountClosureReceiptStore store = new AccountClosureReceiptStore(f, f.secrets, () -> f.installation, () -> f.owner,
+            scope -> true, f.steps, () -> new ArrayList<>(), (scope, capturing) -> generation[0]);
+        store.put(f.a(), "receipt-one"); store.remove(f.a());
+        assertEquals("preparation-one", store.requireCancelledReceipt(f.a()));
+        generation[0] = "preparation-two";
+        AccountClosureReceiptStore.Scope second = new AccountClosureReceiptStore.Scope(A, "operation-two");
+        store.put(second, "receipt-two");
+        reject("scope_conflict", () -> store.requireCancelledReceipt(f.a()));
+        reject("scope_conflict", () -> store.put(f.a(), "receipt-one"));
+        assertEquals("receipt-two", store.get(second)); assertEquals(0, f.effects);
+    }
+    @Test public void olderCapturedReceiptCannotEraseUnderANewerPreparationGeneration() throws Exception {
+        Fixture f = new Fixture(); final String[] generation = {"preparation-one"}; final int[] readiness = {0};
+        AccountClosureReceiptStore store = new AccountClosureReceiptStore(f, f.secrets, () -> f.installation, () -> f.owner,
+            scope -> { readiness[0]++; return true; }, f.steps, () -> new ArrayList<>(), (scope, capturing) -> generation[0]);
+        store.put(f.a(), "receipt-one"); generation[0] = "preparation-two";
+        reject("scope_conflict", () -> store.eraseLocal(f.a()));
+        assertEquals(0, readiness[0]);
+        assertEquals("receipt-one", store.get(f.a())); assertEquals(0, f.effects);
+        assertEquals("B unchanged bytes", f.data.get(B));
+    }
+
+    @Test public void putNeedsOnlyLocalOwnerAndEraseStillRequiresPreparation() throws Exception {
+        Fixture f = new Fixture(); final String[] generation = {""}; f.prepared = false;
+        AccountClosureReceiptStore store = new AccountClosureReceiptStore(f, f.secrets, () -> f.installation, () -> f.owner,
+            scope -> { if (!f.prepared) throw new AccountClosureReceiptStore.Failure("closure_not_prepared"); return true; },
+            f.steps, () -> new ArrayList<>(), (scope, capturing) -> generation[0]);
+        store.put(f.a(), "receipt-before-preparation");
+        assertEquals("receipt-before-preparation", store.get(f.a()));
+        reject("closure_not_prepared", () -> store.eraseLocal(f.a())); assertEquals(0, f.effects);
+        f.prepared = true; generation[0] = "ready-generation";
+        store.put(f.a(), "receipt-before-preparation");
+        assertEquals("complete", store.eraseLocal(f.a()).status); assertEquals(1, f.effects);
+    }
+
 }

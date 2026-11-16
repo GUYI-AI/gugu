@@ -13,13 +13,35 @@ final class AccountClosurePreparation {
         installation = GuguPhoneInstallation.identity(context).key;
         secrets = new AccountClosureEncryptedFiles(context, installation);
     }
-    int state(String owner) throws Exception {
-        byte[] bytes = secrets.read(key(owner));
-        if (bytes == null) return 0;
-        if (bytes.length != 2 || bytes[0] != 1 || bytes[1] < 0 || bytes[1] > CLOSED) throw new AccountClosureReceiptStore.Failure("closure_storage_unavailable");
-        return bytes[1];
+    private static final class Snapshot {
+        final int state; final String generation;
+        Snapshot(int state, String generation) { this.state = state; this.generation = generation; }
     }
-    void set(String owner, int value) throws Exception { secrets.write(key(owner), new byte[] {1, (byte)value}); }
+    private Snapshot read(String owner) throws Exception {
+        byte[] bytes = secrets.read(key(owner));
+        if (bytes == null) return new Snapshot(0, null);
+        if (bytes.length != 38 || bytes[0] != 2 || bytes[1] < 0 || bytes[1] > CLOSED)
+            throw new AccountClosureReceiptStore.Failure("closure_storage_unavailable");
+        String generation = new String(bytes, 2, 36, StandardCharsets.US_ASCII);
+        try {
+            if (!java.util.UUID.fromString(generation).toString().equals(generation)) throw new IllegalArgumentException();
+        } catch (RuntimeException invalid) { throw new AccountClosureReceiptStore.Failure("closure_storage_unavailable"); }
+        return new Snapshot(bytes[1], generation);
+    }
+    int state(String owner) throws Exception { return read(owner).state; }
+    String generation(String owner) throws Exception {
+        String value = read(owner).generation;
+        return value == null ? "" : value;
+    }
+    void set(String owner, int value) throws Exception {
+        if (value < 0 || value > CLOSED) throw new AccountClosureReceiptStore.Failure("invalid_scope");
+        Snapshot previous = read(owner);
+        String generation = value == STOPPING && previous.state == 0 ? java.util.UUID.randomUUID().toString() : previous.generation;
+        if (generation == null) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
+        byte[] bytes = new byte[38]; bytes[0] = 2; bytes[1] = (byte)value;
+        System.arraycopy(generation.getBytes(StandardCharsets.US_ASCII), 0, bytes, 2, 36);
+        secrets.write(key(owner), bytes);
+    }
     static void requireOpen(Context context, String owner) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             if (new AccountClosurePreparation(context).state(owner) != 0) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");

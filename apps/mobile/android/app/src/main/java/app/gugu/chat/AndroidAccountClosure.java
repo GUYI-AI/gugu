@@ -20,8 +20,11 @@ final class AndroidAccountClosure {
         preparation = new AccountClosurePreparation(context);
         auth = new AccountClosureAuthSlot(context);
         AccountClosureLocalEraser files = new AccountClosureLocalEraser(context.getFilesDir(), context.getNoBackupFilesDir(), directory -> {
-            FileDescriptor descriptor = Os.open(directory.getAbsolutePath(), OsConstants.O_RDONLY | OsConstants.O_DIRECTORY | OsConstants.O_NOFOLLOW, 0);
-            try { Os.fsync(descriptor); } finally { Os.close(descriptor); }
+            FileDescriptor descriptor = Os.open(directory.getAbsolutePath(), OsConstants.O_RDONLY | OsConstants.O_NOFOLLOW, 0);
+            try {
+                if (!OsConstants.S_ISDIR(Os.fstat(descriptor).st_mode)) throw new java.io.IOException("Expected an owner storage directory");
+                Os.fsync(descriptor);
+            } finally { Os.close(descriptor); }
         });
         List<AccountClosureReceiptStore.Step> steps = new ArrayList<>();
         steps.add(scope -> { auth.eraseIfOwned(scope.ownerId); return true; });
@@ -38,7 +41,7 @@ final class AndroidAccountClosure {
                 if (ownerBusy(scope.ownerId)) return false;
                 if (state < AccountClosurePreparation.ERASING) preparation.set(scope.ownerId, AccountClosurePreparation.ERASING);
                 return true;
-            }, steps, this::retained);
+            }, steps, this::retained, (scope, capturing) -> preparation.generation(scope.ownerId));
     }
     String deviceId(String owner) throws Exception {
         return "phone-" + GuguPhoneInstallation.identity(context).key + "-" + GuguAgentHostPolicy.owner(owner);
@@ -84,10 +87,11 @@ final class AndroidAccountClosure {
         return result;
     }
     void cancelPreparation(AccountClosureReceiptStore.Scope scope) throws Exception {
-        receipts.requireCancelledReceipt(scope);
+        String generation = receipts.requireCancelledReceipt(scope);
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             requireCurrentOwner(scope.ownerId);
-            if (preparation.state(scope.ownerId) >= AccountClosurePreparation.ERASING) throw new AccountClosureReceiptStore.Failure("scope_conflict");
+            if (!generation.equals(preparation.generation(scope.ownerId)) || preparation.state(scope.ownerId) >= AccountClosurePreparation.ERASING)
+                throw new AccountClosureReceiptStore.Failure("scope_conflict");
             preparation.set(scope.ownerId, 0);
             // Never configure or start a host here. Its settings remain off.
         }

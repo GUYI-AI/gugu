@@ -18,7 +18,10 @@ no Agent is restarted. `deleted`, a pending local erase and an unknown result ke
 the fence. Cancellation errors retain failed cleanup custody and reject the
 adapter call instead of reporting completion. The native guard requires the
 captured scope, current local owner and an already removed receipt; it refuses
-cancellation once erasure has begun.
+cancellation once erasure has begun. Captured receipts bind the preparation
+generation; an old removed scope cannot release a later preparation of the same
+account. The final native cancellation rechecks this generation under the auth
+storage lock immediately before releasing the fence.
 
 The already merged iOS adapter has no equivalent explicit finalizer at this
 branch baseline. iOS alignment is coordinated separately; this branch does not
@@ -26,6 +29,10 @@ change iOS code or the public v0 interface.
 
 ## Verification status
 
-Initial TypeScript composition tests (10 cases) and repository typecheck passed.
-Android compilation, native unit tests, protected-storage device tests and CI
-are pending. This is a reviewable implementation branch, not a release verdict.
+TypeScript composition tests (10 cases) and repository typecheck passed.
+Android Java compilation and all 128 JVM tests passed, including 15 new closure
+cases. Whole-repository zero-warning ESLint, typecheck and source checks also
+passed. The JVM run used an ignored compile-only web asset to generate Capacitor
+configuration; it is not an application build or device acceptance. Protected
+Android Keystore device tests and CI remain pending. This is a reviewable
+implementation branch, not a release verdict.

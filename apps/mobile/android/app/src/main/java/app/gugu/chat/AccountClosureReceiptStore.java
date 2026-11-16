@@ -30,6 +30,7 @@ final class AccountClosureReceiptStore {
     interface Installation { String read() throws Exception; }
     interface MainOwner { String read() throws Exception; }
     interface Preparation { boolean ready(Scope scope) throws Exception; }
+    interface Generation { String read(Scope scope, boolean capturing) throws Exception; }
     interface Step { boolean run(Scope scope) throws Exception; }
     interface Retained { List<String> read() throws Exception; }
     static final class Outcome {
@@ -38,7 +39,7 @@ final class AccountClosureReceiptStore {
         Outcome(String status, List<String> names) { this.status = status; this.retainedUnattributed = new ArrayList<>(names); }
     }
     private static final class Record {
-        String key, installation, receipt;
+        String key, installation, receipt, generation;
         int nextStep;
         boolean complete;
         List<String> retained = new ArrayList<>();
@@ -50,11 +51,16 @@ final class AccountClosureReceiptStore {
     private final Preparation preparation;
     private final List<Step> steps;
     private final Retained retained;
+    private final Generation generation;
 
     AccountClosureReceiptStore(Object authLock, Secrets secrets, Installation installation, MainOwner mainOwner,
                               Preparation preparation, List<Step> steps, Retained retained) {
+        this(authLock, secrets, installation, mainOwner, preparation, steps, retained, (scope, capturing) -> "");
+    }
+    AccountClosureReceiptStore(Object authLock, Secrets secrets, Installation installation, MainOwner mainOwner,
+                              Preparation preparation, List<Step> steps, Retained retained, Generation generation) {
         this.authLock = authLock; this.secrets = secrets; this.installation = installation; this.mainOwner = mainOwner;
-        this.preparation = preparation; this.steps = new ArrayList<>(steps); this.retained = retained;
+        this.preparation = preparation; this.steps = new ArrayList<>(steps); this.retained = retained; this.generation = generation;
     }
     synchronized void put(Scope scope, String receipt) throws Failure {
         synchronized (authLock) {
@@ -68,6 +74,7 @@ final class AccountClosureReceiptStore {
                 }
                 Record captured = new Record();
                 captured.installation = installation.read(); captured.key = key(scope, captured.installation); captured.receipt = receipt;
+                captured.generation = generation.read(scope, true);
                 save(captured);
             } catch (Exception error) { throw publicFailure(error); }
         }
@@ -95,9 +102,15 @@ final class AccountClosureReceiptStore {
                 Record captured = require(scope);
                 if (captured.complete) return new Outcome("complete", captured.retained);
                 if (captured.receipt == null) throw new Failure("receipt_missing");
+                // Reject a stale bound scope before readiness can advance the fence.
+                if (!captured.generation.isEmpty()) requireGeneration(scope, captured);
                 // The platform rejects an absent preparation; false is reserved for
                 // a still-draining, retryable preparation. Recheck after restart.
                 if (!preparation.ready(scope)) return new Outcome("pending", retained.read());
+                // put is authorized by local ownership alone, including before
+                // preparation exists. Bind such a record on its first ready erase.
+                if (captured.generation.isEmpty()) { captured.generation = generation.read(scope, false); save(captured); }
+                requireGeneration(scope, captured);
                 while (captured.nextStep < steps.size()) {
                     requireOwner(scope, false);
                     if (!steps.get(captured.nextStep).run(scope)) return new Outcome("pending", retained.read());
@@ -109,14 +122,19 @@ final class AccountClosureReceiptStore {
             } catch (Exception error) { throw publicFailure(error); }
         }
     }
-    synchronized void requireCancelledReceipt(Scope scope) throws Failure {
+    synchronized String requireCancelledReceipt(Scope scope) throws Failure {
         synchronized (authLock) {
             try {
                 requireOwner(scope, true);
                 Record captured = require(scope);
                 if (captured.complete || captured.receipt != null) throw new Failure("scope_conflict");
+                requireGeneration(scope, captured);
+                return captured.generation;
             } catch (Exception error) { throw publicFailure(error); }
         }
+    }
+    private void requireGeneration(Scope scope, Record captured) throws Exception {
+        if (!captured.generation.equals(generation.read(scope, false))) throw new Failure("scope_conflict");
     }
     private void requireOwner(Scope scope, boolean required) throws Exception {
         String owner = mainOwner.read();
@@ -134,8 +152,8 @@ final class AccountClosureReceiptStore {
         if (bytes.length > 100000) throw new Failure("closure_storage_unavailable");
         Record captured = new Record();
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
-            if (input.readInt() != 1) throw new Failure("closure_storage_unavailable");
-            captured.key = text(input, 64); captured.installation = text(input, 256);
+            if (input.readInt() != 2) throw new Failure("closure_storage_unavailable");
+            captured.key = text(input, 64); captured.installation = text(input, 256); captured.generation = text(input, 128);
             captured.receipt = input.readBoolean() ? text(input, 65536) : null;
             captured.nextStep = input.readInt(); captured.complete = input.readBoolean();
             int count = input.readInt();
@@ -150,7 +168,7 @@ final class AccountClosureReceiptStore {
     private void save(Record captured) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream output = new DataOutputStream(bytes)) {
-            output.writeInt(1); text(output, captured.key); text(output, captured.installation);
+            output.writeInt(2); text(output, captured.key); text(output, captured.installation); text(output, captured.generation);
             output.writeBoolean(captured.receipt != null);
             if (captured.receipt != null) text(output, captured.receipt);
             output.writeInt(captured.nextStep); output.writeBoolean(captured.complete); output.writeInt(captured.retained.size());

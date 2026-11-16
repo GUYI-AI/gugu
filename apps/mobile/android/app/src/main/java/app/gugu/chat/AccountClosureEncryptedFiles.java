@@ -66,8 +66,11 @@ final class AccountClosureEncryptedFiles implements AccountClosureReceiptStore.S
             try (FileOutputStream output = new FileOutputStream(temporary)) { output.write(envelope); output.getFD().sync(); }
             requirePath(root); requirePath(target);
             Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath());
-            FileDescriptor directory = Os.open(root.getAbsolutePath(), OsConstants.O_RDONLY | OsConstants.O_DIRECTORY | OsConstants.O_NOFOLLOW, 0);
-            try { Os.fsync(directory); } finally { Os.close(directory); }
+            FileDescriptor directory = Os.open(root.getAbsolutePath(), OsConstants.O_RDONLY | OsConstants.O_NOFOLLOW, 0);
+            try {
+                if (!OsConstants.S_ISDIR(Os.fstat(directory).st_mode)) throw new java.io.IOException("Expected an owner storage directory");
+                Os.fsync(directory);
+            } finally { Os.close(directory); }
         } finally {
             if (temporary.exists() && !temporary.delete()) throw new java.io.IOException("Cannot remove incomplete protected record");
         }
