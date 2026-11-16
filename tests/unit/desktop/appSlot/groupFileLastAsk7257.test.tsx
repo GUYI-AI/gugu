@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
+import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
@@ -13,6 +16,8 @@ import { ask, chatTabs, shownItem } from './chatTabsHarness'
  * later ask is a file clicked in an App's list (`files.openWith`, its answer already in hand). The host's answers are
  * held open.
  */
+// 最近打开: an open is kept through the chat database (useChatOpener `noteOpened`); never the network here.
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
 }))
@@ -21,15 +26,22 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
 }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
   ...(await original<object>()),
-  chatPackageCards: async () => [],
+  chatPackageCards: async () => (await import('./chatTabsHarness')).sharedCards.answer(),
 }))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account.
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
+  // What is installed here is read (as main tells it at start): nothing.
+  tellInstalled('local', { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
 })
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
 afterEach(() => {
   harness.cleanup()
   HTMLElement.prototype.checkVisibility = originalCheckVisibility
@@ -119,4 +131,9 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await letGo(gates, 'P')
     expect(on('race-5'), '对照:11bd96dbf5 先加序号再核群,P 被丢，面板什么都不开').toBe('P')
   }, 30_000)
+})
+
+it('the shared-package mock is live (signed in): a file waits for this chat\'s packages, then is drawn', async () => {
+  const { expectSharedPackagesLive } = await import('./chatTabsHarness')
+  await expectSharedPackagesLive((node) => harness.render(node))
 })

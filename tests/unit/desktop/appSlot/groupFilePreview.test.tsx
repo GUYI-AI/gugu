@@ -2,6 +2,8 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 // @vitest-environment jsdom
 import { act, createElement, useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 
@@ -35,7 +37,7 @@ vi.mock('@/components/appSlot/appsHere', () => ({
   appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
 }))
 vi.mock('@/components/extensionBundle/sharedPackages', async (original) => ({
-  ...(await original<object>()), chatPackageCards: async () => [] }))
+  ...(await original<object>()), chatPackageCards: async () => (await import('./chatTabsHarness')).sharedCards.answer() }))
 
 const { AppPeek } = await import('@/components/appSlot/AppPeek')
 const { ask, chatTabs, shownItem } = await import('./chatTabsHarness')
@@ -57,6 +59,8 @@ const slot = async (opener: ReturnType<typeof detail>, supplied = true, extra: {
 const redraw = (chatId: string, extra: { visible?: boolean } = {}) =>
   harness.render(chatTabs({ chatId, visible: extra.visible ?? true, mobile: boundary.mobile, onForward: boundary.forward }, 'viewer'))
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account.
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} })
@@ -75,6 +79,9 @@ beforeEach(() => {
   for (const tab of panelTabsOf('preview-group')) closeChatTab('preview-group', tab.tabId)
   act(() => tellInstalled('local', { extensions: [workspace], invalid: [] } as never))
 })
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
 afterEach(() => {
   harness.cleanup()
   vi.restoreAllMocks()
@@ -416,4 +423,9 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(shownItem('preview-group')?.itemId).toBe('file-mp4')
   })
 
+})
+
+it('the shared-package mock is live (signed in): a file waits for this chat\'s packages, then is drawn', async () => {
+  const { expectSharedPackagesLive } = await import('./chatTabsHarness')
+  await expectSharedPackagesLive((node) => harness.render(node))
 })
