@@ -411,10 +411,21 @@ export default defineConfig({
             // #2851 loads the shipped Files JSON editor in a real iframe. Its pinned
             // CodeMirror bundle exposes these language/file bindings; discovering them
             // during the first case reloads that frame and strands the paint assertion.
+            '@codemirror/autocomplete',
+            '@codemirror/commands',
             '@codemirror/lang-json',
+            '@codemirror/lang-markdown',
+            '@codemirror/language',
             '@codemirror/lint',
+            '@codemirror/search',
+            '@codemirror/state',
+            '@codemirror/view',
             '@lezer/common',
+            '@lezer/highlight',
             '@lezer/markdown',
+            'codemirror',
+            'y-codemirror.next',
+            'yjs',
             '@codemirror/lang-javascript',
             '@codemirror/lang-html',
             '@codemirror/lang-css',
