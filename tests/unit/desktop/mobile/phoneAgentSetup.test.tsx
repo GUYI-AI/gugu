@@ -182,7 +182,7 @@ describe('phone permission actions and real Android state', () => {
     expect(readPhoneDeviceSettings(mocks.owner).groups.recordings).toBe(false)
     expect(mocks.dataRequest).not.toHaveBeenCalled()
   })
-  it('a re-read that fails after an earlier answer says it could not read, ❌ the earlier answer as now (review A2)', async () => {
+  it('a re-read that fails after an earlier answer says it could not read, ❌ the earlier answer as now', async () => {
     mocks.os!.runtime.calendar = 'granted'; setPhoneActionGroup(mocks.owner, 'calendar', true); setPhoneDeviceEnabled(mocks.owner, true)
     await render()
     await waitForCondition(() => byId('phone-device-group-calendar')?.textContent?.includes('已开启') ?? false, 'first answer drawn')

@@ -51,7 +51,7 @@ export const AutomationDetailView = observer(function AutomationDetailView(
 
 /**
 * The form seeds once, from the machine's agent list: it is mounted once that list is read, ❌ seeded with no agent
-* (review 4 Q2, cell U2). A machine that cannot act now is not asked: its form is drawn read-only at once.
+* (an empty choice would be saved). A machine that cannot act now is not asked: its form is drawn read-only at once.
 */
 const AutomationSettingsDetailView = observer(function AutomationSettingsDetailView(props: AutomationDetailViewProps) {
   const { translate } = useSessionMessages();

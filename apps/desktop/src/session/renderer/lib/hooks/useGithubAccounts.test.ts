@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * GitHub accounts read through the library host kept under its key (one holder of hosts, library-host.ts; review C-11);
+ * GitHub accounts read through the library host kept under its key;
  * an assistant panel still settling is asked again after a pause (1 s, 2 s), ❌ at once.
  */
 const hosts = vi.hoisted(() => new Map<string, unknown>());

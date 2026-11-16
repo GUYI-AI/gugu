@@ -36,7 +36,7 @@ function noteSnapshotError(snapshot: CloudComputerSnapshot): void {
   loggedSnapshotError = failed
 }
 
-/** A read asked before an answer put in outside a read (wake loop, `destroy`) ❌ lands over it (review E-2). */
+/** A read asked before an answer put in outside a read (wake loop, `destroy`) ❌ lands over it. */
 let issued = 0
 let applied = 0
 

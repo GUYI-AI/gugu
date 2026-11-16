@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 
 /**
- * Independent review item 6: the project folder cards are push-fed (`fresh: Infinity`). Folders read earlier in the run
+ * The project folder cards are push-fed (`fresh: Infinity`). Folders read earlier in the run
  * changed while nobody listened (the home page was left): opening it again reads them again (❌ the old task count and
  * branch until the next push); one machine subscription however many cards show its folders.
  */
@@ -58,7 +58,7 @@ it('folders read before reopening the home page are read again when it opens, an
   again.cleanup({ keepReads: true })
 })
 
-it("with the browser offline, this computer's project folders are still read (they never leave this device; review A9)", async () => {
+it("with the browser offline, this computer's project folders are still read", async () => {
   const { onlineManager } = await import('@tanstack/react-query')
   onlineManager.setOnline(false)
   try {

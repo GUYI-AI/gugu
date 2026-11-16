@@ -87,7 +87,7 @@ describe('其他设备的额度通知由命令结果驱动', () => {
     expect(current()).toBe('cmd')
   })
 
-  // A refresh while the first read is on its way (coordinator 11-16): not restarted, not dropped — marked, and read once more
+  // A refresh while the first read is on its way: not restarted, not dropped — marked, and read once more
   // when that read lands; the late answer is never the last word.
   it('迟到的旧读数不能盖掉新事件的结果：在途的首读落地后再读一次，只读一次', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])

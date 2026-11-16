@@ -24,7 +24,7 @@ beforeEach(async () => {
   await freshReplicaAccount('owner')
 })
 
-describe('a preview asks the server on every open (review A3)', () => {
+describe('a preview asks the server on every open', () => {
   it('a versioned file is resolved and acknowledged again each time a preview opens it (❌ bytes kept from an earlier open)', async () => {
     const { shownAttachmentBytes } = await import('../../../../apps/desktop/src/lib/attachmentBytes')
     const source = { kind: 'item', itemId: 'item-1', version: 3 } as const

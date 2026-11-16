@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// A preview's bytes are read, and the read acknowledged by the server, on every opening (review A3): nothing is kept once
+// A preview's bytes are read, and the read acknowledged by the server, on every opening: nothing is kept once
 // the preview closes, so a file withdrawn since (or a member removed) is refused on the next opening, and the preview that
 // showed it takes it down and says why.
 import { act, createElement } from 'react'

@@ -113,7 +113,7 @@ export async function readPhoneOsState(): Promise<PhoneOsState> {
   return { runtime, special, health, data }
 }
 
-/** What the system grants this phone now (device): the one holder of the OS permission state. ❌ Persisted (review A2). */
+/** What the system grants this phone now (device): the one holder of the OS permission state. ❌ Persisted. */
 export const phoneOsState = replica({
   name: 'phoneOsState',
   scope: 'device',

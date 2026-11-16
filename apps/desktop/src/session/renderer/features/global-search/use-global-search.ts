@@ -45,7 +45,7 @@ export interface SearchView {
   loading: boolean
   error: Error | null
   taskIndex?: TaskTurnIndexStatus
-  /** Hits and counts are the previous words' while these words' are on their way (review 4 Q5). */
+  /** Hits and counts are the previous words' while these words' are on their way. */
   stale: boolean
 }
 

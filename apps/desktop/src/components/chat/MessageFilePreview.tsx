@@ -103,7 +103,7 @@ function noteProgress(key: string, fraction: number | null): void {
 }
 
 /**
- * The bytes a preview shows (review A3): every opening reads them and the server acknowledges it (`fresh: 0`); nothing kept
+ * The bytes a preview shows: every opening reads them and the server acknowledges it (`fresh: 0`); nothing kept
  * once unshown (`keep: 0`), so a withdrawn file never keeps showing. `attempt`: read again (its machine is back).
  */
 // `bytesOf` carries a hosted file's own `read` (a function): it drops out of the key's hash, which still holds the file's

@@ -103,7 +103,7 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(read).toHaveBeenCalledTimes(2)
   })
 
-  // The event came while the first attempt was on its way (coordinator 11-16): that attempt is not restarted; once it
+  // The event came while the first attempt was on its way: that attempt is not restarted; once it
   // lands (here, failed) the event's read runs once, and its success stands — no retry scheduled from the late failure.
   it('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
     const old = deferred<typeof empty>()

@@ -1,7 +1,7 @@
 import { QueryObserver } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/** A machine's install state that cannot be read ends in an error after its retries (review C-11), ❌ unknown for ever. */
+/** A machine's install state that cannot be read ends in an error after its retries, ❌ unknown for ever. */
 const io = vi.hoisted(() => ({ statuses: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpcOn: () => ({ agents: { listAgentInstallationStatus: io.statuses } }),

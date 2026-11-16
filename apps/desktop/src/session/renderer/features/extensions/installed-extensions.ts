@@ -397,7 +397,7 @@ export const marketUpdates = replica({
   },
   fresh: Infinity,
   // Kept (this computer's only) while at most KEPT_UPDATES Apps are named — ≤ 50 B each, within 1024 with room; more is
-  // not kept by definition (coordinator 11-16), ❌ the cap raised: the first frame then waits for the read (a known trade-off).
+  // not kept by definition, ❌ the cap raised: the first frame then waits for the read (a known trade-off).
   persist: {
     maxBytes: 1024,
     maxEntries: 1,

@@ -67,7 +67,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
   const settled = debouncedQuery === search;
   const current = settled && reading.state === 'value' ? reading.value : null;
-  // The last words with non-empty results stay shown (.gg-stale) while the next words' are on their way (review 4 Q5).
+  // The last words with non-empty results stay shown (.gg-stale) while the next words' are on their way.
   const [heldQuery, setHeldQuery] = useState<string | null>(null);
   if (current && current.length > 0 && heldQuery !== debouncedQuery) setHeldQuery(debouncedQuery);
   const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });

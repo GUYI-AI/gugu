@@ -266,7 +266,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     } finally { old.resolve({ install_key: 'stale-install' }) }
   })
 
-  it('a re-read that fails is the reading\'s failure, ❌ the earlier answer left standing as now (review A2)', async () => {
+  it('a re-read that fails is the reading\'s failure, ❌ the earlier answer left standing as now', async () => {
     await refreshPhoneDevice()
     expect(osShown()?.runtime.calendar).toBe('granted')
     test.checkPermissions.mockRejectedValue(new Error('the system did not answer'))
@@ -277,7 +277,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     })
   })
 
-  it('keeps nothing of the OS state across restarts (review A2)', async () => {
+  it('keeps nothing of the OS state across restarts', async () => {
     await refreshPhoneDevice()
     expect(osShown()?.runtime.calendar).toBe('granted')
     const kept = Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index)!) ?? '')

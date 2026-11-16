@@ -782,7 +782,7 @@ describe('useProjectFolders', () => {
     expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root', 'ws-d15']);
   });
 
-  // Independent review item 6: what changed while nobody listened is read again when the card is shown again, the kept
+  // The cards are push-fed: what changed while nobody listened is read again when the card is shown again, the kept
   // folders drawn meanwhile (no blank frame, no reordering).
   it('a remounted card has every folder it already read in its first frame, and reads them again', async () => {
     mocks.list.mockImplementation(listByProject({ 'p-again': { success: true, data: [{ ...ROOT, projectId: 'p-again' }] }, 'proj-on-d15': { success: true, data: [D15_ROOT] } }));
@@ -821,7 +821,7 @@ describe('useProjectFolders', () => {
     expect(latest?.folders?.map((f) => [f.projectId, f.placeholder ?? false])).toEqual([['p-cold', true], ['p-cold', true], ['proj-on-d15', true]]);
     expect(latest?.chosen).toBeNull();
   });
-  it('a push read long after the mount is not late the moment it starts: the machine stays online until the deadline (review C-2)', async () => {
+  it('a push read long after the mount is not late the moment it starts: the machine stays online until the deadline', async () => {
     mocks.list.mockImplementation(listByProject({ 'p-push': { success: true, data: [{ ...ROOT, projectId: 'p-push' }] }, 'proj-on-d15': { success: true, data: [D15_ROOT] } }));
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {

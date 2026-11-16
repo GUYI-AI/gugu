@@ -19,7 +19,7 @@ export const LOCAL_SETTINGS_HOST_KEY = 'local';
 
 /**
  * The keys a surface draws from the first frame. Not kept: handed-over keys (a last-run snapshot could contradict the
- * handover) and `browser`, whose profiles have no upper bound (refused at every write: review B1-3).
+ * handover) and `browser`, whose profiles have no upper bound (it would be refused at every write).
  */
 const CARRIED_KEYS: ReadonlySet<AppSettingsKey> = new Set<AppSettingsKey>([
   'terminal', 'sessions', 'defaultAgent', 'newSessionMemory', 'changesViewMode', 'localProject', 'project',

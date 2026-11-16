@@ -97,7 +97,7 @@ describe('device settings handover', () => {
   });
 });
 
-describe('a broken imported theme file (review B1-2)', () => {
+describe('a broken imported theme file', () => {
   it('loses only the colours: theme and language are still handed over for the first frame', async () => {
     fixture = await openFixture('empty'); h.db = fixture.db;
     const store = new SettingsStore();
@@ -133,7 +133,7 @@ describe('main applies theme and language from its own settings (@@@device-prefe
     await store.update('theme', 'system');
     await store.update('locale', 'zh-CN');
     expect(hostPreferencesNow(store)).toEqual({ theme: 'system', locale: 'zh-CN', trayBadge: true });
-    // The tray badge is read with them (review B1-4: one read, before the contents load).
+    // The tray badge is read with them (one read, before the contents load).
     answerDeviceSettings({ trayBadge: 'false' }, new SettingsStore());
     expect(hostPreferencesNow(store).trayBadge).toBe(false);
   });

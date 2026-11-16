@@ -109,7 +109,7 @@ queryClient.mount()
 const lastFailure = new Map<string, Error>()
 
 /**
- * First reads a refresh came during (coordinator 11-16): read once more when their attempt answers; `done` settles when
+ * First reads a refresh came during: read once more when their attempt answers; `done` settles when
  * that read does (what the refreshes await). Refreshes in one moment share it.
  */
 const readAgainAfter = new Map<string, { done: Promise<void>; settle: () => void }>()
@@ -544,7 +544,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   const first = !definitions.has(definition.name)
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
   // Judged once the defining module has run (a microtask, before anything renders): its `carry` may read what that module
-  // declares below the model — at definition time those are in their temporal dead zone (a blank start in the A/B).
+  // declares below the model — at definition time those are in their temporal dead zone (the app would start blank).
   if (first) queueMicrotask(() => pruneSnapshot(definition as Definition<unknown[], unknown>))
   queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
   const options = (key: QueryKey) => ({

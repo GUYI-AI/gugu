@@ -157,7 +157,7 @@ describe('a group JSON file already open in Workspace', () => {
   })
 })
 
-describe("this chat's shared packages cannot be read (review DE-2)", () => {
+describe("this chat's shared packages cannot be read", () => {
   it('the file opens as it would with nothing shared (❌ an empty page held back for good)', async () => {
     const workspace = { ...slides('1.0.0'), id: 'workspace', contributes: { tabs: [{ name: 'main', title: 'Workspace', opensFiles: { chat: ['.json'] } }] } } as ExtensionManifest
     install([workspace])

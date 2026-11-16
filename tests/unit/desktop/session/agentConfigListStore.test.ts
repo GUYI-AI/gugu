@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * The agent configuration list of a machine (lib/stores/live/agent-config-list.ts): a replica entry read once and fed by
  * one live subscription per machine while shown (`watch`); "not read yet" apart from "read"; the account's (the replica's
- * lifecycle). A subscription that failed is the reading's (review C-9), ❌ an error every later reader of that machine
+ * lifecycle). A subscription that failed is the reading's, ❌ an error every later reader of that machine
  * gets while one stays: a surface opening later reads again, and the feed opens again once the machine answers.
  */
 const wire = vi.hoisted(() => ({ opened: 0, disposed: 0, value: {} as Record<string, unknown>, push: () => {}, client: vi.fn() }))

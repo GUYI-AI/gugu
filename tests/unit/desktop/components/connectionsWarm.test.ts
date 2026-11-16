@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConnectionBridge, ConnectionWindow } from '@/lib/connectionBridge'
 
-/** Fable's decision on the connections' cold open: the channels are kept within a structural bound; both warm at restore. */
+/** The connections' cold open: the channels are kept within a structural bound; both warm at restore. */
 const net = vi.hoisted(() => ({ list: vi.fn(), snapshot: vi.fn(), route: vi.fn() }))
 vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => ({ list: net.list }) }))
 

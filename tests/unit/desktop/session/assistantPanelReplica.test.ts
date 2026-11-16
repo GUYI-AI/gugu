@@ -155,7 +155,7 @@ it('a change on the bus reads the panel again — at once when ready, after the 
   } finally { vi.useRealTimers(); stop() }
 })
 
-it('a connection list shown through the legacy panel does not feed itself: reading it does not read it again (review DE-1)', async () => {
+it('a connection list shown through the legacy panel does not feed itself: reading it does not read it again', async () => {
   const { requireAssistantPanelBridge } = await import('@/lib/assistantPanelBridge')
   const { useConnectionList } = await import('@/components/assistant/assistant-panel-reads')
   const { createReactHarness } = await import('../../../support/testHarness')

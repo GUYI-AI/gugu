@@ -80,7 +80,7 @@ describe('appSettings changes made elsewhere', () => {
   })
 })
 
-describe('what of the settings is kept across restarts (review B1-3)', () => {
+describe('what of the settings is kept across restarts', () => {
   it('the browser key (profiles without an upper bound) is not kept, even while small; a drawn key like terminal is', async () => {
     const block = JSON.parse(localStorage.getItem('gugu.readModel.v1:device') ?? '{}') as Record<string, { key: unknown[] }>
     const keys = Object.values(block).filter((entry) => entry.key[0] === 'appSettings').map((entry) => entry.key[2])
@@ -89,7 +89,7 @@ describe('what of the settings is kept across restarts (review B1-3)', () => {
   })
 })
 
-describe("another machine's settings are the account's (coordinator 11-16)", () => {
+describe("another machine's settings are the account's", () => {
   it("after A signs out and B signs in, A's machine settings are not B's (unknown until read for B)", async () => {
     const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
     followRendererSession('SIGNED_IN', 'owner-a')

@@ -2388,7 +2388,7 @@ body.barcode-scanner-active #root {
 .gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
 @media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
 
-/* @@@stale-results — a search surface's previous words' results while the typed words' are on their way (review 4 Q5):
+/* @@@stale-results — a search surface's previous words' results while the typed words' are on their way:
    the same 150 ms rule as the unknown slot, so a read that answers sooner changes nothing on screen; dimmed after that. */
 @keyframes gg-stale-dim { to { opacity: 0.6; } }
 .gg-stale { animation: gg-stale-dim 0s linear 150ms forwards; }

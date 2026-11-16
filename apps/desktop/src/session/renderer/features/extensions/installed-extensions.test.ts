@@ -102,7 +102,7 @@ describe('the dock kept across restarts (PLAN v2 C4)', () => {
 });
 
 describe('writeInstalled', () => {
-  // Fable's condition for writes without a layer: the unwritten value is never left standing as if it were true.
+  // A write without an optimistic layer: the unwritten value is never left standing as if it were true.
   it('refused, and the read that follows fails too: back to the list read before the click', async () => {
     tellInstalled('local', listOf([], { dock: ['a'] }));
     api.list.mockRejectedValue(new Error('offline'));

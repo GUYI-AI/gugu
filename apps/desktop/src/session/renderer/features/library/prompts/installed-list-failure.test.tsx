@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
 /**
- * What is installed could not be read (review C-6): the surfaces that wait on it say so with a retry, ❌ a placeholder
+ * What is installed could not be read: the surfaces that wait on it say so with a retry, ❌ a placeholder
  * for ever. The prompt library still draws the person's own prompts; an App's page in its own window says the failure.
  */
 const failure = new Error('installed list unreadable');

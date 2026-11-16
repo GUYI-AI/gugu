@@ -506,7 +506,7 @@ describe('core batch: device reads and change feeds', () => {
   })
 })
 
-describe('carry by content (review A6)', () => {
+describe('carry by content', () => {
   it('a carry that returns a new object of the same fields does not rewrite the snapshot at each start', async () => {
     const define = () => rm.replica({ name: 'test-carry-same', scope: 'device', read: async () => ({ status: 'ok', meetings: [1, 2] }),
       persist: { maxBytes: 256, maxEntries: 1, carry: ({ status }: { status: string; meetings?: number[] }) => ({ status }) } })
@@ -519,7 +519,7 @@ describe('carry by content (review A6)', () => {
   })
 })
 
-describe('seeded and restored values are read again (independent review, core)', () => {
+describe('seeded and restored values are read again', () => {
   it('a local first value of a push-fed model (fresh: Infinity) is replaced by a real read', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const reads = vi.fn(async () => 'read')
@@ -551,7 +551,7 @@ describe('seeded and restored values are read again (independent review, core)',
   })
 })
 
-describe('a failed read being read again (independent test lane P1)', () => {
+describe('a failed read being read again', () => {
   it('stays an error until a read answers (❌ unknown while the next read is on its way)', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     let answer: ((value: string) => void) | null = null
@@ -570,7 +570,7 @@ describe('a failed read being read again (independent test lane P1)', () => {
   })
 })
 
-describe('a carry that reads what its module defines below the model (A/B: blank start)', () => {
+describe('a carry that reads what its module defines below the model (the app would start blank)', () => {
   it('the kept entry is judged after the module has run: no error at definition, the entry restored', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const define = (carry?: (value: string[]) => string[] | undefined) => rm.replica({ name: 'test-carry-later', scope: 'account', read: async () => ['read'],

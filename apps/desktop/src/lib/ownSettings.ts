@@ -22,7 +22,7 @@ export const ownSettings = replica({
   read: readRow,
   fresh: 10_000,
   // A transient failure is read again quietly (1 s, 2 s, 4 s): first-run hints, the tour and the occupation hide while the
-  // row is unknown, and one failed read would otherwise hide them until something else reads the row (review T-2).
+  // row is unknown, and one failed read would otherwise hide them until something else reads the row.
   retry: 3,
   retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000),
   // Only the `user` row's display values (their first frame); a group's row is the other model's.

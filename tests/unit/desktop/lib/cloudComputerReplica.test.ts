@@ -102,7 +102,7 @@ describe('cloudComputer read', () => {
     } finally { harness.cleanup() }
   })
 
-  it('唤醒途中交出的新状态 ❌ 被它之前发出的那次 /state 盖回去 (review E-2)', async () => {
+  it('唤醒途中交出的新状态 ❌ 被它之前发出的那次 /state 盖回去', async () => {
     writeCachedDevices([])
     const older = readCloudSnapshotNow()
     await settle()
