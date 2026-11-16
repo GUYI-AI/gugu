@@ -19,7 +19,6 @@ import {
   setAcpSpawnResolver,
   setCatalogKeyResolver,
   setCatalogStore,
-  setHarnessSignInReader,
   setSpawnIdentityResolver,
   type AcpSpawnSpec,
 } from './harness-model-catalog';
@@ -60,10 +59,6 @@ export function wireHarnessModelCatalog(): void {
 
   // 按腿分缓存只看声明(#6246):腿的配置根不同的家才分,其余两条腿共用一份 —— 否则每家多冷启一次。
   setCatalogKeyResolver(harnessCatalogKey);
-
-  // `catalogNeedsSignIn` harnesses: the account row's own reading (agent-config worker, the CLI and config root
-  // a session runs). A failed read is `unknown`, which keeps the list.
-  setHarnessSignInReader(readHarnessSignIn);
 
   setCatalogStore({
     read: async () => {
@@ -135,9 +130,7 @@ export async function resolveHarnessSpawnIdentity(
     // 选中的是一把 API Key 连接(#2507):走模型注入的那几家,连接不进这份 env(它随宿主造的模型声明进进程),
     // 但目录照它读 ⇒ 换一把连接就得作废。只在选了 API Key 连接时并进来,其余家的身份与改动前逐字相同。
     const connection = runContext.apiKeyConnection ? { connection: runContext.connectionId ?? null } : {};
-    // `host`: the probe also runs gugu's own code (e.g. the Codex ACP bridge, which decides whether a signed-out
-    // Codex answers authRequired). Updating gugu replaces this executable, so a catalog read by the previous
-    // build stops matching instead of living out its 12 h TTL.
+    // `host`: gugu's own bridge code runs in the probe, so an update must re-probe.
     return JSON.stringify({ cli, file: diskFileStamp(cli), host: diskFileStamp(process.execPath), env, ...connection });
   } catch {
     return null;
@@ -210,20 +203,16 @@ export async function resolveHarnessModelCatalogSpawn(
     ...(acp.catalogProbeSessionMeta ? { sessionMeta: acp.catalogProbeSessionMeta } : {}),
     ...(acp.catalogModelsInConfigUpdate ? { modelsInConfigUpdate: true } : {}),
     ...(acp.authenticateWhenAdvertised ? { authenticateWhenAdvertised: acp.authenticateWhenAdvertised } : {}),
-    ...(acp.catalogNeedsSignIn ? { catalogNeedsSignIn: true } : {}),
+    ...(acp.catalogNeedsSignIn ? { readSignIn: () => readSignIn(pluginId) } : {}),
   };
 }
 
-async function readHarnessSignIn(pluginId: string): Promise<{ kind: 'authenticated' | 'unauthenticated' | 'unknown'; reason?: 'expired' }> {
-  try {
-    const { getAgentConfigRuntimeClient } = await import('@main/core/agent-config/runtime-process/host');
-    const result = await (await getAgentConfigRuntimeClient()).refreshAuthStatus({ providerId: pluginId });
-    if (result.success) return result.data;
-    log.warn({ pluginId, error: result.error }, 'model catalog: sign-in reading failed');
-  } catch (error) {
+async function readSignIn(pluginId: string) {
+  const { readAgentAuthStatus } = await import('@main/core/agent-config/runtime-process/host');
+  return readAgentAuthStatus(pluginId).catch((error) => {
     log.warn({ pluginId, error: String(error) }, 'model catalog: sign-in reading failed');
-  }
-  return { kind: 'unknown' };
+    return null;
+  });
 }
 
 /**

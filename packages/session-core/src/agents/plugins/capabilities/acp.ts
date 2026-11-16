@@ -485,11 +485,8 @@ export interface IAcpBehavior {
   catalogModelsInConfigUpdate?: boolean;
 
   /**
-   * This harness answers `session/new` with its own model list even when nobody is signed in, and none of those
-   * models can run without its account. After such a `ready` read the catalog probe asks this harness's sign-in
-   * status (`auth.checkStatus`, the same reading as the account row): signed out ⇒ `auth-required`. An `unknown`
-   * reading keeps the list. Do not declare it for a harness whose list works signed out (free models), or whose
-   * adapter already answers `authRequired` itself.
+   * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks
+   * `auth.checkStatus`: signed out ⇒ `auth-required`, `unknown` keeps the list.
    */
   catalogNeedsSignIn?: boolean;
 

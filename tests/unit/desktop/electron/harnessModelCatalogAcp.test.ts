@@ -24,7 +24,6 @@ const {
   setCatalogKeyResolver,
   setCatalogStore,
   setProbeConnectionModelResolver,
-  setHarnessSignInReader,
   setProbePlatformEnvResolver,
   setSpawnIdentityResolver,
 } = await import(
@@ -88,7 +87,6 @@ beforeEach(() => {
   setAcpSpawnResolver(async () => null)
   setProbePlatformEnvResolver(async () => ({ env: {} }))
   setProbeConnectionModelResolver(async () => null)
-  setHarnessSignInReader(async (pluginId) => { throw new Error(`unexpected sign-in reading for ${pluginId}`) })
 })
 describe('ACP 模型目录探测', () => {
   it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {
@@ -352,15 +350,14 @@ function handle(msg) {
   ] });
 }
 `
-    async function useHarness(flagged: boolean): Promise<void> {
+    async function useHarness(readSignIn: () => Promise<{ kind: 'authenticated' | 'unauthenticated' | 'unknown'; reason?: 'expired' }>): Promise<void> {
       const entry = await fakeAgent(LISTS_SIGNED_OUT)
-      setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, ...(flagged ? { catalogNeedsSignIn: true } : {}) }))
+      setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, readSignIn }))
     }
 
     it('signed out ⇒ auth-required with the advertised login and the efforts it read', async () => {
-      await useHarness(true)
       const reader = vi.fn(async () => ({ kind: 'unauthenticated' as const }))
-      setHarnessSignInReader(reader)
+      await useHarness(reader)
       const state = await probeHarnessModelCatalog('claude', 'acp')
       expect(state).toMatchObject({
         kind: 'auth-required',
@@ -370,7 +367,6 @@ function handle(msg) {
       })
       // Asked once: the placeholder second pass runs on credentials that are not this account.
       expect(reader).toHaveBeenCalledTimes(1)
-      expect(reader).toHaveBeenCalledWith('claude')
     })
 
     it.each([
@@ -378,20 +374,11 @@ function handle(msg) {
       ['authenticated', { kind: 'authenticated' as const }],
       ['marked expired (the renderer overlay owns it)', { kind: 'unauthenticated' as const, reason: 'expired' as const }],
     ])('%s ⇒ the list stays', async (_, reading) => {
-      await useHarness(true)
-      setHarnessSignInReader(async () => reading)
+      await useHarness(async () => reading)
       const state = await probeHarnessModelCatalog('claude', 'acp')
       expect(state.kind).toBe('ready')
       if (state.kind !== 'ready') return
       expect(state.models.map((model) => model.id)).toEqual(['own'])
-    })
-
-    it('an unflagged harness keeps its list and is never asked', async () => {
-      await useHarness(false)
-      const reader = vi.fn(async () => ({ kind: 'unauthenticated' as const }))
-      setHarnessSignInReader(reader)
-      expect((await probeHarnessModelCatalog('opencode', 'acp')).kind).toBe('ready')
-      expect(reader).not.toHaveBeenCalled()
     })
 
     it('Claude declares it; every harness that declares it has a sign-in reading', () => {

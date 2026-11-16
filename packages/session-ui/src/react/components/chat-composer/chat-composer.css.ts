@@ -872,16 +872,8 @@ export const settingRowUnlock = style({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-start',
-  textAlign: 'start',
   color: vars.surfaceInfoForeground,
   whiteSpace: 'nowrap',
-});
-
-/** The second line under it: how this agent can be connected. One size down, muted, like a model's description. */
-export const settingRowUnlockDetail = style({
-  fontSize: tokenVars.textTiny,
-  lineHeight: tokenVars.textTinyLineHeight,
-  color: vars.foregroundMuted,
 });
 
 /** 二级列表:模型/档位多了自己滚,不外溢出面板。 */

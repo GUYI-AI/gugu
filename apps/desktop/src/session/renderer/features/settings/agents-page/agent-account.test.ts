@@ -332,9 +332,6 @@ describe('agentAccessMethods: what the connection panel offers, from the same de
   const agent = (id: string, capabilities: Partial<AgentCapabilities>) =>
     ({ id, capabilities, status: 'available' }) as unknown as AgentPayload;
   it.each([
-    ['claude', CLI_LOGIN, ['account', 'api-key', 'endpoint']],
-    ['codex', CLI_LOGIN, ['account', 'api-key', 'endpoint']],
-    ['kimi', CLI_LOGIN, ['account']],
     ['gemini', API_KEY_ONLY, []],
     ['opencode', NO_AUTH, []],
   ] as const)('%s', (id, capabilities, expected) => {

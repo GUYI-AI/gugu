@@ -584,11 +584,7 @@ export function ComposerModelMenu({
                     data-testid="composer-model-unlock"
                   >
                     {modelUnlock.label}
-                    {modelUnlock.detail ? (
-                      <span className={styles.settingRowUnlockDetail} data-testid="composer-model-unlock-detail">
-                        {modelUnlock.detail}
-                      </span>
-                    ) : null}
+                    {modelUnlock.detail ? <span className={styles.modelEffortLabel}>{modelUnlock.detail}</span> : null}
                   </button>
                 </div>
               ) : null}

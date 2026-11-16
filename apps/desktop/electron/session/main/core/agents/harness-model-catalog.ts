@@ -50,6 +50,7 @@ import { defaultEngineTreeOps, signalEngineTree } from '@gugu/session-core/acp/n
 import { errorDetail } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
+import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import { flattenSelectOptions, type AcpPlatformInjection } from '@gugu/session-core/acp';
 import type { SessionConfigSelectOptions } from '@agentclientprotocol/sdk';
 import { mergeTrustedSessionMeta } from '../acp/runtime-process/session-meta';
@@ -226,25 +227,9 @@ export type AcpSpawnSpec = {
   modelsInConfigUpdate?: boolean;
   /** 插件的 `acp.authenticateWhenAdvertised`:agent 报了这个方法就先认证、再开探针那条会话(与真会话同一条)。 */
   authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
-  /** The plugin's `acp.catalogNeedsSignIn`: a `ready` own read is checked against `readHarnessSignIn`. */
-  catalogNeedsSignIn?: boolean;
+  /** `acp.catalogNeedsSignIn`: the account row's sign-in reading; `null` = cannot read. */
+  readSignIn?: () => Promise<AgentAuthStatus | null>;
 };
-
-/**
- * This harness's sign-in reading (`auth.checkStatus`, the account row's reading), for `catalogNeedsSignIn` harnesses.
- * Injected for the same reason as the resolvers below: the reading lives in the agent-config runtime, not here.
- * A reading that cannot be taken is `unknown`.
- */
-export type HarnessSignInReader = (pluginId: string) => Promise<{ kind: 'authenticated' | 'unauthenticated' | 'unknown'; reason?: 'expired' }>;
-
-let readHarnessSignIn: HarnessSignInReader = async (pluginId) => {
-  throw new Error(`model catalog probe: ${pluginId} declares catalogNeedsSignIn but the host installed no sign-in reader`);
-};
-
-export function setHarnessSignInReader(reader: HarnessSignInReader): void {
-  readHarnessSignIn = reader;
-}
-
 /** `null` = 这家插件不说 ACP（→ `unsupported`）；`'not-found'` = 没有这个插件（→ `not-installed`）。 */
 export type AcpSpawnResolver = (
   pluginId: string,
@@ -890,8 +875,8 @@ async function probeOnce(
         const sessionMeta = mergeTrustedSessionMeta(spec.sessionMeta, probeCredentials?.sessionMeta);
         const state = await Promise.race([
           rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised,
-            // Only the own-route read: a placeholder or connection pass runs on credentials that are not this account.
-            spec.catalogNeedsSignIn && !probeCredentials ? () => isSignedOut(pluginId) : undefined),
+            // Own route only: a placeholder or connection pass runs on credentials that are not this account.
+            probeCredentials ? undefined : spec.readSignIn),
           processFailed,
           watchdog.stalled,
         ]);
@@ -923,16 +908,6 @@ async function probeOnce(
       // 临时目录清不掉不该让探测失败。
     });
   }
-}
-
-/**
- * `catalogNeedsSignIn`: a list this harness printed while signed out is not a list anyone can run.
- * Only a signed-out reading counts. `unknown` keeps the list: an instrument that cannot read is not a negative
- * reading. A login marked expired keeps it too: the renderer's expiry overlay owns that state (`withAuthExpiry`).
- */
-async function isSignedOut(pluginId: string): Promise<boolean> {
-  const reading = await readHarnessSignIn(pluginId);
-  return reading.kind === 'unauthenticated' && reading.reason !== 'expired';
 }
 
 /**
@@ -1142,8 +1117,7 @@ class AcpProbeClient {
     model?: string,
     modelsInConfigUpdate?: boolean,
     authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
-    /** `catalogNeedsSignIn`: asked once the session opened. Signed out ⇒ `auth-required`, efforts kept. */
-    signedOut?: () => Promise<boolean>,
+    readSignIn?: AcpSpawnSpec['readSignIn'],
   ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,
@@ -1284,8 +1258,9 @@ class AcpProbeClient {
     const configModels = toChoices(modelOption);
     const reportedModels = toAvailableModels(response?.models?.availableModels);
     const models = [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
-    // The login entry is what `initialize` advertised, as for an `authRequired` refusal that carries none.
-    if (await signedOut?.()) return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };
+    // Signed out ⇒ auth-required with `initialize`'s login methods. Unknown keeps the list; expired is `withAuthExpiry`'s.
+    const signIn = await readSignIn?.();
+    if (signIn?.kind === 'unauthenticated' && signIn.reason !== 'expired') return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };
     if (models.length === 0) {
       // 这家 harness 说了 ACP，但没有模型选择这回事。不是错误，就是没得选。
       return { kind: 'ready', models: [], selected: null, efforts, selectedEffort };

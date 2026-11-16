@@ -148,13 +148,6 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
   if (attachment.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(attachment.previewUrl);
 }
 
-
-const ACCESS_METHOD_KEYS = {
-  account: 'harnessCatalog.accessAccount',
-  'api-key': 'harnessCatalog.accessApiKey',
-  endpoint: 'harnessCatalog.accessEndpoint',
-} as const;
-
 export type InitialSessionState = {
   provider: AgentProviderId | null;
   setProvider: (provider: AgentProviderId | null) => void;
@@ -1007,7 +1000,7 @@ export function useInitialSessionState(
   const harnessSignIn = legLoginGate.signIn ? openAgentAccount : null;
   // 同一个判据算两次没有意义:能去登录才给入口,不能去就一个字都不画(控件要么真生效要么不渲染)。
   const accessMethodsLine = agentAccessMethods(agents?.find((agent) => agent.id === providerId))
-    .map((method) => translate(ACCESS_METHOD_KEYS[method]))
+    .map((method) => translate(`harnessCatalog.access.${method}`))
     .join(' / ');
   const harnessModelUnlock = harnessSignIn
     ? {
@@ -1025,8 +1018,8 @@ export function useInitialSessionState(
               label: translate('harnessCatalog.unlockModels', { name: agentDisplayName }),
               title: translate('harnessCatalog.unlockModelsHint', { name: agentDisplayName }),
             }),
-        // The second line names what the click offers: the connection panel's own ways in.
-        ...(accessMethodsLine ? { detail: accessMethodsLine } : {}),
+        // Second line: the connection panel's own ways in.
+        detail: accessMethodsLine,
       }
     : null;
   // 一行说明,不是弹窗也不是阻断:分组为什么不在,用户有权知道 —— 主进程给原因码,这里翻成人话。

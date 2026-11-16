@@ -165,20 +165,13 @@ export function agentOffersConnections(
   return agentAccessMethods(agent).length > 0;
 }
 
-/** One way the connection panel lets you connect this agent. */
-export type AgentAccessMethod = 'account' | 'api-key' | 'endpoint';
-
-/**
- * The ways the connection panel offers for this agent, in the panel's order, read from the same declarations:
- * account sign-in (account connections, or a sign-in method for its CLI's own login), an API key (a declared
- * connection form), and a custom address for that key (the form's address field). Empty = no panel.
- */
+/** The ways the connection panel offers, in its order; empty = no panel. */
 export function agentAccessMethods(
   agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
-): AgentAccessMethod[] {
+): Array<'account' | 'api-key' | 'endpoint'> {
   if (!agent) return [];
   const form = agentConnectionForm(agent);
-  const methods: AgentAccessMethod[] = [];
+  const methods: Array<'account' | 'api-key' | 'endpoint'> = [];
   if (form?.accounts || resolveAccountTargets(agent).length > 0) methods.push('account');
   if (form) methods.push('api-key');
   if (form && form.endpoint !== 'none') methods.push('endpoint');

@@ -2250,7 +2250,7 @@ describe('InitialSessionField', () => {
     expect(unlock?.groupLabel).toBe('harnessCatalog.ownModelsGroup|Kimi');
     expect(unlock?.label).toBe('harnessCatalog.unlockModels|Kimi');
     // Second line: what the panel it opens offers. Kimi declares only its CLI's own sign-in.
-    expect(unlock?.detail).toBe('harnessCatalog.accessAccount');
+    expect(unlock?.detail).toBe('harnessCatalog.access.account');
 
     // 反例对照:那条 toast 必须**真的没了** —— 只删渲染、判据仍绿的话这里会红。
     expect(
@@ -2297,7 +2297,7 @@ describe('InitialSessionField', () => {
       expect(latestState?.harnessModelUnlock).toMatchObject({
         groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
         label: `harnessCatalog.unlockModels|${provider}`,
-        detail: 'harnessCatalog.accessAccount / harnessCatalog.accessApiKey / harnessCatalog.accessEndpoint',
+        detail: 'harnessCatalog.access.account / harnessCatalog.access.api-key / harnessCatalog.access.endpoint',
       });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state
