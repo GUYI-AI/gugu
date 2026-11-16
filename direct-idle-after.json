@@ -1,0 +1,66 @@
+{
+  "head": "0.3.6-menu2858-8ece4eabb1",
+  "stage": "after",
+  "context": "direct",
+  "theme": "dark",
+  "viewport": {
+    "width": 390,
+    "height": 771,
+    "dpr": 2.7750000953674316
+  },
+  "input": {
+    "x": 11.998873710632324,
+    "y": 699.1835327148438,
+    "width": 366.27252197265625,
+    "height": 55.996620178222656,
+    "top": 699.1835327148438,
+    "right": 378.2713956832886,
+    "bottom": 755.1801528930664,
+    "left": 11.998873710632324
+  },
+  "dock": {
+    "x": 0,
+    "y": 639.19482421875,
+    "width": 390.270263671875,
+    "height": 131.97634887695312,
+    "top": 639.19482421875,
+    "right": 390.270263671875,
+    "bottom": 771.1711730957031,
+    "left": 0
+  },
+  "row": {
+    "rect": {
+      "x": 11.998873710632324,
+      "y": 647.1903076171875,
+      "width": 366.27252197265625,
+      "height": 47.9954948425293,
+      "top": 647.1903076171875,
+      "right": 378.2713956832886,
+      "bottom": 695.1858024597168,
+      "left": 11.998873710632324
+    },
+    "editing": false,
+    "margin": "4px",
+    "controls": [
+      "附件"
+    ]
+  },
+  "scroller": {
+    "x": 0,
+    "y": 63.997745513916016,
+    "width": 390.270263671875,
+    "height": 575.1970825195312,
+    "top": 63.997745513916016,
+    "right": 390.270263671875,
+    "bottom": 639.1948280334473,
+    "left": 0
+  },
+  "pill": null,
+  "editorActive": false,
+  "keyboard": [
+    "mInputShown=false",
+    "mIsInputViewShown=true mStatusIcon=0"
+  ],
+  "syntheticFixture": true,
+  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic test conversations; no model requests"
+}

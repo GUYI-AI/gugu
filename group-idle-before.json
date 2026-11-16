@@ -1,0 +1,79 @@
+{
+  "head": "0.3.6-menu2858-9c0cce9527",
+  "stage": "before",
+  "context": "group",
+  "theme": "dark",
+  "viewport": {
+    "width": 390,
+    "height": 771,
+    "dpr": 2.7750000953674316
+  },
+  "input": {
+    "x": 11.998873710632324,
+    "y": 699.1835327148438,
+    "width": 366.27252197265625,
+    "height": 55.996620178222656,
+    "top": 699.1835327148438,
+    "right": 378.2713956832886,
+    "bottom": 755.1801528930664,
+    "left": 11.998873710632324
+  },
+  "dock": {
+    "x": 0,
+    "y": 597.1959228515625,
+    "width": 390.270263671875,
+    "height": 173.9752197265625,
+    "top": 597.1959228515625,
+    "right": 390.270263671875,
+    "bottom": 771.171142578125,
+    "left": 0
+  },
+  "row": {
+    "rect": {
+      "x": 11.998873710632324,
+      "y": 647.1903076171875,
+      "width": 366.27252197265625,
+      "height": 47.9954948425293,
+      "top": 647.1903076171875,
+      "right": 378.2713956832886,
+      "bottom": 695.1858024597168,
+      "left": 11.998873710632324
+    },
+    "editing": false,
+    "margin": "4px",
+    "controls": [
+      "话题",
+      "智能体"
+    ]
+  },
+  "scroller": {
+    "x": 0,
+    "y": 63.997745513916016,
+    "width": 390.270263671875,
+    "height": 707.1734008789062,
+    "top": 63.997745513916016,
+    "right": 390.270263671875,
+    "bottom": 771.1711463928223,
+    "left": 0
+  },
+  "pill": {
+    "rect": {
+      "x": 11.998873710632324,
+      "y": 597.1959228515625,
+      "width": 366.27252197265625,
+      "height": 41.99887466430664,
+      "top": 597.1959228515625,
+      "right": 378.2713956832886,
+      "bottom": 639.1947975158691,
+      "left": 11.998873710632324
+    },
+    "text": "布局验收智能体 11\n运行中\n+11"
+  },
+  "editorActive": false,
+  "keyboard": [
+    "mInputShown=false",
+    "mIsInputViewShown=false mStatusIcon=0"
+  ],
+  "syntheticFixture": true,
+  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic test conversations; no model requests"
+}

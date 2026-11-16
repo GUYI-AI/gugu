@@ -1,0 +1,25 @@
+{
+  "head": "8ece4eabb1d88ec45c8642c202cce9464e553e7a",
+  "theme": "dark",
+  "row": {
+    "x": 15.996621131896973,
+    "y": 655.185791015625,
+    "width": 358.2770080566406,
+    "height": 47.9954948425293,
+    "top": 655.185791015625,
+    "right": 374.2736291885376,
+    "bottom": 703.1812858581543,
+    "left": 15.996621131896973
+  },
+  "syntheticFixture": true,
+  "modelRequests": 0,
+  "controls": [
+    "工作",
+    "技能",
+    "智能体"
+  ],
+  "hasInput": true,
+  "width": 390,
+  "source": "Android native App on an isolated API 34 emulator, dark, 390 CSS px; synthetic test conversations; no model requests",
+  "limitation": "Menu applicability from a published synthetic account session directory; no live host timeline or skill execution verified."
+}
