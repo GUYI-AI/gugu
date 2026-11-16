@@ -373,7 +373,9 @@ export const ExtensionPage = observer(function ExtensionPage({
       };
       element.addEventListener('dom-ready', ready);
       element.addEventListener('render-process-gone', gone);
-      const load = () => { frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
+      // A widget is also shown once loaded (its snapshot waits on it); any other page only by its first contentful paint
+      // or the three seconds: a page loaded with nothing drawn yet (its file still being read) is not shown empty.
+      const load = () => { if (claimOf()?.widget) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
       // Electron guests are separate documents: their wheel cannot bubble into the chat's scroller.
       const wheel = (event: Event) => {

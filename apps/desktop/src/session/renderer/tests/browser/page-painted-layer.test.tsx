@@ -63,3 +63,15 @@ it('a guest that never says it painted is shown after three seconds', async () =
   await vi.advanceTimersByTimeAsync(200)
   expect(extensionViewStore.paintedPages.has(key)).toBe(true)
 })
+
+it('loaded with nothing drawn yet (its file still being read): still clear, until its first paint or the three seconds', async () => {
+  const { key, guest } = await mount('loaded-tab')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] })
+  act(() => guest.dispatchEvent(new Event('dom-ready')))
+  act(() => guest.dispatchEvent(new Event('did-finish-load')))
+  await vi.advanceTimersByTimeAsync(2_000)
+  expect(extensionViewStore.paintedPages.has(key)).toBe(false)
+  expect(guest.className).toContain('opacity-0')
+  await vi.advanceTimersByTimeAsync(1_100)
+  expect(extensionViewStore.paintedPages.has(key)).toBe(true)
+})
