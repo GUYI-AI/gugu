@@ -33,8 +33,7 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
  const runtime=useAssistantWorkRuntime(canonical?.task.deviceId??null)
  const agentId=canonical?.taskAgentId??null
  const contact=contacts.find(row=>row.id===agentId&&row.type==='agent'&&row.owner_user_id===ownerId)
- // A task agent not in contacts: read the identity directory the way avatars do (its own push), then check it is this
- // account's agent. Not there yet = waiting; there but not this account's agent = the chat is unavailable.
+ // A task agent not in contacts: read the identity directory, then check it is this account's agent.
  const directory=useAvatarIdentity(agentId&&!contact?agentId:'')
  const owned=directory&&directory.type==='agent'&&directory.owner_user_id===ownerId?directory:null
  const identityFailed=!!directory&&!owned
@@ -48,7 +47,6 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
    showAssistantTaskChat({ownerId,request:canonical,name:canonical.title!})
  },[ownerId,canonicalKey,canonical,opened])
  const agent=contact??owned
- // A placeholder title whose evidence is not known yet is drawn as a placeholder (❌ 「任务」 then the real one).
  const titleKnown=detail?detail.titleKnown:true
  const title=detail?.work.title??request.title??t('tasks.title')
  const state=detail?.work.outcome??request.outcome??'active'

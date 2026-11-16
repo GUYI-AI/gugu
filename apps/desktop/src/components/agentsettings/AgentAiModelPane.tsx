@@ -134,7 +134,6 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       if (model.source === 'harness') ownOptions[model.id] = { name: model.name, description: model.description }
     }
   }
-  // While the harness's own catalog is asked and not answered, the picker holds its place like the platform catalog.
   const harnessUnknown = harnessReading.state === 'unknown' && Boolean(agent.device_id && engine && !cloudOnly)
   const options = (listed === null ? null : assembleComposerModelOptions(ownOptions, listed.map((model) => ({
       ...model, creditMultiplier: model.creditMultiplier ?? null, contextWindow: model.contextWindow ?? null,

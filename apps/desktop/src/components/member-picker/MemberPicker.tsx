@@ -74,8 +74,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   const live = useLiveDeviceSessions()
   const [openedAt] = useState(() => Date.now())
 
-  // 选成员要新鲜的候选:通讯录 revision 与弹窗开关可能同一帧到,打开时再取一次权威快照(contactRelations 没有 fresh)。
-  // 在第一次渲染里就发出(❌ 等挂载后的 effect):第一帧确认按钮就等它,也不会先按上次的名单判「所选成员不可用」再收回。
+  // 打开时再取一次权威快照(contactRelations 没有 fresh),在第一次渲染里就发出(❌ 等挂载后的 effect)。
   useState(() => { void contactRelations.prefetch() })
   const loadingContacts = useReplicaFetching(contactRelations, []) || listRead
   const reload = useCallback(() => refreshContacts().catch((error: unknown) => log.error({ error: String(error) }, 'refresh contacts failed')), [refreshContacts])

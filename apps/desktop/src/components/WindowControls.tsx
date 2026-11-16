@@ -38,8 +38,7 @@ export interface WindowChromeState {
   labels: WindowChromeLabels
 }
 
-// 最大化状态与本地化按钮名的真值都在主进程:首值由 preload 同步交出(首帧就对),之后的变化由主进程推来,收进这一个
-// 模块级 store(④,属于这扇窗口,与账号无关)。第一次有人读时才接上,测试与没有桥的壳都不受模块加载顺序影响。
+// 最大化状态与本地化按钮名在主进程:preload 同步交出首值,之后主进程推来(④,属于这扇窗口)。第一次有人读时才接上。
 type ChromeFacts = Omit<WindowChromeState, 'dw'>
 const chromeStores = new WeakMap<DesktopWindowBridge, SelectStore<ChromeFacts>>()
 let noBridgeFacts: ChromeFacts | null = null

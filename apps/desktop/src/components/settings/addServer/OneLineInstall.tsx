@@ -62,7 +62,6 @@ export function OneLineInstall({
 
   const appeared = newlyAppearedDevices(known.current, devices)[0] ?? null
   // #6264 那台机器在确认页点「允许」时、或领取登录结果时,库因为机器上限拒了它:这里就地停下说清楚,❌ 一直转圈等。
-  // 等着时每隔几秒问一次(recentMachineLimitRefusals 的 refreshEvery);机器出现了就不再问。
   const check = useReplica(recentMachineLimitRefusals, appeared ? null : [since.current])
   const refusal = check.state === 'value' ? check.value : null
   // 问不到不打断添加流程:接着等、下一拍再问,只在等待那行下面说一句。

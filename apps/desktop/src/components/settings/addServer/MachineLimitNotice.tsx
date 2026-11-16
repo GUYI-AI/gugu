@@ -29,13 +29,11 @@ export function MachineLimitNotice({
   const { t } = useTranslation('settings')
   const { devices, phones } = useDevicesStore()
   const machines = useMemo(() => deviceMachines([...devices, ...(phones ?? [])]), [devices, phones])
-  // The attempted machine, when the backend names it: then whether the refusal still holds is asked of the enforcement
-  // RPC, and asked again after each removal made here (a partial removal of a multi-version machine included).
+  // The attempted machine, when named: the refusal is checked again after each removal made here.
   const attempt: [string, 'ssh' | 'tunnel'] | null = refusal?.machine_id && refusal.via ? [refusal.machine_id, refusal.via] : null
   const check = useReplica(machineLimitCheck, attempt)
   const recheck = () => { if (attempt) void machineLimitCheck.refresh(...attempt) }
   const { canRemoveDevices, openRemoveDevices, dialogs } = useDeviceRemoval(machines, { onRemoved: recheck })
-  // Until the check answers (or without one) the refusal in hand is what is said.
   const current = check.state === 'value' ? check.value : refusal
   const error = check.state === 'error' ? messageForUser(check.error) : check.state === 'value' && check.error ? messageForUser(check.error) : ''
   const available = check.state === 'value' && check.value === null && !error

@@ -54,9 +54,7 @@ installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.
 isAnimationWindowVisible()
 
-// @@@app-settings-read-model — the shell draws this device's settings too (its device preferences: theme, language, tint,
-// notifications, tray badge, assistant), so it reads the whole set at startup and follows changes from other windows,
-// as the task page's entry does. Web and phone keep their device preferences in localStorage and have no app settings.
+// @@@app-settings-read-model — the shell reads this device's whole settings at startup and follows other windows' changes.
 if (devicePreferences.backend === 'appSettings') {
   prefetchAllAppSettings().catch((error: unknown) => shellLog.error({ error: String(error) }, 'this device\'s settings could not be read at startup'))
 }

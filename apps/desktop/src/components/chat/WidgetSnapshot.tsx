@@ -21,8 +21,7 @@ export function WidgetSnapshot({ widgetId, visible, text, inactive = false }: { 
   const { theme } = useTheme()
   const own = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
-  // Its own box fills the slot: measured before the first paint, so a slot mounted again (back in a conversation) reads its
-  // width's picture from the replica in that frame, ❌ the loading face first.
+  // Measured before the first paint, so a slot mounted again reads its width's picture in that frame, ❌ the loading face first.
   useLayoutEffect(() => {
     if (!own.current) return
     const update = () => setWidth(own.current?.clientWidth ?? 0)

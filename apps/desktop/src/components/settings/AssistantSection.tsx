@@ -162,7 +162,6 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
   const enabled = useMeetingReminderPref()
-  // Whether this computer has a calendar to read (the reminder's own read of it).
   const reading = useReplica(deviceMeetings, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">

@@ -31,12 +31,12 @@ const installedApps = (installed: InstalledApps): { manifest: ExtensionManifest;
 const unusableApps = (installed: InstalledApps): { id: string; reason: string }[] =>
   installed.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason }))
 
-/** `offered`: what the market says of these Apps (`marketUpdates('phone')`); while unknown a row says nothing about versions. */
+/** `offered` (`marketUpdates('phone')`): while unknown a row says nothing about versions. */
 export function AppsSection({ offered, onManage }: { offered: Reading<MarketUpdates>; onManage: (id: string) => void }) {
   const { t, i18n } = useTranslation('main')
   const { t: tm } = useTranslation('messaging')
   const titleId = useId()
-  // What is installed here (`installedExtensions('phone')`): unknown draws placeholder rows (❌ "no Apps installed" first).
+  // Unknown draws placeholder rows (❌ "no Apps installed" first).
   const installed = useInstalledApps(PHONE_HOST)
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

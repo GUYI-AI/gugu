@@ -23,8 +23,7 @@ export interface ReleaseNotesOpener {
 export function useReleaseNotes(): ReleaseNotesOpener {
   const feed = useReplica(releaseNotesFeed, [])
   const version = useReplica(appVersion, [])
-  // 判断只用读到的值:feed 没取到(离线 / 站点挂了 = error)这次什么都不做,❌ 别当成「没有更新说明」;
-  // 版本要等平台答过(build 常量那一帧是 stale),否则可能按错的版本记「看过」。
+  // feed 没取到(error)这次什么都不做,❌ 当成「没有更新说明」;版本要等平台答过,否则可能按错的版本记「看过」。
   const entries = feed.state === 'value' ? feed.value : null
   const current = version.state === 'value' && !version.stale ? version.value : null
   // 自动带过去这件事一次启动只许发生一次 —— 依赖变化重跑不该再开一个标签页。

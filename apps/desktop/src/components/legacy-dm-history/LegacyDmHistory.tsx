@@ -71,7 +71,6 @@ function LegacyDmReader({ scope: owner, sessionId, mobile, onClose }: {
     } catch (cause) { log.error({ error: cause }, 'legacy archive page read failed'); setPageError(cause); }
     finally { setPaging(false); }
   };
-  // A failed first read is read again (prefetch reads an entry without a value); a failed page is asked again.
   const retry = () => { if (reading.state === 'error') void legacyDmList.prefetch(...args); else void more(); };
   const title = translate(sessionId ? 'legacyDm.history' : 'legacyDm.archive');
   return <>

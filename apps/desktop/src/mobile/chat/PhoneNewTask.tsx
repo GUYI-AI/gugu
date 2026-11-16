@@ -202,7 +202,6 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         model: selection.model ?? undefined,
         permissionMode: selection.permissionMode ?? undefined, effort: selection.effort ?? undefined,
       })
-      // That machine's last-used set changed.
       void sessionCreateOptions.refresh(home.deviceId)
       clear()
       setStage({ kind: 'off' })

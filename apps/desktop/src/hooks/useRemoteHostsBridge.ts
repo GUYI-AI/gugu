@@ -60,8 +60,7 @@ export function useRemoteHostsBridge(
     return () => window.removeEventListener('gugu:cloud-version-matched', ready)
   }, [])
   const homeName = useAssistantName()
-  // This desktop's SSH machines; null = not read yet (kept across restarts, so only a first run or a refused snapshot):
-  // then each machine's link is drawn as not known (remoteLinkFacts), no tunnel is asked for and no sign-in is asked.
+  // This desktop's SSH machines; null = not read yet: each link is not known (remoteLinkFacts), nothing is asked.
   const sshMachines = useSshMachineIds()
   // 离线的 SSH 机器:这个账号在那台机器上的登录还在不在(侧栏与会话里说「登录已失效」而不只是「离线」)。
   const sshAddress = useCallback((deviceId: string) => (sshMachines?.has(deviceId) ? deviceId : null), [sshMachines])
@@ -172,7 +171,6 @@ export function useRemoteHostsBridge(
   }, [enabled])
 }
 
-/** Linked over a tunnel per main's state; not read yet = not known linked. */
 function tunnelLinked(tunnels: { ready: readonly string[] } | null, deviceId: string): boolean {
   return tunnels !== null && tunnels.ready.includes(deviceId)
 }

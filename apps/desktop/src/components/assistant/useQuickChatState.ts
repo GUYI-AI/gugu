@@ -21,7 +21,6 @@ export const quickChatState = replica({
   watch: { start: () => desktopIpc()!.eventOn(QUICK_CHAT_CHANNELS.changed, () => { void quickChatState.refresh() }) },
 })
 
-
 /** 不是桌面 = `available: false`(没有这扇小窗,❌ 一个读数);桌面上是读数:没读到、读到了、读不到。 */
 export function useQuickChatState(): { available: boolean; reading: Reading<QuickChatState>; setEnabled: (on: boolean) => void } {
   const available = desktopIpc() !== null

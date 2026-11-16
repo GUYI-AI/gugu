@@ -404,8 +404,7 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
   } else if (params.enabled && !follow.params.enabled) {
     // A page that can reach the machine joins one that could not: the follow reads now (❌ stays on the cached picture).
     follow.params = params
-    follow.stop()
-    follow.stop = runSessionFollow(follow)
+    restartSessionFollow(params)
   }
   const active = follow
   active.followers += 1

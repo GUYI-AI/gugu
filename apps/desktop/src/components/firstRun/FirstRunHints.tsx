@@ -30,7 +30,6 @@ export function FirstRunHints({ userId }: { userId: string }) {
   const suppressed = useRef(new Set<HTMLElement>())
   for (const anchor of suppressed.current) if (!targets.some((target) => target.anchor === anchor)) suppressed.current.delete(anchor)
   const save = useMutation({
-    // The saved row lands in the replica (updateOwnSettingsKey), so the progress reading follows by itself.
     mutationFn: (ids: readonly FirstRunHintId[]) => dismissFirstRunHints(userId, ids),
     ...saveRetry,
     onError: (error) => log.warn({ error: String(error) }, 'First-run hint progress save failed'),

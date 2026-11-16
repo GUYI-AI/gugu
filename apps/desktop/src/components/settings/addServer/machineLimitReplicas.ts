@@ -11,13 +11,11 @@ export const machineLimitCheck = replica({
     currentMachineLimitRefusal({ machine_id: machineId, via }),
 })
 
-export const MACHINE_LIMIT_CHECK_INTERVAL_MS = 5_000
-
 /** #6264 A machine-limit refusal since `sinceIso` (null = none yet), asked while the one-line install waits. */
 export const recentMachineLimitRefusals = replica({
   name: 'recentMachineLimitRefusals',
   scope: 'account',
   keep: 0,
   read: (_owner: string, sinceIso: string) => recentMachineLimitRefusal(sinceIso),
-  refreshEvery: (refusal) => (refusal ? false : MACHINE_LIMIT_CHECK_INTERVAL_MS),
+  refreshEvery: (refusal) => (refusal ? false : 5_000),
 })

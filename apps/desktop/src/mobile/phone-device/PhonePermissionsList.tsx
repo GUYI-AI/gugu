@@ -27,15 +27,13 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
   const settings = usePhoneDeviceSettings(ownerId)
   const report = usePhonePermissionReporter(ownerId)
   const osReading = useReplica(phoneOsState, [])
-  // Read on open (`fresh: 0`) and again on the way back from the system settings. A read again that failed is failed:
-  // the earlier answer is not shown as the system's now.
+  // Read on open and again back from the system settings; a failed read again ❌ shows the earlier answer as now.
   const read: 'loading' | 'ready' | 'failed' = osReading.state === 'unknown' ? 'loading' : osReading.state === 'value' && !osReading.error ? 'ready' : 'failed'
   const os = osReading.state === 'value' && !osReading.error ? osReading.value : null
   const systemRows = systemPermissionRows()
   const system = useSystemPermissionStates(systemRows.map(row => row.permission))
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Re-reads the system and re-registers the device (a command); its answer, or its failure, lands in phoneOsState.
   const refresh = useCallback(() => refreshPhoneDevice().catch((error: unknown) => log.warn({ error: String(error) }, 'phone re-read or re-registration failed')), [])
   useEffect(() => platform.subscribeAppForeground(() => { void refresh() }, () => undefined), [refresh])
   const act = async (key: string, action: () => Promise<void>) => {

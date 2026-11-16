@@ -9,7 +9,6 @@ export function AssistantMemoryContent({ machine,entry,children }: {
 }) {
   const body = useAssistantMemoryBody(machine,entry)
   if (!entry.contentPending) return children(entry,null,false)
-  // Until its text is read the card draws the note's title and kind (from the list) with the loading state.
   if (body.state === 'unknown') return children(entry,null,true)
   if (body.state === 'error') return children(entry,body.error,false)
   return children(body.value,body.error,false)

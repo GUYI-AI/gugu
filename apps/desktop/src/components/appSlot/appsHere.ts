@@ -132,7 +132,6 @@ const phone: AppsHere = {
 
 export const appsHere: AppsHere | null = platform.kind === 'electron' ? desktop : platform.capabilities.mobileApps ? phone : null
 
-/** The host key of this device's Apps (`installedExtensions(HERE_HOST)`), as `appsHere` is chosen. */
 export { HERE_HOST } from './hereHost'
 
 // The phone reads what it has installed once the page is up, so the cards and the panel know it from the start.

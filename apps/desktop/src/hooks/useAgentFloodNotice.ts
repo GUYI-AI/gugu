@@ -30,8 +30,7 @@ export function useAgentFloodNotice(
     if (messages[index]!.content_type === 'system') { latestSystemMessageId = messages[index]!.id; break }
   }
   const seen = latestSystemMessageId
-  // Opening a chat reads it already (the mount): only a system message landing on this chat since asks again
-  // (❌ a second read of the ledger each time a chat with a system message opens).
+  // Only a system message landing on this chat since asks again (❌ a second ledger read per open).
   const shown = useRef<{ chatId: string | null; seen: string | null } | null>(null)
   useEffect(() => {
     const before = shown.current

@@ -21,7 +21,6 @@ export function OpenAppMenuItems({ chatId, separated }: {
   separated?: boolean
 }) {
   const installed = useInstalledApps(HERE_HOST)
-  // No Apps on this platform (the web): nothing to open.
   if (!HERE_HOST) return null
   // Not known yet: the fold's row holds its place (❌ no fold, then one appearing under the pointer).
   if (installed.state === 'unknown') return <>{separated && <MenuSeparator />}<MenuRow><Unknown className="w-32" /></MenuRow></>
@@ -57,7 +56,6 @@ function OpenAppFold({ chatId, separated, apps }: { chatId: string; separated?: 
 export const OpenableAppRows = observer(function OpenableAppRows({ apps, onOpen }: { apps: readonly RailApp[]; onOpen: (appId: string) => void }) {
   const { t } = useTranslation('common')
   const { search, shown } = useMenuSearch(apps, app => app.name, { placeholder: t('menu.search'), noResults: t('menu.noResults') })
-  // The rows come from the list (the rail's menu draws them only once it is a value); the dot also reads the live pages.
   const installed = useInstalledApps(LOCAL_HOST)
   return <>
     {search && <MenuSearch {...search} />}

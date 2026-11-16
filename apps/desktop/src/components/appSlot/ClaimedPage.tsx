@@ -6,7 +6,6 @@ import { extensionViewStore } from '../../session/renderer/features/extensions/e
 import { PeekCovered } from './peekCovered'
 import type { PreparedChatFile } from '../../session/shared/extensions/app-runtime-protocol'
 
-/** Where this window's Apps are listed: the phone's own store on the phone, else main. */
 
 /** What in an ancestor can hide the slot without moving or resizing it (`RETAINED_SURFACE_HIDDEN_STYLE`). */
 const HIDING_ATTRIBUTES = ['style', 'class', 'hidden', 'inert']
@@ -32,7 +31,6 @@ export function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOp
   navigationRef.current = navigation
   // The resident layer draws a page only for an App it keeps (installed, switched on, listed in this window:
   // `residentTabContributions`): with none, the slot says so instead of staying blank (L4 09-29).
-  // Not read yet: nothing said (the page is drawn over the slot once it is).
   const installed = useInstalledApps(LISTED_HOST)
   const noPage = installed.state === 'value' && !installed.value.residentTabContributions.some((entry) => entry.kind === kind)
   useLayoutEffect(() => {

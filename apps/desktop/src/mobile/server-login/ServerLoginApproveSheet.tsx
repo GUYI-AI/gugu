@@ -33,7 +33,6 @@ const serverLoginRequest = replica({
   },
 })
 
-/** What deciding returned (this sheet's own command): in flight, its answer, or why it failed. */
 type Decision = { code: string; busy: boolean; error: string | null; final: { state: Exclude<ServerLoginState, 'pending'>; refusal: MachineLimitRefusal | null } | null }
 
 /**

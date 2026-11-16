@@ -74,8 +74,7 @@ export function peekAssistantPanelIntegration(panel: ConnectionMetadataStore | u
   try { assertCatalogReadable(snapshot,row); return parseIntegrationBody(row,id,locale,bytes) } catch { return undefined }
 }
 
-/** One application's full entry, from its catalog body. Shared reads and the kept result are the
- * `assistantIntegrationDetail` replica's (content-addressed by the body's sha); account state is never kept here. */
+/** One application's full entry, from its catalog body; kept by the `assistantIntegrationDetail` replica. */
 export async function readAssistantPanelIntegration(panel: ConnectionMetadataStore,id: string,locale: string,_version?: string): Promise<IntegrationMetadata> {
   const snapshot = panel.peekSnapshot?.()
   const localRow = snapshot?.items.find(item => item.domain === 'integrations' && item.resource_key === `catalog:${id}`)

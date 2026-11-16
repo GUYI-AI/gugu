@@ -211,8 +211,7 @@ function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: st
   const self = useReplica(thisDeviceId, task && isMine ? [] : null)
   if (!task) return { local: false, label: null }
   if (!isMine) return { local: false, label: t('message.taskCard.onColleagueComputer', { name: senderName }) }
-  // 还不知道这台是哪台:卡上不写「在哪」,也不能点(❌ 猜成别的电脑、按远端路线打开)。本机宿主答不出(error):
-  // 按会话 id 打开(不带项目、不并排),那条路线对哪台电脑上的会话都成立。
+  // 还不知道这台是哪台:卡上不写「在哪」,也不能点(❌ 猜)。本机宿主答不出(error):按会话 id 打开,对哪台电脑都成立。
   if (self.state === 'unknown') return { local: null, label: null }
   if (self.state === 'error') return { local: false, label: null }
   const here = self.value

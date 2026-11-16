@@ -16,8 +16,7 @@ const MAX_STALE = 40
 
 /** ACP records come from the task page archive, not a second parse of the provider's JSONL. */
 export function useNativeSessionRecord(deviceId: string, sessionId: string, enabled: boolean, online: boolean, local = false) {
-  // The record stream's state lives in timeline-cache.ts (keyed per session, the stream engine's own state): what this
-  // phone read last time is drawn first, and is all there is while that machine is away.
+  // What this phone read last time is drawn first, and is all there is while that machine is away.
   const streamKey = useMemo(() => ({ deviceId, sessionId }), [deviceId, sessionId])
   const followed = useSelect(nativeRecordStreams, (map) => map.get(sessionStreamKey(streamKey)), Object.is)
   const initial = useMemo(() => initialNativeRecordStream(streamKey, enabled), [streamKey, enabled])

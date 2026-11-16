@@ -8,10 +8,7 @@ import { assistantPanel } from '@/components/assistant/assistant-panel-replica'
 export type ConnectorAccountRow = { accountId: string; label: string; connectedAt: number | null }
 export type PhoneConnectorAccounts = { accounts: ConnectorAccountRow[] | null; supported: boolean; error: unknown; reload(): void }
 
-/**
- * Saved account labels only; no credential lookup or network verification. Derived from the panel's `integrations`
- * collection (replica `assistantPanel`): a disconnect elsewhere arrives with the panel's change. null = not read yet.
- */
+/** Saved account labels only (no credential lookup), derived from the panel's `integrations`. null = not read yet. */
 export function usePhoneConnectorAccounts({ machine,id,name,enabled }: {
   machine: AssistantMachine | null; device: string | null; id: string; name: string; enabled: boolean
 }): PhoneConnectorAccounts {

@@ -104,7 +104,7 @@ function indexSettlements(
   return next
 }
 
-/** How many pages follow each session's facts: the entry goes when the last one leaves (each applies the same batches). */
+/** Pages following each session's facts: the entry goes when the last one leaves. */
 const factsFollowers = new Map<string, number>()
 
 /** 这条会话的记录此刻还读不到,但会出现(会话刚建、provider 还没落下第一份记录)—— 不是错。 */
@@ -122,7 +122,6 @@ const RECORD_NOT_YET = new Set(['record_unsupported', 'record_not_found'])
  * ❌ 不拿定时器轮询去「等它出现」。
  */
 export function useSessionpageSessionTimeline(sessionId: string | null): SessionpageSessionTimeline {
-  // The facts live in the stream engine's module (timeline-cache.ts, keyed by session): absent = not read yet.
   const facts = useSelect(sessionpageTimelineFacts, (map) => (sessionId ? map.get(sessionId) ?? null : null), Object.is)
   const attachedRef = useRef<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -230,7 +229,7 @@ export function useSessionpageSessionTimeline(sessionId: string | null): Session
 
     return () => {
       alive = false
-      // Not followed any more (the last page showing it left): what it said can go stale unheard, so it is forgotten.
+      // The last page showing it left: what it said can go stale unheard, so it is forgotten.
       const left = (factsFollowers.get(sessionId) ?? 1) - 1
       if (left > 0) factsFollowers.set(sessionId, left)
       else { factsFollowers.delete(sessionId); updateSessionpageFacts(sessionId, () => undefined) }

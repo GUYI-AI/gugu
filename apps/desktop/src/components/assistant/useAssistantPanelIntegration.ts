@@ -3,10 +3,7 @@ import type { ConnectionMetadataStore } from '../connections/connection-metadata
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import { useAssistantIntegrationDetail } from './assistant-panel-reads'
 
-/**
- * The full catalog entry of a connection the list only summarised (replica `assistantIntegrationDetail`): `data` is the
- * summary when it is already full; null while the entry is not read (the caller draws the summary and a spinner).
- */
+/** The full catalog entry of a summarised connection; `data` is the summary when already full, null while not read. */
 export function useAssistantPanelIntegration(panel: ConnectionMetadataStore | undefined,summary: IntegrationMetadata | null | undefined) {
   const { resolvedLocale } = useLocale()
   const { summaryIsFull, reading } = useAssistantIntegrationDetail(panel,summary,resolvedLocale)

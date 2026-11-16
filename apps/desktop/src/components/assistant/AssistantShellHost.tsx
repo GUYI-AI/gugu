@@ -243,7 +243,6 @@ export function AssistantShellHost() {
       setup,
       member,
       preparing,
-      // The entry draws "preparing" only once main said it waits.
       rulesPending: rules.state === 'value' && rules.value.pending,
     })
   }, [deviceCount, cloud, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules])

@@ -18,8 +18,7 @@ export function useAssistantDm(assistantId: string | null): AssistantDm {
     : null)
   const reading = useReplica(assistantDm, assistantId && !existing ? [assistantId] : null)
   const chatId = existing ?? (reading.state === 'value' ? reading.value : null)
-  // A chat the list does not have yet (just made by open_dm): put into the list at once and the list read again, as every
-  // other open_dm caller does (❌ the shell holding a chat id the chat list does not know). Once per chat.
+  // A chat the list does not have yet: put into the list and the list read again, as every other open_dm caller does.
   const { upsertChat, refreshChats } = useChatStore('upsertChat', 'refreshChats')
   const listed = useRef<string | null>(null)
   const unlisted = !existing && assistantId && reading.state === 'value' ? reading.value : null

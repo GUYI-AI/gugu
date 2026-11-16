@@ -30,7 +30,6 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   // While that machine is away there is nothing to ask: unknown, read once it is back.
   const args: [string, string, boolean, boolean] | null = deviceId && sessionId && local !== undefined && reachable ? [deviceId, sessionId, local, phoneHost === true] : null
   const reading = useReplica(conversationOptions, args)
-  // A write's failure (pick / reload): said until dismissed or the next write.
   const [writeError, setWriteError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
@@ -65,7 +64,6 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
     ...(writeError ? { notice: { variant: 'error', message: writeError, onDismiss: () => setWriteError(null) } }
-      // A failed read: dismissing it reads again.
       : readError && args ? { notice: { variant: 'error', message: readError, onDismiss: () => { void conversationOptions.refresh(...args) } } } : {}),
   }
   const confirmation = <SessionReloadConfirm open={!!restart} onOpenChange={open => { if (!open) setRestart(null) }}

@@ -233,8 +233,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
       ...(fields.bio !== undefined ? { bio: fields.bio } : {}),
       ...(fields.avatar !== undefined ? { avatar: fields.avatar } : {}),
     })
-    // Whether to tell the assistant App, decided after the write (a failed assistant read never blocks a profile edit):
-    // the replica is asked now, ❌ guessed from what may not be read yet.
+    // Decided after the write (a failed assistant read never blocks a profile edit), ❌ guessed from what may not be read yet.
     const personal = !!ownerId && await myAssistant.fetch().then((mine) => mine.agentId === agentId, (error: unknown) => {
       rendererLogger('contacts/profile').error({ error: String(error), agentId }, 'Profile saved; whether it is the assistant could not be read, so the assistant App is not told')
       // @@@reading-default(moment) - a one-moment decision after the write: an assistant identity that cannot be read sends no App note (said in the log)

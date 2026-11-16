@@ -30,8 +30,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   const dismissedBeforeIdentity = useRef<string | null>(null)
   const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === iosInstallationId) ? setup : null
 
-  // The installation (one read per account, phoneInstallation); on iOS the host binding names it. Its progress is read
-  // synchronously against it (progress belongs to the native installation, never a restored WebView identifier).
+  // Progress is read against the installation (native), never a restored WebView identifier.
   const phoneHost = platform.kind === 'capacitor' && !!(platform.capabilities?.phoneDevice || platform.capabilities?.phoneAgentHost)
   const installation = useReplica(phoneInstallation, phoneHost && !identity.ios ? [] : null)
   const installId = !phoneHost ? null : identity.ios ? iosInstallationId : installation.state === 'value' ? installation.value.installId : null
@@ -64,7 +63,6 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
     setError(messageForUser(installFailure))
     setVisible(true)
   }, [installFailure])
-  // Asking again (the retry): a failed installation read is read again.
   useEffect(() => { if (retry > 0 && phoneHost && !identity.ios) void phoneInstallation.refresh() }, [retry, phoneHost, identity.ios])
 
   useEffect(() => {

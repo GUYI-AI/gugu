@@ -54,7 +54,6 @@ export function ReadFailed({ title, error, onRetry: _onRetry }: { title: string;
 export function ReadView<T>({ reading, failedTitle, children }: { reading: Reading<T>; failedTitle: string; children: (data: T) => ReactNode }) {
   const { t } = useTranslation('assistant')
   const error = useAssistantReadError(reading.state === 'unknown',reading.state === 'error' ? reading.error : null)
-  // The replica owns recovery (its retries, its push): no second retry timer here.
   if (error) return <AssistantEmpty title={failedTitle}><span role={(error as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'}>{assistantPanelFailure(error,t)}</span></AssistantEmpty>
   if (reading.state !== 'value') return <ReadingNow />
   // ❌ 只留旧的、不说。

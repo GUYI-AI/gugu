@@ -13,10 +13,7 @@ export interface AppInstallOffer {
   from: { kind: 'shared'; card: PackageCard } | { kind: 'market'; extensionId: string; version: string }
 }
 
-/**
- * File and widget offers share the group's own package first, and only versions newer than what is here. `market` null =
- * the market could not be read: only what is shared is offered (the caller says the failure).
- */
+/** The group's own package first, only versions newer than here. `market` null = unreadable: only what is shared is offered. */
 export function availableInstallOffers(shared: readonly SharedPackage[], market: readonly MarketOffer[] | null, installed: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>): AppInstallOffer[] {
   const notHere = (manifest: ExtensionManifest) => {
     const mine = installed.find(candidate => candidate.id === manifest.id)

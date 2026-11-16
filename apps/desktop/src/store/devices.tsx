@@ -68,7 +68,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   }, [userId, refresh])
 
 
-  // #7199 云电脑此刻怎样:管家的 /state 是事实源(replica `cloudComputer`,随账号走、按值定间隔再问、回到前台再问)。
+  // #7199 云电脑此刻怎样:replica `cloudComputer`(管家的 /state)。
   const cloud = useCloudComputer()
   // 开通、唤醒途中(管家每 3 秒问一次)每问到一次也重读设备列表:新机器第一次出现得快一点(❌ 只等 device_changed)。
   useEffect(() => {

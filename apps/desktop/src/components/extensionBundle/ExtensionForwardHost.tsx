@@ -50,7 +50,6 @@ export function ExtensionForwardHost() {
         const { chatId, message } = readMessageCreatedRevision(operation.payload)
         const meta = message?.content_type === 'attachment' && typeof message.content === 'string' ? parseAttachmentContent(message.content, messageFileRefOf(message)) : null
         if (!meta || !isExtensionBundle(meta)) continue
-        // Log push: that chat's list of packages is behind — read again where shown, on the next mount elsewhere.
         void sharedAppPackages.refresh(chatId)
         if (meta.source.kind === 'gone' || !message?.id) continue
         void updateUnasked(installPackageOf({ source: meta.source, messageId: String(message.id) }))
