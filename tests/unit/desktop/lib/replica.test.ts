@@ -509,7 +509,7 @@ describe('carry by content (review A6)', () => {
       persist: { maxBytes: 256, maxEntries: 1, carry: ({ status }: { status: string; meetings?: number[] }) => ({ status }) } })
     await define().prefetch()
     rm = await freshStart()
-    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    const writes = vi.spyOn(localStorage, 'setItem')
     define()
     expect(writes.mock.calls.filter(([key]) => key === 'gugu.readModel.v1:device')).toEqual([])
     writes.mockRestore()
