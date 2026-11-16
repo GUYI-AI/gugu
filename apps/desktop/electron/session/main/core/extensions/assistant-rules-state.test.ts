@@ -12,7 +12,7 @@ import { signTestRelease } from './test-support/signed-release';
 // #1931 R7 With no rules here, what the windows are told: the assistant waits for its rules (its entry shows it preparing)
 // while this machine needs it and has none; that is stuck once getting them truly failed. And the copy a release carries
 // starts the last good copy, so an upgrade made offline still has rules.
-const state = vi.hoisted(() => ({ service: null as unknown, userData: '', appPath: '', signedIn: null as string | null, assistants: {} as Record<string, string | null> }));
+const state = vi.hoisted(() => ({ service: null as unknown, userData: '', appPath: '', signedIn: null as string | null, assistants: {} as Record<string, string | null>, bindingRead: null as null | { entered: () => void; wait: Promise<void> } }));
 vi.mock('electron', () => ({ app: { getPath: () => state.userData, isPackaged: false, getAppPath: () => state.appPath } }));
 vi.mock('./extensions-root', () => ({ extensionsService: () => state.service }));
 // The account signed in and its assistant's provision (wherever the assistant lives); no one signed in: denied.
@@ -20,7 +20,13 @@ const signedIn = () => {
   if (!state.signedIn) throw Object.assign(new Error('Not signed in'), { code: 'denied' });
   return state.signedIn;
 };
-vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () => ({ ownerId: signedIn(), assistantId: state.assistants[signedIn()] ?? null }) }));
+vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () => {
+  const ownerId = signedIn();
+  const bindingRead = state.bindingRead;
+  bindingRead?.entered();
+  if (bindingRead) await bindingRead.wait;
+  return { ownerId, assistantId: state.assistants[ownerId] ?? null };
+} }));
 vi.mock('./app-unread-bindings', () => ({ account: async () => ({ token: 't', ownerId: signedIn() }) }));
 // A market install never finishes here (no network in tests): the App stays not in while it goes. What it was asked is kept.
 const marketInstalls = vi.hoisted(() => [] as unknown[]);
@@ -52,6 +58,7 @@ beforeEach(() => {
   delete process.env.GUGU_ASSISTANT_RULES_SEED_DIR;
   state.signedIn = null;
   state.assistants = {};
+  state.bindingRead = null;
   marketInstalls.length = 0;
 });
 afterEach(() => {
@@ -95,13 +102,45 @@ describe('whether the assistant here waits for its rules', () => {
     const { assistantRulesState, ensureAssistantApp, told } = await root();
     // Not known before main asked: a window found the assistant, the App is not in.
     const going = ensureAssistantApp('assistant');
-    await settle();
-    expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
-    expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+    // The account fact is read asynchronously; a fixed pause is not its completion signal.
+    await vi.waitFor(async () => {
+      expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+    });
     // Another account signed in now: what was read about the first one is not about it.
     state.signedIn = 'owner-2';
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
     void going.catch(() => undefined);
+  });
+
+  it('does not announce pending or install before the account assistant lookup resolves', async () => {
+    state.signedIn = 'owner-1';
+    state.assistants = { 'owner-1': 'assistant-1' };
+    const entered = Promise.withResolvers<void>();
+    const lookup = Promise.withResolvers<void>();
+    state.bindingRead = { entered: () => entered.resolve(), wait: lookup.promise };
+    const { assistantRulesState, ensureAssistantApp, told } = await root();
+    const going = ensureAssistantApp('assistant');
+    try {
+      // Hold the real root's account lookup, independently of import speed or wall-clock time.
+      await entered.promise;
+      expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+      expect(told).not.toContainEqual({ pending: true, stuck: false });
+      expect(marketInstalls).toEqual([]);
+
+      lookup.resolve();
+      await vi.waitFor(async () => {
+        expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
+        expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+        expect(marketInstalls).toHaveLength(1);
+      });
+      state.signedIn = 'owner-2';
+      expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+    } finally {
+      lookup.resolve();
+      state.bindingRead = null;
+      void going.catch(() => undefined);
+    }
   });
 
   it('leaves a person with no assistant anywhere alone: nothing to wait for, nothing put in', async () => {

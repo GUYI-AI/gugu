@@ -49,8 +49,20 @@ describe('the App palette, from tokens.css', () => {
     expect(dark.get('--em-color-white')).toBe('#fff');
     expect(light.get('--em-color-white')).toBe('#fff');
     expect(dark.get('--em-accent-contrast')).not.toBe(light.get('--em-accent-contrast'));
-    expect(css).not.toMatch(/display-p3/);
+    // Syntax retains the host's wide-gamut roles; other App chrome must remain its neutral palette.
+    for (const [name] of APP_PALETTE_COLORS) {
+      if (name.startsWith('--em-syntax-')) continue;
+      expect(`${dark.get(name)} ${light.get(name)}`, name).not.toMatch(/display-p3/);
+    }
     expect(dark.get('--em-background')).not.toBe(light.get('--em-background'));
+  });
+
+  it('projects the editor syntax roles in both themes without replacing App chrome', () => {
+    for (const name of ['--em-syntax-keyword', '--em-syntax-string', '--em-syntax-number']) {
+      expect(dark.get(name), name).toMatch(/^color\(display-p3 /);
+      expect(light.get(name), name).toMatch(/^color\(display-p3 /);
+      expect(dark.get(name), name).not.toBe(light.get(name));
+    }
   });
 
   it('gives the keyboard focus ring the host\'s colour: --focus-ring, the --live blue of each theme (#7333)', () => {

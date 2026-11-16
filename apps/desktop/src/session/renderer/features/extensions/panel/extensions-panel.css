@@ -525,10 +525,13 @@
   display: block;
   margin-top: 6px;
 }
+.xp-history-action .xp-state {
+  color: var(--foreground-muted);
+}
 .xp-history-date {
   flex: 0 0 auto;
   min-width: 52px;
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
