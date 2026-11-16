@@ -14,19 +14,10 @@ import { connectionReadDelay } from './connection-read-policy'
 import { CONNECTIONS_CHANGED } from './owner-connection-metadata'
 
 /**
- * @@@connection-replicas — the connections library's data (@@@client-state-model, PR 3), one replica per kind:
- * - `ownerConnections(epoch, deviceId)`: the owner's connection metadata (service snapshot), what the owner-connection
- *   store reads and writes (connection-host.ts); every owner-mode surface derives from it (statuses, configured, a
- *   provider's accounts). Replaces the assistant panel cache's `owner-connections.v1:*` account rows.
- * - `chatChannels()`: the WeChat (chat channel) list. Replaces the panel cache's `application-connections:wechat` row.
- * - `integrationsCatalog / integrationStatuses / configuredConnections / integrationAccounts / integrationAccountChecks`
- *   keyed by a library host key (`libraryHostOf`): the hosts that are not owner-mode (this machine's own integrations,
- *   another machine's, a legacy assistant panel).
- * Signal tier: `CONNECTIONS_CHANGED` / an assistant panel snapshot changing (this window's announcements, and the owner's change bus
- * through the store's `invalidate`) refresh them (`watchConnections`); focus too. The owner's rows and the channels are
- * account scope (a switch drops them); the host-keyed ones are device scope like the machine they ask (this machine's
- * integrations are asked signed in or not), and a host bound to an account carries its owner in its key. None is kept
- * across restarts (they grow with the account and are not in the cap table).
+ * @@@connection-replicas — the connections library's data (@@@client-state-model): the owner's connection snapshot
+ * (`ownerConnections`, owner mode), the chat channels, and per library host key (`libraryHostOf`, not owner mode) the
+ * integrations' catalog, statuses and accounts. Signal tier: `CONNECTIONS_CHANGED` and assistant panel changes refresh
+ * them (`watchConnections`), focus too. Host-keyed ones are device scope (a host bound to an account carries its owner).
  */
 
 /** No cloud computer: the channels live there, so there are none to list — an answer, not a failure. */
@@ -48,14 +39,10 @@ export const chatChannels = replica({
   refreshOnFocus: true,
   // The channel's health moves on the cloud computer (starting → running, a login lapsing); nothing pushes it here.
   refreshEvery: 10_000,
-  // Kept for the WeChat row's and the connections page's first frame. Bounded by construction: one channel per kind
-  // (`ChatChannelKind`, 4) of fixed fields (kind, agent id, flags, ISO date, health, two times ≈ 260) plus the account
-  // label; with every label ≤ 128 that is ≤ 4 × 388 + the list's fields and the entry ≈ 300 = 1,852 ≤ 2,048. A list
-  // outside that bound (a longer label, a kind this build does not know) is not kept, by definition (❌ refused, ❌ cut).
+  // Bound: ≤ 4 kinds × (fixed fields ≈ 260 + label ≤ 128) + ≈ 300 = 1,852 ≤ 2,048; a list outside it is not kept (❌ cut).
   persist: { maxBytes: 2048, maxEntries: 1, carry: (value: ChatChannelsValue) => (fitsKept(value) ? value : undefined) },
 })
 
-/** Whether a channel list is within the bound the snapshot keeps (see `chatChannels.persist`). */
 function fitsKept(value: ChatChannelsValue): boolean {
   if ('absent' in value) return true
   return value.channels.length <= CHAT_CHANNEL_KINDS && value.kinds.length <= CHAT_CHANNEL_KINDS
@@ -73,25 +60,18 @@ function ownerRoute(epoch: string) {
 export const ownerConnections = replica({
   name: 'ownerConnections',
   scope: 'account',
-  // The owner-connection store reads (and keeps the newer revision); it puts what it read here (connection-host.ts).
   read: (owner: string, epoch: string, deviceId: string | null): Promise<ConnectionMetadataSnapshot> =>
     connectionBridge().metadata(owner, deviceId, ownerRoute(epoch)).snapshot(),
   // Signal-fed and polled: a confirmation under way is asked about every 3 s, else every 15 s.
   fresh: Infinity,
   refreshOnFocus: true,
   refreshEvery: (value) => (value?.application.some(connectionNeedsConfirmation) ? 3_000 : 15_000),
-  // A failed read is retried with backoff and said meanwhile (the reading's `error`); after 3 the reading is an error
-  // (the page says so once, useConnectionReadNotice) and the poll keeps asking. The kept value stays.
+  // After 3 failed retries the reading is an error (said once, useConnectionReadNotice); the poll keeps asking.
   retry: 3,
   retryDelay: connectionReadDelay,
 })
 
-/**
- * Warm the connections after the session is restored (signed in, or the shell starting signed in), as the assistant
- * panel is: a page opened later draws its first frame from the value. The channels (also kept across restarts) and,
- * when the route is the owner's, its snapshot for all devices (the connections page's store). A failure is the
- * reading's (said where shown), not here.
- */
+/** Warm the channels and (owner route) the owner snapshot after the session is restored; a failure is the reading's. */
 export function prefetchConnections(): void {
   void chatChannels.prefetch()
   void connectionRoute.fetch().then((route) => {
@@ -104,7 +84,6 @@ export function useOwnerConnectionsReading(store: ConnectionMetadataStore | unde
   return useReplica(ownerConnections, store?.authorityEpoch && !store.assistantId ? [store.authorityEpoch, store.deviceId ?? null] : null)
 }
 
-/** A host that is not owner-mode, read through its key; `local` copy: what its legacy panel has in hand. */
 type IntegrationsRpc = typeof rpc.integrations
 type IntegrationList = Awaited<ReturnType<IntegrationsRpc['list']>>
 type ConnectionStatuses = Awaited<ReturnType<IntegrationsRpc['checkAllConnections']>>
@@ -195,10 +174,7 @@ export function refreshConnectionStatuses(hostKey: string): void {
 
 let watchers = 0
 let stopPanels: (() => void) | null = null
-/**
- * The window's connection signals, while any surface shows connections (ref-counted, module level): each announcement
- * reads the shown models again. A watcher starting with values already there reads once (changes nobody heard).
- */
+/** The window's connection signals while any surface shows connections (ref-counted); starting with values reads once. */
 export function watchConnections(): () => void {
   if (watchers++ === 0) {
     window.addEventListener(CONNECTIONS_CHANGED, refreshConnections)

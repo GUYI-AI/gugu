@@ -1,11 +1,8 @@
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 
 /**
- * @@@extensions-api-of — the one resolver from a host key to the API that answers for it (PR 3, a replica's `read` is
- * module level, so it asks by key, as `getAgentConfigRuntimeClient(machine)` does): `local` = this desktop's main,
- * `remote:<deviceId>` = another desktop's main through device RPC (#6264). The phone's App store (`phone`) is not an
- * `rpc.extensions`: its models read it themselves (installed-extensions.ts). A host that is offline is not asked: its
- * readers pass null arguments.
+ * @@@extensions-api-of — host key → the API answering for it: `local` = this desktop's main, `remote:<deviceId>` = another
+ * desktop's through device RPC (#6264). `phone` is not an `rpc.extensions`: its models read the phone store themselves.
  */
 export const LOCAL_HOST = 'local';
 export const PHONE_HOST = 'phone';

@@ -19,13 +19,9 @@ import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
 
 /**
- * @@@installed-extensions — what is installed on a host (@@@client-state-model, PR 3: replaces `installedExtensionsStore`).
- * The host owns the truth (main scans the extensions directory; another desktop's main; the phone's own App store), this is
- * the replica of it. A host key: `local` (this desktop's main), `remote:<deviceId>` (another desktop, #6264), `phone`.
- *
- * Push (host tier, `fresh: Infinity`): main's inventory channel and the installed-changed method `refresh('local')`
- * (register-extension-tabs.ts), the quit channel and every write here put main's answer (`at().set`), the phone's store
- * `tell`s its list (phoneApps.ts). Everything drawn from it is a pure function of (list, locale): `InstalledApps`.
+ * @@@installed-extensions — what a host has installed (@@@client-state-model). Host keys: `local`, `remote:<deviceId>`
+ * (#6264), `phone`. Push-fed: main's inventory channel refreshes it (register-extension-tabs.ts), writes and the quit
+ * channel put main's answer, the phone's store `tell`s its list (phoneApps.ts). Drawn as a pure function of (list, locale).
  */
 
 export { LOCAL_HOST, PHONE_HOST } from './extensions-api';
@@ -82,19 +78,15 @@ export interface RailApp {
 }
 
 /**
- * The rail's dock as last read, kept across restarts for its first frame (PLAN v2 C4). Only the first `DOCK_KEPT_SLOTS`
- * docked Apps, each `{extensionId, name}` whole or, when its name is longer than `DOCK_KEPT_NAME_MAX`, left out (null: its
- * slot draws a placeholder the size of an icon); `count` is how many Apps the dock has, so the slots past the kept ones are
- * placeholders too. Icons are host-rendered data URLs (1–6 KB each): not kept, the slot draws the App's monogram.
+ * The rail's dock, kept across restarts for its first frame (PLAN v2 C4): the first `DOCK_KEPT_SLOTS` docked Apps, one whose
+ * name exceeds `DOCK_KEPT_NAME_MAX` left out whole (null: a placeholder slot); `count` sizes the rest. Icons are not kept.
  */
 export type KeptDock = { slots: ({ extensionId: string; name: string } | null)[]; count: number };
 
 /** `list` is absent only in a value restored from the snapshot: what is installed is not known yet, only the dock. */
 export type InstalledReading = { list?: InstalledExtensionsList; dock?: KeptDock };
 
-/** How many of the dock's Apps the snapshot keeps: more than a rail shows on a laptop screen without scrolling. */
 export const DOCK_KEPT_SLOTS = 12;
-/** A name longer than this leaves its App out of the kept dock (whole, never cut short). */
 export const DOCK_KEPT_NAME_MAX = 32;
 // Bound: 12 slots × (id ≤ 64 + name ≤ 32 + JSON ≈ 32 = 128) + count and the entry's key/at/used ≈ 200 = 1,736 ≤ 2,048.
 
@@ -107,7 +99,7 @@ function keptDockOf(list: InstalledExtensionsList): KeptDock {
 }
 
 let phoneList: (() => Promise<InstalledExtensionsList>) | null = null;
-/** The phone's App store says how its list is read (phoneApps.ts registers it; it imports this module, not the other way). */
+/** phoneApps.ts registers how the phone's list is read (it imports this module, not the other way). */
 export function definePhoneInstalledList(read: () => Promise<InstalledExtensionsList>): void {
   phoneList = read;
 }
@@ -126,7 +118,6 @@ export const installedExtensions = replica({
   name: 'installedExtensions',
   scope: 'device',
   read: async (_owner: string, hostKey: string): Promise<InstalledReading> => ({ list: await readList(hostKey) }),
-  // Host-pushed: the inventory channel, the quit channel, the phone's `tell` and every write put or read it again.
   fresh: Infinity,
   persist: {
     maxBytes: 2048,
@@ -139,7 +130,7 @@ export const installedExtensions = replica({
 
 // ── what is drawn: pure functions of (list, locale) ─────────────────────────────────────────────────────────────
 
-/** Everything a surface derives from one host's list in one language. Built once per (list, locale) (`appsOf`). */
+/** Everything a surface derives from one host's list in one language, built once per (list, locale) (`appsOf`). */
 export class InstalledApps {
   readonly manifests: ExtensionManifest[];
   readonly variants: NonNullable<InstalledExtensionsList['variants']>;
@@ -205,10 +196,7 @@ export class InstalledApps {
     return this.origins[extensionId] === 'market' ? !this.autoUpdateOff.includes(extensionId) : null;
   }
 
-  /**
-   * The file an App names for a chat (`chatFile`) is that App's own state, not a document of the person's: its tab goes by
-   * the App's name. `fileName` may also be the name shown for it, its claimed suffix dropped (a block keeps only that).
-   */
+  /** An App's `chatFile` is its own state, not the person's document (its tab goes by the App's name); suffix optional. */
   isChatFile(kind: string | null | undefined, fileName: string | undefined): boolean {
     const tabName = kind ? parseExtensionTabKind(kind) : null;
     const tab = tabName && this.manifestFor(tabName.extensionId)?.contributes.tabs.find((candidate) => candidate.name === tabName.tabName);
@@ -228,10 +216,7 @@ export class InstalledApps {
     return this.allTabContributions.find((entry) => entry.kind === kind)?.sideWidth;
   }
 
-  /**
-   * The prompts enabled Apps offer in the composer's `/` menu (`contributes.prompts`), in the reader's language, with the
-   * App's name to group them under and the titles in its other languages for search.
-   */
+  /** Enabled Apps' `/` prompts in the reader's language, grouped by App name, other languages' titles kept for search. */
   get appPrompts(): { key: string; appName: string; title: string; prompt: string; otherTitles: string[] }[] {
     return this.manifests.filter((manifest) => this.isEnabled(manifest.id)).flatMap((manifest) => {
       const appName = localizedManifestText(manifest, this.locale).name;
@@ -266,10 +251,7 @@ export class InstalledApps {
     return this.tabs;
   }
 
-  /**
-   * The tabs a task session can have of their own — one list for every way a task opens one (its「+」, its empty pane, the
-   * phone's task page): the tabs that open no file, of the Apps that are on. A switched-off App is left out, not greyed.
-   */
+  /** The tabs a task can have of its own (its「+」, empty pane, the phone's task page); a switched-off App is left out. */
   get enabledTabContributions(): ExtensionTabContributionEntry[] {
     return this.allTabContributions.filter((entry) => entry.enabled && entry.ownPage && !entry.hidden);
   }
@@ -279,10 +261,7 @@ export class InstalledApps {
     return this.allTabContributions.filter((entry) => entry.enabled);
   }
 
-  /**
-   * An App's page of its own — its first tab that opens no file and is not one per task — or null: what the rail opens, if
-   * it can be pinned. A page per task is in many places at once, so it has no one place for the rail to go to.
-   */
+  /** An App's page of its own (first tab that opens no file and is not per task) or null: what the rail opens. */
   mainTabOf(extensionId: string): ExtensionTabContributionEntry | null {
     const pages = this.allTabContributions.filter((entry) => entry.extensionId === extensionId && !entry.forFiles && !entry.perSession);
     // A card is the main page only of an App with nothing else (Data Lens): hiding an App's page never makes its card the page.
@@ -300,10 +279,7 @@ export class InstalledApps {
     return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? []);
   }
 
-  /**
-   * What a group can open, in the order they were installed: the Apps with a page of their own, and the Apps whose tab opens
-   * a chat's files — opened on the group's file, as its card's 「Open」 does (5-minute game ①).
-   */
+  /** What a group can open: Apps with a page of their own, and Apps whose tab opens a chat's files (5-minute game ①). */
   get chatOpenableApps(): RailApp[] {
     return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? this.chatFilesApp(manifest) ?? []);
   }
@@ -347,10 +323,7 @@ export function useInstalledApps(hostKey: string | null): Reading<InstalledApps>
   }, [reading, resolvedLocale]);
 }
 
-/**
- * What a host has installed right now, for a one-moment decision outside rendering (a command, an open, a link): null
- * while it is not known. A caller that folds null into an answer says so with `@@@reading-default`.
- */
+/** For a one-moment decision outside rendering: null while not known (a caller folding null says `@@@reading-default`). */
 export function peekInstalledApps(hostKey: string = LOCAL_HOST): InstalledApps | null {
   const reading = installedExtensions.peek(hostKey);
   return reading.state === 'value' && reading.value.list ? appsOf(reading.value.list, getLocaleSnapshot().resolvedLocale) : null;
@@ -371,18 +344,13 @@ export async function fetchInstalledApps(hostKey: string = LOCAL_HOST): Promise<
 
 const ticks = new Map<string, IObservableValue<number>>();
 
-/**
- * For a MobX computed or reaction (a tab provider's title, the command registry, a session store) that reads what is
- * installed on a host: it re-runs when that entry changes or the language does. Holds no data of its own (the replica is
- * the only holder); one tick per host, fed by the model's own `subscribe`.
- */
+/** For a MobX computed/reaction: re-runs when the host's entry or the language changes (a tick per host, no data held). */
 export function peekInstalledAppsTracked(hostKey: string = LOCAL_HOST): InstalledApps | null {
   let tick = ticks.get(hostKey);
   if (!tick) {
     const box = observable.box(0);
     const bump = () => runInAction(() => box.set(box.get() + 1));
     installedExtensions.subscribe([hostKey], bump);
-    // Names and titles are in the interface language: a switch re-runs them too.
     subscribeLocale(bump);
     ticks.set(hostKey, (tick = box));
   }
@@ -397,13 +365,13 @@ export function watchInstalled(hostKey: string, listener: (apps: InstalledApps |
 
 // ── writes: main's answer is put; a refusal reads the truth again (I4: ❌ put back what was there when it began) ──
 
-function patchList(hostKey: string, patch: (list: InstalledExtensionsList) => InstalledExtensionsList) {
+function patchList(patch: (list: InstalledExtensionsList) => InstalledExtensionsList) {
   return (old: InstalledReading | undefined): InstalledReading | undefined => (old?.list ? { ...old, list: patch(old.list) } : old);
 }
 
 /** Put a part of the list a write or a push said (bound to the entry when it began). */
 export function putInstalled(hostKey: string, patch: (list: InstalledExtensionsList) => InstalledExtensionsList): void {
-  installedExtensions.at(hostKey).set(patchList(hostKey, patch));
+  installedExtensions.at(hostKey).set(patchList(patch));
 }
 
 /** A whole list a host told (the phone's App store after each change). */
@@ -412,10 +380,8 @@ export function tellInstalled(hostKey: string, list: InstalledExtensionsList): v
 }
 
 /**
- * A write shown at once: `optimistic` is drawn on the click, `write` asks the host, `settled` puts its answer (all through
- * the entry bound when it began, `at`). A refused write drops the optimistic part by reading the list again (I4: the
- * truth may have moved meanwhile); if that read fails too, the list goes back to what was read before the click — never
- * the unwritten value shown as if it were true. The refusal reaches the caller, which tells the person.
+ * `optimistic` drawn on the click, `write` asks the host, `settled` puts its answer (via `at`). A refusal reads the list
+ * again (I4); if that fails too, the list goes back to before the click. The refusal reaches the caller.
  */
 export async function writeInstalled<R>(
   hostKey: string,
@@ -425,15 +391,14 @@ export async function writeInstalled<R>(
 ): Promise<R> {
   const entry = installedExtensions.at(hostKey);
   const before = installedExtensions.peek(hostKey);
-  if (optimistic) entry.set(patchList(hostKey, optimistic));
+  if (optimistic) entry.set(patchList(optimistic));
   try {
     const answer = await write();
-    entry.set(patchList(hostKey, settled(answer)));
+    entry.set(patchList(settled(answer)));
     return answer;
   } catch (error) {
     if (optimistic) {
       try {
-        // Marked stale, then read whether or not a surface shows it (a refresh alone reads only where shown).
         await installedExtensions.refresh(hostKey);
         await installedExtensions.fetch(hostKey);
       } catch {
@@ -474,11 +439,7 @@ export function noteOpenWithDefault(hostKey: string, key: string, tabKind: strin
 
 // ── what the market says of the installed Apps ───────────────────────────────────────────────────────────────────
 
-/**
- * `offered`: the version the market gives this host for each App that has an update; `gone`: installed from the market
- * and no longer in it; `summary`: the whole answer (yanked, deprecated, fork behind, notes). The snapshot keeps the first
- * two (a row's 「更新到 vX」 on the first frame); `summary` absent = restored: the rest is not known yet.
- */
+/** `offered`: update version per App; `gone`: no longer in the market; `summary` absent = restored (only the first two kept). */
 export type MarketUpdates = { offered: Record<string, string>; gone: string[]; summary?: MarketUpdatesSummary };
 
 let phoneUpdates: (() => Promise<MarketUpdatesSummary>) | null = null;
@@ -496,11 +457,7 @@ async function readUpdates(hostKey: string): Promise<MarketUpdatesSummary> {
   return result.data;
 }
 
-/**
- * What the market says of a host's installed Apps (#5410; absorbs the phone's `offeredVersions`). Host push: main's
- * `marketRefreshedChannel` (outcome `changed`) and the phone's `market.onRefreshed`, and a change of what is installed,
- * `refresh` it (wire-market-refresh.ts, phoneApps.ts). ❌ polled.
- */
+/** What the market says of a host's installed Apps (#5410). Refreshed by pushes (wire-market-refresh.ts, phoneApps.ts); ❌ polled. */
 export const marketUpdates = replica({
   name: 'marketUpdates',
   scope: 'device',
@@ -517,10 +474,7 @@ export const marketUpdates = replica({
   },
 });
 
-/**
- * The number on the 「App」 badge: the Apps with an update (switched on), a yanked or deprecated version — each once. Not
- * updated by itself (pinned to an older version) still counts (owner 10-19「对齐 vscode」).
- */
+/** The 「App」 badge: enabled Apps with an update, yanked or deprecated ones, each once; pinned ones count (owner 10-19). */
 export function updateCountOf(summary: MarketUpdatesSummary, apps: InstalledApps): number {
   return new Set<string>([
     ...Object.keys(summary.updates).filter((id) => apps.isEnabled(id)),

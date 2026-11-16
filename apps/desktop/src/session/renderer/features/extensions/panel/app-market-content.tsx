@@ -58,7 +58,7 @@ export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, 
   onAction: (item: ShelfItem) => void;
   sentinelRef?: Ref<HTMLDivElement>;
   marketStale?: string | null;
-  /** null: what is installed is not known yet — a row says nothing in its button's place (no word, no button). */
+  /** null: not known yet — a row draws nothing in its button's place. */
   installedIds: ReadonlySet<string> | null;
   chip: 'all' | MarketCategory;
   onChipChange: (chip: 'all' | MarketCategory) => void;
@@ -241,10 +241,8 @@ export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, 
 }
 
 /**
- * The market's first screen as kept across restarts (`marketShelf`'s carried value, C2/D5): drawn on a cold open until
- * the shelf is read, card for card where the shelf will draw them, so nothing moves when it lands. A card left out (its
- * fields too long to keep) and every grid row past the kept ones draw a placeholder of a row's size; buttons are not known
- * yet (placeholders). Only the home page with no category picked has a first screen; any other view waits for the shelf.
+ * The market's first screen as kept across restarts (C2/D5), drawn until the shelf is read, card for card where the shelf
+ * will draw them; cards left out, rows past the kept ones and buttons draw placeholders. Only the home page with no chip.
  */
 export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setChip }: {
   first: MarketFirstScreen;

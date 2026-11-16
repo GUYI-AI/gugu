@@ -8,9 +8,7 @@ import type { ComposerActionView } from '@/session/shared/extensions/composer-ac
 import type { GrantedSurfaceBinding, StoredUnreadBinding } from '@/session/shared/extensions/unread-binding'
 
 /**
- * #1925 / #1927 What main grants this account's Apps over its conversations: replicas of the host's authority (account
- * scope; the reader is the signed-in account). Host push: main's `extensionsInventoryChangedChannel` (a grant, a choice, a
- * switch, an install changed) reads them again — through one module-level watcher, counted by the surfaces that show them
+ * #1925 / #1927 What main grants this account's Apps over its conversations. Pushed by main's inventory channel
  * (`useAppBindingPush`). Not kept across restarts: an authority stamp is checked again after a restart.
  */
 
@@ -57,7 +55,7 @@ export const appComposerActions = replica({
   fresh: Infinity,
 })
 
-/** A note from main: what it names changed now. The App it names is undrawn at once; everything is read again. */
+/** A note from main: the App it names is undrawn at once; everything is read again. */
 export function inventoryChanged(note: { extensionId?: string } | undefined): void {
   const extensionId = note?.extensionId
   if (extensionId) {
@@ -76,15 +74,14 @@ export function inventoryChanged(note: { extensionId?: string } | undefined): vo
 
 let users = 0
 let stop: (() => void) | null = null
-/** The composer entries a column has shown in this run (their arguments): what the watcher reads again when it starts. */
+/** The composer entries shown in this run: what the watcher reads again when it starts. */
 const composerEntries = new Map<string, [extensionId: string, authority: string]>()
 
 /** Follow main's notes while a surface shows any of these (ref-counted, one subscription for all of them). */
 function watch(): () => void {
   if (users++ === 0) {
     stop = events.on(extensionsInventoryChangedChannel, inventoryChanged)
-    // Values from before the watch began may have missed a note: read again what is already there (❌ a first read on
-    // its way, which would then read twice).
+    // Values from before the watch may have missed a note: read again what is already there.
     if (appSurfaceBindings.peek().state === 'value') void appSurfaceBindings.refresh()
     if (appUnreadBindings.peek().state === 'value') void appUnreadBindings.refresh()
     for (const args of composerEntries.values()) {
@@ -99,7 +96,6 @@ function watch(): () => void {
   }
 }
 
-/** Mounted by each surface that shows one of these replicas: main's notes reach them while it is up. */
 export function useAppBindingPush(active: boolean, composer?: [extensionId: string, authority: string]): void {
   const [extensionId, authority] = composer ?? []
   useEffect(() => {

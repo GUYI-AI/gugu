@@ -9,10 +9,8 @@ export const widgetSnapshotDataUrl = (blob: Blob) => new Promise<string>((resolv
 })
 
 /**
- * The picture last taken of a widget in a theme at a width (a data URL; null: none kept here): a replica of this device's
- * own picture store, account scope (the store keeps only the signed-in account's). Not kept across restarts (each up to
- * 200 KB, WIDGET_SNAPSHOT_MAX_BYTES); a slot mounted again within `keep` has it in its first frame. Its one writer, the
- * capture (extension-view-layer.tsx), puts the new picture here as it stores it.
+ * The picture last taken of a widget in a theme at a width (data URL; null: none). Not persisted (≤ 200 KB each); a slot
+ * remounted within `keep` has it in its first frame. The capture (extension-view-layer.tsx) puts each new picture here.
  */
 export const widgetSnapshot = replica({
   name: 'widgetSnapshot',

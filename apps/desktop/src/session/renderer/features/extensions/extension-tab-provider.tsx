@@ -91,10 +91,8 @@ export class ExtensionTabResource implements TabResource {
 }
 
 /**
- * An App page standing on its own (a block of the screen, a window): its contribution, and the label of its one tab — what
- * its page says, else its title in the list of what is installed. `unknown` while neither is known yet: the tab draws a
- * placeholder the size of a title, ❌ the raw tab kind. `file`: the chat file it shows, named by the file unless the file is
- * the App's own state (`chatFile`, then the App's name).
+ * An App page on its own (a screen block, a window): its contribution and its tab's label — what the page says, else its
+ * installed title (`unknown` while neither is known: ❌ the raw kind). `file` names it unless it is the App's `chatFile`.
  */
 export function useAppPageTab(said: ExtensionSharedPresentation, tabKind: string, file?: string, stored?: string): {
   /** null: what is installed is not known yet (undefined: known, and this App's tab is not in it). */
@@ -212,9 +210,8 @@ export function createExtensionTabProvider(
    * Read from the replica at render time rather than captured here: a provider
    * can only be registered once per kind, so a title captured now would be the
    * title forever — an upgrade that renames its tab would keep showing the old
-   * name until the app restarted. This provider is registered from a list that
-   * was read (register-extension-tabs.ts `follow`), so the list is known here;
-   * the tab name stands only for a tab its App no longer declares.
+   * name until the app restarted. Registered from a read list, so the tab name
+   * stands only for a tab its App no longer declares.
    */
   const titleOf = (): string => peekInstalledAppsTracked()?.tabTitle(kind) ?? tabName;
 

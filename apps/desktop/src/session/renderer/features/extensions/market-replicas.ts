@@ -14,15 +14,11 @@ import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
 import { decodeShot } from './panel/decoded-shots';
 
 /**
- * @@@market-replicas — the App market and an installed App's pages, as replicas keyed by host (@@@client-state-model, PR 3:
- * replaces the kept shelf, the page's `lastShelf`, the featured shots' `SHOT_KEY` and the effects that read into state).
- * A host key is `local`, `remote:<deviceId>` (another desktop, #6264) or `phone` (the phone's own App store). Device scope.
- *
- * Host push: main's `marketRefreshedChannel` (outcome `changed`) and the phone's `market.onRefreshed` refresh the shelf and
- * the version histories of that host (`useMarketRefreshed`, a module-level, ref-counted watcher per host).
+ * @@@market-replicas — the App market and an installed App's pages, keyed by host (`local`, `remote:<deviceId>`, `phone`;
+ * @@@client-state-model). The host's `changed` push refreshes the market models (`useMarketRefreshed`, ref-counted per host).
  */
 
-/** What the phone's App store answers for the market (phoneMarketPage.ts registers it; it imports this module, not back). */
+/** What the phone's App store answers for the market (registered by phoneMarketPage.ts). */
 export type PhoneMarket = {
   shelf: () => Promise<MarketShelfFull>;
   marketListing: (args: { extensionId: string; version: string }) => Promise<{ success: true; data: MarketListing } | { success: false; error: string }>;
@@ -38,16 +34,14 @@ function phone(): PhoneMarket {
   return phoneMarket;
 }
 
-/** The market API of a host (`marketListing`, `marketHistory` on every host; the rest only on a desktop). */
 function marketApiOf(hostKey: string): Pick<PhoneMarket, 'marketListing' | 'marketHistory'> {
   return hostKey === PHONE_HOST ? phone() : extensionsApiOf(hostKey);
 }
 
 // ── the shelf ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The whole shelf as read (every page of the catalog, no search word), and how the home page arranges it. */
+/** The whole shelf (every page, no search word) and how the home page arranges it. */
 export type MarketShelfFull = {
-  /** The download site could not be reached: the person is told so (❌ "no Apps here"). */
   errorKind: 'unreachable' | null;
   items: MarketListItem[];
   invalid: { dirName: string; reason: string }[];
@@ -55,10 +49,9 @@ export type MarketShelfFull = {
   page: number;
   hasMore: boolean;
   featured: MarketListItem[];
-  /** `popular` null: the install ranking could not be read (`rankingError` says why); the page says so where it would be. */
+  /** `popular` null: the ranking could not be read (`rankingError`); the page says so. */
   home: Omit<MarketHome<MarketListItem>, 'featured'>;
   rankingError: string | null;
-  /** Which fetch of the catalog this is (desktop): the same `changed` said twice is read once. */
   fetchedAt: string | null;
 };
 
@@ -75,11 +68,7 @@ export type MarketCard = {
   defaultLocale: string;
 };
 
-/**
- * The first screen of the market, kept across restarts (C2/D1/D5): the first 2 featured cards, the first 9 of the grid,
- * the category set, and how many there are of each (`featuredCount` for the dots, `remainingCount` for the grid's height).
- * A card whose fields do not fit `CARD_LIMITS` is left out whole (null: its slot draws a placeholder of its size).
- */
+/** The market's first screen, kept across restarts (C2/D1/D5); a card outside `CARD_LIMITS` is left out whole (null). */
 export type MarketFirstScreen = {
   featured: (MarketCard | null)[];
   featuredCount: number;
@@ -93,12 +82,7 @@ export type MarketShelf = { full?: MarketShelfFull; first?: MarketFirstScreen };
 
 export const FIRST_SCREEN_FEATURED = 2;
 export const FIRST_SCREEN_GRID = 9;
-/**
- * Per card, in characters: id ≤ 64 (the manifest's own rule), version ≤ 32, name ≤ 64, subtitle ≤ 160, icon URL ≤ 160
- * (the download site's `market/media/<sha256>.<ext>` is ≈ 120), default locale ≤ 35, category an enum, deprecated a
- * boolean; with its keys ≤ 640.
- * 11 cards × 640 + 4 categories, the counts and the snapshot entry's key ≈ 300 = 7,340 ≤ 7,680 whatever the market lists.
- */
+// Bound: per card ≤ 640 chars with keys (icon URL `market/media/<sha256>.<ext>` ≈ 120); 11 × 640 + ≈ 300 = 7,340 ≤ 7,680.
 export const CARD_LIMITS = { id: 64, version: 32, name: 64, subtitle: 160, iconUrl: 160, defaultLocale: 35 } as const;
 
 function cardOf(item: MarketListItem, locale: string): MarketCard | null {
@@ -134,10 +118,10 @@ export function firstScreenOf(full: MarketShelfFull, locale: string): MarketFirs
   };
 }
 
-/** The install ranking (popular, featured order); unreadable is an answer the page says (`rankingError`), ❌ a silent empty. */
+/** The install ranking; unreadable is said by the page (`rankingError`), ❌ a silent empty. */
 async function readRanking(): Promise<{ scores: Map<string, number> | null; error: string | null }> {
   try {
-    // Loaded here: this module is imported by pages a node test renders, the account client is the browser's.
+    // Imported lazily: node tests render pages importing this module; the account client is the browser's.
     const { chatDb } = await import('@/lib/supabase');
     const { data, error } = await chatDb.rpc('market_install_ranking');
     if (error) throw error;
@@ -148,12 +132,15 @@ async function readRanking(): Promise<{ scores: Map<string, number> | null; erro
   }
 }
 
+function withNew(items: MarketListItem[], more: MarketListItem[]): MarketListItem[] {
+  const seen = new Set(items.map((item) => item.manifest.id));
+  return [...items, ...more.filter((item) => !seen.has(item.manifest.id))];
+}
+
 async function readDesktopShelf(hostKey: string): Promise<MarketShelfFull> {
   const api = extensionsApiOf(hostKey);
   const [result, ranking] = await Promise.all([api.market({ page: 0, query: '' }), readRanking()]);
-  // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
   if (!result.success || !result.data) throw new Error('market unreadable');
-  // The reason is for whoever fixes the bundle; the row on screen says only that it could not be listed.
   for (const entry of result.data.invalid) log.warn(`extension catalog: ${entry.dirName} could not be listed: ${entry.reason}`);
   if (result.data.error) log.warn(`extension market unreachable: ${result.data.error}`);
   let items = result.data.extensions;
@@ -162,8 +149,7 @@ async function readDesktopShelf(hostKey: string): Promise<MarketShelfFull> {
     const next = await api.market({ page, query: '' });
     // The home and the complete listing are read whole (a page missing would move the rows).
     if (!next.success || !next.data || next.data.errorKind) throw new Error('The complete market catalog could not be read');
-    const seen = new Set(items.map((item) => item.manifest.id));
-    items = [...items, ...next.data.extensions.filter((item) => !seen.has(item.manifest.id))];
+    items = withNew(items, next.data.extensions);
     last = next.data;
   }
   const { featured, ...home } = marketHome(items.map((item) => ({ ...item, ...item.cloud })), ranking.scores);
@@ -185,21 +171,18 @@ export const marketShelf = replica({
   scope: 'device',
   read: async (_owner: string, hostKey: string, locale: string): Promise<MarketShelf> => {
     const full = hostKey === PHONE_HOST ? await phone().shelf() : await readDesktopShelf(hostKey);
-    // A shelf already drawn is replaced only once its featured pictures are decoded (❌ a skeleton between two shelves);
-    // one that cannot be had keeps the drawn shelf (the reading says the refresh failed).
+    // A drawn shelf is replaced only once the new featured pictures are decoded (❌ a skeleton between two shelves).
     const drawn = marketShelf.peek(hostKey, locale);
     if (drawn.state === 'value' && drawn.value.full) {
       await Promise.all(full.featured.map((item) => featuredShot.fetch(hostKey, item.manifest.id, item.manifest.version)));
     }
     return { full };
   },
-  // Opening the page reads it again (the page's own index on that machine, ❌ the download site: cheap), drawing the shelf
-  // in hand meanwhile; `marketRefreshedChannel` changed reads it again while shown (useMarketRefreshed).
+  // Opening the page reads it again (the host's own index, cheap), drawing the shelf in hand meanwhile.
   fresh: 0,
   persist: {
     maxBytes: 7680,
     maxEntries: 1,
-    // The first screen only, in its locale; another desktop's shelf and a shelf that could not reach the site are not kept.
     carry: (value: MarketShelf, hostKey: string, locale: string) =>
       hostKey.startsWith('remote:') ? undefined : !value.full ? value : value.full.errorKind ? undefined : { first: firstScreenOf(value.full, locale) },
   },
@@ -218,8 +201,7 @@ export const marketSearch = replica({
     for (let page = 0; page < pages; page += 1) {
       const next = await api.market({ page, query });
       if (!next.success || !next.data) throw new Error('market unreadable');
-      const seen = new Set(items.map((item) => item.manifest.id));
-      items = [...items, ...next.data.extensions.filter((item) => !seen.has(item.manifest.id))];
+      items = withNew(items, next.data.extensions);
       last = next.data;
       if (!next.data.hasMore || next.data.errorKind) break;
     }
@@ -357,33 +339,23 @@ function onRefreshedOf(hostKey: string, listener: (refreshed: { outcome: string 
 
 const changedAt = new Map<string, string | null>();
 
-/**
- * The host's catalog changed (a push, or the answer of the page's own `marketRefresh`): what is read from it is read
- * again — once per fetch of the catalog, however many say it (the push and the answer of one moment are one change).
- */
+/** The host's catalog changed (push or `marketRefresh` answer): read the market again, once per `fetchedAt`. */
 export function marketChanged(hostKey: string, fetchedAt: string | null = null): boolean {
   if (fetchedAt !== null && changedAt.get(hostKey) === fetchedAt) return false;
   changedAt.set(hostKey, fetchedAt);
-  readMarketAgain(hostKey);
-  return true;
-}
-
-function readMarketAgain(hostKey: string): void {
   void marketShelf.refresh(hostKey);
   void marketSearch.refresh(hostKey);
   void marketVersionHistory.refresh(hostKey);
   void marketEntry.refresh(hostKey);
+  return true;
 }
 
-/** While a surface shows a host's market: its `changed` pushes refresh the market models (one subscription per host). */
-export function watchMarketRefreshed(hostKey: string): () => void {
-  let entry = watches.get(hostKey);
-  if (!entry) {
-    const stop = onRefreshedOf(hostKey, (refreshed) => { if (refreshed.outcome === 'changed') marketChanged(hostKey, (refreshed as { fetchedAt?: string }).fetchedAt ?? null); });
-    entry = { users: 0, stop };
-    watches.set(hostKey, entry);
-  }
-  const active = entry;
+function watchMarketRefreshed(hostKey: string): () => void {
+  const active = watches.get(hostKey) ?? {
+    users: 0,
+    stop: onRefreshedOf(hostKey, (refreshed) => { if (refreshed.outcome === 'changed') marketChanged(hostKey, (refreshed as { fetchedAt?: string }).fetchedAt ?? null); }),
+  };
+  watches.set(hostKey, active);
   active.users++;
   return () => {
     if (--active.users === 0) { active.stop(); watches.delete(hostKey); }
