@@ -112,6 +112,8 @@ function noteProgress(key: string, fraction: number | null): void {
  * showing what the server would now refuse. `attempt`: the same preview reading again (its machine is back). Never waits
  * for the network: a read that cannot be done says so, as the preview always did.
  */
+// `bytesOf` carries a hosted file's own `read` (a function): it drops out of the key's hash, which still holds the file's
+// `key`, and nothing of it is kept (`keep: 0`, no `persist`). A model's arguments are data otherwise — ❌ copy this.
 const previewShown = replica({
   name: 'preview-shown',
   scope: 'account',

@@ -103,21 +103,20 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(read).toHaveBeenCalledTimes(2)
   })
 
-  // KNOWN RED (an open question): the event came while the first attempt was on its way (not yet failed): the replica
-  // folds the refresh into it, so the newer success waits for the slow attempt. Restoring this needs an in-flight attempt
-  // cancelled and read again (see the 7503 case); `it.fails` turns red when it is.
-  it.fails('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
+  // The event came while the first attempt was on its way (coordinator 11-16): that attempt is not restarted; once it
+  // lands (here, failed) the event's read runs once, and its success stands — no retry scheduled from the late failure.
+  it('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
     const old = deferred<typeof empty>()
     read.mockReturnValueOnce(old.promise).mockResolvedValue({ failures: [failure], recovered: [] })
     await ui.render(createNode(Probe, {}))
     await reconnect()
-    expect(current()).toBe('cmd')
+    expect(read).toHaveBeenCalledTimes(1)
     await act(async () => old.reject(new Error('old timeout')))
+    await vi.waitFor(() => expect(current()).toBe('cmd'))
     await advance(30_000)
     expect(read).toHaveBeenCalledTimes(2)
     expect(current()).toBe('cmd')
-    // The superseded read still ran to its end and logged its own failure once (a model's read is not told it was
-    // superseded); nothing retried it and nothing was drawn from it.
+    // The superseded read logged its own failure once; nothing retried it.
     expect(log.error).toHaveBeenCalledTimes(1)
   })
 

@@ -87,16 +87,23 @@ describe('其他设备的额度通知由命令结果驱动', () => {
     expect(current()).toBe('cmd')
   })
 
-  // KNOWN RED (an open question): a refresh while the first read's attempt is on its way folds into it — the earlier answer
-  // is drawn for one commit and the event's answer waits for the slow read. The parent read again at once. `it.fails`
-  // turns red when that is restored.
-  it.fails('迟到的旧读数不能盖掉新事件的结果', async () => {
+  // A refresh while the first read is on its way (coordinator 11-16): not restarted, not dropped — marked, and read once more
+  // when that read lands; the late answer is never the last word.
+  it('迟到的旧读数不能盖掉新事件的结果：在途的首读落地后再读一次，只读一次', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])
-    // The event came while the first read was out: read again at once (I2), and the old answer is never drawn.
-    await ui.render(createNode(Probe, {})); await emit(); expect(current()).toBe('new')
-    await act(async () => old.resolve([failure('one', 'old')])); expect(current()).toBe('new')
+    await ui.render(createNode(Probe, {})); await emit(); await emit()
+    expect(read).toHaveBeenCalledTimes(1)
+    await act(async () => old.resolve([failure('one', 'old')]))
+    await vi.waitFor(() => expect(current()).toBe('new'))
     expect(read).toHaveBeenCalledTimes(2)
-    expect(drawnFailures).not.toContain('old')
+  })
+  it('在途的首读失败（等重试）时，事件那次读马上补上，不等退避', async () => {
+    const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])
+    await ui.render(createNode(Probe, {})); await emit()
+    expect(read).toHaveBeenCalledTimes(1)
+    await act(async () => old.reject(new Error('old timeout')))
+    await vi.waitFor(() => expect(current()).toBe('new'))
+    expect(read).toHaveBeenCalledTimes(2)
   })
   it('切聊天立即清掉前一个主体，旧请求失败也不能把错误挂到新聊天', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([])

@@ -125,9 +125,37 @@ queryClient.mount()
  */
 const lastFailure = new Map<string, Error>()
 
+/**
+ * First reads a refresh came during (coordinator 11-16): read once more when their attempt answers; `done` settles when
+ * that read does (what the refreshes await). Refreshes in one moment share it.
+ */
+const readAgainAfter = new Map<string, { done: Promise<void>; settle: () => void }>()
+
+function markReadAgain(query: Query): Promise<void> {
+  let marked = readAgainAfter.get(query.queryHash)
+  if (!marked) {
+    let settle!: () => void
+    marked = { done: new Promise<void>((resolve) => { settle = resolve }), settle }
+    readAgainAfter.set(query.queryHash, marked)
+  }
+  return marked.done
+}
+
+function followReadAgain(query: Query, action: string): void {
+  const marked = readAgainAfter.get(query.queryHash)
+  if (!marked || (action !== 'success' && action !== 'error' && action !== 'failed')) return
+  readAgainAfter.delete(query.queryHash)
+  // An attempt that failed and waits to be retried is not waited for: the read the refresh announced runs now.
+  if (action === 'failed') void query.cancel({ silent: true })
+  void Promise.resolve().then(() => queryClient.refetchQueries({ queryKey: query.queryKey, exact: true }, { cancelRefetch: false }))
+    .catch(() => undefined).then(marked.settle)
+}
+
 queryClient.getQueryCache().subscribe((event) => {
   if (event.type === 'updated' && event.action.type === 'error' && event.query.state.data === undefined) lastFailure.set(event.query.queryHash, event.action.error)
   if ((event.type === 'updated' && event.action.type === 'success') || event.type === 'removed') lastFailure.delete(event.query.queryHash)
+  if (event.type === 'updated') followReadAgain(event.query, event.action.type)
+  if (event.type === 'removed') { readAgainAfter.get(event.query.queryHash)?.settle(); readAgainAfter.delete(event.query.queryHash) }
   const name = String(event.query.queryKey[0])
   if (event.type === 'added' && definitions.has(name) && event.query.options.queryFn !== readFromKey) {
     throw new Error(`Replica query ${JSON.stringify(event.query.queryKey)} brings its own queryFn`)
@@ -662,20 +690,20 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
         queryKey: [definition.name, owner],
         predicate: (query: { queryKey: QueryKey }) => args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
       }
-      // A first read already on its way began before what this refresh announces, and react-query folds the refresh into
-      // it (there is no value to keep meanwhile): read once more when it lands. One waiting out a retry after a failure has
-      // no attempt on its way: dropped and read now (its awaiters get the new read's answer: a silent cancel hands the
-      // promise on), ❌ the announcement waiting up to the backoff (30 s). A later read is cancelled and read again.
+      // A first read on its way began before what this refresh announces, and react-query would fold the refresh into it
+      // (there is no value to keep meanwhile): it is not restarted, it is marked, and read once more when its attempt
+      // answers (`readAgainAfter`) — refreshes in one moment are that one read again. A later read is cancelled and read again.
       const firstReads = queryClient.getQueryCache().findAll(filters)
         .filter((query) => query.state.fetchStatus !== 'idle' && query.state.data === undefined)
+      // One waiting out a retry after a failure has no attempt on its way: read now (its awaiters get the new read's answer).
       const backingOff = definition.refreshJoinsRead ? [] : firstReads.filter((query) => query.state.fetchFailureCount > 0)
+      const marked = firstReads.filter((query) => !backingOff.includes(query)).map(markReadAgain)
       const restarted = backingOff.map((query) => {
         void query.cancel({ silent: true })
         return query.fetch().catch(() => undefined)
       })
       await queryClient.invalidateQueries(filters, { cancelRefetch: !definition.refreshJoinsRead })
-      await Promise.all([...restarted, ...firstReads.filter((query) => !backingOff.includes(query)).map((query) => query.promise?.catch(() => undefined)
-        .then(() => queryClient.refetchQueries({ queryKey: query.queryKey, exact: true }, { cancelRefetch: false })))])
+      await Promise.all([...restarted, ...marked])
     },
   }
 }
