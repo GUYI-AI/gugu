@@ -1,0 +1,87 @@
+{
+  "url": "https://localhost/",
+  "viewport": {
+    "width": 390,
+    "height": 828,
+    "dpr": 2.7750000953674316
+  },
+  "theme": "dark",
+  "editor": {
+    "text": "\n",
+    "focused": false,
+    "rect": {
+      "x": 59.99436950683594,
+      "y": 772.1171264648438,
+      "width": 270.2815246582031,
+      "height": 23.99774742126465,
+      "top": 772.1171264648438,
+      "right": 330.27589416503906,
+      "bottom": 796.1148738861084,
+      "left": 59.99436950683594
+    },
+    "lineHeight": "24px",
+    "paragraphs": 1
+  },
+  "input": {
+    "x": 11.998873710632324,
+    "y": 756.1204833984375,
+    "width": 366.27252197265625,
+    "height": 55.996620178222656,
+    "top": 756.1204833984375,
+    "right": 378.2713956832886,
+    "bottom": 812.1171035766602,
+    "left": 11.998873710632324
+  },
+  "innerAttachment": {
+    "x": 13.997747421264648,
+    "y": 762.1227416992188,
+    "width": 43.997745513916016,
+    "height": 43.997745513916016,
+    "top": 762.1227416992188,
+    "right": 57.995492935180664,
+    "bottom": 806.1204872131348,
+    "left": 13.997747421264648
+  },
+  "menu": null,
+  "scroller": {
+    "x": 0,
+    "y": 63.997745513916016,
+    "width": 390.270263671875,
+    "height": 684.1272583007812,
+    "top": 63.997745513916016,
+    "right": 390.270263671875,
+    "bottom": 748.1250038146973,
+    "left": 0
+  },
+  "scroll": {
+    "top": 0,
+    "height": 684,
+    "client": 684,
+    "paddingBottom": "0px"
+  },
+  "pill": null,
+  "dock": {
+    "x": 0,
+    "y": 748.125,
+    "width": 390.270263671875,
+    "height": 79.98310852050781,
+    "top": 748.125,
+    "right": 390.270263671875,
+    "bottom": 828.1081085205078,
+    "left": 0
+  },
+  "image": null,
+  "ime": [
+    "mInputShown=false",
+    "mIsInputViewShown=true mStatusIcon=0"
+  ],
+  "package": {
+    "name": "Gugu Menu 2858",
+    "id": "app.gugu.test.menubar2858",
+    "build": "306",
+    "version": "0.3.6-menu2858-aee499934c"
+  },
+  "sourceSha": "aee499934c5dcc4008b6328e93b753d4e4bd8def",
+  "source": "Native Android normal App, isolated package; synthetic test account",
+  "modelRequests": 0
+}

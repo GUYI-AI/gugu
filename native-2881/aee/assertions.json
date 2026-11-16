@@ -1,0 +1,9 @@
+{
+  "sourceAllExact": true,
+  "textKeyboardOpenHidden": true,
+  "textKeyboardClosedHidden": true,
+  "emptyKeyboardClosedShown": true,
+  "humanNoMenuAndInnerPaperclip": true,
+  "listEndsAtDock": true,
+  "capsuleOutsideList": true
+}
