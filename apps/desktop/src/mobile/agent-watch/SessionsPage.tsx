@@ -9,6 +9,11 @@ import { ListRowContent } from '@/components/ui/ListRow'
 import { IconButton } from '@/components/ui/IconButton'
 import { ChevronDown, ChevronUp, MoreHorizontal } from '@/lib/icons'
 import { Sheet } from '@/components/ui/Sheet'
+import { confirmArchive } from '@/session/renderer/features/sessions/archive-session-flow'
+import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu'
+import { SessionMenuItems } from '@/components/SessionMenuItems'
+
+const PHONE_MENU_ACTIONS: ReadonlySet<SessionMenuAction> = new Set(['pin', 'rename', 'archive'])
 import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
 import { useToast } from '@/components/toastContext'
 import { Field } from '@/components/ui/Field'
@@ -60,11 +65,20 @@ export function SessionActions({
   const [draftTitle, setDraftTitle] = useState('')
   const reason = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const failed = (err: unknown): void => toast(t('agentWatch.sessions.actionFailed'), 'error', reason(err))
-  const update = (target: { deviceId: string; session: SessionpageSessionSummary }, patch: { pinned?: boolean; archived?: true }): void => {
+  const update = (target: { deviceId: string; session: SessionpageSessionSummary }, patch: { pinned?: boolean; archived?: true; removeSocialIdentity?: boolean }): void => {
     updateSession(target.deviceId, { conversationId: target.session.conversationId, ...patch })
       .then((next) => { if (next.archived) onArchived?.() })
       .catch(failed)
   }
+  // The session menu: the one table (session/shared/session-menu.ts) the desktop tab and rows draw from.
+  const phoneMenuRun = (target: { deviceId: string; session: SessionpageSessionSummary }): Partial<Record<SessionMenuAction, () => void>> => ({
+    pin: () => update(target, { pinned: !target.session.isPinned }),
+    rename: () => { setDraftTitle(target.session.title); setError(null); setRenaming(target) },
+    archive: () => confirmArchive({
+      childCount: 0,
+      proceed: (_withChildren, removeSocialIdentity) => update(target, { archived: true, removeSocialIdentity }),
+    }),
+  })
   const rename = (): void => {
     if (!renaming) return
     setBusy(true)
@@ -83,17 +97,8 @@ export function SessionActions({
               <MenuItem data-testid="agent-watch-session-stop" onClick={() => { void cancelPhoneSessionTurn(target.deviceId, target.session.conversationId).catch(failed) }}>
                 {t('agentWatch.sessions.stop')}
               </MenuItem>
-            ) : <>
-              <MenuItem data-testid="agent-watch-session-pin" onClick={() => update(target, { pinned: !target.session.isPinned })}>
-                {t(target.session.isPinned ? 'agentWatch.sessions.unpin' : 'agentWatch.sessions.pin')}
-              </MenuItem>
-              <MenuItem data-testid="agent-watch-session-rename" onClick={() => { setDraftTitle(target.session.title); setError(null); setRenaming(target) }}>
-                {t('agentWatch.sessions.rename')}
-              </MenuItem>
-              <MenuItem data-testid="agent-watch-session-archive" onClick={() => update(target, { archived: true })}>
-                {t('agentWatch.sessions.archive')}
-              </MenuItem>
-            </>}
+            ) : <SessionMenuItems testIdPrefix="agent-watch-session" onAction={(id) => phoneMenuRun(target)[id]!()}
+              items={sessionMenu('phone', { pinned: target.session.isPinned === true, sidebarPin: null }, PHONE_MENU_ACTIONS)} />}
           </DropdownMenu.Content>
         ) : null}
       </DropdownMenu.Root>

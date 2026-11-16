@@ -8,6 +8,8 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore:
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/hooks/useMarkChatsRead', () => ({ useMarkChatsRead: () => vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: vi.fn() }) }))
+const archive = vi.hoisted(() => ({ confirm: vi.fn(async (_agentUserId: string) => false) }))
+vi.mock('../../../../apps/desktop/src/lib/archiveOwnedAgent', () => ({ confirmOwnedAgentArchive: archive.confirm }))
 vi.mock('../../../../apps/desktop/src/components/chat/useGroupChatSettings', () => ({ useGroupChatSettings: () => ({ settings: scope.settings, error: null }) }))
 
 let harness: ReturnType<typeof createReactHarness>
@@ -63,4 +65,24 @@ it.each([[true, 1], [false, 0]])('dissolving a group asks first: confirmed %s ru
   expect(confirm).toHaveBeenCalledOnce()
   expect(onDelete).toHaveBeenCalledTimes(runs)
   confirm.mockRestore()
+})
+
+// The reported cell: my agent's chat-list row is its task, so it offers what the task's tab offers (session/shared/session-menu.ts).
+it('my active agent row offers 归档会话 and 重命名 and archives through the one agent archive confirmation', async () => {
+  archive.confirm.mockClear()
+  await render()
+  const rename = document.querySelector<HTMLElement>('[data-testid="conversation-row-rename"]')
+  const archiveItem = document.querySelector<HTMLElement>('[data-testid="conversation-row-archive"]')
+  expect(rename?.textContent).toContain('重命名')
+  expect(archiveItem?.textContent).toContain('归档会话')
+  await clickElement(archiveItem!)
+  expect(archive.confirm).toHaveBeenCalledOnce()
+  expect(archive.confirm.mock.calls[0]?.[0]).toBe('agent')
+})
+
+it('a human row keeps the conversation menu: no archive, no rename', async () => {
+  scope.identitiesById.agent = displayIdentity('agent', { type: 'human', owner_user_id: null })
+  await render()
+  expect(document.querySelector('[data-testid="conversation-row-archive"]')).toBeNull()
+  expect(document.querySelector('[data-testid="conversation-row-rename"]')).toBeNull()
 })

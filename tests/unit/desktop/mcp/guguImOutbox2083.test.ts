@@ -146,7 +146,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
       }
       return endpoint.fetch(url, init)
     }) as typeof globalThis.fetch })
-    const send = callTool('message_send_file', {
+    const send = callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'proof.txt', file_path: proofPath, mime_type: 'text/plain', to_user_ids: [`user:${to}`],
     }, deps)
     if (refuse) await expect(send).rejects.toThrow(`收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：${refuse}。用 message_members 查有效成员后重发。`)
@@ -164,7 +164,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
         ? [{ user_id: 'agent-1' }, { user_id: 'member-1' }]
         : [],
     })
-    const receipt = JSON.parse(await callTool('message_send_file', {
+    const receipt = JSON.parse(await callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001',
       file_name: 'proof.txt',
       file_path: proofPath,

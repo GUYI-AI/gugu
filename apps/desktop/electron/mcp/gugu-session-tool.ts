@@ -70,6 +70,39 @@ const SESSION_ROWS: SessionpageListSpec = {
   },
 }
 
+/**
+ * A session as session_get / session_children show it (MCP surface review 11-16: these two were 15% of all gugu tool
+ * output). Kept: what an agent acts on — status, model, preview, a failure, waiting permissions or prompts, context use
+ * and the transcript. Dropped: the host's own bookkeeping (ids repeated bare, rate limits, recent action names, update
+ * times), default flags and the preview's activity versions.
+ */
+const RUNTIME_SHOWN = ['lifecycle', 'lastTurnError', 'failure', 'pendingPermissionCount', 'queuedPromptCount', 'backgroundAgentCount', 'backgroundCommandCount', 'contextTokens', 'contextSize', 'transcriptPath'] as const
+
+function withoutActivityVersions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutActivityVersions)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'activityVersion').map(([key, entry]) => [key, withoutActivityVersions(entry)]))
+}
+
+export function presentSession(row: unknown): unknown {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row
+  const { runtime, pinned, preview, ...rest } = row as Record<string, unknown>
+  const shown: Record<string, unknown> = { ...rest }
+  if (pinned === true) shown.pinned = true
+  if (runtime && typeof runtime === 'object') {
+    const kept = Object.fromEntries(RUNTIME_SHOWN.map((key) => [key, (runtime as Record<string, unknown>)[key]])
+      .filter(([, value]) => value !== null && value !== undefined && value !== 0 && !(Array.isArray(value) && value.length === 0)))
+    if (Object.keys(kept).length) shown.runtime = kept
+  }
+  if (preview !== undefined) shown.preview = withoutActivityVersions(preview)
+  return shown
+}
+
+const presentSessionList = (result: unknown): unknown => {
+  if (!result || typeof result !== 'object' || !Array.isArray((result as { items?: unknown }).items)) return result
+  return { ...(result as Record<string, unknown>), items: (result as { items: unknown[] }).items.map(presentSession) }
+}
+
 export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   {
     name: 'session_devices',
@@ -164,6 +197,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
     }).strict(),
     action: 'children',
     list: SESSION_ROWS,
+    present: presentSessionList,
   },
   {
     name: 'session_message',
@@ -257,6 +291,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
     description: 'Read this session (omit session_id) or another of yours: project_id, transport, status, model, preview. Pass model.spawn_model_id, not model.id, to session_spawn.',
     schema: z.object({ session_id: sessionIdSchema.describe(SESSION_ID_DESCRIPTION).optional() }).strict(),
     action: 'get',
+    present: presentSession,
   },
   {
     name: 'session_stop',

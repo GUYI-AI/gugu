@@ -47,6 +47,7 @@ const LABEL_KEY: Record<SessionConditionItem['code'], string> = {
   'machine-attention': 'transcript.condition.machineAttention',
   'membership-required': 'transcript.condition.membershipRequired',
   'turn-interrupted': 'transcript.condition.turnInterruptedUnclean',
+  'group-join-failed': 'transcript.condition.groupJoinFailed',
 };
 
 function conditionLabel(data: SessionConditionItem, translate: import('@session-chat/localization').ChatTranslator): string { return data.label ??
