@@ -24,8 +24,9 @@ Function .onInstFailed
 FunctionEnd
 
 # @@@uac-outer-cwd - Under UAC an install for all users runs as two processes: the user's
-# non-elevated installer waits while the elevated copy it started does the work, and the
-# waiting one keeps its working directory inside $INSTDIR. A directory being renamed cannot
+# non-elevated installer waits while the elevated copy it started does the work. The waiting
+# one inherits its working directory from whoever launched it, and the app's updater starts it
+# from the app's own working directory, $INSTDIR. A directory being renamed cannot
 # be anyone's working directory, so commit failed every time with "being used by another
 # process" (measured: the only handle under the tree was the waiting installer's, access
 # SYNCHRONIZE|FILE_TRAVERSE). The elevated copy asks it to step out first.
