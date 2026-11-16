@@ -2,7 +2,6 @@
 // #7199 渲染层那一份云电脑读数(replica `cloudComputer`):门说「没开放」= 不显示(一个真值),别的没问到 = 读数是错误;
 // 几路同时在问时只落最后发出的那一次(replica I2);关掉当场就是「没有」;间隔按值定。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { QueryObserver } from '@tanstack/react-query'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
 

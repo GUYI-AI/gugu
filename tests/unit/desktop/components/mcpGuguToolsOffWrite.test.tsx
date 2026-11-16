@@ -16,7 +16,7 @@ const host = vi.hoisted(() => ({ value: null as null | Record<string, unknown> }
 vi.mock('../../../../apps/desktop/src/session/renderer/features/library/library-host', () => ({
   useLibraryHost: () => host.value, keepLibraryHost: (h: unknown) => h, libraryHostOf: () => host.value,
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/use-agents', () => ({ useManagementAgents: () => ({ data: [], isLoading: false, error: null }) }))
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/use-agents', () => ({ useManagementAgents: () => ({ reading: { state: 'value', value: [], stale: false, error: null } }) }))
 
 const { useMcpLibrary } = await import('../../../../apps/desktop/src/session/renderer/features/mcp/components/use-mcp-library')
 
