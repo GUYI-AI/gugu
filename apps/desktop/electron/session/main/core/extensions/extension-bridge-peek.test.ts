@@ -161,10 +161,16 @@ describe('files.openWith on a chat file: the waiting page first', () => {
   afterEach(() => deliver.mockImplementation(() => Promise.resolve()));
   const opening = (extra: Record<string, unknown> = {}) => ({ kind: 'openingChatFile', itemId: 'item-1', intent: 'navigate', ...extra });
 
-  it('said before it is resolved, with the name the page gave; the answer goes to that wait', async () => {
-    expect(await openWith({ ref: { id: 'item-1', name: 'deck.pdf' } })).toMatchObject({ ok: true });
+  it('said before it is resolved, with the name the page gave (its last segment); the answer goes to that wait', async () => {
+    expect(await openWith({ ref: { id: 'item-1' }, fileName: 'slides/deck.pdf' })).toMatchObject({ ok: true });
     expect(actions()).toEqual([opening({ fileName: 'deck.pdf' }), expect.objectContaining({ kind: 'openWith', detail: expect.objectContaining({ itemId: 'item-1', announced: true }) })]);
     expect(deliver.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(openWithTarget).mock.invocationCallOrder[0]!)
+  });
+
+  it('no name given (a bare ref): none said — the window titles it with its own wording', async () => {
+    expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
+    expect(actions()[0]).toEqual(opening());
+    expect(actions()[0]).not.toHaveProperty('fileName');
   });
 
   it('refused: the wait is taken back, nothing opens', async () => {

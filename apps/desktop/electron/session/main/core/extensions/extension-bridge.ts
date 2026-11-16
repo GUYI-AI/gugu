@@ -61,7 +61,7 @@ import {
 } from '@shared/extensions/host-actions';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { fileRefOf, folderOf, openingNameOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -2537,9 +2537,9 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         // named tab, nothing brought forward already. Unsure is not said: then nothing waits, as before.
         const mayWait = !resumed && tab === undefined && !ask && !peek && !isWorkspace(ref) && 'id' in ref && shown.operator.kind === 'person'
           && (ref.chat ?? shown.conversation) !== null;
-        const named = (args.ref as { name?: unknown } | null)?.name;
+        const named = openingNameOf(args);
         const opening = (withdrawn?: true) => deliver(shown, {
-          kind: 'openingChatFile', itemId: (ref as { id: string }).id, ...(typeof named === 'string' && named ? { fileName: named } : {}),
+          kind: 'openingChatFile', itemId: (ref as { id: string }).id, ...(named ? { fileName: named } : {}),
           ...(intent ? { intent } : {}), ...(withdrawn ? { withdrawn } : {}),
         });
         // The window says which chat the page's wait is in (none: the page is in no chat's panel there — nothing waits, and

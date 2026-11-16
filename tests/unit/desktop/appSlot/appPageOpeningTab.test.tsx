@@ -24,6 +24,8 @@ const { applyExtensionHostAction } = await import('@renderer/features/extensions
 const { askChat, askFileOpen, closeUnresolved, chatLayoutOf, closeChatTab, focusedChatTab, openPanelItem, panelTabsOf, takeChatAsk, chatPaneOf } = await import('@renderer/features/chats/chat-tabs/chat-layouts')
 const { folderItem, groupPageSlot, isFolderItem, isUnresolvedItem } = await import('@renderer/features/chats/chat-tabs/chat-panel-item')
 const { useChatOpener } = await import('../../../../apps/desktop/src/components/appSlot/useChatOpener')
+const { displayNameOf } = await import('../../../../apps/desktop/src/session/shared/extensions/file-openers')
+const { translateSessionMessage } = await import('../../../../apps/desktop/src/session/renderer/localization/locale-store')
 const { UI_EVENTS } = await import('../../../../apps/desktop/src/lib/uiEvents')
 const { APP_OPEN_WITH_EVENT } = await import('../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol')
 type Detail = import('../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol').AppOpenWithDetail
@@ -135,6 +137,20 @@ describe('a file clicked in the chat\'s folder', () => {
     expect(panelTabsOf(chat)).toHaveLength(1)
     expect(page()).toMatchObject({ kind: 'workspace.file', itemId: 'A' })
     expect(history().pages).toHaveLength(2)
+  })
+
+  it('waits under the name the page gave, then shows the name the host resolved — whatever the page claimed', async () => {
+    await opening('A', { fileName: 'claimed-by-the-page.md' })
+    expect(page()?.title).toBe('claimed-by-the-page.md')
+    await answer('A')
+    expect(page()?.title).toBe(displayNameOf('A.md', '.md'))
+  })
+
+  it('no name given: the waiting page has the loading wording, then the resolved name', async () => {
+    await opening('A')
+    expect(page()?.title).toBe(translateSessionMessage('task.loading'))
+    await answer('A')
+    expect(page()?.title).toBe(displayNameOf('A.md', '.md'))
   })
 
   it('an answer not held to a wait (nothing was announced) opens as before', async () => {

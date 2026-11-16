@@ -232,7 +232,7 @@ describe('a page\'s 「打开」 on its chat\'s file: the waiting page first', (
   })
 
   it('said to the slot before it is resolved; the answer is held to that wait', async () => {
-    expect(await call('filesOpenWith', { ref: { ...ref, name: 'sales.xlsx' } })).toMatchObject({ ok: true })
+    expect(await call('filesOpenWith', { ref, fileName: 'sales.xlsx' })).toMatchObject({ ok: true })
     expect(opening.mock.calls).toEqual([[{ itemId: SALES, fileName: 'sales.xlsx', intent: 'navigate' }]])
     expect(opened.mock.calls[0]![0]).toMatchObject({ itemId: SALES, announced: true })
     expect(opening.mock.invocationCallOrder[0]).toBeLessThan(opened.mock.invocationCallOrder[0]!)

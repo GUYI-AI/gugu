@@ -51,3 +51,25 @@ describe('gugu.files.openWith: { tab } reaches the host (A2 T10)', () => {
     expect(openWith).toHaveBeenCalledExactlyOnceWith({ ref: { chat: CHAT, id: FILE }, intent });
   });
 });
+
+// The entry the page passes carries its name: the runtime passes it beside the ref (the ref as before), for the host's
+// waiting-page title. A bare ref has none, and none is made up.
+describe('gugu.files.openWith: the entry\'s name goes beside the ref', () => {
+  const host = () => {
+    const openWith = vi.fn(async () => undefined);
+    const gugu = createGugu(
+      { appFiles: { openWith, download: vi.fn(async () => undefined), watch: vi.fn(async () => undefined) }, reportError: vi.fn(async () => undefined) } as never,
+      { files: async () => ({}) as never },
+    ) as unknown as { files: { openWith: (file: unknown, options?: unknown) => Promise<unknown> } };
+    return { gugu, openWith };
+  };
+  it('an entry: its name as fileName, the ref unchanged; a bare ref: no fileName', async () => {
+    const { gugu, openWith } = host();
+    await gugu.files.openWith({ chat: CHAT, id: FILE, name: 'docs/plan.md', savedName: 'plan.md' });
+    await gugu.files.openWith({ chat: CHAT, id: FILE });
+    expect(openWith.mock.calls.map((call) => (call as unknown as [Record<string, unknown>])[0])).toEqual([
+      { ref: { chat: CHAT, id: FILE }, fileName: 'docs/plan.md' },
+      { ref: { chat: CHAT, id: FILE } },
+    ]);
+  });
+});

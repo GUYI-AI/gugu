@@ -332,6 +332,16 @@ export function sessionIdOf(value: unknown): string {
 }
 
 /**
+ * The name a page's `files.openWith` call came with (the runtime passes the entry's own, `fileName`), for the waiting
+ * page's title only: its last segment, never a path; none when it gave none. Not trusted for anything else — the host's
+ * resolved name replaces it once the file is open.
+ */
+export function openingNameOf(args: { fileName?: unknown }): string | undefined {
+  const name = typeof args.fileName === 'string' ? args.fileName.split('/').filter(Boolean).at(-1) : undefined;
+  return name || undefined;
+}
+
+/**
  * A file as a page passed it: an entry from `files.list(place)`, `ctx.file`, `{ workspace, id | name }`, a chat file's
  * `{ id }`, or `{ chat, name }`.
  */

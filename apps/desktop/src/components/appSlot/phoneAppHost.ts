@@ -29,6 +29,7 @@ import {
   APP_FRAME_MARKER,
   SYNC_PORT_WINDOW_MESSAGE,
   fileRefOf,
+  openingNameOf,
   openWithTabOf,
   openWithIntentOf,
   fileSearchOf,
@@ -790,8 +791,8 @@ export function hostAppFrame(
         // The file's waiting page before it is resolved, as main says it on the desktop: one of this chat's files by id, to
         // open in its panel — not asked to pick, not beside the page, not the page's own named tab.
         const waitIn = 'id' in ref && args.ask !== true && args.peek !== true && tab === undefined ? (ref.chat ?? hosted.binding.chatId) : null
-        const named = (args.ref as { name?: unknown } | null)?.name
-        const opening = (withdrawn?: true) => hooks.opening?.({ itemId: (ref as { id: string }).id, ...(typeof named === 'string' && named ? { fileName: named } : {}), ...(intent ? { intent } : {}), ...(withdrawn ? { withdrawn } : {}) })
+        const named = openingNameOf(args)
+        const opening = (withdrawn?: true) => hooks.opening?.({ itemId: (ref as { id: string }).id, ...(named ? { fileName: named } : {}), ...(intent ? { intent } : {}), ...(withdrawn ? { withdrawn } : {}) })
         // Held to a wait only when the slot shows one (a frame outside a chat's panel shows none: the answer goes as before).
         let waiting = waitIn !== null && opening() === true
         return files.openTarget(surface(), { ref: chatRef(args.ref) }).then((target) => {
