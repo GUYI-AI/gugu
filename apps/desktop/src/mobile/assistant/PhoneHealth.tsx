@@ -15,7 +15,8 @@ import type { PhonePageProps } from './MobileAssistantApp'
 import { PhoneMachineView, ReadFailed, ReadingNow, ReadView } from './PhoneMachineView'
 import { healthClock, type PhoneHealthView } from './phoneHealthView'
 import { phoneHealth } from './phoneHealthReplica'
-import { phoneReadOf, type PhoneRead } from './phoneRead'
+import type { Reading } from '@/lib/replica'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { useReplica } from '@/lib/replica'
 import './phone-memory.css'
 
@@ -26,14 +27,15 @@ import './phone-memory.css'
  * 下面「你的健康分析」(让它解读,只填不发;它记进记忆的 health_* 几条,醒着读到了才列)、「分析健康报告」(选文件排进聊天)。
  */
 export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: PhonePageProps & {
-  healthNotes: PhoneRead<{ notes: MemoryEntry[] }> & { reload: () => void }
+  healthNotes: { reading: Reading<{ notes: MemoryEntry[] }> }
 }) {
   const { t } = useTranslation('assistant')
   const name = assistant.display_name
-  const health = phoneReadOf(useReplica(phoneHealth, []), () => { void phoneHealth.refresh() })
-  const view = health.state === 'ok' ? health.data : null
+  const health = useReplica(phoneHealth, [])
+  const reload = () => { void phoneHealth.refresh() }
+  const view = health.state === 'value' ? health.value : null
   return (
-    <div className="ta-page ta-phone-health" data-testid="assistant-health" data-state={health.state === 'ok' ? health.data.state : health.state}>
+    <div className="ta-page ta-phone-health" data-testid="assistant-health" data-state={health.state === 'value' ? health.value.state : health.state === 'unknown' ? 'loading' : 'error'}>
       <PageHead
         title={t('health.title')}
         sub={view?.state === 'ok' ? t('health.from', { device: t('health.phone.thisPhone'), time: healthClock(view.summary.generated_at) }) : undefined}
@@ -41,24 +43,25 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
           <IconButton
             size="lg"
             aria-label={t('health.refresh')}
-            disabled={health.state === 'loading'}
-            onClick={health.reload}
+            disabled={health.state === 'unknown'}
+            onClick={reload}
             data-testid="assistant-health-refresh"
           >
-            {health.state === 'loading' ? <LoadingIndicator size="inline" /> : <RefreshCw />}
+            {health.state === 'unknown' ? <LoadingIndicator size="inline" /> : <RefreshCw />}
           </IconButton>
         }
       />
-      {health.state === 'loading' ? (
+      {health.state === 'value' ? <RefreshFailed error={health.error} onRetry={reload} /> : null}
+      {health.state === 'unknown' ? (
         <ReadingNow label={t('health.loading')} />
       ) : health.state === 'error' ? (
         <div className="ta-card">
-          <ReadFailed title={t('health.state.errorTitle')} error={health.error} onRetry={health.reload} />
+          <ReadFailed title={t('health.state.errorTitle')} error={health.error} onRetry={reload} />
         </div>
-      ) : health.data.state === 'ok' ? (
-        <HealthBody summary={health.data.summary} t={t} />
+      ) : health.value.state === 'ok' ? (
+        <HealthBody summary={health.value.summary} t={t} />
       ) : (
-        <ConnectCard view={health.data} onGrant={openPhonePermissions} onRetry={health.reload} />
+        <ConnectCard view={health.value} onGrant={openPhonePermissions} onRetry={reload} />
       )}
       <AssistantSection
         title={t('health.analysisTitle')}
@@ -72,7 +75,7 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
       >
         <PhoneMachineView machine={machine} name={name}>
           {() => (
-            <ReadView read={healthNotes} failedTitle={t('memory.loadFailed')}>
+            <ReadView reading={healthNotes.reading} failedTitle={t('memory.loadFailed')}>
               {({ notes }) => {
                 const analysis = notes.filter((note) => isHealthNote(note.file))
                 return analysis.length === 0 ? (

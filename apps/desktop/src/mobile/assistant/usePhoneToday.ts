@@ -1,7 +1,7 @@
 import { readChatFolderText } from '@/lib/chatFolder'
-import { replica, useReplica } from '@/lib/replica'
+import { replica, useReplica, type Reading } from '@/lib/replica'
 import { ChatFolderReadError } from '@/session/shared/extensions/chat-folder-text'
-import { TODAY_FILE_NAME, TODAY_REFRESH_MS, TodayReadError, todayReadOf, type TodayFeedView, type TodayRead } from '@/session/renderer/features/assistant/assistant-today-file'
+import { TODAY_FILE_NAME, TODAY_REFRESH_MS, TodayReadError, todayReadOf, type TodayRead } from '@/session/renderer/features/assistant/assistant-today-file'
 
 /**
  * 私聊文件夹里的 today.json(手机上在窗口里 fetch,lib/chatFolder.ts;文件服务要答跨域预检,gugu-supabase #119)。
@@ -20,10 +20,7 @@ export const assistantToday = replica({
   refreshEvery: TODAY_REFRESH_MS,
 })
 
-/** 「动态」那一格与「<名字>」那一格的日记都读它。 */
-export function usePhoneToday(chatId: string): TodayFeedView {
-  const reading = useReplica(assistantToday, [chatId])
-  if (reading.state === 'unknown') return { state: 'loading' }
-  if (reading.state === 'error') return { state: 'error', error: reading.error, retry: () => { void assistantToday.refresh(chatId) } }
-  return { state: 'read', read: reading.value }
+/** 「动态」那一格与「<名字>」那一格的日记都读它。A refresh that failed stays on the reading (said where it is drawn). */
+export function usePhoneToday(chatId: string): { today: Reading<TodayRead>; retry: () => void } {
+  return { today: useReplica(assistantToday, [chatId]), retry: () => { void assistantToday.refresh(chatId) } }
 }

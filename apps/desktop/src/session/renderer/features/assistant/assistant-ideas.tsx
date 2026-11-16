@@ -4,8 +4,10 @@ import { setIdeasEntryHidden, useIdeasEntryHidden } from '@/lib/assistantIdeas';
 import { Unknown } from '@/components/ui/Unknown';
 import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { ideaGroups, type TodayFeedView, type TodayIdea } from './assistant-today-file';
+import { ideaGroups, type TodayIdea, type TodayRead } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import type { Reading } from '@/lib/replica';
 
 /**
  * #7199 「灵感」:输入框右上方一颗「灵感」胶囊,点开一块面板,一张卡 = 一件它现在就能替你做的事,
@@ -32,14 +34,16 @@ export function IdeasEntry({ assistantId, busy, onOpen, label, icon }: { assista
 }
 
 export function IdeasPanel({
-  view,
+  today,
+  retry,
   assistantId,
   name,
   askInChat,
   onClose,
   layout,
 }: {
-  view: TodayFeedView;
+  today: Reading<TodayRead>;
+  retry: () => void;
   assistantId: string;
   name: string;
   askInChat: (draft: string) => void;
@@ -95,12 +99,48 @@ export function IdeasPanel({
           </div>
         </div>
       ) : null}
-      <IdeasBody view={view} name={name} fill={fill} />
+      <IdeasBody today={today} retry={retry} name={name} fill={fill} />
     </div>
   );
 }
 
-function IdeasBody({ view, name, fill }: { view: TodayFeedView; name: string; fill: (draft: string) => void }) {
+function IdeasBody({ today, retry, name, fill }: { today: Reading<TodayRead>; retry: () => void; name: string; fill: (draft: string) => void }) {
+  const { t } = useTranslation('assistant');
+  if (today.state === 'unknown')
+    return (
+      <div className="ta-card">
+        <AssistantEmpty>
+          <span className="inline-flex items-center gap-2">
+            <LoadingIndicator size="inline" />
+            {t('ideas.loading')}
+          </span>
+        </AssistantEmpty>
+      </div>
+    );
+  if (today.state === 'error')
+    return (
+      <div className="ta-card" data-testid="assistant-ideas-unreadable">
+        <AssistantEmpty
+          action={
+            <button type="button" className="ta-pill-btn" onClick={retry}>
+              {t('machine.retry')}
+            </button>
+          }
+        >
+          {t('ideas.unreadable')}
+        </AssistantEmpty>
+      </div>
+    );
+  // Its last refresh failed: the ideas read before stay, and the failure is said above them (❌ old ideas as if current).
+  return (
+    <>
+      <RefreshFailed error={today.error} onRetry={retry} />
+      <IdeasRead read={today.value} name={name} fill={fill} />
+    </>
+  );
+}
+
+function IdeasRead({ read, name, fill }: { read: TodayRead; name: string; fill: (draft: string) => void }) {
   const { t } = useTranslation('assistant');
   const note = (body: ReactNode, action?: { label: string; draft: string }, testId?: string) => (
     <div className="ta-card" data-testid={testId}>
@@ -117,28 +157,6 @@ function IdeasBody({ view, name, fill }: { view: TodayFeedView; name: string; fi
       </AssistantEmpty>
     </div>
   );
-  if (view.state === 'loading')
-    return note(
-      <span className="inline-flex items-center gap-2">
-        <LoadingIndicator size="inline" />
-        {t('ideas.loading')}
-      </span>
-    );
-  if (view.state === 'error')
-    return (
-      <div className="ta-card" data-testid="assistant-ideas-unreadable">
-        <AssistantEmpty
-          action={
-            <button type="button" className="ta-pill-btn" onClick={view.retry}>
-              {t('machine.retry')}
-            </button>
-          }
-        >
-          {t('ideas.unreadable')}
-        </AssistantEmpty>
-      </div>
-    );
-  const read = view.read;
   if (read.state === 'invalid') return note(t('today.invalid', { name, problem: read.problem }), { label: t('today.fix', { name }), draft: t('today.fixPrompt', { problem: read.problem }) }, 'assistant-ideas-invalid');
   const part = read.state === 'ok' ? read.file.ideas : ({ state: 'none' } as const);
   if (part.state === 'invalid')

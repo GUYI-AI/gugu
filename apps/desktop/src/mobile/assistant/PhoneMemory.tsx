@@ -18,13 +18,13 @@ import { PhoneConfirmDialog } from './PhoneConfirmDialog'
 import { PhoneHealth } from './PhoneHealth'
 import { PhoneMachineView, ReadView, type OpenedPageProps } from './PhoneMachineView'
 import { deleteMemoryNote } from './phoneMemoryData'
-import { phoneReadOf, type PhoneRead } from './phoneRead'
+import type { Reading } from '@/lib/replica'
 import { useAssistantPanelCollection } from '@/components/assistant/assistant-panel-reads'
 import { assistantPanel } from '@/components/assistant/assistant-panel-replica'
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
-type NotesRead = PhoneRead<{ notes: MemoryEntry[]; index: string | null }> & { reload: () => void }
+type NotesRead = { reading: Reading<{ notes: MemoryEntry[]; index: string | null }>; reload: () => void }
 
 function kindLabel(kind: MemoryKind, t: Translate, name: string): string {
   if (kind === 'user') return t('memory.filter.user')
@@ -50,7 +50,7 @@ export function PhoneMemory(props: PhonePageProps) {
   // 健康页与它点开的那一条共用一份读数(它记的 health_* 几条):面板快照里的「记忆」那一份,画的时候推出来。
   const memoryDir = ready?.paths.memoryDir ?? ''
   const derive = useCallback((rows: AssistantPanelItem[]) => memoryNotesOf(rows, memoryDir), [memoryDir])
-  const notes = phoneReadOf(useAssistantPanelCollection(ready, 'memory', derive), () => { if (ready?.panel) void assistantPanel.refresh(ready.panel.assistantId) })
+  const notes: NotesRead = { reading: useAssistantPanelCollection(ready, 'memory', derive), reload: () => { if (ready?.panel) void assistantPanel.refresh(ready.panel.assistantId) } }
   if (sub === 'health') return <PhoneHealth {...props} healthNotes={notes} />
   if (sub?.startsWith('note:')) return <MemoryNote {...props} file={sub.slice('note:'.length)} notes={notes} />
   return null
@@ -61,7 +61,7 @@ function MemoryNote(props: PhonePageProps & { file: string; notes: NotesRead }) 
   const { t } = useTranslation('assistant')
   const { assistant, machine, notes, file } = props
   const opened = machine.state === 'ready' ? machine.machine : null
-  const note = notes.state === 'ok' ? notes.data.notes.find((entry) => entry.file === file) ?? null : null
+  const note = notes.reading.state === 'value' ? notes.reading.value.notes.find((entry) => entry.file === file) ?? null : null
   if (opened && note) return <MemoryNoteBody {...props} machine={opened} note={note} />
   // 读到之前 / 读不到 / 已经不在了:页头先说是记忆,下面说清是哪一步。
   return (
@@ -69,7 +69,7 @@ function MemoryNote(props: PhonePageProps & { file: string; notes: NotesRead }) 
       <PageHead title={t('nav.memory')} />
       <PhoneMachineView machine={machine} name={assistant.display_name}>
         {() => (
-          <ReadView read={notes} failedTitle={t('memory.loadFailed')}>
+          <ReadView reading={notes.reading} failedTitle={t('memory.loadFailed')}>
             {() => <AssistantEmpty title={t('memory.goneTitle')}>{t('memory.gone')}</AssistantEmpty>}
           </ReadView>
         )}

@@ -110,7 +110,7 @@ export function homeWhere(home: AssistantHomePlace, t: (key: string) => string):
 /** 已连接 / 可用 两组;点一行做什么由调用方定(引导里直接弹连接框)。 */
 export const ConnectorLists = observer(function ConnectorLists({ onOpen }: { onOpen: (id: string) => void }) {
   const { t, i18n } = useTranslation('assistant');
-  const { integrations, configuredConnections, connectionStatus, hasList, listError, reloadList } = useIntegrationsContext();
+  const { integrations, configuredConnections, configuredConnectionsError, connectionStatus, hasList, listError, reloadList, reloadConnections } = useIntegrationsContext();
   const { remote } = useLibraryHost();
   const reload = useCallback(() => void reloadList(), [reloadList]);
   const readError = useAssistantReadError(!hasList,listError,remote?.deviceId ?? '');
@@ -119,6 +119,13 @@ export const ConnectorLists = observer(function ConnectorLists({ onOpen }: { onO
     return (
       <AssistantEmpty action={failure.retry ? <button type="button" className="ta-pill-btn" onClick={failure.retry}>{t('machine.retry')}</button> : undefined}>
         <span role={failure.tone === 'danger' ? 'alert' : 'status'} data-testid="assistant-connectors-read-failed">{failure.text}</span>
+      </AssistantEmpty>
+    );
+  // Which are connected could not be read: said, with a retry (❌ the placeholder for ever).
+  if (integrations && !configuredConnections && configuredConnectionsError)
+    return (
+      <AssistantEmpty action={<button type="button" className="ta-pill-btn" onClick={reloadConnections}>{t('machine.retry')}</button>}>
+        <span role="alert" data-testid="assistant-connectors-read-failed">{t('connectors.loadFailed')}</span>
       </AssistantEmpty>
     );
   // Not known yet which are connected: one placeholder list, ❌ every connector drawn as "available" first (AP11).
