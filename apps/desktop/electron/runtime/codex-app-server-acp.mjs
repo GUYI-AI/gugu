@@ -935,7 +935,7 @@ async function startAppOnce(servers) {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
     })
-    const version = String(initialized?.userAgent ?? '').match(/(?:codex[^/]*\/|codex[^0-9]*)(\d+)\.(\d+)\.(\d+)/i)
+    const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
     autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {
     throw new Error(

@@ -179,8 +179,7 @@ export const plugin = definePlugin(
       //    Gemini CLI 把这两档并列排进 PLAN < DEFAULT < AUTO_EDIT < YOLO,同一个阶梯。
       // `dontAsk`(预授权工具,其余一律拒)最贴近只读,作别名归进去,这样 agent 处在
       // 该档时界面显示「只读」而不是错报成「编辑」。
-      // ⚠️ `auto`(交给模型分类器判批准/拒绝)**不进阶梯** —— 它不是"能改多少"这条轴上的
-      //    一个刻度,而是"谁来决定"。硬塞进任何一档都是骗人,所以不声明、界面也不摆。
+      // Native auto is a separate review authority, exposed only after executable/model admission.
       modes: CLAUDE_PERMISSION_MODES,
     },
     auth: {

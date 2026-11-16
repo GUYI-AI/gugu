@@ -17,7 +17,7 @@ rl.on('line', (line) => {
   if (m.id === undefined || !m.method) return
   fs.appendFileSync(process.env.FIXTURE_RECORD, JSON.stringify(m) + '\\n')
   let result = { data: [] }
-  if (m.method === 'initialize') result = { userAgent: 'codex_cli_rs/0.160.0' }
+  if (m.method === 'initialize') result = { userAgent: 'gugu/0.156.1 (Mac OS 26.5.1; arm64) unknown (gugu; 0)' }
   if (m.method === 'thread/start') result = { thread: { id: 'thread-permission' }, activePermissionProfile: ':danger-full-access' }
   if (m.method === 'model/list') result = { data: [{ id: 'model-a', model: 'model-a', displayName: 'Model A', supportedReasoningEfforts: [] }, { id: 'codex-auto-review', model: 'codex-auto-review', displayName: 'Reviewer', supportedReasoningEfforts: [] }] }
   if (m.method === 'permissionProfile/list') result = { data: [':read-only', ':workspace', ':danger-full-access', 'custom'].map(id => ({ id, allowed: true })) }

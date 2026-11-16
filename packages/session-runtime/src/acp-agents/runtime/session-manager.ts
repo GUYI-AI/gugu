@@ -2444,6 +2444,9 @@ export class SessionManager implements InboundRouter {
     input: AcpStartInput
   ): Promise<void> {
     const provider = this.deps.agentHost.get(input.providerId);
+    if (input.permissionMode === 'ai-review' && !provider?.capabilities.autoApprove.modes?.['ai-review']) {
+      throw new Error('This harness does not support AI review');
+    }
     if (provider?.capabilities.acp.sessionModes === 'none') return;
     if (provider?.capabilities.autoApprove.kind !== 'supported') return;
     // 只读**权限那一维**的声明:三维各自声明(见 `LiveSettingsCapability`),量过模型那一维的家

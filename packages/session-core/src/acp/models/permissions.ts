@@ -69,7 +69,8 @@ export function isDestructivePermissionMode(modeId: string): boolean {
 }
 
 /**
- * 咕咕面向用户的四档权限,**按约束从严到松排列**。这是产品概念,不是任何一家 agent
+ * 咕咕权限选择。AI review changes the reviewer, shares edit's sandbox boundary, and never participates in fallback.
+ * 原有四档权限,**按约束从严到松排列**。这是产品概念,不是任何一家 agent
  * 的原生档位 —— 各 agent 自报的档位由 classifyProviderPermissionMode() 归类到这四档。
  *
  * 为什么需要它:此前这里只有一个 `autoApprove: boolean`,它装不下多档 ——
@@ -292,6 +293,7 @@ export function resolveDeclaredPermissionMode(
   wanted: GuguPermissionMode,
   modes: ProviderPermissionModeMap | undefined
 ): GuguPermissionMode | undefined {
+  if (wanted === 'ai-review' && !modes?.['ai-review']) return undefined;
   if (!modes || wanted === 'full-access' || modes[wanted]) return wanted;
   if (wanted === 'ai-review') return undefined;
   for (let rung = permissionModeRung(wanted) - 1; rung >= 0; rung -= 1) {
