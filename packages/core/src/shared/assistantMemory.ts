@@ -13,10 +13,15 @@ export function readFrontmatter(text: string): { fields: Record<string, string>;
     if (!match) continue;
     const [, key, raw] = match;
     const scalar = raw.trim().replace(/^((?:"(?:\\.|[^"\\])*"|'(?:''|[^'])*'))[ \t]+#.*$/, '$1').replace(/^(?!["'])(.*?)[ \t]+#.*$/, '$1');
-    const value = scalar.replace(/^(['"])(.*)\1$/, (_, quote: string, body: string) => quote === "'" ? body.replace(/''/g, "'") : body.replace(/\\([\\"])/g, '$1'));
+    const value = scalar.replace(/^(['"])(.*)\1$/, (_, quote: string, body: string) => quote === "'" ? body.replace(/''/g, "'") : decodeDoubleQuotedScalar(body));
     if (value && !(key in fields)) fields[key] = value;
   }
   return { fields, body: normalized.slice(offset + close.index + close[0].length).trim() };
+}
+
+function decodeDoubleQuotedScalar(body: string): string {
+  try { return JSON.parse('"' + body + '"') as string; }
+  catch { return body.replace(/\\([\\"])/g, '$1'); }
 }
 
 /** Claude Code 的记忆分四种;「关于你 / 关于助理」对应前两种。 */
