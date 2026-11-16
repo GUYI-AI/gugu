@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { readChatPinSettings, setChatPinPreference, watchChatPinSettings, type ChatPinSettings } from '@/lib/chatPinSettings'
@@ -15,28 +14,10 @@ export const chatPins = replica({
   read: (owner: string, chatId: string): Promise<ChatPinSettings> => readChatPinSettings(owner, chatId),
   // Pushed: a value stays current until the watch says otherwise (the watch reads once more when it starts).
   fresh: Infinity,
+  watch: { group: (chatId) => chatId, start: (owner, chatId) => watchChatPinSettings(owner, chatId, () => { void chatPins.refresh(chatId) }) },
 })
 
 const NO_PINS: readonly string[] = []
-// Subscription ownership only; the pins live in the replica.
-const watches = new Map<string, { users: number; stop: () => void }>()
-
-function watch(userId: string, chatId: string) {
-  const id = JSON.stringify([userId, chatId])
-  let entry = watches.get(id)
-  if (!entry) {
-    const stop = watchChatPinSettings(userId, chatId, () => { void chatPins.refresh(chatId) })
-    // The kept pins paint the first frame; changes made while nobody watched are read again now.
-    if (chatPins.peek(chatId).state === 'value') void chatPins.refresh(chatId)
-    entry = { users: 0, stop }
-    watches.set(id, entry)
-  }
-  const active = entry
-  active.users++
-  return () => {
-    if (--active.users === 0) { active.stop(); watches.delete(id) }
-  }
-}
 
 export function useChatPinSettings(chatId: string | null, enabled = true) {
   const { user } = useAuth()
@@ -44,10 +25,6 @@ export function useChatPinSettings(chatId: string | null, enabled = true) {
   const { t } = useTranslation('messaging')
   const userId = user?.id
   const reading = useReplica(chatPins, userId && chatId && enabled ? [chatId] : null)
-  useEffect(() => {
-    if (!userId || !chatId || !enabled) return
-    return watch(userId, chatId)
-  }, [userId, chatId, enabled])
   const mutation = useMutation({
     networkMode: 'always', scope: { id: `chat-settings:${userId}:${chatId}` },
     mutationFn: async (input: { userId: string | undefined; chatId: string | null; id: string; pinned: boolean }) => {

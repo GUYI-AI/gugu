@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { replica } from '@/lib/replica';
 import { events, onMachineEvent } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
@@ -15,7 +14,7 @@ import { decodeShot } from './panel/decoded-shots';
 
 /**
  * @@@market-replicas — the App market and an installed App's pages, keyed by host (`local`, `remote:<deviceId>`, `phone`;
- * @@@client-state-model). The host's `changed` push refreshes the market models (`useMarketRefreshed`, ref-counted per host).
+ * @@@client-state-model). The host's `changed` push refreshes the market models (their `watch`, one per host while shown).
  */
 
 /** What the phone's App store answers for the market (registered by phoneMarketPage.ts). */
@@ -159,6 +158,14 @@ async function readDesktopShelf(hostKey: string): Promise<MarketShelfFull> {
   };
 }
 
+/** The host's `changed` push reads the market models again (one listener per host and model while shown). */
+const marketFeed = {
+  group: (hostKey: string) => hostKey,
+  start: (_owner: string, hostKey: string) => onRefreshedOf(hostKey, (refreshed) => {
+    if (refreshed.outcome === 'changed') marketChanged(hostKey, (refreshed as { fetchedAt?: string }).fetchedAt ?? null);
+  }),
+};
+
 /** The phone's shelf from its App store's entries (phoneMarketPage.ts): same home rules, its own ranking read. */
 export async function phoneShelfOf(items: MarketListItem[]): Promise<MarketShelfFull> {
   const ranking = await readRanking();
@@ -186,6 +193,7 @@ export const marketShelf = replica({
     carry: (value: MarketShelf, hostKey: string, locale: string) =>
       hostKey.startsWith('remote:') ? undefined : !value.full ? value : value.full.errorKind ? undefined : { first: firstScreenOf(value.full, locale) },
   },
+  watch: marketFeed,
 });
 
 export type MarketSearch = Pick<MarketShelfFull, 'errorKind' | 'items' | 'invalid' | 'total' | 'page' | 'hasMore'>;
@@ -208,6 +216,7 @@ export const marketSearch = replica({
     return { errorKind: last!.errorKind, items, invalid: last!.invalid, total: last!.total, page: last!.page, hasMore: last!.hasMore };
   },
   keep: 60_000,
+  watch: marketFeed,
 });
 
 /** One App as the market lists it now (a page not loaded yet, a link to an App): null = not in the market. */
@@ -220,6 +229,7 @@ export const marketEntry = replica({
     return result.data ?? null;
   },
   fresh: 60_000,
+  watch: marketFeed,
 });
 
 /** A version's product page in the market (about, screenshots). `outdated`: that machine's gugu is too old to say. */
@@ -265,6 +275,7 @@ export const marketVersionHistory = replica({
     return result.data;
   },
   fresh: Infinity,
+  watch: marketFeed,
 });
 
 // ── an installed App (desktop hosts) ─────────────────────────────────────────────────────────────────────────────
@@ -329,8 +340,6 @@ export const extensionAgentStatus = replica({
 
 // ── push ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const watches = new Map<string, { users: number; stop: () => void }>();
-
 function onRefreshedOf(hostKey: string, listener: (refreshed: { outcome: string }) => void): () => void {
   if (hostKey === PHONE_HOST) return phone().onRefreshed(listener);
   const machine = hostKey === LOCAL_HOST ? null : hostKey.slice('remote:'.length);
@@ -348,22 +357,6 @@ export function marketChanged(hostKey: string, fetchedAt: string | null = null):
   void marketVersionHistory.refresh(hostKey);
   void marketEntry.refresh(hostKey);
   return true;
-}
-
-function watchMarketRefreshed(hostKey: string): () => void {
-  const active = watches.get(hostKey) ?? {
-    users: 0,
-    stop: onRefreshedOf(hostKey, (refreshed) => { if (refreshed.outcome === 'changed') marketChanged(hostKey, (refreshed as { fetchedAt?: string }).fetchedAt ?? null); }),
-  };
-  watches.set(hostKey, active);
-  active.users++;
-  return () => {
-    if (--active.users === 0) { active.stop(); watches.delete(hostKey); }
-  };
-}
-
-export function useMarketRefreshed(hostKey: string | null): void {
-  useEffect(() => (hostKey ? watchMarketRefreshed(hostKey) : undefined), [hostKey]);
 }
 
 // This desktop's App programs changed with what is installed (main's inventory channel).

@@ -435,3 +435,69 @@ describe('PR 3 additions', () => {
   })
 })
 
+
+describe('core batch: device reads and change feeds', () => {
+  it('a device model reads while the browser says it is offline (its read goes to this device, never waits unknown)', async () => {
+    const { onlineManager } = await import('@tanstack/react-query')
+    onlineManager.setOnline(false)
+    try {
+      const host = rm.replica({ name: 'test-device-offline', scope: 'device', read: async () => 'host answer' })
+      void host.prefetch()
+      for (let i = 0; i < 5; i += 1) await Promise.resolve()
+      expect(host.peek()).toMatchObject({ state: 'value', value: 'host answer' })
+    } finally {
+      onlineManager.setOnline(true)
+    }
+  })
+
+  it('a change feed runs while a surface shows the group, once per group, and stops with the last surface', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const log: string[] = []
+    const model = rm.replica({
+      name: 'test-watch', scope: 'account', fresh: Infinity,
+      read: async (_owner: string, chat: string, topic: string) => `${chat}/${topic}`,
+      watch: { group: (chat) => chat, start: (owner, chat) => { log.push(`start ${owner} ${chat}`); return () => { log.push(`stop ${owner} ${chat}`) } } },
+    })
+    function Probe({ chat, topic }: { chat: string; topic: string }) { rm.useReplica(model, [chat, topic]); return null }
+    const harness = createReactHarness()
+    const shown = (rows: [string, string][]) => harness.render(createElement('div', null,
+      ...rows.map(([chat, topic]) => createElement(Probe, { key: `${chat}/${topic}`, chat, topic }))))
+    await shown([['c1', 't1'], ['c1', 't2'], ['c2', 't1']])
+    expect(log).toEqual(['start alice c1', 'start alice c2'])
+    await shown([['c1', 't2']])
+    expect(log).toEqual(['start alice c1', 'start alice c2', 'stop alice c2'])
+    await shown([])
+    expect(log).toEqual(['start alice c1', 'start alice c2', 'stop alice c2', 'stop alice c1'])
+    harness.cleanup({ keepReads: true })
+  })
+
+  it('a feed starting over entries that already hold a value reads them again (what changed while nobody listened)', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let version = 1
+    const reads = vi.fn(async () => version)
+    const model = rm.replica({ name: 'test-watch-reread', scope: 'account', fresh: Infinity, read: reads, watch: { start: () => () => undefined } })
+    await model.prefetch()
+    version = 2
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    for (let i = 0; i < 5; i += 1) await Promise.resolve()
+    expect(reads).toHaveBeenCalledTimes(2)
+    expect(model.peek()).toMatchObject({ state: 'value', value: 2 })
+    harness.cleanup({ keepReads: true })
+  })
+
+  it("the previous account's feed stops when the account changes, ❌ kept until the surface goes", async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const log: string[] = []
+    const model = rm.replica({ name: 'test-watch-account', scope: 'account', fresh: Infinity, read: async (owner) => owner,
+      watch: { start: (owner) => { log.push(`start ${owner}`); return () => { log.push(`stop ${owner}`) } } } })
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    const { act } = await import('react')
+    await act(async () => { rm.followRendererSession('SIGNED_OUT', null); rm.followRendererSession('SIGNED_IN', 'bob') })
+    expect(log).toEqual(['start alice', 'stop alice', 'start bob'])
+    harness.cleanup({ keepReads: true })
+  })
+})

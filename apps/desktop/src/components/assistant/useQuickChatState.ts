@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { QUICK_CHAT_CHANNELS, shortcutLabel, type QuickChatState } from '../../lib/quickChatIpc'
 import { rendererLogger } from '../../lib/log'
@@ -23,29 +22,14 @@ export const quickChatState = replica({
   fresh: Infinity,
   // Two flags, a registered flag and an accelerator: ~150 B.
   persist: { maxBytes: 256, maxEntries: 1 },
+  watch: { start: () => desktopIpc()!.eventOn(QUICK_CHAT_CHANNELS.changed, () => { void quickChatState.refresh() }) },
 })
 
-// Subscription ownership only (the value lives in the replica).
-let watch: { users: number; stop: () => void } | null = null
-function watchChanges(): () => void {
-  const ipc = desktopIpc()
-  if (!ipc) return () => undefined
-  if (!watch) {
-    const stop = ipc.eventOn(QUICK_CHAT_CHANNELS.changed, () => { void quickChatState.refresh() })
-    // A kept value paints the first frame; a change made while nobody watched is read again now.
-    if (quickChatState.peek().state === 'value') void quickChatState.refresh()
-    watch = { users: 0, stop }
-  }
-  const active = watch
-  active.users++
-  return () => { if (--active.users === 0 && watch === active) { active.stop(); watch = null } }
-}
 
 /** 不是桌面 = `available: false`(没有这扇小窗,❌ 一个读数);桌面上是读数:没读到、读到了、读不到。 */
 export function useQuickChatState(): { available: boolean; reading: Reading<QuickChatState>; setEnabled: (on: boolean) => void } {
   const available = desktopIpc() !== null
   const reading = useReplica(quickChatState, available ? [] : null)
-  useEffect(() => watchChanges(), [])
   const toggle = useMutation({
     mutationFn: async (on: boolean) => {
       const ipc = desktopIpc()

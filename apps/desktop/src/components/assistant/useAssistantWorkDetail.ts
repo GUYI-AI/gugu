@@ -1,6 +1,6 @@
 import {useMemo} from 'react'
 import {useReplica} from '../../lib/replica'
-import {assistantWork,useAssistantWorkTitles,useAssistantWorkWatch} from './assistant-work-records'
+import {assistantWork,useAssistantWorkTitles} from './assistant-work-records'
 
 type Detail=Awaited<ReturnType<typeof assistantWork.fetch>>
 
@@ -12,7 +12,6 @@ type Detail=Awaited<ReturnType<typeof assistantWork.fetch>>
  */
 export function useAssistantWorkDetail(ownerId:string,assistantId:string,workId:string,sessionId:string):{detail:(Detail&{titleKnown:boolean})|null;error?:unknown}{
  const reading=useReplica(assistantWork,[assistantId,workId])
- useAssistantWorkWatch(ownerId,assistantId)
  const value=reading.state==='value'?reading.value:null
  const matches=!!value&&value.work.owner_user_id===ownerId&&value.work.assistant_user_id===assistantId&&value.work.work_id===workId
    &&value.work.executors.some(row=>row.session_id===sessionId)

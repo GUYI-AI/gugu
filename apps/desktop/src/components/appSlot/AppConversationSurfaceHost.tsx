@@ -15,7 +15,7 @@ import { AppComposerRow } from './AppComposerRow'
 import { useStoreValueBy } from '../../store/chatContext'
 import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { useReplica } from '../../lib/replica'
-import { appSurfaceBindings, installedAs, useAppBindingPush } from './appBindingReplicas'
+import { appSurfaceBindings, installedAs } from './appBindingReplicas'
 
 installShellSlots()
 installAppConversationSurfaceBridge()
@@ -57,7 +57,6 @@ export function AppConversationSurfaceHost({ visible, ...handlers }: {
   // Followed (main's notes reach it) for the account even while no App places a column, so an App uninstalled and
   // installed again is drawn only after a new read; asked of main only while one does.
   const reading = useReplica(appSurfaceBindings, ownerId ? [] : null, { read: wanted })
-  useAppBindingPush(!!ownerId)
   // Not read yet, or unreadable: no column (an authority not verified draws nothing). A read that failed after a value keeps
   // that value (the reading's `error`): it takes nothing back that it could not check.
   const current = reading.state === 'value' ? reading.value : null

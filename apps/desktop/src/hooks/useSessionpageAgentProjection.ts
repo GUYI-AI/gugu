@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { replica, useReplica } from '../lib/replica'
 import { parseSessionpageAgentContext, type SessionpageAgentContext } from '../lib/sessionpageAgentProjection'
 import { desktopIpc } from '../platform/desktopIpc'
@@ -21,7 +20,7 @@ type ProjectionState = (
 /**
  * Which task-page session an agent maps to on this computer, with its platform recovery (null = not mapped). Pushed by
  * the host: the task page switching its view (`session:changed` with a runtime) and a platform recovery changing are
- * read again by the module listener below.
+ * read again by its watch.
  */
 export const agentSessionContext = replica({
   name: 'agentSessionContext',
@@ -32,38 +31,23 @@ export const agentSessionContext = replica({
     return parseSessionpageAgentContext(await api.invoke('sessionpage:agent-context', agentUserId))
   },
   fresh: Infinity,
+  watch: {
+    start: () => {
+      const api = desktopIpc()!
+      // 任务页换了展示(编程 ⇄ 通用):宿主播 session:changed,带 runtime。私聊头部模式按钮的「使用中」跟着换。
+      const offView = api.eventOn('session:changed', (value) => {
+        const runtime = (value as { changes?: { runtime?: unknown } } | null)?.changes?.runtime
+        if (runtime !== undefined) void agentSessionContext.refresh()
+      })
+      const offRecovery = api.eventOn('session:platform-recovery-changed', () => { void agentSessionContext.refresh() })
+      return () => { offView(); offRecovery() }
+    },
+  },
 })
-
-// One host subscription however many surfaces show an agent's projection; the contexts live in the replica.
-let watch: { users: number; stop: () => void } | null = null
-
-function watchHost(): () => void {
-  const api = desktopIpc()
-  if (!api) return () => {}
-  if (!watch) {
-    // 任务页换了展示(编程 ⇄ 通用):宿主播 session:changed,带 runtime。私聊头部模式按钮的「使用中」跟着换。
-    const offView = api.eventOn('session:changed', (value) => {
-      const runtime = (value as { changes?: { runtime?: unknown } } | null)?.changes?.runtime
-      if (runtime !== undefined) void agentSessionContext.refresh()
-    })
-    const offRecovery = api.eventOn('session:platform-recovery-changed', () => { void agentSessionContext.refresh() })
-    // Contexts held from earlier: what changed while nobody watched is read again now.
-    void agentSessionContext.refresh()
-    watch = { users: 0, stop: () => { offView(); offRecovery() } }
-  }
-  const active = watch
-  active.users += 1
-  return () => {
-    if (--active.users > 0) return
-    active.stop()
-    if (watch === active) watch = null
-  }
-}
 
 export function useSessionpageAgentProjection(agentUserId: string | null): ProjectionState {
   const enabled = agentUserId !== null && desktopIpc() !== null
   const reading = useReplica(agentSessionContext, enabled ? [agentUserId] : null)
-  useEffect(() => (enabled ? watchHost() : undefined), [enabled])
   if (!enabled) return { kind: 'disabled', context: null, error: null, agentUserId }
   if (reading.state === 'unknown') return { kind: 'pending', context: null, error: null, agentUserId }
   if (reading.state === 'error') return { kind: 'error', context: null, error: reading.error.message, agentUserId }

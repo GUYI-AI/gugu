@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { events, rpc } from '@/session/renderer/lib/ipc'
 import { replica } from '@/lib/replica'
 import { fetchInstalledApps, LOCAL_HOST, type InstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
@@ -9,7 +8,7 @@ import type { GrantedSurfaceBinding, StoredUnreadBinding } from '@/session/share
 
 /**
  * #1925 / #1927 What main grants this account's Apps over its conversations. Pushed by main's inventory channel
- * (`useAppBindingPush`). Not kept across restarts: an authority stamp is checked again after a restart.
+ * (each model's `watch`). Not kept across restarts: an authority stamp is checked again after a restart.
  */
 
 /** One App as installed here: what its update, or a reinstall from another publisher, changes. Another App's never does. */
@@ -31,6 +30,20 @@ export const appSurfaceBindings = replica({
     return { bindings: result.data.bindings, installed }
   },
   fresh: Infinity,
+  // A note naming an App undraws it at once (a later install changes what it was granted); everything is read again.
+  watch: {
+    start: () => events.on(extensionsInventoryChangedChannel, (note?: { extensionId?: string }) => {
+      const extensionId = note?.extensionId
+      if (extensionId && appSurfaceBindings.peek().state === 'value') {
+        appSurfaceBindings.at().set((old) => {
+          if (!old || !(extensionId in old.bindings)) return old
+          const { [extensionId]: _gone, ...bindings } = old.bindings
+          return { ...old, bindings }
+        })
+      }
+      void appSurfaceBindings.refresh()
+    }),
+  },
 })
 
 export const appUnreadBindings = replica({
@@ -42,6 +55,7 @@ export const appUnreadBindings = replica({
     return result.data.bindings
   },
   fresh: Infinity,
+  watch: { start: () => events.on(extensionsInventoryChangedChannel, () => { void appUnreadBindings.refresh() }) },
 })
 
 export const appComposerActions = replica({
@@ -53,54 +67,11 @@ export const appComposerActions = replica({
     return result.data.actions
   },
   fresh: Infinity,
-})
-
-/** A note from main: the App it names is undrawn at once; everything is read again. */
-export function inventoryChanged(note: { extensionId?: string } | undefined): void {
-  const extensionId = note?.extensionId
-  if (extensionId) {
-    const without = (old: SurfaceBindings | undefined) => {
-      if (!old || !(extensionId in old.bindings)) return old
-      const { [extensionId]: _gone, ...bindings } = old.bindings
-      return { ...old, bindings }
-    }
-    if (appSurfaceBindings.peek().state === 'value') appSurfaceBindings.at().set(without)
-  }
-  void appSurfaceBindings.refresh()
-  void appUnreadBindings.refresh()
   // A note naming no App may be about any of them.
-  void appComposerActions.refresh(...(extensionId ? [extensionId] as [string] : []))
-}
-
-let users = 0
-let stop: (() => void) | null = null
-/** The composer entries shown in this run: what the watcher reads again when it starts. */
-const composerEntries = new Map<string, [extensionId: string, authority: string]>()
-
-/** Follow main's notes while a surface shows any of these (ref-counted, one subscription for all of them). */
-function watch(): () => void {
-  if (users++ === 0) {
-    stop = events.on(extensionsInventoryChangedChannel, inventoryChanged)
-    // Values from before the watch may have missed a note: read again what is already there.
-    if (appSurfaceBindings.peek().state === 'value') void appSurfaceBindings.refresh()
-    if (appUnreadBindings.peek().state === 'value') void appUnreadBindings.refresh()
-    for (const args of composerEntries.values()) {
-      if (appComposerActions.peek(...args).state === 'value') void appComposerActions.refresh(...args)
-    }
-  }
-  return () => {
-    if (--users === 0) {
-      stop?.()
-      stop = null
-    }
-  }
-}
-
-export function useAppBindingPush(active: boolean, composer?: [extensionId: string, authority: string]): void {
-  const [extensionId, authority] = composer ?? []
-  useEffect(() => {
-    if (!active) return
-    if (extensionId !== undefined && authority !== undefined) composerEntries.set(JSON.stringify([extensionId, authority]), [extensionId, authority])
-    return watch()
-  }, [active, extensionId, authority])
-}
+  watch: {
+    group: (extensionId) => extensionId,
+    start: (_owner, extensionId) => events.on(extensionsInventoryChangedChannel, (note?: { extensionId?: string }) => {
+      if (!note?.extensionId || note.extensionId === extensionId) void appComposerActions.refresh(extensionId)
+    }),
+  },
+})

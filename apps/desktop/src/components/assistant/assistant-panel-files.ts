@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { watchAssistantPanel } from './assistant-panel-replica'
+import { assistantPanel } from './assistant-panel-replica'
 import type { AssistantMachine } from '@/session/renderer/features/assistant/assistant-machine-core'
 import { requireAssistantPanelBridge, useAssistantPanelAccountId } from '@/lib/assistantPanelBridge'
 
@@ -13,7 +13,7 @@ export function useCloudAssistantFiles(assistantId: string | null, chatId: strin
   },[assistantId,chatId,deviceId,ownerId])
   useEffect(() => {
     if (!machine?.panel || !ownerId) return
-    return watchAssistantPanel(ownerId,machine.panel.assistantId)
+    return assistantPanel.hold(machine.panel.assistantId)
   },[machine,ownerId])
   return machine
 }

@@ -52,7 +52,7 @@ import type { ExtensionsApi } from '../extensions-host';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { useReplica } from '@/lib/replica';
 import { LOCAL_HOST } from '../extensions-api';
-import { marketListing, marketVersionHistory, useMarketRefreshed } from '../market-replicas';
+import { marketListing, marketVersionHistory } from '../market-replicas';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppShelfRow } from './app-shelf';
@@ -164,7 +164,6 @@ export function AppProductPage({
   const historyReading = useReplica(marketVersionHistory, [hostKey, manifest.id]);
   const history: Loadable<MarketVersionHistoryEntry[]> = historyReading.state === 'unknown' ? { status: 'loading' }
     : historyReading.state === 'error' ? { status: 'error' } : { status: 'ready', data: historyReading.value };
-  useMarketRefreshed(hostKey);
 
   const publishedAt = cloud.publishedAt;
   const permissions = declaredPermissions(manifest);

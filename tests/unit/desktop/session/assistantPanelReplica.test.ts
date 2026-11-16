@@ -18,7 +18,7 @@ vi.mock('@/lib/realtimeChannel', () => ({
 }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }))
 
-const { assistantPanel, assistantPanelReadCache, watchAssistantPanel } = await import('@/components/assistant/assistant-panel-replica')
+const { assistantPanel, assistantPanelReadCache } = await import('@/components/assistant/assistant-panel-replica')
 // The shell's half: the panel bridge (the cloud read) and the session-restore prefetch (C7).
 const { installAssistantPanelHost } = await import('@/components/assistant/assistant-panel-host')
 installAssistantPanelHost()
@@ -86,7 +86,7 @@ it('a change on the bus reads the panel again — at once when ready, after the 
   const ready = { ...item('__collection__'), data: { state: 'ready' } }
   cloud.snapshot.mockResolvedValue(snap('2', [ready]))
   await assistantPanel.refresh('assistant'); await assistantPanel.fetch('assistant')
-  const stop = watchAssistantPanel('owner', 'assistant')
+  const stop = assistantPanel.hold('assistant')
   const changed = cloud.bus.filter((entry) => entry.event === 'assistant_panel_changed').at(-1)!
   cloud.snapshot.mockClear().mockResolvedValue(snap('3', [ready]))
   changed.listener({ assistantId: 'another' })

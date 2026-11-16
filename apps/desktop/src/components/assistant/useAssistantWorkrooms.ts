@@ -33,27 +33,19 @@ export const assistantWorkroomSources = replica({
     return { sessions: listed.sessions, bindings: bound.data }
   },
   fresh: platform.capabilities.agentRuntime ? Infinity : 0,
+  // One pair of host listeners per machine while shown; a value read while nobody listened is read again when it starts.
+  watch: {
+    group: (machine) => machine,
+    start: (_owner, machine) => {
+      if (!platform.capabilities.agentRuntime) return () => undefined
+      const refresh = () => { void assistantWorkroomSources.refresh(machine) }
+      const offBindings = onMachineEvent(machine, projectGroupBindingChangedChannel, refresh)
+      const offSessions = onMachineEvent(machine, sessionCreatedChannel, refresh)
+      return () => { offBindings(); offSessions() }
+    },
+  },
 })
 
-// Subscription ownership only (the value lives in the replica): one pair of host listeners per machine.
-const watches = new Map<string, { users: number; stop: () => void }>()
-function watchHost(machine: string | null): () => void {
-  if (!platform.capabilities.agentRuntime) return () => undefined
-  const id = machine ?? ''
-  let entry = watches.get(id)
-  if (!entry) {
-    const refresh = () => { void assistantWorkroomSources.refresh(machine) }
-    const offBindings = onMachineEvent(machine, projectGroupBindingChangedChannel, refresh)
-    const offSessions = onMachineEvent(machine, sessionCreatedChannel, refresh)
-    // A value read while nobody listened may have moved since: read again now.
-    if (assistantWorkroomSources.peek(machine).state === 'value') refresh()
-    entry = { users: 0, stop: () => { offBindings(); offSessions() } }
-    watches.set(id, entry)
-  }
-  const active = entry
-  active.users++
-  return () => { if (--active.users === 0 && watches.get(id) === active) { active.stop(); watches.delete(id) } }
-}
 
 /**
  * Which groups are the assistant's workrooms, from its home host's actual session identities and project bindings. Never
@@ -70,7 +62,6 @@ export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, memb
   const machine = local && platform.capabilities.agentRuntime ? null : deviceId
   const subject = ownerId && assistantId && deviceId ? [machine] as [string | null] : null
   const reading = useReplica(assistantWorkroomSources, subject)
-  useEffect(() => (subject ? watchHost(machine) : undefined), [subject !== null, machine]) // eslint-disable-line react-hooks/exhaustive-deps
   // A membership change (a group joined / left) can change which bindings count: read again then (❌ on the first render).
   const lastMembership = useRef(membershipKey)
   useEffect(() => {

@@ -5,13 +5,12 @@
 // ❌ 跟订阅者走 —— 关掉订阅页再开,上一次的读数立刻在。
 // 取不到就说取不到 —— 余额与窗口两条链路各自落地,一条挂了不会把另一条一起吞掉,也绝不
 // 用 0 之类的假数字顶上。
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
 import { deriveSpendingPower, quotaSpendWindows, type SpendingPower } from '@gugu/core/billing'
 import {
   subscribePrivateUserEventBus,
   unsubscribePrivateUserEventBus,
-  type PrivateUserEventBusHandle,
 } from '../realtimeChannel'
 import { replica, useReplica } from '../replica'
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
@@ -70,6 +69,8 @@ const creditAccount = replica({
     }
   },
   persist: { maxBytes: 2048, maxEntries: 1 },
+  // 实时那一路(广播、回到前台)只在有人看着时挂着;数据本身跟账号走,没人看也不清。
+  watch: { start: (owner) => watchBilling(owner) },
 })
 
 // 计费版本:库的广播、回到前台各推进一次;用量页据此重取会员。
@@ -85,45 +86,29 @@ function refreshAll(): void {
   void creditAccount.refresh()
 }
 
+function watchBilling(userId: string): () => void {
+  window.addEventListener('focus', refreshWhenVisible)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
+  const handle = subscribePrivateUserEventBus(userId, 'spending_power_changed', () => {
+    bumpActivity()
+    refreshAll()
+  }, {
+    // Reconnects also re-fetch once, closing any event gap while the socket was unavailable.
+    onSubscribed: () => refreshAll(),
+  })
+  return () => {
+    window.removeEventListener('focus', refreshWhenVisible)
+    document.removeEventListener('visibilitychange', refreshWhenVisible)
+    unsubscribePrivateUserEventBus(handle)
+  }
+}
+
 function refreshWhenVisible(): void {
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
   // 回到前台:人可能刚在网页上开通或续费了会员。那只写会员表(bind_subscription → user_quota_periods)、
   // 不碰 user_credits,库的广播不会响 —— 推进计费版本,让读会员的那一处(用量页)也跟着重取(#5899)。
   bumpActivity()
   refreshAll()
-}
-
-// 实时那一路(广播、回到前台)只在有人看着时挂着;数据本身跟账号走,没人看也不清。
-let watchers = 0
-let watchedUserId: string | null = null
-let billingEventHandle: PrivateUserEventBusHandle | null = null
-
-function watch(userId: string): () => void {
-  watchers += 1
-  if (watchers === 1) {
-    window.addEventListener('focus', refreshWhenVisible)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-  }
-  if (watchedUserId !== userId) {
-    if (billingEventHandle) unsubscribePrivateUserEventBus(billingEventHandle)
-    watchedUserId = userId
-    billingEventHandle = subscribePrivateUserEventBus(userId, 'spending_power_changed', () => {
-      bumpActivity()
-      refreshAll()
-    }, {
-      // Reconnects also re-fetch once, closing any event gap while the socket was unavailable.
-      onSubscribed: () => refreshAll(),
-    })
-  }
-  return () => {
-    watchers -= 1
-    if (watchers > 0) return
-    window.removeEventListener('focus', refreshWhenVisible)
-    document.removeEventListener('visibilitychange', refreshWhenVisible)
-    if (billingEventHandle) unsubscribePrivateUserEventBus(billingEventHandle)
-    billingEventHandle = null
-    watchedUserId = null
-  }
 }
 
 /** 手动催一次(充值回来、用户点刷新)。 */
@@ -138,7 +123,6 @@ export function useSpendingPower(user: { id: string } | null): SpendingSnapshot 
     (listener) => { revisionListeners.add(listener); return () => { revisionListeners.delete(listener) } },
     () => activityRevision,
   )
-  useEffect(() => (userId ? watch(userId) : undefined), [userId])
 
   return useMemo((): SpendingSnapshot => {
     if (reading.state === 'unknown') return { ...UNKNOWN_SNAPSHOT, activityRevision: revision }

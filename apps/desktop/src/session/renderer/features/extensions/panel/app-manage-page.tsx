@@ -22,7 +22,7 @@ import type { ResourceContext } from '@shared/resource-actions';
 import { AppSettingsForm } from '../app-settings-form';
 import { useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
-import { extensionAgentSkills, extensionAgentTools, extensionDataBytes, marketVersionHistory, useMarketRefreshed } from '../market-replicas';
+import { extensionAgentSkills, extensionAgentTools, extensionDataBytes, marketVersionHistory } from '../market-replicas';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
 import type { ExtensionDisclosureLevel } from '../installed-extensions';
@@ -159,7 +159,6 @@ export function AppManagePage({
   const historyReading = useReplica(marketVersionHistory, historyOpen ? [hostKey, manifest.id] : null);
   const history: Loadable<MarketVersionHistoryEntry[]> = !historyOpen ? { status: 'idle' } : historyReading.state === 'unknown' ? { status: 'loading' }
     : historyReading.state === 'error' ? { status: 'error' } : { status: 'ready', data: historyReading.value };
-  useMarketRefreshed(historyOpen ? hostKey : null);
 
   // ── 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单(按装着的版本)──
   const toolsLive = enabled && givesAgentTools(manifest) && !revoked.includes('agents:tools');

@@ -4,7 +4,7 @@ import { useChatStore } from '@/store/chatContext';
 import { useReplica } from '@/lib/replica';
 import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions';
 import { conversationUnreadProjection } from '@/session/shared/extensions/unread-projection';
-import { appUnreadBindings, useAppBindingPush } from '../appSlot/appBindingReplicas';
+import { appUnreadBindings } from '../appSlot/appBindingReplicas';
 
 /**
  * Mounted by the host rail, never by an App guest. Page lifetime does not participate. The host-owned authorization
@@ -21,7 +21,6 @@ export function AppConversationUnread({ extensionId, children }: {
   // Unknown list: no binding name, so nothing is read and no unread is said (`null`) until it is known.
   const name = installed.state === 'value' ? installed.value.manifestFor(extensionId)?.contributes.unreadSource?.binding : undefined;
   const bindings = useReplica(appUnreadBindings, ownerId && name ? [] : null);
-  useAppBindingPush(!!ownerId && !!name);
   if (!name || bindings.state !== 'value') return children(null);
   return children(conversationUnreadProjection({ ownerId, binding: bindings.value[extensionId], name, chats }));
 }

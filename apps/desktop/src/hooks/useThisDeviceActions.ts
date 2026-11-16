@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import { DEVICE_ACTIONS_CHANNELS, type DeviceActionsState } from '../lib/deviceActionsIpc'
 import { rendererLogger } from '../lib/log'
 import { replica, useReplica } from '../lib/replica'
@@ -25,20 +25,13 @@ const thisDeviceActions = replica({
     }
   },
   fresh: Infinity,
+  watch: { start: () => desktopIpc()!.eventOn(DEVICE_ACTIONS_CHANNELS.changed, () => { void thisDeviceActions.refresh() }) },
 })
-// Pushed by main while any surface shows it (one watch, reference counted).
-let watchers = 0
-let stopWatch: (() => void) | undefined
-function watchChanges(): () => void {
-  if (watchers++ === 0) stopWatch = desktopIpc()?.eventOn(DEVICE_ACTIONS_CHANNELS.changed, () => { void thisDeviceActions.refresh() })
-  return () => { if (--watchers === 0) { stopWatch?.(); stopWatch = undefined } }
-}
 
 /** 这台电脑「能做的事」;不是桌面 = 一直 null。助理 App「能力 · 设备」那一行也读它。读取失败 ❌ 一直停在「读取中」。 */
 export function useThisDeviceState(): { state: DeviceActionsState | null; readError: string | null; reload: () => void } {
   const desktop = desktopIpc() !== null
   const reading = useReplica(thisDeviceActions, desktop ? [] : null)
-  useEffect(() => (desktop ? watchChanges() : undefined), [desktop])
   const reload = useCallback(() => { void thisDeviceActions.refresh() }, [])
   return {
     state: reading.state === 'value' ? reading.value : null,

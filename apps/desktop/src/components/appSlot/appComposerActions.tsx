@@ -7,7 +7,7 @@ import { rendererLogger } from '../../lib/log'
 import { useChatStore } from '../../store/chatContext'
 import { rpc } from '@/session/renderer/lib/ipc'
 import { useReplica } from '@/lib/replica'
-import { appComposerActions, useAppBindingPush } from './appBindingReplicas'
+import { appComposerActions } from './appBindingReplicas'
 import type { ComposerActionIcon, ComposerActionView } from '@/session/shared/extensions/composer-actions'
 
 const log = rendererLogger('app-composer-actions')
@@ -65,7 +65,6 @@ export function useAppComposerEntries({ ownerId, extensionId, authority, chatId 
   const zhNow = useCallback(() => i18n.language.startsWith('zh'), [i18n])
   // Read for this column's App and authority; main's notes (a grant withdrawn, say) read it again.
   const reading = useReplica(appComposerActions, [extensionId, authority])
-  useAppBindingPush(true, [extensionId, authority])
   const run = useCallback((actionId: string) => {
     void rpc.extensions.runConversationComposerAction({ ownerId, extensionId, authority, actionId }).then((result) => {
       if (!result.success) {

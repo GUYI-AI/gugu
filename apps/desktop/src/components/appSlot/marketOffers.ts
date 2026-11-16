@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { replica, useReplica, type Reading } from '../../lib/replica'
 import type { MarketOffer } from '../extensionBundle/installOffers'
 import { appsHere } from './appsHere'
@@ -17,28 +16,11 @@ export const marketOffers = replica({
     return answer.data
   },
   fresh: Infinity,
+  watch: { start: () => appsHere!.onMarketChanged(() => void marketOffers.refresh()) },
 })
 
-let users = 0
-let stop: (() => void) | null = null
-
-function watch(): () => void {
-  if (users++ === 0 && appsHere) {
-    stop = appsHere.onMarketChanged(() => void marketOffers.refresh())
-    // A value from before the watch may have missed a change: read it again.
-    if (marketOffers.peek().state === 'value') void marketOffers.refresh()
-  }
-  return () => {
-    if (--users === 0) {
-      stop?.()
-      stop = null
-    }
-  }
-}
 
 /** What the market offers here, while `asked` (false: nothing asked, unknown). */
 export function useMarketOffers(asked: boolean): Reading<MarketOffer[]> {
-  const reading = useReplica(marketOffers, asked && appsHere ? [] : null)
-  useEffect(() => (asked && appsHere ? watch() : undefined), [asked])
-  return reading
+  return useReplica(marketOffers, asked && appsHere ? [] : null)
 }

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { identityDb } from './supabase'
 import { rendererLogger } from './log'
@@ -48,6 +47,16 @@ export const myAssistant = replica({
   refreshOnFocus: true,
   // `{agentId, provisionDeviceId}`: two uuids, ~120 B.
   persist: { maxBytes: 256, maxEntries: 1 },
+  // One bus listener per account while anything shows it. The bus carries no provision event; only its resubscription
+  // matters here (signal tier: invalidate on resume). The first subscription is not a resume.
+  watch: {
+    start: (owner) => {
+      let resumed = false
+      const onSubscribed = () => { if (resumed) void myAssistant.refresh(); resumed = true }
+      const handle = subscribePrivateUserEventBus(owner, 'im_revision_advanced', () => undefined, { onSubscribed })
+      return () => unsubscribePrivateUserEventBus(handle)
+    },
+  },
 })
 
 /** A provision / move / close just landed: that row was just written, read it again (❌ wait for contacts to change — a move adds no agent). */
@@ -55,35 +64,10 @@ export function refreshMyAssistant(): Promise<void> {
   return myAssistant.refresh()
 }
 
-// Subscription ownership only (the value lives in the replica): one bus listener per account while anything shows it.
-let watch: { owner: string; users: number; stop: () => void } | null = null
-
-function watchResubscribe(owner: string): () => void {
-  if (watch && watch.owner !== owner) { watch.stop(); watch = null }
-  if (!watch) {
-    // The bus carries no provision event; only its resubscription matters here (signal tier: invalidate on resume). The
-    // first subscription is not a resume: the mount reads already.
-    let resumed = false
-    const onSubscribed = () => { if (resumed) void myAssistant.refresh(); resumed = true }
-    const handle = subscribePrivateUserEventBus(owner, 'im_revision_advanced', () => undefined, { onSubscribed })
-    watch = { owner, users: 0, stop: () => unsubscribePrivateUserEventBus(handle) }
-  }
-  const active = watch
-  active.users++
-  return () => {
-    if (--active.users === 0 && watch === active) { active.stop(); watch = null }
-  }
-}
-
 /** This account's personal assistant: unknown until read, then who it is (or that there is none), or why it could not be read. */
 export function useMyAssistant(): Reading<MyAssistant> {
   const ownerUserId = useAuth().user?.id ?? null
-  const reading = useReplica(myAssistant, ownerUserId ? [] : null)
-  useEffect(() => {
-    if (!ownerUserId) return
-    return watchResubscribe(ownerUserId)
-  }, [ownerUserId])
-  return reading
+  return useReplica(myAssistant, ownerUserId ? [] : null)
 }
 
 /**

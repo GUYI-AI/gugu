@@ -50,6 +50,7 @@ export const connectionRoute = replica({
   refreshEvery: 15_000,
   retry: 3,
   retryDelay: connectionReadDelay,
+  watch: { start: (owner) => connectionBridge().subscribeChanges(owner,() => { void connectionRoute.refresh() }) },
 })
 
 /** Core routing's cache of the last route, as this replica's entry for the signed-in account (one copy, not two). */
@@ -64,27 +65,9 @@ export const routeCache = {
   },
 }
 
-// Subscription ownership only: the route lives in the replica.
-const routeWatches = new Map<string,{ users: number; stop: () => void }>()
-function watchRoute(owner: string): () => void {
-  let entry = routeWatches.get(owner)
-  if (!entry) {
-    const refresh = () => { void connectionRoute.refresh() }
-    const stopChanges = connectionBridge().subscribeChanges(owner,refresh)
-    // A route kept from earlier in this run: changes made while nobody watched are read again now.
-    if (connectionRoute.peek().state === 'value') refresh()
-    entry = { users: 0,stop: stopChanges }
-    routeWatches.set(owner,entry)
-  }
-  const active = entry
-  active.users++
-  return () => { if (--active.users === 0) { active.stop(); routeWatches.delete(owner) } }
-}
-
 export function useConnectionAuthority() {
   const owner = useSyncExternalStore(subscribeAccount,accountId,() => null)
   const reading = useReplica(connectionRoute,owner ? [] : null)
-  useEffect(() => owner ? watchRoute(owner) : undefined,[owner])
   const route = reading.state === 'value' ? reading.value : undefined
   const error = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error ?? undefined : undefined
   // The notice is for an empty read episode: said once the retries are spent and nothing was ever read.

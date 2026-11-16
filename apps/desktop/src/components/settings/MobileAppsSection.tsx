@@ -10,7 +10,7 @@ import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { queryClient, useReplica } from '@/lib/replica'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { AppMarketContent, AppMarketFirstScreen, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
-import { marketShelf, useMarketRefreshed } from '@/session/renderer/features/extensions/market-replicas'
+import { marketShelf } from '@/session/renderer/features/extensions/market-replicas'
 import { AppProductPage } from '@/session/renderer/features/extensions/panel/app-product-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { AppLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle-button'
@@ -51,7 +51,6 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
   const shelfReading = useReplica(marketShelf, [PHONE_HOST, locale])
   const full = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null
   const first = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null
-  useMarketRefreshed(PHONE_HOST)
   const [tab, setTab] = useState<'market' | 'installed'>('market')
   const [view, setView] = useState<MarketBrowsePage>('market')
   const [manage, setManage] = useState<string | null>(null)

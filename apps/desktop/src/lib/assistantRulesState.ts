@@ -25,29 +25,16 @@ export const assistantRulesState = replica({
     return (await ipc.invoke(ASSISTANT_HOME_CHANNELS.rulesState)) as AssistantRulesState
   },
   fresh: Infinity,
+  watch: {
+    start: () => desktopIpc()?.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => assistantRulesState.set([], value as AssistantRulesState))
+      ?? (() => undefined),
+  },
 })
 
-// Subscription ownership only (the value lives in the replica).
-let watch: { users: number; stop: () => void } | null = null
-function watchRules(): () => void {
-  const ipc = desktopIpc()
-  if (!ipc) return () => undefined
-  if (!watch) {
-    const stop = ipc.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => assistantRulesState.set([], value as AssistantRulesState))
-    // A value read while an earlier watch ran may have moved since: read again now.
-    if (assistantRulesState.peek().state === 'value') void assistantRulesState.refresh()
-    watch = { users: 0, stop }
-  }
-  const active = watch
-  active.users++
-  return () => { if (--active.users === 0 && watch === active) { active.stop(); watch = null } }
-}
 
 /** Unknown until main answers: the entry is not drawn as preparing meanwhile (❌ a literal "not waiting" either). */
 export function useAssistantRulesState(): Reading<AssistantRulesState> {
-  const reading = useReplica(assistantRulesState, [])
-  useEffect(() => watchRules(), [])
-  return reading
+  return useReplica(assistantRulesState, [])
 }
 
 /** The one notice for a truly stuck wait: shown when it becomes stuck, in place (by key) if it is shown already. */

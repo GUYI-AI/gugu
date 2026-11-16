@@ -36,6 +36,9 @@ export const UNKNOWN: Reading<never> = { state: 'unknown' }
 
 type Scope = 'account' | 'device'
 
+/** The arguments as `read` declares them: a `watch` callback takes them, ❌ decides them. */
+type Later<A extends unknown[]> = A extends unknown[] ? A : never
+
 type Definition<A extends unknown[], V> = {
   /** Unique; part of every key and of the snapshot. Change it when the value's shape changes. */
   name: string
@@ -72,9 +75,20 @@ type Definition<A extends unknown[], V> = {
   refreshEvery?: number | ((value: V | undefined) => number | false)
   /**
    * `always`: read even while the browser says it is offline (a read that never leaves this device, e.g. the local message
-   * library). Default: a read waits for the network to come back.
+   * library); a read that needs the network then fails loud instead of waiting unknown. Default: `always` for `device`
+   * (its reads go to this device's host), `online` for `account` (a read waits for the network to come back).
    */
   networkMode?: 'online' | 'always'
+  /**
+   * A push-fed model's change feed (pair with `fresh: Infinity`): `start` runs when the first surface showing an entry of
+   * a group appears and the function it returns when the last one goes; `group` says which entries share one feed (default:
+   * all of the model's, per owner). `start` gets the owner and the arguments of the entry that opened the group. Entries
+   * of the group that already hold a value are read again when it starts: what changed while nobody listened.
+   */
+  watch?: {
+    group?: (...args: Later<A>) => unknown
+    start: (owner: string, ...args: Later<A>) => () => void
+  }
   /** How many times a failed read is retried before the reading is an error. Default 0: fail loud. */
   retry?: number | true
   retryDelay?: (attempt: number) => number
@@ -110,7 +124,38 @@ queryClient.getQueryCache().subscribe((event) => {
     writeSnapshotEntry(event.query.queryKey, event.query.state.data, event.query.state.dataUpdatedAt, persist)
   }
   if (event.type === 'observerAdded' && persist) noteUse(event.query.queryKey)
+  if (event.type === 'observerAdded' || event.type === 'observerRemoved') followWatch(event.query, event.type === 'observerAdded' ? 1 : -1)
 })
+
+/** The feeds of `watch` models now running: one per model, owner and group, with how many surfaces hold it. */
+const watches = new Map<string, { users: number; stop: () => void }>()
+
+function followWatch(query: Query, delta: 1 | -1): void {
+  const [name, owner, ...args] = query.queryKey as [string, string, ...unknown[]]
+  holdFeed(name, owner, args, delta)
+}
+
+function holdFeed(name: string, owner: string, args: unknown[], delta: 1 | -1): void {
+  const definition = definitions.get(name)
+  const watch = definition?.watch
+  if (!watch) return
+  const group = (args: unknown[]) => hashKey([name, owner, watch.group ? watch.group(...args) : null])
+  const id = group(args)
+  const running = watches.get(id)
+  if (running) {
+    running.users += delta
+    if (running.users > 0) return
+    watches.delete(id)
+    running.stop()
+    return
+  }
+  if (delta < 0) return
+  watches.set(id, { users: 1, stop: watch.start(owner, ...args) })
+  const held = queryClient.getQueryCache().findAll({ queryKey: [name, owner] })
+    .filter((entry) => entry.state.data !== undefined && group(entry.queryKey.slice(2)) === id)
+  // As `refresh`: a read already on its way began before the feed listened, so it is replaced (unless the model shares reads).
+  for (const entry of held) void queryClient.invalidateQueries({ queryKey: entry.queryKey, exact: true }, { cancelRefetch: !definition!.refreshJoinsRead })
+}
 
 /**
  * Put a value under a key, the entry living as long as its model keeps it (the account's lifetime by default) — ❌
@@ -469,6 +514,11 @@ export type Replica<A extends unknown[], V> = {
   reset(...args: A): Promise<void>
   /** Forget this entry altogether (a read finishing now does not put it back); the next reader starts from unknown. */
   forget(...args: A): void
+  /**
+   * Keep this entry's change feed (`watch`) running as a surface showing it would, for a reader that peeks without
+   * showing (files read through the entry). Returns the release.
+   */
+  hold(...args: A): () => void
   /** @internal */ options(key: QueryKey): object
 }
 
@@ -493,7 +543,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
-    ...(definition.networkMode ? { networkMode: definition.networkMode } : {}),
+    networkMode: definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
     ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
   })
   const key = (...args: A): QueryKey | null => {
@@ -549,6 +599,13 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     isFetching: (...args) => {
       const k = key(...args)
       return !!k && queryClient.getQueryState(k)?.fetchStatus === 'fetching'
+    },
+    hold: (...args) => {
+      const k = key(...args)
+      if (!k) return () => undefined
+      holdFeed(definition.name, k[1] as string, args, 1)
+      let held = true
+      return () => { if (held) { held = false; holdFeed(definition.name, k[1] as string, args, -1) } }
     },
     forget: (...args) => {
       const k = key(...args)

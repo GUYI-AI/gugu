@@ -9,7 +9,7 @@ import { taskChatRows, taskChatWindow } from './taskChatRows'
 import { Button } from '../ui/Button'
 import { Unknown } from '../ui/Unknown'
 import './assistant-task-chat.css'
-import { assistantWork, useAssistantWorkRecords, useAssistantWorkWatch } from './assistant-work-records'
+import { assistantWork, useAssistantWorkRecords } from './assistant-work-records'
 
 /**
  * The task chat's exchanges (the account's collaboration ledger), read only while the chat is shown: the work ids from the
@@ -24,7 +24,6 @@ export function useTaskChatRows(messages: readonly MessageItem[], ownerId: strin
   const shown = !!task && !!ownerId && visible
   // A task without a work id: its works are the ledger's that this session executes for this coordinator.
   const ledger = useAssistantWorkRecords(shown && task && !task.workId ? ownerId : null, task?.assistantId ?? '')
-  useAssistantWorkWatch(shown ? ownerId : null, task?.assistantId ?? null)
   const workIds = useMemo(() => {
     if (!shown || !task) return null
     if (task.workId) return [task.workId]
