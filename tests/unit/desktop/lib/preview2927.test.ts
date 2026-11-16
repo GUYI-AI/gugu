@@ -18,3 +18,5 @@ it('keeps balanced terminal URL parentheses',()=>{const url='https://example.tes
 it('excludes unmatched terminal URL brackets',()=>{const url='https://example.test/docs';expect(getTerminalLinkAtBufferCell(buffer(['['+url+']']),1,4)).toBe(url);expect(getTerminalLinkAtBufferCell(buffer(['['+url+']']),1,url.length+2)).toBeNull();const ipv6='https://[::1]';expect(getTerminalLinkAtBufferCell(buffer([ipv6]),1,10)).toBe(ipv6);});
 
 it('resolves terminal URLs across wrapped rows',()=>{const url='https://example.test/long/path';const b=buffer([url.slice(0,20),url.slice(20)]);expect(getTerminalLinkAtBufferCell(b,1,2)).toBe(url);expect(getTerminalLinkAtBufferCell(b,2,2)).toBe(url);expect(getTerminalLinkAtBufferCell(b,2,20)).toBeNull();});
+
+it('backspaces supplementary terminal input',()=>{const input=new SubmittedInputBuffer();expect(input.feed('fix 😀\u007fnow\r')).toEqual(['fix now']);});

@@ -193,9 +193,9 @@ class LineEditor {
         }
         case 'backspace':
           if (this.cursor > 0) {
-            this.lineBuffer =
-              this.lineBuffer.slice(0, this.cursor - 1) + this.lineBuffer.slice(this.cursor);
-            this.cursor -= 1;
+            const previous = this.previousOffset(this.cursor);
+            this.lineBuffer = this.lineBuffer.slice(0, previous) + this.lineBuffer.slice(this.cursor);
+            this.cursor = previous;
           }
           break;
         case 'delete':
@@ -223,6 +223,14 @@ class LineEditor {
     }
 
     return submitted;
+  }
+
+  private previousOffset(offset: number): number {
+    const previous = offset - 1;
+    const code = this.lineBuffer.charCodeAt(previous);
+    return previous > 0 && code >= 0xdc00 && code <= 0xdfff &&
+      this.lineBuffer.charCodeAt(previous - 1) >= 0xd800 && this.lineBuffer.charCodeAt(previous - 1) <= 0xdbff
+      ? previous - 1 : Math.max(0, previous);
   }
 
   clearLine(): void {
