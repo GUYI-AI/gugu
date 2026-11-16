@@ -18,6 +18,7 @@ import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/ele
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { useTheme } from '@/store/theme';
 import { widgetSnapshotWebP, widgetSnapshots } from '@/lib/widgetSnapshots';
+import { PageLoading } from '@/lib/loading/PageLoading';
 
 /**
  * 常驻扩展的页都住在这一层:每个 App 在每个地方(一个群、一个任务)一张,一生不换地方(摩擦单 F48,
@@ -341,7 +342,7 @@ export const ExtensionPage = observer(function ExtensionPage({
       let changed: ReturnType<typeof setTimeout> | undefined;
       let frame = 0;
       const painted = () => {
-        if (webviewRef.current !== element || !claimOf()?.widget) return;
+        if (webviewRef.current !== element) return;
         clearTimeout(fallback);
         paintedRef.current = true;
         if (pageKey) extensionViewStore.pagePainted(pageKey);
@@ -371,7 +372,8 @@ export const ExtensionPage = observer(function ExtensionPage({
       };
       element.addEventListener('dom-ready', ready);
       element.addEventListener('render-process-gone', gone);
-      const load = () => { frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
+      // Loaded is enough for a widget (its snapshot is waiting); any other page shows at its first contentful paint, or after 3s.
+      const load = () => { if (claimOf()?.widget) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
       // Electron guests are separate documents: their wheel cannot bubble into the chat's scroller.
       const wheel = (event: Event) => {
@@ -537,10 +539,19 @@ export const ExtensionPage = observer(function ExtensionPage({
     [pageKey]
   );
 
-  if (!surface && !managed) return null;
+  // A page stays clear until it has painted: a widget's snapshot shows through, any other page has the loading mark over it.
+  const unpainted = !inline && !managed && (!pageKey || !extensionViewStore.paintedPages.has(pageKey));
+  // The mark and its fallback start together, when the page is asked for (not at its guest's dom-ready), and end together:
+  // a page that never says it painted is shown after three seconds (a widget's waits for its guest, below).
+  const marked = unpainted && !!pageKey && !!claimOf() && !claimOf()?.widget;
+  useEffect(() => {
+    if (!marked) return undefined;
+    const fallback = setTimeout(() => extensionViewStore.pagePainted(pageKey!), 3_000);
+    return () => clearTimeout(fallback);
+  }, [marked, pageKey]);
+  // Not started yet, its box is still placed: the loading mark shows from the moment the page is asked for.
+  if (!surface && !managed && inline) return null;
   const manifest = installedExtensionsStore.manifestFor(extensionId);
-  // A widget's page stays clear until it has painted: its slot's snapshot shows through, not a blank box.
-  const unpainted = !inline && !!claimOf()?.widget && (!pageKey || !extensionViewStore.paintedPages.has(pageKey));
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}
@@ -560,6 +571,7 @@ export const ExtensionPage = observer(function ExtensionPage({
       <div ref={innerRef} className="absolute" style={{ left: 0, top: 0, width: 0, height: 0 }}>
         {page}
       </div>
+      {marked ? <PageLoading /> : null}
     </div>
   );
 });
