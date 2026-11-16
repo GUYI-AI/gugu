@@ -752,6 +752,7 @@ export function materializeClaudeSessionBundle(
     const allowed = guguMcpAllowRules(bundle);
     return {
       ...common,
+      artifacts: [...artifacts, ...(reviewerSettings ? [reviewerSettings] : [])],
       // 桥接自己的状态目录只进**适配器进程**的 env(物化结果的 env 叠在它的 spawn env 最上面);
       // 下面 `claudeCode.options.env` 那一份是给 claude 的,仍是原来的 `env`。
       env: { ...env, ...claudeAcpBridgeStateEnv(bundle) },

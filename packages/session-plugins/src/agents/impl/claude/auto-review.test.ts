@@ -1,4 +1,4 @@
-import { acpSessionMetaSchema } from '@gugu/session-core/acp/client';
+import { acpSessionMetaSchema } from '@gugu/session-core/acp';
 import { describe, expect, it } from 'vitest';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { claudeAutoReviewAvailable, claudeReviewConfig, CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
