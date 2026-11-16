@@ -68,10 +68,11 @@ const memoryKind = (value: string | undefined): MemoryKind | undefined => {
 export function memoryIndexHints(index: string): Map<string, { title: string; kind?: MemoryKind }> {
   const result = new Map<string, { title: string; kind?: MemoryKind }>();
   let kind: MemoryKind | undefined;
-  for (const line of index.split('\n')) {
+  for (const line of visibleMemoryLines(index)) {
     const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line);
     if (heading) kind = memoryKind(heading[1].trim());
-    for (const link of line.matchAll(/\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s)]+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*\)/gi)) {
+    const references = line.replace(/(`+)(?!`)([\s\S]*?)\1(?!`)/g, '');
+    for (const link of references.matchAll(/\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s)]+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*\)/gi)) {
       let destination: string;
       try { destination = decodeURIComponent(link[2] ?? link[3]).replace(/^\.\//, ''); } catch { continue; }
       if (/\.md$/i.test(destination) && !destination.includes('/')) result.set(destination, { title: link[1], ...(kind ? { kind } : {}) });
