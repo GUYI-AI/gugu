@@ -589,6 +589,7 @@ export default {
         "next": "Then open the link it prints and click “Allow”. The code expires in 15 minutes.",
         "wgetToggle": "No curl? Use wget",
         "curlToggle": "Use curl",
+        "limitCheckFailed": "Couldn’t check the machine limit just now; checking again.",
         "waiting": "Waiting for the machine…",
         "appeared": "{{name}} added"
       },

@@ -1,6 +1,5 @@
 import { createContext, useContext } from 'react'
 import type { Device } from '@gugu/core/shared/types/chat'
-import type { MachineLimitRefusal } from '@gugu/core/cloud/machineLimit'
 import type { DeviceBoundAgent } from '../lib/chat'
 
 // #1749 设备 store 的单一事实源：设置面板与 create-agent selector 都只订这里（列表 + 排序 + 实时在线 +
@@ -28,7 +27,6 @@ export interface DevicesContextValue {
    * #6264 since 之后这个账号有没有哪台咕咕 server 因为机器上限没登上(远程隧道那一段就地等时顺带问)。
    * 可选:没接这一格的场合(测试、只读面板)就不问。
    */
-  recentMachineLimitRefusal?: (sinceIso: string) => Promise<(MachineLimitRefusal & { hostname: string | null }) | null>
 }
 
 export const DevicesContext = createContext<DevicesContextValue>({

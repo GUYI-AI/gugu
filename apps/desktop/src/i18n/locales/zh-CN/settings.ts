@@ -589,6 +589,7 @@ export default {
         "next": "然后打开它输出的链接，点「允许」。短码 15 分钟内有效。",
         "wgetToggle": "没有 curl？用 wget",
         "curlToggle": "改用 curl",
+        "limitCheckFailed": "暂时查不到机器上限，稍后再查。",
         "waiting": "等待机器上线…",
         "appeared": "{{name}} 已添加"
       },

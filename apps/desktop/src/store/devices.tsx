@@ -1,6 +1,5 @@
 import { useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
 import { chatService } from '../lib/chat'
-import { recentMachineLimitRefusal } from '../lib/device-labels'
 import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { isLocalDeviceUnidentified } from '../lib/localDeviceIdentity'
 import { rendererLogger } from '../lib/log'
@@ -195,7 +194,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // A fresh value on every provider render re-rendered every device reader (sidebar, composer, contacts sections) even when
   // the render changed nothing they read.
   const value = useMemo(
-    () => ({ devices: machines, phones, loading, error, refresh, rename, remove, listBoundAgents, recentMachineLimitRefusal }),
+    () => ({ devices: machines, phones, loading, error, refresh, rename, remove, listBoundAgents }),
     [machines, phones, loading, error, refresh, rename, remove, listBoundAgents],
   )
   return (
