@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   listeners: [] as { machine: string | null; name: string; cb: (data: unknown) => void }[],
   marketRefresh: vi.fn(async () => ({ success: true, data: { outcome: 'unchanged', fetchedAt: '2026-10-16T01:00:00.000Z' } })),
   checkUpdates: vi.fn(async () => undefined),
+  decode: vi.fn(async () => undefined),
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: { marketRefresh: h.marketRefresh } },
@@ -15,6 +16,11 @@ vi.mock('@renderer/lib/ipc', () => ({
   },
 }));
 vi.mock('./installed-extensions', () => ({ LOCAL_HOST: 'local', marketUpdates: { refresh: h.checkUpdates } }));
+vi.mock('./market-replicas', () => ({ featuredShot: { entries: () => [
+  { args: ['local', 'pomo', '1.0.0'], reading: { state: 'value', value: { src: 'https://dl.example/market/media/pomo/1.0.0.png', placeholder: 'data:x' } }, fetching: false },
+  { args: ['local', 'none', '1.0.0'], reading: { state: 'value', value: null }, fetching: false },
+] } }));
+vi.mock('./panel/decoded-shots', () => ({ decodeShot: h.decode }));
 
 const { wireMarketRefresh } = await import('./wire-market-refresh');
 
@@ -23,6 +29,12 @@ describe('wireMarketRefresh', () => {
     h.listeners.length = 0;
     h.marketRefresh.mockClear();
     h.checkUpdates.mockClear();
+    h.decode.mockClear();
+  });
+
+  it('启动:上次留下的精选底图先解码好(重启后点进 App,第一帧就是图;owner 10-30)', () => {
+    wireMarketRefresh();
+    expect(h.decode.mock.calls).toEqual([['https://dl.example/market/media/pomo/1.0.0.png']]);
   });
 
   it('启动:查一次(手上那份),让主进程去下载站取一趟;只听本机推的', () => {
