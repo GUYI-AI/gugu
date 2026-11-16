@@ -14,31 +14,20 @@ import { PhoneConnectorSetupPage } from '../../../apps/desktop/src/mobile/assist
 import { failureKey, type SetupFailure } from '../../../apps/desktop/src/mobile/assistant/phoneConnectorFlow'
 import type { PhoneIntegrations } from '../../../apps/desktop/src/mobile/assistant/usePhoneProfileData'
 import { clickElement, createNode, createReactHarness, deferred, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
+import { freshReplicaAccount } from '../../support/replicaAccount'
+import { readableAssistantPanelCollection } from '@gugu/core/cloud/assistantPanelFiles'
+import type { AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel'
+import { assistantPanel } from '../../../apps/desktop/src/components/assistant/assistant-panel-replica'
 
 // #7199 手机连接应用的详情页与连接页:真目录(二十家)+ 假的助理的家(rpc 记下调用),渲染出来点一遍。
 // 判据落在行为上:点了什么就发了什么调用、连上后重读状态、没断成就留在确认卡上。
 
 const ui = vi.hoisted(() => ({ platformKind: 'capacitor' as 'capacitor' | 'web', writeClipboardText: vi.fn(async (_text: string) => {}), rpc: null as unknown, listeners: [] as Array<(data: unknown) => void> }))
 
-// The saved accounts are derived from the panel snapshot (`useAssistantPanelCollection`); here the fixture panel's
-// `integrations` rows stand for that snapshot's collection (read once per machine; a failure is the reading's error).
-vi.mock('@/components/assistant/assistant-panel-reads', async (original) => {
-  const React = await import('react')
-  return {
-    ...await original<object>(),
-    useAssistantPanelCollection: (machine: { panel: { collection(domain: string): Promise<unknown[]> } } | null, domain: string, derive: (rows: unknown[]) => unknown) => {
-      const [reading, setReading] = React.useState<unknown>({ state: 'unknown' })
-      React.useEffect(() => {
-        if (!machine) return
-        let live = true
-        machine.panel.collection(domain).then((rows) => { if (live) setReading({ state: 'value', value: derive(rows), stale: false, error: null }) },
-          (error: unknown) => { if (live) setReading({ state: 'error', error }) })
-        return () => { live = false }
-      }, [machine, domain, derive])
-      return reading
-    },
-  }
-})
+// The saved accounts are derived from the panel snapshot (the real `useAssistantPanelCollection` over the `assistantPanel`
+// replica); here the panel's cloud read is played at its bridge (`panelSnapshot`): the page's `integrations` rows, as the
+// cloud snapshot would carry them, read again on each refresh. A failed read is the reading's error.
+const panel = vi.hoisted(() => ({ rows: async (): Promise<Array<{ resource_key: string; data: Record<string, unknown> }>> => [], revision: 0, reads: 0 }))
 vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => ({ client: null, list: null, status: 'absent', error: '', refresh: async () => {}, apply: () => {} }) }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
@@ -86,6 +75,14 @@ function makeRpc() {
 }
 
 function pageProps(id: string, options: { configured?: Record<string, boolean>; statuses?: PhoneIntegrations['statuses'] } = {}) {
+  // This page's provider's rows in the cloud snapshot of the panel.
+  panel.rows = async () => {
+    const rows = id === 'github' ? await rpc.github.listAccounts() : await rpc.integrations.accounts(id)
+    return (rows.length ? rows : options.configured?.[id] && !catalog.find(item => item.id === id)?.multiAccount ? [{ accountId: 'default' }] : []).map((raw: unknown) => {
+      const row = raw as { accountId: string; displayName?: string; login?: string }
+      return { resource_key: row.accountId,data: { providerId: id,accountId: row.accountId,displayName: row.displayName ?? row.login ?? row.accountId } }
+    })
+  }
   const retry = vi.fn()
   const go = vi.fn()
   const integrations = {
@@ -98,14 +95,12 @@ function pageProps(id: string, options: { configured?: Record<string, boolean>; 
     retry,
     go,
     props: { assistant, chatId: 'chat-1', ownerName: null, homeDeviceId: "cloud-1", readiness: 'ready', machine: { state: 'ready',machine: { deviceId: 'cloud-1',projectId: 'panel',workspaceId: 'dm',paths: { memoryDir: 'memory' },panel: {
-      invalidate: vi.fn(),
-      collection: async () => {
-        const rows = id === 'github' ? await rpc.github.listAccounts() : await rpc.integrations.accounts(id)
-        return (rows.length ? rows : options.configured?.[id] && !catalog.find(item => item.id === id)?.multiAccount ? [{ accountId: 'default' }] : []).map((raw: unknown) => {
-          const row = raw as { accountId: string; displayName?: string; login?: string }
-          return { resource_key: row.accountId,data: { providerId: id,accountId: row.accountId,displayName: row.displayName ?? row.login ?? row.accountId } }
-        })
-      },change: async (row: { data: { providerId: string; accountId: string } }) => {
+      ownerId: owner(),assistantId: assistant.id,deviceId: 'cloud-1',
+      // As the panel files' invalidate: the panel is read again.
+      invalidate: vi.fn(() => { void assistantPanel.refresh(assistant.id) }),
+      // As the panel files read a collection: through the same replica entry.
+      collection: async (domain: AssistantPanelDomain) => readableAssistantPanelCollection(await assistantPanel.fetch(assistant.id), domain, 'cloud-1'),
+      change: async (row: { data: { providerId: string; accountId: string } }) => {
         const result = (row.data.providerId === 'github' ? await rpc.github.removeAccount(row.data.accountId)
           : await rpc.integrations.disconnect(row.data.providerId,row.data.accountId === 'default' ? undefined : row.data.accountId)) as { success: boolean; error?: string }
         if (!result.success) throw new Error('Cloud removal could not be saved')
@@ -130,8 +125,33 @@ let harness: ReturnType<typeof createReactHarness>
 let rpc: FakeRpc
 let opened: string[]
 let accountSequence = 0
-beforeEach(() => {
+const owner = () => `phone-connectors-test-${accountSequence}`
+const panelItem = (resourceKey: string, data: Record<string, unknown>, revision: string) => ({
+  assistant_user_id: assistant.id, owner_user_id: owner(), domain: 'integrations' as const, resource_key: resourceKey, device_id: 'cloud-1', revision, data,
+  body_item_id: null, body_sha256: null, deleted_at: null, observed_at: null, updated_at: '2026-11-15T00:00:00Z',
+})
+/** The panel bridge's cloud read (the shell's half): a snapshot of the page's rows, a newer revision each read. */
+function installPanelBridge() {
+  (window as unknown as { __GUGU_ASSISTANT_PANEL__: unknown }).__GUGU_ASSISTANT_PANEL__ = {
+    accountId: () => owner(),
+    subscribeAccount: () => () => {},
+    subscribeChanges: () => () => {},
+    files: () => { throw new Error('not in this test') },
+    queueNotice: async () => null,
+    panelSnapshot: async () => {
+      panel.reads += 1
+      const revision = String(++panel.revision)
+      const rows = await panel.rows()
+      return { version: 1, revision, application: [],
+        items: [panelItem('__collection__:cloud-1', { state: 'ready' }, revision), ...rows.map((row) => panelItem(row.resource_key, row.data, revision))] }
+    },
+  }
+}
+beforeEach(async () => {
   accountSequence += 1
+  await freshReplicaAccount(owner())
+  installPanelBridge()
+  panel.reads = 0
   setLocalePreference('zh-CN')
   harness = createReactHarness()
   rpc = makeRpc()
@@ -152,7 +172,7 @@ afterEach(() => {
   delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations
 })
 
-const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(I18nextProvider, { i18n }, createNode(node, props)), { auth: { id: `phone-connectors-test-${accountSequence}` } })
+const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(I18nextProvider, { i18n }, createNode(node, props)), { auth: { id: owner() } })
 
 describe('直接展开的连接列表', () => {
   it('应用行只有一个操作，先打开详情，不重复标记未连接或混入设备授权', async () => {
