@@ -25,5 +25,6 @@
 
 
 [data-phone-watch-layout] [data-mode="enlarged"] [data-phone-watch-switch] { top: 48px; }
-.gg-aw-title-with-watch { display: inline-flex; align-items: center; gap: var(--spacing-xs); min-width: 0; }
+.gg-aw-title-with-watch { display: inline-flex; align-items: center; gap: var(--spacing-xs); min-width: 0; max-width: 100%; }
+.gg-aw-title-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gg-aw[data-testid="agent-watch-timeline-page"] > .gg-pane-header { --pane-header-h-touch: 52px; }

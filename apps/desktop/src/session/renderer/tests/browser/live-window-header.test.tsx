@@ -6,9 +6,14 @@ import { LiveWindowHeaderIcon } from '../../features/live-window/LiveWindowHeade
 import { LiveWindowModel } from '../../features/live-window/model';
 import { DesktopLiveWindow } from '../../features/live-window/DesktopLiveWindow';
 import { PhoneWatchWindow } from '@/mobile/agent-watch/PhoneWatchWindow';
+import { PhoneLiveWindowTitle } from '@/mobile/agent-watch/PhoneLiveWindowTitle';
+import { AgentWatchScreen } from '@/mobile/agent-watch/AgentWatchChrome';
+import { LocalizationProvider } from '@/i18n';
 import type { LiveWindowContext, LiveWindowSource } from '../../features/live-window/types';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
+import '@/mobile/phone-shell.css';
+import '@/mobile/agent-watch/agent-watch.css';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).reverse().forEach(cleanup => cleanup()); });
@@ -71,4 +76,32 @@ describe.each(['desktop', 'phone'] as const)('%s active header', platform => {
     await act(async () => model.observe({ ...context, connected: false }, []));
     expect(host.querySelector('[data-live-window-toggle]')).toBeNull();
   });
+});
+
+it('keeps the phone header toggle hittable beside a long title and the real header actions', async () => {
+  await page.viewport(360, 766);
+  const host = document.body.appendChild(document.createElement('div'));
+  host.className = 'gugu-skin'; host.setAttribute('data-phone-shell', '');
+  host.style.cssText = 'width:360px;height:700px';
+  const root = createRoot(host), model = new LiveWindowModel('phone'); model.activate(context); model.observe(context, [source('computer', 1)]);
+  function View() {
+    const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot);
+    return <LocalizationProvider><AgentWatchScreen testId="header-fit" onBack={() => {}}
+      title={<PhoneLiveWindowTitle name="Issue #2868 acceptance with a long agent name" live={{ ...snapshot, dispatch: action => model.dispatch(action) }} />}
+      titleLeading={<div style={{ width: 40, height: 40, flex: 'none' }}>A</div>}
+      actions={<><button style={{ width: 64 }}>对话</button><button style={{ width: 32 }} aria-label="更多">…</button></>}>
+      <div />
+    </AgentWatchScreen></LocalizationProvider>;
+  }
+  await act(async () => root.render(<View />));
+  cleanups.push(() => { act(() => root.unmount()); host.remove(); });
+  const toggle = host.querySelector<HTMLButtonElement>('[data-live-window-toggle]')!;
+  const b = toggle.getBoundingClientRect();
+  expect(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('button'), JSON.stringify({
+    toggle: b.toJSON(), viewport: [innerWidth, innerHeight], host: host.getBoundingClientRect().toJSON(),
+    title: host.querySelector('.gg-pane-heading-title')?.getBoundingClientRect().toJSON(),
+    copy: host.querySelector('.gg-aw-title-copy')?.getBoundingClientRect().toJSON(),
+  })).toBe(toggle);
+  await page.elementLocator(toggle).click();
+  expect(model.getSnapshot().visible).toBe(false);
 });

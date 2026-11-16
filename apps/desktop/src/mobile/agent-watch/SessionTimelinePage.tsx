@@ -2,7 +2,7 @@ import { PhoneSessionSidebarControls } from '../chat/PhoneSessionSidebarControls
 import { usePhoneSessionSidebar } from '../chat/usePhoneSessionSidebar'
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
 import { PhoneLiveWindowConversation, PhoneLiveWindowSurface } from './PhoneLiveWindowConversation'
-import { LiveWindowHeaderIcon } from '@/session/renderer/features/live-window/LiveWindowHeaderIcon'
+import { PhoneLiveWindowTitle } from './PhoneLiveWindowTitle'
 import { useLiveWindowLabels } from '@/session/renderer/features/live-window/desktop-labels'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
@@ -294,7 +294,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     {live => (
     <AgentWatchScreen
       {...taskHeader}
-      title={<span className="gg-aw-title-with-watch">{shownName}{live && <LiveWindowHeaderIcon snapshot={live} dispatch={live.dispatch} compact />}</span>}
+      title={<PhoneLiveWindowTitle name={shownName} live={live} />}
       subtitle={live?.operating && live.headerSource ? liveLabel(live.headerSource.kind === 'browser' ? 'usingBrowser' : 'usingComputer') : taskHeader.subtitle}
       onBack={appKind === PHONE_TASK_BROWSER ? () => setAppKind(null) : onBack}
       testId="agent-watch-timeline-page"
