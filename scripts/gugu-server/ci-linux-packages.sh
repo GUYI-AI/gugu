@@ -18,8 +18,8 @@
 #    (GUGU_SERVER_NODE_PREFIX;build-gugu-server.mjs 核它的版本等于 .node-version,不等就停)。
 #  · tmux:与 mise 同一个内容寻址缓存,宿主预取(--pin tmux-release.json)、只读挂载。
 #  · npm install:npm 缓存放在专用卷里(构建容器挂在 /npm-cache 的那个卷;卷名只在工作流的 docker run 里写一次,
-#    这里从容器读出来给 arm64 那一趟挂同一个),两个架构、跨 run 共用;better-sqlite3 的预编译件
-#    (prebuild-install 存在 <npm 缓存>/_prebuilds)随之复用。❌ 与 pnpm store 卷或槽缓存混用。
+#    这里从容器读出来给 arm64 那一趟挂同一个),两个架构、跨 run 共用;SQLite 13 的 N-API 预编译件
+#    随完整 npm 包缓存,不再另下 prebuild-install 归档。❌ 与 pnpm store 卷或槽缓存混用。
 #    并发:npm 缓存(cacache)按内容哈希寻址,先写临时文件再原子 rename,索引只追加、每行自带校验和、读时丢弃坏行
 #    ⇒ 两个 job 同时读写同一个卷,最坏是各下一份同样的内容,不会读到半截文件。
 #  · node-gyp(node-pty 在 linux 上从源码编):npm_config_nodedir 指向镜像自带的头文件,❌ 再去 nodejs.org 拉 headers。
@@ -72,6 +72,7 @@ rm -rf "$out" && mkdir -p "$out"
 "$DOCKER" cp "$GUGU_LINUX_CONTAINER:/work/release/server/." "$out/"
 cp "$here/smoke-app-tools.mts" "$out/"   # 预装 App 的 tools/list(见下)
 cp "$here/smoke-legacy-account.mts" "$out/"
+cp "$here/loaded-native-paths.cjs" "$out/"
 chmod -R a+rX "$out"   # 同上:冒烟容器以只读挂载读这些包
 for arch in x64 arm64; do
   platform=$([ "$arch" = x64 ] && echo linux/amd64 || echo linux/arm64)
@@ -81,12 +82,13 @@ for arch in x64 arm64; do
     mkdir -p /opt && tar -xzf "/pkg/$PKG" -C /opt
     d=$(ls -d /opt/gugu-server-*)
     useradd -m smoke
-    for f in better-sqlite3/build/Release/better_sqlite3.node node-pty/build/Release/pty.node; do
-      got=$(grep -ao "GLIBC_2\.[0-9]*" "$d/app/node_modules/$f" | sort -Vu | tail -1)
+    native_files=$(su smoke -c "\"$d/node/bin/node\" /pkg/loaded-native-paths.cjs \"$d/app\"")
+    while IFS= read -r f; do
+      got=$(grep -ao "GLIBC_2\.[0-9]*" "$f" | sort -Vu | tail -1)
       top=$(printf "%s\nGLIBC_2.34\n" "$got" | sort -V | tail -1)
       [ "$top" = GLIBC_2.34 ] || { echo "::error::$PKG 里 $f 要求 $got,高于 GLIBC_2.34"; exit 1; }
       echo "glibc ok: $f -> $got"
-    done
+    done <<< "$native_files"
     # 数据目录按包的通道定(正式版 ~/.gugu-server,Beta ~/.gugu-server-beta):问它自己,❌ 写死。
     home=$(su smoke -c "$d/bin/gugu-server status" | sed -n "s/^数据目录:\(.*\)\$/\1/p")
     [ -n "$home" ] || { echo "::error::$PKG 的 status 没报数据目录"; exit 1; }

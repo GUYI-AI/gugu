@@ -11,7 +11,8 @@ const sqliteVersion = JSON.parse(readFileSync(resolve(here, 'vendor-build-pins.j
 export function verifySqliteNodeDependency(directory) {
   const require = createRequire(resolve(directory, 'package.json'))
   const manifest = require('better-sqlite3/package.json')
-  if (manifest.version !== sqliteVersion || manifest.scripts?.install || manifest.dependencies?.['prebuild-install']) {
+  const hasLifecycle = ['preinstall', 'install', 'postinstall', 'prepare'].some(name => manifest.scripts?.[name])
+  if (manifest.version !== sqliteVersion || manifest.gypfile !== false || hasLifecycle || manifest.dependencies?.['prebuild-install']) {
     throw new Error('Unreviewed SQLite npm package or install lifecycle')
   }
   const Database = require('better-sqlite3')
@@ -30,6 +31,9 @@ export function installVendorNodeDependencies(directory, args = []) {
   // npm verifies package-lock integrity. No remote prebuild installer or lifecycle is needed for SQLite 13.
   run(['install', ...args, '--ignore-scripts'])
   verifySqliteNodeDependency(directory)
+  // SQLite has no lifecycle (including npm's implicit binding.gyp hook). Other packages still need
+  // theirs: notably node-pty's install/postinstall produce its native module and spawn helper.
+  run(['rebuild', '--ignore-scripts=false', '--workspaces=false', '--no-audit', '--no-fund'])
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

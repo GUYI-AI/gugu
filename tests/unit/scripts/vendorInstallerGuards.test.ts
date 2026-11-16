@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest'
 const require_ = createRequire(import.meta.url)
 const { configureVendorDownloads } = require_('../../../scripts/build/vendor-download-env.cjs')
 const origin = 'https://download.gugu.nextmind.space/releases/vendor/'
-const { verifySqliteNodeDependency } = await import(pathToFileURL(resolve(__dirname, '../../../scripts/build/install-vendor-node-deps.mjs')).href) as {
+const { verifySqliteNodeDependency, installVendorNodeDependencies } = await import(pathToFileURL(resolve(__dirname, '../../../scripts/build/install-vendor-node-deps.mjs')).href) as {
   verifySqliteNodeDependency(directory: string): void
+  installVendorNodeDependencies(directory: string, args?: string[]): void
 }
 
 describe('installer archive boundaries', () => {
@@ -19,7 +20,7 @@ describe('installer archive boundaries', () => {
       const pkg = join(directory, 'node_modules/better-sqlite3')
       mkdirSync(pkg, { recursive: true })
       writeFileSync(join(directory, 'package.json'), '{}')
-      writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'better-sqlite3', version: '13.2.0', main: 'index.cjs' }))
+      writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'better-sqlite3', version: '13.2.0', gypfile: false, main: 'index.cjs' }))
       writeFileSync(join(pkg, 'index.cjs'), 'module.exports=class { prepare(){return {get(){return {ready:1}}}} close(){} }')
       expect(() => verifySqliteNodeDependency(directory)).not.toThrow()
     } finally { rmSync(directory, { recursive: true, force: true }) }
@@ -28,17 +29,43 @@ describe('installer archive boundaries', () => {
   it.each([
     { version: '12.11.1' }, { version: '13.3.0' },
     { version: '13.2.0', scripts: { install: 'remote-prebuild-installer' } },
+    { version: '13.2.0', scripts: { preinstall: 'unreviewed-hook' } },
+    { version: '13.2.0', scripts: { postinstall: 'unreviewed-hook' } },
+    { version: '13.2.0', scripts: { prepare: 'unreviewed-hook' } },
+    { version: '13.2.0', gypfile: true },
+    { version: '13.2.0', gypfile: undefined },
     { version: '13.2.0', dependencies: { 'prebuild-install': '7.1.3' } },
   ])('refuses an unreviewed SQLite version or lifecycle before native loading: %j', manifest => {
     const directory = mkdtempSync(join(tmpdir(), 'sqlite-napi-refuse-'))
     try {
       const pkg = join(directory, 'node_modules/better-sqlite3')
       mkdirSync(pkg, { recursive: true }); writeFileSync(join(directory, 'package.json'), '{}')
-      writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'better-sqlite3', main: 'index.cjs', ...manifest }))
+      writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'better-sqlite3', main: 'index.cjs', gypfile: false, ...manifest }))
       writeFileSync(join(pkg, 'index.cjs'), 'throw Error("native code must not load")')
       expect(() => verifySqliteNodeDependency(directory)).toThrow('Unreviewed SQLite npm package or install lifecycle')
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
+
+  it('runs other dependency install hooks after verifying script-free SQLite, using only local npm packages', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sqlite-napi-lifecycle-'))
+    try {
+      const sqlite = join(directory, 'fixtures', 'sqlite')
+      const hook = join(directory, 'fixtures', 'native-hook')
+      for (const dir of [sqlite, hook]) mkdirSync(dir, { recursive: true })
+      writeFileSync(join(sqlite, 'package.json'), JSON.stringify({ name: 'better-sqlite3', version: '13.2.0', gypfile: false, main: 'index.cjs' }))
+      // This invalid gyp file must never be executed: SQLite 13 disables npm's implicit install hook.
+      writeFileSync(join(sqlite, 'binding.gyp'), 'not a build definition')
+      writeFileSync(join(sqlite, 'index.cjs'), 'module.exports=class { prepare(){return {get(){return {ready:1}}}} close(){} }')
+      writeFileSync(join(hook, 'package.json'), JSON.stringify({ name: 'test-native-hook', version: '1.0.0', scripts: { install: 'node build.cjs' } }))
+      writeFileSync(join(hook, 'build.cjs'), "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'built.txt'), 'ready')")
+      writeFileSync(join(directory, 'package.json'), JSON.stringify({ private: true, dependencies: {
+        'better-sqlite3': 'file:./fixtures/sqlite', 'test-native-hook': 'file:./fixtures/native-hook',
+      } }))
+      installVendorNodeDependencies(directory, ['--offline', '--no-audit', '--no-fund', '--workspaces=false'])
+      expect(readFileSync(join(hook, 'built.txt'), 'utf8')).toBe('ready')
+      expect(existsSync(join(sqlite, 'build'))).toBe(false)
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  }, 30_000)
 
   it('keeps the root, session and isolated Node SQLite pins aligned without legacy archive downloads', () => {
     const root = resolve(__dirname, '../../..')
