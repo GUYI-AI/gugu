@@ -48,8 +48,9 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file .file-open { padding-block: 0; padding-inline-end: var(--em-spacing-xs); grid-template-columns: var(--em-icon-xl) minmax(0, 1fr); align-content: center; }
 .file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
 .file[data-folder] .file-mark { width: 28px; height: 28px; justify-self: center; }
-/* A folder not read yet has no count under its name: one line, not a two-line row's height. */
-.file[data-folder]:not(:has(.file-cell)) { min-height: 0; }
+/* A folder not read yet has no count under its name: one line, not a two-line row's height. `auto`, not 0: the list is a
+   flex column, and a row allowed down to 0 is squeezed under its own line once the rows outgrow the pane. */
+.file[data-folder]:not(:has(.file-cell)) { min-height: auto; }
 .file-cell[data-cell='size'] { display: none; }
 .file[data-folder] .file-cell[data-cell='size'] { display: block; }
 .file-marks { flex: none; display: flex; align-items: center; gap: var(--em-spacing-xs); max-width: 35%; min-width: 0; }
