@@ -27,6 +27,12 @@ vi.mock('@/lib/errorSummaryReporting', () => ({ reportHandledError: vi.fn() }))
 type Client = typeof import('../../../../apps/desktop/src/session/renderer/features/settings/app-settings-client')
 let client: Client
 const broadcast = (key: string) => { for (const listener of ipc.listeners) listener({ key }) }
+/** Bounded microtask turns until `seen` holds: no clock, and a read that never starts fails loudly. */
+async function turnsUntil(seen: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 200 && !seen(); turn += 1) await Promise.resolve()
+  expect(seen()).toBe(true)
+}
+const readsOf = (key: string) => ipc.getWithMeta.mock.calls.filter(([read]) => read === key).length
 
 beforeEach(async () => {
   notifyManager.setScheduler((callback) => { callback() })
@@ -50,10 +56,14 @@ describe('appSettings changes made elsewhere', () => {
     const done = client.beginAppSettingsWrite('interface')
     client.setAppSettingsValueInCache('interface', { hideContextBar: true } as never)
     // The main process answered an earlier write: its broadcast arrives while the newer edit is still on its way.
-    const reads = ipc.getWithMeta.mock.calls.length
+    const reads = readsOf('interface')
     broadcast('interface')
-    await Promise.resolve()
-    expect(ipc.getWithMeta.mock.calls.length).toBe(reads)
+    // Control: a key nobody is writing, broadcast right after, is read — by then a read of `interface` would have started.
+    const terminalReads = readsOf('terminal')
+    broadcast('terminal')
+    await turnsUntil(() => readsOf('terminal') > terminalReads)
+    for (let turn = 0; turn < 20; turn += 1) await Promise.resolve()
+    expect(readsOf('interface')).toBe(reads)
     expect(client.getAppSettingValueSnapshot('interface')).toEqual({ hideContextBar: true })
     done()
   })

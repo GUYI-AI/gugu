@@ -49,6 +49,12 @@ const handover = (over: Partial<Record<string, unknown>> = {}): DeviceSettingsHa
   return { settings: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, meta(value)])) as DeviceSettingsHandover['settings'], themePackCss: '' }
 }
 const broadcast = (key: string) => { for (const listener of ipc.listeners) listener({ key }) }
+/** Bounded microtask turns until `seen` holds: no clock, and a read that never starts fails loudly. */
+async function turnsUntil(seen: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 200 && !seen(); turn += 1) await Promise.resolve()
+  expect(seen()).toBe(true)
+}
+const readsOf = (key: string) => ipc.getWithMeta.mock.calls.filter(([read]) => read === key).length
 const OLD_KEYS = Object.values(PREFERENCE_STORAGE_KEYS) as string[]
 
 async function load() {
@@ -150,10 +156,14 @@ describe('desktop shell: app settings', () => {
     ipc.update.mockImplementationOnce(async (key: string, value: unknown) => { await held; ipc.stored[key] = value })
     devicePreferences.write('sidebarTint', false)
     // Main answered an earlier write: its broadcast lands while this one is still on its way (main still says true).
-    const reads = ipc.getWithMeta.mock.calls.length
+    const reads = readsOf('interface')
     broadcast('interface')
-    await Promise.resolve()
-    expect(ipc.getWithMeta.mock.calls.length).toBe(reads)
+    // Control: a key nobody is writing, broadcast right after, is read — by then a read of `interface` would have landed.
+    const localeReads = readsOf('locale')
+    broadcast('locale')
+    await turnsUntil(() => readsOf('locale') > localeReads)
+    for (let turn = 0; turn < 20; turn += 1) await Promise.resolve()
+    expect(readsOf('interface')).toBe(reads)
     expect(devicePreferences.read('sidebarTint')).toMatchObject({ state: 'value', value: false })
     ipc.release()
     await vi.waitFor(() => expect(ipc.stored.interface).toMatchObject({ sidebarTint: false }))
