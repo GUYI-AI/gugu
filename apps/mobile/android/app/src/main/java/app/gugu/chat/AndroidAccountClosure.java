@@ -95,7 +95,12 @@ final class AndroidAccountClosure {
     AccountClosureReceiptStore.Outcome erase(AccountClosureReceiptStore.Scope scope) throws Exception {
         AccountClosureReceiptStore.Outcome result = receipts.eraseLocal(scope);
         if ("complete".equals(result.status)) {
-            synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) { preparation.set(scope.ownerId, AccountClosurePreparation.CLOSED); }
+            synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+                // A repeated completed V1 receipt can bypass the readiness callback.
+                // Its final local fence must not overwrite a subsequently captured V2.
+                AndroidAccountClosureV2.requireNoCapturedOperation(context, scope.ownerId);
+                preparation.set(scope.ownerId, AccountClosurePreparation.CLOSED);
+            }
             GuguAgentHostService.forgetClosedOwner(scope.ownerId);
             GuguAgentService.forgetClosedOwner(scope.ownerId);
         }

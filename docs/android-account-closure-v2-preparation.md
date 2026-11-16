@@ -86,6 +86,8 @@ V1 preparation captures its starting generation and stage. Its late completion
 checks the V2 fence and requires that exact generation/stage before writing
 STOPPED. Cancelling G1 to state zero and then capturing V2 cannot let the old G1
 completion resurrect the V1 fence. A replaced V1 generation also rejects.
+The completed-receipt V1 erasure fast path also rechecks the V2 fence before its
+CLOSED write; it cannot bypass isolation by skipping the readiness callback.
 
 `local_prepared` is not cloud preparation or deletion proof. No trusted server
 result entry is implemented here. Server binding, cancellation and erasure
