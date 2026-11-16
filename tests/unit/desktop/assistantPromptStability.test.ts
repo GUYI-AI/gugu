@@ -60,7 +60,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
     for (const row of catalog.items) {
       if (!row.call) continue
       const name = row.call.slice(0, row.call.indexOf('('))
-      const result = await client.callTool({ name: 'catalog_describe', arguments: { tool: name } })
+      const result = await client.callTool({ name: 'catalog_list', arguments: { name } })
       expect(result.isError).not.toBe(true)
       deferred.push(JSON.parse(text(result)))
     }
