@@ -207,7 +207,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
     <CreateTarget projects={[]} project={null} onProject={() => undefined}
       machines={creationMachine ? [creationMachine] : []} machine={creationMachine}
       onMachine={() => undefined} machineLabel={machineLabel} busy={sending}
-      projectTask={{ onFolder: () => setStage({ kind: 'on', folder: chosen, picking: true }) }}
+      scopeChatId={chatId} projectTask={{ onFolder: () => setStage({ kind: 'on', folder: chosen, picking: true }) }}
       configuration={{ options: options?.value ?? null,
         selection: selection ?? { harness: null, model: null, permissionMode: null, effort: null },
         onChange: (next, modelPicked) => {

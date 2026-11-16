@@ -119,9 +119,9 @@ it('hides the skills entry for a phone target and restores it for a computer wit
 it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'light']] as const)('%s %s: three complete fixed labels fit at 390px without scrolling', async (locale, theme) => {
   await mount(theme, locale)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll<HTMLButtonElement>('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(buttons.map((button) => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
-  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   for (const button of buttons) {
     const box = button.getBoundingClientRect(), label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
     expect(box.right).toBeLessThanOrEqual(390)
@@ -134,8 +134,8 @@ it('keeps narrow English controls on one line without unnecessary scrolling', as
   await mount('dark', 'en-US')
   await page.viewport(320, 640)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
-  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  const buttons = [...row.querySelectorAll('.gg-phone-composer-control')]
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
   row.scrollLeft = row.scrollWidth
   await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1)
@@ -148,10 +148,10 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll('.gg-phone-composer-control')]
   expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '文件夹', '技能'] : ['Work', 'Folder', 'Skills'])
   expect(host!.querySelector('[data-testid="agent-watch-create-agent"]')).toBeNull()
-  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
   await page.getByTestId('agent-watch-create-model-device').click()
   const harness = () => document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="harness"]')
@@ -180,16 +180,25 @@ it('omits search only for an actually empty skill catalog', async () => {
 })
 
 
-it.each([360, 390])('%ipx: four shared controls retain equal padding and fit without scrolling', async width => {
+it.each([360, 390, 430])('%ipx: controls retain equal padding and only the row arrow moves above when needed', async width => {
   await mount()
   await page.viewport(width, 844)
   root!.render(<PhoneComposerControlRow>{[
     ['工作', <Monitor />], ['技能', <Sparkles />], ['话题', <Hash />], ['智能体', <Users />],
   ].map(([label, icon], index) => <PhoneComposerControl key={index} label={String(label)} icon={icon} testId={`shared-control-${index}`} onClick={() => {}} />)}</PhoneComposerControlRow>)
-  await until('four shared controls', () => host!.querySelectorAll('[data-phone-composer-controls] button').length === 4)
+  await until('four shared controls and one row toggle', () => host!.querySelectorAll('.gg-phone-composer-control').length === 4 && !!host!.querySelector('[data-testid="phone-composer-menu-toggle"]'))
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
-  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  const buttons = [...row.querySelectorAll('.gg-phone-composer-control')]
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+  const items = row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+  const toggle = row.querySelector<HTMLElement>('[data-testid="phone-composer-menu-toggle"]')!.getBoundingClientRect()
+  const first = buttons[0]!.getBoundingClientRect()
+  if (width < 394) expect(toggle.bottom).toBeLessThanOrEqual(first.top)
+  else expect(toggle.top + toggle.height / 2).toBe(first.top + first.height / 2)
+  expect(toggle.right).toBeLessThanOrEqual(row.getBoundingClientRect().right)
+  // The 44px touch pseudo-element extends beyond the 28px arrow; it is not a scroll lane.
+  expect(getComputedStyle(row).overflowX).toBe('visible')
+  expect(items.scrollWidth, JSON.stringify({ row: row.getBoundingClientRect().toJSON(), items: items.getBoundingClientRect().toJSON(), toggle: row.querySelector('[data-testid=phone-composer-menu-toggle]')?.getBoundingClientRect().toJSON(), buttons: buttons.map(button => ({ text: button.textContent, rect: button.getBoundingClientRect().toJSON() })) })).toBeLessThanOrEqual(items.clientWidth)
   for (const [index, button] of buttons.entries()) {
     const box = button.getBoundingClientRect(), style = getComputedStyle(button)
     const icons = button.querySelectorAll('svg'), icon = icons[0]!.getBoundingClientRect()

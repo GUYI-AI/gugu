@@ -29,11 +29,12 @@ export type CreationConfiguration = {
 }
 
 /** The mobile creation row reads the same device, project and model catalogs as before. */
-export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, projectTask, existingSession, controlsExtra }: {
+export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, projectTask, existingSession, controlsExtra, scopeChatId, conversationKey }: {
   projects: readonly CreateProject[]; project: CreateProject | null; onProject: (key: string | null) => void
   machines: readonly CreateMachine[]; machine: CreateMachine | undefined; onMachine: (deviceId: string) => void
   machineLabel: (device: CreateMachine['device']) => string; busy: boolean
   configuration?: CreationConfiguration; scopeChatId?: string | null
+  conversationKey?: string
   existingSession?: { agentName: string; model?: ExistingSessionModel }
   controlsExtra?: ReactNode
   /** An in-place project task already owns its project; its folder determines the run device. */
@@ -66,7 +67,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
   const compact = !!existingSession || view !== 'project'
   return <>
-    <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
+    <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow conversationKey={conversationKey ?? scopeChatId ?? undefined}>
       {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />}
       {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
