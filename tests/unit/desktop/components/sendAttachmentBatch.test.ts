@@ -43,13 +43,13 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     expect(f.stageAttachment.mock.invocationCallOrder[0]).toBeLessThan(f.args.appendMessage.mock.invocationCallOrder[0])
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledOnce())
     expect(f.stageAttachment.mock.invocationCallOrder[0]).toBeLessThan(upload.mock.invocationCallOrder[0])
-    expect(f.commitAttachment).toHaveBeenCalledWith(message, { staging_key: 'staging/photo.png' }, expect.objectContaining({ message_id: id, to_user_ids: ['peer'] }), expect.anything())
+    expect(f.commitAttachment).toHaveBeenCalledWith(message, { staging_key: 'staging/photo.png' }, expect.objectContaining({ message_id: id, to_user_ids: ['peer'] }), expect.anything(), undefined, expect.any(Function))
   })
   it('keeps the original whisper, reply, thread and caption on the queued commit', async () => {
     const f = fixture()
     await sendAttachmentBatch({ ...f.args, isWhisper: true, replyToMessageId: 'source', threadRootId: 'thread', caption: '① Move this' })
     expect(f.args.appendMessage.mock.calls[0][0]).toMatchObject({ is_whisper: true, reply_to_message_id: 'source', thread_root_id: 'thread' })
-    await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ is_whisper: true, reply_to_message_id: 'source', thread_root_id: 'thread', caption: '① Move this' }), expect.anything()))
+    await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ is_whisper: true, reply_to_message_id: 'source', thread_root_id: 'thread', caption: '① Move this' }), expect.anything(), undefined, expect.any(Function)))
   })
   it('returns the last row once every file is on screen, before any byte has gone up', async () => {
     const f = fixture()
@@ -136,8 +136,8 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     await sendAttachmentBatch({ ...f.args, files: [...f.args.files, pdf('spec.pdf')], caption: 'look' })
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(2))
     expect(f.commitAttachment.mock.calls).toEqual([
-      [expect.anything(), { staging_key: 'staging/photo.png' }, expect.not.objectContaining({ caption: expect.anything() }), expect.anything()],
-      [expect.anything(), { staging_key: 'staging/spec.pdf' }, expect.objectContaining({ caption: 'look' }), expect.anything()],
+      [expect.anything(), { staging_key: 'staging/photo.png' }, expect.not.objectContaining({ caption: expect.anything() }), expect.anything(), undefined, expect.any(Function)],
+      [expect.anything(), { staging_key: 'staging/spec.pdf' }, expect.objectContaining({ caption: 'look' }), expect.anything(), undefined, expect.any(Function)],
     ])
     type Group = { send_group_id?: string; send_group_size?: number }
     const [first, second] = (f.commitAttachment.mock.calls as unknown as Array<[Group, unknown, Group]>).map(([row, , commit]) => ({ row, commit }))

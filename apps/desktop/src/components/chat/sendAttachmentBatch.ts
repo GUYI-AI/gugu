@@ -156,6 +156,14 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
 }
 
 async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, upload: Promise<PreparedChatAttachment>, timing: AttachmentSendTiming, caption: string | undefined, sendGroup: SendGroup | undefined): Promise<void> {
+  // Uploads the same bytes again under the same row, signed in afresh (it may be much later): a resend after the upload
+  // failed, or after the commit found the upload's permit lapsed.
+  const uploadAgain = () => {
+    const again = attachmentSendTiming(row.message.id, args.chatId)
+    const [retried] = startBoundedUploads([file], attachmentsEndpoint(), { chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper }, [again])
+    void commitWhenUploaded(args, file, row, retried, again, caption, sendGroup)
+      .catch((failure) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(failure) }, 'attachment failure not recorded'))
+  }
   try {
     const prepared = await upload
     // Uploaded bytes are kept by content before the commit, so the committed row draws them instead of downloading them again.
@@ -167,15 +175,9 @@ async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, u
       is_thread_root: !!args.isThreadRoot, is_whisper: !!args.isWhisper,
       ...(caption ? { caption } : {}),
       ...(sendGroup ? { send_group_id: sendGroup.id, send_group_size: sendGroup.size } : {}),
-    }, timing)
+    }, timing, undefined, uploadAgain)
   } catch (error) {
     rendererLogger('chat/send').error({ chatId: args.chatId, messageId: row.message.id, error: String(error) }, 'attachment upload failed')
-    // Resending uploads the same bytes again under the same row, signed in afresh (it may be much later).
-    await args.outbox.failAttachmentUpload(row.message.id, error, chatSendFailureReason(error, i18n.getFixedT(null, 'messaging')), () => {
-      const again = attachmentSendTiming(row.message.id, args.chatId)
-      const [retried] = startBoundedUploads([file], attachmentsEndpoint(), { chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper }, [again])
-      void commitWhenUploaded(args, file, row, retried, again, caption, sendGroup)
-        .catch((failure) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(failure) }, 'attachment failure not recorded'))
-    })
+    await args.outbox.failAttachmentUpload(row.message.id, error, chatSendFailureReason(error, i18n.getFixedT(null, 'messaging')), uploadAgain)
   }
 }

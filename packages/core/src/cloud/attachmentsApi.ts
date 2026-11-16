@@ -71,11 +71,20 @@ export async function uploadAttachmentBytes(
   options?: { onPlan?: (plan: AttachmentUploadPlan) => void; retry?: boolean; onProgress?: (progress: AttachmentByteProgress) => void; signal?: AbortSignal },
 ): Promise<string> {
   const size = file.bytes instanceof Blob ? file.bytes.size : file.bytes.byteLength
-  const form = await call(endpoint, 'upload', {
-    size_bytes: size, content_type: file.contentType, as: scope.as, chat_id: scope.chat_id, request_id: scope.request_id ?? crypto.randomUUID(),
-  }, options?.signal) as { staging_key: string; url: string; fields: Record<string, string>; max_bytes: number; expires_at?: string; method?: 'POST' | 'PUT'; headers?: Record<string, string> }
+  type Plan = { staging_key: string; url: string; fields: Record<string, string>; max_bytes: number; expires_at?: string; method?: 'POST' | 'PUT'; headers?: Record<string, string> }
+  const ask = async (request_id: string) => await call(endpoint, 'upload', {
+    size_bytes: size, content_type: file.contentType, as: scope.as, chat_id: scope.chat_id, request_id,
+  }, options?.signal) as Plan
+  let form: Plan, fresh = false
+  try { form = await ask(scope.request_id ?? crypto.randomUUID()) } catch (error) {
+    // The caller's id was already sent or its permit lapsed (a resend long after the first try): that id can never upload
+    // again, so the upload starts once more under a fresh one.
+    if (!scope.request_id || !(error instanceof AttachmentsError) || error.code !== 'expired') throw error
+    fresh = true
+    form = await ask(crypto.randomUUID())
+  }
   options?.onPlan?.(form)
-  await uploadAttachmentPlan(endpoint, form, file, options?.retry === true && !!scope.request_id, options?.onProgress, options?.signal)
+  await uploadAttachmentPlan(endpoint, form, file, options?.retry === true && !!scope.request_id && !fresh, options?.onProgress, options?.signal)
   return form.staging_key
 }
 
