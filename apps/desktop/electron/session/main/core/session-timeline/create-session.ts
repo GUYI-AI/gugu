@@ -347,7 +347,13 @@ export async function createModels(
   }
 }
 
+export interface StagedAttachmentCreation {
+  sessionId: string; attachmentNames: readonly string[]; beforeCommit: () => Promise<void>;
+}
+
 export interface CreateSessionDeps {
+  /** Trusted host-only hook; no initial payload or model dispatch before file admission. */
+  stagedAttachmentCreation?: StagedAttachmentCreation;
   /** 这台机器上还没装所选 harness 时先装上;默认是云端 agent.create 用的**同一个** ensureAgentInstalled。 */
   ensureAgentInstalled: (provider: string) => Promise<void>;
 }
@@ -392,13 +398,19 @@ export async function createSession(
   return result;
 }
 
+/** Separate host verb. The request still passes every ordinary creation preflight. */
+export function createAttachmentDraft(request: SessionpageSessionCreateRequest, staged: StagedAttachmentCreation) {
+  return createSession(request, { ...defaultCreateSessionDeps, stagedAttachmentCreation: staged });
+}
+
 async function createSessionSteps(
   request: SessionpageSessionCreateRequest,
   deps: CreateSessionDeps
 ): Promise<CreateSessionResult<SessionpageSessionCreateResult>> {
   const prompt = request.prompt.trim();
-  if (!prompt) return fail('prompt_empty', '要开一条会话,总得先有一句话');
-  const titleSource = prompt;
+  const staged = deps.stagedAttachmentCreation;
+  if (!prompt && !staged?.attachmentNames.length) return fail('prompt_empty', '要开一条会话,总得先有一句话');
+  const titleSource = prompt || staged!.attachmentNames.join(' ');
 
   const resolved = await resolveProjectWorkspace({ projectId: request.projectId, projectPath: request.projectPath });
   if (!resolved.ok) return resolved;
@@ -487,8 +499,8 @@ async function createSessionSteps(
   // 派任务(gugu-dev#181):第一句是一条真的咕咕消息(那张卡),要稳定 id —— 与桌面 use-create-session-callback 同。
   // 不派任务时首句用发起方铸的 id(#2296):手机画的乐观首句与待发行、原生消息是同一个身份。
   const taskChatId = request.taskChatId?.trim() || undefined;
-  const taskMessageId = taskChatId ? randomUUID() : undefined;
-  const sessionId = randomUUID();
+  const taskMessageId = taskChatId ? (staged ? request.initialMessageId : randomUUID()) : undefined;
+  const sessionId = staged?.sessionId ?? randomUUID();
   // 与桌面 composer 同一个翻译点。首轮内容的投递方式跟着腿走:聊天腿把第一句放进 ACP 启动队列,
   // 终端腿放进 initialPrompt(与 use-create-session-callback 对 startup-capable provider 的做法同)。
   const initialSession = {
@@ -497,6 +509,7 @@ async function createSessionSteps(
       provider,
       sessionView: view.view,
       prompt: request.prompt,
+      ...(staged ? { attachmentNames: staged.attachmentNames } : {}),
       permissionMode,
       model,
       effort,
@@ -504,7 +517,7 @@ async function createSessionSteps(
       ...(platformModel !== undefined ? { platformModel } : {}),
       startupOrigin: 'session-page',
     }),
-    ...(runtime === 'acp' ? { initialQueue: [{ text: prompt, origin: 'manual' as const }] } : { initialPrompt: prompt }),
+    ...(!staged ? (runtime === 'acp' ? { initialQueue: [{ text: prompt, origin: 'manual' as const }] } : { initialPrompt: prompt }) : {}),
     ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
   };
   const params: CreateSessionParams = {
@@ -523,6 +536,7 @@ async function createSessionSteps(
     return failStart('create_task_failed', JSON.stringify(prepared.error), provider, requestedPlatform);
   }
 
+  await staged?.beforeCommit();
   let convRow!: SessionRow;
   db.transaction((tx) => {
     convRow = commitCreateSession(prepared.data, tx);
@@ -540,6 +554,8 @@ async function createSessionSteps(
   //    (#6264 走查实测:侧栏一行灰字、红点,点不动)。改为照常进这条会话:第一句话在转录里,
   //    失败原因是其后的一行、可以再试一次(spec session-always-openable)。原因码记在这台机器上,
   //    另一台桌面、另一天打开它也看得到;原文进日志。
+  if (staged) return { ok: true, value };
+
   const launched = await launchCreatedSession({
     sessionId,
     projectId,
