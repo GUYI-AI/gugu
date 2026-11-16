@@ -21,7 +21,7 @@ import '@/mobile/phone-look.css'
 const fixture = vi.hoisted(() => ({
   owner: 'attachment-page-owner',
   device: { device_id: 'attachment-device', label: 'Test device', hostname: 'fixture', platform: 'linux', status: 'online', is_online: true, last_seen_at: '2026-11-17T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } },
-  legacyCreate: vi.fn(), created: vi.fn(),
+  legacyCreate: vi.fn(), created: vi.fn(), skills: vi.fn(),
   ports: { assertAccount: vi.fn(), describe: vi.fn(), create: vi.fn(), place: vi.fn(), admit: vi.fn() },
 }))
 vi.mock('@/store/auth', async original => ({ ...(await original<typeof import('@/store/auth')>()), useAuth: () => ({ user: { id: fixture.owner } }) }))
@@ -31,7 +31,7 @@ vi.mock('@/hooks/useWakeCloudComputer', () => ({ useCloudComputerWake: () => ({ 
 vi.mock('@renderer/features/projects/components/main-panel/project-run-machine', () => ({ rememberRunMachine: vi.fn(), useProjectRunMachine: () => ({ machine: fixture.device.device_id, pick: vi.fn() }) }))
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
-  machineRpc: () => { throw new Error('Skills are outside this attachment scenario') },
+  machineRpc: (deviceId: string) => ({ sessionTimeline: { sessionCreateSkills: (input: unknown) => fixture.skills(deviceId, input) } }),
   fetchCreateOptions: async () => ({ projects: [], lastUsed: null, harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
   fetchCreateModels: async () => ({ harness: 'codex', transport: 'acp', selected: 'native-model', selectedEffort: null, efforts: [],
     harnessState: 'ready', harnessAuth: 'signed-in', selectedCredential: 'credentialed', models: [{ id: 'native-model', name: 'Native model', source: 'harness' }] }),
@@ -43,7 +43,8 @@ let root: Root | null = null, host: HTMLDivElement | null = null, sequence = 0
 let receipt: SessionCreateAttachmentDraftResult
 beforeEach(() => {
   fixture.owner = `attachment-page-owner-${++sequence}`
-  for (const mock of [fixture.created, fixture.legacyCreate, ...Object.values(fixture.ports)]) mock.mockReset()
+  for (const mock of [fixture.created, fixture.legacyCreate, fixture.skills, ...Object.values(fixture.ports)]) mock.mockReset()
+  fixture.skills.mockResolvedValue({ ok: false, error: { code: 'unknown_method', message: "No handler registered for 'sessionTimeline.sessionCreateSkills'" } })
   fixture.legacyCreate.mockRejectedValue(new Error('The caption-only creation route must not receive attachments'))
   fixture.ports.assertAccount.mockResolvedValue(undefined)
   fixture.ports.describe.mockImplementation(async (file: File) => ({ name: file.name, sizeBytes: file.size, mimeType: file.type, sha256: 'a'.repeat(64) }))
@@ -115,4 +116,26 @@ it('retains the original File after placement fails, then retries the same task 
   expect(fixture.ports.create).toHaveBeenCalledTimes(1); expect(fixture.ports.admit).toHaveBeenCalledTimes(1)
   expect(fixture.ports.create.mock.calls[0]![0].prompt).toBe('')
   expect(fixture.legacyCreate).not.toHaveBeenCalled()
+})
+
+it('keeps a missing skill method distinct from empty skills and retries the same selected target', async () => {
+  await mount('dark')
+  await page.getByTestId('agent-watch-create-skills').click()
+  await until('host compatibility error is visible', () => document.querySelector('[data-testid="agent-watch-create-skills-error"]')?.getAttribute('data-failure') === 'host-update-required')
+  expect(fixture.skills).toHaveBeenCalledExactlyOnceWith('attachment-device', { harness: 'codex' })
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Test device')
+  await expect.element(page.getByRole('alert')).toHaveTextContent('更新后重试')
+  expect(document.body.textContent).not.toContain('没有可用的技能')
+  await page.screenshot({ path: '__screenshots__/owner-phone-regression/C-create-unsupported-host.png' })
+  fixture.skills.mockResolvedValueOnce({ ok: true, value: { skills: [
+    { id: '/native/code/SKILL.md', name: '代码检查', description: '检查所选项目' },
+    { id: '/native/notes/SKILL.md', name: '会议记录', description: '整理会议记录' },
+  ] } })
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await until('selected host catalog is available after retry', () => !!document.querySelector('[data-skill-id="/native/code/SKILL.md"]'))
+  expect(fixture.skills.mock.calls[1]).toEqual(fixture.skills.mock.calls[0])
+  await page.getByRole('searchbox', { name: '搜索技能' }).fill('检查')
+  await expect.element(page.getByRole('checkbox', { name: /代码检查/ })).toBeVisible()
+  expect(document.querySelector('[data-skill-id="/native/notes/SKILL.md"]')).toBeNull()
+  await page.screenshot({ path: '__screenshots__/owner-phone-regression/C-create-retry-search-transport-fixture.png' })
 })
