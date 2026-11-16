@@ -127,7 +127,7 @@
 /* 主按钮 = 墨（暗色下近白、浅色下近黑），反馈走透明度阶梯 .88 / .78，不改底色、不缩放 */
 :where(button, input, a).primary { border-color: transparent; background-color: var(--em-accent-9); color: var(--em-accent-contrast); }
 /* 危险 = 咕咕唯一的那个红；字色与 ui/Button 的 danger 变体相同：红底白字（--em-color-white），明暗两侧一样。
-   ❌ 用 --em-accent-contrast：那是墨色主按钮的反相字，暗色下是表面色 #181818，红底上就成了深灰字（#7333）。 */
+   ❌ 用 --em-accent-contrast：那是墨色主按钮的反相字，暗色下是表面色 #0f0f0f，红底上就成了深灰字（#7333）。 */
 :where(button, input, a).danger { border-color: transparent; background-color: var(--em-danger-solid); color: var(--em-color-white); }
 @media (hover: hover) {
   :where(button, input, a):is(.primary, .danger):hover:not(:disabled) { background-color: var(--em-accent-9); opacity: 0.88; }

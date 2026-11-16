@@ -348,6 +348,6 @@ export type ThemeSwatch = Pick<ResolvedPalette, 'page' | 'bg' | 'card' | 'fg' | 
  * 默认卡会画成当下的主题。themePacks.test.ts 逐字对齐 tokens.css,那边改了这里跟不上会红。
  */
 export const GUGU_DEFAULT_SWATCH: Record<ThemeMode, ThemeSwatch> = {
-  dark: { page: '#121212', bg: '#181818', card: '#212121', fg: '#dfdfdf', mutedFg: '#939393', live: 'oklch(0.714 0.143 255)' },
+  dark: { page: '#0a0a0a', bg: '#0f0f0f', card: '#191919', fg: '#fafafa', mutedFg: '#a1a1a1', live: 'oklch(0.714 0.143 255)' },
   light: { page: '#f9f9f9', bg: '#ffffff', card: '#ffffff', fg: '#1a1c1f', mutedFg: '#68696b', live: 'oklch(0.623 0.188 260)' },
 };
