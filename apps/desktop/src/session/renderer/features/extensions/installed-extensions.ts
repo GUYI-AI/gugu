@@ -394,12 +394,17 @@ export const marketUpdates = replica({
     return { offered: Object.fromEntries(Object.entries(summary.updates).map(([id, update]) => [id, update.version])), gone: summary.gone ?? [], summary };
   },
   fresh: Infinity,
+  // Kept (this computer's only) while at most KEPT_UPDATES Apps are named — ≤ 50 B each, within 1024 with room; more is
+  // not kept by definition (coordinator 11-16), ❌ the cap raised: the first frame then waits for the read (a known trade-off).
   persist: {
     maxBytes: 1024,
     maxEntries: 1,
-    carry: (value: MarketUpdates, hostKey: string) => (hostKey.startsWith('remote:') ? undefined : value.summary ? { offered: value.offered, gone: value.gone } : value),
+    carry: (value: MarketUpdates, hostKey: string) => (hostKey.startsWith('remote:')
+      || Object.keys(value.offered).length + value.gone.length > KEPT_UPDATES ? undefined
+      : value.summary ? { offered: value.offered, gone: value.gone } : value),
   },
 });
+const KEPT_UPDATES = 16;
 
 /** The 「App」 badge: enabled Apps with an update, yanked or deprecated ones, each once; pinned ones count (owner 10-19). */
 export function updateCountOf(summary: MarketUpdatesSummary, apps: InstalledApps): number {
