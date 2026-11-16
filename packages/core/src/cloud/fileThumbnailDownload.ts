@@ -6,7 +6,7 @@ type SignedThumbnail = { lease: Thumbnail; direct: boolean }
 
 /** A fallback thumbnail remains a display-only capability; it never opens the original. */
 export async function readFileThumbnail(initial: SignedThumbnail, sign: (renew: boolean, route: 'cdn' | 'origin') => Promise<SignedThumbnail>,
-  fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal): Promise<Blob> {
+  fetcher: () => Promise<typeof globalThis.fetch>, session: FileDownloadSession, signal?: AbortSignal): Promise<Blob> {
   let signed = initial, renewed = false, compatibilityCdn = false, reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   const started = Date.now()
   const target = () => {

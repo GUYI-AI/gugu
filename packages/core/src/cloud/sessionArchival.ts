@@ -1,3 +1,4 @@
+import { hostFetch } from '../shared/hostFetch'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 import type { SessionArchiveInterval } from '../shared/sessionArchival'
 
@@ -9,7 +10,7 @@ export interface AgentSessionArchivalOperation {
 }
 
 async function request(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
-  const response = await fetch(`${getSupabaseUrl()}/rest/v1/${path}`, {
+  const response = await hostFetch(`${getSupabaseUrl()}/rest/v1/${path}`, {
     ...init, signal: AbortSignal.timeout(12_000),
     headers: { apikey: getSupabaseAnonKey(), Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json', 'Content-Profile': 'identity', 'Accept-Profile': 'identity' },

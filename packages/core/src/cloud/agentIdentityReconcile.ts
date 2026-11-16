@@ -7,7 +7,7 @@ import { createGuguSupabaseClient } from './supabase'
  */
 export async function listAgentNameSerialsViaSupabase(input: {
   accessToken: string
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
 }): Promise<Map<string, number>> {
   const client = createGuguSupabaseClient({
     schema: 'identity',

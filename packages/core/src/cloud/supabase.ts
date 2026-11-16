@@ -17,7 +17,7 @@ export interface GuguSupabaseClientOptions {
   anonKey?: string
   autoRefreshToken?: boolean
   flowType?: 'implicit' | 'pkce'
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   headers?: Record<string, string>
   persistSession?: boolean
   realtime?: SupabaseCreateOptions['realtime']

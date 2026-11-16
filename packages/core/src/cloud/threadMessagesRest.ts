@@ -3,12 +3,13 @@
 // fetchThreadMessages option。auth：service_role 或调用者是该 chat 成员。
 // fail-loud：失败/返非数组即抛（调用方 deviceCommandRuntime 告警 + 不阻塞投递、下次重试，不静默吞）。
 // （原居 groupRouter/deliveryGate.ts；#2008 product spec 移除整个 groupRouter 评分层后迁出独立成文件。）
+import { hostFetch } from '../shared/hostFetch'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 import type { ThreadMessageRow } from '../local/agent/threadBootstrap'
 
 // 公共 PostgREST RPC POST helper：拼 URL + headers，返回 Response。
 function postIdentityRpc(accessToken: string, fnName: string, body: unknown): Promise<Response> {
-  return fetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/${fnName}`, {
+  return hostFetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/${fnName}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

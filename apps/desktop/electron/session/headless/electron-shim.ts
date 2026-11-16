@@ -323,7 +323,9 @@ export const protocol = {
 }
 
 export const net = {
+  // A headless host has no Chromium: its network is the runtime's own (proxies come from its environment).
   fetch: (...args: Parameters<typeof globalThis.fetch>): Promise<Response> =>
+    // eslint-disable-next-line no-restricted-properties -- this IS the runtime fetch net.fetch stands for here
     globalThis.fetch(...args),
   request: (_options: unknown): never => {
     throw new Error('net.request is unavailable in the headless session host — use net.fetch()')

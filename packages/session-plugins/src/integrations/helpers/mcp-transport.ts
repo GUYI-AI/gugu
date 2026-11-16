@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
@@ -8,7 +9,7 @@ export function integrationMcpTransport(endpoint: {
   url: string;
   headers: Record<string, string>;
   transport?: McpTransportKind;
-  fetch?: typeof fetch;
+  fetch?: typeof globalThis.fetch;
 }) {
   const options = { requestInit: { headers: endpoint.headers }, ...(endpoint.fetch ? { fetch: endpoint.fetch } : {}) };
   return endpoint.transport === 'sse'
@@ -18,7 +19,7 @@ export function integrationMcpTransport(endpoint: {
           fetch: (input, init) => {
             const headers = new Headers(init?.headers);
             for (const [name, value] of Object.entries(endpoint.headers)) headers.set(name, value);
-            return (endpoint.fetch ?? fetch)(input, { ...init, headers });
+            return (endpoint.fetch ?? hostFetch)(input, { ...init, headers });
           },
         },
       })

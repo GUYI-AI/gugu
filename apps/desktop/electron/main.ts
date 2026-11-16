@@ -136,7 +136,7 @@ import {
 import { createUpdateState, type VersionedUpdateState } from '../shared/update-state'
 import { createBuiltRendererRootResolver } from './rendererRoot'
 import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
-import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
+import { makeChatClient, makeIdentityClient, supabase, electronFetch, installChromiumHostFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
 import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity, watchHostResumeGap } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
 import { runDueScheduledTasksForOwner } from './scheduled-tasks-runner'
@@ -4503,6 +4503,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Before anything reaches the network: every host request goes through Chromium from here on (system proxy, certificates).
+  installChromiumHostFetch()
   if (!hasSingleInstanceLock) return
   // #6264 重启前发出去的卡还有 agent 拿着(tmux 里的会话):开机**第一步**就把端口绑回来。agent 的 HTTP MCP 客户端在宿主
   // 一退就开始重连(claude:5 次、退避 1/2/4/8 s,15 s 内用完就永远放弃),而开机到会话页就绪要十几秒;端口晚绑,

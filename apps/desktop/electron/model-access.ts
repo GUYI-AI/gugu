@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { execFile } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -18,7 +19,6 @@ import {
   type RuntimeAuthProvider,
 } from '@gugu/core'
 import { platformProtocolForEngine } from './engine-injection-contract'
-import * as electron from 'electron'
 import type { PlatformCallableRoutes } from '@gugu/session-core/agents/plugins'
 import type { GuguCatalogReason } from '@gugu/session-core/session-record/contract'
 import { createLogger } from './lib/logger'
@@ -114,11 +114,6 @@ export interface IssuedModelAccess {
   membershipLocked: readonly string[]
 }
 
-function modelAccessFetch(url: string, init: RequestInit): Promise<Response> {
-  const netFetch = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
-  return netFetch ? netFetch(url, init) : fetch(url, init)
-}
-
 /**
  * model-access 的非 2xx 回应;status 让调用方分清「这张票服务端不认识」(404)与其它失败。
  * `reason` 是服务端给的机读定性(目前只有 `membership_required`,#7056);没给 = null。
@@ -180,8 +175,8 @@ async function invokeModelAccessAs(
 ): Promise<Record<string, unknown>> {
   if (!platformModelsEnabled()) throw new Error('Official model service is not configured')
   // #5331 签令牌走 Chromium 连接池(与 supabase-js 同池,空闲保活约 5 分钟);Node 全局 fetch 的 undici 池
-  // 4 s 就断,两次新建会话之间必然冷掉,每次都重握 0.95 s 的 TLS。electron 缺席(单测)时退回全局 fetch。
-  const response = await modelAccessFetch(`${getSupabaseUrl().replace(/\/$/, '')}/functions/v1/model-access`, {
+  // 4 s 就断,两次新建会话之间必然冷掉,每次都重握 0.95 s 的 TLS。hostFetch 就是那条 Chromium 路(app 就绪时装上)。
+  const response = await hostFetch(`${getSupabaseUrl().replace(/\/$/, '')}/functions/v1/model-access`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

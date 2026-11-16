@@ -44,7 +44,7 @@ describe('owner-requested friend messages (#7299)', () => {
   })
   it('stops after bounded transport retries without changing its stable key', async () => {
     const restRpc = vi.fn().mockRejectedValue(new RpcTransportError())
-    await expect(callTool(context, 'message_send_as_owner', args, { restRpc })).rejects.toThrow('transport failed')
+    await expect(callTool(context, 'message_send_as_owner', args, { restRpc })).rejects.toThrow(RpcTransportError)
     expect(restRpc).toHaveBeenCalledTimes(3)
     expect(restRpc.mock.calls[0]).toEqual(restRpc.mock.calls[2])
   })

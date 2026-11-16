@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { AccountBootRejectedError, createServerVersionLifecycle, isServerPackageBad, type ServerVersionLifecycle } from './server-version-lifecycle'
 /**
  * 咕咕 server 自己升级(product spec 第 5 条):后台悄悄下好、校验、解开,
@@ -88,7 +89,7 @@ function readChannel(home: string): string {
 async function fetchManifest(home: string): Promise<ServerManifest> {
   const base = serverDownloadBase()
   const url = `${base}/${readChannel(home)}/${platformKey()}.txt`
-  const response = await fetch(url, { cache: 'no-store' }).catch(() => { throw new DownloadSiteUnreachableError(`Cannot reach the server release feed: ${url}`) })
+  const response = await hostFetch(url, { cache: 'no-store' }).catch(() => { throw new DownloadSiteUnreachableError(`Cannot reach the server release feed: ${url}`) })
   if (!response.ok) throw new Error(`取版本清单失败(${response.status}):${url}`)
   return parseManifest(await response.text())
 }
@@ -108,7 +109,7 @@ export class VersionNotPublishedError extends Error {}
 export async function fetchVersionManifest(
   home: string,
   version: string,
-  fetchImpl: (url: string) => Promise<Response> = (url) => fetch(url, { cache: 'no-store' }),
+  fetchImpl: (url: string) => Promise<Response> = (url) => hostFetch(url, { cache: 'no-store' }),
 ): Promise<ServerManifest> {
   const base = serverDownloadBase()
   const url = versionManifestUrl(base, version, platformKey())

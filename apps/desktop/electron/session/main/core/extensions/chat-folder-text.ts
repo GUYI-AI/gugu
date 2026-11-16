@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import type { ChatFileRef } from '@shared/extensions/app-files-core';
 // #7199 桌面:主进程读聊天文件夹里一个文件此刻的文本(读法在 @shared/extensions/chat-folder-text)。令牌与文件服务都在这边;
 // 网关没合 CORS 的库(devdb / 生产,gugu-supabase #119 之前)窗口里 fetch 会被预检挡住,桌面走这里不受影响。
@@ -23,7 +24,7 @@ export function readChatFolderText(ref: ChatFileRef): Promise<ChatFolderText | n
         return { data: data as { id: string; kind: string; updated_at: string }[] | null, error };
       },
       filesUrl: fileServiceUrl,
-      fetch: (...args) => fetch(...args),
+      fetch: (...args) => hostFetch(...args),
     },
     ref
   );

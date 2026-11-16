@@ -7,7 +7,6 @@ const revokePlatformModelAccess = vi.fn(async (..._args: unknown[]) => undefined
 const fetchMock = vi.fn()
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 
-vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
 vi.mock('../../../../apps/desktop/electron/model-access', () => ({
   issuePlatformModelAccess: (...args: unknown[]) => issuePlatformModelAccess(...args),
   revokePlatformModelAccess: (...args: unknown[]) => revokePlatformModelAccess(...args),
@@ -17,6 +16,8 @@ vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
   createLogger: () => log,
 }))
 
+const { installHostFetch } = await import('@gugu/core/shared/hostFetch')
+installHostFetch(((...args: unknown[]) => fetchMock(...args)) as typeof globalThis.fetch)
 const { createSessionTitleNamer } = await import('../../../../apps/desktop/electron/session-title-namer')
 
 const LONG = '帮我看看为什么登录之后又跳回首页了，应该是 auth.ts 里 verifyLoginOtp 那块的问题'

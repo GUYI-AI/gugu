@@ -74,6 +74,12 @@ const childProcessImportGate = ['node:child_process', 'child_process'].map((name
     '起子进程用 @gugu/core/local/childProcess:同一套 API,windowsHide 默认 true(Windows 上不弹黑框)。要人看见窗口的(「用 X 打开」)显式写 windowsHide: false。'
 }))
 
+const abortSignalAnyGate = {
+  object: 'AbortSignal', property: 'any',
+  message: 'Use anySignal from @gugu/core/shared/anySignal: AbortSignal.any is missing on Android WebView before 116.'
+}
+const hostFetchMessage = 'Use hostFetch from @gugu/core/shared/hostFetch: the global fetch ignores the system proxy and certificates in the desktop host.'
+
 module.exports = {
   root: true,
   env: { browser: true, es2020: true, node: true },
@@ -298,6 +304,21 @@ module.exports = {
       }
     },
     {
+      // @@@host-fetch: a host process reaches the network through one fetch, the one the desktop points at Chromium
+      // (system proxy and certificates). Node's global fetch skips both: behind a system-only proxy every Gugu tool
+      // call failed while the rest of the app worked. Tests stub the global on purpose and stay outside.
+      files: ['apps/desktop/electron/**', 'packages/core/src/**', 'packages/session-core/src/**', 'packages/session-runtime/src/**', 'packages/session-plugins/src/**'],
+      excludedFiles: ['**/*.test.*', '**/test-support/**', '**/__tests__/**'],
+      rules: {
+        'no-restricted-globals': ['error', { name: 'fetch', message: hostFetchMessage }],
+        // Overrides replace a rule whole: the AbortSignal.any entry is repeated from the top level.
+        'no-restricted-properties': ['error', abortSignalAnyGate,
+          { object: 'globalThis', property: 'fetch', message: hostFetchMessage },
+          { object: 'window', property: 'fetch', message: hostFetchMessage },
+          { object: 'self', property: 'fetch', message: hostFetchMessage }]
+      }
+    },
+    {
       // Tests drive the auth SDK directly on purpose (what a bare call does is what they prove); the single-refresher
       // rule guards product code only.
       files: ['tests/**'],
@@ -314,10 +335,7 @@ module.exports = {
     'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath],
     // Android System WebView before 116 has no AbortSignal.any: calling it threw before the request was sent (images
     // could not load). One function owns the native call and its fallback; everything else combines signals through it.
-    'no-restricted-properties': ['error', {
-      object: 'AbortSignal', property: 'any',
-      message: 'Use anySignal from @gugu/core/shared/anySignal: AbortSignal.any is missing on Android WebView before 116.'
-    }],
+    'no-restricted-properties': ['error', abortSignalAnyGate],
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     '@typescript-eslint/no-explicit-any': 'warn',
     // @@@task-fusion (#2802) — vars/caughtErrors 也认 `_` 前缀:会话页用 `const _x = ...` 表示

@@ -13,6 +13,10 @@ vi.mock('@main/core/app/utils', () => ({ resolveAppVersion: async () => '9.9.9' 
  * 读下载站走 Chromium 的网络栈(net.fetch)和它的 HTTP 缓存:README、截图、包都是内容哈希路径、immutable,
  * 重启后从磁盘答(owner 10-30「既然曾经缓存过,为什么又要失效又要重新读取」)。Node 的 fetch 没有 HTTP 缓存,每次都上网。
  */
+// The app points the host fetch at net.fetch once it is ready; the test does the same through the same function.
+const { installChromiumHostFetch } = await import('../../../../supabase');
+installChromiumHostFetch();
+
 describe('the market reads the download site through Chromium', () => {
   h.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'market-root-'));
   afterAll(() => fs.rmSync(h.userData, { recursive: true, force: true }));

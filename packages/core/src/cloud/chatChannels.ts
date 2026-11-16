@@ -5,6 +5,7 @@
  *
  * 不碰 node / electron:渲染层(设置 → 聊天渠道)与主进程(把本机旧连接交给管家)共用。
  */
+import { hostFetch } from '../shared/hostFetch'
 import { CloudComputerError, cloudComputerErrorFromResponse } from './cloudComputer'
 import { anySignal } from '../shared/anySignal'
 
@@ -69,10 +70,10 @@ export function createChatChannelsClient(options: {
   baseUrl: string
   accessToken: () => Promise<string>
   anonKey?: string | null
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   requestTimeoutMs?: number
 }): ChatChannelsClient {
-  const doFetch = options.fetch ?? fetch
+  const doFetch = options.fetch ?? hostFetch
   const timeoutMs = options.requestTimeoutMs ?? 20_000
   const request = async <T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<T> => {
     const headers: Record<string, string> = { Authorization: `Bearer ${await options.accessToken()}` }

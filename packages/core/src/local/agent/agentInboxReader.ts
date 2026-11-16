@@ -16,6 +16,7 @@
  * pull_agent_inbox RPC 里收口)。并发触发由 per-agent coalescing single-flight 合并
  * (内存,不持有任何跨进程/跨崩溃真值:进程死,守卫与工作同死,游标未推进,重启重拉)。
  */
+import { hostFetch } from '../../shared/hostFetch'
 import { createHash } from 'node:crypto'
 import { isSqliteBusy } from '../../shared/sqliteBusy'
 import { getSupabaseAnonKey, getSupabaseUrl } from '../../cloud/config'
@@ -255,7 +256,7 @@ async function fetchUnreadViaRpc(
   input: AgentInboxFetchInput,
   accessToken: string,
 ): Promise<AgentInboxUnreadRow[]> {
-  const response = await fetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/pull_agent_inbox_v2`, {
+  const response = await hostFetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/pull_agent_inbox_v2`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -410,7 +411,7 @@ export function deliveryDisclosureMessage(input: DisclosureRow) {
  * 也是 [[device-command-runtime]] 对「无人持有的 agent」终态显形(#5041)用的同一条写口——聊天里对用户可见的失败只有这一种形状。
  */
 export async function postDeliveryDisclosureRow(input: DisclosureRow, accessToken: string): Promise<void> {
-  const response = await fetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/messages`, {
+  const response = await hostFetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -428,7 +429,7 @@ export async function postDeliveryDisclosureRow(input: DisclosureRow, accessToke
 export type AgentSpokeAfterInput = { agentUserId: string; chatId: string; threadRootId: string | null; afterSeq: number }
 
 /** The agent's own non-system message on this line after `afterSeq`, read as the agent (`chat.message_history_as`). */
-export async function agentSpokeAfterViaRpc(input: AgentSpokeAfterInput, accessToken: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+export async function agentSpokeAfterViaRpc(input: AgentSpokeAfterInput, accessToken: string, fetchImpl: typeof globalThis.fetch = hostFetch): Promise<boolean> {
   const response = await fetchImpl(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/message_history_as`, {
     method: 'POST',
     headers: {

@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -48,7 +49,7 @@ export function registerErrorSummaryReporting(deps: {
       // A private connection: never use the signed-in Chromium session/cookie jar.
       const body = errorSummaryRequest(summary)
       if (!body) return
-      const response = await fetch(destination.url, {
+      const response = await hostFetch(destination.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'user-agent': 'gugu-error-summary/1' },
         body,

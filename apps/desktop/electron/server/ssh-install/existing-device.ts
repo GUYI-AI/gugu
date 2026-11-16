@@ -3,7 +3,7 @@ import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import type { ExistingDeviceLookup } from './existing-account'
 
 /** The released install-id is the server's cloud machine_id, not a hardware ID. */
-export function cloudExistingDevice(getAuth: () => Promise<RuntimeAuth | null>, tier: string, requestFetch?: typeof fetch): ExistingDeviceLookup {
+export function cloudExistingDevice(getAuth: () => Promise<RuntimeAuth | null>, tier: string, requestFetch?: typeof globalThis.fetch): ExistingDeviceLookup {
   return async ({ userId, machineId, signal }) => {
     signal.throwIfAborted()
     const auth = await getAuth()

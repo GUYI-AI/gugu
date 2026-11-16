@@ -1,19 +1,28 @@
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import { net } from 'electron'
+import { hostFetch, installHostFetch } from '@gugu/core/shared/hostFetch'
 import WebSocket from 'ws'
 import { pauseElectronRealtimeChannels, reconnectElectronRealtimeChannels } from './realtime-channel'
 import { createLogger } from './lib/logger'
 
 // #5331 主进程里所有云往返共用 Chromium 的连接池:已用过的空闲连接保活约 5 分钟,不像 Node 全局 fetch
-// (undici 默认 keepAliveTimeout 4 s)那样在两次新建会话之间断掉、下一发重握 0.95 s 的 TLS。
+// (undici 默认 keepAliveTimeout 4 s)那样在两次新建会话之间断掉、下一发重握 0.95 s 的 TLS。Chromium 也认系统代理和系统证书。
+// 宿主进程的每一发请求都走它:app 就绪时装进 hostFetch(installChromiumHostFetch),其余代码只认 hostFetch。
+const chromiumFetch = ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(
+  input instanceof URL ? input.toString() : (input as RequestInfo),
+  init as Parameters<typeof net.fetch>[1]
+)) as typeof globalThis.fetch
+
+/** net.fetch only works once the app is ready: call this first thing in whenReady. */
+export function installChromiumHostFetch(): void {
+  installHostFetch(chromiumFetch)
+}
+
 export const electronFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-  const response = await net.fetch(
-    input instanceof URL ? input.toString() : (input as RequestInfo),
-    init as Parameters<typeof net.fetch>[1]
-  )
+  const response = await hostFetch(input, init)
   if (response.status < 500) for (const listener of cloudAnswerListeners) listener()
   return response
-}) as typeof fetch
+}) as typeof globalThis.fetch
 
 const cloudAnswerListeners = new Set<() => void>()
 

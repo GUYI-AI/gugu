@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { PLATFORM_STANDALONE_SEARCH_ROUTE, platformStandaloneSearchGranted } from '@gugu/session-core/agents/plugins'
 import { platformModelIdFromNativeOption } from '@gugu/session-core/acp/platform-model-address'
 import type { SessionWebSearch } from '../mcp/gugu-web-search-tool'
@@ -35,7 +36,7 @@ export function platformWebSearchForSession(sessionId: string): SessionWebSearch
       }
       let response: Response
       try {
-        response = await fetch(`${held.relayUrl.replace(/\/$/, '')}${PLATFORM_STANDALONE_SEARCH_ROUTE}`, {
+        response = await hostFetch(`${held.relayUrl.replace(/\/$/, '')}${PLATFORM_STANDALONE_SEARCH_ROUTE}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: sessionId, model, commands: { search_query: [{ q: query }] } }),

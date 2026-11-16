@@ -1,3 +1,4 @@
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { execFile } from '@gugu/core/local/childProcess';
 import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync } from 'node:fs';
@@ -216,7 +217,7 @@ function stallWatch(file: string, stallMs: number) {
 }
 
 async function fetchOk(url: string, signal: AbortSignal, headers?: Record<string, string>): Promise<Response> {
-  const response = await fetch(url, { signal, ...(headers ? { headers } : {}) });
+  const response = await hostFetch(url, { signal, ...(headers ? { headers } : {}) });
   if (!response.ok || !response.body) throw new DownloadHttpError(url, response.status);
   return response;
 }

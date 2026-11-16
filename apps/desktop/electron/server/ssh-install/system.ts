@@ -2,6 +2,7 @@
  * #6264「从桌面用 SSH 一步装好」里与 Electron 无关的两件实事:真的 spawn 系统 ssh、以桌面的身份向云端要登录凭证。
  * 单独放一个文件,是为了 ipc.ts(要 electron)之外也能原样跑这条路径(本机对着容器实测时用)。
  */
+import { hostFetch } from '@gugu/core/shared/hostFetch'
 import { spawn } from '@gugu/core/local/childProcess'
 import fs from 'node:fs'
 import type { RuntimeAuth } from '@gugu/core'
@@ -76,7 +77,7 @@ export function cloudMintGrant(getAuth: () => Promise<RuntimeAuth | null>): Mint
     if (!auth) return { error: 'notSignedIn' }
     let response: Response
     try {
-      response = await fetch(`${getSupabaseUrl().replace(/\/$/, '')}/functions/v1/server-login/grant`, {
+      response = await hostFetch(`${getSupabaseUrl().replace(/\/$/, '')}/functions/v1/server-login/grant`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
