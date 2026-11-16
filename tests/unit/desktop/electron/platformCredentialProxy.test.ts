@@ -21,6 +21,55 @@ afterEach(async () => {
 })
 
 describe('the host credential relay', () => {
+  it('observes a synthetic 400 before ACP wrapping without changing its wire response or retrying', async () => {
+    const id = '20261116000000000000000000aBcDeFgHiJkLm'
+    const wire = JSON.stringify({ request_id: id, error: { type: 'invalid_request_error',
+      code: 'unsupported_parameter', param: 'thinking.display', message: 'private prompt and private-token' } })
+    const upstreamCall = vi.fn((_request: IncomingMessage, response: ServerResponse) => {
+      response.writeHead(400, { 'content-type': 'application/json', 'x-preserved': 'yes' })
+      response.write(wire.slice(0, 20))
+      response.end(wire.slice(20))
+    })
+    const upstream = await serve(upstreamCall)
+    const httpError = vi.fn()
+    const refresh = vi.fn()
+    const relay = await serve((request, response) => {
+      void proxyPlatformCredentialRequest(request, response, {
+        upstream: () => new URL(upstream), localOnlyHeaders: new Set(),
+        credential: async () => 'private-token', refresh, warn: vi.fn(), httpError,
+      })
+    })
+    const result = await fetch(relay, { method: 'POST', body: '{}' })
+    expect(result.status).toBe(400)
+    expect(result.headers.get('x-preserved')).toBe('yes')
+    expect(await result.text()).toBe(wire)
+    await vi.waitFor(() => expect(httpError).toHaveBeenCalledExactlyOnceWith({ status: 400,
+      bodyInspection: 'json', requestId: id, errorType: 'invalid_request_error',
+      errorCode: 'unsupported_parameter', param: 'thinking.display' }))
+    expect(upstreamCall).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
+    expect(JSON.stringify(httpError.mock.calls)).not.toMatch(/private prompt|private-token/)
+  })
+
+  it('leaves successful JSON responses unchanged and never inspects them as errors', async () => {
+    const wire = '{"error":{"type":"invalid_request_error"},"text":"successful response"}'
+    const upstream = await serve((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(wire)
+    })
+    const httpError = vi.fn()
+    const relay = await serve((request, response) => {
+      void proxyPlatformCredentialRequest(request, response, {
+        upstream: () => new URL(upstream), localOnlyHeaders: new Set(),
+        credential: async () => 'fresh', refresh: vi.fn(), warn: vi.fn(), httpError,
+      })
+    })
+    const result = await fetch(relay, { method: 'POST', body: '{}' })
+    expect(result.status).toBe(200)
+    expect(await result.text()).toBe(wire)
+    expect(httpError).not.toHaveBeenCalled()
+  })
+
   it('waits for the shared credential and replaces both local auth headers without changing bytes', async () => {
     const issued = deferred<string>()
     const readCredential = deferred<void>()
@@ -94,10 +143,11 @@ describe('the host credential relay', () => {
       response.write('event: message_start\ndata: first\n\n')
       void finish.promise.then(() => response.end('event: message_stop\ndata: last\n\n'))
     })
+    const httpError = vi.fn()
     const relay = await serve((request, response) => {
       void proxyPlatformCredentialRequest(request, response, {
         upstream: () => new URL(upstream), localOnlyHeaders: new Set(),
-        credential: async () => 'fresh', refresh: vi.fn(), warn: vi.fn(),
+        credential: async () => 'fresh', refresh: vi.fn(), warn: vi.fn(), httpError,
       })
     })
     const result = await fetch(relay, { method: 'POST', body: '{}' })
@@ -107,6 +157,7 @@ describe('the host credential relay', () => {
     finish.resolve()
     expect(new TextDecoder().decode((await reader.read()).value)).toBe('event: message_stop\ndata: last\n\n')
     expect((await reader.read()).done).toBe(true)
+    expect(httpError).not.toHaveBeenCalled()
   })
 
   it('reports passive stream timings once without recording response content or credentials', async () => {
