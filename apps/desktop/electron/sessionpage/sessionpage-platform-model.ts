@@ -690,10 +690,6 @@ function credentialProxyEnv(
     if (normalized === `${upstreamRoot}/v1`) return [key, proxy.baseUrl]
     return [key, value]
   }))
-  for (const key of ['NO_PROXY', 'no_proxy']) {
-    const current = next[key]?.split(',').map((entry) => entry.trim()).filter(Boolean) ?? []
-    next[key] = [...new Set([...current, '127.0.0.1', 'localhost', '::1'])].join(',')
-  }
   return next
 }
 

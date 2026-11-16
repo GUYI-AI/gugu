@@ -49,6 +49,7 @@ import { claudeTuiSessionArgs, releaseClaudeTuiSettings } from './claude-tui-set
 import { codexStartupFastTier } from './codex-startup-fast-tier'
 import { probeHarnessModelCatalog } from '@main/core/agents/harness-model-catalog'
 import { wireHarnessModelCatalog } from '@main/core/agents/harness-model-catalog-wiring'
+import { withLoopbackNoProxy } from '@gugu/session-core/agents/agent-env'
 
 // @@@sessionpage TASKPAGE-FUSION — the PTY-divert hook shapes (mirror emdash-pty-sessionpage-hook.ts across
 // the module boundary; the host returns a command override to run `codex --remote … resume <tid>`).
@@ -366,13 +367,14 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   // ⚠️ 只在 task-home 设:开在用户真 repo 里的 agent(projectId 非 sentinel)照旧读它自己的 repo
   // `.opencode` —— 那是承诺给用户的、且不走 task-home,不吃这条。判据抽成纯函数便于单测判红。
   const descriptor = getPlugin(info.providerId).capabilities.sessionBundle
-  // serve and attach do not go through the run context, so the descriptor's pinned env is applied here.
+  // serve and attach do not go through the run context, so the descriptor's pinned env — and the loopback
+  // NO_PROXY rule of composeAgentSpawnEnv (serve talks to Gugu MCP and the loopback credential relay) — apply here.
   const pinnedEnv = harnessPinnedEnv(descriptor)
-  const serveEnv = buildOpencodeServeEnv({
+  const serveEnv = withLoopbackNoProxy(buildOpencodeServeEnv({
     processEnv: process.env,
     spawnEnv: { ...capabilities.spawnEnv, ...pinnedEnv },
     projectConfigDisableEnv: isImplicitSessionHomeProjectId(info.projectId) ? descriptor.projectConfigDisableEnv : undefined,
-  })
+  }))
   step('bundle+materialized')
   const handle = await opencodeServeAttachSessionDelivery.startSession(
     {
