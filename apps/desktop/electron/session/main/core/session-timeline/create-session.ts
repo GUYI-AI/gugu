@@ -29,6 +29,7 @@ import {
   agentSupportsPermissionMode,
   type AgentPayload,
 } from '@shared/core/agents/agent-payload';
+import { creationFastGroup } from '@shared/core/agents/create-fast-mode';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { SESSION_VIEWS, sessionRuntimeOfView, sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { buildInitialSessionDocument } from '@shared/core/sessions/initial-session-document';
@@ -287,7 +288,8 @@ export async function createModels(
     const { listLocalModels, probeHarnessCatalogState } = await import('@main/core/agents/session-discovery');
     const [catalog, state] = await Promise.all([
       listLocalModels(request.harness, { transport: sessionRuntimeOfView(view.view) }),
-      probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view)),
+      probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view),
+        request.model?.trim() && !request.model.trim().startsWith('platform:') ? request.model.trim() : undefined),
     ]);
     // 默认模型在这台机器上有没有凭据(#6264):远端创建框据此决定默认挪不挪到平台模型,与桌面同一个读数。
     const [selectedCredential, harnessAuth] = await Promise.all([
@@ -309,9 +311,11 @@ export async function createModels(
       ),
       leg: sessionpageLegOfView(view.view),
     });
+    const fast = creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
     return {
       ok: true,
       value: {
+        ...(fast ? { fast } : {}),
         harness: catalog.harness_id,
         transport: catalog.transport,
         models: catalog.models.map((m) => ({
@@ -458,6 +462,16 @@ async function createSessionSteps(
   const resolvedEffort = await resolveCreateEffort({ ...request, sessionView: view.view });
   if (!resolvedEffort.ok) return resolvedEffort;
   const effort = resolvedEffort.value;
+  if (request.fastMode !== undefined && typeof request.fastMode !== 'boolean') {
+    return fail('fast_rejected', 'Fast mode must be a boolean');
+  }
+  if (request.fastMode === true) {
+    if (!request.model?.trim() || platformModel !== null) return fail('fast_rejected', 'Fast requires an explicit native model');
+    const catalog = await createModels({ harness: request.harness, sessionView: view.view, model: request.model });
+    if (!catalog.ok || catalog.value.fast?.model !== request.model.trim()) {
+      return fail('fast_rejected', 'Cannot verify Fast for the selected native model');
+    }
+  }
 
   /*
    * ⚠️ 建会话那整条配方**用时再取**,❌ 不在模块顶层 import(理由见 agentPayloads 抬头)。
@@ -486,6 +500,7 @@ async function createSessionSteps(
       permissionMode,
       model,
       effort,
+      ...(request.fastMode !== undefined ? { fastMode: request.fastMode } : {}),
       ...(platformModel !== undefined ? { platformModel } : {}),
       startupOrigin: 'session-page',
     }),

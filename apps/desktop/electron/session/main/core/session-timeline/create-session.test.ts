@@ -78,6 +78,7 @@ vi.mock('@main/core/agents/controller', () => ({
         name: 'Codex',
         status: state.agentStatus,
         capabilities: {
+          acp: { kind: 'supported', liveSettings: { fast: { channel: 'acp-config-option', ack: 'ack-read-back' } } },
           sessionViews: ['general', 'code'],
           permissionModes: ['plan', 'read-only', 'edit', 'full-access'],
         },
@@ -181,6 +182,7 @@ const probe = vi.hoisted(() => ({
   authThrows: false,
   efforts: [] as string[],
   modelEfforts: {} as Record<string, string[]>,
+  fast: false,
 }));
 vi.mock('@main/core/agents/session-discovery', () => ({
   listLocalModels: async () => ({
@@ -197,7 +199,7 @@ vi.mock('@main/core/agents/session-discovery', () => ({
     harness_catalog: { source: 'live-acp', state: 'ready' },
     gugu_catalog: { available: true },
   }),
-  probeHarnessCatalogState: async (_harness: string, _transport: string, model?: string) => ({ kind: 'ready', models: [], selected: model ?? null, efforts: (model && probe.modelEfforts[model] || probe.efforts).map(id => ({ id, name: id })), selectedEffort: null }),
+  probeHarnessCatalogState: async (_harness: string, _transport: string, model?: string) => ({ kind: 'ready', models: [], selected: model ?? null, efforts: (model && probe.modelEfforts[model] || probe.efforts).map(id => ({ id, name: id })), selectedEffort: null, ...(probe.fast ? { fastMode: { configId: 'fast', selected: 'off', available: [{ id: 'on', name: 'On' }, { id: 'off', name: 'Off' }] } } : {}) }),
 }));
 vi.mock('@main/core/agent-config/runtime-process/host', () => ({
   getAgentConfigRuntimeClient: async () => ({ modelCredential: async () => ({ success: true, data: 'unknown' }) }),
@@ -531,5 +533,35 @@ describe('createModels:那台机器上这家登没登(#6264 探针漏判)', () =
     expect(await createModels({ harness: 'codex' }, { readAuth })).toMatchObject({ ok: true, value: { harnessAuth: 'unknown' } });
     probe.authThrows = true;
     expect(await createModels({ harness: 'codex' }, { readAuth })).toMatchObject({ ok: true, value: { harnessAuth: 'unknown' } });
+  });
+});
+
+
+describe('mobile creation Fast reaches the shared initial document', () => {
+  beforeEach(() => { state.agentStatus = 'available'; state.calls = []; state.createParams = []; probe.fast = true; });
+  afterEach(() => { probe.fast = false; });
+  it('returns a target-bound native group and retains native reasoning choices', async () => {
+    probe.modelEfforts['gpt-6-astra'] = ['provider-specific-level'];
+    expect(await createModels({ harness: 'codex', model: 'gpt-6-astra' }, { readAuth })).toMatchObject({ ok: true, value: {
+      fast: { model: 'gpt-6-astra', selected: 'off' }, efforts: [{ id: 'provider-specific-level' }],
+    } });
+    delete probe.modelEfforts['gpt-6-astra'];
+  });
+  it.each([true, false])('preserves explicit native Fast intent %s', async fastMode => {
+    expect((await createSession({ projectId: 'proj-1', harness: 'codex', model: 'gpt-6-astra', prompt: 'hi', fastMode })).ok).toBe(true);
+    expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { fastMode, model: 'gpt-6-astra', platformModel: null } } });
+  });
+  it.each([undefined, 'platform:deep'])('rejects enabled Fast without an explicit native target %s', async model => {
+    expect(await createSession({ projectId: 'proj-1', harness: 'codex', model, prompt: 'hi', fastMode: true })).toMatchObject({ ok: false, error: { code: 'fast_rejected' } });
+    expect(state.createParams).toEqual([]);
+  });
+  it('rejects capability lost between catalog read and creation', async () => {
+    probe.fast = false;
+    expect(await createSession({ projectId: 'proj-1', harness: 'codex', model: 'gpt-6-astra', prompt: 'hi', fastMode: true })).toMatchObject({ ok: false, error: { code: 'fast_rejected' } });
+    expect(state.createParams).toEqual([]);
+  });
+  it('hides Fast on the credit-billed catalog', async () => {
+    const result = await createModels({ harness: 'codex', model: 'platform:deep' }, { readAuth });
+    expect(result.ok && result.value.fast).toBeUndefined();
   });
 });

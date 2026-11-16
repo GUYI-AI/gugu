@@ -947,6 +947,8 @@ export type SessionpageSessionCreateModels = {
   /** 推理档（引擎的固有属性，没登录也有）；不声明的家是空数组，界面不摆。 */
   efforts: Array<{ id: string; name: string; description?: string }>;
   selectedEffort: string | null;
+  /** Host-confirmed Fast option for this exact native target; absent on older hosts. */
+  fast?: SessionOptionGroup & { model: string };
   /**
    * harness 自家那一组的探测状态（与桌面目录同一套词）：`ready` 有货；`auth-required` 那台机器上这家没登录；
    * `not-installed` / `unsupported` / `unknown`（还没探完）/ `unavailable`（起不来，原因在 harnessReason）。
@@ -1092,6 +1094,8 @@ export type SessionpageSessionCreateRequest = {
   permissionMode?: SessionpagePermissionMode;
   /** 推理档 id,取自 `sessionCreateModels.efforts`;不给 = 引擎默认。 */
   effort?: string;
+  /** Native Fast intent; the host revalidates the target before creating. */
+  fastMode?: boolean;
   /** 生在哪个群里(群成员里「新建 Agent」):它的身份第一次建出来时进这个群,群规照常生效。老宿主不认这一格。 */
   chatId?: string;
   /**
