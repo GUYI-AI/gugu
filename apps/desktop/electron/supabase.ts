@@ -1,7 +1,8 @@
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
-import { net } from 'electron'
+import { net, session } from 'electron'
 import { hostFetch, installHostFetch } from '@gugu/core/shared/hostFetch'
 import WebSocket from 'ws'
+import { systemProxyWebSocketOptions } from '@main/utils/systemProxySocket'
 import { pauseElectronRealtimeChannels, reconnectElectronRealtimeChannels } from './realtime-channel'
 import { createLogger } from './lib/logger'
 
@@ -37,10 +38,11 @@ export function onElectronCloudAnswer(listener: () => void): () => void {
 
 /** ws waits for an upgrade answer forever by default. A path that accepts the connection and never answers (a dead
  * tunnel) would leave Realtime "connecting" for good: it skips connect() while connecting, so every channel join
- * times out until something else replaces the socket. Bound the handshake like the file-sync socket does. */
+ * times out until something else replaces the socket. Bound the handshake like the file-sync socket does.
+ * It connects through the system proxy, like every Chromium request of this process (`systemProxySocket`). */
 class HandshakeBoundedWebSocket extends WebSocket {
   constructor(address: string | URL, protocols?: string | string[]) {
-    super(address, protocols, { handshakeTimeout: 10_000 })
+    super(address, protocols, systemProxyWebSocketOptions(address, (url) => session.defaultSession.resolveProxy(url)))
   }
 }
 

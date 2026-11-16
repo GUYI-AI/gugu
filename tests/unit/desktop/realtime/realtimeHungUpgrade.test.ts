@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 // upgrade (a dead tunnel). Once the link is back, the channels must come back by themselves: before, the socket sat
 // in "connecting" for good, every join timed out, and only a host resume (which replaces the socket) recovered it.
 const fixture = vi.hoisted(() => ({ url: '' }))
-vi.mock('electron', () => ({ net: { fetch } }))
+vi.mock('electron', () => ({ net: { fetch }, session: { defaultSession: { resolveProxy: async () => 'DIRECT' } } }))
 vi.mock('@gugu/core/cloud/supabase', async () => {
   const { createClient } = await import('@supabase/supabase-js')
   return { createGuguSupabaseClient: (options: { accessToken: () => Promise<string | null>; realtime: { transport: unknown } }) =>

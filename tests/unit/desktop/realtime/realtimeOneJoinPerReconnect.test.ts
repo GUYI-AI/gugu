@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 // sent, so both waited in the socket's send buffer, and one reconnect flushed them all: a longer outage meant more
 // joins of the same topic at once. One reconnect must send each channel's join exactly once.
 const fixture = vi.hoisted(() => ({ url: '' }))
-vi.mock('electron', () => ({ net: { fetch } }))
+vi.mock('electron', () => ({ net: { fetch }, session: { defaultSession: { resolveProxy: async () => 'DIRECT' } } }))
 vi.mock('@gugu/core/cloud/supabase', async () => {
   const { createClient } = await import('@supabase/supabase-js')
   return { createGuguSupabaseClient: (options: { accessToken: () => Promise<string | null>; realtime: { transport: unknown } }) =>

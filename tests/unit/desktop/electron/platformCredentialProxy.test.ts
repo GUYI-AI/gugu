@@ -1,4 +1,5 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
+import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { proxyPlatformCredentialRequest, withinCredentialDeadline } from '../../../../apps/desktop/electron/sessionpage/platform-credential-proxy'
 import { deferred } from '../../../support/testHarness'
@@ -107,6 +108,27 @@ describe('the host credential relay', () => {
     finish.resolve()
     expect(new TextDecoder().decode((await reader.read()).value)).toBe('event: message_stop\ndata: last\n\n')
     expect((await reader.read()).done).toBe(true)
+  })
+
+  it('hands the harness the decoded body without the encoding headers the host fetch already undid', async () => {
+    const wire = 'event: message_start\ndata: {"type":"message_start"}\n\n'
+    const upstream = await serve((_request, response) => {
+      const gz = gzipSync(wire)
+      response.writeHead(200, { 'content-type': 'text/event-stream', 'content-encoding': 'gzip', 'content-length': String(gz.length) })
+      response.end(gz)
+    })
+    const streamTiming = vi.fn()
+    const relay = await serve((request, response) => {
+      void proxyPlatformCredentialRequest(request, response, {
+        upstream: () => new URL(upstream), localOnlyHeaders: new Set(),
+        credential: async () => 'fresh', refresh: vi.fn(), warn: vi.fn(), streamTiming,
+      })
+    })
+    const result = await fetch(relay, { method: 'POST', body: '{}' })
+    expect(result.headers.get('content-encoding')).toBeNull()
+    expect(await result.text()).toBe(wire)
+    await vi.waitFor(() => expect(streamTiming).toHaveBeenCalledTimes(1))
+    expect(streamTiming.mock.calls[0][0]).toMatchObject({ frames: 1, eventTimingAvailable: true, complete: true })
   })
 
   it('reports passive stream timings once without recording response content or credentials', async () => {

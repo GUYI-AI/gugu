@@ -1,4 +1,4 @@
-import { MessageChannelMain, webContents } from 'electron';
+import { MessageChannelMain, session, webContents } from 'electron';
 import WebSocket from 'ws';
 import { getSupabaseUrl } from '@gugu/core/cloud/config';
 import {
@@ -13,6 +13,7 @@ import { SYNC_PORT_CHANNEL, type SyncRevokeReason } from '@shared/extensions/app
 import { extensionsService } from '@main/core/extensions/extensions-root';
 import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { log } from '@main/lib/logger';
+import { systemProxyWebSocketOptions } from '@main/utils/systemProxySocket';
 import { tapMainEvents } from '@main/lib/events';
 import { fileChangesChannel, type FileChangesEvent } from '@shared/core/fs/fsEvents';
 import { createLocalFileService } from '@main/core/extensions/local-files';
@@ -58,7 +59,7 @@ export function fileServiceUrl(): string {
 const platform: FileSyncPlatform = {
   serviceUrl: () => webSocketUrl(fileServiceUrl()),
   connect(url, protocols, events) {
-    const ws = new WebSocket(url, protocols, { handshakeTimeout: 10_000 });
+    const ws = new WebSocket(url, protocols, systemProxyWebSocketOptions(url, (target) => session.defaultSession.resolveProxy(target)));
     ws.binaryType = 'nodebuffer';
     ws.on('open', () => events.open());
     ws.on('message', (data: Buffer) => events.message(new Uint8Array(data)));

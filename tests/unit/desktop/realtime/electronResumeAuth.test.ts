@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import WebSocket, { WebSocketServer } from 'ws'
 
 const fixture = vi.hoisted(() => ({ url: '' }))
-vi.mock('electron', () => ({ net: { fetch } }))
+vi.mock('electron', () => ({ net: { fetch }, session: { defaultSession: { resolveProxy: async () => 'DIRECT' } } }))
 vi.mock('@gugu/core/cloud/supabase', async () => {
   const { createClient } = await import('@supabase/supabase-js')
   return { createGuguSupabaseClient: (options: { accessToken: () => Promise<string | null> }) =>

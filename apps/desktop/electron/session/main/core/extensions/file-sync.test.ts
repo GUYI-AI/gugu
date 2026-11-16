@@ -51,6 +51,7 @@ vi.mock('electron', () => ({
     }
   },
   webContents: { fromId: (id: number) => contentsById.get(id) },
+  session: { defaultSession: { resolveProxy: async () => 'DIRECT' } },
 }));
 
 const granted = vi.hoisted(() => ({ caps: new Set<string>(['files:write']) }));

@@ -1,4 +1,5 @@
 import { createClient, processLock } from '@supabase/supabase-js'
+import { hostFetch } from '../shared/hostFetch'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 
 type SupabaseCreateOptions = NonNullable<Parameters<typeof createClient>[2]>
@@ -36,13 +37,9 @@ export function createGuguSupabaseClient(options: GuguSupabaseClientOptions = {}
     )
   }
 
-  const global =
-    options.headers || options.fetch
-      ? {
-          headers: options.headers,
-          fetch: options.fetch
-        }
-      : undefined
+  // Without a fetch of its own, supabase-js uses the runtime's global fetch, which in a host process ignores the system
+  // proxy (see hostFetch). Every client defaults to the host fetch; in a renderer that is the same global fetch.
+  const global = { headers: options.headers, fetch: options.fetch ?? hostFetch }
 
   // @@@access-token-client — accessToken 与自有 auth 互斥(supabase-js 约束):令牌客户端
   // 不建 GoTrue 会话,auth 相关选项一概不传。
