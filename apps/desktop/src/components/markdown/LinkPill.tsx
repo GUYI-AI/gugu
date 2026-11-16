@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
 import { useReplica } from '../../lib/replica'
-import { fileMetadata } from '../../lib/fileMetadataReplica'
+import { chatFileMetadata } from '../../lib/fileMetadataReplica'
 import { messageById } from '../../lib/messageById'
 import { useChatStore } from '../../store/chatContext'
 import { quotedContentView } from '../chat/quotedContent'
@@ -34,7 +34,7 @@ export function LinkPill(props: DrawProps & { accountId: string }) {
 
 function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps & { accountId: string; itemId: string; version?: number }) {
   const { t } = useTranslation('messaging')
-  const reading = useReplica(fileMetadata, [itemId, version ?? null])
+  const reading = useReplica(chatFileMetadata, [itemId, version ?? null])
   const file = reading.state === 'value' ? reading.value : null
   const ready = file?.status === 'ready' ? file.revision : null
   const reason = reading.state === 'error' ? t('attachmentView.fileUnavailable')

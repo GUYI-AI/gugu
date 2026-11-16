@@ -6,7 +6,7 @@ import { replica } from './replica'
  * by the file link pill and `useFileHost`. No push: read when shown, kept five minutes after nothing shows it. Flows that
  * must ask afresh (why a read failed, whether a machine is back: lib/fileHost.ts) call the resolver directly on purpose.
  */
-export const fileMetadata = replica({
+export const chatFileMetadata = replica({
   name: 'fileMetadata',
   scope: 'account',
   keep: 5 * 60_000,

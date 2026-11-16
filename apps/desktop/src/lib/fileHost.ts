@@ -4,7 +4,7 @@ import { useDevicesStore } from '../store/devicesContext'
 import { i18n } from '../i18n'
 import { UI_EVENTS } from './uiEvents'
 import { fileMetadata } from './fileAccess'
-import { fileMetadata as fileMetadataReplica } from './fileMetadataReplica'
+import { chatFileMetadata } from './fileMetadataReplica'
 import { useReplica } from './replica'
 import { rendererLogger } from './log'
 
@@ -18,7 +18,7 @@ export type FileHost = { device: string; account: string }
  * Null for every other file, and while unknown: it only says where the file is, so a failed read draws nothing.
  */
 export function useFileHost(itemId: string | null): FileHost | null {
-  const reading = useReplica(fileMetadataReplica, itemId ? [itemId, null] : null)
+  const reading = useReplica(chatFileMetadata, itemId ? [itemId, null] : null)
   if (reading.state !== 'value') return null
   const metadata = reading.value
   return metadata.status === 'ready' && metadata.revision.source === 'local' && metadata.revision.host_device_id && metadata.revision.host_account_id
