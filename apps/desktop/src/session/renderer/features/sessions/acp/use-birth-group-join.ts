@@ -15,15 +15,22 @@ const birthGroupJoin = replica<[string], SessionShellBirthGroupJoin | null>({
   read: async (_owner, sessionId) => (await findSessionShellPort()?.birthGroupJoin(sessionId)) ?? null,
 });
 
-onBirthGroupJoinEvent(({ conversationId, join }) => {
-  if (birthGroupJoin.key(conversationId)) birthGroupJoin.set([conversationId], join);
-});
+// Subscribed once, when a panel first asks (not at import: importing a module must not open a channel).
+let following = false;
+function followBirthGroupJoins(): void {
+  if (following) return;
+  following = true;
+  onBirthGroupJoinEvent(({ conversationId, join }) => {
+    if (birthGroupJoin.key(conversationId)) birthGroupJoin.set([conversationId], join);
+  });
+}
 
 export function useBirthGroupJoin(sessionId: string | undefined): {
   join: SessionShellBirthGroupJoin | null;
   retrying: boolean;
   retry: () => void;
 } {
+  followBirthGroupJoins();
   const reading = useReplica(birthGroupJoin, sessionId ? [sessionId] : null);
   const [retrying, setRetrying] = useState(false);
 
