@@ -47,8 +47,9 @@ it('keeps edge handles on the real phone body and the floating picture above the
     await act(async () => root.render(<View />))
     const window = () => host.querySelector<HTMLElement>('[data-phone-watch-window]')!
     const composer = () => host.querySelector<HTMLElement>('[data-chat-composer-placement="bottom"]')!
-    await until('real shared composer bounds are available', () => ({ height: composer()?.getBoundingClientRect().height, width: window()?.offsetWidth }),
-      value => (value.height ?? 0) >= 108 && value.width === 160)
+    await until('floating picture clears the measured composer', () => ({ height: composer()?.getBoundingClientRect().height, width: window()?.offsetWidth,
+      pictureBottom: window()?.getBoundingClientRect().bottom, composerTop: composer()?.getBoundingClientRect().top }),
+      value => (value.height ?? 0) >= 108 && value.width === 160 && value.pictureBottom <= value.composerTop - 15)
     const body = host.querySelector<HTMLElement>('.gg-aw-body')!.getBoundingClientRect()
     const layout = host.querySelector<HTMLElement>('[data-phone-watch-layout]')!.getBoundingClientRect()
     expect(layout.left).toBe(body.left)
