@@ -14,7 +14,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
 }))
 
 const rm = await import('../../../../apps/desktop/src/lib/replica')
-const { installReadOnReturn } = await import('../../../../apps/desktop/src/lib/foregroundReturn')
+const { LEAVE_GRACE_MS, installReadOnReturn } = await import('../../../../apps/desktop/src/lib/foregroundReturn')
 
 const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
 let visibility: DocumentVisibilityState = 'visible'
@@ -55,9 +55,21 @@ describe('a return to the app', () => {
     window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')); await settle()
     window.dispatchEvent(new Event('focus')); await settle()
     expect(reads).toHaveBeenCalledTimes(1)
-    // Another application had the focus: a return.
-    host.active?.(false); host.active?.(true); await settle()
-    expect(reads).toHaveBeenCalledTimes(2)
     harness.cleanup({ keepReads: true })
+  })
+
+  it('switching between two Gugu windows (none focused for a moment) is no return; another application is', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      installReadOnReturn()
+      const { reads, harness } = await shown('test-return-windows')
+      host.active?.(false); host.active?.(true); await settle()
+      vi.advanceTimersByTime(LEAVE_GRACE_MS * 2); await settle()
+      expect(reads).toHaveBeenCalledTimes(1)
+      host.active?.(false); vi.advanceTimersByTime(LEAVE_GRACE_MS + 1)
+      host.active?.(true); await settle()
+      expect(reads).toHaveBeenCalledTimes(2)
+      harness.cleanup({ keepReads: true })
+    } finally { vi.useRealTimers() }
   })
 })
