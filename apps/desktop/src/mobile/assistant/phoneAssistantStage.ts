@@ -34,7 +34,8 @@ export function phoneAssistantStage(input: {
   // 标记读到了、通讯录里还没有那一位 = 还在读(开通刚建好它),❌ 说「没有」。
   if (identity.state === 'unknown' || (identity.state === 'value' && identity.value.agentId)) return { stage: 'identity', state: 'loading' }
   // 读不到 ≠ 没有它:如实说读不到,❌ 把人送进「安家」再建一个。
-  if (identity.state === 'error') return { stage: 'identity', state: 'unreadable' }
+  // A kept "none" whose read again failed is not known now either.
+  if (identity.state === 'error' || identity.error) return { stage: 'identity', state: 'unreadable' }
   if (!snapshot) {
     if (input.cloudLoadFailed) return { stage: 'cloud-unreadable' }
     if (!input.cloudKnown) return { stage: 'cloud-loading' }

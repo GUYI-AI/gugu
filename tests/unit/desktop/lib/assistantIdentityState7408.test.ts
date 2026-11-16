@@ -27,4 +27,8 @@ describe('assistantIdentityState', () => {
     expect(assistantIdentityState(false, { state: 'error' as const, error: new Error('boom') }, 'ready')).toBe('unreadable')
     expect(assistantIdentityState(false, value(null), 'ready')).toBe('none')
   })
+
+  it('E-1: "none" kept from an earlier read whose read again failed: unreadable (❌ none, sending the person to set up another)', () => {
+    expect(assistantIdentityState(false, { ...value(null), error: new Error('offline') }, 'ready')).toBe('unreadable')
+  })
 })

@@ -17,15 +17,15 @@ export type MyAssistant = { agentId: string | null; provisionDeviceId: string | 
 const log = rendererLogger('assistant/identity')
 
 async function readMyAssistant(owner: string): Promise<MyAssistant> {
-  const { data, error } = await identityDb
+  const { data, error, status } = await identityDb
     .from('agent_provisions')
     .select(ASSISTANT_PROVISION_SELECT)
     .eq('member_key', 'assistant')
     .eq('owner_user_id', owner)
   if (error) {
-    // 读不到 ≠ 没有助理:读数就是错误,由看的一方说「读不到」。
+    // 读不到 ≠ 没有助理:读数就是错误,由看的一方说「读不到」。带着 code / status(瞬时的还是固定的,看的一方据此说)。
     log.error({ error: error.message }, 'read assistant provision failed')
-    throw new Error(error.message)
+    throw Object.assign(new Error(error.message), { code: error.code, status })
   }
   const pick = pickAssistant((data ?? []) as AssistantProvisionRow[])
   return { agentId: pick?.agentId ?? null, provisionDeviceId: pick?.deviceId ?? null }
@@ -45,6 +45,8 @@ export const myAssistant = replica({
   read: (owner: string): Promise<MyAssistant> => readMyAssistant(owner),
   fresh: 60_000,
   refreshOnFocus: true,
+  // A network blip is not an answer: asked twice more before the reading is an error (the panel path did the same).
+  retry: 2,
   // `{agentId, provisionDeviceId}`: two uuids, ~120 B.
   persist: { maxBytes: 256, maxEntries: 1 },
   // One bus listener per account while anything shows it. The bus carries no provision event; only its resubscription
@@ -95,5 +97,6 @@ export function assistantIdentityState(
   if (mine.state === 'unknown') return 'loading'
   if (mine.state === 'error') return 'unreadable'
   if (mine.value.agentId) return contactsStatus === 'error' ? 'unreadable' : 'loading'
-  return 'none'
+  // "None" kept from an earlier read whose read again failed: not known now (another device may have made one since).
+  return mine.error ? 'unreadable' : 'none'
 }

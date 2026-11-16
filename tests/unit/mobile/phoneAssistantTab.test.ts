@@ -58,4 +58,9 @@ describe('phoneAssistantStage', () => {
     expect(phoneAssistantStage({ ...open, identity: { state: 'error' as const, error: new Error('network') } })).toEqual({ stage: 'identity', state: 'unreadable' })
     expect(phoneAssistantStage({ ...base, identity: { state: 'error' as const, error: new Error('network') } })).toEqual({ stage: 'identity', state: 'unreadable' })
   })
+
+  it('E-1: "none" kept from an earlier read whose read again failed is unreadable (❌ onboarding to set up a second one)', () => {
+    const open = { ...base, cloudKnown: true, snapshot: snapshot('awake') }
+    expect(phoneAssistantStage({ ...open, identity: { ...NONE, error: new Error('offline') } })).toEqual({ stage: 'identity', state: 'unreadable' })
+  })
 })
