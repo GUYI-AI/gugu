@@ -14,7 +14,7 @@ import '@/mobile/phone-shell.css'
 import '@/mobile/agent-watch/agent-watch.css'
 import '@/mobile/agent-watch/phone-conversation.css'
 
-it('keeps edge handles on the real phone body and the floating picture above the shared composer', async () => {
+it('keeps the floating picture above the shared composer through header hiding and enlargement', async () => {
   await page.viewport(390, 844)
   const { createChatContext, createChatState } = await loadChatUi()
   const context = createChatContext({ locale: () => 'en-US' })
@@ -55,11 +55,11 @@ it('keeps edge handles on the real phone body and the floating picture above the
     expect(layout.left).toBe(body.left)
     expect(layout.right).toBe(body.right)
     expect(window().getBoundingClientRect().bottom).toBeLessThanOrEqual(composer().getBoundingClientRect().top - 15)
-    await act(async () => model.dispatch({ type: 'dock', edge: 'right', ratio: 1 }))
-    const handle = host.querySelector<HTMLElement>('[data-phone-watch-handle]')!.getBoundingClientRect()
-    expect(handle.right).toBe(body.right)
-    expect(handle.bottom).toBeLessThanOrEqual(composer().getBoundingClientRect().top)
-    await act(async () => model.dispatch({ type: 'undock' }))
+    await act(async () => model.dispatch({ type: 'toggle-window' }))
+    expect(window().hidden).toBe(true)
+    expect(host.querySelector('[data-phone-watch-handle]')).toBeNull()
+    await act(async () => model.dispatch({ type: 'toggle-window' }))
+    expect(window().hidden).toBe(false)
     await act(async () => model.dispatch({ type: 'enlarge' }))
     await until('chat flows below the enlarged picture', () => host.querySelector('[data-chat-scroll]')!.getBoundingClientRect().top >= window().getBoundingClientRect().bottom)
     expect(composer().getBoundingClientRect().bottom).toBeLessThanOrEqual(body.bottom)
