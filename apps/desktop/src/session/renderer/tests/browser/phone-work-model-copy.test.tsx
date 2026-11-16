@@ -26,7 +26,7 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const host = vi.hoisted(() => ({ set: vi.fn(), supported: true, fast: 'off', effort: 'medium', selected: 'native-model' }))
+const host = vi.hoisted(() => ({ set: vi.fn(), supported: true, fast: 'off', effort: 'medium', selected: 'native-model', canSwitch: true }))
 vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
   ...await original<typeof import('@/components/assistant/assistantTimelineClient')>(),
   conversationOptionClient: () => {
@@ -35,7 +35,10 @@ vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
       model: { selected: host.selected, available: [{ id: 'native-model', name: 'GPT-6.1-Sol', description: 'Latest workhorse model for coding and everyday work.' }, { id: 'sonnet', name: 'Alternative native model', description: 'A second advertised model with the original alias.' }] },
       effort: { selected: host.effort, available: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'high', name: 'High' }] },
       fast: host.supported ? { selected: host.fast, available: [{ id: 'off', name: 'Off' }, { id: 'on', name: 'On' }] } : null,
-      modelMenu: { agentName: 'Codex', conversationSelection: null, platformModels: [], ownCatalog: null, ownAuth: null },
+      modelMenu: { agentName: 'Codex', conversationSelection: null, platformModels: [], ownCatalog: null, ownAuth: null,
+        // Exact Codex metadata contract; omitting it correctly disables live changes.
+        ...(host.canSwitch ? { liveSetting: { channel: 'provider-thread-settings', ack: 'ack-read-back', busy: 'queue-next-turn', reloadRequired: false, recovery: 'none' } } : {}),
+      },
     })
     return { read: async () => read(), set: async (dimension: string, value: string) => {
       host.set(dimension, value)
@@ -93,7 +96,7 @@ afterEach(() => {
   document.body.className = bodyClass
   if (bodyStyle === null) document.body.removeAttribute('style')
   else document.body.setAttribute('style', bodyStyle)
-  host.set.mockClear(); host.supported = true; host.fast = 'off'; host.effort = 'medium'; host.selected = 'native-model'
+  host.set.mockClear(); host.supported = true; host.fast = 'off'; host.effort = 'medium'; host.selected = 'native-model'; host.canSwitch = true
 })
 
 // Only the external option-client response is a fixture; the conversation,
@@ -119,4 +122,14 @@ it.each(['light', 'dark'] as const)('%s: existing session Work separates model c
   await until('host response selects the original alias', () => row('sonnet')?.getAttribute('aria-checked') === 'true')
   await page.screenshot({ path: `__screenshots__/owner-phone-regression/B-existing-model-selected-${theme}-320.png` })
   expect(host.set.mock.calls).toEqual([['model', 'sonnet']])
+})
+
+it('keeps an undeclared live model channel disabled with its actual reason', async () => {
+  host.canSwitch = false
+  await mount('dark')
+  await page.elementLocator(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
+  const row = document.querySelector<HTMLButtonElement>('[data-dimension="model"][data-option-id="native-model"]')!
+  await until('undeclared live channel is disabled', () => row?.disabled === true)
+  expect(row.querySelector('.gg-aw-choice-desc')?.textContent).toBe(translateSessionMessage('chat.modelSwitchUnsupportedHint'))
+  expect(host.set).not.toHaveBeenCalled()
 })
