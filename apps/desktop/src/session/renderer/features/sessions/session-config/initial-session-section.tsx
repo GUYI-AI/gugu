@@ -81,7 +81,7 @@ import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
-import { useAgents } from '@renderer/lib/stores/use-agents';
+import { agentsAnswerAwaited, useAgents } from '@renderer/lib/stores/use-agents';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
 import {
@@ -1377,7 +1377,7 @@ export function InitialSessionField({
   const remoteCreateForActions = remoteHost !== null;
   // The agent list or this box's choice not read yet: the agent trigger holds its place (❌ "Agent", then a name).
   // #6264 a machine not connected is not asked: nothing is held for it (why it is unreachable is the machine's notice).
-  const agentOptionsLoading = !state.providerKnown && agentsReading.state !== 'error' && remoteHost?.online !== false;
+  const agentOptionsLoading = !state.providerKnown && agentsAnswerAwaited(agentsReading, remoteHost);
   const { byEngine: agentCreationToolsByEngine, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
   const selectedAgentName = composerOwnTierAgentName(agents, state.provider);
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。

@@ -22,16 +22,17 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
 vi.mock('./use-agent-auth-status', () => ({ useAgentAuthStatus: () => ({ auth: null }) }));
 
 import { followRendererSession, queryClient as client } from '@/lib/replica';
-import { useAgents } from './use-agents';
+import { agentsAnswerAwaited, useAgents } from './use-agents';
 import { useHarnessModelCatalog } from './use-harness-model-catalog';
 import { useHarnessModelCredential } from './use-harness-model-credential';
 
-let seen: { agents: unknown; catalog: string; credential: string | null } | null = null;
+let seen: { agents: unknown; awaited: boolean; catalog: string; credential: string | null } | null = null;
 function Probe() {
   const agents = useAgents();
   const catalog = useHarnessModelCatalog('claude', 'acp');
   const credential = useHarnessModelCredential('claude', 'opus');
-  seen = { agents, catalog: catalog.state.kind, credential };
+  // What the new-task box holds a place for (initial-session-section `agentOptionsLoading`).
+  seen = { agents, awaited: agentsAnswerAwaited(agents as never, mocks.host.remote), catalog: catalog.state.kind, credential };
   return null;
 }
 
@@ -72,6 +73,8 @@ describe('新建框跟着那台机器连没连上去问', () => {
     expect(mocks.modelCatalog).not.toHaveBeenCalled();
     expect(mocks.modelCredential).not.toHaveBeenCalled();
     expect(seen?.agents).toEqual({ state: 'unknown' });
+    // Unknown, but not asked: ❌ 「正在读取」.
+    expect(seen?.awaited).toBe(false);
   });
 
   it('连上那一刻:自己去取,取的时候说「正在读取」,取到就是那台机器的', async () => {
@@ -82,6 +85,7 @@ describe('新建框跟着那台机器连没连上去问', () => {
     mocks.modelCredential.mockResolvedValue({ success: true, data: 'credentialed' });
     await render(true);
     expect(seen?.agents).toEqual({ state: 'unknown' });
+    expect(seen?.awaited).toBe(true);
     await act(async () => answer([{ id: 'claude' }]));
     await settle();
     expect(seen?.agents).toMatchObject({ state: 'value', value: [{ id: 'claude' }] });

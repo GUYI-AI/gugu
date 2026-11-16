@@ -23,6 +23,14 @@ export function useAgents(): Reading<AgentPayload[]> {
 }
 
 /**
+ * Whether the agent list will answer here (a place is held for it): not failed, and its machine connected. #6264 a machine
+ * not connected is not asked, so nothing is held for it (why it is unreachable is the machine's notice).
+ */
+export function agentsAnswerAwaited(reading: Reading<AgentPayload[]>, remote: { online: boolean } | null): boolean {
+  return reading.state !== 'error' && remote?.online !== false;
+}
+
+/**
  * 资源库 →「智能体」那张列表 —— 与 composer 同一份上架名单（#6099）。
  * #6264 资源库选了别的机器时,问的是那台机器(见 features/library/library-host.ts);离线时不问,手上有上次的就照旧画。
  */
