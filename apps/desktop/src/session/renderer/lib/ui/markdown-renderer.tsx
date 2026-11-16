@@ -3,7 +3,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import React, { useCallback, useEffect } from 'react';
 import { useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
-import { watchWorkspaceImages, workspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
+import { workspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
 import { Markdown, type MarkdownDensity } from '@/components/markdown/Markdown';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import { ExpandableImage } from './expandable-image';
@@ -34,7 +34,6 @@ const ResolvedImage: React.FC<{
 }> = ({ src, alt, images }) => {
   const path = images.pathOf(src);
   const reading = useReplica(workspaceImage, path ? [images.projectId, images.workspaceId, path] : null);
-  useEffect(() => (path ? watchWorkspaceImages() : undefined), [path]);
   const failed = reading.state === 'error' ? reading.error : null;
   useEffect(() => {
     if (failed) rendererLogger('markdown/image').error({ error: failed }, 'image resolution failed');

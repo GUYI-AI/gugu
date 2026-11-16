@@ -19,7 +19,7 @@ vi.mock('@renderer/lib/ipc', () => ({
 }));
 
 const { followRendererSession, queryClient } = await import('@/lib/replica');
-const { machineListeningPorts, remoteForLocalPort, remotePortForwards, watchRemotePorts } = await import('./remote-ports-replicas');
+const { machineListeningPorts, holdRemotePorts, remoteForLocalPort, remotePortForwards } = await import('./remote-ports-replicas');
 
 const table = (localPort: number) => ({ success: true, data: { forwards: [{ remotePort: 5173, localPort, phase: 'ready', holders: ['manual'] }], detected: [] } });
 
@@ -42,15 +42,24 @@ describe('remote port forwards', () => {
 
   it('main saying the table changed reads it again, one subscription per machine', async () => {
     mocks.list.mockResolvedValueOnce(table(15173)).mockResolvedValueOnce(table(25173));
-    const stopA = watchRemotePorts('dev-1');
-    const stopB = watchRemotePorts('dev-1');
-    await remotePortForwards.fetch('dev-1');
+    const stopA = holdRemotePorts('dev-1');
+    const stopB = holdRemotePorts('dev-1');
+    await vi.waitFor(() => expect(remoteForLocalPort('dev-1', 15173)).toBe(5173));
     mocks.listeners.get('dev-1')!();
     await vi.waitFor(() => expect(remoteForLocalPort('dev-1', 25173)).toBe(5173));
     stopA();
     expect(mocks.listeners.has('dev-1')).toBe(true);
     stopB();
     expect(mocks.listeners.has('dev-1')).toBe(false);
+  });
+
+  it('a table kept from earlier is read again when it is followed again (changes made while nobody listened)', async () => {
+    mocks.list.mockResolvedValueOnce(table(15173)).mockResolvedValueOnce(table(25173));
+    holdRemotePorts('dev-1')();
+    await vi.waitFor(() => expect(remoteForLocalPort('dev-1', 15173)).toBe(5173));
+    const stop = holdRemotePorts('dev-1');
+    await vi.waitFor(() => expect(remoteForLocalPort('dev-1', 25173)).toBe(5173));
+    stop();
   });
 
   it('a failed listing is an error, ❌ an empty table', async () => {

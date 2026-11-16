@@ -4,7 +4,11 @@ import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { remotePortsChangedChannel, type RemotePortsSnapshot } from '@shared/remote-ports';
 import type { SessionpageListeningPort } from '@gugu/session-core/session-record/contract';
 
-/** The ports this computer forwards for a machine (main's table) and the ones found in its output. Pushed by main. */
+/**
+ * The ports this computer forwards for a machine (main's table) and the ones found in its output. Pushed by main: one
+ * subscription per machine while the ports tab or a browser pane (`hold`) shows it; a table kept from earlier is read
+ * again when it opens (changes made while nobody watched).
+ */
 export const remotePortForwards = replica({
   name: 'remotePortForwards',
   scope: 'account',
@@ -15,6 +19,14 @@ export const remotePortForwards = replica({
     return result.data;
   },
   fresh: Infinity,
+  watch: {
+    group: (deviceId) => deviceId,
+    start: (_owner, deviceId) => events.on(remotePortsChangedChannel, () => {
+      // Read even where no surface subscribes (the browser pane's address bar looks forwards up with `peek`).
+      void remotePortForwards.refresh(deviceId).then(() => remotePortForwards.prefetch(deviceId));
+      void machineListeningPorts.refresh(deviceId);
+    }, deviceId),
+  },
 });
 
 /** What programs listen on that machine right now: asked each time the ports tab opens or the table changes. */
@@ -30,35 +42,11 @@ export const machineListeningPorts = replica({
   fresh: 0,
 });
 
-// One subscription per machine however many tabs and browser panes show it.
-const watches = new Map<string, { users: number; off: () => void }>();
-
-/** Follow a machine's forwards while something shows them; returns stop. */
-export function watchRemotePorts(deviceId: string): () => void {
-  let entry = watches.get(deviceId);
-  if (!entry) {
-    // Read now even where no surface subscribes (the browser pane's address bar looks forwards up with `peek`).
-    const readForwards = () => { void remotePortForwards.refresh(deviceId).then(() => remotePortForwards.prefetch(deviceId)); };
-    const off = events.on(remotePortsChangedChannel, () => {
-      readForwards();
-      void machineListeningPorts.refresh(deviceId);
-    }, deviceId);
-    // A table kept from earlier: changes made while nobody watched are read again now; none yet: read it.
-    if (remotePortForwards.peek(deviceId).state === 'value') readForwards();
-    else void remotePortForwards.prefetch(deviceId);
-    entry = { users: 0, off };
-    watches.set(deviceId, entry);
-  }
-  const active = entry;
-  active.users += 1;
-  let stopped = false;
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    if (--active.users > 0) return;
-    active.off();
-    watches.delete(deviceId);
-  };
+/** Follow a machine's forwards for the address bar (shows nothing itself): the table is read now and kept current; returns stop. */
+export function holdRemotePorts(deviceId: string): () => void {
+  const release = remotePortForwards.hold(deviceId);
+  void remotePortForwards.prefetch(deviceId);
+  return release;
 }
 
 /** The machine's port a local forward stands for (one-moment, for the address bar); not read yet = none known. */

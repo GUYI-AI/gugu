@@ -4,7 +4,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { copyExternalLink } from '@renderer/lib/open-external-link';
 import { Copy, Globe, RefreshCw, Unplug, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import type { TabContentProps } from '@renderer/features/tabs/core/tab-provider';
@@ -19,7 +19,7 @@ import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { MANUAL_PORT_HOLDER } from '@shared/remote-ports';
-import { machineListeningPorts, remotePortForwards, watchRemotePorts } from './remote-ports-replicas';
+import { machineListeningPorts, remotePortForwards } from './remote-ports-replicas';
 import { remoteHostsStore } from '../remote-hosts-store';
 import { remotePortFailureText } from './remote-page-copy';
 import { mergePortRows, parsePortInput, type RemotePortRow } from './remote-ports-model';
@@ -69,9 +69,6 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
   const [draft, setDraft] = useState('');
   const [draftError, setDraftError] = useState<string | null>(null);
   const [forwarding, setForwarding] = useState(false);
-
-  // Main says when the table changes; one subscription per machine (remote-ports-replicas.ts).
-  useEffect(() => watchRemotePorts(ctx.deviceId), [ctx.deviceId]);
 
   const refresh = () => {
     void remotePortForwards.refresh(ctx.deviceId);
