@@ -1,5 +1,4 @@
 import { useReplica, type Reading } from '@/lib/replica';
-import { queryView } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { AgentIconAsset, AgentPayload } from '@shared/core/agents/agent-payload';
 import { agentIcons, agentMetadata, agentsMetadata, managementAgent, managementAgents } from './agent-replicas';
@@ -29,14 +28,13 @@ export function useAgents(): Reading<AgentPayload[]> {
 export function useManagementAgents() {
   const { machine, online } = useHostMachine();
   const reading = useReplica(managementAgents, [machine], { read: online });
-  // The library pages read the projected fields (`queryView`); `reading` is the three states.
-  return { ...queryView(reading), isLoading: reading.state === 'unknown', reading, refetch: () => managementAgents.refresh(machine) };
+  return { reading, refetch: () => managementAgents.refresh(machine) };
 }
 
 /** One registered agent of this computer. */
 export function useAgent(id: string) {
   const reading = useReplica(agentMetadata, [id]);
-  return { ...queryView(reading), reading, refetch: () => agentMetadata.refresh(id) };
+  return { reading, refetch: () => agentMetadata.refresh(id) };
 }
 
 /**
@@ -51,7 +49,7 @@ export function useManagementAgent(id: string) {
   const reading: Reading<AgentPayload | null> = detail.state !== 'value' && row
     ? { state: 'value', value: row, stale: true, error: detail.state === 'error' ? detail.error : null }
     : detail;
-  return { ...queryView(reading), reading };
+  return reading;
 }
 
 /**

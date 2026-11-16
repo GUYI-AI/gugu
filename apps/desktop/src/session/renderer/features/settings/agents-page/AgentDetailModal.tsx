@@ -36,7 +36,8 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
   onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
-  const { data: agentPayload } = useManagementAgent(agentId);
+  const detail = useManagementAgent(agentId);
+  const agentPayload = detail.state === 'value' ? detail.value : undefined;
   // 有「连接」一节的家都是同一种样子(#2507):与 Claude / Codex 一样的卡头与固定高度的内容。
   const compact = agentOffersConnections(agentPayload);
   /**

@@ -54,10 +54,11 @@ export function useMcpLibrary() {
   const list = useReplica(mcpLibraryServers, [host.key], { read: reachable });
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
   const provided = useReplica(mcpProvided, [host.key], { read: reachable });
-  const agents = useManagementAgents();
+  const agents = useManagementAgents().reading;
+  // @@@reading-default(paired) - while the agent list is not known `isLoading` is true and the view draws no groups (nor offers "add", where `harnessNames` reads it)
   const installed = useMemo(
-    () => (agents.data ?? []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
-    [agents.data]
+    () => (agents.state === 'value' ? agents.value : []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
+    [agents]
   );
   const invalidate = () => void mcpLibraryServers.refresh(host.key);
   const add = useMutation({ mutationFn: (servers: LibraryMcpServer[]) => host.mcpLibrary.add(servers), onSettled: invalidate }, queryClient);
@@ -117,8 +118,8 @@ export function useMcpLibrary() {
       return names;
     },
     // 各家那几组只等「装了哪几家」(段头要画出来);各家的配置等展开才读。
-    isLoading: (reachable && (list.state === 'unknown' || provided.state === 'unknown')) || agents.isLoading,
-    error: (list.state === 'error' ? list.error : null) ?? agents.error ?? (provided.state === 'error' ? provided.error : null),
+    isLoading: (reachable && (list.state === 'unknown' || provided.state === 'unknown')) || agents.state === 'unknown',
+    error: (list.state === 'error' ? list.error : null) ?? (agents.state === 'error' || agents.state === 'value' ? agents.error : null) ?? (provided.state === 'error' ? provided.error : null),
     hasData: list.state === 'value',
     reload: () => {
       void mcpLibraryServers.refresh(host.key);

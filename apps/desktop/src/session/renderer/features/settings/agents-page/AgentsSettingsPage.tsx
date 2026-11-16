@@ -41,7 +41,7 @@ export function AgentsSettingsPage({
    * 手上有它上次的读数就照旧画(离线时只读);一份都没有就只有这句话 —— ❌ 画一句「这里还没有智能体」。
    */
   const notice = deviceScopeNotice(
-    { remote: host.remote, error: agents.error, hasData: !!agents.data, now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
+    { remote: host.remote, error: agents.reading.state === 'error' || agents.reading.state === 'value' ? agents.reading.error : null, hasData: agents.reading.state === 'value', now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
     translate
   );
 
@@ -82,9 +82,9 @@ export function AgentsSettingsPage({
         </div>
       </PageHeader>
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void agents.refetch()} />}
-      {agents.isLoading ? (
+      {agents.reading.state === 'unknown' ? (
         <PageLoading />
-      ) : notice && !agents.data ? null : (
+      ) : notice && agents.reading.state !== 'value' ? null : (
         <div className="flex flex-col gap-3">
           <CliAgentsList
             searchQuery={searchQuery}

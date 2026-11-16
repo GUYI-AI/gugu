@@ -51,7 +51,7 @@ export const InstallSection = observer(function InstallSection({
    * 各下载源的「最新版本」。这一趟请求**本来就要发**(高级那一项要把版本列出来),
    * 主进程顺手给它们计时 —— 装的时候按「谁先正确答出来」选源(#6157 的自动选源)。
    */
-  const sourceVersionsQuery = useInstallSourceVersions(agentId, hasRegistryOptions);
+  const sourceVersions = useInstallSourceVersions(agentId, hasRegistryOptions);
 
   const [selectedSource, setSelectedSource] = useState<SelectedSource>(() =>
     liveRefFor(vm.used, vm.installations),
@@ -122,8 +122,8 @@ export const InstallSection = observer(function InstallSection({
   );
 
   const registries = useMemo(
-    () => registryRows(installOptions, sourceVersionsQuery.data, sourceVersionsQuery.isPending),
-    [installOptions, sourceVersionsQuery.data, sourceVersionsQuery.isPending],
+    () => registryRows(installOptions, sourceVersions.state === 'value' ? sourceVersions.value : undefined, sourceVersions.state === 'unknown'),
+    [installOptions, sourceVersions],
   );
 
   /** 状态判据与图标网格**同一个函数** —— ❌ 两处各算一遍就是 #6101 那格 bug 的形状。 */

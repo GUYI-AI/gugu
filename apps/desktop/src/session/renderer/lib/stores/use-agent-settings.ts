@@ -1,6 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
 import { useReplica } from '@/lib/replica';
-import { queryView } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { agentSettings } from './agent-replicas';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
@@ -32,7 +31,6 @@ export function useAgentSettings(id: string) {
 
   const data = reading.state === 'value' ? reading.value : null;
   return {
-    ...queryView(reading),
     isLoading: reading.state === 'unknown',
     value: data?.value,
     defaults: data?.defaults,

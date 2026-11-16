@@ -97,7 +97,8 @@ export function AgentSignInModal({ providerId, providerName, steps, remote, conn
   const { translate } = useSessionMessages();
   const [index, setIndex] = useState(0);
   // 这一步的程序声明了不止一种登录方法(CodeBuddy 国际版 / 中国版)时,先让用户挑;挑过的按步记着。
-  const agent = useAgent(providerId).data;
+  const agentReading = useAgent(providerId).reading;
+  const agent = agentReading.state === 'value' ? agentReading.value : null;
   const [chosen, setChosen] = useState<Record<number, string>>({});
   // 远端但这家登不了 / 宿主给不了:不起终端,说清楚下一步。
   if (remote && !remote.headless) {

@@ -139,15 +139,15 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     let finish!: (value: unknown) => void;
     agents.getManagement.mockRejectedValueOnce(new Error('temporary host failure')).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     let detail!: ReturnType<typeof useManagementAgent>;
-    function Detail() { detail = useManagementAgent('claude'); return React.createElement('p', null, detail.data?.name); }
+    function Detail() { detail = useManagementAgent('claude'); return React.createElement('p', null, detail.state === 'value' ? detail.value?.name : null); }
     await act(async () => root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(LibraryHostProvider, { value: remoteHost(agents, true) }, React.createElement(Detail)))));
-    expect(detail.data?.name).toBe('Cached CLI');
+    expect(detail.state === 'value' && detail.value?.name).toBe('Cached CLI');
     expect(dom.window.document.body.textContent).toContain('Cached CLI');
     await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
     expect(agents.getManagement).toHaveBeenCalledTimes(2);
-    expect(detail.data?.name).toBe('Cached CLI');
+    expect(detail.state === 'value' && detail.value?.name).toBe('Cached CLI');
     await act(async () => { finish({ ...cached, name: 'Fresh CLI' }); await vi.advanceTimersByTimeAsync(50); });
-    expect(detail.data?.name).toBe('Fresh CLI');
+    expect(detail.state === 'value' && detail.value?.name).toBe('Fresh CLI');
     expect(dom.window.document.body.textContent).toContain('Fresh CLI');
   });
 
@@ -159,7 +159,8 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     expect(agents.listAgentInstallationStatus).toHaveBeenCalled();
     expect(local.listManagement).not.toHaveBeenCalled();
     expect(local.listAgentInstallationStatus).not.toHaveBeenCalled();
-    expect(api?.list.data?.map((a) => [a.id, a.reading])).toEqual([['claude', 'installed']]);
+    expect(api?.list.reading).toMatchObject({ state: 'value' });
+    expect(api?.list.reading.state === 'value' && api.list.reading.value.map((a) => [a.id, a.reading])).toEqual([['claude', 'installed']]);
   });
 
   it('点「安装」装在那台机器上;进行中只挂在那台机器的网格上', async () => {

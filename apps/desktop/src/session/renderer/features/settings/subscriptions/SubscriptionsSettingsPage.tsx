@@ -74,8 +74,9 @@ function SubscriptionRefresh() {
 
 function SubscriptionList({ machine }: { machine: string | null }) {
   const { translate } = useSessionMessages();
-  const { data: agents, error, isPending } = useManagementAgents();
-  const installed = useMemo(() => (agents ?? []).filter(isInstalledAgent).sort(compareAgents), [agents]);
+  const { reading } = useManagementAgents();
+  const error = reading.state === 'error' || reading.state === 'value' ? reading.error : null;
+  const installed = useMemo(() => (reading.state === 'value' ? reading.value.filter(isInstalledAgent).sort(compareAgents) : null), [reading]);
   return (
     <SettingsGroup
       footer={<SettingsNote>{translate('subscriptions.connections.hint')}</SettingsNote>}
@@ -86,10 +87,10 @@ function SubscriptionList({ machine }: { machine: string | null }) {
           {translate('subscriptions.loadFailed', { message: errorText(error) })}
         </SettingsNote>
       )}
-      {!isPending && !error && installed.length === 0 && (
+      {installed !== null && !error && installed.length === 0 && (
         <SettingsNote>{translate('subscriptions.empty')}</SettingsNote>
       )}
-      {installed.map((agent) => (
+      {installed?.map((agent) => (
         <SubscriptionRow key={agent.id} agent={agent} machine={machine} />
       ))}
     </SettingsGroup>

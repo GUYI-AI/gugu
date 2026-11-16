@@ -15,7 +15,7 @@ import {
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useLibraryHost, type LibraryAgentsRpc } from '@renderer/features/library/library-host';
-import { queryView, refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import type {
   AgentInstallationStatus,
   AgentInstallError,
@@ -26,7 +26,6 @@ import type {
   HostDependencySelection,
   Installation,
   InstallMethod,
-  InstallSourceVersions,
   SelectedSource,
 } from '@shared/core/agents/agent-payload';
 import { useAgents } from './use-agents';
@@ -40,7 +39,7 @@ function opKey(op: 'install' | 'update' | 'uninstall', hostKey: string) {
 export function useInstallSourceVersions(id: string, enabled: boolean) {
   const remote = useLibraryHost().remote;
   const reading = useReplica(installSourceVersions, enabled ? [remote?.deviceId ?? null, id] : null, { read: remote?.online !== false });
-  return queryView<InstallSourceVersions>(reading);
+  return reading;
 }
 
 /**
@@ -341,7 +340,6 @@ export function useAgentInstallationStatuses() {
   });
 
   return {
-    ...queryView(reading),
     reading,
     install: installMutation.mutate,
     installAsync: installMutation.mutateAsync,
@@ -428,7 +426,7 @@ export function useAgentInstallationStatus(
   const { translate } = useSessionMessages();
   const host = useLibraryHost();
   const {
-    data: statuses,
+    reading: statusesReading,
     install: installMutate,
     update: updateMutate,
     uninstall: uninstallMutate,
@@ -465,7 +463,8 @@ export function useAgentInstallationStatus(
   const isUninstalling = !!uninstallVar;
   const uninstallingMethod = uninstallVar?.method;
 
-  const statusEntry = statuses?.find((s) => s.id === id) ?? null;
+  // Not read yet (or not readable): the library row's own view of this agent stands in (`agentPayload`) until it is.
+  const statusEntry = statusesReading.state === 'value' ? statusesReading.value.find((s) => s.id === id) ?? null : null;
 
   const installations = useMemo<Installation[]>(() => {
     if (statusEntry) return statusEntry.installations;
