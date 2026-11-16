@@ -34,7 +34,12 @@ const close = () => provider.onBeforeClose!(
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // A real surface binds before it reports edits; an unbound empty surface is pruned.
+  extensionSurfaceStore.setWebContentsId(sessionId, tabId, pageId);
   extensionSurfaceStore.reportDirty(sessionId, tabId, true, pageId);
+  expect(extensionSurfaceStore.state(sessionId, tabId)).toMatchObject({
+    webContentsId: pageId, dirtyIn: pageId, dirtyReports: 1,
+  });
 });
 afterEach(() => extensionSurfaceStore.forget(sessionId, tabId));
 
