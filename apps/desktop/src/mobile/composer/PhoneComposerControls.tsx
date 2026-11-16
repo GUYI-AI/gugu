@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { X } from '@/lib/icons'
+import { ChevronDown, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import { PhoneViewportContext } from '../usePhoneViewport'
@@ -36,14 +36,16 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
   return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined} inert={editing || undefined} aria-hidden={editing || undefined}>{children}</div>
 }
 
-export function PhoneComposerControl({ label, icon, active, dot, disabled, onClick, testId, buttonRef }: {
+export function PhoneComposerControl({ label, icon, active, dot, disabled, onClick, testId, buttonRef, menuExpanded }: {
   label: string; icon?: ReactNode; active?: boolean; dot?: boolean; disabled?: boolean
-  onClick: () => void; testId: string; buttonRef?: RefObject<HTMLButtonElement | null>
+  onClick: () => void; testId: string; buttonRef?: RefObject<HTMLButtonElement | null>; menuExpanded?: boolean
 }) {
   return <Button ref={buttonRef} variant="ghost" className="gg-phone-composer-control gap-1" disabled={disabled}
+    aria-haspopup={menuExpanded === undefined ? undefined : 'dialog'} aria-expanded={menuExpanded}
     data-testid={testId} data-active={active || undefined} onPointerDown={preserveComposerFocus}
     onMouseDown={preserveComposerFocus} onClick={onClick}>
     {icon}<span className="gg-phone-composer-control-label">{label}</span>
+    {menuExpanded !== undefined && <ChevronDown aria-hidden />}
     {dot && <span className="gg-phone-composer-control-dot" />}
   </Button>
 }

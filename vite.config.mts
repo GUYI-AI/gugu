@@ -448,7 +448,15 @@ async function buildAppRuntime(outDir: string): Promise<void> {
   await esbuild.build({ ...common, entryPoints: [src('gugu-entry.ts')], outfile: resolve(outDir, 'gugu.js'), format: 'iife' })
   // The host's look, which gugu.js writes into every App page right after itself (app-runtime/ui): ui.js, and ui.css
   // = the palette app-palette.mjs resolves from this build's tokens.css, then ui/ui.css with its fonts beside it.
-  await esbuild.build({ ...common, entryPoints: [src('ui/ui-entry.ts')], outfile: resolve(outDir, 'ui.js'), format: 'iife' })
+  // `?raw` as vite reads it (the tests import ui-entry through vite): the file's text, here the shared file-tile.css.
+  const raw: import('esbuild').Plugin = {
+    name: 'raw',
+    setup(build) {
+      build.onResolve({ filter: /\?raw$/ }, async ({ path, kind, resolveDir }) => ({ path: (await build.resolve(path.slice(0, -4), { kind, resolveDir })).path, namespace: 'raw' }))
+      build.onLoad({ filter: /.*/, namespace: 'raw' }, ({ path }) => ({ contents: readFileSync(path, 'utf-8'), loader: 'text' }))
+    },
+  }
+  await esbuild.build({ ...common, entryPoints: [src('ui/ui-entry.ts')], outfile: resolve(outDir, 'ui.js'), format: 'iife', plugins: [raw] })
   await esbuild.build({
     ...common,
     entryPoints: [src('ui/ui.css')],

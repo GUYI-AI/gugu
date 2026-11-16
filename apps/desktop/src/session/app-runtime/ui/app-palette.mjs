@@ -44,7 +44,7 @@ export const APP_PALETTE_COLORS = [
   ['--em-danger', 'var(--danger)'],
   ['--em-warn', 'var(--warn)'],
   // White text on the saturated red — the same --color-white the host's ui/Button danger uses (#7333). Not --primary-fg:
-  // that is the inverted ink, the surface colour in dark (#181818), and would turn the red button's label dark grey.
+  // that is the inverted ink, the surface colour in dark (#0f0f0f), and would turn the red button's label dark grey.
   ['--em-color-white', 'var(--color-white)'],
   ['--em-background-destructive', 'var(--danger-tint)'],
   ['--em-foreground-success', 'var(--ok-fg)'],
