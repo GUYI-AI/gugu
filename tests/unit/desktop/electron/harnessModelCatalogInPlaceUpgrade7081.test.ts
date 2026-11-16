@@ -172,3 +172,36 @@ describe('#7081 npm / brew 原地覆盖', () => {
     expect(probes).toBe(2)
   })
 })
+
+describe('gugu itself is updated', () => {
+  it('a catalog read by the previous gugu build is not reused', async () => {
+    const cli = join(dir, 'cli.js')
+    await writeFile(cli, 'Haiku 4.5')
+    spawnContext.cli = cli
+    const host = join(dir, 'gugu.exe')
+    await writeFile(host, 'build 1')
+    const yesterday = new Date(Date.now() - 24 * 60 * 60_000)
+    await utimes(host, yesterday, yesterday)
+    const realExecPath = process.execPath
+    const bridge = join(dir, 'bridge.mjs')
+    setAcpSpawnResolver(async () => {
+      probes += 1
+      return { command: realExecPath, args: [bridge, spawnContext.cli], env: {} }
+    })
+    const harnessVersion = '2.1.280'
+    try {
+      Object.defineProperty(process, 'execPath', { value: host, configurable: true, writable: true })
+      expect(haikuOf(await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion }))).toBe('Haiku 4.5')
+      await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion })
+      expect(probes).toBe(1)
+
+      // The updater replaces the executable at the same path; the harness CLI is untouched.
+      await writeFile(host, 'build 2')
+
+      expect(haikuOf(await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion }))).toBe('Haiku 4.5')
+      expect(probes).toBe(2)
+    } finally {
+      Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true, writable: true })
+    }
+  })
+})

@@ -130,7 +130,10 @@ export async function resolveHarnessSpawnIdentity(
     // 选中的是一把 API Key 连接(#2507):走模型注入的那几家,连接不进这份 env(它随宿主造的模型声明进进程),
     // 但目录照它读 ⇒ 换一把连接就得作废。只在选了 API Key 连接时并进来,其余家的身份与改动前逐字相同。
     const connection = runContext.apiKeyConnection ? { connection: runContext.connectionId ?? null } : {};
-    return JSON.stringify({ cli, file: diskFileStamp(cli), env, ...connection });
+    // `host`: the probe also runs gugu's own code (e.g. the Codex ACP bridge, which decides whether a signed-out
+    // Codex answers authRequired). Updating gugu replaces this executable, so a catalog read by the previous
+    // build stops matching instead of living out its 12 h TTL.
+    return JSON.stringify({ cli, file: diskFileStamp(cli), host: diskFileStamp(process.execPath), env, ...connection });
   } catch {
     return null;
   }
