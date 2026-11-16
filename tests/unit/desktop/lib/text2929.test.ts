@@ -11,3 +11,5 @@ it('keeps escaped Markdown punctuation literal',()=>{expect(markdownPlainText('U
 it('removes balanced Markdown link destinations',()=>{expect(markdownPlainText('see [Function](https://example.test/wiki/Function_(math)) now')).toBe('see Function now');expect(markdownPlainText('before ![plot](images/plot_(1).png) after')).toBe('before  after');expect(markdownPlainText('[Nested](https://example.test/a_(b_(c)))')).toBe('Nested');});
 
 it('respects Markdown fence lengths',()=>{expect(markdownPlainText('before\n~~~~md\nsecret\n~~~\nstill code\n~~~~\nafter')).toBe('before after');expect(markdownPlainText('before\n````md\nsecret\n```\nstill code\n````\nafter')).toBe('before after');expect(markdownPlainText('```literal```')).toBe('```literal```');});
+
+it('highlights original text after lowercase expansion',()=>{const text='İstanbul docs';const ranges=matchRanges(text,'docs');expect(ranges).toEqual([{start:9,end:13}]);expect(text.slice(ranges[0].start,ranges[0].end)).toBe('docs');expect(matchRanges('İx','i')).toEqual([{start:0,end:1}]);expect(matchRanges('ΟΣ','ος')).toEqual([{start:0,end:2}]);expect(matchRanges('a𐐀b','𐐨')).toEqual([{start:1,end:3}]);});

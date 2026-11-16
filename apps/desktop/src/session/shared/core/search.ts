@@ -50,9 +50,17 @@ export type TaskTurnIndexStatus = { state: 'preparing' | 'ready' | 'failed'; don
 /** Where each whitespace-separated piece of the query occurs in text (case-insensitive), merged, for highlighting. */
 export function matchRanges(text: string, query: string): { start: number; end: number }[] {
   const lower = text.toLowerCase();
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let offset = 0;
+  for (const char of text) {
+    const folded = char.toLowerCase();
+    for (let index = 0; index < folded.length; index += 1) { starts.push(offset); ends.push(offset + char.length); }
+    offset += char.length;
+  }
   const ranges: { start: number; end: number }[] = [];
   for (const piece of query.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
-    for (let at = lower.indexOf(piece); at !== -1; at = lower.indexOf(piece, at + piece.length)) ranges.push({ start: at, end: at + piece.length });
+    for (let at = lower.indexOf(piece); at !== -1; at = lower.indexOf(piece, at + piece.length)) ranges.push({ start: starts[at], end: ends[at + piece.length - 1] });
   }
   ranges.sort((a, b) => a.start - b.start);
   const merged: { start: number; end: number }[] = [];
