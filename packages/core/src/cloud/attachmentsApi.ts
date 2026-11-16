@@ -142,18 +142,26 @@ async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string,
       const progress = () => onProgress?.({ loaded: stored + report.reduce((sum, n) => sum + partSize(n), 0) + [...sending.values()].reduce((a, b) => a + b, 0), total: blob.size })
       const queue = [...answer.todo]
       let expired = false
+      const failures: unknown[] = []
       await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, queue.length) }, async () => {
-        for (let part = queue.shift(); part && !expired; part = queue.shift()) {
+        for (let part = queue.shift(); part && !expired && !failures.length; part = queue.shift()) {
           const sent = part
           const start = (sent.n - 1) * plan.part_bytes
-          const status = await retryFileDownload(() => ({ stage: 'oss', url: sent.url }),
-            () => putPart(endpoint, sent, blob.slice(start, start + sent.bytes), loaded => { sending.set(sent.n, loaded); progress() }, signal), signal)
-          sending.delete(sent.n)
-          if (status === 403) { expired = true; return }
-          report.push(sent.n)
-          progress()
+          try {
+            const status = await retryFileDownload(() => ({ stage: 'oss', url: sent.url }),
+              () => putPart(endpoint, sent, blob.slice(start, start + sent.bytes), loaded => { sending.set(sent.n, loaded); progress() }, signal), signal)
+            if (status === 403) { expired = true; return }
+            report.push(sent.n)
+            progress()
+          } catch (error) { failures.push(error) } finally { sending.delete(sent.n) }
         }
       }))
+      if (failures.length) {
+        // The parts that did go up are reported before giving up, so a later attempt does not send them again. That
+        // report failing too changes nothing: the original failure is the one said.
+        if (report.length) await call(endpoint, 'upload-parts', { staging_key: key, done: report }, signal).catch(() => undefined)
+        throw failures[0]
+      }
       // A signature that expired is signed again; one just signed and still refused is a real refusal.
       if (expired && resigned && !report.length) throw new AttachmentsError('upload', 403, 'failed', `storing ${file.name} failed: the storage refused a fresh part signature`)
       resigned = expired

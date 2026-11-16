@@ -142,4 +142,11 @@ describe('multipart uploads from a host that sends signed parts', () => {
     expect(s.calls.filter(c => c.route === 'upload')).toHaveLength(2)
     expect(s.calls.at(-1)?.route).toBe('finish')
   })
+  it('a batch that fails part-way reports the parts that did go up first, so the next attempt does not send them again', async () => {
+    // Parts 1 and 2 are signed together; part 2 is refused for good once, part 1 goes up.
+    const s = server({ refuse: (n, attempt) => n === 2 && attempt === 1 ? 400 : null })
+    await expect(uploadAttachmentBytes(s.endpoint, file(10), scope)).rejects.toMatchObject({ status: 400 })
+    expect(s.calls.filter(c => c.route === 'upload-parts').at(-1)?.body.done).toEqual([1])
+    expect(s.done).toEqual(new Set([1]))
+  })
 })
