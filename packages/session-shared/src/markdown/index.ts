@@ -3,6 +3,7 @@ export {
   draftWithPills,
   fileCiteDraft,
   fileCite,
+  fileLabelParts,
   normalizeWindowsMarkdownFileLinks,
   AT_BARE_PATTERN,
   SLASH_PATTERN

@@ -15,8 +15,7 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { useTheme } from '@session-chat/components/contexts/ThemeContext';
 import { BlockFrame } from '@session-chat/components/engine/block-frame';
-import { MentionAtIcon, MentionFileIcon, MentionIssueIcon, MentionSymbolIcon } from '@session-chat/components/primitives/icons';
-import { glyphIcon } from '@session-chat/components/primitives/icons.css';
+import { FileMark, MentionAtIcon, MentionIssueIcon, MentionSymbolIcon } from '@session-chat/components/primitives/icons';
 import { defineBlock } from '@session-chat/components/rows/markdown/block-def';
 import type { ChatCaches } from '@session-chat/core/caches';
 import { paintHighlight } from '@session-chat/core/highlight/highlighter';
@@ -27,22 +26,20 @@ import { createEffect, createMemo, on, onCleanup, untrack } from 'solid-js';
 import { render } from 'solid-js/web';
 import { applyBodyType, htmlBlockClass, measureHtml } from './layout';
 
-const KIND_ICONS = { file: MentionFileIcon, issue: MentionIssueIcon, symbol: MentionSymbolIcon } as const;
+const KIND_ICONS = { issue: MentionIssueIcon, symbol: MentionSymbolIcon } as const;
 type MentionKind = 'file' | 'issue' | 'symbol' | 'custom';
 
 function hydrateMentionIcons(root: HTMLElement): () => void {
   const disposers: (() => void)[] = [];
   for (const slot of root.querySelectorAll<HTMLElement>('.gg-md-mention-icon')) {
-    const { icon, iconUrl, iconClass } = slot.dataset;
+    const { icon, iconUrl, iconName } = slot.dataset;
     if (icon === 'url' && iconUrl) {
       const img = document.createElement('img');
       img.src = iconUrl;
       img.alt = '';
       slot.appendChild(img);
-    } else if (icon === 'class' && iconClass) {
-      const glyph = document.createElement('i');
-      glyph.className = `${iconClass} ${glyphIcon}`;
-      slot.appendChild(glyph);
+    } else if (icon === 'file') {
+      disposers.push(render(() => <FileMark name={iconName ?? ''} size={12} />, slot));
     } else {
       const Icon = KIND_ICONS[icon as keyof typeof KIND_ICONS] ?? MentionAtIcon;
       disposers.push(render(() => <Icon />, slot));

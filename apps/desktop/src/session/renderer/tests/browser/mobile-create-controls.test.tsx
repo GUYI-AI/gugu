@@ -54,29 +54,28 @@ async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US'
   await until('configuration controls visible', () => !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   return host.querySelector<HTMLElement>('[contenteditable]')!
 }
-it.each(['light', 'dark'] as const)('%s: configuration transitions and a skill tag preserve the same editor and draft', async (theme) => {
+// Owner 2026-11-16 13:27: configuration is available before typing;
+// a nonempty text draft keeps the menu hidden even after the editor blurs.
+it.each(['light', 'dark'] as const)('%s: configure first, then a text draft hides controls without replacing the editor', async theme => {
   const editor = await mount(theme)
-  await page.getByTestId('chat-composer').fill('正在输入中文\n第二行'); editor.blur()
-  const s = getSelection()!, range = document.createRange(); range.setStart(editor.lastElementChild!.firstChild!, 2); range.collapse(true); s.removeAllRanges(); s.addRange(range)
-  const before = { node: s.anchorNode, offset: s.anchorOffset, text: editor.textContent }
-  editor.blur()
-  await until('configuration controls visible', () => !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   await page.getByTestId('agent-watch-create-model-device').click()
-  await page.getByRole('heading', { name: '工作', exact: true }).click()
   await page.getByRole('radio', { name: 'Cloud' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByTestId('agent-watch-create-project').click()
   await page.getByRole('radio', { name: '一个用于窄屏验收的长项目名称' }).click()
   await page.getByTestId('agent-watch-create-skills').click()
   await page.getByRole('checkbox', { name: /会议记录/ }).click()
-  await until('skill tag', () => !!host?.querySelector('[data-testid="agent-watch-create-skill-tags"]'))
+  await until('skill tag alone does not hide the menu', () => !!host?.querySelector('[data-testid="agent-watch-create-skill-tags"]') && !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
-  expect(document.activeElement).not.toBe(editor); expect(s.anchorNode).toBe(before.node); expect(s.anchorOffset).toBe(before.offset)
-  expect(editor.textContent).toBe(before.text); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
+  await page.getByTestId('chat-composer').fill('正在输入中文\n第二行')
+  await until('text draft hides the menu', () => !!host?.querySelector('[data-phone-composer-controls][data-editing]'))
+  expect(editor.textContent).toBe('正在输入中文第二行')
   expect(editor.closest('[data-slot="composer-input"]')!.querySelector('[data-testid="agent-watch-create-skill-tags"]')).not.toBeNull()
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
+  expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
   await page.getByRole('button', { name: '移除技能 会议记录' }).click()
-  expect(host!.querySelector('[contenteditable]')).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
+  expect(editor.textContent).toBe('正在输入中文第二行')
 })
 it('search is intentional, filters the real catalog and keeps a narrow sheet in the visible viewport', async () => {
   await mount(); await page.viewport(320, 640)
@@ -103,13 +102,12 @@ it('does not reserve an attachment gutter when creation has no attachment adapte
 })
 it('hides the skills entry for a phone target and restores it for a computer without replacing the input', async () => {
   const editor = await mount()
-  await page.getByTestId('chat-composer').fill('保留这段草稿'); editor.blur()
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.getByRole('radio', { name: 'Phone' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   expect(host!.querySelector('[data-testid="agent-watch-create-skills"]')).toBeNull()
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
-  expect(editor.textContent).toBe('保留这段草稿')
+  expect(editor.textContent?.trim()).toBe('')
   expect(document.body.textContent).not.toContain('暂不提供')
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.getByRole('radio', { name: 'Mac', exact: true }).click()

@@ -9,7 +9,6 @@ export { IconRestorePrompt } from './icons/IconRestorePrompt';
 export { IconShieldAlert } from './icons/IconShieldAlert';
 export { IconStop } from './icons/IconStop';
 export { MentionAtIcon } from './icons/MentionAtIcon';
-export { MentionFileIcon } from './icons/MentionFileIcon';
 export { MentionIssueIcon } from './icons/MentionIssueIcon';
 export { MentionSymbolIcon } from './icons/MentionSymbolIcon';
 export { PlanCompletedIcon } from './icons/PlanCompletedIcon';

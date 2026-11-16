@@ -1,6 +1,7 @@
 /** Product configuration for the input composer menu bar (输入框菜单栏). */
 export const PHONE_COMPOSER_MENU_BAR = {
-  direct: ['attachments'],
+  direct: [],
+  attachmentOnly: ['attachments'],
   room: ['topics', 'agents'],
   agent: ['work', 'skills', 'agents'],
   roomAgent: ['work', 'skills', 'topics', 'agents'],

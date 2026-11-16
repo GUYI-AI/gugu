@@ -16,14 +16,21 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const scope = row.current?.closest('[data-slot="composer"], [data-chat-composer], [data-chat-composer-host], [data-chat-bottom-dock], .gg-aw-create-host')
     if (!scope) return
-    const update = () => setEditing(keyboardVisible !== false && document.activeElement instanceof Element
-      && scope.contains(document.activeElement)
-      && !!document.activeElement.closest('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea'))
+    const update = () => {
+      const editor = scope.querySelector('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea')
+      const text = editor instanceof HTMLTextAreaElement ? editor.value : editor?.textContent ?? ''
+      setEditing(!!text.trim() || keyboardVisible !== false && document.activeElement instanceof Element
+        && scope.contains(document.activeElement)
+        && !!document.activeElement.closest('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea'))
+    }
     const afterBlur = () => queueMicrotask(update)
     update()
     scope.addEventListener('focusin', update)
     scope.addEventListener('focusout', afterBlur)
-    return () => { scope.removeEventListener('focusin', update); scope.removeEventListener('focusout', afterBlur) }
+    scope.addEventListener('input', update)
+    const observer = new MutationObserver(update)
+    observer.observe(scope, { childList: true, characterData: true, subtree: true })
+    return () => { observer.disconnect(); scope.removeEventListener('input', update); scope.removeEventListener('focusin', update); scope.removeEventListener('focusout', afterBlur) }
   }, [keyboardVisible])
   return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined} inert={editing || undefined} aria-hidden={editing || undefined}>{children}</div>
 }
