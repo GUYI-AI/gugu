@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/mobile/agent-watch/sessionpage-rpc'
 import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
 import { replica, useReplica, type Reading } from './replica'
+import { PLATFORM_MODELS_CHANGED_EVENT } from '@shared/core/agents/platform-model'
 import type { PlatformCatalogModel } from './agentModelSelection'
 
 const MENU_DETAILS = ['creditMultiplier', 'creditMultipliers', 'contextWindow', 'reasoningEfforts'] as const
@@ -31,6 +32,7 @@ export const platformModels = replica({
   scope: 'account',
   read: () => fetchPlatformModelCatalog(),
   fresh: 5 * 60_000,
+  watch: { start: () => followCatalogChanges(() => { void platformModels.refresh() }) },
   persist: {
     maxBytes: 16384,
     maxEntries: 1,
@@ -40,6 +42,33 @@ export const platformModels = replica({
       : models),
   },
 })
+
+/** Back in the foreground: focus and visibilitychange often arrive together, one switch reads once. */
+const FOREGROUND_REFRESH_MIN_MS = 5_000
+
+/**
+ * What says the account's catalog may have changed, for the models that hold it (`watch`): a models-changed signal
+ * (settings → Model, "I joined" #7092) and the window coming back (#7056: membership is bought on the web; no push
+ * reaches here). Returns stop.
+ */
+export function followCatalogChanges(refresh: () => void): () => void {
+  let lastAt = Date.now()
+  const onForeground = () => {
+    if (document.visibilityState === 'hidden') return
+    const now = Date.now()
+    if (now - lastAt < FOREGROUND_REFRESH_MIN_MS) return
+    lastAt = now
+    refresh()
+  }
+  window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
+  window.addEventListener('focus', onForeground)
+  document.addEventListener('visibilitychange', onForeground)
+  return () => {
+    window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
+    window.removeEventListener('focus', onForeground)
+    document.removeEventListener('visibilitychange', onForeground)
+  }
+}
 
 /**
  * The catalog as a surface that draws its menu details reads it (the composer's Gugu group, the agent model pane): a value

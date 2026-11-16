@@ -24,7 +24,11 @@ vi.mock('@renderer/lib/ipc', () => ({
   rpc: {},
   events: { on: () => () => {} },
 }));
-vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
+vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: (id: string) => (id.startsWith('remote-') ? 'box' : null) } }));
+const reconnect = vi.hoisted(() => new Map<string, () => void>());
+vi.mock('@renderer/lib/machine-clients', () => ({
+  onMachineReconnected: (machine: string, cb: () => void) => { reconnect.set(machine, cb); return () => { reconnect.delete(machine); }; },
+}));
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
 
 import { notifyManager } from '@tanstack/react-query';
@@ -106,12 +110,16 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     mount(<Probe provider="codex" />);
     expect(frames[0]).toMatchObject({ known: true });
     expect(frames[0]!.models.map((model) => model.id)).toEqual(['gpt-6-astra']);
-    expect(io.catalog).toHaveBeenCalledTimes(1);
+    // Opened again, the catalog is read once more (what changed while no composer listened), the group drawn meanwhile.
+    await settle();
+    expect(io.catalog).toHaveBeenCalledTimes(2);
+    expect(frames.every((frame) => frame.known && frame.models.length === 1)).toBe(true);
   });
 
   it('a catalog restored from the snapshot (no menu details) is not taken as read: the group waits for the read', async () => {
     let answer!: (rows: unknown) => void;
-    io.catalog.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    // Every read waits (the feed opening and the restored value each ask once): the group waits for them.
+    io.catalog.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
     const { platformModels } = await import('@/lib/agentModelReplicas');
     platformModels.set([], ROWS.map(({ creditMultiplier: _m, creditMultipliers: _ms, contextWindow: _c, reasoningEfforts: _r, ...kept }) => kept));
     mount(<Probe provider="claude" />);
@@ -175,5 +183,32 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     });
     await settle();
     expect(io.catalog).toHaveBeenCalledTimes(3);
+  });
+
+  it('stays settled while a refresh is on its way (a harness notice is not withdrawn and drawn again)', async () => {
+    mount(<Probe provider="claude" />);
+    await settle();
+    expect(current!.settled).toBe(true);
+    let answer!: (rows: unknown) => void;
+    io.catalog.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    frames.length = 0;
+    await act(async () => { window.dispatchEvent(new Event(PLATFORM_MODELS_CHANGED_EVENT)); });
+    await settle();
+    expect(io.catalog).toHaveBeenCalledTimes(2);
+    await act(async () => { answer(ROWS); });
+    await settle();
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.every((frame) => frame.settled)).toBe(true);
+  });
+
+  it("a session's preselection is read again when its machine comes back", async () => {
+    mount(<Probe provider="claude" session="remote-1" />);
+    await settle();
+    expect(io.invoke).toHaveBeenCalledTimes(1);
+    io.invoke.mockResolvedValue({ models: [], agentDefault: null, sessionSelection: { modelId: 'opus-5.5' } });
+    await act(async () => { reconnect.get('box')!(); });
+    await settle();
+    expect(io.invoke).toHaveBeenCalledTimes(2);
+    expect(current!.sessionSelection).toEqual({ modelId: 'opus-5.5' });
   });
 });

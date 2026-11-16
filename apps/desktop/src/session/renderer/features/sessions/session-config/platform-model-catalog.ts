@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { replica, useReplica } from '@/lib/replica';
-import { catalogDetailed, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
+import { catalogDetailed, followCatalogChanges, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
 import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
@@ -8,6 +8,7 @@ import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-prot
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import {
   offeredInModelPicker,
   parsePlatformReasoningEfforts,
@@ -63,8 +64,6 @@ export const NO_PLATFORM_CATALOG: PlatformModelCatalog = {
  * 「还没到」——超时按取不到处理。
  */
 const CATALOG_TIMEOUT_MS = 8_000;
-/** 回到前台时重取目录的最短间隔:focus 与 visibilitychange 常常一前一后同时到,别为一次切窗取两遍。 */
-const FOREGROUND_REFRESH_MIN_MS = 5_000;
 /** A session's catalog entry (its preselection) is dropped this long after its last reader leaves. */
 export const SESSION_CATALOG_GC_MS = 5 * 60_000;
 /** 这一侧问宿主没问到(IPC 失败 / 超时)。 */
@@ -201,10 +200,18 @@ export const sessionPlatformSelection = replica({
     const { agentDefault, sessionSelection } = await fetchPlatformModelCatalog(providerId, surface, sessionId, machine);
     return { agentDefault, sessionSelection };
   },
-  // Changes by a hot switch on this composer (`refresh`), or a models-changed signal.
+  // Changes by a hot switch on this composer (`refresh`), a models-changed signal, or its machine coming back.
   fresh: Infinity,
   // Viewing sessions does not grow the cache forever: an entry nobody shows leaves after a while.
   keep: SESSION_CATALOG_GC_MS,
+  watch: {
+    group: (_sessionId, _providerId, _surface, machine) => machine,
+    start: (_owner, _sessionId, _providerId, _surface, machine) => {
+      const offs = [followCatalogChanges(() => { void sessionPlatformSelection.refresh(); })];
+      if (machine) offs.push(onMachineReconnected(machine, () => { void sessionPlatformSelection.refresh(undefined, undefined, undefined, machine); }));
+      return () => offs.forEach((off) => off());
+    },
+  },
 });
 
 /**
@@ -244,40 +251,6 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
     }));
 }
 
-// The catalog's pushes, one subscription however many composers show it: a models-changed signal (settings → Model,
-// "I joined" #7092) and the window coming back (#7056: membership is bought on the web; no push reaches here).
-let watchers = 0;
-let stopWatching: (() => void) | null = null;
-function watchCatalog(): () => void {
-  if (watchers++ === 0) {
-    const refreshAll = () => {
-      void platformModels.refresh();
-      void sessionPlatformSelection.refresh();
-    };
-    let lastAt = Date.now();
-    const onForeground = () => {
-      if (document.visibilityState === 'hidden') return;
-      const now = Date.now();
-      if (now - lastAt < FOREGROUND_REFRESH_MIN_MS) return;
-      lastAt = now;
-      refreshAll();
-    };
-    window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, refreshAll);
-    window.addEventListener('focus', onForeground);
-    document.addEventListener('visibilitychange', onForeground);
-    stopWatching = () => {
-      window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refreshAll);
-      window.removeEventListener('focus', onForeground);
-      document.removeEventListener('visibilitychange', onForeground);
-    };
-  }
-  return () => {
-    if (--watchers > 0) return;
-    stopWatching?.();
-    stopWatching = null;
-  };
-}
-
 /**
  * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)时什么都不读。
  * Derived, not read per surface: the account's catalog (`platformModels`) filtered to the engine's protocol and gated by
@@ -297,7 +270,6 @@ export function usePlatformModelCatalog(
   const catalog = useDetailedPlatformCatalog(providerId !== null);
   const agents = useReplica(agentsMetadata, providerId ? [machine] : null, { read: online });
   const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
-  useEffect(watchCatalog, []);
 
   const agent = agents.state === 'value' ? agents.value.find((entry) => entry.id === providerId) : undefined;
   const gate = providerId && agents.state === 'value' ? gateReason(providerId, surface, agent) : null;
@@ -324,7 +296,8 @@ export function usePlatformModelCatalog(
     sessionSelection: selection.state === 'value' ? selection.value.sessionSelection : undefined,
     catalogError,
     known,
-    settled: known && online && catalog.state === 'value' && !catalog.stale && !failed,
+    // ❌ `stale`: a refresh on its way (a focus, a models-changed signal) keeps what is settled (owner 11-10: a notice rising and withdrawn).
+    settled: known && online && catalog.state === 'value' && !failed,
     retry: refresh,
     refresh,
   };
