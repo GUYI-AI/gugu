@@ -84,7 +84,10 @@ function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, 
         <span className="agent-question-card__label">{option.name}</span>{option.description && <span className="agent-question-card__detail">{option.description}</span>}
       </Button>)}
       <Button variant="ghost" size="sm" className="agent-question-card__option" aria-pressed={draft.custom[draft.step]}
-        disabled={busy || unavailable} onClick={() => replaceAnswer({ selected: question.multiSelect ? answer.selected : [], other: answer.other ?? '' }, true)}>
+        disabled={busy || unavailable} onClick={() => {
+          const custom = !question.multiSelect || !draft.custom[draft.step]
+          replaceAnswer({ selected: question.multiSelect ? answer.selected : [], ...(custom ? { other: answer.other ?? '' } : {}) }, custom)
+        }}>
         <span className="agent-question-card__label">{t('question.other')}</span>
       </Button>
     </div>

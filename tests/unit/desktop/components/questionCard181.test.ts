@@ -7,7 +7,10 @@ import type { QuestionCard } from '../../../../packages/core/src/shared/ui/taskC
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 const send = vi.fn(async () => 'reply-1')
-const respond = vi.fn(async (_answer: unknown) => ({ accepted: true, settlement }))
+const respond = vi.fn(async (answer: Record<string, unknown>) => {
+  if (!settlement) throw new Error('Missing host settlement fixture')
+  return { accepted: true, settlement: { ...settlement, state: 'resolved', optionId: JSON.stringify(answer.answers) } }
+})
 let viewer = 'owner-1'
 let settlement: Record<string, unknown> | null = null
 const reads: Array<{ enabled: boolean; deviceId: string | null }> = []
