@@ -241,8 +241,8 @@ export const enUSSessionWorkflowMessages = {
   'task.unpinFromSidebarFailed': 'Couldn’t unpin from the sidebar',
   'task.pinnedSessionGone': 'This task is no longer in the list.',
   'task.archive': 'Archive',
-  'task.archiveTaskTitle': 'Archive task',
-  'task.archiveTaskConfirm': 'Archive task',
+  'task.archiveTaskTitle': 'Archive agent',
+  'task.archiveTaskConfirm': 'Archive agent',
   // 归档这条智能体会话：说明从列表隐藏、停止运行与保留内容。
   // 带走多少条由下面那个勾选说 —— ❌ 在正文里再报一次数。
   'task.archiveSessionDescription':

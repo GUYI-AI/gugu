@@ -37,7 +37,7 @@ export function UnsavedChangesDialog({ fileName, onSuccess }: Props) {
           />
         </p>
       </DialogContentArea>
-      <DialogFooter>
+      <DialogFooter className="gg-confirm-action-footer">
         <Button variant="outline" onClick={() => onSuccess('discard')}>
           {translate('file.discardChanges')}
         </Button>

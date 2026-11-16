@@ -57,9 +57,9 @@ async function settled() {
 }
 
 for (const locale of ['zh-CN', 'en-US'] as const) {
-  for (const action of ['save', 'discard'] as const) {
-    it(`${locale}: focuses Save before an explicit ${action} and preserves the filename`, async () => {
-      await mount(locale, 1100);
+  for (const width of [1100, 390]) for (const action of ['save', 'discard'] as const) {
+    it(`${locale} at ${width}px: focuses Save before an explicit ${action} and preserves the filename`, async () => {
+      await mount(locale, width, width === 390);
       const onSuccess = vi.fn();
       const fileName = '计划 <draft> & notes.md';
       showModal('unsavedChangesModal', { fileName, onSuccess });
@@ -71,6 +71,7 @@ for (const locale of ['zh-CN', 'en-US'] as const) {
       expect(document.querySelector('[data-slot="dialog-content"] strong')?.textContent).toBe(fileName);
       expect(discard.textContent).toBe(locale === 'zh-CN' ? '不保存' : 'Discard');
       expect(save.textContent).toBe(locale === 'zh-CN' ? '保存' : 'Save');
+      for (const button of [discard, save]) expect(button.getBoundingClientRect().height).toBe(width === 390 ? 44 : 32);
       if (action === 'save') await userEvent.keyboard('{Enter}');
       else await userEvent.click(discard);
       expect(onSuccess).toHaveBeenCalledExactlyOnceWith(action);
@@ -93,6 +94,7 @@ it.each([
     variant: 'default',
   });
   await settled();
+  expect(buttons()[1].textContent).toContain(locale === 'zh-CN' ? '归档会话' : 'Archive agent');
   expect(document.querySelector('[data-slot="dialog-content"]')?.textContent).toContain(locale === 'zh-CN'
     ? '智能体将从列表中隐藏并停止运行。不会删除任何内容。'
     : 'The agent is hidden from the list and stops running. Nothing is deleted.');
