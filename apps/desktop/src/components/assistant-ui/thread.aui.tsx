@@ -29,7 +29,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "./tool-group.aui";
-import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerPlaceholder, useComposerStop } from "./composer-extras";
+import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerAttachmentPlacement, useComposerPlaceholder, useComposerStop } from "./composer-extras";
 import { useAuiCopy } from "./copy";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { Button } from "./ui/button";
@@ -369,6 +369,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const fileSelection = useAttachmentFileSelection(attachments, composer);
   const { isRunning, isDisabled, capabilities } = useAuiState((s) => s.thread);
   const hostStop = useComposerStop();
+  const attachmentPlacement = useComposerAttachmentPlacement();
   const placeholder = useComposerPlaceholder() ?? c.placeholder;
   const editor = useRef<PromptEditorRef | null>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -415,12 +416,12 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
         {capabilities.attachments && <input ref={picker} type="file" multiple hidden onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />}
         <ChatComposer editorApiRef={editor} mobile={mobile} placeholder={placeholder}
-          renderPhoneHeader={mobile && capabilities.attachments ? () => <PhoneAttachmentMenuBar disabled={isDisabled} onOpen={() => picker.current?.click()} /> : undefined}
+          renderPhoneHeader={mobile && capabilities.attachments && attachmentPlacement === 'menu' ? () => <PhoneAttachmentMenuBar disabled={isDisabled} onOpen={() => picker.current?.click()} /> : undefined}
           editorOptions={{ enterBehavior: submitOnEnter ? 'submit' : 'newline', clearOnSubmit: false }}
           disabled={isDisabled} canSubmit={!sendDisabled && canSend && (!isRunning || capabilities.queue)}
           isWorking={!!hostStop && isEmpty} stopDisabled={hostStop?.stopping}
           onStop={hostStop?.onStop} onInputChange={(value) => composer.setText(value)} onSubmit={() => composer.send()}
-          onAttach={!mobile && capabilities.attachments ? () => picker.current?.click() : undefined}
+          onAttach={capabilities.attachments && (!mobile || attachmentPlacement === 'input') ? () => picker.current?.click() : undefined}
           onFilesDropped={capabilities.attachments ? addFiles : undefined} onImageFilesDropped={capabilities.attachments ? addFiles : undefined}
           attachments={chips} onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
           onRetryAttachment={(id) => { const file = attachments.find((attachment) => attachment.id === id)?.file; if (file) void composer.attachment({ id }).remove().then(() => composer.addAttachment(file)); }}

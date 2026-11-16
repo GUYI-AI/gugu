@@ -44,6 +44,7 @@ import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptions, createPhoneSession, fetchPhoneCreateModels, fetchPhoneCreateOptions } from './sessionpage-rpc'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
+import { createAttachmentDraftAdapter } from './create-attachment-adapter'
 import './task-flow-catalog'
 import {
   createBlocker,
@@ -191,6 +192,7 @@ function CreateOnMachine({
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
+  const attachmentAdapter = useMemo(() => ownerId ? createAttachmentDraftAdapter(mobileCreationDraftKey(ownerId)) : undefined, [ownerId])
 
   // 机器离线时**不发 RPC**(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
   useEffect(() => {
@@ -255,22 +257,23 @@ function CreateOnMachine({
 
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     isRunning: creating,
+    adapters: { attachments: attachmentAdapter },
     messages,
     convertMessage: (message) => message,
     onNew: async (message: AppendMessage) => {
-      const first = message.content[0]
-      if (!first || first.type !== 'text') throw new Error(t('agentWatch.composer.textOnly'))
-      const typedText = first.text.trim()
+      const originalText = message.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n')
+      const files = message.attachments ?? []
+      const typedText = originalText.trim()
       const text = skillDraft.skills.length
         ? `${tControls('useSkills', { names: skillDraft.skills.map((skill) => skill.name).join(', ') })}\n\n${typedText}`
         : typedText
       const submittedDraft = draft.current
-      submittedDraft?.hold(first.text)
+      submittedDraft?.hold(originalText, files)
       // 还没读到选项 / 还有拦着的原因 → 如实报,❌ 不带着空 projectId 发过去让机器来拒。
       if (!online || !options || optionsError || blocker || readingModelDefault || modelNeedsSignIn) {
         setCreateError(blocker ? t(`agentWatch.create.blocked.${blocker}`) : modelNotice ?? t('agentWatch.create.blocked.loading'))
-        runtime.thread.composer.setText(first.text)
-        submittedDraft?.restore(first.text)
+        runtime.thread.composer.setText(originalText)
+        await submittedDraft?.restore(originalText, files)
         return
       }
       setCreateError(null)
@@ -278,6 +281,9 @@ function CreateOnMachine({
       const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
+        // Replaced by the dedicated attachment draft/admission protocol before this candidate can ship.
+        // Never send a text-only first turn while its local files are still awaiting placement.
+        if (files.length) throw new SessionpageRpcError('host_update_required', translateSessionMessage('composer.attachmentHostUpdateRequired'))
         if (phone && !ownerId) throw new Error('请先登录后创建 Agent')
         if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error('上次创建尚未确认，请先发送原来的任务以继续同一次创建')
         const request: SessionpageSessionCreateRequest = phoneAttempt ?? {
@@ -304,7 +310,7 @@ function CreateOnMachine({
           forgetPhoneSessionCreate(ownerId!, device.device_id, request)
           if (page.active) setPhoneAttempt(null)
         }
-        submittedDraft?.accepted(first.text)
+        submittedDraft?.accepted(originalText, files)
         if (page.active) skillDraft.update([])
         if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
       } catch (err) {
@@ -321,7 +327,7 @@ function CreateOnMachine({
         setPendingText(null)
         // 签咕咕额度被拒:那台机器报的是原因码(#7103),按原因说(与新建框咕咕那一组同一份文案)。
         const gugu = guguReasonInText(code)
-        setCreateError(phone ? describe(err) : code === 'harness_install_failed'
+        setCreateError(phone || code === 'host_update_required' ? describe(err) : code === 'harness_install_failed'
           ? t('agentWatch.create.agentInstallFailed')
           : code === 'harness_runtime_missing'
             ? t('agentWatch.create.agentRuntimeMissing')
@@ -329,8 +335,8 @@ function CreateOnMachine({
               ? guguReasonText(gugu, translateSessionMessage)
               : t(`agentWatch.create.failure.${remoteFailureKind(code)}`))
         // 把那句话还回去。assistant-ui 发送时已经清空了输入框,这一步不做就等于吞掉用户输入。
-        submittedDraft?.restore(phoneAttempt?.prompt ?? first.text)
-        if (!submittedDraft && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt?.prompt ?? first.text)
+        await submittedDraft?.restore(phoneAttempt?.prompt ?? originalText, files)
+        if (!submittedDraft && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt?.prompt ?? originalText)
       }
     },
   })
@@ -461,6 +467,7 @@ function CreateOnMachine({
         <AssistantRuntimeProvider runtime={runtime}>
           <div className="gg-aw-thread-host gg-aw-create-host" data-testid="agent-watch-create-thread">
             <ComposerExtrasProvider
+              attachmentPlacement="input"
               placeholder={t('agentWatch.create.placeholder')}
               extras={null}
               inputHeader={<SelectedCreationSkills skills={skillDraft.skills} onChange={skillDraft.update} />}
