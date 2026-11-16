@@ -77,7 +77,7 @@ const creditAccount = replica({
   refreshOnFocus: true,
 })
 
-// 计费版本:库的广播、回到前台各推进一次;用量页据此重取会员。
+// 计费版本:库的计费广播推进一次;用量页据此重读积分日表与流水(回到前台它们各自重读,refreshOnFocus)。
 let activityRevision = 0
 const revisionListeners = new Set<() => void>()
 function bumpActivity(): void {

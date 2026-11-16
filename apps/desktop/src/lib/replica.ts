@@ -105,18 +105,16 @@ const readFromKey = ({ queryKey }: QueryFunctionContext) => {
 
 export const queryClient = new QueryClient({ defaultOptions: { queries: { queryFn: readFromKey } } })
 
-// Back to the foreground (`refreshOnFocus`) is the page becoming visible or its window being focused: a desktop window
-// switched to while visible is a return too (react-query alone hears only visibility).
-focusManager.setEventListener((handleFocus) => {
-  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined
-  const back = () => handleFocus()
-  window.addEventListener('visibilitychange', back, false)
-  window.addEventListener('focus', back, false)
-  return () => {
-    window.removeEventListener('visibilitychange', back)
-    window.removeEventListener('focus', back)
-  }
-})
+/**
+ * The app's returns to the foreground (`refreshOnFocus`): `watch(back)` calls `back` once each time the person comes back
+ * to the app after having left it, and returns its stop. Installed by the app's entry (lib/foregroundReturn.ts); without
+ * it, react-query's own page visibility applies. It only says "back": whether the app is in the foreground for polling
+ * stays the page's visibility (a poll keeps running while another application has the focus).
+ */
+export function readOnReturn(watch: (back: () => void) => () => void): void {
+  focusManager.setEventListener((handleFocus) => watch(() => handleFocus()))
+}
+
 queryClient.mount()
 /**
  * The failure of a read that has no value, kept while it is read again: react-query empties `error` when the next read

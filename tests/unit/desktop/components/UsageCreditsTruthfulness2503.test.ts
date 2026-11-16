@@ -346,7 +346,13 @@ describe('#2503 用量与订阅积分的诚实性', () => {
       const badge = () => document.querySelector('.subscription-plan-badge')?.textContent
       expect(badge()).toBe('Free')
       vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ expiresAt: new Date(Date.now() + 30 * 24 * hour) }) }))
-      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      // A return: the person left for the web page (the window hidden) and came back.
+      const shown = vi.spyOn(document, 'visibilityState', 'get')
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockRestore()
       await flush()
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
       expect(badge()).toBe('Pro')
