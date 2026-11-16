@@ -26,6 +26,7 @@ vi.mock('@/hooks/useWakeCloudComputer', () => ({ useCloudComputerWake: () => ({ 
 vi.mock('@renderer/features/projects/components/main-panel/project-run-machine', () => ({ rememberRunMachine: vi.fn(), useProjectRunMachine: () => ({ machine: fixture.device.device_id, pick: vi.fn() }) }))
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
+  machineRpc: () => { throw new Error('Skills RPC is outside this model display test') },
   fetchCreateOptions: async () => ({ projects: [], lastUsed: null, harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
   fetchCreateModels: fixture.models, createSession: fixture.create,
   fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.create,
@@ -60,6 +61,7 @@ it.each(['light', 'dark'] as const)('%s: real New task Work panel separates mode
   expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth)
   const alias = document.querySelector<HTMLElement>('[data-dimension="model"][data-option-id="sonnet"]')!
   expect(alias.scrollWidth).toBeLessThanOrEqual(alias.clientWidth)
+  await page.screenshot({ path: `__screenshots__/owner-phone-regression/B-new-task-model-${theme}-320.png` })
   await page.elementLocator(alias).click()
   await until('original alias reaches catalog request', () => fixture.models.mock.calls.some(call => call[3] === 'sonnet'))
   expect(fixture.create).not.toHaveBeenCalled()
