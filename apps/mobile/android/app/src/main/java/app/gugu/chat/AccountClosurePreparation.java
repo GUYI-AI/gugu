@@ -44,6 +44,7 @@ final class AccountClosurePreparation {
     }
     static void requireOpen(Context context, String owner) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            AndroidAccountClosureV2.requireNoCapturedOperation(context, owner);
             if (new AccountClosurePreparation(context).state(owner) != 0) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
         }
     }

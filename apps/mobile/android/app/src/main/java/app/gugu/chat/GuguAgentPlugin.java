@@ -40,12 +40,15 @@ public class GuguAgentPlugin extends Plugin {
             String previousOwner = settings.getString("owner", "");
             if (!previousOwner.isEmpty() && !previousOwner.equals(owner)) GuguAgentHostService.stopOwner(getContext(), previousOwner, true);
             var grants = config.optJSONObject("grants");
-            if (!owner.equals(settings.getString("owner", "")) || !settings.getBoolean("fullGrantsMirror", false)) {
-                var editor = settings.edit().clear().putString("owner", owner);
-                if (grants != null) for (String key : new String[] {"calendar", "contacts", "location", "notifications", "alarm", "health", "sms", "recordings", "photos"}) editor.putBoolean(key, grants.optBoolean(key, false));
-                if (!editor.commit()) throw new IllegalStateException("无法保存手机能力授权");
+            synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+                AndroidAccountClosureV2.requireNoCapturedOperation(getContext(), owner);
+                if (!owner.equals(settings.getString("owner", "")) || !settings.getBoolean("fullGrantsMirror", false)) {
+                    var editor = settings.edit().clear().putString("owner", owner);
+                    if (grants != null) for (String key : new String[] {"calendar", "contacts", "location", "notifications", "alarm", "health", "sms", "recordings", "photos"}) editor.putBoolean(key, grants.optBoolean(key, false));
+                    if (!editor.commit()) throw new IllegalStateException("无法保存手机能力授权");
+                }
+                GuguNotificationListener.setCollecting(settings.getBoolean("notifications", false));
             }
-            GuguNotificationListener.setCollecting(settings.getBoolean("notifications", false));
             GuguAgentHostService.reserveOwner(owner);
             try { ContextCompat.startForegroundService(getContext(), new Intent(getContext(), GuguAgentHostService.class).putExtra("ownerId", owner)); }
             catch (Exception error) { GuguAgentHostService.releaseReservation(owner); throw error; }
@@ -133,17 +136,20 @@ public class GuguAgentPlugin extends Plugin {
     @PluginMethod public void grants(PluginCall call) {
         try {
             String owner = owner(call);
-            var grants = GuguAgentService.permissions(getContext());
-            var editor = grants.edit();
-            if (!owner.equals(grants.getString("owner", ""))) editor.clear();
-            editor.putString("owner", owner);
-            var groups = call.getData().optJSONObject("groups");
-            if (groups != null) {
-                for (String key : new String[] {"calendar", "contacts", "location", "notifications", "alarm", "health", "sms", "recordings", "photos"}) editor.putBoolean(key, groups.optBoolean(key, false));
-                editor.putBoolean("fullGrantsMirror", true);
-            } else editor.putBoolean("calendar", Boolean.TRUE.equals(call.getBoolean("calendar", false)));
-            if (!editor.commit()) throw new IllegalStateException("无法保存手机能力授权");
-            if (groups != null) GuguNotificationListener.setCollecting(groups.optBoolean("notifications", false));
+            synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+                AndroidAccountClosureV2.requireNoCapturedOperation(getContext(), owner);
+                var grants = GuguAgentService.permissions(getContext());
+                var editor = grants.edit();
+                if (!owner.equals(grants.getString("owner", ""))) editor.clear();
+                editor.putString("owner", owner);
+                var groups = call.getData().optJSONObject("groups");
+                if (groups != null) {
+                    for (String key : new String[] {"calendar", "contacts", "location", "notifications", "alarm", "health", "sms", "recordings", "photos"}) editor.putBoolean(key, groups.optBoolean(key, false));
+                    editor.putBoolean("fullGrantsMirror", true);
+                } else editor.putBoolean("calendar", Boolean.TRUE.equals(call.getBoolean("calendar", false)));
+                if (!editor.commit()) throw new IllegalStateException("无法保存手机能力授权");
+                if (groups != null) GuguNotificationListener.setCollecting(groups.optBoolean("notifications", false));
+            }
             call.resolve();
         } catch (Exception error) { call.reject(error.getMessage(), "failed"); }
     }

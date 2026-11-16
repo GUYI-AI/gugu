@@ -36,6 +36,7 @@ final class AndroidAccountClosure {
         receipts = new AccountClosureReceiptStore(GuguAuthStoragePlugin.STORAGE_LOCK,
             new AccountClosureEncryptedFiles(context, installation), () -> GuguPhoneInstallation.identity(context).key,
             auth::owner, scope -> {
+                AndroidAccountClosureV2.requireNoCapturedOperation(context, scope.ownerId);
                 int state = preparation.state(scope.ownerId);
                 if (state < AccountClosurePreparation.RETIRED) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
                 if (ownerBusy(scope.ownerId)) return false;
@@ -51,6 +52,7 @@ final class AndroidAccountClosure {
     CompletableFuture<Void> prepareSignOut(String owner) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             requireCurrentOwner(owner);
+            AndroidAccountClosureV2.requireNoCapturedOperation(context, owner);
             int state = preparation.state(owner);
             if (state >= AccountClosurePreparation.ERASING) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
             if (state == 0) preparation.set(owner, AccountClosurePreparation.STOPPING);
@@ -75,6 +77,7 @@ final class AndroidAccountClosure {
         String registeredDevice = deviceId(owner);
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             requireCurrentOwner(owner);
+            AndroidAccountClosureV2.requireNoCapturedOperation(context, owner);
             if (!registeredDevice.equals(expectedDeviceId) || preparation.state(owner) < AccountClosurePreparation.STOPPED || ownerBusy(owner))
                 throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
             // The Android adapter calls this only after the existing owner-
@@ -95,6 +98,7 @@ final class AndroidAccountClosure {
         String generation = receipts.requireCancelledReceipt(scope);
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             requireCurrentOwner(scope.ownerId);
+            AndroidAccountClosureV2.requireNoCapturedOperation(context, scope.ownerId);
             if (!generation.equals(preparation.generation(scope.ownerId)) || preparation.state(scope.ownerId) >= AccountClosurePreparation.ERASING)
                 throw new AccountClosureReceiptStore.Failure("scope_conflict");
             preparation.set(scope.ownerId, 0);
