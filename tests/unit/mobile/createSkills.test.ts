@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { creationSkillsHostTooOld, filterCreationSkills, loadCreationSkills } from '../../../apps/desktop/src/mobile/agent-watch/create-skills'
+import { creationSkillsHostMethodMissing, creationSkillsHostTooOld, filterCreationSkills, loadCreationSkills } from '../../../apps/desktop/src/mobile/agent-watch/create-skills'
 
 describe('native creation skills', () => {
   it('requests the selected harness and actual project, without an App catalog', async () => {
@@ -24,13 +24,22 @@ describe('native creation skills', () => {
     await expect(loadCreationSkills({ sessionCreateSkills: async () => { throw error } }, 'codex', null)).rejects.toBe(error)
   })
 
+  it('uses actual peer/client versions before calling a missing method an outdated host', () => {
+    const missing = new Error("No handler registered for 'sessionTimeline.sessionCreateSkills'")
+    expect(creationSkillsHostTooOld(missing, 'old-build', 'current-build')).toBe(true)
+    expect(creationSkillsHostTooOld(missing, 'current-build', 'current-build')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, undefined, 'current-build')).toBe(false)
+    expect(creationSkillsHostTooOld(missing, 'old-build')).toBe(false)
+    expect(creationSkillsHostTooOld(Object.assign(new Error('denied'), { code: 'forbidden' }), 'old-build', 'current-build')).toBe(false)
+  })
+
   it('distinguishes a missing host route from permission, offline and scanning failures', () => {
-    expect(creationSkillsHostTooOld(new Error("No handler registered for 'sessionTimeline.sessionCreateSkills'"))).toBe(true)
-    expect(creationSkillsHostTooOld(Object.assign(new Error('unknown route'), { code: 'unknown_method' }))).toBe(true)
-    expect(creationSkillsHostTooOld(Object.assign(new Error('denied'), { code: 'forbidden' }))).toBe(false)
-    expect(creationSkillsHostTooOld(Object.assign(new Error('EACCES: SKILL.md'), { code: 'skills_unavailable' }))).toBe(false)
-    expect(creationSkillsHostTooOld(Object.assign(new Error('offline'), { code: 'unreachable' }))).toBe(false)
-    expect(creationSkillsHostTooOld(new Error("No handler registered for 'another.route'"))).toBe(false)
+    expect(creationSkillsHostMethodMissing(new Error("No handler registered for 'sessionTimeline.sessionCreateSkills'"))).toBe(true)
+    expect(creationSkillsHostMethodMissing(Object.assign(new Error('unknown route'), { code: 'unknown_method' }))).toBe(true)
+    expect(creationSkillsHostMethodMissing(Object.assign(new Error('denied'), { code: 'forbidden' }))).toBe(false)
+    expect(creationSkillsHostMethodMissing(Object.assign(new Error('EACCES: SKILL.md'), { code: 'skills_unavailable' }))).toBe(false)
+    expect(creationSkillsHostMethodMissing(Object.assign(new Error('offline'), { code: 'unreachable' }))).toBe(false)
+    expect(creationSkillsHostMethodMissing(new Error("No handler registered for 'another.route'"))).toBe(false)
   })
 
 })

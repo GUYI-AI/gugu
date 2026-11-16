@@ -130,10 +130,10 @@ it('retains the original File after placement fails, then retries the same task 
 it('keeps a missing skill method distinct from empty skills and retries the same selected target', async () => {
   await mount('dark')
   await page.getByTestId('agent-watch-create-skills').click()
-  await until('host compatibility error is visible', () => document.querySelector('[data-testid="agent-watch-create-skills-error"]')?.getAttribute('data-failure') === 'host-update-required')
+  await until('host compatibility error is visible', () => document.querySelector('[data-testid="agent-watch-create-skills-error"]')?.getAttribute('data-failure') === 'method-unavailable')
   expect(fixture.skills).toHaveBeenCalledExactlyOnceWith('attachment-device', { harness: 'codex' })
   await expect.element(page.getByRole('alert')).toHaveTextContent('Test device')
-  await expect.element(page.getByRole('alert')).toHaveTextContent('更新后重试')
+  await expect.element(page.getByRole('alert')).toHaveTextContent('检查那台设备的咕咕版本后重试')
   expect(document.body.textContent).not.toContain('没有可用的技能')
   await page.screenshot({ path: '__screenshots__/owner-phone-regression/C-create-unsupported-host.png' })
   fixture.skills.mockResolvedValueOnce({ ok: true, value: { skills: [

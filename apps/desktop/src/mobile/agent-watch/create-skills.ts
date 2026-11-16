@@ -10,12 +10,17 @@ export class CreationSkillsReadError extends Error {
   }
 }
 
-/** A missing route is a host-version signal; permission/refusal and real scan failures remain failures. */
-export function creationSkillsHostTooOld(error: Error): boolean {
+/** Only this catalog call's exact missing-method signal describes capability, not a failed native scan. */
+export function creationSkillsHostMethodMissing(error: Error): boolean {
   const code = 'code' in error && typeof error.code === 'string' ? error.code : null
   if (code === 'forbidden' || code === 'EACCES') return false
-  return code === 'host_update_required' || code === 'unknown_method' || code === 'method_not_found'
+  return code === 'host_update_required' || code === 'server_outdated' || code === 'unknown_method' || code === 'method_not_found'
     || /No handler registered for ['"]sessionTimeline\.sessionCreateSkills['"]/.test(error.message)
+}
+
+/** A same-build routing failure or an unknown peer version must not be diagnosed as an old installation. */
+export function creationSkillsHostTooOld(error: Error, peerVersion?: string, clientVersion?: string): boolean {
+  return !!peerVersion && !!clientVersion && peerVersion !== clientVersion && creationSkillsHostMethodMissing(error)
 }
 
 /** Read the selected harness's native skills on its execution computer, never installed Apps. */

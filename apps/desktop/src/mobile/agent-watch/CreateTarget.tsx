@@ -139,7 +139,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         {selectedHarness?.permissionModes.map((mode) => <Choice key={mode} id={mode} dimension="permission" name={tm(`agentWatch.create.permission.${mode}.name`)}
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}
       </div>}
-      {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} deviceLabel={machine ? label(machine.device) : undefined} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.localProjectId ?? null} search={search}
+      {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} deviceLabel={machine ? label(machine.device) : undefined} deviceVersion={machine?.device.capabilities.app_version} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.localProjectId ?? null} search={search}
         selected={configuration?.skills ?? []} onChange={(skills) => { configuration?.onSkills(skills); setView(null) }} />}
     </PhoneComposerSheet>
   </>
