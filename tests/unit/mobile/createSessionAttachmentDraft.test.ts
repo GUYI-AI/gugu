@@ -97,6 +97,7 @@ it('waits for a disposed account’s in-flight hydrate and clears its late files
   const next = bindCreationDraft(local, newKey)
   expect(composerDrafts.forKey(newKey).pending).toEqual([])
   release()
+  await Promise.allSettled([old.ready])
   await next.ready
   expect(local.getState().attachments).toEqual([])
   expect(composerDrafts.forKey(newKey).pending).toEqual([])
