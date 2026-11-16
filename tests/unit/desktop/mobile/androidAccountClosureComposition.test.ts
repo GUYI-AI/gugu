@@ -74,6 +74,21 @@ describe('Android closure preparation finalization', () => {
     expect(flow.getSnapshot().status).toBe('failed'); expect(f.enabled()).toBe(false); expect(f.sealed()).toBe(true)
     expect(f.native.receipt.remove).toHaveBeenCalledOnce(); expect(f.journal.remove).not.toHaveBeenCalled(); expect(f.saved()).not.toBeNull()
   })
+  it('unavailable retry actions preserve a cancellation failure instead of reporting completion', async () => {
+    const f = setup(); const failure = new Error('Protected write failure')
+    f.preparation.cancel.mockRejectedValueOnce(failure)
+    const flow = await f.create(); await expect(flow.start()).rejects.toBe(failure)
+    await expect(flow.retryLocal()).rejects.toBe(failure)
+    await expect(flow.retry()).rejects.toBe(failure)
+    expect(f.preparation.cancel).toHaveBeenCalledOnce()
+    expect(f.sealed()).toBe(true); expect(f.enabled()).toBe(false)
+    expect(f.saved()).not.toBeNull(); expect(f.native.eraseLocal).not.toHaveBeenCalled()
+  })
+  it('a cancellation rejection without a payload still fails instead of completing', async () => {
+    const f = setup(); f.preparation.cancel.mockRejectedValueOnce(undefined)
+    const flow = await f.create(); await expect(flow.start()).rejects.toMatchObject({ code: 'closure_storage_unavailable' })
+    expect(f.sealed()).toBe(true); expect(f.enabled()).toBe(false); expect(f.saved()).not.toBeNull()
+  })
   it('never submits closure after stop or device retirement fails', async () => {
     const f = setup(); f.removeRegistration.mockRejectedValue(new Error('Device removal failed'))
     const flow = await f.create(); await flow.start()

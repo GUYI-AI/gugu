@@ -30,6 +30,7 @@ final class AccountClosureEncryptedFiles implements AccountClosureReceiptStore.S
         root = new File(parent, "account-closure");
         if (!root.exists() && !root.mkdir()) throw new java.io.IOException("Cannot create protected storage");
         requirePath(root);
+        if (!root.isDirectory()) throw new java.io.IOException("Protected storage is not a directory");
     }
     @Override public synchronized byte[] read(String key) throws Exception {
         File target = target(key);
@@ -78,6 +79,7 @@ final class AccountClosureEncryptedFiles implements AccountClosureReceiptStore.S
     private File target(String key) throws Exception {
         if (key == null || !key.matches("[a-f0-9]{64}")) throw new java.io.IOException("Invalid protected record key");
         requirePath(root);
+        if (!root.isDirectory()) throw new java.io.IOException("Protected storage is not a directory");
         File target = new File(root, key + ".enc"); requirePath(target); return target;
     }
     private byte[] aad(String key) { return ("gugu-account-closure-v1\u0000" + installation + "\u0000" + key).getBytes(StandardCharsets.UTF_8); }
