@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { chmod, link, mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn, execFile } from 'node:child_process';
+import { once } from 'node:events';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { MAX_CREATION_RECORD_BYTES, openCreationAttachmentJournal } from './creation-attachment-journal';
 
 const roots: string[] = [];
@@ -9,6 +13,27 @@ const fresh = async () => { const root = await mkdtemp(join(tmpdir(), 'creation-
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
 describe('POSIX bounded private creation facts', () => {
+  it.skipIf(process.platform === 'win32')('rejects a private FIFO with no writer through the complete journal read before the child deadline', async () => {
+    const root = await fresh();
+    await openCreationAttachmentJournal(root, 'owner', 'device', 'request');
+    const [key] = await readdir(root), path = join(root, key, 'creating.json');
+    await promisify(execFile)('mkfifo', ['-m', '600', path]);
+    const module = fileURLToPath(new URL('./creation-attachment-journal.ts', import.meta.url));
+    const script = `const {openCreationAttachmentJournal}=await import(${JSON.stringify(`file://${module}`)});\nconst j=await openCreationAttachmentJournal(${JSON.stringify(root)},'owner','device','request');\ntry {await j.read('creating');process.exitCode=2} catch(e) {if(!String(e.message).includes('private regular file')) throw e;console.log('FIFO_REJECTED')}`;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_OPTIONS: '' } });
+    let output = '', error = '', expired = false;
+    child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { error += bytes; });
+    const timer = setTimeout(() => {
+      expired = true;
+      void promisify(execFile)('pgrep', ['-af', String(child.pid)]).catch(() => undefined).finally(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      });
+    }, 5000);
+    try {
+      const [code] = await once(child, 'exit');
+      expect(expired, error).toBe(false); expect(code, error).toBe(0); expect(output).toContain('FIFO_REJECTED');
+    } finally { clearTimeout(timer); }
+  }, 10_000);
   it('reopens complete private records and keeps an exclusive fact immutable', async () => {
     const root = await fresh(), journal = await openCreationAttachmentJournal(root, 'owner', 'device', 'request');
     expect(await journal.append('creating', { conversationId: 'original' })).toBe(true);

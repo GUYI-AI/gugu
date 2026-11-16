@@ -58,7 +58,7 @@ export async function openCreationAttachmentJournal(root: string, ownerId: strin
   async function read<K extends keyof CreationStages>(stage: K): Promise<CreationStages[K] | null> {
     const path = join(directory, `${stage}.json`);
     let handle;
-    try { handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); }
+    try { handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
     let value: string;
     try {
@@ -97,7 +97,7 @@ export async function openCreationAttachmentJournal(root: string, ownerId: strin
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const existing = await read(stage);
       if (!isDeepStrictEqual(existing, value)) throw attachmentCreationUnverified('The original attachment creation fact conflicts');
-      const prior = await open(path, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0));
+      const prior = await open(path, constants.O_RDWR | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
       try {
         const info = await prior.stat();
         if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o077) !== 0) throw attachmentCreationUnverified('The original attachment fact is not private');
