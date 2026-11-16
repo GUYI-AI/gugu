@@ -72,7 +72,7 @@ const vm = {
 
 vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useAgentInstallationStatus: () => vm,
-  useInstallSourceVersions: () => ({ data: undefined, isPending: false }),
+  useInstallSourceVersions: () => ({ state: 'value', value: undefined, stale: false, error: null }),
 }))
 
 const { InstallSection } = await import('@renderer/features/settings/agents-page/InstallSection')
