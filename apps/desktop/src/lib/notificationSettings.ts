@@ -11,15 +11,11 @@ import type { ChatNotifications } from '../../shared/device-preferences'
  *  - `chatMessages` 聊天消息：私聊新消息、群里叫到你的消息（判据见 notificationModels.shouldNotify）。
  *  - `sound` 提示音：聊天系统横幅响不响。
  *
- * 存在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `chatNotifications`,web / 手机 = localStorage)。
- * 旧结构 `{ messages, requests }` 的 `messages` 在读旧值时认一次(shared/device-preferences.ts)。
+ * 存在这台设备的偏好里(lib/devicePreferences.ts)。
  */
 export type NotificationSettings = ChatNotifications
 
-/**
- * What a notification decides with, this moment. Before the preference is read (only if the desktop handover failed)
- * nothing announces: the person may have turned it off.
- */
+/** What a notification decides with, this moment; before the preference is read nothing announces (it may be off). */
 function decision(reading: Reading<NotificationSettings>): NotificationSettings {
   // @@@reading-default(moment) - whether to announce a message arriving before the preference was read: neither banner nor sound
   return reading.state === 'value' ? reading.value : { chatMessages: false, sound: false }

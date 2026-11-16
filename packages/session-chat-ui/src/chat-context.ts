@@ -90,11 +90,7 @@ export type ChatContextOptions = {
   senderAvatar?: (fromId: string | null) => string | null;
   /** Optional change source so mounted cards re-read `senderAvatar` when the host's cache changes. */
   subscribeSenderAvatars?: (listener: () => void) => () => void;
-  /**
-   * An App's name by its id, as the host names it (its installed Apps, the interface language), for a delivery an App
-   * sent. Synchronous; `null` = the host does not have that App (the card shows the id); `undefined` = not known yet
-   * (the card leaves the App out until `subscribeAppNames` says it is). Omitted = ids.
-   */
+  /** An App's name by id, as the host names it (semantics: lib/app-name.ts). Omitted = ids. */
   appName?: (appId: string) => string | null | undefined;
   /** Optional change source so mounted cards re-read `appName` when the host's Apps or language change. */
   subscribeAppNames?: (listener: () => void) => () => void;

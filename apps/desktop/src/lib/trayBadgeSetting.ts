@@ -8,8 +8,7 @@ import { devicePreferences, useDevicePreference } from './devicePreferences'
  * 但它不是通知开关 —— 它是窗口外观(chrome),和「关闭时最小化到托盘」同一类。
  * ❌ 别把它塞进「聊天消息通知」或任务面板的通知卡里:关掉角标不等于关掉通知,反过来也是。
  *
- * 存在 app 设置 `interface.trayBadge` 里(lib/devicePreferences.ts);主进程自己读它(启动时、这个键变了时),
- * ❌ 渲染层每次启动再推一遍。
+ * 存在 app 设置 `interface.trayBadge` 里;主进程自己读它(❌ 渲染层再推一遍)。
  */
 export function setTrayBadgeEnabled(enabled: boolean): void {
   devicePreferences.write('trayBadge', enabled)

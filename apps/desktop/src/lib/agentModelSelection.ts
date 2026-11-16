@@ -37,11 +37,7 @@ export interface PlatformCatalogModel {
   requiresMembership: boolean
   /** 目录 `hidden`(#7056):他在设置「模型」页关掉了这一条。只认 true,旧服务端不带 ⇒ false。 */
   hidden: boolean
-  /**
-   * The four details below are what a model *menu* shows (its rows' multiplier and context) and what the composer's effort
-   * picker intersects (#6447). They are read every time but not kept across restarts (`platformCatalog`'s `carry`): a
-   * catalog restored from the snapshot lacks them, and a reader takes absent as "not known yet" (`catalogDetailed`).
-   */
+  /** What a model menu shows and the effort picker intersects (#6447); not carried across restarts (absent = not known yet). */
   creditMultiplier?: number | null
   /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
   creditMultipliers?: Partial<Record<ModelAccessProtocol, number>>
@@ -198,10 +194,7 @@ export async function setAgentModelSelection(
 /** Which way a machine's create-model catalog is asked: this computer's runtime, another computer, or a phone task host. */
 export type SessionCreateVia = 'local' | 'machine' | 'phone'
 
-/**
- * 一台机器上某个 harness 能跑哪些模型(新建会话框、智能体模型设置共用这一问)。目录与订阅凭据都问那台实际所在的设备;
- * 控制端本机账号不能冒充远端凭据。`sessionView` null = 那台电脑按自己的「终端」开关定。
- */
+/** 一台机器上某个 harness 能跑哪些模型:目录与订阅凭据都问那台实际所在的设备。`sessionView` null = 那台按自己的「终端」开关定。 */
 export async function fetchSessionCreateModels(deviceId: string, harness: string, sessionView: SessionpageSessionView | null, model: string | null, via: SessionCreateVia): Promise<SessionpageSessionCreateModels> {
   if (via === 'machine') return fetchCreateModels(deviceId, harness, sessionView, model)
   if (via === 'phone') return fetchPhoneCreateModels(deviceId, harness, sessionView, model)

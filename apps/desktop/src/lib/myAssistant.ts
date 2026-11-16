@@ -7,11 +7,7 @@ import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from './
 import { useAuth } from '../store/auth'
 import type { ContactsLoadStatus } from '../store/contactsContext'
 
-/**
- * 这个人的个人助理是谁(按库里的标记 `agent_provisions.member_key='assistant'`,不论它住在云上还是哪台电脑上)。
- * `provisionDeviceId`:库里那一行记的是哪台(建它 / 最近一次搬过去的);它此刻住哪以通讯录为准,见 `useMyAssistantContact`。
- * `agentId: null` = 读到了,这个人还没有个人助理。
- */
+/** 这个人的个人助理是谁(`member_key='assistant'`);`provisionDeviceId` = 库里那一行记的那台;`agentId: null` = 读到了、还没有。 */
 export type MyAssistant = { agentId: string | null; provisionDeviceId: string | null }
 
 const log = rendererLogger('assistant/identity')
@@ -32,12 +28,8 @@ async function readMyAssistant(owner: string): Promise<MyAssistant> {
 }
 
 /**
- * @@@client-state-model, signal tier: `agent_provisions` writes no account revision (gugu-supabase dev 5f12312: its only
- * trigger stamps device commands; `agent_changed` comes from `identity.users`). So the value is read again when the window
- * comes back past `fresh`, when the account's private bus resubscribes (a gap where another device may have provisioned or
- * moved it), on `agent_changed` (creating an assistant adds a users row: a hint; store/contacts.tsx), and after this
- * device's own provision / move / close writes (`refreshMyAssistant`: a write without a version).
- * Kept across restarts so the left-rail entry is there on the first frame.
+ * @@@client-state-model, signal tier: `agent_provisions` writes no account revision (gugu-supabase dev 5f12312): read again on
+ * focus, bus resubscribe, `agent_changed` and this device's own writes (`refreshMyAssistant`). Kept for the first frame.
  */
 export const myAssistant = replica({
   name: 'myAssistant',

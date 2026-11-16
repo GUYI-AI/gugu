@@ -10,13 +10,7 @@ import { notify } from './notices'
 import { replica, useReplica, type Reading } from './replica'
 import '../i18n/registerMainCatalog'
 
-/**
- * Main's answer for the signed-in account (account scope: whether it waits depends on whether this account has an
- * assistant here, so an account switch never shows the last account's wait). With no desktop IPC (a phone, a web page)
- * nothing hosts an assistant here, so it truly does not wait: `{pending: false, stuck: false}` is the value, ❌ a placeholder. Main pushes every change with its value
- * (`rulesStateChanged`), so a read value stays current (`fresh: Infinity`). Not kept across restarts (a restored `pending`
- * would flash "preparing").
- */
+/** Main's answer for the signed-in account; no desktop IPC = `{pending: false, stuck: false}` (a value). Pushed; ❌ kept (would flash "preparing"). */
 export const assistantRulesState = replica({
   name: 'assistantRulesState',
   scope: 'account',

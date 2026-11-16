@@ -4,10 +4,7 @@ import { replica } from './replica'
 
 const dmLog = rendererLogger('assistant/chat')
 
-/**
- * #7199 和个人助理的那条私聊的 id(rpc `open_dm`:有就给那一条,没有就建一条 —— 与通讯录「发消息」同一个)。一条私聊的 id
- * 不会变,读到就一直对(`fresh: Infinity`,没有推送)。跨重启留一份:壳挂着就要它(聊天格子、「今天」页的文件夹)。
- */
+/** #7199 和个人助理的那条私聊的 id(rpc `open_dm`);不会变(`fresh: Infinity`),跨重启留一份:壳挂着就要它。 */
 export const assistantDm = replica({
   name: 'assistantDm',
   scope: 'account',
@@ -20,7 +17,6 @@ export const assistantDm = replica({
     }
   },
   fresh: Infinity,
-  // One chat id in an entry keyed by two uuids: 167 B measured, 188 B with its last-use stamp. The assistant and, after a
-  // move or a re-provision, the one before it.
+  // ~190 B each: the assistant and, after a move or re-provision, the one before it.
   persist: { maxBytes: 256, maxEntries: 2 },
 })

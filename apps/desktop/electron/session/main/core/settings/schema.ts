@@ -56,11 +56,7 @@ export const terminalSettingsSchema = z.object({
   defaultShell: z.enum(TERMINAL_SHELL_IDS),
 });
 
-/**
- * @@@device-preferences — the appearance preference (light / dark / system), this device's (shared/device-preferences.ts).
- * Stored values from before it had a writer (`emlight` / `emdark`) and the retired `plain-white` read as their light /
- * dark; anything else unrecognised is the factory light (@@@1424).
- */
+/** @@@device-preferences — the appearance preference; legacy `emlight` / `emdark` / `plain-white` read as light / dark, anything else light (@@@1424). */
 export const themeSchema = z
   .preprocess(
     (value) => (value === 'emlight' || value === 'plain-white' ? 'light' : value === 'emdark' ? 'dark' : value),
@@ -74,16 +70,10 @@ export const localeSchema = z.enum(['system', 'zh-CN', 'en-US']).catch('system')
 /** Which theme pack each appearance uses (ids of builtin or imported packs; empty = Gugu's own colours). */
 export const themePackSlotsSchema = z.object({ light: z.string().optional(), dark: z.string().optional() });
 
-/**
- * @@@5301 the shell's chat notifications (new direct messages, mentions) and their sound. ❌ Folded into `notifications`:
- * that one is the task page's agent chain, a separate panel.
- */
+/** @@@5301 the shell's chat notifications and their sound (❌ folded into `notifications`: the task page's agent chain). */
 export const chatNotificationsSchema = z.object({ chatMessages: z.boolean(), sound: z.boolean() });
 
-/**
- * #7199 the assistant's device preferences: the meeting reminder (it reads this computer's calendar) and the assistants
- * whose composer ideas entry is hidden (assistant ids are global, so no account dimension is needed).
- */
+/** #7199 the assistant's device preferences: the meeting reminder and the hidden ideas entries (assistant ids are global). */
 export const assistantSettingsSchema = z.object({ meetingReminder: z.boolean(), hiddenIdeasEntries: z.array(z.string()) });
 
 /**

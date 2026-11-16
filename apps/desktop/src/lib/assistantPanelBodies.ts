@@ -2,15 +2,7 @@ import { parseAssistantPanelSnapshot, type AssistantPanelItem, type AssistantPan
 import { getAgentWatchStore, type AgentWatchLocalStore, type LocalRow } from '@/session/shared/remote-sessions/local-store'
 import { getRendererSession } from './sessionPublication'
 
-/**
- * @@@client-state-model — the assistant panel's on-device copies (IndexedDB `meta`, the rows the former panel cache wrote, so
- * nothing is lost on upgrade):
- * - **bodies**: a content cache. A body is immutable and addressed by `body_item_id:body_sha256`, so a kept copy is always
- *   right for the item that names it; least recently saved leave past 32 MB. ❌ a replica (no freshness, nothing to refresh).
- * - **the snapshot's copy**: the `assistantPanel` replica's async `local` (one row per owner and assistant), written when a
- *   read lands. It paints a cold start without a synchronous mirror (the 1 MB localStorage mirror is gone).
- * Rows are bound to their owner: another account never peeks them.
- */
+/** @@@client-state-model — the assistant panel's on-device copies (IndexedDB, per owner): immutable bodies (a content cache, ❌ a replica; 32 MB) and the snapshot copy. */
 const PREFIX = 'assistant-panel.v1:'
 const MAX_BYTES = 32 * 1024 * 1024
 /** Bodies kept on the device: the connection catalog's (the others are read when opened). */
@@ -39,10 +31,7 @@ export function createAssistantPanelBodies(input: { store: () => Promise<AgentWa
   let tail = Promise.resolve()
   const persist = (run: (store: AgentWatchLocalStore) => Promise<void>) => { tail = tail.then(async () => run(await input.store())).catch(() => undefined) }
   const remove = (key: string) => { rows.delete(key); persist((store) => store.delete('meta', key)) }
-  /**
-   * The kept bodies are loaded once, on first use (❌ when the module loads: opening IndexedDB is the app's choice of
-   * moment). A peek before this answers finds none and the body is read.
-   */
+  /** Loaded once, on first use (❌ at module load); a peek before this answers finds none. */
   let loading: Promise<void> | null = null
   const load = () => loading ??= input.store().then((store) => store.readAll('meta')).then((saved) => {
     for (const row of saved) if (isBodyRow(row) && !rows.has(row.key)) { rows.set(row.key, row); stamp = Math.max(stamp, row.savedAt) }

@@ -1,12 +1,6 @@
 import { resolveLocale, type LocalePreference, type SupportedLocale } from '@/i18n/locale'
 
-/**
- * @@@device-preferences — the host's language (tray, menus, window chrome, the session host's copy). Main resolves it
- * itself from the `locale` app setting and the system's languages (main.ts `applyHostLocale`): at startup, when the
- * setting changes, and when the app comes back to the foreground (the system's languages may have changed meanwhile).
- * ❌ a copy of its own on disk, ❌ the renderer pushing what it resolved: the setting is the one store.
- * Until the settings are readable (the session backend loads after the window is created, hidden) it follows the system.
- */
+/** @@@device-preferences — the host's language, resolved by main from the `locale` setting (❌ a copy on disk, ❌ renderer-pushed); system until readable. */
 export class HostLocaleStore {
   private locale: SupportedLocale
 

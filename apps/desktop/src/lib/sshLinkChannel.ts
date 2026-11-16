@@ -6,7 +6,7 @@
 //  · 一台机器的设备连接,形状与 Realtime 频道对齐(ready / send / 收到一条 / 断了),deviceRpc.ts 直接换用。
 // 手机与网页里没有主进程 ⇒ 清单恒为空、没有设备连接:远程 SSH 的机器在那里经咕咕云用(owner 2026-10-08 选 B)。
 
-import { sshMachineAddresses, sshMachineIdsOf, subscribeSshMachineAddresses, watchSshMachineAddresses } from './sshMachineAddresses'
+import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from './sshMachineAddresses'
 import { createSelectStore, type Readable } from './selectStore'
 import { replica } from './replica'
 import { TUNNEL_MACHINES_CHANNELS, type TunnelState, type TunnelWant } from './tunnelMachines'
@@ -34,8 +34,7 @@ function bridge(): ElectronBridge | null {
 
 // ── 这台桌面上的远程 SSH 机器 ──────────────────────────────────────────────────
 
-// 清单只有一份:sshMachineAddresses(lib/sshMachineAddresses.ts,主进程 `describe` 那一读)。这里只是给设备 RPC 的
-// 同步判定读它此刻的值。
+// 清单只有一份(sshMachineAddresses.ts);这里给设备 RPC 的同步判定读它此刻的值。
 const NO_MACHINES: ReadonlySet<string> = new Set()
 
 /** Waits for the list to be read (a read already on its way is joined); a failed read rejects and stays retryable. */
@@ -50,8 +49,7 @@ export async function refreshSshMachines(): Promise<void> {
   if (!bridge()) return
   watchSshMachineAddresses()
   await sshMachineAddresses.refresh()
-  // Shown nowhere right now, the refresh only marked it stale: read it now (a read already done by the refresh is not
-  // repeated). A failed read rejects; the list shown stays the last one main gave and the next ask reads again.
+  // Shown nowhere, the refresh only marked it stale: read now (a failed read rejects; the next ask reads again).
   if (!sshMachineAddresses.key()) return
   await sshMachineAddresses.fetch()
 }
@@ -70,7 +68,7 @@ export function currentSshMachineIds(): ReadonlySet<string> {
 export function subscribeSshMachineIds(listener: (ids: ReadonlySet<string>) => void): () => void {
   void sshMachinesReady().catch(() => undefined)
   let last = currentSshMachineIds()
-  return subscribeSshMachineAddresses(() => {
+  return sshMachineAddresses.subscribe([], () => {
     const next = currentSshMachineIds()
     if (next === last) return
     last = next
@@ -94,10 +92,7 @@ function tunnelStateOf(value: unknown): TunnelState | null {
   return { ready: [...new Set(state.ready.filter((id): id is string => typeof id === 'string'))], problems: { ...state.problems } }
 }
 
-/**
- * Which machines main has linked over a remote tunnel and why the others are not (main's live state). Pushed: main's
- * `changed` event carries the whole state (→ `set`), and so does every answer to `want`. Read once when first wanted.
- */
+/** Which machines main has linked over a remote tunnel, and why the others are not. Pushed whole (`changed`, every `want` answer). */
 export const tunnelLinks = replica({
   name: 'tunnelState',
   scope: 'device',
@@ -181,7 +176,7 @@ export function subscribeTunnelState(listener: (state: TunnelState) => void): ()
   const electron = bridge()
   if (electron) {
     wireTunnel(electron)
-    // The first read lands in the replica, not through `applyTunnelState`: the listeners hear of it once it is there.
+    // The first read lands in the replica, not through `applyTunnelState`: hear it once there.
     void tunnelLinks.prefetch().then(() => {
       const state = tunnelsNow()
       if (state && tunnelListeners.has(listener)) listener(state)

@@ -106,31 +106,21 @@ export interface NativeAppearanceTheme {
 
 /**
  * @@@native-appearance (#7333) — 只在 mac 上把偏好照抄成 themeSource(原生材质只有 mac 有;Windows/Linux 的托盘图标
- * 读 shouldUseDarkColors 跟任务栏走,不能被咕咕的手选主题带偏)。偏好来自 app 设置 `theme`,由主进程自己读
- * (启动时、这个键变了时,main.ts);认不出的偏好响亮报错,❌ 悄悄当成 system。
+ * 读 shouldUseDarkColors 跟任务栏走,不能被咕咕的手选主题带偏)。偏好是 app 设置 `theme`;认不出的响亮报错,❌ 当成 system。
  */
 export function applyNativeThemePreference(platform: NodeJS.Platform, theme: NativeAppearanceTheme, preference: unknown): void {
   if (!isThemePreferenceValue(preference)) throw new Error(`theme preference must be light / dark / system, got ${JSON.stringify(preference)}`)
   if (platform === 'darwin' && theme.themeSource !== preference) theme.themeSource = preference
 }
 
-/**
- * The system's own appearance, whatever Gugu's choice. Off macOS themeSource is never set, so shouldUseDarkColors is the
- * system's. On macOS it is too while themeSource is 'system'; while a hand-pick holds it, the system's appearance is
- * the user default AppleInterfaceStyle ('Dark' while dark, also under automatic switching).
- */
+/** The system's own appearance: shouldUseDarkColors, except on macOS under a hand-picked themeSource (then AppleInterfaceStyle). */
 export function systemAppearance(platform: NodeJS.Platform, theme: NativeAppearanceTheme, macInterfaceStyle: () => string): 'light' | 'dark' {
   if (platform !== 'darwin' || theme.themeSource === 'system') return theme.shouldUseDarkColors ? 'dark' : 'light'
   return macInterfaceStyle() === 'Dark' ? 'dark' : 'light'
 }
 
 /** 纯读:renderer 解析「跟随系统」时同步问一次系统此刻的明暗(首帧前也要用)。 */
-export function installSystemAppearanceRead(deps: {
-  platform: NodeJS.Platform
-  nativeTheme: NativeAppearanceTheme
-  macInterfaceStyle: () => string
-  ipcMain: WindowMaterialIpc
-}): void {
+export function installSystemAppearanceRead(deps: { platform: NodeJS.Platform; nativeTheme: NativeAppearanceTheme; macInterfaceStyle: () => string; ipcMain: WindowMaterialIpc }): void {
   deps.ipcMain.on(SYSTEM_APPEARANCE_CHANNEL, (event) => {
     try {
       event.returnValue = systemAppearance(deps.platform, deps.nativeTheme, deps.macInterfaceStyle)

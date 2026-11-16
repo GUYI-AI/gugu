@@ -12,11 +12,7 @@ export const agentFloodAdjustment = replica({
 
 const floodNoticeLog = rendererLogger('chat/agent-flood-notice')
 
-/**
- * The system message that carries a line's agent-flood notice ("一键全撤" hangs on it), or null when the line never had
- * one: at most one ledger row per group (spec: only once), so one read per line. ❌ A failed read as "never happened":
- * it is an error reading, read once more after 3 s (a single blip must not take the button away for good).
- */
+/** The system message carrying a line's agent-flood notice, or null (one per group). ❌ A failed read as "never happened": retried once after 3 s. */
 export const agentFloodNotice = replica({
   name: 'agentFloodNotice',
   scope: 'account',

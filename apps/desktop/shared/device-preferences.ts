@@ -1,17 +1,9 @@
 /**
- * @@@device-preferences — this device's preferences (theme, language, theme-pack slots, sidebar tint, tray badge, chat
- * notifications, meeting reminder, hidden ideas entries) have one store per shell:
- * - desktop: main's app settings (`theme`, `locale`, `themePackSlots`, `chatNotifications`, `assistant`, `interface`).
- *   Preload hands them over synchronously before the first frame (DEVICE_SETTINGS_CHANNEL) — the inline boot script,
- *   the language runtime and the renderer's settings replica all start from that one answer. Imported theme packs are
- *   a file main keeps under userData; the theme-pack stylesheet is derived by main from slots + packs, ❌ stored.
- * - web and phone have no main process: localStorage under the keys below is their device store (❌ a fallback).
- *
- * The localStorage keys below were the desktop's store too until this change. On desktop, preload reads them exactly
- * once — the one-time migration — sends them along with the handover request, and deletes each one main has settled
- * (adopted into an empty setting, or main already had its own value, which wins). Nothing else on desktop touches them.
- *
- * Dependency-free: preload, main and the renderer all import it.
+ * @@@device-preferences — this device's preferences have one store per shell. Desktop: main's app settings, handed over by
+ * preload synchronously before the first frame (DEVICE_SETTINGS_CHANNEL); boot script, language runtime and settings
+ * replica all start from that answer. The theme-pack stylesheet is derived by main from slots + packs, ❌ stored.
+ * Web / phone: localStorage under the keys below (❌ a fallback). On desktop preload reads those keys once (the migration)
+ * and deletes each one main settled (adopted, or main's own value wins). Dependency-free: preload, main, renderer import it.
  */
 import type { ThemePack } from '../src/session/shared/theme/theme-packs'
 
@@ -40,6 +32,15 @@ export const PREFERENCE_STORAGE_KEYS = {
 
 /** One key per assistant whose ideas entry is hidden (value `hidden`). */
 export const IDEAS_ENTRY_KEY_PREFIX = 'gugu.assistant.ideasEntry:'
+
+export function ideasEntryKeys(storage: Pick<Storage, 'key' | 'length'>): string[] {
+  const keys: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i)
+    if (key?.startsWith(IDEAS_ENTRY_KEY_PREFIX)) keys.push(key)
+  }
+  return keys
+}
 
 /** What preload read of the old keys: raw strings, parsed by main (the same parsers the web shell reads them with). */
 export type LegacyDevicePreferences = {
@@ -94,10 +95,7 @@ function parseJson(raw: string | null | undefined): unknown {
   }
 }
 
-/**
- * `{ chatMessages, sound }`; the older `{ messages, requests }` shape carries `messages` over as `chatMessages` (#5301:
- * `requests` was never read and is dropped).
- */
+/** `{ chatMessages, sound }`; the older `{ messages, requests }` carries `messages` over (#5301: `requests` was never read). */
 export function parseChatNotifications(raw: string | null | undefined): ChatNotifications | undefined {
   const parsed = parseJson(raw)
   if (!parsed || typeof parsed !== 'object') return undefined
@@ -132,32 +130,17 @@ export function readLegacyPreferences(storage: LegacyStorage): LegacyDevicePrefe
     const raw = storage.getItem(key)
     if (raw !== null) legacy[name] = raw
   }
-  const hidden: string[] = []
-  for (let i = 0; i < storage.length; i++) {
-    const key = storage.key(i)
-    if (key?.startsWith(IDEAS_ENTRY_KEY_PREFIX) && storage.getItem(key) === 'hidden') hidden.push(key.slice(IDEAS_ENTRY_KEY_PREFIX.length))
-  }
+  const hidden = ideasEntryKeys(storage).filter((key) => storage.getItem(key) === 'hidden').map((key) => key.slice(IDEAS_ENTRY_KEY_PREFIX.length))
   if (hidden.length) legacy.hiddenIdeasEntries = hidden
   return legacy
 }
 
 function removeLegacy(storage: LegacyStorage, name: LegacyPreferenceName): void {
-  if (name !== 'hiddenIdeasEntries') {
-    storage.removeItem(PREFERENCE_STORAGE_KEYS[name])
-    return
-  }
-  const keys: string[] = []
-  for (let i = 0; i < storage.length; i++) {
-    const key = storage.key(i)
-    if (key?.startsWith(IDEAS_ENTRY_KEY_PREFIX)) keys.push(key)
-  }
-  for (const key of keys) storage.removeItem(key)
+  if (name !== 'hiddenIdeasEntries') storage.removeItem(PREFERENCE_STORAGE_KEYS[name])
+  else for (const key of ideasEntryKeys(storage)) storage.removeItem(key)
 }
 
-/**
- * Preload, desktop: send the old keys' values with the handover request (`ask` = the synchronous IPC), delete the ones
- * main settled, hand over main's answer. The derived stylesheet key goes unconditionally: main derives it now.
- */
+/** Preload: send the old keys with the handover request (`ask`, sync IPC), delete the ones main settled; the stylesheet key always goes. */
 export function takeDeviceSettings(storage: LegacyStorage, ask: (legacy: LegacyDevicePreferences) => DeviceSettingsAnswer | null): DeviceSettingsGlobal {
   const answer = ask(readLegacyPreferences(storage))
   if (!answer) return { handover: null }
@@ -166,10 +149,7 @@ export function takeDeviceSettings(storage: LegacyStorage, ask: (legacy: LegacyD
   return { handover: answer.handover }
 }
 
-/**
- * The language preference for a script that runs before the renderer's modules (the boot poster's slogan): the same
- * store `lib/devicePreferences.ts` picks — preload's handover on desktop, localStorage on web / phone.
- */
+/** The language preference for a script that runs before the renderer's modules (the boot poster's slogan), from the same store. */
 export function bootLocalePreference(host: { guguDeviceSettings?: DeviceSettingsGlobal; localStorage?: Pick<Storage, 'getItem'> }): LocalePreference {
   if (host.guguDeviceSettings) {
     // @@@reading-default - the poster's slogan when main gave no handover: the system language (i18n says so too).

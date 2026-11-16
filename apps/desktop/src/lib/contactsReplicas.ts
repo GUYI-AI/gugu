@@ -67,11 +67,7 @@ export const groupJoinRequests = replica({
   },
 })
 
-/**
- * The people a search in 「添加联系人」 found for one submitted query (user, 咕咕号 or email). Held only while the page
- * shows it (`keep: 0`): the next opening starts from an empty box, ❌ the last search's hits. The rows are whole
- * identities (a search finds people not in the IM library yet); they are published to it before the answer, as above.
- */
+/** The people a search in 「添加联系人」 found; held only while shown (`keep: 0`): ❌ the last search's hits on the next opening. */
 export const userSearch = replica({
   name: 'userSearch',
   scope: 'account',

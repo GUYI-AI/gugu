@@ -224,8 +224,7 @@ export function estimateDelivery(item: ChatMessage, ctx: MeasureCtx, vars: Deliv
 
 /**
  * 渠道一段，加上两格送法事实：App 代发、悄悄话（#6835）。手机与桌面同一张卡、同一句。
- * App 代发写它的名字（宿主按装着的 App、界面语言给）；这台没装就写 id；还不知道装没装（宿主还没读到）就先不写这一段，读到了再补上。
- * 信封里留的是 id，详情里照样看得到。
+ * App 代发写它的名字;这台没装就写 id;还不知道就先不写这一段(lib/app-name.ts)。
  */
 type Namers = { appName: (appId: string) => string | null | undefined; chatName: (chatId: string) => string | null };
 

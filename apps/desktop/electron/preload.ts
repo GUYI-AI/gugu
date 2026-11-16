@@ -150,8 +150,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncWindowTone: (tone: 'light' | 'dark', themeColors?: Record<string, string>): void => {
     ipcRenderer.send('window:sync-tone', tone, themeColors)
   },
-  // @@@native-appearance (#7333) 纯读:系统此刻是深是浅(与咕咕选了什么无关)。解析「跟随系统」时用 —— mac 上 themeSource
-  // 还停在上一次手选时,Chromium 的 matchMedia 说的是那个手选。主进程读不到答 null。
+  // @@@native-appearance (#7333) 纯读:系统此刻是深是浅(mac 上 themeSource 停在手选时 matchMedia 说的是手选)。读不到答 null。
   readSystemAppearance: (): 'light' | 'dark' | null => ipcRenderer.sendSync(SYSTEM_APPEARANCE_CHANNEL),
   relaunchApp: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
   onAppForeground: (callback: () => void): (() => void) => {
@@ -209,9 +208,8 @@ contextBridge.exposeInMainWorld(VIEW_STATE_GLOBAL, {
   snapshot: ipcRenderer.sendSync(VIEW_STATE_SNAPSHOT_CHANNEL) as Record<string, unknown> | null,
 } satisfies ViewStateGlobal)
 
-// @@@device-preferences — theme, language, theme-pack stylesheet, sidebar tint and the other device preferences are in the
-// first frame: one synchronous request that also carries the old localStorage keys over (the one-time migration; this is
-// the only place on desktop that reads them). The renderer's settings replica starts from the same answer.
+// @@@device-preferences — every device preference is in the first frame: one synchronous request, carrying the old
+// localStorage keys over (the one-time migration; the only desktop reader of them).
 contextBridge.exposeInMainWorld(DEVICE_SETTINGS_GLOBAL, takeDeviceSettings(
   window.localStorage,
   (legacy) => ipcRenderer.sendSync(DEVICE_SETTINGS_CHANNEL, legacy) as DeviceSettingsAnswer | null,

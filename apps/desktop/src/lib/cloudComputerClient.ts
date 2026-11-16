@@ -9,11 +9,7 @@ import { cloudComputerEnabled } from '@gugu/core/cloud/optionalServices'
 import { authBoundedFetch } from './authBoundedFetch'
 import { getRendererAccessToken } from './sessionPublication'
 
-/**
- * #7199 渲染层(桌面窗口、手机)到云电脑管家的那一条:地址 = 开发实例的 `GUGU_CLOUD_COMPUTER_URL`(构建时烘进来),
- * 否则这套库的 `/functions/v1/cloud-computer`。两个都拿不到 = null ⇒ 设置 → 设备里没有云电脑这一块。
- * 请求跟着登录态走(authBoundedFetch:退出登录时在途的就地中止),带的是此刻这一端的用户 JWT。
- */
+/** #7199 到云电脑管家的那一条:`GUGU_CLOUD_COMPUTER_URL`,否则 `/functions/v1/cloud-computer`;都没有 = null。请求跟着登录态走(authBoundedFetch)。 */
 function overrideUrl(): string {
   return typeof __GUGU_CLOUD_COMPUTER_URL__ === 'string' ? __GUGU_CLOUD_COMPUTER_URL__ : ''
 }

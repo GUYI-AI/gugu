@@ -125,7 +125,6 @@ export function requestAssistantClose(): void {
 
 /** 通讯录 / agent 设置里删的是他的个人助理 = 换成关闭咕咕那一份确认(返回 true,调用方别再走通用删除);不是 = false。 */
 export function closeIfMyAssistant(ownerUserId: string | null | undefined, agentUserId: string): boolean {
-  // 读这里已经读到的那一份,不发请求:一刻的分流,不画。
   const mine = myAssistant.peek()
   // @@@reading-default(route) - a one-moment routing decision outside rendering: not read yet = not known to be the assistant, the delete takes the general path (today's behaviour)
   const personal = mine.state === 'value' ? mine.value.agentId === agentUserId : false

@@ -27,11 +27,7 @@ function route(path: string) {
 
 const collectionDevice = (domain: AssistantPanelDomain, deviceId: string) => ['tasks','integrations'].includes(domain) ? deviceId : undefined
 
-/**
- * One collection of a snapshot as a reader may use it, or why not (the same rule `collection` reads by): a failed
- * application, stale rows, or a collection the home has not prepared / could not publish throw. Pure: a surface that
- * holds the snapshot derives it at render.
- */
+/** One collection of a snapshot as a reader may use it, or throws why not (the rule `collection` reads by). Pure. */
 export function readableAssistantPanelCollection(snapshot: AssistantPanelSnapshot, domain: AssistantPanelDomain, deviceId: string): AssistantPanelItem[] {
   const result = assistantPanelCollection(snapshot,domain,collectionDevice(domain,deviceId))
   const failed = snapshot.application.find(row => row.domain === domain && row.status === 'failed')

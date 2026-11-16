@@ -3,14 +3,7 @@ import { replica } from './replica'
 import { invokeOnMachine } from '../session/renderer/lib/ipc'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../session/shared/core/voice-notes'
 
-/**
- * This computer's calendar as the meeting reminder and its setting read it (one read of `VOICE_NOTE_MEETINGS_CHANNEL`,
- * device scope). `missing` = no calendar to read here (not connected / not supported / no OS permission): a true value.
- * Any other failure is a failed read (❌ taken for "connected"). `meetings` is not carried across restarts (titles and
- * times of meetings): a restored value has none, and its readers take that as "not known yet" (the reminder waits for the
- * read; the setting only needs the status). No push: read while shown every 30 s (a reminder lands 1 min before a meeting)
- * and when the window comes back.
- */
+/** This computer's calendar. `missing` = none here (a value); `meetings` not carried; read every 30 s while shown and on focus. */
 export type DeviceMeetings = { status: 'ok' | 'missing'; meetings?: UpcomingMeeting[] }
 
 const MISSING = new Set(['not_granted', 'unsupported', 'os_permission'])

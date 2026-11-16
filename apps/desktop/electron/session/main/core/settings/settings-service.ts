@@ -21,10 +21,7 @@ export type SettingsMeta<K extends AppSettingsKey> = {
 export class SettingsStore implements IInitializable {
   private cache: Partial<AppSettings> = {};
 
-  /**
-   * Synchronous underneath (better-sqlite3): preload's handover (device-settings.ts) reads and adopts through the same
-   * methods before the first frame.
-   */
+  /** Synchronous underneath (better-sqlite3): preload's handover reads and adopts through these before the first frame. */
   readRaw(key: AppSettingsKey): unknown {
     const [row] = db.select().from(appSettings).where(eq(appSettings.key, key)).all();
     if (!row) return null;

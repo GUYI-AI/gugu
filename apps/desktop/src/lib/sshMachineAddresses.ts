@@ -1,16 +1,11 @@
-import { replica, type Reading } from './replica'
+import { replica } from './replica'
 import { SERVER_SSH_MACHINES_CHANNELS, type SshMachineSummary } from './serverSshMachines'
 import { desktopIpc } from '../platform/desktopIpc'
 import { rendererLogger } from './log'
 
 const registryLog = rendererLogger('ssh-registry')
 
-/**
- * 这台桌面上用 SSH 装上的机器(设备 id → 给人看的地址),见 electron/server/ssh-machines.ts。主进程按登录账号筛,
- * 所以跟账号走。这是这份清单唯一的一读:设备 RPC 挑通道(lib/sshLinkChannel.ts)、侧栏、设置 → 设备都读它。
- * 推送:主进程装上 / 忘掉一台时发 `changed`,主进程接受了一份登录镜像(启动恢复、续期)以后渲染层再读一次
- * (`refreshSshMachines`),所以值一直是最新的(`fresh: Infinity`)。没有桌面主进程(网页、手机)⇒ 空:那里没有 SSH 这条路。
- */
+/** 这台桌面上用 SSH 装上的机器(设备 id → 地址;跟账号走),唯一的一读。主进程推 `changed`,故 `fresh: Infinity`;没有桌面主进程 ⇒ 空。 */
 export const sshMachineAddresses = replica({
   name: 'sshMachineAddresses',
   scope: 'account',
@@ -31,13 +26,12 @@ export const sshMachineAddresses = replica({
       .map((item) => [item.deviceId, item.display])
   },
   fresh: Infinity,
-  // A failed read is not for ever (until then every SSH machine is drawn by its cloud heartbeat): read again when the
-  // window comes back (a value is kept; only a reading without one is stale). ❌ retried: its callers fail loud at once.
+  // A failed read is read again when the window comes back; ❌ retried: its callers fail loud at once.
   refreshOnFocus: true,
   persist: { maxBytes: 8192, maxEntries: 1 },
 })
 let watching = false
-/** Main says when the list changes: listened to from the first reader on (once per document). */
+/** Main says when the list changes (listened to once per document). */
 export function watchSshMachineAddresses(): void {
   if (watching) return
   const electron = desktopIpc()
@@ -54,10 +48,3 @@ export function sshMachineIdsOf(value: Array<[string, string]>): ReadonlySet<str
   if (!ids) idsOf.set(value, ids = new Set(value.map(([id]) => id)))
   return ids
 }
-
-/** For code outside React (the device RPC's transport choice): told whenever the list's entry changes. */
-export function subscribeSshMachineAddresses(listener: () => void): () => void {
-  return sshMachineAddresses.subscribe([], listener)
-}
-
-export type SshMachineAddressesReading = Reading<Array<[string, string]>>

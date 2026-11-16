@@ -3,11 +3,7 @@ import { replica } from './replica'
 import { dataClient } from './supabase'
 
 // @@@runtime-capability-policy (#647) - the global min_critical_capability lives in the DB.
-/**
- * The lowest host runtime capability that is not flagged as stale. One number for everyone: read once per run (no push),
- * kept across restarts so the badge decision is there on the first frame. A failed read is an error reading (❌ 0, which
- * would hide the badge as if the policy said so).
- */
+/** The lowest non-stale host runtime capability: read once per run, kept for the first frame; a failed read is an error (❌ 0). */
 export const runtimeCapabilityPolicy = replica({
   name: 'runtimeCapabilityPolicy',
   scope: 'account',

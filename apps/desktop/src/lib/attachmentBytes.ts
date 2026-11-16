@@ -102,10 +102,7 @@ export type AttachmentView =
 /** 缩略图在内存里只是一个 blob:记在本次运行里,超过这么久没人再取就丢。 */
 const THUMB_GC_MS = 30 * 60_000
 
-/**
- * A preview's bytes, read and acknowledged by the server on every open (❌ a cache: a withdrawn file, or a member removed
- * from the group, must not keep showing what the server would now refuse).
- */
+/** A preview's bytes, read and acknowledged on every open (❌ a cache: a withdrawn file must not keep showing). */
 export async function shownAttachmentBytes(source: AttachmentSource, progress?: (done: number, total: number) => void): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
   const bytes = await attachmentBytes(source, 'shown', undefined, undefined, progress)
   if (bytes.status !== 'ready') throw new Error(bytes.status)

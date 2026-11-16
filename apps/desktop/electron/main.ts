@@ -1360,10 +1360,7 @@ function refreshApplicationMenu(): void {
   })
 }
 
-/**
- * @@@device-preferences — the host's language, resolved here from the `locale` setting and the system's languages (main
- * owns the setting; ❌ the renderer pushing what it resolved). Tray, menus, window chrome and the session host follow.
- */
+/** @@@device-preferences — the host's language, resolved here from the `locale` setting (main owns it). */
 function applyHostLocale(preference: LocalePreference): void {
   if (!hostLocaleStore) throw new Error('HOST_LOCALE_NOT_INITIALIZED')
   if (!hostLocaleStore.apply(preference, app.getPreferredSystemLanguages())) return
@@ -1374,11 +1371,7 @@ function applyHostLocale(preference: LocalePreference): void {
   tellHostPresentationChanged()
 }
 
-/**
- * @@@device-preferences — main applies the two preferences it holds as app settings itself: `theme` → the native
- * appearance (mac themeSource, @@@native-appearance), `locale` → the host's language. At startup (before the window's
- * contents load) and whenever one of the keys changes (`reconcileSettingsRuntimeState` → `onAppSettingsChanged`).
- */
+/** @@@device-preferences — main applies `theme` (@@@native-appearance) and `locale` itself, at startup and on each change. */
 function applyHostPreferences(): void {
   if (!emdashBridgeModule) return
   const { theme, locale, trayBadge } = emdashBridgeModule.hostPreferencesNow()
@@ -2378,10 +2371,7 @@ ipcMain.on(VIEW_STATE_SNAPSHOT_CHANNEL, (event) => {
     event.returnValue = null
   }
 })
-// @@@device-preferences — this device's preferences before the renderer's first frame (shared/device-preferences.ts):
-// preload sends what the old localStorage keys still hold, main adopts them where it has no value of its own, and answers
-// the settings the first frame draws. The session page module is loaded before the window (loadMainWindowContents);
-// a failed answer is logged and is null — the renderer then reads its settings as usual, after the first frame.
+// @@@device-preferences — preload's synchronous handover (shared/device-preferences.ts); a failed answer is logged and is null.
 ipcMain.on(DEVICE_SETTINGS_CHANNEL, (event, legacy: LegacyDevicePreferences) => {
   try {
     event.returnValue = emdashBridgeModule?.answerDeviceSettings(legacy ?? {}) ?? null
@@ -4572,7 +4562,7 @@ app.whenReady().then(async () => {
     createLogger('engine-reap').error({ err: error }, '启动回收自身失败,残留留待下轮')
   }
   hostLocaleStore = new HostLocaleStore(app.getPreferredSystemLanguages())
-  // The renderer-pushed copy of the resolved language this replaced (main resolves it from the setting now).
+  // The old renderer-pushed language copy (main resolves it from the setting now).
   rmSync(join(app.getPath('userData'), 'host-locale-v1.json'), { force: true })
   try {
     enableMacTouchIdPasskeys()
@@ -4658,8 +4648,7 @@ app.whenReady().then(async () => {
     fatalSessionpageBoot(err)
     return
   }
-  // @@@device-preferences — the settings are readable from here on (before the window's contents load): theme and language
-  // are main's own to apply, now and on every change of their keys (a migration adopting them included).
+  // @@@device-preferences — the settings are readable from here on: apply theme and language, now and on every change.
   const applyPreferencesLogged = () => {
     try {
       applyHostPreferences()

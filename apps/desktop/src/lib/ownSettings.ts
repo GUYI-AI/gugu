@@ -15,12 +15,7 @@ type Scope = GuguSettingsScope
 const readRow = (userId: string, scope: Scope) => readUserSettingsConfig(client, userId, scope)
 const isChatScope = (scope: Scope) => scope.startsWith('chat:')
 
-/**
- * The signed-in account's own settings rows (identity.user_settings), one reading per scope. Occupation, first-run
- * progress and hints, file storage, the product tour and the sample project are keys of the `user` row: their readers
- * share one read (a read on its way serves everyone who asks meanwhile), and a write puts the row the server saved back,
- * so the next reader needs no read at all.
- */
+/** The signed-in account's own settings rows (identity.user_settings), one reading per scope; a write puts the saved row back. */
 export const ownSettings = replica({
   name: 'ownSettings',
   scope: 'account',
@@ -30,9 +25,7 @@ export const ownSettings = replica({
   // row is unknown, and one failed read would otherwise hide them until something else reads the row (review T-2).
   retry: 3,
   retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000),
-  // The `user` row's display values (an occupation, which hints were seen): their first frame after a restart. Other
-  // scopes are not drawn at start; a group's row is the other model's (sharing the slots, every group opened pushed the
-  // `user` row out of the snapshot after four).
+  // Only the `user` row's display values (their first frame); a group's row is the other model's.
   persist: { maxBytes: 1024, maxEntries: 1, carry: (config: Record<string, unknown>, scope: Scope) => (scope === 'user' ? config : undefined) },
 })
 
@@ -69,10 +62,7 @@ export async function updateOwnSettingsKey(userId: string, scope: Scope, key: st
   return saved(userId, await updateUserSettingsKey(client, userId, scope, key, edit))
 }
 
-/**
- * One key family of the signed-in account's `user` row, parsed: the row's reading with `parse` applied to its value. A
- * value `parse` rejects is an error reading (❌ read as "never set"). `userId` null = no account to read for (unknown).
- */
+/** One key family of the `user` row, parsed; a value `parse` rejects is an error (❌ "never set"). `userId` null = unknown. */
 export function useOwnUserSetting<T>(userId: string | null, parse: (config: Record<string, unknown>) => T): Reading<T> {
   const row = useReplica(ownSettings, userId ? ['user'] : null)
   if (row.state !== 'value') return row

@@ -75,10 +75,7 @@ export type SystemPermissionStates = Partial<Record<SystemPermission, SystemPerm
 
 const permissionLog = rendererLogger('system-permissions')
 
-/**
- * 一项系统权限此刻的真值(device):挂上时读,App 每次回到前台再读(信号档:用户从系统设置改完回来,这里立刻重读)。
- * ❌ 缓存 / 持久化:显示的永远是刚问过系统的那一份;读不到就明说读不到,❌ 留着上一次的值冒充当下。
- */
+/** 一项系统权限此刻的真值(device):挂上时读,回到前台再读;❌ 缓存 / 持久化,读不到就明说。 */
 export const systemPermission = replica({
   name: 'systemPermission',
   scope: 'device',
@@ -91,17 +88,9 @@ export const systemPermission = replica({
   },
 })
 
-/**
- * 读系统真值(见 `systemPermission`)。没有 `systemPermissions` 能力位的宿主上什么都不读,`states` 恒为空。
- * `states` 里只有读到了的那几项:还没读到的那一行由调用方画占位(❌ 画成某个状态)。
- */
-export function useSystemPermissionStates(permissions: readonly SystemPermission[]): {
-  states: SystemPermissionStates
-  refresh: () => Promise<void>
-  failed: boolean
-} {
-  // 只读宿主报得出的那几项 —— 调用方问了别的(例如「通用 → 通知」在桌面问通知),
-  // 读不到就是读不到,❌ 不去试一把再吞掉异常。
+/** 读系统真值;没有 `systemPermissions` 能力位的宿主什么都不读。`states` 只有读到了的那几项(没读到的由调用方画占位)。 */
+export function useSystemPermissionStates(permissions: readonly SystemPermission[]): { states: SystemPermissionStates; refresh: () => Promise<void>; failed: boolean } {
+  // 只读宿主报得出的那几项(❌ 试一把再吞掉异常)。
   const key = permissions.filter((permission) => platform.systemPermissions.includes(permission)).join(',')
   const wanted = useMemo(() => (key ? key.split(',') as SystemPermission[] : []), [key])
   const readings = useReplicas(systemPermission, wanted.map((permission) => [permission] as [SystemPermission]))

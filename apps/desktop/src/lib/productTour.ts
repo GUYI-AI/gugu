@@ -51,10 +51,7 @@ export async function saveProductTourState(userId: string, state: ProductTourSta
 /** 「帮助与导览」发来的请求(UI_EVENTS.reopenProductTour 的 detail)。 */
 export type ProductTourRequest = { mode: 'restart' } | { mode: 'resume'; step: TourStepId } | { mode: 'films' }
 
-/**
- * 「帮助与导览」要知道能不能「从第 n 步继续」:读账号自己那一行(ownSettings 的 `user`,与首次提示同一份)。
- * 格式坏了是一个 error 读数(❌ 当成没看过)。
- */
+/** 「帮助与导览」能不能「从第 n 步继续」:读 ownSettings 的 `user`;格式坏了是 error(❌ 当成没看过)。 */
 export function useProductTourState(userId: string | null): Reading<ProductTourState | null> {
   return useOwnUserSetting(userId, parseProductTourState)
 }

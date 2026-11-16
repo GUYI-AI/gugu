@@ -36,10 +36,7 @@ export function readGoogleProviderEnabled(url: string, anonKey: string,
   })
 }
 
-/**
- * Whether this backend offers Google sign-in (device: it is read before anyone signs in). Kept across restarts so the
- * sign-in page draws its methods in the first frame; read again after ten minutes.
- */
+/** Whether this backend offers Google sign-in (device scope: read before sign-in); kept so the first frame draws it. */
 export const googleProviderEnabled = replica({
   name: 'googleProviderEnabled',
   scope: 'device',

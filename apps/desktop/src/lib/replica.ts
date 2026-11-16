@@ -25,10 +25,7 @@ import { rendererLogger } from './log'
 
 export type Reading<V> =
   | { state: 'unknown' }
-  /**
-   * `stale`: a newer answer may be on its way (snapshot from an earlier run, or past `fresh`). `error`: the last refresh
-   * failed, or the one being retried did (a model with `retry` says so while it retries).
-   */
+  /** `stale`: a newer answer may be on its way (snapshot, or past `fresh`). `error`: the last refresh (or retried one) failed. */
   | { state: 'value'; value: V; stale: boolean; error: Error | null }
   | { state: 'error'; error: Error }
 
@@ -36,7 +33,6 @@ export const UNKNOWN: Reading<never> = { state: 'unknown' }
 
 type Scope = 'account' | 'device'
 
-/** The arguments as `read` declares them: a `watch` callback takes them, ❌ decides them. */
 type Later<A extends unknown[]> = A extends unknown[] ? A : never
 
 type Definition<A extends unknown[], V> = {
@@ -60,11 +56,9 @@ type Definition<A extends unknown[], V> = {
     maxBytes: number
     maxEntries: number
     /**
-     * What of a value is carried across restarts (default: all of it). Whole fields left out, or `undefined` = this key is
-     * not kept by definition (not a refusal); never a value cut short or rewritten. A field left out must be one the
-     * value's type already has as optional and every reader already reads as "not known yet". The limits apply to what
-     * is carried. Applied again to what a snapshot holds when it is restored: a value carried as it was kept (the same
-     * fields) is not written again.
+     * What of a value is carried across restarts (default: all). Whole fields left out (ones the type has as optional and
+     * readers read as "not known yet"), or `undefined` = not kept by definition; never cut short or rewritten. The limits
+     * apply to what is carried; applied again on restore.
      */
     carry?: (value: V, ...args: A) => V | undefined
   }
@@ -72,23 +66,17 @@ type Definition<A extends unknown[], V> = {
   refreshOnFocus?: boolean
   /** `refresh` shares a read already on its way instead of cancelling it (for reads that are retried and polled). */
   refreshJoinsRead?: boolean
-  /**
-   * Read again this often while a surface shows it (ms); a function of the value shown, the last read's failure and the
-   * entry's arguments decides per entry (false = not now).
-   */
+  /** Read again this often while a surface shows it (ms); a function (value, failure, arguments) decides per entry (false = not now). */
   refreshEvery?: number | ((value: NoInfer<V> | undefined, error: Error | null, ...args: Later<A>) => number | false)
   /**
-   * `always`: read even while the browser says it is offline — a read that goes to this device (its main process, the
-   * local library; main reaching another machine is main's to answer), so it fails loud instead of waiting unknown. A
-   * function decides per entry (a model that reads this computer or the cloud by its arguments). Default: `always` for
-   * `device`, `online` for `account` (a cloud read waits for the network to come back).
+   * `always`: read even while the browser says offline — a read that goes to this device (main, the local library) fails
+   * loud instead of waiting unknown. A function decides per entry. Default: `always` for `device`, `online` for `account`.
    */
   networkMode?: 'online' | 'always' | ((...args: Later<A>) => 'online' | 'always')
   /**
    * A push-fed model's change feed (pair with `fresh: Infinity`): `start` runs when the first surface showing an entry of
-   * a group appears and the function it returns when the last one goes; `group` says which entries share one feed (default:
-   * all of the model's, per owner). `start` gets the owner and the arguments of the entry that opened the group. Entries
-   * of the group that already hold a value are read again when it starts: what changed while nobody listened.
+   * a `group` (default: all of the model's, per owner) appears, its return when the last goes. Entries of the group that
+   * already hold a value are read again when it starts: what changed while nobody listened.
    */
   watch?: {
     group?: (...args: Later<A>) => unknown
@@ -97,11 +85,7 @@ type Definition<A extends unknown[], V> = {
   /** How many times a failed read is retried before the reading is an error (or, per failure and entry, whether). Default 0: fail loud. */
   retry?: number | true | ((failures: number, error: Error, ...args: Later<A>) => boolean)
   retryDelay?: (attempt: number) => number
-  /**
-   * A first source on this device (the IM library's own copy): asked once when a key is first wanted, its answer shows
-   * (stale) until the read lands. ❌ A second snapshot of `persist`: this is data the app keeps anyway. Answered at once
-   * (not a promise), it is there for the surface's first frame.
-   */
+  /** A synchronous first source on this device (the IM library's copy), shown stale until the read lands; ❌ a second `persist`. */
   local?: (owner: string, ...args: A) => V | undefined | Promise<V | undefined>
   /** How a new answer joins the shown one (keep the order rows were drawn in); default: the new answer replaces it. */
   merge?: (shown: V, next: V) => V
@@ -120,8 +104,7 @@ export const queryClient = new QueryClient({ defaultOptions: { queries: { queryF
 queryClient.mount()
 /**
  * The failure of a read that has no value, kept while it is read again: react-query empties `error` when the next read
- * starts, which would turn a failed reading back into unknown for that while — a surface that hides what waits on an
- * unknown reading, and remounts what reads it again, would loop. A read that answers (or a reset) clears it.
+ * starts, turning it back into unknown — a surface remounting on unknown would loop. An answer (or a reset) clears it.
  */
 const lastFailure = new Map<string, Error>()
 
@@ -213,11 +196,7 @@ function releaseFeed(id: string): void {
   running.stop()
 }
 
-/**
- * Put a value under a key, the entry living as long as its model keeps it (the account's lifetime by default) — ❌
- * react-query's five minutes for an entry nobody watches yet: a snapshot restored at start, or a value a write returned,
- * must still be there when a surface opens later. A model not registered yet (its chunk loads later) is kept likewise.
- */
+/** Put a value under a key, living as long as its model keeps it (❌ react-query's five minutes for an unwatched entry). */
 function putValue(key: QueryKey, value: unknown): void {
   const patch = typeof value === 'function'
   const next = patch ? (value as (old: unknown) => unknown)(queryClient.getQueryData(key)) : value
@@ -228,13 +207,9 @@ function putValue(key: QueryKey, value: unknown): void {
   if (pending) void queryClient.invalidateQueries({ queryKey: key, exact: true, refetchType: 'none' })
 }
 
-/** Putting back what the snapshot kept: not written back to it (it is already there). */
 let restoring = false
 
-/**
- * An entry restored from the snapshot: shown at once, and marked to be read again — a kept value is never trusted as
- * current (I5: the snapshot keeps no invalidation, so whatever `fresh` says, the first surface showing it reads again).
- */
+/** An entry restored from the snapshot: shown at once, marked to be read again whatever `fresh` says (I5). */
 function restoreEntry(key: QueryKey, value: unknown, at: number): void {
   restoring = true
   try {
@@ -255,8 +230,7 @@ function seedFromLocal(key: QueryKey): void {
   const [name, owner, ...args] = key as [string, string, ...unknown[]]
   const local = definitions.get(name)?.local
   if (!local || queryClient.getQueryData(key) !== undefined) return
-  // Marked to be read again whatever `fresh` says (as a restored entry, I5): the read already on its way, or the next
-  // mount, replaces it; a surface showing it now reads at once.
+  // Marked to be read again whatever `fresh` says (I5).
   const put = (value: unknown) => {
     if (value === undefined || queryClient.getQueryData(key) !== undefined) return
     putEntry(key, value, 0)
@@ -309,16 +283,11 @@ function forgetAccount(id: string): void {
   try { localStorage.removeItem(SNAPSHOT_PREFIX + id) } catch { /* nothing stored */ }
 }
 
-/**
- * The account follows the published session. Only a real sign-out or another person signing in clears; a session that is
- * merely absent (boot restore, inactive shell, a refresh that cannot reach the network) holds — the devices cache learned
- * that the hard way twice (devicesCache.ts).
- */
+/** The account follows the published session: only a real sign-out or another person clears; a merely absent session holds. */
 export function followRendererSession(event: string, userId: string | null): void {
   if (userId) {
     if (account.id && account.id !== userId) forgetAccount(account.id)
-    // The account moves first, then its kept entries are restored: followers of a model (`subscribe`) hear them as
-    // this account's (restored before the move, they belonged to nobody a follower was listening for).
+    // The account moves first, then its kept entries are restored: `subscribe` followers hear them as this account's.
     const arriving = account.id !== userId
     setAccount({ id: userId, live: true })
     if (arriving) hydrateSnapshot(userId)
@@ -348,9 +317,8 @@ type Snapshot = Record<string, SnapshotEntry>
 type Limits = NonNullable<Definition<unknown[], unknown>['persist']>
 
 /**
- * When a surface last showed an entry. A surface showing it right now counts as now; one never shown is 0 (a key read in
- * the background must not push out one a surface showed). Uses are noted in memory as surfaces mount and written with
- * the block once the renderer is idle (`flushUses`), ❌ a whole-block rewrite per mounting key on the first frame.
+ * When a surface last showed an entry (showing now = now; never shown = 0). Noted in memory on mount and written once the
+ * renderer is idle (`flushUses`), ❌ a whole-block rewrite per mounting key on the first frame.
  */
 function lastUse(entry: SnapshotEntry, now: number): number {
   const shown = (queryClient.getQueryCache().find({ queryKey: entry.key, exact: true })?.getObserversCount() ?? 0) > 0
@@ -377,7 +345,6 @@ function noteUse(key: QueryKey): void {
 
 const USES_FLUSH_AFTER_MS = 2_000
 
-/** Write the noted uses into the blocks they belong to, one write per block. */
 export function flushUses(): void {
   usesFlush = null
   const noted = new Map(usesNoted)
@@ -393,7 +360,6 @@ export function flushUses(): void {
   }
 }
 
-/** Drop one entry from its owner's snapshot block (no-op when it is not kept). */
 function dropKept(key: QueryKey): void {
   const owner = String(key[1])
   const snapshot = readSnapshot(owner)
@@ -442,8 +408,7 @@ function writeSnapshotEntry(key: QueryKey, read: unknown, at: number, limits: Li
     refuseSnapshotWrite(name, `entry is ${bytes} B, its limit ${limits.maxBytes} B`)
   } else {
     snapshot[hash] = entry
-    // The least recently used leave (❌ the least recently read: a row read in the background must not push out one a
-    // surface shows at every start).
+    // The least recently used leave (❌ least recently read: a background read must not push out a shown row).
     const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => byUse(now)(x, y))
     for (const [evicted] of own.slice(limits.maxEntries)) delete snapshot[evicted]
   }
@@ -454,16 +419,11 @@ function writeSnapshotEntry(key: QueryKey, read: unknown, at: number, limits: Li
   }
 }
 
-/**
- * What a model as defined now admits of its kept entries: none without `persist`, each within `maxBytes`, the newest
- * `maxEntries`. A snapshot written by an older build (a model that no longer persists, a limit that shrank) goes no
- * further than this.
- */
+/** What a model as defined now admits of its kept entries (an older build's snapshot goes no further): none without `persist`, each within `maxBytes`, the newest `maxEntries`. */
 function admitted(definition: Definition<unknown[], unknown>, entries: SnapshotEntry[]): SnapshotEntry[] {
   if (!definition.persist) return []
   const { maxBytes, maxEntries, carry } = definition.persist
   const now = Date.now()
-  // What this definition carries of each kept value (an older build may have kept fields it no longer carries).
   const carried = entries.flatMap((entry) => {
     const value = carry ? carry(entry.value, ...entry.key.slice(2)) : entry.value
     // Carried as it was kept (by content: a carry that returns a new object of the same fields changes nothing).
@@ -487,10 +447,7 @@ function ownEntries(snapshot: Snapshot, owner: string): Map<string, SnapshotEntr
   return byName
 }
 
-/**
- * Seed the cache with the last run's values, dated when they were read, so `fresh` decides whether to read again. A model
- * not registered yet (it loads with its chunk) is seeded as kept and judged when it registers (`pruneSnapshot`).
- */
+/** Seed the cache with the last run's values, dated when read; a model not registered yet is judged when it registers. */
 function hydrateSnapshot(owner: string): void {
   const snapshot = readSnapshot(owner)
   const settled: Settled = { dropped: [], carried: [] }
@@ -504,16 +461,12 @@ function hydrateSnapshot(owner: string): void {
   settleSnapshot(owner, snapshot, settled)
 }
 
-/**
- * A model registering for the first time: its kept entries it does not admit leave the cache and the snapshot; the
- * ones it carries differently (fields an older build kept) are seeded again as carried.
- */
+/** A model registering for the first time: kept entries it does not admit leave; ones it carries differently are seeded again. */
 function pruneSnapshot(definition: Definition<unknown[], unknown>): void {
   for (const owner of definition.scope === DEVICE ? [DEVICE] : account.id ? [account.id] : []) {
     const snapshot = readSnapshot(owner)
     const settled: Settled = { dropped: [], carried: [] }
     judge(definition, ownEntries(snapshot, owner).get(definition.name) ?? [], settled)
-    // Seeded from the snapshot: nothing of this model was read before it was defined.
     for (const entry of settled.dropped) queryClient.removeQueries({ queryKey: entry.key, exact: true })
     for (const entry of settled.carried) {
       if (queryClient.getQueryState(entry.key)?.dataUpdatedAt === entry.at) restoreEntry(entry.key, entry.value, entry.at)
@@ -524,7 +477,6 @@ function pruneSnapshot(definition: Definition<unknown[], unknown>): void {
 
 type Settled = { dropped: SnapshotEntry[]; carried: SnapshotEntry[] }
 
-/** What a definition keeps of a model's entries: admitted ones (as carried), the rest noted as dropped. */
 function judge(definition: Definition<unknown[], unknown>, entries: SnapshotEntry[], settled: Settled): SnapshotEntry[] {
   const keep = admitted(definition, entries)
   const kept = new Map(keep.map((entry) => [hashKey(entry.key), entry]))
@@ -568,11 +520,7 @@ export type Replica<A extends unknown[], V> = {
   at(...args: A): { set(value: V | ((old: V | undefined) => V | undefined)): void }
   /** Mark stale and read again where shown; without arguments, every entry of this model. */
   refresh(...args: Partial<A>): Promise<void>
-  /**
-   * Hear when an entry of this model changes (a read starting or landing, a write, a removal), for code outside React
-   * that keeps a derived value or follows a read; React subscribes with `useReplica`. An argument left out matches any
-   * value in its place (as `refresh`); only entries of the account signed in when it fires are heard.
-   */
+  /** Hear when an entry changes, for code outside React (React: `useReplica`). Arguments left out match any; only the current account's entries. */
   subscribe(args: Partial<A>, listener: (entry: Entry<A, V>) => void): () => void
   /** The entries of this model now held for the account signed in (arguments left out match any): a one-moment look. */
   entries(...args: Partial<A>): Entry<A, V>[]
@@ -580,15 +528,11 @@ export type Replica<A extends unknown[], V> = {
   isFetching(...args: A): boolean
   /** Drop what is shown for these arguments (unknown again) and read again where it is shown; never throws. */
   reset(...args: A): Promise<void>
-  /**
-   * Keep this entry's change feed (`watch`) running as a surface showing it would, for a reader that peeks without
-   * showing (files read through the entry). Returns the release.
-   */
+  /** Keep this entry's `watch` feed running as a surface would, for a reader that peeks without showing. Returns the release. */
   hold(...args: A): () => void
   /** @internal */ options(key: QueryKey): object
 }
 
-/** One entry as `subscribe` / `entries` report it: its arguments, its reading, and whether a read is on its way. */
 export type Entry<A extends unknown[], V> = { args: A; reading: Reading<V>; fetching: boolean }
 
 function ownerOf(scope: Scope): string | null {
@@ -653,10 +597,8 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       return { set: (value) => { if (k[1] === ownerOf(definition.scope)) putValue(k, value) } }
     },
     subscribe: (args, listener) => queryClient.getQueryCache().subscribe((event) => {
-      // An entry being created holds nothing yet: the `updated` that puts its value (or starts its read) is the change.
       if (event.type !== 'updated' && event.type !== 'removed') return
       if (!matches(event.query.queryKey, args)) return
-      // A removed entry is unknown now, whatever it last held.
       listener(event.type === 'removed'
         ? { args: event.query.queryKey.slice(2) as A, reading: UNKNOWN, fetching: false }
         : entryOf(event.query))
@@ -690,9 +632,8 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
         queryKey: [definition.name, owner],
         predicate: (query: { queryKey: QueryKey }) => args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
       }
-      // A first read on its way began before what this refresh announces, and react-query would fold the refresh into it
-      // (there is no value to keep meanwhile): it is not restarted, it is marked, and read once more when its attempt
-      // answers (`readAgainAfter`) — refreshes in one moment are that one read again. A later read is cancelled and read again.
+      // A first read on its way is not restarted: marked, and read once more when its attempt answers (`readAgainAfter`);
+      // refreshes in one moment are that one read. A later read is cancelled and read again.
       const firstReads = queryClient.getQueryCache().findAll(filters)
         .filter((query) => query.state.fetchStatus !== 'idle' && query.state.data === undefined)
       // One waiting out a retry after a failure has no attempt on its way: read now (its awaiters get the new read's answer).
@@ -733,10 +674,7 @@ function readingOf<V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> {
 
 const IDLE_KEY = ['read-model:idle'] as const
 
-/**
- * The reading for these arguments. `null` arguments = nothing to read yet (no subject): `unknown`, nothing requested.
- * Account models read only while the account's session is live; until then a snapshot from the last run is shown as is.
- */
+/** The reading for these arguments; `null` = no subject (`unknown`, nothing requested). Account models read only while the session is live. */
 export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean } = {}): Reading<V> {
   const current = useSyncExternalStore(subscribeAccount, accountSnapshot)
   const definition = definitions.get(model.name)!
@@ -765,7 +703,6 @@ export function replicaAccount(): AccountState { return account }
 /** Whether a read of this model's entry (arguments left out match any) is on its way now: e.g. a check running. */
 export function useReplicaFetching<A extends unknown[], V>(model: Replica<A, V>, args: Partial<A> | null): boolean {
   useSyncExternalStore(subscribeAccount, accountSnapshot)
-  // The model's owner now (the account, or this device): its key without arguments is [name, owner].
   const owner = model.key(...([] as unknown as A))?.[1] ?? null
   return useIsFetching({
     queryKey: [model.name],

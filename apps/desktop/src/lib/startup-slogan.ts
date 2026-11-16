@@ -4,8 +4,7 @@ import enUS from '../i18n/locales/en-US/common'
 import zhCN from '../i18n/locales/zh-CN/common'
 
 // The HTML startup runs before React. Reuse its locale resolver and catalogs
-// without pulling the React i18n provider into this early entry point. The preference comes from this shell's device
-// store (shared/device-preferences.ts); a change made while the poster shows arrives as LOCALE_CHANGED_EVENT.
+// without pulling the React i18n provider into this early entry point; a change arrives as LOCALE_CHANGED_EVENT.
 export function mountStartupSlogan(host: HTMLElement): () => void {
   const slogan = document.createElement('p')
   slogan.setAttribute('data-startup-slogan', '')

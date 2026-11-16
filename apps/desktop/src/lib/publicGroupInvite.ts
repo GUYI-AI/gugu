@@ -2,10 +2,7 @@ import type { PublicGroupInviteLookupResult } from '@gugu/core/shared/types/cont
 import { contactsService } from './contacts'
 import { replica } from './replica'
 
-/**
- * A public group as its invite number shows it to this account (found or not, a member already or not). No push: read on
- * open (`fresh: 0`), kept five minutes; a join puts the group it answered. A failed lookup is an error reading.
- */
+/** A public group as its invite number shows it to this account; read on open, a join puts what it answered. */
 export const publicGroupInvite = replica({
   name: 'publicGroupInvite',
   scope: 'account',

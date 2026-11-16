@@ -290,11 +290,7 @@ export function neverObservedAgentPresence(agentUserId: string): AgentPresenceSt
 const neverObserved = new Map<string, AgentPresenceState>()
 const readables = new Map<string, Readable<AgentPresenceState>>()
 
-/**
- * One agent's presence as a `Readable` for `useSelect` (@@@client-state-model §6): `get` is the stored state, or one
- * cached never-observed state per id (a stable reference, so a reader does not loop). Presence becomes two replica
- * entries in PR 4; until then this is the store's own adapter.
- */
+/** One agent's presence as a `Readable` for `useSelect` (@@@client-state-model §6): the stored state, or one cached never-observed state per id (stable reference). */
 export function agentPresenceReadable(agentUserId: string): Readable<AgentPresenceState> {
   let readable = readables.get(agentUserId)
   if (!readable) {

@@ -14,8 +14,7 @@ import { devicePreferences, useDevicePreference } from './devicePreferences'
  * 这一个 token,所以一处到位。会话页那棵 Shadow DOM 靠自定义属性的继承拿到同一个值,
  * ❌ 不需要第二条同步链。
  *
- * 存在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `interface.sidebarTint`,web / 手机 = localStorage)。
- * 首帧之前由 index.html 的引导脚本按同一份值落一次属性(桌面读 preload 交出的值),避免开着这个选项启动时先闪一下白底再变灰。
+ * 存在这台设备的偏好里(lib/devicePreferences.ts);首帧之前由 index.html 的引导脚本按同一份值落一次属性(❌ 先闪白底)。
  */
 const ATTRIBUTE = 'data-sidebar-tint'
 const ATTRIBUTE_ON = 'on'

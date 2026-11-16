@@ -14,19 +14,7 @@ export function catalogDetailed(models: readonly PlatformCatalogModel[]): boolea
   return models.every((model) => model.creditMultipliers !== undefined && model.reasoningEfforts !== undefined)
 }
 
-/**
- * The account's platform model catalog (settings → Model, the agent model pane, and every composer's Gugu group, derived
- * per engine in platform-model-catalog.ts).
- *
- * Named `platformCatalog` (it was `platformModels`): the value gained per-protocol multipliers and reasoning levels, and a
- * model whose value changes shape takes a new name (lib/replica.ts) so an older build's snapshot is never read as this one.
- *
- * Kept across restarts without the menu details (`carry`): what a cold first frame draws from it is the settings → Model
- * list (id, name, enabled, hidden, members-only), and that is all the snapshot holds. Rows ≈ 150 B, so today's catalog
- * (~50 rows) is ~7.5 K and a catalog twice that size still fits under the cap. The details (multipliers, context window,
- * reasoning levels) are read again at once (a restored value is stale, I5); surfaces that draw them wait for that read
- * (`catalogDetailed`): the composer's model trigger (its effort label intersects the levels) and the agent model pane.
- */
+/** The account's platform model catalog, kept without the menu details (`carry`; ~50 rows ≈ 7.5 K); detail surfaces wait (`catalogDetailed`). */
 export const platformModels = replica({
   name: 'platformCatalog',
   scope: 'account',
@@ -46,11 +34,7 @@ export const platformModels = replica({
 /** Back in the foreground: focus and visibilitychange often arrive together, one switch reads once. */
 const FOREGROUND_REFRESH_MIN_MS = 5_000
 
-/**
- * What says the account's catalog may have changed, for the models that hold it (`watch`): a models-changed signal
- * (settings → Model, "I joined" #7092) and the window coming back (#7056: membership is bought on the web; no push
- * reaches here). Returns stop.
- */
+/** The catalog may have changed: a models-changed signal (#7092) or the window coming back (#7056: bought on the web, no push). */
 export function followCatalogChanges(refresh: () => void): () => void {
   let lastAt = Date.now()
   const onForeground = () => {
@@ -70,11 +54,7 @@ export function followCatalogChanges(refresh: () => void): () => void {
   }
 }
 
-/**
- * The catalog as a surface that draws its menu details reads it (the composer's Gugu group, the agent model pane): a value
- * restored from the snapshot carries none, so it is not known yet for them (`unknown`, or the failure of the read that
- * should bring them), and that read is asked now — a restored value may still be fresh by time, and nothing else would.
- */
+/** The catalog for a surface that draws its menu details: a restored value (none carried) is unknown to it, and the read is asked now. */
 export function useDetailedPlatformCatalog(wanted: boolean): Reading<PlatformCatalogModel[]> {
   const reading = useReplica(platformModels, wanted ? [] : null)
   const restored = reading.state === 'value' && !catalogDetailed(reading.value)
@@ -90,15 +70,11 @@ export const agentModelSelection = replica({
   name: 'agentModelSelection',
   scope: 'account',
   read: (_owner, agentUserId: string) => readAgentModelSelection(agentUserId),
-  // The two agents opened last (2 of 4 before: the account block made room for the connections' first frame).
+  // The two agents opened last.
   persist: { maxBytes: 1024, maxEntries: 2 },
 })
 
-/**
- * The models a harness offers on a machine (one catalog per machine × harness × view × the model asked about, whose
- * efforts it carries): the new-session pages (desktop and phone) and the agent model pane read this one model. No push:
- * read again after five minutes. The last two are kept across restarts (the agent model pane's first frame).
- */
+/** The models a harness offers on a machine (per machine × harness × view × model asked about). No push; the last two kept (the pane's first frame). */
 export const sessionCreateModels = replica({
   name: 'sessionCreateModels',
   scope: 'account',
@@ -109,11 +85,7 @@ export const sessionCreateModels = replica({
   persist: { maxBytes: 3072, maxEntries: 2 },
 })
 
-/**
- * What a machine offers for a new session (harnesses, projects, the last-used set). No push: read on open (`fresh: 0`),
- * again after a session is created there (the last-used set changes), when the machine comes back, and on reload. Not
- * kept across restarts (it carries the machine's project list, which grows).
- */
+/** What a machine offers for a new session. No push: read on open; not kept (its project list grows). */
 export const sessionCreateOptions = replica({
   name: 'sessionCreateOptions',
   scope: 'account',

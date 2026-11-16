@@ -25,11 +25,7 @@ export function sshLinkFacts(
   return { isOnline: true, sshLink: null }
 }
 
-/**
- * A machine's link facts on this desktop when the SSH machine list may not be read yet (`sshMachines` null): then
- * whether it is an SSH machine is not known, and neither is its link — `linkUnknown`, ❌ the cloud's offline (an
- * offline SSH machine would first say "offline", then "signed out").
- */
+/** A machine's link facts while the SSH list may be unread (`sshMachines` null): `linkUnknown`, ❌ the cloud's offline. */
 export function remoteLinkFacts(
   deviceId: string,
   sshMachines: ReadonlySet<string> | null,

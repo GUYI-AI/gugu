@@ -21,12 +21,7 @@ import { observeRendererSession } from './sessionPublication'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { readCachedDevices } from '../store/devicesCache'
 
-/**
- * #7199 这个账号的云电脑此刻怎样(@@@client-state-model, replica `cloudComputer`):管家的 /state 是唯一事实源;库里的在线与否
- * 只用来判「醒了的那台 server 上线没有」。读数随账号走(换号、登出由 replica 丢掉),跨重启留一份(冷开云电脑那一行不先画成离线)。
- * 什么时候再问:挂着的界面按值定的间隔(开通 / 唤醒途中 3 秒,有一台时 30 秒,窗口在后台不问)、回到前台、设备行里牵动它的变动
- * (DevicesProvider)、这里的动作之后。这里放模型、动作和纯函数。
- */
+/** #7199 这个账号的云电脑(@@@client-state-model, replica `cloudComputer`):管家的 /state 是唯一事实源;库里的在线与否只判「醒了的那台上线没有」。 */
 const log = rendererLogger('cloud-computer')
 
 /** `available: false` = 拿不到管家地址,或那扇门说「环境未配置可选云电脑服务」(503 not_open):这个功能不显示。 */
@@ -41,10 +36,7 @@ function noteSnapshotError(snapshot: CloudComputerSnapshot): void {
   loggedSnapshotError = failed
 }
 
-/**
- * /state asked (`issued`) and the last answer put in outside a read (`applied`: the wake loop, `destroy`). A read asked
- * before that answer is older and ❌ lands over it (review E-2: a stale `asleep` would also slow the polling to 30 s).
- */
+/** A read asked before an answer put in outside a read (wake loop, `destroy`) ❌ lands over it (review E-2). */
 let issued = 0
 let applied = 0
 
@@ -78,10 +70,7 @@ async function readCloudComputer(): Promise<CloudComputerState> {
 /** 开通 / 唤醒途中多久问一次管家。 */
 export const CLOUD_COMPUTER_FAST_POLL_MS = 3_000
 
-/**
- * 有一台云电脑、不在开通 / 唤醒途中时多久问一次管家。它睡下、被别处叫醒(私聊、已安排到点),库里那一行的在线与否
- * 要等心跳超时(实测约 2 分钟)才翻 —— 在不在以管家为准,❌ 等那一行。没有云电脑 = null(❌ 白问)。
- */
+/** 有一台、不在途中时多久问一次:被别处叫醒时库里那一行要等心跳超时(约 2 分钟)才翻,以管家为准。 */
 export const CLOUD_COMPUTER_WATCH_MS = 30_000
 
 export function cloudComputerWatchMs(snapshot: CloudComputerSnapshot | null): number | null {
@@ -145,11 +134,7 @@ export function canSetUpCloudAssistant(reading: Reading<CloudComputerState>): bo
   return reading.state === 'value' && reading.value.available && reading.error === null
 }
 
-/**
- * 叫醒被管家拒了(积分用完 / 会员到期 / 没有这项权益)的那几台:它收回着、却醒不来 —— 它上面的 agent ❌ 当「收回着、有事自己醒」
- * 不画状态,照读数说不在线并说原因(拒了的时候管家的 /state 仍是 asleep)。这是叫醒这条命令的结果,按设备记;只在管家快照
- * 仍是那台 asleep 时算数(`refusedDeviceIdOf`),那台下一次叫醒成功就去掉。内容属于这个账号。
- */
+/** 叫醒被管家拒了的那几台(按设备记,属于这个账号):醒不来,❌ 当「收回着、有事自己醒」;只在快照仍是那台 asleep 时算数。 */
 export const wakeRefusals = createSelectStore<Readonly<Record<string, CloudComputerFailureKind>>>({})
 
 function putRefusals(next: Readonly<Record<string, CloudComputerFailureKind>>): void {
@@ -169,13 +154,13 @@ export function useWakeRefusal(snapshot: CloudComputerSnapshot | null): { device
   return deviceId ? { deviceId, kind: refusals[deviceId]! } : null
 }
 
-/** 换账号时停掉在途的叫醒(❌ 拿新账号的 /state 接着等旧账号的那台)。 */
+/** 换账号时停掉在途的叫醒。 */
 let wakeAbort = new AbortController()
 type ConnectionWake = { promise: Promise<void>; abort: AbortController; users: number; settled: boolean }
 const connectionWakes = new Map<string, ConnectionWake>()
 let signedInAs: string | null = null
 
-/** 只在真换了人、或真退出登录时清(冷启动、刷新令牌时会话短暂缺席,那一下 ❌ 作废在途的叫醒) —— 和 replica 的账号同一条规则。 */
+/** 只在真换了人或真退出登录时清 —— 和 replica 的账号同一条规则。 */
 export function followCloudComputerAccount(event: string, userId: string | null): void {
   if (userId ? userId === signedInAs : event !== 'SIGNED_OUT') return
   const switched = signedInAs !== null || !userId
@@ -206,8 +191,7 @@ function forgetRefusal(deviceId: string | null): void {
   putRefusals(rest)
 }
 
-// A refused machine that left `asleep` (woken elsewhere, after a top-up): the refusal is over (❌ said again the next time
-// it sleeps).
+// A refused machine that left `asleep` (woken elsewhere): the refusal is over.
 cloudComputer.subscribe([], ({ reading }) => {
   const snapshot = cloudSnapshotOf(reading)
   if (snapshot?.deviceId && snapshot.state !== 'asleep') forgetRefusal(snapshot.deviceId)
@@ -219,10 +203,7 @@ function requireClient() {
   return client
 }
 
-/**
- * 现问一次管家(打开它上面的会话、开私聊、搬家等它之前),返回此刻的快照;没有这项服务 = null,问不到就抛。
- * 已经在路上的那一次就等它(`fresh` 是 0:没有在路上的就现问)。答案落进读数,画着它的界面一起更新。
- */
+/** 现问一次管家,返回此刻的快照;没有这项服务 = null,问不到就抛。 */
 export async function readCloudSnapshotNow(): Promise<CloudComputerSnapshot | null> {
   const value = await cloudComputer.fetch()
   return value.available ? value.snapshot : null
@@ -239,10 +220,7 @@ export async function provisionCloudComputer(input?: CloudComputerProvisionInput
   await cloudComputer.refresh()
 }
 
-/**
- * 正在叫的那几次:连着敲字时同一次叫醒不重复发(❌ 每个字一个 POST /wake)。
- * 按用途分开记:搬家读旧家的那一叫(`purpose: 'move_out'`,会员到期也放行)不能被一次普通的叫醒顶掉 —— 到期后普通叫醒会被拒。
- */
+/** 正在叫的那几次(❌ 每个字一个 POST /wake);按用途分开:`move_out` 会员到期也放行,❌ 被普通叫醒顶掉。 */
 const wakeInFlight = new Map<string, Promise<void>>()
 
 export function wakeCloudComputer(input?: CloudComputerWakeInput): Promise<void> {
@@ -271,10 +249,7 @@ export async function destroyCloudComputer(): Promise<void> {
   await cloudComputer.refresh()
 }
 
-/**
- * 设备列表补上云电脑那一行此刻的样子(`cloud_computer`);别的行原样。叫醒被拒的那一台(`refusedDeviceId`)不补:
- * 它醒不来,❌ 算「收回着、有事自己醒」,照库里的离线说。
- */
+/** 设备列表补上云电脑那一行此刻的样子;叫醒被拒的那一台不补(照库里的离线说)。 */
 export function withCloudComputerPresence(
   devices: Device[],
   snapshot: CloudComputerSnapshot | null,
@@ -293,10 +268,7 @@ export function withCloudComputerPresence(
   return changed ? next : devices
 }
 
-/**
- * 在它上面开会话 / 打开它上面的会话这类要一条活连接的动作之前:叫醒它,等到它真的在线(每问到一次 /state 都更新界面)。
- * 原因见 CloudComputerWakeError;不是这个账号的云电脑也当失败说(调用方只对云电脑那一行调它)。
- */
+/** 要一条活连接的动作之前:叫醒它,等到它真的在线;不是这个账号的云电脑也当失败说。 */
 export function wakeAndWaitOnline(deviceId: string, deps: { isOnline: (deviceId: string) => Promise<boolean>; signal?: AbortSignal }): Promise<void> {
   deps.signal?.throwIfAborted()
   let entry = connectionWakes.get(deviceId)
@@ -350,10 +322,7 @@ export function wakeAndWaitOnline(deviceId: string, deps: { isOnline: (deviceId:
 
 export type CloudComputerStepStatus = 'pending' | 'running' | 'done'
 
-/**
- * 开通三步,每步按看得到的事实打勾(管家 10-15 说明的顺序:登录 → 设备行出现 → 上线 → 建个人助理 → awake):
- * ① 开机并登录你的账号 = /state 带上 deviceId;② 等它上线 = 设备行在线;③ 建好个人助理 = state 变 awake。
- */
+/** 开通三步(管家 10-15 的顺序):deviceId 出现 → 设备行在线 → state 变 awake。 */
 export function cloudComputerProvisionSteps(
   snapshot: CloudComputerSnapshot,
   device: Pick<Device, 'is_online'> | null,
@@ -361,12 +330,9 @@ export function cloudComputerProvisionSteps(
   const signedIn = snapshot.deviceId !== null
   const online = signedIn && device?.is_online === true
   const ready = snapshot.state === 'awake' && online
-  const machine: CloudComputerStepStatus = signedIn ? 'done' : 'running'
-  const onlineStep: CloudComputerStepStatus = online ? 'done' : signedIn ? 'running' : 'pending'
-  const assistant: CloudComputerStepStatus = ready ? 'done' : online ? 'running' : 'pending'
   return [
-    { id: 'machine', status: machine },
-    { id: 'online', status: onlineStep },
-    { id: 'assistant', status: assistant },
+    { id: 'machine', status: signedIn ? 'done' : 'running' },
+    { id: 'online', status: online ? 'done' : signedIn ? 'running' : 'pending' },
+    { id: 'assistant', status: ready ? 'done' : online ? 'running' : 'pending' },
   ]
 }

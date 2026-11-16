@@ -12,6 +12,7 @@ import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings'
 import {
   HANDED_OVER_SETTINGS,
   IDEAS_ENTRY_KEY_PREFIX,
+  ideasEntryKeys,
   PREFERENCE_STORAGE_KEYS,
   parseChatNotifications,
   parseLocalePreference,
@@ -26,15 +27,7 @@ import {
   type ThemePreference,
 } from '../../shared/device-preferences'
 
-/**
- * @@@device-preferences — this device's preferences behind one interface, with one store per shell, chosen once here:
- * - desktop (preload handed over `window.guguDeviceSettings`): main's app settings, read through the renderer's
- *   `appSettings` replica. Their first value is preload's handover (the replica's `local`), the same answer the inline
- *   boot script painted with; a change from any window arrives as `appSettingsChangedChannel` and is read again.
- * - web / phone: localStorage, their only device store (shared/device-preferences.ts has the keys and their rules).
- * ❌ "read one, else the other": the desktop never touches the old localStorage keys (preload migrated them once), the
- * web and phone never touch app settings.
- */
+/** @@@device-preferences — one interface, the shell's store chosen once here (shared/device-preferences.ts); ❌ "read one, else the other". */
 export type DevicePreferenceValues = {
   theme: ThemePreference
   locale: LocalePreference
@@ -48,15 +41,11 @@ export type DevicePreferenceValues = {
 export type DevicePreferenceName = keyof DevicePreferenceValues
 
 export type DevicePreferences = {
-  /** Which store this shell has (decided once, at module load). */
   readonly backend: 'appSettings' | 'localStorage'
   /** The preference now, for logic outside React (a one-moment decision). */
   read<N extends DevicePreferenceName>(name: N): Reading<DevicePreferenceValues[N]>
-  /** Any preference changed (this window, another window, main). */
   subscribe(listener: () => void): () => void
-  /** Store a new value; shown at once. */
   write<N extends DevicePreferenceName>(name: N, value: DevicePreferenceValues[N]): void
-  /** The preference as a surface draws it. */
   use<N extends DevicePreferenceName>(name: N): Reading<DevicePreferenceValues[N]>
 }
 
@@ -97,8 +86,7 @@ function mapReading<N extends DevicePreferenceName>(name: N, reading: Reading<un
 
 export function appSettingsPreferences(): DevicePreferences {
   watchAppSettingsChanges()
-  // The handed-over keys are values from the first moment: asking seeds them from preload's answer (`local`, synchronous)
-  // and reads them again from main in the background.
+  // The handed-over keys are values from the first moment (preload's answer is `local`), read again from main in the background.
   for (const key of HANDED_OVER_SETTINGS) void appSettingsModel.prefetch(key, LOCAL_SETTINGS_HOST_KEY)
   const keys = new Set(Object.values(SOURCES).map((source) => source.key))
   return {
@@ -134,15 +122,6 @@ const single = <N extends DevicePreferenceName>(key: string, parse: (raw: string
   write: (storage, value) => storage.setItem(key, serialize(value)),
 })
 
-function ideasKeys(storage: Storage): string[] {
-  const keys: string[] = []
-  for (let i = 0; i < storage.length; i++) {
-    const key = storage.key(i)
-    if (key?.startsWith(IDEAS_ENTRY_KEY_PREFIX)) keys.push(key)
-  }
-  return keys
-}
-
 const K = PREFERENCE_STORAGE_KEYS
 /** Each preference's localStorage form; a key never written (or not understood) is the factory value. */
 const STORED: { [N in DevicePreferenceName]: StoredRule<N> } = {
@@ -154,18 +133,17 @@ const STORED: { [N in DevicePreferenceName]: StoredRule<N> } = {
   chatNotifications: single(K.chatNotifications, parseChatNotifications, { chatMessages: true, sound: true }, JSON.stringify),
   themePackSlots: single(K.themePackSlots, parseThemePackSlots, {}, JSON.stringify),
   hiddenIdeasEntries: {
-    raw: (storage) => ideasKeys(storage).filter((key) => storage.getItem(key) === 'hidden').join('\n'),
-    read: (storage) => ideasKeys(storage).filter((key) => storage.getItem(key) === 'hidden').map((key) => key.slice(IDEAS_ENTRY_KEY_PREFIX.length)),
+    raw: (storage) => ideasEntryKeys(storage).filter((key) => storage.getItem(key) === 'hidden').join('\n'),
+    read: (storage) => ideasEntryKeys(storage).filter((key) => storage.getItem(key) === 'hidden').map((key) => key.slice(IDEAS_ENTRY_KEY_PREFIX.length)),
     write: (storage, ids) => {
-      for (const key of ideasKeys(storage)) if (!ids.includes(key.slice(IDEAS_ENTRY_KEY_PREFIX.length))) storage.removeItem(key)
+      for (const key of ideasEntryKeys(storage)) if (!ids.includes(key.slice(IDEAS_ENTRY_KEY_PREFIX.length))) storage.removeItem(key)
       for (const id of ids) storage.setItem(IDEAS_ENTRY_KEY_PREFIX + id, 'hidden')
     },
   },
 }
 
-/** Which preference a localStorage key holds (another tab of the web page wrote it). */
+/** Which preference a localStorage key holds (another tab wrote it); null key = the whole storage was cleared. */
 function nameOfStorageKey(key: string | null): DevicePreferenceName | null | 'all' {
-  // null: the whole storage was cleared.
   if (key === null) return 'all'
   if (key.startsWith(IDEAS_ENTRY_KEY_PREFIX)) return 'hiddenIdeasEntries'
   const found = (Object.keys(STORED) as DevicePreferenceName[]).find((name) => (K as Record<string, string>)[name] === key)
@@ -173,23 +151,20 @@ function nameOfStorageKey(key: string | null): DevicePreferenceName | null | 'al
 }
 
 export function localStoragePreferences(storage: Storage | null): DevicePreferences {
-  // No localStorage (a node test importing this): kept in memory for this run.
   const store = storage ?? memoryStorage()
   // One reading per preference, kept while what is stored stays the same: readers compare by identity.
   const readings = new Map<DevicePreferenceName, { raw: string | null; reading: Reading<unknown> }>()
   const changes = createSelectStore(0)
   const changed = () => { changes.publish(changes.get() + 1); changes.notify() }
   const read = <N extends DevicePreferenceName>(name: N): Reading<DevicePreferenceValues[N]> => {
-    const from = store
-    const raw = STORED[name].raw(from)
+    const raw = STORED[name].raw(store)
     let kept = readings.get(name)
     if (!kept || kept.raw !== raw) {
-      kept = { raw, reading: valueReading(STORED[name].read(from)) }
+      kept = { raw, reading: valueReading(STORED[name].read(store)) }
       readings.set(name, kept)
     }
     return kept.reading as Reading<DevicePreferenceValues[N]>
   }
-  // Another tab of the web page wrote one: readers read again.
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', (event) => { if (nameOfStorageKey(event.key)) changed() })
   }
@@ -202,7 +177,7 @@ export function localStoragePreferences(storage: Storage | null): DevicePreferen
         STORED[name].write(store, value)
         readings.set(name, { raw: STORED[name].raw(store), reading: valueReading(value) })
       } catch (error) {
-        // Not stored (private mode, quota): not kept on this device; it is said, and the shown value stays what is stored.
+        // Not stored (private mode, quota): said; the shown value stays what is stored.
         log.error({ name, error: String(error) }, `${name}: not stored on this device`)
       }
       changed()
@@ -223,8 +198,6 @@ function memoryStorage(): Storage {
     clear: () => items.clear(),
   }
 }
-
-// ── this shell's store ───────────────────────────────────────────────────────────────────────────────────────────
 
 /** This document's localStorage; none (a node test, an opaque origin) = kept in memory for this run. */
 export function documentStorage(): Storage | null {

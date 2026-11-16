@@ -145,10 +145,7 @@ export function parseChangelog(raw: unknown): ChangelogEntry[] {
     }))
 }
 
-/**
- * 去官网取一次那一页的 feed。取不到就抛错 —— 调用方据此这次什么都不做,
- * ❌ 不把「这次没取到」当成「没有更新说明」(❌ 吞成 null / 空表)。
- */
+/** 去官网取一次 feed;取不到就抛错(❌ 吞成 null / 空表:「这次没取到」≠「没有更新说明」)。 */
 export async function fetchChangelog(): Promise<ChangelogEntry[]> {
   // @@@5758 桌面端**必须由主进程去取**:渲染层的 origin 是 gugu-app://app,对站点是跨源。
   // (2026-09-18 在同一个 scheme 下起了一个最小 Electron 实测复现:渲染层失败,主进程 net.fetch 200;

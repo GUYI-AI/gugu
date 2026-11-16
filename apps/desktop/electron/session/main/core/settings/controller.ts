@@ -10,7 +10,6 @@ import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettings
 export async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
   // Every window keeps this device's settings in its replica: say which key changed, each reads it again.
   events.emit(appSettingsChangedChannel, { key });
-  // Main's own followers (the host's tray badge reads `interface.trayBadge`).
   settingsChanged(key);
   if (key === 'resourceMonitor') await reconcileResourceSampler();
   if (key === 'keyboard') {

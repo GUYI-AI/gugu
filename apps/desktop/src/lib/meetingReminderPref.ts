@@ -1,6 +1,5 @@
 // #7199 「入会提醒」开关(默认开):记在这台电脑上 —— 提醒读的就是这台电脑的日历。
-// 存在这台设备的偏好里(lib/devicePreferences.ts:桌面 = app 设置 `assistant.meetingReminder`);壳(提醒卡)与会话页
-// (助理的设置页)读同一份,任一窗口改了,别的跟着变。
+// 存在这台设备的偏好里(lib/devicePreferences.ts);任一窗口改了,别的跟着变。
 import type { Reading } from './replica'
 import { devicePreferences, useDevicePreference } from './devicePreferences'
 

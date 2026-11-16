@@ -32,14 +32,9 @@ const accountId = () => typeof window === 'undefined' ? null : (window as Connec
 const subscribeAccount = (listener: () => void) => typeof window === 'undefined' ? () => {} : (window as ConnectionWindow)[KEY]?.subscribeAccount(listener) ?? (() => {})
 
 /**
- * @@@connection-route — which source this account's connections live in (legacy assistant panel or owner service), at
- * which epoch (@@@client-state-model, PR 3). The one copy: core's routing keeps its last route here (`routeCache`,
- * handed to `createConnectionRouting` by connection-host.ts), so its epoch check, `peek` and this reading are the same
- * value. Server-head versioned: a lower epoch never replaces a higher one (`merge`). Signal tier: the owner's change bus
- * (`subscribeChanges`) and focus refresh it, and it is read every 15 s while shown; a failed read is retried with the
- * connections' backoff, then said. This window's announcements (`CONNECTIONS_CHANGED`) are not a source: a route
- * another reader here found changed is already in this entry (routing wrote it before announcing), and reading again on
- * an announcement would announce again when the route moved (the cycle #1922 D8 removed).
+ * @@@connection-route (@@@client-state-model) — which source this account's connections live in, at which epoch. The one copy: core's routing keeps
+ * its last route here (`routeCache`). A lower epoch never replaces a higher one (`merge`). Signal tier: change bus, focus,
+ * every 15 s while shown. `CONNECTIONS_CHANGED` is ❌ a source: reading on it would re-announce (the cycle #1922 D8 removed).
  */
 export const connectionRoute = replica({
   name: 'connectionRoute',

@@ -7,11 +7,7 @@ const digest=(device:TitlesDevice)=>Array.isArray(device.session_digest)?device.
 /** The placeholder title a work is created with until its executor names its session. */
 export const PLACEHOLDER_WORK_TITLE='任务'
 
-/**
- * Display-only recovery for old placeholder rows (never rewrites a work or event), derived where it is drawn over the
- * account's devices. null = not known yet: the devices are not read, or an executor's row was carried across a restart
- * without its session digest (store/devicesCache.ts) — ❌ taken for "no title evidence" (CODE-REVIEW-1 R1).
- */
+/** Display-only recovery for old placeholder rows. null = not known yet (devices unread, or a digest not carried) — ❌ "no title evidence" (CODE-REVIEW-1 R1). */
 export function assistantWorkTitleOf(work:AssistantWorkTask,owner:string|null,devices:readonly TitlesDevice[]|null):string|null {
   if(work.title!==PLACEHOLDER_WORK_TITLE||!owner||work.owner_user_id!==owner)return work.title
   if(!devices)return null

@@ -6,10 +6,7 @@ import { reconcileSettingsRuntimeState } from './controller';
 import { readImportedThemePacks, writeImportedThemePacks } from './device-settings';
 import { appSettingsService } from './settings-service';
 
-/**
- * @@@theme-pack-slots — this device's imported theme packs (a file under userData) and the stylesheet main derives from
- * the stored slots. The slots themselves are the `themePackSlots` app setting.
- */
+/** @@@theme-pack-slots — imported theme packs (a userData file) and the derived stylesheet; the slots are the `themePackSlots` setting. */
 export const themePacksController = createRPCController({
   imported: async (): Promise<ThemePack[]> => readImportedThemePacks(),
 

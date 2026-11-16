@@ -8,10 +8,7 @@ export type ConnectionRouteBinding = Readonly<ConnectionRoute & { ownerId: strin
  * after a late result, account switch or server authority change. */
 export function createConnectionRouting(input: {
   accountId(): string | null; read(): Promise<ConnectionRoute>; changed(ownerId: string,route: ConnectionRoute): void
-  /**
-   * Where the last route read for an owner is kept (the epoch check and `peek` read it). A shell that keeps its own
-   * replica of the route hands it here, so there is one copy; without one, routing keeps it in a map of its own.
-   */
+  /** Where the last route per owner is kept: a shell's replica of the route (one copy), else a map of routing's own. */
   cache?: { get(ownerId: string): ConnectionRoute | undefined; set(ownerId: string,route: ConnectionRoute): void }
 }) {
   const own = new Map<string,ConnectionRoute>()

@@ -26,13 +26,7 @@ import { localeSchema, themeSchema } from './schema';
 import { appSettingsService, type SettingsMeta, type SettingsStore } from './settings-service';
 import { isPlainObject } from './utils';
 
-/**
- * @@@device-preferences — main's side (shared/device-preferences.ts): the synchronous handover preload asks for before the
- * first frame (with the one-time migration of the old localStorage keys), the imported theme packs (a file under
- * userData: several KB each, over what a settings row is for) and the stylesheet derived from slots + packs.
- */
-
-// ── imported theme packs ─────────────────────────────────────────────────────────────────────────────────────────
+/** @@@device-preferences — main's side: the handover (+ migration), imported theme packs (a userData file: several KB each, over what a settings row is for), the derived stylesheet. */
 
 const importedPacksFile = (): string => join(app.getPath('userData'), 'theme-packs', 'imported.json');
 
@@ -53,19 +47,6 @@ export function writeImportedThemePacks(packs: readonly ThemePack[]): void {
   renameSync(tmp, file);
 }
 
-/** Every pack there is: builtin first, then imported. */
-export function allThemePacks(): ThemePack[] {
-  return [...BUILTIN_THEME_PACKS, ...readImportedThemePacks()];
-}
-
-/** The stylesheet the stored slots stand for ('' = Gugu's own colours). Derived, ❌ stored. */
-export function themePackStylesheetNow(store: SettingsStore = appSettingsService): string {
-  const packs = allThemePacks();
-  return slotsStylesheet(validThemePackSlots(store.getWithMetaNow('themePackSlots').value, packs), packs);
-}
-
-// ── who follows a change ─────────────────────────────────────────────────────────────────────────────────────────
-
 const changeListeners = new Set<(key: AppSettingsKey) => void>();
 
 /** Main-side followers of a settings change (the host's tray badge): the controller calls `settingsChanged` per write. */
@@ -84,12 +65,7 @@ export function settingsChanged(key: AppSettingsKey): void {
   }
 }
 
-/**
- * The two preferences the host applies itself (@@@native-appearance themeSource, the host locale for tray, menus,
- * window chrome and the session host), read synchronously: at startup, before the window loads, and on each change of
- * these keys. A database without the settings table yet (a first start, before its migrations) stores nothing: the
- * factory values are what is stored.
- */
+/** What the host applies itself (@@@native-appearance themeSource, host locale), read synchronously; no settings table yet = factory values. */
 export function hostPreferencesNow(store: SettingsStore = appSettingsService): { theme: AppSettings['theme']; locale: AppSettings['locale']; trayBadge: boolean } {
   if (!hasSettingsTable()) return { theme: getDefaultForKey('theme'), locale: getDefaultForKey('locale'), trayBadge: getDefaultForKey('interface').trayBadge };
   // Parsed: a value stored before the key had its writer (`emdark`) reads as what it meant.
@@ -100,8 +76,6 @@ export function hostPreferencesNow(store: SettingsStore = appSettingsService): {
     trayBadge: store.getWithMetaNow('interface').value.trayBadge,
   };
 }
-
-// ── handover + one-time migration ────────────────────────────────────────────────────────────────────────────────
 
 function hasSettingsTable(): boolean {
   return db.all(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'`).length > 0;
@@ -136,11 +110,7 @@ const ADOPTIONS: Record<Exclude<LegacyPreferenceName, 'importedThemePacks'>, Ado
   hiddenIdeasEntries: { key: 'assistant', field: 'hiddenIdeasEntries', value: (legacy, store) => withField(store, 'assistant', 'hiddenIdeasEntries', legacy.hiddenIdeasEntries) },
 };
 
-/**
- * Settle each old key preload found: main already has its own value → main wins; main has none → the old value is
- * written (a value that says nothing usable is simply dropped). Returns the old keys settled: preload deletes exactly
- * those. One that could not be written stays where it is for the next start.
- */
+/** Settle each old key: main's own value wins, else the old one is written. Returns the keys settled (preload deletes those); a failed one stays. */
 export function adoptLegacyPreferences(legacy: LegacyDevicePreferences, store: SettingsStore = appSettingsService): LegacyPreferenceName[] {
   const settled: LegacyPreferenceName[] = [];
   for (const name of Object.keys(legacy) as LegacyPreferenceName[]) {
@@ -174,24 +144,18 @@ function handover(store: SettingsStore, hasTable: boolean): DeviceSettingsHandov
   };
 }
 
-/**
- * The theme packs' stylesheet for the first frame. An imported theme file that cannot be read loses only the colours
- * (said in the log), never the rest of the handover: theme, language and tint are still the person's from the first frame.
- */
+/** The derived theme-pack stylesheet for the first frame; an unreadable imported file loses only the colours (said), ❌ the rest of the handover. */
 function handedStylesheet(store: SettingsStore): string {
   try {
-    return themePackStylesheetNow(store);
+    const packs = [...BUILTIN_THEME_PACKS, ...readImportedThemePacks()];
+    return slotsStylesheet(validThemePackSlots(store.getWithMetaNow('themePackSlots').value, packs), packs);
   } catch (error) {
     log.error('the theme packs could not be read for the first frame; it starts with the default colours', { error: String(error) });
     return '';
   }
 }
 
-/**
- * Preload's synchronous request: adopt what the old keys hold, then hand over the settings the first frame draws. A
- * database without the settings table yet (a first start, before its migrations) has nothing stored and adopts nothing
- * (the old keys stay for the next start).
- */
+/** Preload's synchronous request: adopt the old keys (none without the settings table: they stay), then hand over. */
 export function answerDeviceSettings(legacy: LegacyDevicePreferences, store: SettingsStore = appSettingsService): DeviceSettingsAnswer {
   const hasTable = hasSettingsTable();
   const settled = hasTable ? adoptLegacyPreferences(legacy, store) : [];

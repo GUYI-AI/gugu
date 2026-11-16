@@ -11,7 +11,6 @@ const log = rendererLogger('remote-directory')
 /** Codes that mean "this path is not a place to stand" (the picker's first path falls back to the home folder on them). */
 export const UNREACHABLE_PATH_CODES: readonly string[] = ['not_found', 'not_a_directory', 'permission_denied', 'path_blocked']
 
-/** A listing the machine refused, with its code (not found, no permission, …). */
 export class RemoteDirectoryError extends Error {
   constructor(readonly path: string, readonly rpcError: DeviceRpcError) {
     super(rpcError.message || rpcError.code)
@@ -29,11 +28,7 @@ export type RemoteDirectory = {
   truncated: number | null
 }
 
-/**
- * One folder on another machine as its `fs.list-directory` answers (the remote folder picker and its address-bar
- * completion read the same entries). Not pushed and not kept across restarts (listings grow without bound): read every
- * time a folder is opened, held a minute for going back and forth.
- */
+/** One folder on another machine. Not pushed, not kept (listings grow without bound): read on open, held a minute. */
 export const remoteDirectory = replica({
   name: 'remoteDirectory',
   scope: 'account',

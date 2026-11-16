@@ -14,12 +14,7 @@ async function ask(command: PasswordUiCommand): Promise<Extract<PasswordUiReply,
   return reply
 }
 
-/**
- * The password vault's state as this device's vault answers it (names, websites, non-secret values, requests, grants,
- * sync) — one reading for every surface (Settings → 密码, notifications, the device prompt). Fed by the vault's own push
- * (`watch`). The vault never puts a secret value in it (secrets come only with `reveal`, to the page that asked), and it
- * is ❌ kept across restarts: it stays inside the vault.
- */
+/** The vault's state as this device's vault answers it, fed by its push (`watch`). Holds no secret values; ❌ kept across restarts. */
 export const passwordVault = replica({
   name: 'passwordVault',
   scope: 'account',
@@ -30,11 +25,7 @@ export const passwordVault = replica({
   watch: { start: () => window.passwordVaultBeta?.subscribe(() => { void passwordVault.refresh() }) ?? (() => undefined) },
 })
 
-/**
- * What an Agent proposed to save for one request (「去填写」): `null` once the request is no longer waiting. It holds the
- * proposed values, secret ones included, so it is held only while the form opened for it is shown (`keep: 0`) and is
- * ❌ kept across restarts.
- */
+/** What an Agent proposed to save for one request (secrets included): held only while its form is shown (`keep: 0`), ❌ kept. */
 export const passwordSaveDraft = replica({
   name: 'passwordSaveDraft',
   scope: 'account',

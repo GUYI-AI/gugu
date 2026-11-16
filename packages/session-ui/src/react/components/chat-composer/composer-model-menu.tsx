@@ -254,10 +254,7 @@ export interface ComposerModelMenuProps {
   triggerTitle?: string;
   modelItems: ComposerModelItem[];
   selectedModel?: string;
-  /**
-   * The model options are not read yet (a catalog still on its way): the trigger holds the model name's place with a
-   * neutral slot (@@@unknown-slot), ❌ the literal "Model" that a name then replaces.
-   */
+  /** The model options are not read yet: the trigger holds the name's place (@@@unknown-slot), ❌ the literal "Model". */
   modelUnknown?: boolean;
   onModelChange?: (modelId: string) => void;
   /**
