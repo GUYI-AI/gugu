@@ -26,20 +26,31 @@ function keyframes(name: string): AtRule {
 
 const declarations = (node: Rule) => Object.fromEntries(node.nodes.flatMap((child) => child.type === 'decl' ? [[child.prop, child.value]] : []))
 
-it('the held results are not dimmed within 150 ms: the dimming is an animation that starts after a 150 ms delay', () => {
+/** The shared timing (@@@placeholder-reveal): `--gg-placeholder-delay` / `--gg-placeholder-duration` on :root. */
+function timing(): { delay: string; duration: string } {
+  const root = declarations(rule(':root'))
+  return { delay: root['--gg-placeholder-delay']!, duration: root['--gg-placeholder-duration']! }
+}
+
+it('the held results are not dimmed within 150 ms, then dim over 250 ms: an animation after a delay', () => {
   const stale = declarations(rule('.gg-stale'))
   // Nothing applies at once: no opacity of its own, no transition (that would start moving at 0 ms).
   expect(stale.opacity).toBeUndefined()
   expect(stale.transition).toBeUndefined()
+  expect(timing()).toEqual({ delay: '150ms', duration: '250ms' })
   const [name, duration, , delay, fill] = stale.animation!.split(/\s+/)
-  expect(delay).toBe('150ms')
-  expect(fill).toBe('forwards')
-  expect(duration).toBe('0s')
-  const end = keyframes(name!).nodes!.find((node): node is Rule => node.type === 'rule' && node.selector === 'to')!
-  expect(declarations(end).opacity).toBe('0.6')
+  expect([duration, delay, fill]).toEqual(['var(--gg-placeholder-duration)', 'var(--gg-placeholder-delay)', 'both'])
+  const frames = keyframes(name!).nodes!.filter((node): node is Rule => node.type === 'rule')
+  expect(declarations(frames.find((node) => node.selector === 'from')!).opacity).toBe('1')
+  expect(declarations(frames.find((node) => node.selector === 'to')!).opacity).toBe('0.6')
 })
 
-it('uses the same delay as the unknown slot (one rule for "a value on its way")', () => {
-  const unknownDelay = declarations(rule('.gg-unknown')).animation!.split(/\s+/)[3]
-  expect(declarations(rule('.gg-stale')).animation!.split(/\s+/)[3]).toBe(unknownDelay)
+it('the placeholder, the loading lines and the held results share one timing (one rule for "a value on its way")', () => {
+  const placeholder = declarations(rule('.gg-unknown, .gg-loading-line'))
+  const stale = declarations(rule('.gg-stale'))
+  const timingOf = (animation: string) => animation.split(/\s+/).filter((part) => part.startsWith('var('))
+  expect(timingOf(placeholder.animation!)).toEqual(timingOf(stale.animation!))
+  const [name] = placeholder.animation!.split(/\s+/)
+  const frames = keyframes(name!).nodes!.filter((node): node is Rule => node.type === 'rule')
+  expect(declarations(frames.find((node) => node.selector === 'from')!).opacity).toBe('0')
 })

@@ -4,7 +4,6 @@ import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/mobile/agent-watc
 import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
 import { replica, useReplica, type Reading } from './replica'
 import { PLATFORM_MODELS_CHANGED_EVENT } from '@shared/core/agents/platform-model'
-import { onPlanChange } from './billing/useSpendingPower'
 import type { PlatformCatalogModel } from './agentModelSelection'
 
 const MENU_DETAILS = ['creditMultiplier', 'creditMultipliers', 'contextWindow', 'reasoningEfforts'] as const
@@ -39,10 +38,14 @@ export const platformModels = replica({
  */
 export function followCatalogChanges(refresh: () => void): () => void {
   window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
-  const stopPlan = onPlanChange(refresh)
+  // Loaded on first use: the billing module (and its credit reads) stays out of this module's importers' graph.
+  let stopPlan: (() => void) | null = null
+  let stopped = false
+  void import('./billing/useSpendingPower').then(({ onPlanChange }) => { if (!stopped) stopPlan = onPlanChange(refresh) })
   return () => {
+    stopped = true
     window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refresh)
-    stopPlan()
+    stopPlan?.()
   }
 }
 
