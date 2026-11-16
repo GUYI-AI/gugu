@@ -821,6 +821,78 @@ describe('useProjectFolders', () => {
     expect(latest?.folders?.map((f) => [f.projectId, f.placeholder ?? false])).toEqual([['p-cold', true], ['p-cold', true], ['proj-on-d15', true]]);
     expect(latest?.chosen).toBeNull();
   });
+  it('a push read long after the mount is not late the moment it starts: the machine stays online until the deadline (review C-2)', async () => {
+    mocks.list.mockImplementation(listByProject({ 'p-push': { success: true, data: [{ ...ROOT, projectId: 'p-push' }] }, 'proj-on-d15': { success: true, data: [D15_ROOT] } }));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await mount('p-push', ['p-push', 'proj-on-d15']);
+      await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS * 2));
+      mocks.list.mockImplementation((projectId: string) =>
+        projectId === 'p-push' ? Promise.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-push' }] }) : never());
+      await act(async () => mocks.folderListeners.forEach((cb) => cb({ projectId: 'proj-on-d15' })));
+      expect(latest?.folders?.map((f) => [f.workspaceId, f.offline])).toEqual([['ws-root', false], ['ws-d15', false]]);
+      await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS));
+      expect(latest?.folders?.find((f) => f.workspaceId === 'ws-d15')?.offline).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a machine held by last run\'s count that never answers is drawn without, once the deadline passes (❌ placeholder papers for ever)', async () => {
+    mocks.list.mockImplementation(listByProject({ 'p-held': { success: true, data: [{ ...ROOT, projectId: 'p-held' }] }, 'proj-gone': { success: true, data: [D15_ROOT] } }));
+    await mount('p-held', ['p-held', 'proj-gone']);
+    act(() => root.unmount());
+    root = createRoot(dom.window.document.querySelector('#root') as HTMLDivElement);
+    for (const query of queryClient.getQueryCache().findAll({ queryKey: ['projectFolders'] })) queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+    mocks.list.mockImplementation((projectId: string) =>
+      projectId === 'p-held' ? Promise.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-held' }] }) : never());
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await mount('p-held', ['p-held', 'proj-gone']);
+      expect(latest?.folders?.map((f) => [f.projectId, f.placeholder ?? false])).toEqual([['p-held', false], ['proj-gone', true]]);
+      await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS));
+      expect(latest?.folders?.map((f) => [f.projectId, f.placeholder ?? false])).toEqual([['p-held', false]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a machine with no record and no count that never answers is waited for, then drawn without once the deadline passes', async () => {
+    mocks.list.mockImplementation((projectId: string) =>
+      projectId === 'p-alone' ? Promise.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-alone' }] }) : never());
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await mount('p-alone', ['p-alone', 'proj-silent']);
+      expect(latest?.folders).toBeNull();
+      await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS));
+      expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root']);
+      expect(latest?.loadError).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('attaching waits for the machine it attached on only (❌ a member out of reach holds the toast)', async () => {
+    mocks.list.mockImplementation((projectId: string) =>
+      projectId === 'p-att' ? Promise.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-att' }] }) : never());
+    await mount('p-att', ['p-att', 'proj-hung-d15']);
+    mocks.attach.mockResolvedValue({ success: true, data: { ...OTHER, projectId: 'p-att' } });
+    let done = false;
+    await act(async () => { void latest!.attach('p-att', '/www/gugu-supabase').then(() => { done = true; }); });
+    await act(async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); });
+    expect(done).toBe(true);
+  });
+
+  it('a member leaving does not mark the next member\'s folders as just attached (compared by member, ❌ by position)', async () => {
+    const B_ROOT = folder('ws-b', 'root', '/b', [], 'proj-b');
+    const C_ROOT = folder('ws-c', 'root', '/c', [], 'proj-c');
+    mocks.list.mockImplementation(listByProject({ 'p-a': { success: true, data: [{ ...ROOT, projectId: 'p-a' }] }, 'proj-b': { success: true, data: [B_ROOT] }, 'proj-c': { success: true, data: [C_ROOT] } }));
+    await mount('p-a', ['p-a', 'proj-b', 'proj-c']);
+    expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root', 'ws-b', 'ws-c']);
+    await mount('p-a', ['p-a', 'proj-c']);
+    expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root', 'ws-c']);
+    expect(latest?.fresh).toBeUndefined();
+  });
 });
 
 describe('shortHome', () => {

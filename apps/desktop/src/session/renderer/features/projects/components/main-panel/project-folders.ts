@@ -176,12 +176,14 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     askAgain(members);
   }, [connectionKey, members, askAgain]);
 
-  // A machine that has not answered after a while and has nothing else to show: draw without it.
+  // A machine that has not answered after a while and has nothing else to show: draw without it. Counted from when a
+  // read starts (a reload, a push, a reconnect), ❌ from the mount: a push read later is not "late" the moment it starts.
+  const inFlight = readings.map((entry) => entry.state === 'unknown' || (entry.state === 'value' && entry.stale)).join();
   useEffect(() => {
     setLate(false);
     const deadline = setTimeout(() => setLate(true), UNANSWERED_AFTER_MS);
     return () => clearTimeout(deadline);
-  }, [rowId, membersKey, asked]);
+  }, [rowId, membersKey, asked, inFlight]);
 
   // 换了项目:「刚挂上」跟着换成那个项目的(❌ 把上一个项目的那张带过来)。
   useEffect(() => setFresh(freshFolders.get(rowId)), [rowId]);
@@ -202,10 +204,10 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   // What each machine answered: the count of each is what the next start draws first; a folder that appears in a
   // member's answer it did not have before (attached in another window, by an agent, undone) is the fresh one.
   const answered = readings.map((reading) => (reading.state === 'value' ? reading.value : null));
-  const seen = useRef<{ rowId: string; members: (ProjectFolder[] | null)[] } | null>(null);
+  const seen = useRef<{ rowId: string; members: Map<string, ProjectFolder[] | null> } | null>(null);
   useEffect(() => {
     const before = seen.current?.rowId === rowId ? seen.current.members : null;
-    seen.current = { rowId, members: answered };
+    seen.current = { rowId, members: new Map(members.map((id, index) => [id, answered[index]!])) };
     // Each machine that answered gives its count; one that has not keeps its old count (❌ blocking the others' write).
     if (answered.some((list) => list !== null)) {
       const stored = layout.state === 'value' ? layout.value : null;
@@ -214,7 +216,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     }
     if (!before) return;
     const added = answered.flatMap((list, index) => {
-      const previous = before[index];
+      const previous = before.get(members[index]!);
       if (!list || !previous) return [];
       const had = new Set(previous.map((folder) => folder.workspaceId));
       return list.filter((folder) => !had.has(folder.workspaceId));
@@ -246,7 +248,9 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
           deviceId: machineRegistry.machineOf(projectId) ?? undefined, after: { path: result.data.path } }, ownerId);
         freshFolders.set(rowId, result.data.workspaceId);
         setFresh(result.data.workspaceId);
-        await Promise.all([...new Set([projectId, ...members])].map((id) => projectFolders.refresh(id)));
+        // Every member is read again; only the machine that attached it is waited for (❌ one out of reach holds the toast).
+        for (const id of members) if (id !== projectId) void projectFolders.refresh(id);
+        await projectFolders.refresh(projectId);
         return { ok: true, folder: result.data };
       } catch (error) {
         return { ok: false, error: { type: 'rpc-failed', message: error instanceof Error ? error.message : String(error) } };
@@ -267,7 +271,8 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
         setFresh(undefined);
       }
       if (folderChoice.get(rowId) === folder.workspaceId) folderChoice.delete(rowId);
-      await Promise.all([...new Set([folder.projectId, ...members])].map((id) => projectFolders.refresh(id)));
+      for (const id of members) if (id !== folder.projectId) void projectFolders.refresh(id);
+      await projectFolders.refresh(folder.projectId);
       return true;
     },
     [rowId, members]
@@ -289,7 +294,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
 /**
  * One machine's part of the card. Its answer when there is one. When its last read failed or it has not answered yet:
  * the account's record of its folders (marked offline; the newer of the record and the last answer). With neither: the
- * last run's count as placeholder papers; with nothing at all, wait — until the deadline, then draw without it.
+ * last run's count as placeholder papers, or wait — until the deadline, then draw without it.
  */
 function memberFolders(
   projectId: string,
@@ -316,7 +321,7 @@ function memberFolders(
   const waitingOnRecord = recordedAs(late);
   if (waitingOnRecord) return waitingOnRecord;
   const count = layout.state === 'value' ? layout.value[index] : null;
-  if (typeof count === 'number') {
+  if (typeof count === 'number' && !late) {
     return Array.from({ length: count }, (_, n): ShownFolder => ({
       workspaceId: `pending:${projectId}:${n}`, projectId, kind: n === 0 ? 'root' : 'attached', path: '' as ProjectFolder['path'],
       branch: null, sessionIds: [], attachedAt: null, offline: false, deviceId, placeholder: true,
