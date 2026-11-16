@@ -17,13 +17,13 @@ import {
   miseDependency,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { resolveWindowsHandoffLaunch, type WindowsHandoffLaunch } from '@gugu/session-core/exec';
-import { connectStdioAcpV2 } from '../../helpers/acp-v2';
 import { requireBridgeEntry } from '../../helpers/acp-bridge-entry';
 import {
   NODE_FOR_CLAUDE_ACP,
   resolveNodeInterpreter,
 } from '../../helpers/node-interpreter';
-import { createClaudeSessionDecoder } from './acp-transform';
+import { connectClaudeWithReview } from './auto-review-connection';
+import { CLAUDE_REVIEWER_MODEL, claudeReviewConfig } from './auto-review';
 import { claudeAuthStatus } from './auth';
 import { claudeSubscriptionBehavior } from './subscription';
 import { buildClaudeHookConfig } from './hooks';
@@ -418,6 +418,7 @@ export const provider = registerPluginBehavior(plugin, {
           // Point the adapter's Claude Agent SDK at the host-installed claude
           // binary instead of the SDK's auto-downloaded native binary.
           CLAUDE_CODE_EXECUTABLE: claude.program,
+          CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL,
           // 以 root 跑咕咕时,桥会把「完全访问」这一档整个不报 —— 取证与 A/B 见 ./root-bypass.ts。
           // 非 root 上返回 {},这一行什么都不加。
           ...claudeAcpRootBypassEnv(),
@@ -425,7 +426,8 @@ export const provider = registerPluginBehavior(plugin, {
       };
     },
     // ACP v2:一轮在前台 idle 处结束,后台子智能体不再扣住这一轮的结局(子智能体在跑时下一句不进队列)。
-    connect: (io, toClient) => connectStdioAcpV2(io, toClient, createClaudeSessionDecoder()),
+    filterPermissionConfig: (options, context) => claudeReviewConfig(options, context.cliVersion),
+    connect: (io, toClient, context) => connectClaudeWithReview(io, toClient, context?.cliVersion),
   },
   auth: {
     checkStatus: claudeAuthStatus,
@@ -452,6 +454,7 @@ export const provider = registerPluginBehavior(plugin, {
         // 只读档于是会静默变成 auto,比用户所选更松。
         readOnlyFlag: '--permission-mode default',
         editFlag: '--permission-mode acceptEdits',
+        aiReviewFlag: '--permission-mode auto',
         // 规划档。❌ 不能拿「不加 flag」(= default = 只读)顶替:只读允许 agent 动手做
         // 只读的事,规划连动手的意图都不产生,只产出方案 —— 顶替会让选了规划的用户拿到只读行为。
         planFlag: '--permission-mode plan',

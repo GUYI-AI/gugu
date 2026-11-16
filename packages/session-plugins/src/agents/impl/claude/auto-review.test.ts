@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest';
+import type { SessionConfigOption } from '@agentclientprotocol/sdk';
+import { claudeAutoReviewAvailable, claudeReviewConfig, CLAUDE_REVIEWER_MODEL } from './auto-review';
+import { provider } from './index';
+import { materializeClaudeSessionBundle } from './session-bundle';
+
+const options = (model: string, description?: string): SessionConfigOption[] => [
+  { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: model, options: [{ value: model, name: model, description }] },
+  { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: 'acceptEdits', options: ['plan', 'default', 'acceptEdits', 'auto', 'bypassPermissions'].map(value => ({ value, name: value })) },
+];
+const modes = (version: string | undefined, model: string, description?: string) => {
+  const mode = claudeReviewConfig(options(model, description), version)[1]!;
+  return mode.type === 'select' ? mode.options : [];
+};
+describe('Claude AI review prerequisites', () => {
+  it.each([undefined, '', '2.1.293', '2.1.301', 'unknown', '1.9.999', '2.1.302-beta'])('hides auto for unverified/old actual CLI %s', version => {
+    expect(modes(version, 'claude-opus-5')).not.toContainEqual({ value: 'auto', name: 'auto' });
+  });
+  it.each(['2.1.302', '2.1.311', '2.2.0', '3.0.0'])('accepts actual CLI %s at or after the floor', version => {
+    expect(claudeAutoReviewAvailable(version, 'claude-opus-5')).toBe(true);
+  });
+  it.each(['opus', 'opus[1m]', 'claude-opus-5', 'claude-fable-5-1[1m]', 'fable', 'sonnet', 'claude-sonnet-4-6', 'claude-sonnet-5-1', 'claude-sonnet-5', 'claude-haiku-5-5'])('allows supported main model %s', model => {
+    expect(claudeAutoReviewAvailable('2.1.302', model)).toBe(true);
+  });
+  it.each(['deepseek-v4', 'glm-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'haiku', '', 'default', 'proxy/claude-opus-5'])('does not infer support for %s', model => {
+    expect(claudeAutoReviewAvailable('2.1.311', model)).toBe(false);
+  });
+  it('resolves default from native model facts and preserves other modes', () => {
+    expect(modes('2.1.311', 'default', 'Claude Opus 5')).toHaveLength(5);
+    expect(modes('2.1.311', 'default', 'DeepSeek V4')).toHaveLength(4);
+    expect(modes('2.1.301', 'default', 'Claude Opus 5')).toHaveLength(4);
+  });
+  it('sends native auto rather than the bypass flag', () => {
+    const command = provider.behavior.prompt!.buildCommand({ cli: '/fixture/claude', model: 'claude-opus-5', permissionMode: 'ai-review' });
+    expect(command.args).toContain('auto');
+    expect(command.args).not.toContain('--dangerously-skip-permissions');
+    expect(command.autoApproved).not.toBe(true);
+  });
+  it.each(['acp', 'tui'] as const)('pins Haiku on the %s session materialization, without changing host CLI', surface => {
+    const result = materializeClaudeSessionBundle({ surface, lifecycle: 'fresh', cwd: '/fixture' }, { mcpServers: [], env: {}, model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [] });
+    expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(CLAUDE_REVIEWER_MODEL);
+  });
+});

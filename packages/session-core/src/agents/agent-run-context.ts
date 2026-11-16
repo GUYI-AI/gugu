@@ -26,6 +26,8 @@ import { hostCliKey, hostCliSchema } from './host-cli';
 export const agentRunContextSchema = z.object({
   /** 选中的那一份二进制(解析失败也是一个答案,带着诊断原文)。 */
   cli: hostCliSchema,
+  /** Actual selected host executable, probed with its launch environment. Unknown stays absent. */
+  cliVersion: z.string().optional(),
   /** Host-owned credential selection, pinned on first session launch. */
   connectionId: z.string().optional(),
   /** Home-shaped root for reading the selected connection's credential files. */
@@ -111,6 +113,7 @@ const KEY_ITEM_SEP = String.fromCharCode(1);
 export function agentRunContextKey(ctx: AgentRunContext): string {
   return [
     hostCliKey(ctx.cli),
+    ctx.cliVersion ?? '',
     envKey(ctx.env),
     envKey(ctx.configRootEnv),
     envKey(ctx.credentialEnv ?? {}),

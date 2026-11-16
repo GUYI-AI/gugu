@@ -39,11 +39,12 @@ export function detachedPermissionModeOptions(
   tier: GuguPermissionMode | null,
   modeMap: ProviderPermissionModeMap | undefined
 ): { options: Options; selected: string } | null {
-  if (!tier || !modeMap) return null;
+  if (!tier || tier === 'ai-review' || !modeMap) return null;
   const selected = modeMap[tier]?.id;
   if (!selected) return null;
   const options: Options = {};
   for (const rung of GUGU_PERMISSION_MODES) {
+    if (rung === 'ai-review') continue;
     const id = modeMap[rung]?.id;
     if (id) options[id] = { name: id, destructive: isDestructivePermissionMode(id) };
   }
@@ -83,6 +84,7 @@ export const PERMISSION_TIER_LABEL_KEYS = {
   plan: 'taskConfig.permissionPlan',
   'read-only': 'taskConfig.permissionReadOnly',
   edit: 'taskConfig.permissionEdit',
+  'ai-review': 'taskConfig.permissionAiReview',
   'full-access': 'taskConfig.permissionFullAccess',
 } as const satisfies Record<GuguPermissionMode, SessionMessageLookupKey>;
 
@@ -107,6 +109,10 @@ export function localizePermissionModeOptions(
     edit: {
       name: translate(PERMISSION_TIER_LABEL_KEYS.edit),
       description: translate('taskConfig.permissionEditHint'),
+    },
+    'ai-review': {
+      name: translate('taskConfig.permissionAiReview'),
+      description: translate('taskConfig.permissionAiReviewHint'),
     },
     'full-access': {
       name: translate(PERMISSION_TIER_LABEL_KEYS['full-access']),

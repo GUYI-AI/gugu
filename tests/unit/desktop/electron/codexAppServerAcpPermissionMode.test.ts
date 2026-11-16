@@ -17,8 +17,9 @@ rl.on('line', (line) => {
   if (m.id === undefined || !m.method) return
   fs.appendFileSync(process.env.FIXTURE_RECORD, JSON.stringify(m) + '\\n')
   let result = { data: [] }
+  if (m.method === 'initialize') result = { userAgent: 'codex_cli_rs/0.160.0' }
   if (m.method === 'thread/start') result = { thread: { id: 'thread-permission' }, activePermissionProfile: ':danger-full-access' }
-  if (m.method === 'model/list') result = { data: [{ id: 'model-a', model: 'model-a', displayName: 'Model A', supportedReasoningEfforts: [] }] }
+  if (m.method === 'model/list') result = { data: [{ id: 'model-a', model: 'model-a', displayName: 'Model A', supportedReasoningEfforts: [] }, { id: 'codex-auto-review', model: 'codex-auto-review', displayName: 'Reviewer', supportedReasoningEfforts: [] }] }
   if (m.method === 'permissionProfile/list') result = { data: [':read-only', ':workspace', ':danger-full-access', 'custom'].map(id => ({ id, allowed: true })) }
   process.stdout.write(JSON.stringify({ id: m.id, result }) + '\\n')
 })
@@ -69,6 +70,7 @@ it('hot-switches approval policy with each builtin profile while preserving nati
     _meta: { guguCodex: { permissionProfile: ':danger-full-access', threadStart: { approvalPolicy: 'never', sandbox: 'danger-full-access' } } },
   })).error).toBeUndefined()
   for (const [profile, approvalPolicy] of [
+    ['auto-review', 'on-request'],
     [':workspace', 'on-request'],
     [':danger-full-access', 'never'],
     [':read-only', 'never'],
@@ -76,7 +78,7 @@ it('hot-switches approval policy with each builtin profile while preserving nati
   ]) {
     const response = await call('session/set_config_option', { sessionId: 'thread-permission', type: 'id', configId: 'mode', value: profile })
     expect(response.error).toBeUndefined()
-    expect(settings().at(-1)).toEqual({ threadId: 'thread-permission', permissions: profile, approvalPolicy })
+    expect(settings().at(-1)).toEqual({ threadId: 'thread-permission', permissions: profile === 'auto-review' ? ':workspace' : profile, approvalPolicy, approvalsReviewer: profile === 'auto-review' ? 'auto_review' : 'user' })
   }
   expect((await call('session/set_config_option', { sessionId: 'thread-permission', type: 'id', configId: 'mode', value: 'custom' })).error).toBeUndefined()
   expect(settings().at(-1)).toEqual({ threadId: 'thread-permission', permissions: 'custom' })
@@ -89,6 +91,9 @@ it('hot-switches approval policy with each builtin profile while preserving nati
   } })
   expect(settings()).toEqual(before)
   expect((await call('session/set_config_option', { sessionId: 'thread-permission', type: 'id', configId: 'mode', value: ':read-only' })).error).toBeUndefined()
-  expect((await call('session/set_config_option', { sessionId: 'thread-permission', type: 'id', configId: 'model', value: 'model-a' })).error).toBeUndefined()
+  const selected = await call('session/set_config_option', { sessionId: 'thread-permission', type: 'id', configId: 'model', value: 'model-a' })
+  expect(selected.error).toBeUndefined()
+  const options = (selected.result as { configOptions: Array<{ category: string; options: Array<{ value: string }> }> }).configOptions
+  expect(options.find(option => option.category === 'model')?.options.map(option => option.value)).toEqual(['model-a'])
   expect(settings().at(-1)).toEqual({ threadId: 'thread-permission', model: 'model-a' })
 })

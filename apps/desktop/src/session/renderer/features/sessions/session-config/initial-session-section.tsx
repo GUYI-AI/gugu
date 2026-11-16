@@ -1,3 +1,4 @@
+import { meetsReviewModeRequirements } from '@gugu/session-core/acp/client';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -244,6 +245,7 @@ export type InitialSessionState = {
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
+  autoReviewAvailable?: boolean;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
@@ -1116,6 +1118,12 @@ export function useInitialSessionState(
           : undefined))
       : undefined
   );
+  const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
+  const reviewEntry = capabilities?.autoApprove.modes?.['ai-review'];
+  const autoReviewAvailable = !unattended && !!reviewEntry && (platformModel
+    ? (reviewCatalog.kind === 'ready' || reviewCatalog.kind === 'auth-required') && reviewCatalog.reviewerAvailable === true
+      && meetsReviewModeRequirements(reviewEntry.reviewRequirements, { cliVersion: reviewCatalog.cliVersion, model: platformModel.replace(/^platform:/, '') })
+    : reviewCatalog.kind === 'ready' && reviewCatalog.selected === model && reviewCatalog.autoReview === true);
   const autoApproveSupported = agentSupportsAutoApprove(capabilities);
   const grokStructuralFullAccess = providerId === 'grok';
   // @@@5597-draft-decides — **草稿上显示的档 = 落库的档 = 进程里生效的档**,三者同一个事实。
@@ -1177,7 +1185,7 @@ export function useInitialSessionState(
   const exhaustiveModes = capabilities?.autoApprove.modesExhaustive
     ? capabilities.autoApprove.modes
     : undefined;
-  const permissionMode: GuguPermissionMode = grokStructuralFullAccess
+  const permissionMode: GuguPermissionMode = wantedPermissionMode === 'ai-review' && !autoReviewAvailable ? 'edit' : grokStructuralFullAccess
     ? wantedPermissionMode
     : exhaustiveModes
       ? (resolveDeclaredPermissionMode(wantedPermissionMode, exhaustiveModes)
@@ -1248,6 +1256,7 @@ export function useInitialSessionState(
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
+    autoReviewAvailable,
     fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
@@ -1599,6 +1608,10 @@ export function InitialSessionField({
                     },
                   }
                 : {}),
+              ...((state.autoReviewAvailable) ? { 'ai-review': {
+                name: translate('taskConfig.permissionAiReview'),
+                description: translate('taskConfig.permissionAiReviewHint'),
+              } } : {}),
               'full-access': {
                 name: translate('taskConfig.permissionFullAccess'),
                 description: translate('taskConfig.permissionFullAccessHint'),

@@ -163,6 +163,7 @@ export type AgentHostLoginCommand = {
 };
 
 export type AgentHostAcpSpawn = AcpSpawnResult & {
+  cliVersion?: string;
   env: Record<string, string>;
   cwd: string;
 };
@@ -738,6 +739,7 @@ export class AgentPluginHost {
     });
     return ok({
       ...spawn,
+      ...(ctx.runContext.cliVersion ? { cliVersion: ctx.runContext.cliVersion } : {}),
       env: composeAgentSpawnEnv(ctx.runContext, {
         providerEnv: {
           ...(await this.deps.resolveProviderEnv?.(providerId)),

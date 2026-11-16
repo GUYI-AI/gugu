@@ -1,3 +1,4 @@
+import { CLAUDE_REVIEWER_MODEL } from './auto-review';
 import { harnessPlatform } from './platform';
 import { claudeSessionFlagSettings } from './platform-model';
 import {
@@ -644,7 +645,7 @@ export function materializeClaudeSessionBundle(
   assertPackageDeclaresMcpServers(bundle);
   const plugin = packageEntry ? { entry: packageEntry, root: packageRoot(bundle) } : null;
   const library = libraryPlugin(bundle);
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL };
   materializeMcpEnv(bundle, env);
   materializeModel(bundle, env);
   const promptValue = renderPromptBlocks(bundle.promptBlocks);

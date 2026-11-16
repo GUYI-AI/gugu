@@ -207,6 +207,15 @@ describe('listPlatformModels', () => {
     })])
   })
 
+  it('does not expose the internal reviewer as a main model even when the gateway lists it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ models: [
+      { id: 'codex-auto-review', display_name: 'Reviewer', protocols: ['openai-responses'], enabled: true },
+      { id: 'gpt-6.1-sol', display_name: 'GPT-6.1 Sol', protocols: ['openai-responses'], enabled: true },
+    ] }));
+    const models = await listPlatformModels({} as never);
+    expect(models.map(model => model.id)).toEqual(['gpt-6.1-sol']);
+  });
+
   it('lists the catalog unchanged when the server sends no multipliers at all', async () => {
     // 倍率是 display-only:老服务端 / 网关问不到 → 空表,目录照常上架。
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({

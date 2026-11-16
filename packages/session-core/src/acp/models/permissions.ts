@@ -86,7 +86,7 @@ export function isDestructivePermissionMode(modeId: string): boolean {
  * 没有 plan 的 harness(codex 只有 :read-only/:workspace/:danger-full-access)不声明这一档,
  * 界面上就不摆 —— 见 @@@permission-three-modes 的「不摆不存在的档」。
  */
-export const GUGU_PERMISSION_MODES = ['plan', 'read-only', 'edit', 'full-access'] as const;
+export const GUGU_PERMISSION_MODES = ['plan', 'read-only', 'edit', 'ai-review', 'full-access'] as const;
 export type GuguPermissionMode = (typeof GUGU_PERMISSION_MODES)[number];
 
 export function isGuguPermissionMode(value: unknown): value is GuguPermissionMode {
@@ -110,7 +110,7 @@ const READ_ONLY_PERMISSION_MODE_PATTERN = /read[-_]?only/i;
  * 用于反查 agent 当前档属于三档里的哪一档。
  */
 export type ProviderPermissionModeMap = {
-  [K in GuguPermissionMode]?: { id: string; aliases?: readonly string[]; legs?: readonly ('acp' | 'tui')[] };
+  [K in GuguPermissionMode]?: { id: string; aliases?: readonly string[]; legs?: readonly ('acp' | 'tui')[]; reviewRequirements?: import('./review-mode').ReviewModeRequirements };
 };
 
 /**
@@ -131,6 +131,7 @@ export function classifyProviderPermissionMode(
       if (entry.id === modeId || entry.aliases?.includes(modeId)) return mode;
     }
   }
+  if (modeId === 'auto-review') return 'ai-review';
   if (isDestructivePermissionMode(modeId)) return 'full-access';
   if (PLAN_PERMISSION_MODE_PATTERN.test(modeId)) return 'plan';
   if (READ_ONLY_PERMISSION_MODE_PATTERN.test(modeId)) return 'read-only';
@@ -218,7 +219,7 @@ export function canRepresentPermissionMode(
 
 /** 档位在阶梯上的位置 —— 数字越大越松(plan 0 < read-only 1 < edit 2 < full-access 3)。 */
 function permissionModeRung(mode: GuguPermissionMode): number {
-  return GUGU_PERMISSION_MODES.indexOf(mode);
+  return ['plan', 'read-only', 'edit', 'full-access'].indexOf(mode === 'ai-review' ? 'edit' : mode);
 }
 
 /**
@@ -233,7 +234,7 @@ function permissionModeRung(mode: GuguPermissionMode): number {
  * 因为那时"照样开"等于把用户放进一个比他选的更大的权限里(见 resolvePermissionModeFallback)。
  */
 export function isTopPermissionRung(mode: GuguPermissionMode): boolean {
-  return permissionModeRung(mode) === GUGU_PERMISSION_MODES.length - 1;
+  return mode === 'full-access';
 }
 
 /**
@@ -258,6 +259,7 @@ export function resolvePermissionModeFallback(
   availableModeIds: readonly string[],
   map?: ProviderPermissionModeMap
 ): { modeId: string; mode: GuguPermissionMode } | undefined {
+  if (wanted === 'ai-review') return undefined; // Reviewer failure never selects a different approval authority.
   const ceiling = permissionModeRung(wanted);
   let best: { modeId: string; mode: GuguPermissionMode } | undefined;
   for (const modeId of availableModeIds) {
@@ -265,6 +267,7 @@ export function resolvePermissionModeFallback(
     // 该家为这一档指名过代表就只认那个 id(claude 的 `auto` 在这里被挡);没指名才许猜着填
     // (droid 的 `normal`)—— 见 canRepresentPermissionMode 抬头。
     if (!canRepresentPermissionMode(modeId, mode, map)) continue;
+    if (mode === 'ai-review') continue;
     const rung = permissionModeRung(mode);
     if (rung > ceiling) continue;
     // 同档并列时保留先出现的那个 —— 与精确匹配那条路的 find() 取法一致(claude 的
@@ -290,6 +293,7 @@ export function resolveDeclaredPermissionMode(
   modes: ProviderPermissionModeMap | undefined
 ): GuguPermissionMode | undefined {
   if (!modes || wanted === 'full-access' || modes[wanted]) return wanted;
+  if (wanted === 'ai-review') return undefined;
   for (let rung = permissionModeRung(wanted) - 1; rung >= 0; rung -= 1) {
     const mode = GUGU_PERMISSION_MODES[rung]!;
     if (modes[mode]) return mode;

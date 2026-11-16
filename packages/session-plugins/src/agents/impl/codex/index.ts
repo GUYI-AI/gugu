@@ -457,7 +457,9 @@ export const provider = registerPluginBehavior(plugin, {
           '-c approval_policy="never" -c sandbox_mode="danger-full-access" --dangerously-bypass-hook-trust',
         // `codex --help` 0.146.0: `-s, --sandbox <read-only|workspace-write|danger-full-access>`。
         // 编辑档不给 flag —— codex 自己的默认就是那一档。
-        readOnlyFlag: '-s read-only',
+        readOnlyFlag: '-s read-only -c approvals_reviewer="user"',
+        editFlag: '-s workspace-write -a on-request -c approvals_reviewer="user"',
+        aiReviewFlag: '-s workspace-write -a on-request -c approvals_reviewer="auto_review"',
         initialPromptFlag: '',
         resumeFlag: 'resume',
         cliSessionIdFlag: ' ',

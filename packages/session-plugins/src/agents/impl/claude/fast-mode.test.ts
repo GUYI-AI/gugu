@@ -31,7 +31,7 @@ describe('Claude session Fast settings', () => {
     });
     expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode } } } });
     expect(materialized.argsAppend).toEqual([]);
-    expect(materialized.env).toEqual({});
+    expect(materialized.env).toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-haiku-5-5' });
   });
 
   it('keeps ACP Fast and UltraCode together without copying protected credentials into settings', () => {
