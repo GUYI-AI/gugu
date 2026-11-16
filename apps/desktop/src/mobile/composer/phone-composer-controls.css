@@ -2,7 +2,8 @@
 .gg-phone-composer-controls { display: flex; flex-wrap: wrap-reverse; align-items: center; column-gap: 8px; row-gap: 4px; min-width: 0; padding-block: 2px; margin-bottom: var(--phone-composer-row-input-gap, 4px); opacity: 1; transition: opacity var(--transition-fast); }
 .gg-phone-composer-controls-items { display: flex; align-items: center; flex: 1 1 max-content; gap: 8px; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .gg-phone-composer-controls-items[hidden] { display: none; }
-.gg-phone-composer-menu-toggle { flex: 0 0 auto; margin: 8px 0 8px auto; color: var(--text-secondary); }
+/* The sm icon's mobile ::after extends to the 44px touch target; reserve its right half in layout. */
+.gg-phone-composer-menu-toggle { flex: 0 0 auto; margin: 8px calc((var(--control-h-touch) - var(--control-h-sm)) / 2) 8px auto; color: var(--text-secondary); }
 .gg-phone-composer-controls[data-collapsed] { padding-block: 0; }
 .gg-phone-composer-controls:has(> .gg-phone-composer-controls-items:empty) { display: none; }
 .gg-phone-composer-control { flex: 0 0 auto; position: relative; min-height: 44px; height: 44px; padding: 0 12px; gap: 4px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font-size: var(--font-body); }
