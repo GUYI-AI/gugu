@@ -1,3 +1,4 @@
+import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
@@ -50,18 +51,18 @@ const sessions=[
  {conversationId:'child',title:'排版子智能体',agent:{userId:'child-agent'},parentConversationId:'solo'},
  {conversationId:'other',title:'别处的任务',agent:{userId:'other-agent'}},
 ].map(session=>({...session,projectId:'workspace',harness:'codex',runtime:'acp',agentStatus:'idle'} as SessionpageSessionSummary))
-const Controls = observer((props: { sessionId: string; entry: string | null }) => <PhoneSessionSidebarControls sidebar={usePhoneSessionSidebar(props)} />)
-const Conversation = observer((props: {sessionId: string; entry: string | null}) => {
+const Controls = observer((props: { sessionId: string; entry: string | null; deviceId?: string }) => <PhoneSessionSidebarControls sidebar={usePhoneSessionSidebar(props)} conversationKey={`${props.deviceId ?? 'qa-device'}:${props.sessionId}`} />)
+const Conversation = observer((props: {sessionId: string; entry: string | null; deviceId?: string}) => {
  const sidebar = usePhoneSessionSidebar(props)
  return <AgentWatchScreen title="验收任务" testId="existing-review" bodyFill><SessionConversation
-  timeline={emptyAgentWatchTimeline()} deviceId="qa-device" sessionId={props.sessionId} agentName="Codex" harness="codex" nativeRecord sessionRuntime="acp"
+  timeline={emptyAgentWatchTimeline()} deviceId={props.deviceId ?? 'qa-device'} sessionId={props.sessionId} agentName="Codex" harness="codex" nativeRecord sessionRuntime="acp"
   respondingItemId={null} onRespond={vi.fn()} onSend={actions.send} pendingSends={[]} sending={false} agentWorking={false} onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()}
-  composerControls={(modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} />}
+  composerControls={(modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} conversationKey={`${props.deviceId ?? 'qa-device'}:${props.sessionId}`} modelControl={modelControl} model={model} skillDraft={skillDraft} />}
  /></AgentWatchScreen>
 })
-async function mount(sessionId:string,entry:string|null,full=false,width=390,theme:'light'|'dark'='dark'){
+async function mount(sessionId:string,entry:string|null,full=false,width=390,theme:'light'|'dark'='dark',locale:'zh-CN'|'en-US'='zh-CN'){
  followRendererSession('SIGNED_IN', 'owner')
- await page.viewport(width,844);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
+ await page.viewport(width,844);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference(locale)
  const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'})]
  publishChatSummaries(chats);dispose=installOwnedAgentEntry({open:()=>false,owns:()=>true})
  publishDirectoryDevices([device('qa-device',[],{is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
@@ -154,6 +155,78 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
  expect(icon.getBoundingClientRect().left-label.getBoundingClientRect().right).toBe(4)
  expect(topic.getBoundingClientRect().right-icon.getBoundingClientRect().right).toBe(12)
 })
+it.each([320,360].flatMap(width=>[14,21].map(fontSize=>({width,fontSize}))))('$width/English/$fontSize: every fixed-size control remains reachable without widening the page',async({width,fontSize})=>{
+ await mount('room-task','chat:room',true,width,'dark','en-US')
+ harness!.container.style.setProperty('--font-body',`${fontSize}px`)
+ harness!.container.style.fontFamily='Arial, sans-serif'
+ await document.fonts.ready
+ const row=()=>harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+ await vi.waitFor(()=>{
+  const buttons=row().querySelectorAll<HTMLElement>('.gg-phone-composer-control')
+  expect(buttons).toHaveLength(4)
+  for(const button of buttons) expect(button.getBoundingClientRect().width,button.outerHTML).toBeGreaterThan(0)
+ },{timeout:10000})
+ const items=row().querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+ const buttons=[...items.querySelectorAll<HTMLElement>('.gg-phone-composer-control')]
+ const toggle=row().querySelector<HTMLElement>('[data-testid="phone-composer-menu-toggle"]')!
+ expect(buttons.map(button=>button.textContent)).toEqual(['Work','Skills','Topics','Agents'])
+ expect(getComputedStyle(items).overflowX).toBe('auto')
+ expect(items.scrollWidth).toBeGreaterThan(items.clientWidth)
+ expect(items.getBoundingClientRect().right).toBeLessThanOrEqual(width-16)
+ expect(toggle.getBoundingClientRect().bottom).toBeLessThanOrEqual(items.getBoundingClientRect().top)
+ expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
+ for(const [index,button] of buttons.entries()){
+  const box=button.getBoundingClientRect(),style=getComputedStyle(button)
+  expect(box.top).toBe(buttons[0]!.getBoundingClientRect().top)
+  expect(box.height).toBe(44)
+  expect([style.paddingLeft,style.paddingRight]).toEqual(['12px','12px'])
+  expect(style.fontSize).toBe(`${fontSize}px`)
+  if(index)expect(box.left-buttons[index-1]!.getBoundingClientRect().right).toBe(8)
+ }
+ items.scrollLeft=items.scrollWidth
+ const last=buttons.at(-1)!
+ await vi.waitFor(()=>{
+  expect(items.scrollLeft).toBeGreaterThan(0)
+  const visible=items.getBoundingClientRect(),box=last.getBoundingClientRect()
+  expect(box.left).toBeGreaterThanOrEqual(visible.left)
+  expect(box.right).toBeLessThanOrEqual(visible.right)
+  expect(document.elementFromPoint(box.left+box.width/2,box.top+box.height/2)?.closest('button')).toBe(last)
+ })
+ await page.elementLocator(last).click()
+ await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
+ expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
+})
+
+it.each(['session','device'] as const)('%s identity changes reset collapse while directory empty/full/empty does not',async change=>{
+ await mount('room-task','chat:room',true)
+ await act(async()=>{removeDeviceSessions('qa-device')})
+ const row=()=>harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+ await vi.waitFor(()=>expect(row().querySelector('[data-testid="agent-watch-create-model-device"]')).not.toBeNull())
+ const original=row()
+ await page.getByTestId('phone-composer-menu-toggle').click()
+ await vi.waitFor(()=>expect(original.hasAttribute('data-collapsed')).toBe(true))
+ await act(async()=>{updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})})
+ await vi.waitFor(()=>{
+  expect(harness!.container.querySelector('[data-testid="agent-watch-create-skills"]')).not.toBeNull()
+  expect(row()).toBe(original)
+  expect(row().hasAttribute('data-collapsed')).toBe(true)
+  expect(row().querySelector('[data-testid="phone-composer-menu-toggle"]')?.getAttribute('aria-expanded')).toBe('false')
+ })
+ await act(async()=>{removeDeviceSessions('qa-device')})
+ await vi.waitFor(()=>{
+  expect(harness!.container.querySelector('[data-testid="agent-watch-create-skills"]')).toBeNull()
+  expect(row()).toBe(original)
+  expect(row().hasAttribute('data-collapsed')).toBe(true)
+  expect(row().querySelector<HTMLElement>('.gg-phone-composer-controls-items')!.getBoundingClientRect().height).toBe(0)
+ })
+ await renderWithAppProviders(harness!,<LocalizationProvider><SessionUiTheme theme="dark"><><Conversation sessionId={change==='session'?'other':'room-task'} deviceId={change==='device'?'qa-other-device':'qa-device'} entry={null}/></></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},contacts:{contacts:[]}})
+ await vi.waitFor(()=>{
+  expect(row()).not.toBe(original)
+  expect(row().hasAttribute('data-collapsed')).toBe(false)
+  expect(row().querySelector('[data-testid="phone-composer-menu-toggle"]')?.getAttribute('aria-expanded')).toBe('true')
+ })
+})
+
 it('an unrelated task does not inherit room navigation',async()=>{
  await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()
 })

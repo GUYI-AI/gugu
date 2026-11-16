@@ -137,8 +137,9 @@ it('keeps narrow English controls on one line without unnecessary scrolling', as
   const buttons = [...row.querySelectorAll('.gg-phone-composer-control')]
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
-  row.scrollLeft = row.scrollWidth
-  await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1)
+  const items = row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+  items.scrollLeft = items.scrollWidth
+  await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= items.getBoundingClientRect().right + 1)
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
 })
 
