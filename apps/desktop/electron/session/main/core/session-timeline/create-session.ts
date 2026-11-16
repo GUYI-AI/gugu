@@ -326,7 +326,7 @@ export async function createModels(
         })),
         selected: catalog.selected,
         ...((state.kind === 'ready' || state.kind === 'auth-required')
-          && permissionModeSupportsBillingRoute('ai-review', agent.capabilities?.autoApprove.modes, platformModel ? 'platform' : 'own') && (platformModel
+          && permissionModeSupportsBillingRoute('ai-review', agent.capabilities?.autoApprove?.modes, platformModel ? 'platform' : 'own') && (platformModel
           ? state.reviewerAvailable === true && !!agent.capabilities?.autoApprove.modes?.['ai-review'] && meetsReviewModeRequirements(agent.capabilities.autoApprove.modes['ai-review'].reviewRequirements, { cliVersion: state.cliVersion, model: requestedModel?.replace(/^platform:/, '') })
           : state.kind === 'ready' && state.autoReview === true && !!state.selected)
           ? { autoReview: { model: platformModel ? requestedModel! : state.kind === 'ready' ? state.selected! : '' } } : {}),

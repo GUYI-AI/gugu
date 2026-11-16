@@ -2329,7 +2329,7 @@ export class SessionManager implements InboundRouter {
       projectId: input.projectId,
       providerId: input.providerId,
       acpSessionId,
-      billingRoute: input.platformModel === null ? 'own' : input.platformModel ? 'platform' : 'unknown',
+      billingRoute: input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
       ...(input.platformAccessSessionId ? { platformCredentials: true } : {}),
       ...(provider?.capabilities.acp.liveSettings
         ? { liveSettings: provider.capabilities.acp.liveSettings }
@@ -2452,7 +2452,7 @@ export class SessionManager implements InboundRouter {
     if (!permissionModeSupportsBillingRoute(
       resolveSessionPermissionMode(input),
       provider?.capabilities.autoApprove.modes,
-      input.platformModel === null ? 'own' : input.platformModel ? 'platform' : 'unknown',
+      input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
     )) throw new Error('This permission tier is unavailable for the session billing route');
     if (provider?.capabilities.acp.sessionModes === 'none') return;
     if (provider?.capabilities.autoApprove.kind !== 'supported') return;

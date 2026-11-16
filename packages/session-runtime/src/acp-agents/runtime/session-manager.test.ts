@@ -3559,7 +3559,7 @@ it('starts a confirmed own-account reviewer through the native permission setter
     currentModeId: 'agent', availableModes: [{ id: 'agent', name: 'Edit' }, { id: 'auto-review', name: 'AI review' }],
   } });
   const rt = new AcpRuntime(h.deps);
-  const started = await rt.startSession(makeStartInput({ sessionId: 'own-reviewer', platformModel: null, permissionMode: 'ai-review' }));
+  const started = await rt.startSession(makeStartInput({ sessionId: 'own-reviewer', billingRoute: 'own', permissionMode: 'ai-review' }));
   expect(isOk(started)).toBe(true);
   expect(h.agent.setSessionMode).toHaveBeenCalledWith({ sessionId: 'own-session', modeId: 'auto-review' });
   await rt.dispose();
