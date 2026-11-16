@@ -6,11 +6,20 @@ import { AgentWatchPage } from '@/mobile/agent-watch/AgentWatchPage'
 import { DevicesContext, type DevicesContextValue } from '@/store/devicesContext'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
+import { ThemeProvider } from '@/store/theme'
+import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
+import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge'
 import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { device, displayIdentity, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMobileWorkspaceCatalog'
+import '@/i18n/registerMainCatalog'
+import '@/i18n/registerMessagingCatalog'
+import '@gugu/session-ui/theme/theme.css'
+import '@gugu/session-ui/theme/semantic.css'
+import '@gugu/session-ui/styles/base.css'
+import '@renderer/index.css'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -32,7 +41,7 @@ afterEach(() => {
 for (const width of [360, 390]) for (const theme of ['light', 'dark']) {
   it(`${width}/${theme}: actual Agent route and identity follow distinct IDs and a live rename`, async () => {
     await page.viewport(width, 844); setLocalePreference('zh-CN')
-    document.documentElement.dataset.theme = theme; document.documentElement.setAttribute('data-phone-shell', '')
+    writeThemePreference(theme); document.documentElement.setAttribute('data-phone-shell', '')
     installIdentityDirectoryBridge()
     const identities = Object.fromEntries(['a', 'b'].map(id => [`agent-${id}`, displayIdentity(`agent-${id}`, {
       type: 'agent', owner_user_id: 'owner', display_name: '同名智能体', avatar: null,
@@ -41,16 +50,17 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark']) {
     publishDirectoryDevices([machine]); updateDeviceSessions(machine.device_id, { projects: [], sessions, cached: false, loading: false, error: null })
     harness = createReactHarness(); Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
     const exit = vi.fn()
-    const draw = (session: SessionpageSessionSummary | null) => renderWithAppProviders(harness!, <LocalizationProvider><DevicesContext.Provider value={devices}>
-      <PhoneViewportShell mobile style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    const draw = (session: SessionpageSessionSummary | null) => renderWithAppProviders(harness!, <ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><DevicesContext.Provider value={devices}>
+      <PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" className="h-full flex flex-col bg-background">
         <AgentWatchPage active onExit={exit} openRequest={session ? { deviceId: machine.device_id, session } : null} />
       </PhoneViewportShell>
-    </DevicesContext.Provider></LocalizationProvider>, { auth: { id: 'owner' }, chat: { identitiesById: identities } })
+    </DevicesContext.Provider></SessionUiTheme></LocalizationProvider></ThemeProvider>, { auth: { id: 'owner' }, chat: { identitiesById: identities } })
     await draw(null)
     const header = () => harness!.container.querySelector<HTMLElement>('[data-testid="agent-watch-hero"]')
     await draw(sessions[0]!)
     await until('actual Agent A route', () => header()?.dataset.sessionId === 'session-a' && header()?.dataset.agentId === 'agent-a')
     expect(header()?.textContent).toContain('同名智能体')
+    expect(harness!.container.textContent).not.toMatch(/agentWatch\.|shell\./)
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/K-agent-a-offline-${width}-${theme}.png` })
     await draw(sessions[1]!)
     await until('actual Agent B route', () => header()?.dataset.sessionId === 'session-b' && header()?.dataset.agentId === 'agent-b')

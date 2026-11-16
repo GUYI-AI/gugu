@@ -4,6 +4,8 @@ import { page } from 'vitest/browser'
 import { MessageProvider } from '@gugu/session-ui/react/components'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
+import { ThemeProvider } from '@/store/theme'
+import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { followRendererSession } from '@/lib/replica'
 import { CreateSessionPage } from '@/mobile/agent-watch/CreateSessionPage'
@@ -12,6 +14,9 @@ import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draf
 import type { SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftResult } from '@gugu/session-core/session-record/creation-attachment-protocol'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
+import '@/i18n/registerMainCatalog'
+import '@/mobile/agent-watch/agent-watch.css'
+import '@renderer/index.css'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -64,17 +69,21 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 function render(theme: 'light' | 'dark') {
-  root!.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
+  root!.render(<ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
     <CreateSessionPage onCreated={fixture.created} />
-  </MessageProvider></SessionUiTheme></LocalizationProvider>)
+  </MessageProvider></SessionUiTheme></LocalizationProvider></ThemeProvider>)
 }
 async function mount(theme: 'light' | 'dark') {
-  await page.viewport(390, 844); setLocalePreference('zh-CN'); document.documentElement.dataset.theme = theme
+  await page.viewport(390, 844); setLocalePreference('zh-CN'); writeThemePreference(theme)
   followRendererSession('SIGNED_IN', fixture.owner)
-  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''
-  host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column'
+  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''; host.dataset.taScope = ''
+  // Match MainLayout's phone shell boundary; the production CreateSessionPage/Thread stay real.
+  host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;background:var(--ta-panel-bg)'
   root = createRoot(host); render(theme)
   await until('real empty creation input and attachment control', () => !!host?.querySelector('[contenteditable]') && !!host?.querySelector('[data-phone-attachment]'))
+  expect(host!.textContent).toContain('新建任务')
+  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('第一句话…')
+  expect(host!.textContent).not.toContain('agentWatch.')
 }
 async function choose(file: File) {
   const picker = host!.querySelector<HTMLInputElement>('input[type="file"]')!
