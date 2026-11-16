@@ -59,11 +59,13 @@ it('removes auto when a live model update loses support, rejecting a forged sele
 // These are protocol fixtures, not evidence of a paid Claude request.
 const nativeDenial = (reason?: string) => ({ sessionUpdate: 'tool_call_update', toolCallId: 'call', status: 'failed',
   content: [{ type: 'content', content: { type: 'text', text: `Permission denied: ${reason ?? 'Action blocked by policy'}` } }],
-  _meta: { claudeCode: { toolName: 'Bash', toolResponse: { decisionReasonType: 'auto_mode', ...(reason ? { decisionReason: reason } : {}) } } },
+  _meta: { claudeCode: { toolName: 'Bash', toolResponse: { decisionReasonType: 'auto_mode', ...(reason ? { message: 'Action blocked by policy' } : {}) } } },
 });
 it.each([undefined, 'Deletes an unrelated directory'])('shows a native denial once per session, with v2 content fallback (%s)', reason => {
   connect('2.1.322');
-  const event = createClaudeSessionDecoder()(nativeDenial(reason));
+  const raw = nativeDenial(reason);
+  expect(raw._meta.claudeCode.toolResponse).not.toHaveProperty('decisionReason');
+  const event = createClaudeSessionDecoder()(raw);
   const frame = { sessionId: 'session', event };
   mock.client!.sessionEvent(frame);
   mock.client!.sessionEvent(frame);
@@ -75,6 +77,19 @@ it.each([undefined, 'Deletes an unrelated directory'])('shows a native denial on
   expect(mock.set).not.toHaveBeenCalled();
   expect(mock.permission).not.toHaveBeenCalled();
   expect(mock.publish.mock.calls.at(-1)?.[0].event).toBe(event);
+});
+it('retains the legacy metadata-only denial as a compatibility counterexample, not a v2 fixture', () => {
+  connect('2.1.322');
+  const event = createClaudeSessionDecoder()({ sessionUpdate: 'tool_call_update', toolCallId: 'legacy-call', status: 'failed',
+    _meta: { claudeCode: { toolName: 'Bash', toolResponse: { decisionReason: 'Legacy denial reason' } } },
+  });
+  mock.client!.sessionEvent({ sessionId: 'session', event });
+  expect(mock.publish.mock.calls.map(call => call[0].event)).toEqual([
+    { kind: 'session_notice', code: 'provider-notice', title: 'Bash: Legacy denial reason', detail: 'Bash: Legacy denial reason' },
+    event,
+  ]);
+  expect(mock.set).not.toHaveBeenCalled();
+  expect(mock.permission).not.toHaveBeenCalled();
 });
 it('keeps successful tool completion and ordinary errors intact without a denial notice', () => {
   connect('2.1.322');
