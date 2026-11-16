@@ -9,7 +9,6 @@ import { showBesideOnScreen } from '@renderer/app/screen-layout-actions';
 import { ProjectTaskComposer } from '@renderer/features/projects/components/main-panel/project-home';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
 import { Button } from '@renderer/lib/ui/button';
-import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { composerDrafts, projectDraftKey } from './composer-drafts';
 import { cancelComposerVerb, composerVerbLook } from './composer-verb-tag';
@@ -57,6 +56,7 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
   /** 项目群;没有项目的会话 = undefined(它就是和这个 agent 的私聊,卡落那个私聊)。 */
   chatId: string | undefined;
 }) {
+  const { translate } = useSessionMessages();
   const key = sessionVerbKey(sessionId);
   // 这条会话的 agent 和我的私聊(与对话页给它发首句同一个地址);有项目群就不要。
   const dm = useReplica(sessionAgentChat, chatId ? null : [projectId, sessionId]);
@@ -64,7 +64,12 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
     // Not resolved yet: the box's place is held; failed: said, with a retry (❌ no box and no word).
     if (dm.state === 'unknown') return <Unknown className="h-[132px] w-full" />;
     if (dm.state === 'error') {
-      return <ReadFailedLine className="px-4 py-2" message={messageForUser(dm.error)} onRetry={() => void sessionAgentChat.refresh(projectId, sessionId)} />;
+      return (
+        <p role="alert" className="flex items-center gap-2 px-4 py-2 text-xs text-foreground-destructive">
+          <span className="min-w-0 truncate">{messageForUser(dm.error)}</span>
+          <Button size="xs" variant="outline" onClick={() => void sessionAgentChat.refresh(projectId, sessionId)}>{translate('common.retry')}</Button>
+        </p>
+      );
     }
     // gugu-dev#181 核对 #51:没有项目的会话里派 —— agent 进不了私聊(只能两个人),卡照样留在私聊里,结果回它自己的会话。
     return (
