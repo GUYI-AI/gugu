@@ -1,29 +1,54 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect } from 'react'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
-import type { PasswordRequestView, PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
+import type { PasswordRequestView, PasswordSaveDraft, PasswordSnapshot, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
+import { passwordErrorText } from '@/components/password/passwordModel'
 import { followLink } from './guguLinks'
+import { replica, useReplica } from './replica'
 
-/** One snapshot of the password vault for every always-mounted surface (notifications, the device prompt), read once
- * per change instead of once per surface. */
-let snapshot: PasswordSnapshot | undefined
-const snapshotListeners = new Set<() => void>()
-let close: (() => void) | undefined
-const publish = (next: PasswordSnapshot | undefined) => { snapshot = next; for (const listener of snapshotListeners) listener() }
-async function read() {
-  try { const reply = await window.passwordVaultBeta?.invoke({ type: 'snapshot' }); publish(reply?.ok ? reply.snapshot : undefined) }
-  catch { publish(undefined) }
+/** One vault command answered by this device's vault; a refusal is an error carrying the line the person reads. */
+async function ask(command: PasswordUiCommand): Promise<Extract<PasswordUiReply, { ok: true }>> {
+  const vault = window.passwordVaultBeta
+  if (!vault) throw new Error(passwordErrorText(''))
+  const reply = await vault.invoke(command)
+  if (!reply.ok) throw new Error(passwordErrorText(reply.code))
+  return reply
 }
-function subscribe(listener: () => void) {
-  snapshotListeners.add(listener)
-  if (snapshotListeners.size === 1) { void read(); close = window.passwordVaultBeta?.subscribe(() => { void read() }) }
-  return () => { snapshotListeners.delete(listener); if (!snapshotListeners.size) { close?.(); close = undefined } }
-}
+
+/**
+ * The password vault's state as this device's vault answers it (names, websites, non-secret values, requests, grants,
+ * sync) — one reading for every surface (Settings → 密码, notifications, the device prompt). Fed by the vault's own push
+ * (`watch`). The vault never puts a secret value in it (secrets come only with `reveal`, to the page that asked), and it
+ * is ❌ kept across restarts: it stays inside the vault.
+ */
+export const passwordVault = replica({
+  name: 'passwordVault',
+  scope: 'account',
+  fresh: Infinity,
+  // The vault is on this device: a read never waits for the network.
+  networkMode: 'always',
+  read: async (): Promise<PasswordSnapshot> => (await ask({ type: 'snapshot' })).snapshot,
+  watch: { start: () => window.passwordVaultBeta?.subscribe(() => { void passwordVault.refresh() }) ?? (() => undefined) },
+})
+
+/**
+ * What an Agent proposed to save for one request (「去填写」): `null` once the request is no longer waiting. It holds the
+ * proposed values, secret ones included, so it is held only while the form opened for it is shown (`keep: 0`) and is
+ * ❌ kept across restarts.
+ */
+export const passwordSaveDraft = replica({
+  name: 'passwordSaveDraft',
+  scope: 'account',
+  keep: 0,
+  fresh: Infinity,
+  networkMode: 'always',
+  read: async (_owner: string, requestId: string): Promise<PasswordSaveDraft | null> => (await ask({ type: 'save-draft', requestId })).draft ?? null,
+})
+
+/** The vault's reading where only a value matters (notifications, the device prompt): undefined until it is read. */
 export function usePasswordSnapshot(): PasswordSnapshot | undefined {
-  return useSyncExternalStore(PASSWORD_BETA_ENABLED ? subscribe : noSubscribe, () => snapshot)
+  const reading = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
+  return reading.state === 'value' ? reading.value : undefined
 }
-const noSubscribe = () => () => {}
-/** A command's reply carries the next snapshot; surfaces that read the shared one see it at once. */
-export function publishPasswordSnapshot(next: PasswordSnapshot): void { publish(next) }
 
 export function usePasswordNotifications(): PasswordRequestView[] {
   const value = usePasswordSnapshot()
