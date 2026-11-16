@@ -13,7 +13,6 @@ import {
   putBackFromWindow,
   revealTabWindow,
 } from '@renderer/app/screen-layout-actions';
-import { auxWindows } from '@renderer/app/aux-windows';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneProvider } from '@renderer/features/tabs/pane-context';
@@ -101,11 +100,9 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
       return () => openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId);
     });
     paneLayout.setWindowRevealer(revealTabWindow);
-    paneLayout.setPaneSizer(paneCellSize);
     return () => {
       paneLayout.setWindowOpener(null);
       paneLayout.setWindowRevealer(null);
-      paneLayout.setPaneSizer(null);
     };
     // blockContentOf 每次被调用时现读页签;它闭包里认的只有这几样。
   }, [paneLayout, projectId, pageSessionId, windowId]);
@@ -204,15 +201,6 @@ const PaneCell = observer(function PaneCell({
     </PaneProvider>
   );
 });
-
-/** 一格此刻画出来多大:主窗里,或单独成窗的那扇窗里(格子 id 全局不重)。量不到(没画出来)= null。 */
-function paneCellSize(paneId: string): { width: number; height: number } | null {
-  for (const doc of auxWindows.documents()) {
-    const rect = doc.querySelector(`[data-pane-cell="${CSS.escape(paneId)}"]`)?.getBoundingClientRect();
-    if (rect && rect.width > 0) return { width: rect.width, height: rect.height };
-  }
-  return null;
-}
 
 /**
  * 这一块(这个会话)自己的控制:在哪里打开项目、换模型(编程模式)、输出 / 来源。原来在聊天栏标题行右端;

@@ -26,6 +26,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
+vi.mock('./platform-model-selection', () => ({ sessionPlatformModel: async () => null }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { recordLiveSessionSetting } = await import('./record-live-session-setting');
@@ -103,6 +104,16 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     const session = await reopened();
     expect(session.permissionMode).toBe('read-only');
     expect(session.effort).toBe('low');
+  });
+
+  it('keeps accepted Fast across reopen and preserves another simultaneous setting', async () => {
+    await Promise.all([
+      recordLiveSessionSetting(CONV, { dimension: 'fast', value: true }),
+      recordLiveSessionSetting(CONV, { dimension: 'effort', value: 'low' }),
+    ]);
+    expect(await reopened()).toMatchObject({ fastMode: true, effort: 'low', model: 'opus' });
+    await recordLiveSessionSetting(CONV, { dimension: 'fast', value: false });
+    expect((await reopened()).fastMode).toBe(false);
   });
 
   it('会话不存在 ⇒ 响亮失败', async () => {

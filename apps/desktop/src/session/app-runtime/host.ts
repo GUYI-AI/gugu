@@ -105,7 +105,6 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
   onFilesChanged(handler: (watchId: string, change: ExtensionFileChangeBatch) => void): () => void;
   /** Every call names where its file is (`AppPlace`, `AppFileRef`, 真源原则 13). */
   readonly appFiles: {
-    annotateSelection?(args: { ref: AppFileRef } & import('@shared/extensions/file-annotation').FileAnnotationFields): Promise<void>;
     open(args: { ref: AppFileRef; readOnly?: boolean; deferDetails?: boolean; expectedVersion?: number }): Promise<AppFileOpened>;
     reopen(args: { ref: AppFileRef; readOnly?: boolean }): Promise<AppFileOpened>;
     close(args: { docName?: string; ref?: AppFileRef & { version?: number } }): Promise<void>;
@@ -135,6 +134,8 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch(args: { watchId: string; place: AppPlace & { folder?: string; id?: string }; on: boolean }): Promise<void>;
     replace(args: { ref: AppFileRef; file: AppFileUpload; expectedVersion?: number | null }): Promise<AppFileEntry>;
     readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
+    /** API 54, the preinstalled Files App's page only (selection-send.ts): the host's Send box; only the outcome comes back. */
+    sendSelection?(args: Record<string, unknown>): Promise<import('@shared/extensions/selection-send').SelectionSendResult>;
     exists(args: { ref: AppFileRef }): Promise<boolean>;
     draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;
     writeText(args: { ref: AppFileRef; text: string }): Promise<{ entry: AppFileEntry }>;

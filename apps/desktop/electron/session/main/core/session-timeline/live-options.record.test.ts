@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   record: vi.fn(async () => {}),
+  allowFast: vi.fn(async () => false),
   recordModel: vi.fn(async () => {}),
   platform: vi.fn(async (): Promise<{ modelId: string } | null | undefined> => undefined),
 }));
@@ -21,6 +22,7 @@ vi.mock('@main/core/sessions/live-model-switch', () => ({
 vi.mock('@main/core/sessions/platform-model-selection', () => ({
   sessionPlatformModel: mocks.platform,
 }));
+vi.mock('@main/core/sessions/getSessions', () => ({ getSessions: async () => [] }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { setSessionOption, setSessionOptionsIo } = await import('./live-options');
@@ -28,12 +30,14 @@ const { setSessionOption, setSessionOptionsIo } = await import('./live-options')
 const CONFIG = {
   modeOptions: { selected: 'bypassPermissions', available: [{ id: 'default', name: 'Default' }, { id: 'bypassPermissions', name: 'Bypass' }] },
   modelOptions: { selected: 'opus', available: [{ id: 'opus', name: 'Opus' }, { id: 'sonnet', name: 'Sonnet' }, { id: 'gugu-platform/glm-5', name: 'GLM' }, { id: 'gugu-platform\\glm-5', name: 'GLM (ZCode)' }, { id: 'glm-5[1m]', name: 'GLM 1M (Claude)' }, { id: 'glm-5', name: 'GLM bare' }] },
+  fastMode: { configId: 'fast', selected: 'off', available: [{ id: 'off', name: 'Off' }, { id: 'on', name: 'On' }] },
   efforts: { selected: 'high', available: [{ id: 'high', name: 'High' }, { id: 'low', name: 'Low' }] },
 };
 
 function useIo(data: { status: string; effectiveValue?: string } | undefined, success = true) {
   setSessionOptionsIo({
     readConfig: async () => CONFIG as never,
+    canUseFast: mocks.allowFast,
     apply: async () => ({ success, ...(data ? { data } : {}), ...(success ? {} : { error: { type: 'x' } }) }),
   });
 }
@@ -42,10 +46,24 @@ beforeEach(() => {
   mocks.record.mockClear();
   mocks.recordModel.mockClear();
   mocks.platform.mockReset();
+  mocks.allowFast.mockReset().mockResolvedValue(false);
 });
 afterEach(() => setSessionOptionsIo(null));
 
 describe('手机改选项:确认生效才写回记录', () => {
+  it('persists native accepted Fast only on an explicitly allowed own-account route', async () => {
+    mocks.allowFast.mockResolvedValue(true);
+    useIo({ status: 'applied', effectiveValue: 'on' });
+    await setSessionOption({ conversationId: 'c1', dimension: 'fast', value: 'on' });
+    expect(mocks.record).toHaveBeenCalledWith('c1', { dimension: 'fast', value: true });
+  });
+
+  it('rejects Fast before applying it when the billing route is not eligible', async () => {
+    useIo({ status: 'applied', effectiveValue: 'on' });
+    await expect(setSessionOption({ conversationId: 'c1', dimension: 'fast', value: 'on' })).rejects.toThrow(/自己的厂商账号/);
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
   it('权限档 applied ⇒ 按确认值写', async () => {
     useIo({ status: 'applied', effectiveValue: 'default' });
     await setSessionOption({ conversationId: 'c1', dimension: 'mode', value: 'default' });

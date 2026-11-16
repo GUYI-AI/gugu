@@ -10,7 +10,8 @@ const matches = (pattern: string, ...paths: string[]) => {
 }
 
 it('e3 keeps message SQL and renderer writes at their sole boundaries', () => {
-  const tables = matches('im_messages\\b|im_messages_text|im_message_(ranges|tombstones|chats|accounts)', 'apps', 'packages')
+  // POSIX boundary works with Apple Git and GNU Git; both must include the journal tag.
+  const tables = matches('im_messages([^[:alnum:]_]|$)|im_messages_text|im_message_(ranges|tombstones|chats|accounts)', 'apps', 'packages')
     .filter(line => !/\.test\.[^:]+:|\/tests\//.test(line))
     // Generated schema snapshots describe tables; they cannot execute writes.
     .filter(line => !/\/drizzle\/meta\/\d{4}_snapshot\.json:/.test(line))

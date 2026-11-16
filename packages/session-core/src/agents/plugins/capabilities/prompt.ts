@@ -23,6 +23,8 @@ export type CommandContext = {
   model: string;
   /** Reasoning-effort level picked in the composer. Empty when none was chosen. */
   effort?: string;
+  /** Per-session Fast intent. Explicit false overrides a vendor-global preference. */
+  fastMode?: boolean;
 };
 
 export type AgentCommand = {

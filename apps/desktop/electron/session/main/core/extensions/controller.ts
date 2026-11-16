@@ -331,14 +331,13 @@ export const extensionsController = createRPCController({
    * pill): when one App opens it, that App gets the place as the `link` event a gugu link brings — opened and placed here,
    * as `openExtensionLinkWith` opens and places (148 17:21). Several to choose from: the person picks, and no App is told.
    */
-  groupFileOpener: async (args: { chatId: string; itemId: string; at?: Record<string, string> }) => {
+  groupFileOpener: async (args: { chatId?: string; itemId: string; at?: Record<string, string> }) => {
     try {
       const files = await import('@main/core/extensions/app-files');
-      const chatId = String(args?.chatId ?? '');
-      const target = await files.groupFile(chatId, String(args?.itemId ?? ''));
+      const target = await files.groupFile(args?.chatId === undefined ? undefined : String(args.chatId), String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
-      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), chatId, target.itemId);
+      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), target.chatId, target.itemId);
       return { success: true as const, data: { ...target, choice } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);

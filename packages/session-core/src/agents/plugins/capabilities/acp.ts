@@ -33,7 +33,7 @@ import type { NormalizedEvent } from '../../../acp/reducer/normalized-event';
 import type { SessionPromptReceipt } from '../../../acp/session-protocol';
 import type { PermissionSubject, AcpPermissionOption } from '../../../acp/models/permissions';
 
-export type LiveSettingDimension = 'model' | 'permission' | 'effort';
+export type LiveSettingDimension = 'model' | 'permission' | 'effort' | 'fast';
 export type LiveSettingChannel =
   | 'acp-config-option'
   | 'acp-mode'
@@ -92,6 +92,7 @@ export interface LiveSettingsCapability {
   model?: LiveSettingCapability;
   permission?: LiveSettingCapability;
   effort?: LiveSettingCapability;
+  fast?: LiveSettingCapability;
 }
 
 const unsupportedLiveSetting: LiveSettingCapability = {
@@ -131,6 +132,7 @@ export const liveSettingsCapabilitySchema = z.object({
   model: liveSettingSchema.optional(),
   permission: liveSettingSchema.optional(),
   effort: liveSettingSchema.optional(),
+  fast: liveSettingSchema.optional(),
 });
 
 export type AcpSpawnContext = {
