@@ -5,16 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 
 /**
- * A return to the app reads a push-fed model again (`refreshOnFocus`), once per return: having left (no Gugu window has
- * the focus, or the page hidden), coming back. Focus moving inside the app is no return.
+ * A return to the app reads a push-fed model again (`refreshOnFocus`), once per return: the host says the person left the
+ * app and came back (main.ts @@@app-presence; switching between Gugu windows is no leaving there). Focus or visibility
+ * moving inside the app is no return.
  */
-const host = vi.hoisted(() => ({ active: null as null | ((active: boolean) => void) }))
+const host = vi.hoisted(() => ({ presence: null as null | ((present: boolean) => void) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: { subscribeAppActive: (listener: (active: boolean) => void) => { host.active = listener; listener(true); return () => { host.active = null } } },
+  platform: {
+    subscribeAppPresence: (listener: (present: boolean) => void) => { host.presence = listener; listener(true); return () => { host.presence = null } },
+    // The window-focus answer (main.ts @@@app-active) stays "a Gugu window has the focus" throughout these switches.
+    subscribeAppActive: (listener: (active: boolean) => void) => { listener(true); return () => undefined },
+  },
 }))
 
 const rm = await import('../../../../apps/desktop/src/lib/replica')
-const { LEAVE_GRACE_MS, installReadOnReturn } = await import('../../../../apps/desktop/src/lib/foregroundReturn')
+const { installReadOnReturn } = await import('../../../../apps/desktop/src/lib/foregroundReturn')
 
 const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
 let visibility: DocumentVisibilityState = 'visible'
@@ -23,6 +28,7 @@ beforeEach(() => {
   notifyManager.setScheduler((callback) => { callback() })
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
   rm.followRendererSession('SIGNED_IN', 'alice')
+  installReadOnReturn()
 })
 afterEach(() => { vi.restoreAllMocks(); rm.queryClient.clear() })
 
@@ -36,40 +42,28 @@ async function shown(name: string) {
   return { reads, harness }
 }
 
+const switchVisibility = async (next: DocumentVisibilityState) => {
+  visibility = next
+  document.dispatchEvent(new Event('visibilitychange', { bubbles: true }))
+  await settle()
+}
+
 describe('a return to the app', () => {
-  it('the page becoming visible and the window regaining focus in one return read once', async () => {
-    installReadOnReturn()
+  it('left and came back: read once; told it is here again without having left: nothing', async () => {
     const { reads, harness } = await shown('test-return-once')
-    visibility = 'hidden'; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); host.active?.(false)
-    visibility = 'visible'; document.dispatchEvent(new Event('visibilitychange', { bubbles: true }))
-    // The return's read has landed before the window's focus arrives (a fast read, e.g. this machine's host).
-    await vi.waitFor(() => expect(reads).toHaveBeenCalledTimes(2)); await settle()
-    window.dispatchEvent(new Event('focus')); host.active?.(true); await settle()
+    host.presence?.(false); host.presence?.(true); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
+    host.presence?.(true); await settle()
     expect(reads).toHaveBeenCalledTimes(2)
     harness.cleanup({ keepReads: true })
   })
 
-  it('focus moving inside the app (never left) reads nothing', async () => {
-    installReadOnReturn()
+  it('focus and visibility moving inside the app (a window covered by another Gugu window, an App page focused) read nothing', async () => {
     const { reads, harness } = await shown('test-return-inside')
     window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')); await settle()
+    await switchVisibility('hidden'); await switchVisibility('visible')
     window.dispatchEvent(new Event('focus')); await settle()
     expect(reads).toHaveBeenCalledTimes(1)
     harness.cleanup({ keepReads: true })
-  })
-
-  it('switching between two Gugu windows (none focused for a moment) is no return; another application is', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      installReadOnReturn()
-      const { reads, harness } = await shown('test-return-windows')
-      host.active?.(false); host.active?.(true); await settle()
-      vi.advanceTimersByTime(LEAVE_GRACE_MS * 2); await settle()
-      expect(reads).toHaveBeenCalledTimes(1)
-      host.active?.(false); vi.advanceTimersByTime(LEAVE_GRACE_MS + 1)
-      host.active?.(true); await settle()
-      expect(reads).toHaveBeenCalledTimes(2)
-      harness.cleanup({ keepReads: true })
-    } finally { vi.useRealTimers() }
   })
 })

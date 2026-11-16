@@ -125,6 +125,8 @@ export interface AppPlatform {
    * 宿主答不上来就不实现它,调用方退回 visibilityState —— 那是没有前台服务的宿主,不会被骗。
    */
   subscribeAppActive?: (listener: (active: boolean) => void) => () => void
+  /** The person left the app / came back (main.ts @@@app-presence): switching between the app's own windows is no leaving. Desktop only. */
+  subscribeAppPresence?: (listener: (present: boolean) => void) => () => void
   /** 本机宿主在当前账号的设备里认出了这台电脑(拿到登录、查到自己那一行)。没有本机设备的宿主不实现。 */
   subscribeLocalDeviceIdentified?: (listener: () => void) => () => void
   selectDirectory: () => Promise<string | null>

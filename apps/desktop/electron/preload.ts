@@ -165,6 +165,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     void ipcRenderer.invoke('app:is-active').then(callback)
     return () => ipcRenderer.removeListener('app:active-changed', listener)
   },
+  // 人离开了咕咕 / 回来了(main.ts @@@app-presence):先答一次当下,之后每次变化再答。只给「回前台重读」用。
+  subscribeAppPresence: (callback: (present: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, present: boolean): void => callback(present)
+    ipcRenderer.on('app:presence-changed', listener)
+    void ipcRenderer.invoke('app:is-present').then(callback)
+    return () => ipcRenderer.removeListener('app:presence-changed', listener)
+  },
   // 本机在当前账号的设备里认出了自己(main.ts device:self-identified):设备表要按「哪一行是本机」重读。
   subscribeLocalDeviceIdentified: (callback: () => void): (() => void) => {
     const listener = (): void => callback()

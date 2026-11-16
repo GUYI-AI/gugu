@@ -44,6 +44,7 @@ interface Window {
     relaunchApp: () => Promise<void>
     onAppForeground: (callback: () => void) => () => void
     subscribeAppActive: (callback: (active: boolean) => void) => () => void
+    subscribeAppPresence: (callback: (present: boolean) => void) => () => void
     subscribeLocalDeviceIdentified: (callback: () => void) => () => void
     showNotification: (payload: { title: string; body?: string; chatId?: string | null }) => Promise<unknown>
     getLocalDeviceSelfSnapshot: () => Promise<unknown>
