@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { phoneMenuBar } from '../../../apps/desktop/src/mobile/composer/phone-menu-bar'
 
 describe('input composer menu bar applicability', () => {
-  it('human direct messages only expose the real attachment entry', () => {
-    expect(phoneMenuBar('direct', { attachments: true, work: true, skills: true, topics: true, agents: true })).toEqual(['attachments'])
+  it('human direct messages have no menu bar; attachment-capable App surfaces keep their adapter', () => {
+    expect(phoneMenuBar('direct', { attachments: true, work: true, skills: true, topics: true, agents: true })).toEqual([])
+    expect(phoneMenuBar('attachmentOnly', { attachments: true })).toEqual(['attachments'])
     expect(phoneMenuBar('direct', { attachments: false })).toEqual([])
   })
   it('Agent direct messages never gain Topics and only show actual child Agents', () => {

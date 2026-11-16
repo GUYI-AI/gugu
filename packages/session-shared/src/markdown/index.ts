@@ -4,6 +4,7 @@ export {
   fileCiteDraft,
   fileCite,
   pillCite,
+  fileLabelParts,
   normalizeWindowsMarkdownFileLinks,
   AT_BARE_PATTERN,
   SLASH_PATTERN

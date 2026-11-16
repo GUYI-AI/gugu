@@ -183,6 +183,16 @@ export function pillCite(words: string, pills: readonly { label: string; target:
 }
 
 /**
+ * A file pill's label read back as `fileCite` wrote it: the name, then its place (` (Lines 3–4)`, or ` · 第 4 行` in older
+ * messages), the place with its leading space. Every pill that draws a file label cuts it here, so a long name gives way
+ * and the place stays whole. A place is the bracket pair that ends the label; a bracket inside a name ends in its extension.
+ */
+export function fileLabelParts(label: string): { name: string; place: string } {
+  const cut = / \([^()]+\)$/.exec(label)?.index ?? label.indexOf(' · ');
+  return cut > 0 ? { name: label.slice(0, cut), place: label.slice(cut) } : { name: label, place: '' };
+}
+
+/**
  * Produce the canonical text form of a mention for use as the serialized
  * submit/clipboard text.
  *
