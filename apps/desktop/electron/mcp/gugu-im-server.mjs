@@ -1,4 +1,6 @@
-#!/usr/bin/env node
+// 咕咕's MCP server for agents. This module runs inside the host's main process (the desktop app or gugu-server): the
+// host builds it (createGuguImServer) and its tools execute there. It is never started on its own. The only separate
+// process is the stdio relay (runtime/gugu-mcp-stdio-relay.mjs), and that only forwards requests to this one.
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
@@ -24,9 +26,9 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { AttachmentsError, commitAttachment, contentRequestId, declareAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
-import { agentUploadFailed, forgetAgentUpload, noteAgentUploadPlan, rememberAgentUpload, resumeAgentUploadsSoon, runAgentUpload } from '../../../../packages/core/src/local/agent/agentAttachmentUploads'
+import { forgetAgentUpload, rememberAgentUpload, uploadAgentFile } from '../../../../packages/core/src/local/agent/agentAttachmentUploads'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
@@ -2488,29 +2490,28 @@ async function handleFile(args, deps) {
         // 临时 / 保留:这份上传的副本留多久,和人在 ⋯ 里改的是同一个标记。不给就照这个群的规矩。
         ...(args.temporary === true ? { keep: 'temporary' } : {}),
       }
-      // Where these bytes are, before the message can go out: if this call gives up or the host process dies, the host
-      // uploads them later from here (agentAttachmentUploads). A refused commit leaves nothing to upload.
+      // Where these bytes are, before the message can go out: the host's one uploader sends them from there, now for this
+      // call and later again if the host dies or the upload fails (agentAttachmentUploads). A refused commit leaves nothing.
       const { target } = await uploadTarget('message_send_file', args)
       const account = parseJwtPayload(await deps.context.getAccessToken())?.sub
       const home = String(deps.context.guguHome ?? '').trim()
-      if (!account || !home) throw new Error('message_send_file: the signed-in account or this host\'s home is unknown, so its file could not be finished later; nothing was sent')
-      await rememberAgentUpload(home, { account, message_id: messageId, path: target, sha256: declared.sha256, size_bytes: declared.size_bytes,
-        content_type: contentType, file_name: fileName, ...(args.temporary === true ? { keep: 'temporary' } : {}), ...(declared.plan?.parts ? { plan: declared.plan } : {}) })
+      if (!account || !home) throw new Error('message_send_file: the signed-in account or this host\'s home is unknown, so its file could not be uploaded later; nothing was sent')
+      const record = { account, message_id: messageId, chat_id: chatId, as: deps.context.agentId, staging_key: declared.staging_key, path: target,
+        sha256: declared.sha256, size_bytes: declared.size_bytes, content_type: contentType, file_name: fileName,
+        ...(args.temporary === true ? { keep: 'temporary' } : {}), ...(declared.plan ? { plan: declared.plan } : {}) }
+      await rememberAgentUpload(home, record)
       message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
         await forgetAgentUpload(home, messageId)
         if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
       })
-      if (message?.id) await runAgentUpload(message.id, () => finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
-        { id: message.id, chat_id: chatId, as: deps.context.agentId },
-        { ...(args.temporary === true ? { keep: 'temporary' } : {}), onPlan: (plan) => { void noteAgentUploadPlan(home, message.id, plan) } }))
-        .then(() => forgetAgentUpload(home, message.id), async (error) => {
-          if (!await agentUploadFailed(home, message.id, error)) {
-            throw new Error(`message_send_file: message ${message.id} was sent, but its file was refused (${error?.message ?? error}); readers see it as unavailable`)
-          }
-          resumeAgentUploadsSoon()
-          throw new Error(`message_send_file: message ${message.id} was sent, and its file is still uploading: this host keeps uploading it in the background (${error?.message ?? error}). Do not send it again.`)
-        })
+      // This call waits for its own message's upload only, never for other files the host still holds.
+      const upload = message?.id ? await uploadAgentFile(home, { ...record, message_id: message.id }, endpoint) : { status: 'finished' }
+      if (upload.status === 'retrying') {
+        throw new Error(`message_send_file: message ${message.id} was sent, and its file is still uploading: this host keeps uploading it in the background (${upload.error?.message ?? upload.error}). Do not change, move or delete ${target} until it is done, and do not send it again.`)
+      }
+      if (upload.status === 'refused') throw new Error(`message_send_file: message ${message.id} was sent, but its file was refused (${upload.error?.message ?? upload.error}); readers see it as unavailable`)
+      if (upload.status === 'changed') throw new Error(`message_send_file: message ${message.id} was sent, but ${target} changed or went away before its bytes were sent (${upload.reason}); they were not sent, and readers see the file as unavailable`)
     }
     if (!message?.id) throw new Error('message_send_file: the server did not confirm the send')
     const pinned = typeof message.file_item_id === 'string' && Number.isInteger(message.file_version)

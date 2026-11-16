@@ -1,5 +1,5 @@
-// message_send_file sends the message before its bytes. When the tool call cannot finish them, the host does: the call
-// leaves a record of where the file is (agentAttachmentUploads) and says the message is out and its file still uploading.
+// message_send_file sends the message before its bytes, through the host's one uploader. When that upload fails for now,
+// its record stays (agentAttachmentUploads) and the call says the message is out and its file still uploading.
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -39,7 +39,7 @@ test('a file whose upload the call could not finish is left to the host, and the
   }
   const refusal = await callTool(context, 'message_send_file', { chat_id: CHAT, file_path: file }, deps).then(() => null, (error: Error) => error.message)
   expect(refusal).toMatch(/was sent, and its file is still uploading: this host keeps uploading it in the background/)
-  expect(refusal).toMatch(/Do not send it again/)
+  expect(refusal).toMatch(/Do not change, move or delete .* until it is done, and do not send it again/)
   const records = readdirSync(join(home, 'agent-attachment-uploads')).filter(name => name.endsWith('.json'))
   expect(records).toHaveLength(1)
   const record = JSON.parse(readFileSync(join(home, 'agent-attachment-uploads', records[0]!), 'utf8'))
