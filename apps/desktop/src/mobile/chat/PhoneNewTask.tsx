@@ -11,7 +11,8 @@ import { useAuth } from '@/store/auth'
 import { CreateTarget } from '../agent-watch/CreateTarget'
 import { SelectedCreationSkills } from '../agent-watch/CreateSkills'
 import { useCreationSkillDraft } from '../agent-watch/create-skill-draft'
-import { preserveComposerFocus, preservePanelComposerFocus } from '../composer/composer-focus'
+import { preserveComposerFocus } from '../composer/composer-focus'
+import { PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -37,7 +38,7 @@ type Stage = { kind: 'off' } | { kind: 'on'; folder: ShownFolder | null; picking
  * 回形针菜单「新任务」→ 框上方显示工作、文件夹和技能,智能体类型在工作面板里选;这个项目的文件夹卡(电脑上那一张,
  * ProjectFolderCard)浮在群上 → 点一张文件夹,标签旁写明它在哪台机器上(spec:新建任务的地方写明在哪台机器上运行;点它重新挑)→
  * 发出去 = 那台机器那个文件夹里开工,卡落进群,agent 在群里回(同普通群)。
- * 打字不收卡(spec projects「项目首页」);收卡只有点一张文件夹,或标签上的 × 连新任务一起收。
+ * 文件夹面板右上角 × 只收起选择器,保留已选目录和任务草稿。
  */
 export function usePhoneNewTask({ chatId, enabled, clear }: {
   chatId: string | null | undefined
@@ -180,9 +181,10 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
     },
   } : null
 
-  const overlay = <>{attach.picker}{stage.kind === 'on' && stage.picking && project && folderState ? (
-    <div className="gg-phone-task-card" data-testid="phone-task-folder-card"
-      onPointerDownCapture={preservePanelComposerFocus} onMouseDownCapture={preservePanelComposerFocus}>
+  const folderPickerOpen = stage.kind === 'on' && stage.picking && !!project && !!folderState
+  const overlay = <>{attach.picker}{folderPickerOpen && project && folderState ? (
+    <PhoneComposerSheet open title={tControls('folder')} testId="phone-task-folder-card"
+      onClose={() => setStage((current) => current.kind === 'on' ? { ...current, picking: false } : current)}>
       <ProjectFolderCard
         projectId={project.rowId}
         projectName={project.name}
@@ -196,7 +198,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         floating
         touch
       />
-    </div>
+    </PhoneComposerSheet>
   ) : null}</>
 
   const agentName = picked?.name ?? ''
@@ -207,7 +209,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
     <CreateTarget projects={[]} project={null} onProject={() => undefined}
       machines={creationMachine ? [creationMachine] : []} machine={creationMachine}
       onMachine={() => undefined} machineLabel={machineLabel} busy={sending}
-      projectTask={{ open: stage.picking === true, onFolder: () => setStage({ kind: 'on', folder: chosen, picking: true }) }}
+      projectTask={{ open: folderPickerOpen, onFolder: () => setStage({ kind: 'on', folder: chosen, picking: true }) }}
       configuration={{ options: options?.value ?? null,
         selection: selection ?? { harness: null, model: null, permissionMode: null, effort: null },
         onChange: (next, modelPicked) => {
@@ -260,7 +262,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         : () => window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } })) }
       : null,
     active: stage.kind !== 'off',
-    picking: stage.kind === 'on' && stage.picking && !!project && !!folderState,
+    picking: folderPickerOpen,
     placeholder: stage.kind === 'on' && agentName ? t('composer.phoneTask.placeholder', { agent: agentName }) : undefined,
     overlay,
     band,
