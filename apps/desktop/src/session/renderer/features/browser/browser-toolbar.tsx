@@ -105,6 +105,7 @@ export function BrowserToolbar({
 
   useEffect(() => {
     setUrlText(browserUrlInputText(session.currentUrl));
+    setUrlError(null);
   }, [session.currentUrl]);
 
   useEffect(() => {

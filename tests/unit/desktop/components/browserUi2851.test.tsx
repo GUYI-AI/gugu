@@ -44,6 +44,12 @@ it.each([390, 800])('exposes invalid addresses in place and clears the error aft
   expect(navigate).toHaveBeenCalledWith('https://example.test/next')
   expect(harness.container.querySelector('[role="alert"]')).toBeNull()
   expect(input.hasAttribute('aria-invalid')).toBe(false)
+  await typeInto(input, 'javascript:alert(1)')
+  await act(async () => harness.container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(harness.container.querySelector('[role="alert"]')).not.toBeNull()
+  await harness.render(createNode(SessionLocalizationProvider, null, createNode(BrowserToolbar, { session: { ...session(), currentUrl: 'https://example.test/back' }, adapter: null, onNavigate: navigate })))
+  expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+  expect(input.value).toBe('https://example.test/back')
 })
 
 it.each([{ kind: 'web', width: 360, touch: true }, { kind: 'web', width: 390, touch: true }, { kind: 'electron', width: 390, touch: false }, { kind: 'web', width: 800, touch: false }])('keeps the real shell sizing rule for $kind at $width', async ({ kind, width, touch }) => {
