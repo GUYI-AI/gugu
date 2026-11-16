@@ -5,3 +5,5 @@ import { excerpt, matchRanges } from '../../../../apps/desktop/src/session/share
 import { sessionTitleRequestBody } from '../../../../apps/desktop/src/session/shared/core/sessions/session-title-namer';
 
 it('keeps multi backtick inline code literal',()=>{const text='run ``a`b **literal** [x](y)`` now';expect(markdownPlainText(text)).toBe(text);expect(markdownPlainText('``**literal**``')).toBe('``**literal**``');});
+
+it('keeps escaped Markdown punctuation literal',()=>{expect(markdownPlainText('Use \\*\\*literal\\*\\* and \\[label\\](target)')).toBe('Use **literal** and [label](target)');expect(markdownPlainText('**bold** snake_case')).toBe('bold snake_case');});

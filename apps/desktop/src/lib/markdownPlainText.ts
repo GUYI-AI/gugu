@@ -19,7 +19,12 @@ export function markdownPlainText(text: string): string {
 }
 
 function plainSegment(text: string): string {
-  return text
+  const literals: string[] = [];
+  const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]\^_`{|}~])/g, (_, char: string) => {
+    literals.push(char);
+    return `\u0000${literals.length - 1}\u0000`;
+  });
+  return escaped
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]+#+[ \t]*$/gm, '$1')
@@ -30,4 +35,5 @@ function plainSegment(text: string): string {
     .replace(/(?<![\w*])(\*|_)(?=\S)([^*_\n]*?\S)\1(?![\w*])/g, '$2')
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '$1')
     .replace(/\*\*|__|~~/g, '')
+    .replace(/\u0000(\d+)\u0000/g, (_, index: string) => literals[Number(index)])
 }
