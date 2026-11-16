@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /** Only call on the payload produced by npm ci against the committed SQLite lock. */
 export function sqlitePayloadSnapshot(directory) {
@@ -22,7 +22,9 @@ export function sqlitePayloadSnapshot(directory) {
 export function assertSqlitePayload(directory, expected, expectedEntry) {
   const app = realpathSync(directory)
   const req = createRequire(resolve(app, 'package.json'))
-  const installed = dirname(realpathSync(req.resolve('better-sqlite3/package.json')))
+  // Re-read the logical install location on every check. Node's package resolver can retain
+  // the old realpath after a lifecycle replaces this link, even while the old target still exists.
+  const installed = realpathSync.native(join(app, 'node_modules', 'better-sqlite3'))
   const part = relative(app, installed)
   if (!part || part === '..' || part.startsWith(`..${sep}`) || isAbsolute(part)) {
     throw new Error('SQLite resolved outside its installed app')

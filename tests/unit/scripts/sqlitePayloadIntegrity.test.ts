@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -80,6 +80,25 @@ describe('SQLite payload binding from reviewed extraction to the installed app',
       throw new Error('npm ci integrity rejected')
     } })).toThrow('npm ci integrity rejected')
     expect(phases).toEqual(['ci'])
+  })
+
+  it('re-reads a retargeted install link after the first check, while the old trusted directory remains', () => {
+    const f = fixture()
+    const a = join(f.app, 'variants', 'a')
+    const b = join(f.app, 'variants', 'b')
+    cpSync(f.trusted, a, { recursive: true })
+    cpSync(f.trusted, b, { recursive: true })
+    writeFileSync(join(b, 'index.cjs'), 'changed package with the same version')
+    rmSync(f.installed, { recursive: true })
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+    symlinkSync(a, f.installed, linkType)
+    expect(assertSqlitePayload(f.app, f.expected, 'index.cjs')).toBe(realpathSync(join(a, 'index.cjs')))
+    unlinkSync(f.installed)
+    symlinkSync(b, f.installed, linkType)
+    expect(existsSync(join(a, 'index.cjs'))).toBe(true)
+    expect(realpathSync(f.installed)).toBe(realpathSync(b))
+    // Whether Node returns the stale A entry or refreshes it, B must never pass as the verified tree.
+    expect(() => assertSqlitePayload(f.app, f.expected, 'index.cjs')).toThrow(/SQLite entry is outside|SQLite payload differs/)
   })
 
   it.each(['./unchecked.cjs', './checked/other.cjs'])(
