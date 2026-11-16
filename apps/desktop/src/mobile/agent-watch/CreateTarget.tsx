@@ -54,7 +54,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const menu = phoneMenuBar(existingSession ? 'agent' : projectTask ? 'projectTask' : 'create', {
     work: !existingSession || !!machine || !!existingSession.model?.options,
     project: !existingSession && !projectTask, folder: !!projectTask,
-    skills: !!machine && !phone && !!configuration?.selection.harness,
+    skills: !!machine && !phone && (!existingSession || !!configuration?.selection.harness),
   })
   const skillCatalog = useReplica(creationSkills, view === 'skills' && machine && !phone && configuration?.selection.harness
     ? [machine.device.device_id, configuration.selection.harness, machine.localProjectId] : null)
