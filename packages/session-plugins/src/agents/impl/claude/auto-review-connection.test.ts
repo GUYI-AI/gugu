@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import type { AcpClient, AcpProcessIo } from '@gugu/session-core/agents/plugins';
+import { flattenSelectOptions } from '@gugu/session-core/acp';
 import { connectClaudeWithReview } from './auto-review-connection';
 import { createClaudeSessionDecoder } from './acp-transform';
 
@@ -60,7 +61,7 @@ it.each([
   ['haiku', 'Claude Haiku 5.5'], ['default', 'Claude Opus 5'],
 ])('forwards a native-qualified %s model alias while auto remains selected', async (target, description) => {
   mock.current = configs('claude-opus-5').map(option => option.id === 'model' && option.type === 'select'
-    ? { ...option, options: [...option.options, { value: target, name: target, description }] }
+    ? { ...option, options: [...flattenSelectOptions(option.options), { value: target, name: target, description }] }
     : option.id === 'mode' && option.type === 'select' ? { ...option, currentValue: 'auto' } : option);
   const api = connect('2.1.322');
   await api.newSession(start);
@@ -79,7 +80,7 @@ it.each([
   ['2.1.322', 'undeclared-alias', 'Claude Sonnet 4.6'], ['2.1.301', 'sonnet', 'Claude Sonnet 4.6'],
 ])('rejects an unqualified target without changing native auto (%s / %s / %s)', async (version, target, description) => {
   mock.current = configs('claude-opus-5').map(option => option.id === 'model' && option.type === 'select'
-    ? { ...option, options: [...option.options, { value: target, name: target, description }] }
+    ? { ...option, options: [...flattenSelectOptions(option.options), { value: target, name: target, description }] }
     : option.id === 'mode' && option.type === 'select' ? { ...option, currentValue: 'auto' } : option);
   const original = mock.current;
   const api = connect(version);
