@@ -1,7 +1,8 @@
 import { ArrowLeft, ArrowRight, Ellipsis, Globe, Plus, Reload, RotateCcw, Square } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Minus } from '@/lib/icons'
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useMobileShell } from '@/hooks/useMobileShell';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -92,11 +93,13 @@ export function BrowserToolbar({
   const [urlError, setUrlError] = useState<string | null>(null);
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const urlErrorId = useId();
+  const mobile = useMobileShell();
   const { translate } = useSessionMessages();
   const { settings: browserSettingsReading } = useAppSettingsKey('browser');
   const browserSettings = browserSettingsReading.state === 'value' ? browserSettingsReading.value.value : undefined;
   const profiles = browserSettings?.profiles ?? DEFAULT_BROWSER_PROFILES;
-  const profileLabel = browserProfileLabel(session.profileId, profiles);
+  const profileLabel = browserProfileLabel(session.profileId, profiles, translate('browser.isolatedPerTask'));
   const faviconUrl =
     session.faviconUrl && session.faviconUrl !== failedFaviconUrl ? session.faviconUrl : null;
 
@@ -164,8 +167,10 @@ export function BrowserToolbar({
   const zoomFactor = session.zoomFactor;
 
   return (
-    <div className={cn(panelHeaderBarClass, 'gap-1')}>
+    <div className="shrink-0">
+    <div className={cn(panelHeaderBarClass, 'gap-1', mobile && 'h-[49px]')}>
       <ToolbarIconButton
+        mobile={mobile}
         label={translate('browser.back')}
         disabled={(!adapter && !remote) || !session.canGoBack}
         onClick={() => onGoBack?.()}
@@ -173,6 +178,7 @@ export function BrowserToolbar({
         <ArrowLeft className="size-4" />
       </ToolbarIconButton>
       <ToolbarIconButton
+        mobile={mobile}
         label={translate('browser.forward')}
         disabled={(!adapter && !remote) || !session.canGoForward}
         onClick={() => onGoForward?.()}
@@ -180,6 +186,7 @@ export function BrowserToolbar({
         <ArrowRight className="size-4" />
       </ToolbarIconButton>
       <ToolbarIconButton
+        mobile={mobile}
         label={translate(session.isLoading ? 'browser.stop' : 'browser.reload')}
         onClick={() => onReload?.()}
       >
@@ -213,8 +220,10 @@ export function BrowserToolbar({
               if (urlError) setUrlError(null);
             }}
             onFocus={(event) => event.currentTarget.select()}
-            className="h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0"
+            className={cn('h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0', mobile && 'h-11')}
             aria-label={translate('browser.urlLabel')}
+            aria-invalid={urlError ? true : undefined}
+            aria-describedby={urlError ? urlErrorId : undefined}
             placeholder={translate('browser.urlPlaceholder')}
             spellCheck={false}
             autoCapitalize="none"
@@ -225,11 +234,6 @@ export function BrowserToolbar({
             </span>
           )}
         </div>
-        {urlError && (
-          <div className="sr-only" role="alert">
-            {urlError}
-          </div>
-        )}
       </form>
       {!remote && (
         <DropdownMenu>
@@ -239,7 +243,7 @@ export function BrowserToolbar({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0"
+                className={cn('size-7 shrink-0', mobile && 'size-11')}
                 aria-label={translate('browser.actions')}
               />
             }
@@ -367,15 +371,19 @@ export function BrowserToolbar({
         </DropdownMenu>
       )}
     </div>
+    {urlError && <div id={urlErrorId} role="alert" className="border-b border-border bg-background-secondary-1 px-2 py-1.5 text-sm text-foreground-destructive break-words">{urlError}</div>}
+    </div>
   );
 }
 
 function ToolbarIconButton({
+  mobile,
   label,
   disabled,
   onClick,
   children,
 }: {
+  mobile: boolean;
   label: string;
   disabled?: boolean;
   onClick: () => void;
@@ -389,7 +397,7 @@ function ToolbarIconButton({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7 shrink-0"
+            className={cn('size-7 shrink-0', mobile && 'size-11')}
             disabled={disabled}
             aria-label={label}
             onClick={onClick}
