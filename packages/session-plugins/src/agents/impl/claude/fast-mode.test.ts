@@ -29,7 +29,8 @@ describe('Claude session Fast settings', () => {
       mcpServers: [], env: {}, model: { dialect: 'provider-env', fastMode },
       autonomy: null, promptBlocks: {}, packages: [],
     });
-    expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode } } } });
+    if (fastMode) expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode: true } } } });
+    else expect((materialized.acp?.meta as {claudeCode?: {options?: Record<string, unknown>}})?.claudeCode?.options).not.toHaveProperty('settings');
     expect(materialized.argsAppend).toEqual([]);
     expect(materialized.env).toEqual({});
   });
@@ -41,7 +42,7 @@ describe('Claude session Fast settings', () => {
         platformSettingsEnv: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' },
       }, autonomy: null, promptBlocks: {}, packages: [],
     });
-    expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode: false, ultracode: true } } } });
+    expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { ultracode: true } } } });
     expect(JSON.stringify(materialized)).not.toContain('fixture-token');
   });
 
