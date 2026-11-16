@@ -16,7 +16,7 @@ import {
 import type { Device } from '@gugu/core/shared/types/chat'
 import { rendererCloudComputerClient } from './cloudComputerClient'
 import { rendererLogger } from './log'
-import { queryClient, replica, useReplica, type Reading } from './replica'
+import { replica, useReplica, type Reading } from './replica'
 import { createSelectStore, useSelect } from './selectStore'
 import { observeRendererSession } from './sessionPublication'
 import { anySignal } from '@gugu/core/shared/anySignal'
@@ -114,9 +114,7 @@ export function useCloudComputer(): Reading<CloudComputerState> {
 
 /** The reading changed (a read, a write, an account switch): for logic outside React (a link's reachability). */
 export function subscribeCloudComputer(listener: () => void): () => void {
-  return queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryKey[0] === cloudComputer.name && (event.type === 'updated' || event.type === 'removed')) listener()
-  })
+  return cloudComputer.subscribe([], () => listener())
 }
 
 /** 读到的那份管家快照;还没读到、读不到、或没有云电脑这项服务 = null(调用方据此不补「收回着 / 醒着」)。 */

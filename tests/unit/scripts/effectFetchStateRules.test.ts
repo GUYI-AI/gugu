@@ -1,30 +1,33 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { literalDefaultLines, scanEffectFetchState, scanFile, scanLiteralDefaults } from '../../../scripts/checks/effect-fetch-state.mts'
+import { literalDefaultLines, reactQueryLines, scanEffectFetchState, scanFile, scanLiteralDefaults, scanReactQuery } from '../../../scripts/checks/effect-fetch-state.mts'
 
 /**
- * @@@replica ratchet: the old shape (an effect reads, then puts the answer into component state) only goes down.
- * The baseline is the debt list; a file leaves it when its surfaces read through the replica (lib/replica.ts).
+ * @@@client-state-model hard rules (open-flicker PR 3 cleared the last of them; there is no baseline): no effect reads
+ * into component state, no reading collapsed to a literal default, nothing outside lib/replica.ts reaches react-query.
+ * The source is clean, and each rule still catches what it is for (the cases below are injected into it).
  */
-const BASELINE = 'scripts/checks/effect-fetch-state-baseline.json'
-const baseline = JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, number>
+describe('the source', () => {
+  const rule = 'read what a surface shows through a replica (lib/replica.ts) and branch on unknown / value / error — @@@client-state-model, docs/design/client-state-model.md'
+  it('has no effect that fills component state with a read', () => { expect(scanEffectFetchState(), rule).toEqual({}) })
+  it('has no reading collapsed to a literal default', () => { expect(scanLiteralDefaults(), rule).toEqual({}) })
+  it('reaches react-query only through the replica', () => { expect(scanReactQuery(), rule).toEqual({}) })
+})
 
-describe('effect-fetch-state ratchet', () => {
-  const actual = scanEffectFetchState()
-
-  it('no file gains the shape, and no new file has it', () => {
-    const grown = Object.entries(actual).filter(([file, count]) => count > (baseline[file] ?? 0))
-    expect(grown, 'read what a surface shows through a replica (lib/replica.ts), not an effect into useState — @@@client-state-model, docs/design/client-state-model.md').toEqual([])
+describe('react-query past the replica (what counts)', () => {
+  const lines = (code: string, path = 'apps/desktop/src/a.tsx') => reactQueryLines(path, code)
+  it('a read hook or a fetch-state hook', () => {
+    for (const hook of ['useQuery', 'useQueries', 'useInfiniteQuery', 'useSuspenseQuery', 'useIsFetching', 'useQueryClient']) {
+      expect(lines(`import { ${hook} } from '@tanstack/react-query'\nexport const x = () => ${hook}({ queryKey: ['a'] })`), hook).toEqual([1, 2])
+    }
   })
-
-  it('the baseline records every decrease (so the debt never grows back unnoticed)', () => {
-    const stale = Object.entries(baseline).filter(([file, count]) => (actual[file] ?? 0) < count)
-    expect(stale, `lower these in ${BASELINE} (node scripts/checks/effect-fetch-state.mts --write)`).toEqual([])
+  it('a method of the client', () => {
+    expect(lines("import { queryClient } from '@/lib/replica'\nqueryClient.invalidateQueries({ queryKey: ['a'] })")).toEqual([2])
+    expect(lines("queryClient.getQueryCache().subscribe(() => {})")).toEqual([1])
   })
-
-  it('the settings surfaces have none left', () => {
-    const settings = Object.keys(actual).filter((file) => /\/components\/(settings|usage|agentsettings|devices)\/|\/session\/renderer\/features\/settings\//.test(file))
-    expect(settings, 'Settings reads through replicas only — @@@client-state-model, docs/design/client-state-model.md').toEqual([])
+  it('not the replica itself, not a test, and not a write handed the client', () => {
+    expect(lines("useQuery({ queryKey: ['a'] })", 'apps/desktop/src/lib/replica.ts')).toEqual([])
+    expect(lines("useQuery({ queryKey: ['a'] })", 'apps/desktop/src/a.test.tsx')).toEqual([])
+    expect(lines("import { useMutation } from '@tanstack/react-query'\nimport { queryClient } from '@/lib/replica'\nuseMutation({ mutationFn: save }, queryClient)")).toEqual([])
   })
 })
 
@@ -71,9 +74,6 @@ describe('what counts', () => {
 })
 
 describe('a reading collapsed to a literal default (@@@client-state-model)', () => {
-  it('none in the source: branch on the three states, or say why with @@@reading-default', () => {
-    expect(scanLiteralDefaults(), 'an unknown reading must not draw like a stored empty value — docs/design/client-state-model.md').toEqual({})
-  })
   const lines = (code: string) => literalDefaultLines('a.ts', code)
   it('counts the literal defaults', () => {
     expect(lines("const xs = r.state === 'value' ? r.value : []")).toHaveLength(1)

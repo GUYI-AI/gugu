@@ -10,8 +10,11 @@
 // that settles, a dialog step) is not this shape; it says so on the line above with `@@@effect-flow - <what flow>`,
 // and the marker needs the reason (a bare marker is still counted).
 //
-// It is a ratchet: `effect-fetch-state-baseline.json` lists the files that still have the shape and how many effects;
-// a file may only go down. Real AST, not regex (the same reason as subject-scoped-hooks.mts).
+// A hard rule (open-flicker PR 3 cleared the last of them): no source file has the shape, no reading is collapsed to a
+// literal default (`--defaults`), and nothing outside lib/replica.ts reaches react-query directly — its read hooks, the
+// fetch-state hooks, or the client's own methods (`queryClient.…`); writes may still use `useMutation` with the client.
+// `node scripts/checks/effect-fetch-state.mts` prints every finding and exits 1 if there is one. Real AST, not regex
+// (the same reason as subject-scoped-hooks.mts).
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
@@ -306,19 +309,48 @@ export function scanEffectFetchState(root = '.'): Record<string, number> {
   return out
 }
 
+const REPLICA_MODULE = 'apps/desktop/src/lib/replica.ts'
+/** React-query's read and fetch-state hooks: only the replica reads through them (lib/replica.ts). */
+const REACT_QUERY_READS = new Set(['useQuery', 'useQueries', 'useInfiniteQuery', 'useSuspenseQuery', 'useSuspenseQueries', 'useIsFetching', 'useQueryClient', 'usePrefetchQuery'])
+
+/** Lines in this file that reach react-query past the replica: a read / fetch-state hook, or a method of the client. */
+export function reactQueryLines(path: string, text: string): number[] {
+  if (path === REPLICA_MODULE || isTest(path)) return []
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const lines = new Set<number>()
+  const line = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && REACT_QUERY_READS.has(node.text)) lines.add(line(node))
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'queryClient') lines.add(line(node))
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return [...lines].sort((a, b) => a - b)
+}
+
+/** `{ relative path: lines }` for every non-test source file that reaches react-query past the replica. */
+export function scanReactQuery(root = '.'): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    const lines = reactQueryLines(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
 if (process.argv[1]?.endsWith('effect-fetch-state.mts')) {
-  const hits = scanEffectFetchState()
-  if (process.argv.includes('--defaults')) {
-    for (const [file, lines] of Object.entries(scanLiteralDefaults())) console.log(`${file}: ${lines.join(', ')}`)
-    process.exit(0)
+  const report = (title: string, hits: Record<string, number[]>) => {
+    for (const [file, lines] of Object.entries(hits)) console.log(`${title}: ${file}: ${lines.join(', ')}`)
+    return Object.keys(hits).length
   }
-  if (process.argv.includes('--lines')) {
-    for (const file of Object.keys(hits)) console.log(`${file}: ${effectLines(file, readFileSync(file, 'utf8')).join(', ')}`)
+  const effects = Object.fromEntries(Object.keys(scanEffectFetchState()).map((file) => [file, effectLines(file, readFileSync(file, 'utf8'))]))
+  const found = report('effect fills component state with a read', effects)
+    + report('reading collapsed to a literal default', scanLiteralDefaults())
+    + report('react-query reached past the replica', scanReactQuery())
+  if (found > 0) {
+    console.log('Read what a surface shows through a replica (lib/replica.ts); branch on unknown / value / error — docs/design/client-state-model.md')
+    process.exit(1)
   }
-  if (process.argv.includes('--write')) {
-    const { writeFileSync } = await import('node:fs')
-    writeFileSync('scripts/checks/effect-fetch-state-baseline.json', `${JSON.stringify(hits, null, 2)}\n`)
-  }
-  console.log(JSON.stringify(hits, null, 2))
-  console.log('files =', Object.keys(hits).length, 'effects =', Object.values(hits).reduce((a, b) => a + b, 0))
+  console.log('effect-fetch-state: clean')
 }

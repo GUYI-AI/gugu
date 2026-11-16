@@ -62,8 +62,9 @@ if (typeof window !== 'undefined') {
   window.addEventListener(UI_EVENTS.identityInvalidated, (event) => {
     const id = (event as CustomEvent<{ id: string | null }>).detail.id
     for (const { args, reading } of groupRoster.entries()) {
-      const members = reading.state === 'value' ? [...reading.value.humans, ...reading.value.agents] : []
-      if (id === null || members.some((member) => member.id === id)) void groupRoster.refresh(...args)
+      // A roster not read yet will be read anyway; one drawn is read again if the identity is among its members.
+      const among = reading.state === 'value' && [...reading.value.humans, ...reading.value.agents].some((member) => member.id === id)
+      if (id === null || among) void groupRoster.refresh(...args)
     }
   })
 }

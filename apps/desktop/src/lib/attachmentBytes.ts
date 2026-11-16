@@ -3,7 +3,7 @@ import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, 
 import { fileSha256 } from '@gugu/core/shared/fileCipher'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
-import { queryClient, replica } from './replica'
+import { replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, type ImageViewerItem } from './imageViewer'
@@ -117,9 +117,10 @@ const attachmentShown = replica({
   read: async (_owner: string, key: string, source: AttachmentSource): Promise<ShownBytes> => {
     const bytes = await attachmentBytes(source, 'shown', undefined, undefined, (done, total) => { for (const hear of shownProgress.get(key) ?? []) hear(done, total) })
     if (bytes.status !== 'ready') throw new Error(bytes.status)
-    const entry = attachmentShown.key(key, source)
+    // The server withdrew what is shown (its acknowledgement failed): the entry goes, and a surface still showing it
+    // reads again.
     const acknowledged = bytes.acknowledged?.catch((error: unknown) => {
-      if (entry) queryClient.removeQueries({ queryKey: entry, exact: true })
+      void attachmentShown.reset(key, source)
       throw error
     })
     return { blob: bytes.blob, ...(acknowledged ? { acknowledged } : {}) }
