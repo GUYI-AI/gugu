@@ -393,5 +393,45 @@ describe('PR 3 additions', () => {
     expect(model.peek()).toMatchObject({ state: 'value', value: 'second' })
     harness.cleanup()
   })
+
+  it('an entry restored from the snapshot is read again when shown, however long `fresh` is (I5)', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let n = 0
+    const define = () => rm.replica({ name: 'test-i5', scope: 'account', read: async () => ++n, fresh: Infinity, persist: { maxBytes: 256, maxEntries: 1 } })
+    await define().prefetch()
+    rm = await freshStart()
+    const model = define()
+    expect(model.peek()).toMatchObject({ state: 'value', value: 1 })
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    await tick(1)
+    expect(n).toBe(2)
+    harness.cleanup()
+  })
+
+  it('a follower of a model hears the entries restored for the account that signs in', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const define = () => rm.replica({ name: 'test-switch', scope: 'account', read: async () => 'read', persist: { maxBytes: 256, maxEntries: 1 } })
+    define().set([], 'alice kept')
+    // A start where the session is published after the models are defined (no account pointer to restore from at load).
+    localStorage.removeItem('gugu.readModel.v1.account')
+    rm = await freshStart()
+    const model = define()
+    const heard: unknown[] = []
+    model.subscribe([], (entry) => { heard.push(entry.reading.state === 'value' ? entry.reading.value : entry.reading.state) })
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    expect(heard).toContain('alice kept')
+  })
+
+  it('reset and forget drop the kept copy too', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const model = rm.replica({ name: 'test-drop', scope: 'account', read: async (_owner: string, id: string) => id, persist: { maxBytes: 256, maxEntries: 4 } })
+    await model.prefetch('a'); await model.prefetch('b')
+    model.forget('a')
+    await model.reset('b')
+    expect(entriesOf('alice', 'test-drop')).toEqual([])
+  })
 })
 

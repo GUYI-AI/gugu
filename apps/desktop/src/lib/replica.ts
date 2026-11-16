@@ -106,7 +106,7 @@ queryClient.getQueryCache().subscribe((event) => {
   }
   if (event.type === 'added') seedFromLocal(event.query.queryKey)
   const persist = definitions.get(name)?.persist
-  if (event.type === 'updated' && event.action.type === 'success' && persist) {
+  if (event.type === 'updated' && event.action.type === 'success' && persist && !restoring) {
     writeSnapshotEntry(event.query.queryKey, event.query.state.data, event.query.state.dataUpdatedAt, persist)
   }
   if (event.type === 'observerAdded' && persist) noteUse(event.query.queryKey)
@@ -120,6 +120,23 @@ queryClient.getQueryCache().subscribe((event) => {
 function putValue(key: QueryKey, value: unknown): void {
   const next = typeof value === 'function' ? (value as (old: unknown) => unknown)(queryClient.getQueryData(key)) : value
   if (next !== undefined) putEntry(key, next)
+}
+
+/** Putting back what the snapshot kept: not written back to it (it is already there). */
+let restoring = false
+
+/**
+ * An entry restored from the snapshot: shown at once, and marked to be read again — a kept value is never trusted as
+ * current (I5: the snapshot keeps no invalidation, so whatever `fresh` says, the first surface showing it reads again).
+ */
+function restoreEntry(key: QueryKey, value: unknown, at: number): void {
+  restoring = true
+  try {
+    putEntry(key, value, at)
+  } finally {
+    restoring = false
+  }
+  void queryClient.invalidateQueries({ queryKey: key, exact: true, refetchType: 'none' })
 }
 
 function putEntry(key: QueryKey, value: unknown, updatedAt?: number): void {
@@ -189,8 +206,11 @@ function forgetAccount(id: string): void {
 export function followRendererSession(event: string, userId: string | null): void {
   if (userId) {
     if (account.id && account.id !== userId) forgetAccount(account.id)
-    if (account.id !== userId) hydrateSnapshot(userId)
+    // The account moves first, then its kept entries are restored: followers of a model (`subscribe`) hear them as
+    // this account's (restored before the move, they belonged to nobody a follower was listening for).
+    const arriving = account.id !== userId
     setAccount({ id: userId, live: true })
+    if (arriving) hydrateSnapshot(userId)
     return
   }
   if (event === 'SIGNED_OUT') {
@@ -260,6 +280,16 @@ export function flushUses(): void {
     if (!changed) continue
     try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* a use not recorded only weakens the next eviction */ }
   }
+}
+
+/** Drop one entry from its owner's snapshot block (no-op when it is not kept). */
+function dropKept(key: QueryKey): void {
+  const owner = String(key[1])
+  const snapshot = readSnapshot(owner)
+  const hash = hashKey(key)
+  if (!snapshot[hash]) return
+  delete snapshot[hash]
+  try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* the entry is gone from memory anyway */ }
 }
 
 function readSnapshot(owner: string): Snapshot {
@@ -355,7 +385,7 @@ function hydrateSnapshot(owner: string): void {
     const definition = definitions.get(name)
     const keep = definition ? judge(definition, entries, settled) : entries
     for (const entry of keep) {
-      if (queryClient.getQueryData(entry.key) === undefined) putEntry(entry.key, entry.value, entry.at)
+      if (queryClient.getQueryData(entry.key) === undefined) restoreEntry(entry.key, entry.value, entry.at)
     }
   }
   settleSnapshot(owner, snapshot, settled)
@@ -373,7 +403,7 @@ function pruneSnapshot(definition: Definition<unknown[], unknown>): void {
     // Seeded from the snapshot: nothing of this model was read before it was defined.
     for (const entry of settled.dropped) queryClient.removeQueries({ queryKey: entry.key, exact: true })
     for (const entry of settled.carried) {
-      if (queryClient.getQueryState(entry.key)?.dataUpdatedAt === entry.at) putEntry(entry.key, entry.value, entry.at)
+      if (queryClient.getQueryState(entry.key)?.dataUpdatedAt === entry.at) restoreEntry(entry.key, entry.value, entry.at)
     }
     settleSnapshot(owner, snapshot, settled)
   }
@@ -508,7 +538,11 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     subscribe: (args, listener) => queryClient.getQueryCache().subscribe((event) => {
       // An entry being created holds nothing yet: the `updated` that puts its value (or starts its read) is the change.
       if (event.type !== 'updated' && event.type !== 'removed') return
-      if (matches(event.query.queryKey, args)) listener(entryOf(event.query))
+      if (!matches(event.query.queryKey, args)) return
+      // A removed entry is unknown now, whatever it last held.
+      listener(event.type === 'removed'
+        ? { args: event.query.queryKey.slice(2) as A, reading: UNKNOWN, fetching: false }
+        : entryOf(event.query))
     }),
     entries: (...args) => queryClient.getQueryCache().findAll({ queryKey: [definition.name] })
       .filter((query) => matches(query.queryKey, args)).map(entryOf),
@@ -518,11 +552,16 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     },
     forget: (...args) => {
       const k = key(...args)
-      if (k) queryClient.removeQueries({ queryKey: k, exact: true })
+      if (!k) return
+      queryClient.removeQueries({ queryKey: k, exact: true })
+      dropKept(k)
     },
     reset: async (...args) => {
       const k = key(...args)
-      if (k) await queryClient.resetQueries({ queryKey: k, exact: true }).catch(() => undefined)
+      if (!k) return
+      // The kept copy goes too: a reset whose read never lands must not come back at the next start.
+      dropKept(k)
+      await queryClient.resetQueries({ queryKey: k, exact: true }).catch(() => undefined)
     },
     refresh: async (...args) => {
       const owner = ownerOf(definition.scope)

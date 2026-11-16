@@ -15,10 +15,20 @@ describe('the source', () => {
 
 describe('react-query past the replica (what counts)', () => {
   const lines = (code: string, path = 'apps/desktop/src/a.tsx') => reactQueryLines(path, code)
-  it('a read hook or a fetch-state hook', () => {
-    for (const hook of ['useQuery', 'useQueries', 'useInfiniteQuery', 'useSuspenseQuery', 'useIsFetching', 'useQueryClient']) {
-      expect(lines(`import { ${hook} } from '@tanstack/react-query'\nexport const x = () => ${hook}({ queryKey: ['a'] })`), hook).toEqual([1, 2])
+  it('anything imported from react-query but a write (whatever it is renamed to)', () => {
+    for (const name of ['useQuery', 'useQueries', 'useInfiniteQuery', 'useSuspenseQuery', 'useIsFetching', 'useQueryClient', 'QueryObserver', 'QueryClient']) {
+      expect(lines(`import { ${name} } from '@tanstack/react-query'`), name).toEqual([1])
     }
+    expect(lines("import { useQuery as read } from '@tanstack/react-query'\nread({ queryKey: ['a'] })")).toEqual([1])
+    expect(lines("import * as rq from '@tanstack/react-query'")).toEqual([1])
+    expect(lines("import rq from '@tanstack/react-query'")).toEqual([1])
+    expect(lines("export { useQuery } from '@tanstack/react-query'")).toEqual([1])
+    expect(lines("import { QueryObserver } from '@tanstack/query-core'")).toEqual([1])
+    expect(lines("const m = await import('@tanstack/react-query')")).toEqual([1])
+  })
+  it('the writes, the provider, the sharing helper and types are allowed', () => {
+    expect(lines("import { useMutation, useMutationState, QueryClientProvider, replaceEqualDeep } from '@tanstack/react-query'")).toEqual([])
+    expect(lines("import type { QueryKey } from '@tanstack/react-query'\nimport { type UseQueryResult } from '@tanstack/react-query'")).toEqual([])
   })
   it('a method of the client', () => {
     expect(lines("import { queryClient } from '@/lib/replica'\nqueryClient.invalidateQueries({ queryKey: ['a'] })")).toEqual([2])
@@ -79,6 +89,7 @@ describe('a reading collapsed to a literal default (@@@client-state-model)', () 
     expect(lines("const xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
     expect(lines("const n = r.state === 'value' ? r.value.length : 0")).toHaveLength(1)
     expect(lines("const t = r.state === 'value' ? r.value : EMPTY_TOPICS")).toHaveLength(1)
+    expect(lines("const c = r.state === 'value' ? r.value : NO_PLATFORM_CATALOG")).toHaveLength(1)
     expect(lines("const s = r.state === 'value' ? r.value.name : ''")).toHaveLength(1)
     expect(lines("const on = r.state === 'value' ? r.value.on : false")).toHaveLength(1)
     expect(lines("const o = r.state === 'value' ? r.value : {}")).toHaveLength(1)

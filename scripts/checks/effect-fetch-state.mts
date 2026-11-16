@@ -167,7 +167,7 @@ export function scanFile(path: string, text: string): number {
 
 /**
  * A reading collapsed to a literal default (@@@client-state-model): the unknown reading then draws like a stored empty
- * value. Branch on the reading's three states instead. Literal = `[]`, `{}`, a number, a string, `false`, an `EMPTY_*`
+ * value. Branch on the reading's three states instead. Literal = `[]`, `{}`, a number, a string, `false`, an `EMPTY_*` / `NO_*`
  * constant; `null` is not a default (null is "unknown" in the consumer's type) — until it is folded into one downstream.
  * Syntactic: a reading is a name bound to `useReplica(…)` / `….peek(…)`, or any `x` whose `x.state` is compared with
  * `'value'` in the file. Counted:
@@ -191,7 +191,8 @@ export function literalDefaultLines(path: string, text: string): number[] {
     if (ts.isObjectLiteralExpression(n) && n.properties.length === 0) return true
     if (ts.isNumericLiteral(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return true
     if (n.kind === ts.SyntaxKind.FalseKeyword) return true
-    return ts.isIdentifier(n) && /^EMPTY_[A-Z0-9_]+$/.test(n.text)
+    // This codebase names its empty constants `EMPTY_*` or `NO_*` (`NO_PLATFORM_CATALOG`, `NO_SCHEDULES`).
+    return ts.isIdentifier(n) && /^(EMPTY|NO)_[A-Z0-9_]+$/.test(n.text)
   }
   const EQ = [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken]
   const NE = [ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]
@@ -310,8 +311,13 @@ export function scanEffectFetchState(root = '.'): Record<string, number> {
 }
 
 const REPLICA_MODULE = 'apps/desktop/src/lib/replica.ts'
-/** React-query's read and fetch-state hooks: only the replica reads through them (lib/replica.ts). */
-const REACT_QUERY_READS = new Set(['useQuery', 'useQueries', 'useInfiniteQuery', 'useSuspenseQuery', 'useSuspenseQueries', 'useIsFetching', 'useQueryClient', 'usePrefetchQuery'])
+/**
+ * What a module other than the replica may import from react-query: writes and their state, the provider, and the
+ * structural-sharing helper. Anything else (a read or fetch-state hook, an observer, a client of its own, a namespace or
+ * default import) reads past the replica, whatever it is renamed to.
+ */
+const REACT_QUERY_ALLOWED = new Set(['useMutation', 'useMutationState', 'QueryClientProvider', 'replaceEqualDeep'])
+const REACT_QUERY_MODULE = /^@tanstack\/(react-)?query(-core)?$/
 
 /** Lines in this file that reach react-query past the replica: a read / fetch-state hook, or a method of the client. */
 export function reactQueryLines(path: string, text: string): number[] {
@@ -320,7 +326,22 @@ export function reactQueryLines(path: string, text: string): number[] {
   const lines = new Set<number>()
   const line = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
   const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && REACT_QUERY_READS.has(node.text)) lines.add(line(node))
+    // Imports and re-exports from react-query: only the allowed names (types are not a read).
+    const from = (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)
+      ? node.moduleSpecifier.text : null
+    if (from && REACT_QUERY_MODULE.test(from) && !(ts.isImportDeclaration(node) && node.importClause?.isTypeOnly)) {
+      const clause = ts.isImportDeclaration(node) ? node.importClause : undefined
+      const named = ts.isImportDeclaration(node) ? clause?.namedBindings : (node as ts.ExportDeclaration).exportClause
+      const wholesale = (ts.isImportDeclaration(node) && (!clause || !!clause.name || (named && ts.isNamespaceImport(named))))
+        || (ts.isExportDeclaration(node) && (!named || ts.isNamespaceExport(named)))
+      const disallowed = named && (ts.isNamedImports(named) || ts.isNamedExports(named))
+        ? named.elements.some((element) => !element.isTypeOnly && !REACT_QUERY_ALLOWED.has((element.propertyName ?? element.name).text))
+        : false
+      if (wholesale || disallowed) lines.add(line(node))
+    }
+    // A dynamic import of react-query, and a method of the replica's client.
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])
+      && REACT_QUERY_MODULE.test(node.arguments[0].text)) lines.add(line(node))
     if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'queryClient') lines.add(line(node))
     ts.forEachChild(node, visit)
   }
