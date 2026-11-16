@@ -6,6 +6,8 @@ import { AgentWatchPage } from '@/mobile/agent-watch/AgentWatchPage'
 import { DevicesContext, type DevicesContextValue } from '@/store/devicesContext'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
+import { ThemeProvider } from '@/store/theme'
+import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { APP_SHOW_SESSION_EVENT } from '@/session/shared/extensions/app-runtime-protocol'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge'
@@ -16,6 +18,9 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMobileWorkspaceCatalog'
 import '@/i18n/registerMessagingCatalog'
+import '@gugu/session-ui/theme/theme.css'
+import '@gugu/session-ui/theme/semantic.css'
+import '@gugu/session-ui/styles/base.css'
 import '@renderer/index.css'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
@@ -70,7 +75,7 @@ afterEach(() => {
 for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) {
   it(`${width}/${theme}: actual existing-task sidebar keeps Agent search first and routes duplicate names by ID (offline)`, async () => {
     await page.viewport(width, 844); setLocalePreference('zh-CN')
-    document.documentElement.dataset.theme = theme
+    writeThemePreference(theme)
     document.documentElement.setAttribute('data-phone-shell', '')
     installIdentityDirectoryBridge(); publishIdentityDirectory(identities, null)
     const room = chat({ id: roomId, kind: 'group', name: '受控来源群' })
@@ -79,9 +84,9 @@ for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) 
     updateDeviceSessions(machine.device_id, { projects: [], sessions, cached: false, loading: false, error: null })
     harness = createReactHarness()
     harness.container.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column'
-    await renderWithAppProviders(harness, <LocalizationProvider><SessionUiTheme theme={theme}><DevicesContext.Provider value={devices}>
-      <PhoneViewportShell mobile className="h-full flex flex-col"><ControlledOuterBoundary /></PhoneViewportShell>
-    </DevicesContext.Provider></SessionUiTheme></LocalizationProvider>,
+    await renderWithAppProviders(harness, <ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><DevicesContext.Provider value={devices}>
+      <PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" className="h-full flex flex-col" style={{ background: 'var(--ta-panel-bg)' }}><ControlledOuterBoundary /></PhoneViewportShell>
+    </DevicesContext.Provider></SessionUiTheme></LocalizationProvider></ThemeProvider>,
     { auth: { id: 'I-owner' }, chat: { chats: [room], identitiesById: identities } })
     await act(async () => {
       window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, {
@@ -100,7 +105,8 @@ for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) 
     expect(getComputedStyle(search()).position).toBe('sticky')
     await expect.element(page.getByTestId('phone-agents-search')).toHaveAttribute('placeholder', '搜索智能体')
     expect(header()?.textContent).toContain('同名智能体')
-    expect(document.body.textContent).not.toContain('agentWatch.')
+    expect(document.documentElement.dataset.theme).toBe(theme)
+    expect(document.body.textContent).not.toMatch(/agentWatch\.|shell\./)
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/I-existing-sidebar-open-offline-${width}-${theme}.png` })
     list().scrollTop = 400
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))

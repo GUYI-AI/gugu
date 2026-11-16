@@ -3,6 +3,8 @@ import { page } from 'vitest/browser'
 import { ChatAreaPanel } from '@/components/ChatAreaPanel'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
+import { ThemeProvider } from '@/store/theme'
+import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { closeTopicTab, topicTabOf, infoTabOf } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -15,6 +17,8 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 import '@/i18n/registerMessagingCatalog'
+import '@/i18n/registerMainCatalog'
+import '@/i18n/registerMobileWorkspaceCatalog'
 
 // Only external reads are controlled. The real room, topic, header and tab-route
 // components run together; no replacement heading or route callback is rendered.
@@ -29,22 +33,24 @@ vi.mock('@/hooks/useRoomCollab', async original => ({ ...await original<object>(
 let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => { closeTopicTab('context-room'); harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
 
-for (const width of [360, 390]) for (const theme of ['light', 'dark']) {
+for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
   it(`${width}/${theme}: real room route selects topic B, switches to A and returns to its source`, async () => {
     await page.viewport(width, 844); setLocalePreference('zh-CN')
-    document.documentElement.dataset.theme = theme; document.documentElement.setAttribute('data-phone-shell', '')
+    writeThemePreference(theme); document.documentElement.setAttribute('data-phone-shell', '')
     closeTopicTab('context-room'); harness = createReactHarness()
     Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
     const group = chat({ id: 'context-room', kind: 'group', name: '来源群' })
-    await renderWithAppProviders(harness, <LocalizationProvider><PhoneViewportShell mobile style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    await renderWithAppProviders(harness, <ThemeProvider><LocalizationProvider><PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--ta-panel-bg)' }}>
       <ChatAreaPanel mobile onBack={vi.fn()} />
-    </PhoneViewportShell></LocalizationProvider>, { chat: { activeChat: group, activeChatId: group.id,
+    </PhoneViewportShell></LocalizationProvider></ThemeProvider>, { chat: { activeChat: group, activeChatId: group.id,
       chats: [group, ...reads.topics.map(topic => chat({ id: topic.chat_id, kind: 'topic', source_chat_id: group.id, name: topic.name }))],
     } })
     const header = () => harness!.container.querySelector<HTMLElement>('[data-chat-area-header]')!
     await until('actual source header', () => header()?.dataset.chatContextId === 'context-room')
     await page.getByTestId('session-chat-panel').getByTestId('phone-room-topics').click()
     await page.getByTestId('phone-topics-search').fill('同名')
+    expect(document.documentElement.dataset.theme).toBe(theme)
+    expect(harness.container.textContent).not.toMatch(/agentWatch\.|shell\./)
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/J-real-room-${width}-${theme}.png` })
     await page.elementLocator(document.querySelector<HTMLElement>('[data-topic-id="context-topic-b"][role="radio"]')!).click()
     await until('actual B route and title', () => topicTabOf(group.id)?.topic.topicChatId === 'context-topic-b' && header()?.dataset.chatContextId === 'context-topic-b')
