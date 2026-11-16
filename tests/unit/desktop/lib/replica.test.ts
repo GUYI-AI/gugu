@@ -239,6 +239,8 @@ describe('snapshot limits (@@@client-state-model, persistence)', () => {
     const unpersisted = rm.replica({ name: 'test-unpersisted', scope: 'account', read: async () => 'new' })
     const shrunk = rm.replica({ name: 'test-shrunk', scope: 'account', read: async () => 'new', persist: { maxBytes: 100, maxEntries: 1 } })
     const same = rm.replica({ name: 'test-same', scope: 'account', read: async () => 'new', persist: kept })
+    // Judged once the defining module has run (a microtask), before anything renders.
+    await Promise.resolve()
     expect([early.peek().state, unpersisted.peek().state, shrunk.peek().state, same.peek().state]).toEqual(['unknown', 'unknown', 'unknown', 'value'])
     expect(['test-unpersisted', 'test-shrunk', 'test-early', 'test-same'].map((name) => entriesOf('alice', name).length)).toEqual([0, 0, 0, 1])
   })
@@ -316,6 +318,7 @@ describe('PR 3 additions', () => {
     rm = await freshStart()
     type Row = { name: string; digest?: string[] }
     const model = rm.replica({ name: 'test-old', scope: 'account', read: async (): Promise<Row> => ({ name: 'n', digest: [] }), persist: { maxBytes: 1024, maxEntries: 1, carry: ({ name }: Row) => ({ name }) } })
+    await Promise.resolve()
     expect(model.peek()).toMatchObject({ state: 'value', value: { name: 'n' } })
     expect((model.peek() as { value: Row }).value.digest).toBeUndefined()
     expect(entriesOf('alice', 'test-old').map((e) => e.value)).toEqual([{ name: 'n' }])
@@ -564,5 +567,24 @@ describe('a failed read being read again (independent test lane P1)', () => {
     answer!('up')
     for (let i = 0; i < 5; i += 1) await Promise.resolve()
     expect(model.peek()).toMatchObject({ state: 'value', value: 'up' })
+  })
+})
+
+describe('a carry that reads what its module defines below the model (A/B: blank start)', () => {
+  it('the kept entry is judged after the module has run: no error at definition, the entry restored', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const define = (carry?: (value: string[]) => string[] | undefined) => rm.replica({ name: 'test-carry-later', scope: 'account', read: async () => ['read'],
+      persist: { maxBytes: 256, maxEntries: 1, ...(carry ? { carry } : {}) } })
+    define().set([], ['kept'])
+    rm = await freshStart()
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    // As a module that declares the bound its carry reads after the model (a `const` in its temporal dead zone).
+    let model: ReturnType<typeof define> | undefined
+    expect(() => {
+      model = define((value) => (value.length <= LIMIT ? value : undefined))
+    }).not.toThrow()
+    const LIMIT = 4
+    await Promise.resolve()
+    expect(model!.peek()).toMatchObject({ state: 'value', value: ['kept'] })
   })
 })

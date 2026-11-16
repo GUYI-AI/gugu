@@ -543,7 +543,9 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   // A module evaluated again (hot reload, a test's module reset) defines its model again: the latest reader serves.
   const first = !definitions.has(definition.name)
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
-  if (first) pruneSnapshot(definition as Definition<unknown[], unknown>)
+  // Judged once the defining module has run (a microtask, before anything renders): its `carry` may read what that module
+  // declares below the model — at definition time those are in their temporal dead zone (a blank start in the A/B).
+  if (first) queueMicrotask(() => pruneSnapshot(definition as Definition<unknown[], unknown>))
   queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
   const options = (key: QueryKey) => ({
     queryKey: key,
