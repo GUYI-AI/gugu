@@ -13,3 +13,5 @@ it('ignores fenced headings in memory titles',()=>{expect(parseMemoryNote('note.
 it('reads memory index links with titles',()=>{expect(memoryIndexHints('# 项目\n- [Plan](./plan.md "Details")').get('plan.md')).toEqual({title:'Plan',kind:'project'});expect(memoryIndexHints("[Plan](plan.md 'Details')").has('plan.md')).toBe(true);});
 
 it('reads angle memory index destinations',()=>{expect(memoryIndexHints('[Plan](<./my plan.md> "Details")').get('my plan.md')).toEqual({title:'Plan'});expect(memoryIndexHints('[Other](<nested/note.md>)').size).toBe(0);});
+
+it('decodes memory index filenames once',()=>{expect(memoryIndexHints('[茶](tea%20notes.md)').get('tea notes.md')).toEqual({title:'茶'});expect(memoryIndexHints('[Literal](literal%2520.md)').has('literal%20.md')).toBe(true);expect(memoryIndexHints('[Nested](nested%2Fnote.md)').size).toBe(0);expect(memoryIndexHints('[Bad](bad%ZZ.md)').size).toBe(0);});

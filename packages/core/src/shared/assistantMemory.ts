@@ -72,7 +72,8 @@ export function memoryIndexHints(index: string): Map<string, { title: string; ki
     const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line);
     if (heading) kind = memoryKind(heading[1].trim());
     for (const link of line.matchAll(/\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s)]+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*\)/gi)) {
-      const destination = (link[2] ?? link[3]).replace(/^\.\//, '');
+      let destination: string;
+      try { destination = decodeURIComponent(link[2] ?? link[3]).replace(/^\.\//, ''); } catch { continue; }
       if (/\.md$/i.test(destination) && !destination.includes('/')) result.set(destination, { title: link[1], ...(kind ? { kind } : {}) });
     }
   }
