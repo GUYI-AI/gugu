@@ -1,5 +1,5 @@
 export default {
-  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}" },
+  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
   "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
   "agent": {
     "identity": {
@@ -438,6 +438,7 @@ export default {
     "attachmentSendTimedOut": "Attachment send timed out.",
     "attachmentPersistenceFailed": "Could not save {{fileName}}",
     "attach": "Add",
+    "attachmentsMenu": "Attachments",
     "cancelQuote": "Cancel reply",
     "disabled": "You cannot send messages in this chat",
     "exitWhisper": "Exit whisper mode",

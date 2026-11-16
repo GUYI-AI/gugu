@@ -18,6 +18,7 @@ import { roomAgentEntry, roomTopicChoices } from './room-composer-models'
 import '../agent-watch/create-controls-catalog'
 import './room-composer-catalog'
 import './phone-room-composer.css'
+import { phoneMenuBar } from '../composer/phone-menu-bar'
 
 export type PhoneRoomComposerControlsProps = {
   chatId: string
@@ -41,16 +42,16 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
-  const selectedName = topics.find(topic => topic.chat_id === current?.chatId)?.name ?? current?.name
+  const menu = phoneMenuBar('room', { topics: true, agents: true })
   const choose = (topic: TopicSummary | null) => {
     setView(null)
     if ((topic?.chat_id ?? null) !== (current?.chatId ?? null)) onPick(topic)
   }
   return <div className="gg-phone-room-controls" data-testid="phone-room-composer-controls">
     <PhoneComposerControlRow>
-      <PhoneComposerControl label={selectedName ?? t('topics')} icon={<Hash />} active={!!current} dot={choices.hasUnread}
-        testId="phone-room-topics" onClick={() => setView('topics')} />
-      <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />
+      {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} active={!!current} dot={choices.hasUnread}
+        testId="phone-room-topics" onClick={() => setView('topics')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'topics' ? <div role="radiogroup" aria-label={t('topics')}>
@@ -76,7 +77,7 @@ function TopicChoice({ name, unread, selected, onClick, main = false, id }: {
     data-testid={main ? 'phone-room-main' : 'phone-room-topic'} data-topic-id={id}
     onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClick}>
     {main ? <MessageCircle aria-hidden /> : <Hash aria-hidden />}
-    <span className="gg-phone-room-choice-name">{name}</span>
+    <span className="gg-phone-room-choice-name gg-phone-room-topic-name">{name}</span>
     {unread > 0 && <Chip shape="count" aria-label={t('unread', { count: unread })}>{unread.toLocaleString()}</Chip>}
     {selected && <Check className="gg-phone-room-check" aria-hidden />}
   </Button>

@@ -28,6 +28,15 @@ describe('durable local IM messages', () => {
   beforeEach(async () => { fixture = await openFixture('empty') })
   afterEach(() => { vi.restoreAllMocks(); fixture.close() })
 
+  it('retains a sender-device resend position when full server overlays replace the body', () => {
+    const store = createImMessageStore(fixture.sqlite)
+    const local_timeline = { afterSeq: 4, createdAt: '2026-11-02T00:00:00Z' }
+    store.ingest(account, batch(message('resent', 'first', 8, { local_timeline })))
+    store.ingest(account, batch(message('resent', 'refreshed', 8, { reactions: [], delivery_blocks: [] })))
+    const [restored] = store.windows(account, ['chat-a'], 10)
+    expect(restored).toMatchObject({ id: 'resent', seq: 8, content: 'refreshed', local_timeline })
+  })
+
   it('searches stored history outside a display window, using projected short and trigram terms in the requested account and chat', async () => {
     const store = createImMessageStore(fixture.sqlite)
     store.ingest(account, batch(message('older', 'orchid 登录', 1),

@@ -25,6 +25,7 @@ import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { appendToDraft } from '@/store/chatContext'
 import { useLocale } from '@/i18n'
 import type { ExistingSessionModel } from './CreateTarget'
+import { PhoneAttachmentMenuBar } from '../composer/PhoneAttachmentMenuBar'
 import { useCreationSkillDraft } from './create-skill-draft'
 import { SelectedCreationSkills } from './CreateSkills'
 import { useTranslation } from 'react-i18next'
@@ -390,7 +391,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange,
         effortOptions: options.props.effortOptions, selectedEffort: options.props.selectedEffort, defaultEffort: options.props.defaultEffort,
         onEffortChange: options.props.onEffortChange, fastMode: options.props.fastMode, onFastModeChange: options.props.onFastModeChange,
-      }, skillDraft) : undefined}
+      }, skillDraft) : mobile && appPanel ? () => <PhoneAttachmentMenuBar disabled={sending} onOpen={() => input.current?.click()} /> : undefined}
       inputHeader={composerControls ? <SelectedCreationSkills skills={skillDraft.skills} onChange={skillDraft.update} /> : undefined}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
       ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}
@@ -402,7 +403,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
       attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
-      onAttach={mobile ? () => input.current?.click() : undefined}
+      onAttach={mobile && (composerControls || !appPanel) ? () => input.current?.click() : undefined}
       toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>

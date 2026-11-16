@@ -4805,7 +4805,8 @@ app.whenReady().then(async () => {
             if (!agentId) throw new Error(`Session attachment recipient has no Agent identity: session:${target.sessionId}`)
             recipients.push(agentId)
           }
-          const endpoint = configuredEndpoint(auth.accessToken)
+          // The main process sends signed part PUTs straight to the store (a page cannot).
+          const endpoint = { ...configuredEndpoint(auth.accessToken), signedParts: true }
           signal.throwIfAborted()
           return uploadSessionFiles(endpoint, files, { agentId: sender.guguAgentUserId, sessionId: context.sessionId, recipients, beforeCommit: async () => signal.throwIfAborted() })
       }

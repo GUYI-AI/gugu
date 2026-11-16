@@ -1,5 +1,5 @@
 export default {
-  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行" },
+  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
   "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。", "sent": "已发送" },
   "agent": {
     "identity": {
@@ -437,6 +437,7 @@ export default {
     "attachmentSendTimedOut": "附件发送超时。",
     "attachmentPersistenceFailed": "附件 {{fileName}} 保存失败。",
     "attach": "添加",
+    "attachmentsMenu": "附件",
     "cancelQuote": "取消引用",
     "disabled": "当前对话不可发送",
     "exitWhisper": "退出悄悄话",

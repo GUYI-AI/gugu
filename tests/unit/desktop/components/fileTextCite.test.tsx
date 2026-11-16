@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Markdown } from '@/components/markdown/Markdown'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { fileTextRange, sourceLineRange } from '@/components/preview/file-text-range'
+import { selectedTextQuote, selectionPosition } from '@/components/preview/quote-preview-file'
+import { i18n } from '@/i18n'
+import '@/i18n/registerMessagingCatalog'
+import { readFileSync } from 'node:fs'
 
 vi.mock('@/platform', () => ({ platform: { kind: 'web' } }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -133,7 +137,7 @@ it('cites each selected range on its own, as many times as asked', async () => {
     expect(buttons).toHaveLength(1)
     expect(document.querySelector('.gg-file-cite-popup input')).toBeNull()
     await act(async () => buttons[0].click())
-    expect(onCite).toHaveBeenLastCalledWith({ text: line === 2 ? 'second' : 'third', at: { lines: String(line) } })
+    expect(onCite).toHaveBeenLastCalledWith({ text: line === 2 ? 'second' : 'third', at: { lines: String(line) }, code: true })
     expect(document.querySelector('.gg-file-cite-popup')).toBeNull()
   }
   expect(onCite).toHaveBeenCalledTimes(2)
@@ -150,5 +154,17 @@ it('cites a code gutter range, including the empty final source line', async () 
     await new Promise(resolve => requestAnimationFrame(resolve))
   })
   await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-cite-popup button')!.click())
-  expect(onCite).toHaveBeenCalledWith({ text: 'one\n', at: { lines: '1-2' } })
+  expect(onCite).toHaveBeenCalledWith({ text: 'one\n', at: { lines: '1-2' }, code: true })
+})
+
+it('says a place and quotes code as the Files App does, word for word', async () => {
+  const app = readFileSync('apps/desktop/preinstalled-apps/workspace/app.js', 'utf8')
+  // The App's own strings, in the order its table has them: zh first, then en.
+  const [zh, en] = [...app.matchAll(/^ {4}line: '(.+)',\n {4}lines: '(.+)',$/gm)].map(([, line, lines]) => ({ line: line!, lines: lines! }))
+  for (const [language, strings] of [['zh-CN', zh!], ['en-US', en!]] as const) {
+    await i18n.changeLanguage(language)
+    expect(selectionPosition({ text: '', at: { lines: '10' } })).toBe(strings.line.replace('{first}', '10'))
+    expect(selectionPosition({ text: '', at: { lines: '10-11' } })).toBe(strings.lines.replace('{first}', '10').replace('{last}', '11'))
+  }
+  expect(selectedTextQuote({ text: '    x = `a`\n', code: true })).toBe(['> ```', '>     x = `a`', '> ```'].join('\n'))
 })

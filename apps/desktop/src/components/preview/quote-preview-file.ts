@@ -4,16 +4,18 @@ import { APP_COMPOSE_EVENT } from '@/session/shared/extensions/app-runtime-proto
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { openSelectionSend } from '@/components/chat/selectionSendAsk';
+import { i18n } from '@/i18n';
+import { codeQuote } from '../../../preinstalled-apps/workspace/code-quote.js';
 
 export function selectedTextQuote(selection: FileViewerSelection): string {
-  return selection.text.split('\n').map((line) => `> ${line}`).join('\n');
+  return selection.code ? codeQuote(selection.text) : selection.text.split('\n').map((line) => `> ${line}`).join('\n');
 }
 
+/** The place as the Files App says it (its `line` / `lines` strings): 「第 10–11 行」, "Lines 10–11". */
 export function selectionPosition(selection: FileViewerSelection): string {
-  const at = selection.at;
-  if (!at) return '';
-  if (at.lines) return `L${at.lines}`;
-  return '';
+  const [first, last = first] = selection.at?.lines?.split('-') ?? [];
+  if (!first) return '';
+  return first === last ? i18n.t('fileCite.line', { first, ns: 'messaging' }) : i18n.t('fileCite.lines', { first, last, ns: 'messaging' });
 }
 
 /** Use the App file-reference producer and its existing draft delivery, including membership and version checks. */

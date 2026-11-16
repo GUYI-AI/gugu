@@ -1,4 +1,5 @@
 import { notify } from '@/lib/notices';
+import { PhoneAttachmentMenuBar } from '@/mobile/composer/PhoneAttachmentMenuBar';
 import { messageForUser } from '@/lib/userFacingError';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { MAX_ATTACHMENT_BYTES } from "@gugu/session-core/session-record/contract";
@@ -414,11 +415,12 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
         {capabilities.attachments && <input ref={picker} type="file" multiple hidden onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />}
         <ChatComposer editorApiRef={editor} mobile={mobile} placeholder={placeholder}
+          renderPhoneHeader={mobile && capabilities.attachments ? () => <PhoneAttachmentMenuBar disabled={isDisabled} onOpen={() => picker.current?.click()} /> : undefined}
           editorOptions={{ enterBehavior: submitOnEnter ? 'submit' : 'newline', clearOnSubmit: false }}
           disabled={isDisabled} canSubmit={!sendDisabled && canSend && (!isRunning || capabilities.queue)}
           isWorking={!!hostStop && isEmpty} stopDisabled={hostStop?.stopping}
           onStop={hostStop?.onStop} onInputChange={(value) => composer.setText(value)} onSubmit={() => composer.send()}
-          onAttach={capabilities.attachments ? () => picker.current?.click() : undefined}
+          onAttach={!mobile && capabilities.attachments ? () => picker.current?.click() : undefined}
           onFilesDropped={capabilities.attachments ? addFiles : undefined} onImageFilesDropped={capabilities.attachments ? addFiles : undefined}
           attachments={chips} onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
           onRetryAttachment={(id) => { const file = attachments.find((attachment) => attachment.id === id)?.file; if (file) void composer.attachment({ id }).remove().then(() => composer.addAttachment(file)); }}
