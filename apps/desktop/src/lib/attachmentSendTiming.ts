@@ -1,7 +1,9 @@
 import { rendererLogger } from './log'
 import { i18n } from '../i18n'
+import type { AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { xhrAttachmentUpload } from './attachmentUploadTransport'
 
-export const ATTACHMENT_SEND_DEADLINES = { upload: 120_000, commit: 20_000, readback: 5_000 }
+export const ATTACHMENT_SEND_DEADLINES = { prepare: 120_000, upload: 120_000, commit: 20_000, readback: 5_000 }
 export const ATTACHMENT_UPLOAD_IDLE_MS = 15_000
 export const ATTACHMENT_UPLOAD_START_MS = 30_000
 export const ATTACHMENT_UPLOAD_RESPONSE_MS = 20_000
@@ -28,6 +30,14 @@ export function linkedAttachmentSignal(signals: readonly AbortSignal[]): AbortSi
   const aborted = signals.find(signal => signal.aborted)
   if (aborted) controller.abort(aborted.reason)
   return controller.signal
+}
+/** An endpoint whose requests (and uploads) stop with this attempt's signal. */
+export function attachmentAttemptEndpoint(endpoint: AttachmentsEndpoint, signal: AbortSignal): AttachmentsEndpoint {
+  return { ...endpoint, fetch: (input, init) => (endpoint.fetch ?? fetch)(input, {
+    ...init, signal: init?.signal ? linkedAttachmentSignal([signal, init.signal]) : signal,
+  }), upload: (url, init, progress) => (endpoint.upload ?? xhrAttachmentUpload)(url, {
+    ...init, signal: init.signal ? linkedAttachmentSignal([signal, init.signal]) : signal,
+  }, progress) }
 }
 export function attachmentSendTiming(clientId: string, chatId: string) {
   const submitted = performance.now()

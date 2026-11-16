@@ -1,4 +1,6 @@
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { closeLiveWindowConversation } from '../../live-window/use-live-window-conversation';
+import { releaseBackgroundBrowserPage } from '../../live-window/background-browser-page';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ILifecycle } from '@gugu/session-shared';
@@ -447,6 +449,8 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
    * Call only when the task is being permanently removed.
    */
   dispose(): void {
+    closeLiveWindowConversation(this.sessionId);
+    releaseBackgroundBrowserPage(this);
     this.suspend();
     appState.history.prune((e) => e.kind === 'tab' && e.sessionId === this.sessionId);
     for (const d of this._disposers) d();

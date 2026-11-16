@@ -22,7 +22,7 @@ const { applyExtensionHostAction } = await import('./host-action-handlers');
  */
 describe('a page that loads another document starts from the manifest title again', () => {
   const el = () => document.createElement('div');
-  const origin = { extensionId: 'paper-club', sessionId: null, tabId: 'panel' };
+  const origin = { extensionId: 'paper-club', sessionId: null, tabId: 'panel', pageId: null };
 
   it('reader → shelf: the paper’s title, badge and error go; the slot reads null and draws the manifest’s title', () => {
     const chatId = 'chat-new-document';

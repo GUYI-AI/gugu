@@ -20,7 +20,7 @@ describe('confirmed sent attachments', () => {
   });
 });
 
-it.each([['image/png', 'proof.bin', 'image'], [undefined, 'PHOTO.JPEG', 'image'], ['application/octet-stream', 'proof.png', 'file'], [undefined, 'report.pdf', 'file']])('uses MIME %s and filename %s to classify %s', (mime_type, file_name, kind) => {
+it.each([['image/png', 'proof.bin', 'image'], [undefined, 'PHOTO.JPEG', 'image'], ['application/octet-stream', 'proof.png', 'image'], [undefined, 'report.pdf', 'file']])('uses MIME %s and filename %s to classify %s', (mime_type, file_name, kind) => {
   const chatId = '127ec4f0-30b1-4583-b469-706756153bdd';
   const result = sentAttachmentOf({ ...call, outputText: JSON.stringify({ message_id: id, mime_type, file_name, source_link: `gugu-chat://${chatId}/${id}` }) });
   expect(result).toMatchObject({ kind, href: `gugu-message-file://${id}?chat=${chatId}` });

@@ -1,4 +1,17 @@
 export default {
+  "controlWatch": {
+    "picture": "Control picture",
+    "enlarge": "Enlarge",
+    "shrink": "Shrink",
+    "landscape": "Landscape",
+    "portrait": "Portrait",
+    "dock": "Dock to edge",
+    "restore": "Show picture, drag to either edge",
+    "close": "Close last picture",
+    "sources": "Picture source",
+    "web": "Web",
+    "computer": "Desktop"
+  },
   "referralPreview": {
     "contactCaption": "Scan to add me as a contact",
     "contactFooter": "Connect your AI collaboration network with Gugu",
@@ -135,10 +148,7 @@ export default {
       "exportMarkdown": "Export as Markdown"
     },
     "attachment": {
-      "add": "Add attachment",
-      "remove": "Remove {{name}}",
-      "cancel": "Cancel upload of {{name}}",
-      "retry": "Retry"
+      "add": "Add attachment"
     },
     "tool": {
       "groupCount_one": "{{count}} tool call",

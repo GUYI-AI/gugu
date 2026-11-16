@@ -22,7 +22,7 @@ describe('attachmentsEndpoint: the attachments function, with the token the sess
     const invoke = vi.fn(async () => { throw new Error("Error invoking remote method 'files:publish': EACCES /private/source") })
     vi.stubGlobal('window', { electronAPI: { invoke, getPathForFile: () => '/private/source' } })
     const file = new File(['bytes'], 'file.bin'), endpoint = { supabaseUrl: 'https://db.test', anonKey: 'anon', token: 't' }
-    const failure = await (stage === 'planning' ? prepareChatAttachment(endpoint, file, { chat_id: 'chat', as: 'owner' })
+    const failure = await (stage === 'planning' ? prepareChatAttachment(endpoint, file, { chat_id: 'chat', as: 'owner', message_id: 'message' })
       : commitPreparedChatAttachment(endpoint, { local: file }, { message_id: 'message', chat_id: 'chat', sender_user_id: 'owner', file_name: file.name, content_type: 'application/octet-stream' }))
       .catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(Error)

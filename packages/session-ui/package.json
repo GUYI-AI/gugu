@@ -23,6 +23,7 @@
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./icons": "./src/icons.tsx",
     "./icon-bodies": "./src/icon-bodies.ts",
+    "./file-mark": "./src/file-mark.tsx",
     "./react/primitives": "./src/react/primitives/index.ts",
     "./react/components": "./src/react/components/index.ts",
     "./styles/sprinkles": "./src/styles/utilities/sprinkles.css.ts",

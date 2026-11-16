@@ -1,4 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, type CSSProperties, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseAttachmentContent, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
@@ -8,8 +9,10 @@ import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { Markdown } from '../markdown/Markdown'
 import { layoutAlbum, type AlbumLayout } from './albumLayout'
+import { sendStillArriving } from './messageAlbum'
 import { Button } from '../ui/Button'
 import { MediaAttachmentBubble } from './MediaAttachmentBubble'
+import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
 import { useNearViewport } from './useNearViewport'
 import { SentMessageSurface } from './sentMessageSurface'
 
@@ -47,7 +50,7 @@ export function MessageAlbumBubble({ members, isMine, chatId, senderName, onOpen
   const listed = parts.filter(part => !tiled.includes(part))
   const caption = parts.findLast(({ meta }) => meta.caption)?.meta.caption
   return <div className="flex max-w-full flex-col items-start gap-1" data-message-album={members.length}>
-    {tiled.length > 0 && <AlbumTiles parts={tiled} chatId={chatId} />}
+    {tiled.length > 0 && <AlbumTiles parts={tiled} chatId={chatId} awaited={sendStillArriving(members) && !listed.length ? members[0]!.send_group_size! - members.length : 0} />}
     {listed.map(({ member, meta }) => <div key={member.id} className="relative max-w-full" data-album-failed={member.local_send_state === 'failed' || undefined}>
       <MediaAttachmentBubble meta={{ ...meta, caption: undefined }} messageId={member.id} isMine={isMine} chatId={chatId} senderName={senderName}
         onOpenFile={onOpenFile ? (file) => onOpenFile(file, member) : undefined} />
@@ -57,22 +60,28 @@ export function MessageAlbumBubble({ members, isMine, chatId, senderName, onOpen
   </div>
 }
 
-function AlbumTiles({ parts, chatId }: { parts: Part[]; chatId: string }) {
-  const layout = useMemo(() => layoutAlbum(parts.map(({ member, meta }) => {
-    const size = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.imageDimensions ?? member.image_dimensions
-    return size?.width && size.height ? size.width / size.height : 1
-  }), ALBUM_WIDTH), [parts])
+/** `awaited` images of this send have not arrived yet: their places are kept, shaped like the last one that did. */
+function AlbumTiles({ parts, chatId, awaited }: { parts: Part[]; chatId: string; awaited: number }) {
+  const layout = useMemo(() => {
+    const ratios = parts.map(({ member, meta }) => {
+      const size = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.fileMetadata?.status === 'pending' && meta.fileMetadata.width ? meta.fileMetadata : meta.imageDimensions ?? member.image_dimensions
+      return size?.width && size.height ? size.width / size.height : 1
+    })
+    return layoutAlbum([...ratios, ...Array<number>(awaited).fill(ratios.at(-1) ?? 1)], ALBUM_WIDTH)
+  }, [parts, awaited])
   return <div className="relative w-[min(280px,calc(100cqw-24px))] max-w-full" style={albumBox(layout)} data-testid="message-album-tiles">
     {parts.map((part, index) => <AlbumTile key={part.member.id} part={part} chatId={chatId} style={tileBox(layout.tiles[index]!, layout)} />)}
+    {layout.tiles.slice(parts.length).map((tile, index) => <div key={`awaited-${index}`} data-attachment-pending className="chat-inline-image--awaiting absolute bg-[var(--muted)]" style={tileBox(tile, layout)} />)}
   </div>
 }
 
 function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chatId: string; style: CSSProperties }) {
+  const { t } = useTranslation('messaging')
   const box = useRef<HTMLElement>(null)
   // A sending row draws from its local preview at once; others are fetched once they come near the screen.
   const onMount = useContext(SentMessageSurface)
   const near = useNearViewport(box, !onMount) || onMount
-  const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata)
+  const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata, member.id)
   const img = useRef<HTMLImageElement>(null)
   const ready = view.status === 'ready'
   const sourceKey = sourceKeyOf(meta.source)
@@ -96,11 +105,14 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
   const failed = member.local_send_state === 'failed'
   return <div ref={box as RefObject<HTMLDivElement>} data-album-failed={failed || undefined} className="absolute overflow-hidden bg-[var(--muted)]" style={style}>
     <Button variant="ghost" size="icon" aria-label={meta.fileName} disabled={!ready} onClick={() => img.current && openImageFromThumb(img.current)}
-      className={`relative block size-full min-h-0 rounded-none border-0 p-0 max-[719px]:min-h-0 max-[719px]:w-full ${ready ? 'cursor-zoom-in' : 'cursor-default'}`}>
+      className={`relative block size-full min-h-0 rounded-none border-0 p-0 max-[719px]:min-h-0 max-[719px]:w-full ${ready ? 'cursor-zoom-in' : 'cursor-default'}${ready && view.arrived ? ' bg-[var(--muted)]' : ''}`}>
       {ready && <img ref={img} src={view.objectUrl} data-image-viewer-src={view.objectUrl} alt={meta.fileName}
         data-testid={AUTOMATION_TEST_IDS.messageAttachmentImage} draggable={false}
-        decoding={view.link ? 'async' : 'sync'} className="block size-full object-cover" />}
+        decoding={view.link ? 'async' : 'sync'} className={`block size-full object-cover${view.arrived ? ' chat-inline-image--arrived' : ''}`} />}
+      {view.status === 'pending' && <span data-attachment-pending className="chat-inline-image--awaiting absolute inset-0" title={t('attachmentView.senderUploading')} />}
+      {view.status === 'unsent' && <span className="absolute inset-0 grid place-items-center text-center text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('attachmentView.senderUploadFailed')}</span>}
       {failed && <span className="absolute inset-0 grid place-items-center bg-[var(--bg-overlay-strong)]"><FailedMark /></span>}
+      {member.is_mine && <AttachmentUploadOverlay messageId={member.id} />}
     </Button>
   </div>
 }
