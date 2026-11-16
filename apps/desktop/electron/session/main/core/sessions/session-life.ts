@@ -134,6 +134,16 @@ export class SessionLife {
    */
   signOut(): Promise<void> { return this.transition(() => this.leave()); }
 
+  /** A native auth permit names the outgoing epoch. A later account cannot be
+   * signed out by an older writer waiting to reach this transition queue. */
+  leaveForAuthChange(expected: string | null, next: string | null, qualify: () => Promise<void>): Promise<void> {
+    return this.transition(async () => {
+      await qualify()
+      if (this.account !== null && this.account !== expected) throw new Error('Session account changed before auth transition')
+      if (expected !== next) await this.leave()
+    })
+  }
+
   /** Account closure never signs out a newer account and requires proof for
    * removed forks and late start results as well as the current entries. */
   async stopOwnerForClosure(userId: string): Promise<void> {

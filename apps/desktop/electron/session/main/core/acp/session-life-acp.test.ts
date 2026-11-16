@@ -39,7 +39,9 @@ vi.mock('./runtime-process/host', () => ({
 vi.mock('../session-timeline/turn-files', () => ({ turnFileText: h.turnFiles }));
 vi.mock('./inject-prompt', () => ({ injectEmdashPromptDetached: h.inject }));
 vi.mock('@main/lib/logger', () => ({ log: { error: h.logError } }));
-vi.mock('./emdash-platform-injector', () => ({ releaseEmdashPlatformSession: h.release, prepareEmdashPlatformSession: h.preparePlatform }));
+vi.mock('./emdash-platform-injector', async original => ({
+  ...await original<typeof import('./emdash-platform-injector')>(), prepareEmdashPlatformSession: h.preparePlatform,
+}));
 vi.mock('@main/core/sessions/runtime-fork-ownership', () => ({ recordRuntimeForkOwnership: vi.fn() }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ localAgentForSession: async () => h.parentAgent }));
 vi.mock('@main/core/projects/utils', () => ({ resolveWorkspace: () => (h.registered ? { path: '/repo' } : null), persistedWorkspacePath: () => '/repo' }));
@@ -52,6 +54,7 @@ vi.mock('./runtime-process/session-persistence-policy', () => ({ persistAcpStart
 import { acpWorkerLease } from './runtime-process/host';
 import { createAcpLegAdapter } from './session-life-acp';
 import { firstTurnFilesPlaced, holdFirstTurnForPlacement } from '../sessions/first-turn-placement';
+import { setEmdashPlatformRelease } from './emdash-platform-injector';
 
 const gen = { auth: 1, attempt: 1 } as unknown as Gen;
 const ctx = () => ({ gen, signal: new AbortController().signal });
@@ -65,7 +68,20 @@ async function boundAdapter() {
   return adapter;
 }
 
-beforeEach(() => { h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; vi.clearAllMocks(); });
+beforeEach(() => {
+  h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; vi.clearAllMocks();
+  const proofs = new Map<string, Promise<void>>();
+  const actualRelease = (id: string, generation?: string) => {
+    const pending = h.release(id, generation); proofs.set(JSON.stringify([id, generation]), pending); return pending;
+  };
+  setEmdashPlatformRelease((id, generation) => {
+    if (id === null) throw new Error('Unexpected fixture bulk release');
+    return actualRelease(id, generation);
+  }, async (id, generation) => {
+    await (proofs.get(JSON.stringify([id, generation])) ?? actualRelease(id, generation));
+    return { status: 'settled', sessionId: id, generation };
+  });
+});
 
 describe('session-life ACP leg', () => {
   it('starts platform preparation once identity is bound, before waiting for workspace or capability work', async () => {
@@ -125,6 +141,30 @@ describe('session-life ACP leg', () => {
     expect(drained).toBe(false);
     released.resolve(); await closing;
     expect(drained).toBe(true);
+  });
+  it.each(['normal', 'late'] as const)('retains a rejected actual release outcome on the %s closure branch', async branch => {
+    h.platformModel = { modelId: 'platform-model' };
+    const issue = Promise.withResolvers<string>();
+    h.preparePlatform.mockReturnValueOnce(issue.promise);
+    h.release.mockRejectedValueOnce(new Error('controlled settlement refused'));
+    const adapter = await boundAdapter();
+    if (branch === 'normal') {
+      issue.resolve('normal-generation');
+      await adapter.teardown({ process: await processLease() } as StageOut, ctx());
+    } else {
+      await adapter.teardown({}, ctx()); issue.resolve('late-generation');
+    }
+    await expect(adapter.closureDrain!()).rejects.toThrow('controlled settlement refused');
+  });
+  it('never substitutes an unconfigured or missing generation release for closure proof', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockResolvedValueOnce('required-generation');
+    setEmdashPlatformRelease(async () => {});
+    const adapter = await boundAdapter(); await adapter.teardown({}, ctx());
+    await expect(adapter.closureDrain!()).rejects.toThrow('unconfirmed');
+    h.preparePlatform.mockResolvedValueOnce(null);
+    const missing = await boundAdapter(); await missing.teardown({}, ctx());
+    await expect(missing.closureDrain!()).rejects.toThrow('unconfirmed');
   });
 
   it.each(['CANCELLED', 'HANDLER_ERROR', 'DISCONNECTED'])('owns a completed %s request without another admission', async code => {

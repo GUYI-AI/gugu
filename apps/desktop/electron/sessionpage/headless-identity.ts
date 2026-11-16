@@ -134,7 +134,9 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
   setEmdashPlatformInjector((info) => platform.acpInjector(info),
     async (info) => (await platform.acpPlatformModel(info)).accessSessionId)
   setEmdashPlatformRelease((sessionId, expectedAccessSessionId, intent) =>
-    platform.release(sessionId, expectedAccessSessionId, intent))
+    platform.release(sessionId, expectedAccessSessionId, intent),
+    (sessionId, generation) => platform.releaseForClosure?.(sessionId, generation)
+      ?? Promise.reject(new Error('Platform closure release unavailable')))
   setEmdashPlatformCheckpoint((sessionId) => platform.checkpoint(sessionId))
   // @@@4972 agent 自己用 `session_list_models` 查到的那一组。装进去的**就是**下面 composer 那条
   // 通道调的同一份实现 —— 只接下拉不接这一口,会让「用户看得到、agent 查不到」在网页版变成常态。

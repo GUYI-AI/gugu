@@ -499,3 +499,5 @@ export const ownerCases: readonly { name: string; run: () => Promise<void> }[] =
 ];
 
 export async function verifyOwnerCases(): Promise<void> { for (const c of ownerCases) await c.run(); }
+
+export { rig as sessionLifeOwnerFixture };

@@ -2,6 +2,7 @@ import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
+import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
 import './browser-user-agent-bootstrap'
@@ -821,6 +822,7 @@ if (SERVER_MODE) {
 }
 // F33 渲染进程推来的会话(见下面 human-auth-session:write / clear)。桌面模式的 getAuth 平时就用它。
 let pushedHumanAuth: PushedRuntimeAuth = undefined
+let humanAuthRevision = 0
 /**
  * #7290 `app_install { device }` from another machine of the owner's (`fromDevice`), as this machine's App action: a part of
  * their folder's package, sent over the device channel (`package_part`); then that package, installed here as a folder
@@ -2723,6 +2725,7 @@ function desktopClosureHost() {
       const owner = humanAuthUserId()
       if (owner !== null && owner !== ownerId) throw new ClosureFailure('wrong_local_owner')
       pushedHumanAuth = null
+      humanAuthRevision += 1
       errorSummaryConsent.identityChanged()
       projectionDeviceRuntime.invalidate()
       await nativeFiles.ownerChanged(null)
@@ -2756,13 +2759,20 @@ registerErrorSummaryReporting({
 })
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
-  set: (auth) => { pushedHumanAuth = auth; errorSummaryConsent.identityChanged() },
+  set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
   revoke: () => projectionDeviceRuntime.invalidate(),
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,
   enter: sessionLifeEnter,
   changed: onHumanAuthSessionChanged,
+  prepareChange: SERVER_MODE ? undefined : createClosureAuthChange({
+    ready: () => desktopClosureReady.promise,
+    fence: desktopClosureHost,
+    source: () => ({ ownerId: humanAuthUserId(), generation: humanAuthRevision }),
+    leave: (source, next, qualify) => sessionLifeBooted
+      ? bootedSessionLife().leaveForAuthChange(source, next, qualify) : qualify(),
+  }),
   async mutate(nextOwner, operation) {
     if (SERVER_MODE) return operation()
     await desktopClosureReady.promise
@@ -6008,7 +6018,9 @@ app.whenReady().then(async () => {
     // conversationId 为 null = 运行时整个没了,把 Chat UI 这一批全结清(终端会话那批的进程还活着,
     // 一起撤会把它们打成每轮 401)。
     emdash.setEmdashPlatformRelease((sessionId, expectedAccessSessionId, intent) =>
-      sessionpagePlatformHooks.release(sessionId, expectedAccessSessionId, intent))
+      sessionpagePlatformHooks.release(sessionId, expectedAccessSessionId, intent),
+      (sessionId, generation) => sessionpagePlatformHooks.releaseForClosure?.(sessionId, generation)
+        ?? Promise.reject(new Error('Platform closure release unavailable')))
     emdash.setEmdashPlatformCheckpoint((sessionId) => sessionpagePlatformHooks.checkpoint(sessionId))
     // Sidecar-backed session-TUI legs (codex app-server, opencode serve) deliver over their own socket and
     // publish turn boundaries back through this one relay; the host never writes to the PTY for them.

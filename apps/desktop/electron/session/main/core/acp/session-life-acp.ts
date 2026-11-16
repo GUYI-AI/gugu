@@ -18,7 +18,7 @@ import type { RuntimeFork } from '../sessions/session-life-forks';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { acpAgentStatusBridge } from './agent-status-bridge';
 import type { EmdashSessionIdentity } from './emdash-mcp-injector';
-import { prepareEmdashPlatformSession, releaseEmdashPlatformSession } from './emdash-platform-injector';
+import { prepareEmdashPlatformSession, releaseEmdashPlatformSession, releaseEmdashPlatformSessionForClosure } from './emdash-platform-injector';
 import { injectEmdashPromptDetached } from './inject-prompt';
 import {
   acpWorkerLease, callSessionStart, persistProviderSessionMissing, persistReturnedProviderSessionId,
@@ -309,7 +309,13 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
         void lateTeardown.catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
       } else if (have.capabilities) await releaseEmdashPlatformSession(sessionId); // a session on its own model asks no ticket early
     },
-    async closureDrain() { if (lateTeardown) await lateTeardown; },
+    async closureDrain() {
+      if (lateTeardown) await lateTeardown;
+      if (!facts?.platformModel) return;
+      const generation = await platformPreparation;
+      if (!generation) throw new Error('Platform release is unconfirmed');
+      await releaseEmdashPlatformSessionForClosure(sessionId, generation);
+    },
     onExit(have, cb) {
       const worker = read<Worker>(have.process);
       let fired = false;

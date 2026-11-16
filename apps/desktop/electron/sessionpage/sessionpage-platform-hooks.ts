@@ -22,7 +22,7 @@ import { createLogger } from '../lib/logger'
 import { notOnPlatform } from './connection-model-launch'
 import { platformEnvelopeKind } from '../platform-envelope'
 import { guguCatalogReasonCode } from '@gugu/session-core/session-record/contract'
-import type { EmdashPlatformInjection } from '../session/main/core/acp/emdash-platform-injector'
+import type { EmdashPlatformInjection, EmdashPlatformClosureAck } from '../session/main/core/acp/emdash-platform-injector'
 import { emdashPlatformReleaseIntent } from '../session/main/core/acp/emdash-platform-injector'
 
 /**
@@ -58,6 +58,7 @@ import {
   platformCredentialGenerationForSession,
   platformRelaySessionsRestored,
   releasePlatformModelForSession,
+  releasePlatformModelForClosure,
   releasePlatformModelsForSurface,
   type SessionpagePlatformModel,
 } from './sessionpage-platform-model'
@@ -187,6 +188,7 @@ export interface SessionpagePlatformHooks {
   /** PTY 腿的**平台那一半**:复用判定 + 解析。宿主自己决定怎么与它的 provider hook 叠。 */
   ptyPlatform(info: EmdashPtySessionpageStartInfo): Promise<{ platform: SessionpagePlatformModel; reusedHeld: boolean }>
   release(sessionId: string | null, expectedAccessSessionId?: string, intent?: 'end' | 'restart'): Promise<void>
+  releaseForClosure?(sessionId: string, generation: string): Promise<EmdashPlatformClosureAck>
   checkpoint(sessionId: string): Promise<void>
   targetForSession(sessionId: string): {
     sessionId: string
@@ -534,6 +536,7 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
       if (!platformCredentialGenerationForSession(sessionId)) sessionTargets.delete(sessionId)
     },
 
+    releaseForClosure: (sessionId, generation) => releasePlatformModelForClosure(sessionId, generation),
     checkpoint: (sessionId) => checkpointPlatformModelForSession(sessionId),
 
     targetForSession(sessionId) {
