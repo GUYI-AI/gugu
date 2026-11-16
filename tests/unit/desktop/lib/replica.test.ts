@@ -425,11 +425,12 @@ describe('PR 3 additions', () => {
     expect(heard).toContain('alice kept')
   })
 
-  it('reset and forget drop the kept copy too', async () => {
+  it('reset drops the kept copy too', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
-    const model = rm.replica({ name: 'test-drop', scope: 'account', read: async (_owner: string, id: string) => id, persist: { maxBytes: 256, maxEntries: 4 } })
-    await model.prefetch('a'); await model.prefetch('b')
-    model.forget('a')
+    let fail = false
+    const model = rm.replica({ name: 'test-drop', scope: 'account', read: async (_owner: string, id: string) => { if (fail) throw new Error('down'); return id }, persist: { maxBytes: 256, maxEntries: 4 } })
+    await model.prefetch('b')
+    fail = true
     await model.reset('b')
     expect(entriesOf('alice', 'test-drop')).toEqual([])
   })

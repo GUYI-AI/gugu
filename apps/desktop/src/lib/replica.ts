@@ -526,8 +526,6 @@ export type Replica<A extends unknown[], V> = {
   isFetching(...args: A): boolean
   /** Drop what is shown for these arguments (unknown again) and read again where it is shown; never throws. */
   reset(...args: A): Promise<void>
-  /** Forget this entry altogether (a read finishing now does not put it back); the next reader starts from unknown. */
-  forget(...args: A): void
   /**
    * Keep this entry's change feed (`watch`) running as a surface showing it would, for a reader that peeks without
    * showing (files read through the entry). Returns the release.
@@ -620,12 +618,6 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const id = holdFeed(definition.name, k[1] as string, args)
       let held = true
       return () => { if (held) { held = false; releaseFeed(id) } }
-    },
-    forget: (...args) => {
-      const k = key(...args)
-      if (!k) return
-      queryClient.removeQueries({ queryKey: k, exact: true })
-      dropKept(k)
     },
     reset: async (...args) => {
       const k = key(...args)

@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { freshReplicaAccount } from '../../../support/replicaAccount'
 
-/** A preview's bytes go through the attachment content cache: an immutable source is read once; a refusal drops it. */
+/** A preview's bytes are read and acknowledged on every open: nothing withdrawn keeps showing from an earlier read. */
 const io = vi.hoisted(() => ({ resolves: 0, acknowledged: () => Promise.resolve() as Promise<void> }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', async (original) => ({
   ...await original<object>(),
@@ -24,26 +24,15 @@ beforeEach(async () => {
   await freshReplicaAccount('owner')
 })
 
-describe('attachment content cache', () => {
-  it('reads a versioned file once for every preview that opens it', async () => {
+describe('a preview asks the server on every open (review A3)', () => {
+  it('a versioned file is resolved and acknowledged again each time a preview opens it (❌ bytes kept from an earlier open)', async () => {
     const { shownAttachmentBytes } = await import('../../../../apps/desktop/src/lib/attachmentBytes')
     const source = { kind: 'item', itemId: 'item-1', version: 3 } as const
     await shownAttachmentBytes(source)
-    await shownAttachmentBytes(source)
-    expect(io.resolves).toBe(1)
-    // Another version is other content: read for itself.
-    await shownAttachmentBytes({ kind: 'item', itemId: 'item-1', version: 4 })
+    // Withdrawn since (or the member removed): the server now refuses what it acknowledged before.
+    io.acknowledged = () => Promise.reject(new Error('withdrawn'))
+    const again = await shownAttachmentBytes(source)
     expect(io.resolves).toBe(2)
-  })
-
-  it('a refused acknowledgement drops the kept bytes: the next preview reads again', async () => {
-    const { shownAttachmentBytes } = await import('../../../../apps/desktop/src/lib/attachmentBytes')
-    const source = { kind: 'item', itemId: 'item-2', version: 1 } as const
-    io.acknowledged = () => Promise.reject(new Error('refused'))
-    const first = await shownAttachmentBytes(source)
-    await expect(first.acknowledged).rejects.toThrow('refused')
-    io.acknowledged = () => Promise.resolve()
-    await shownAttachmentBytes(source)
-    expect(io.resolves).toBe(2)
+    await expect(again.acknowledged).rejects.toThrow('withdrawn')
   })
 })

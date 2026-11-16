@@ -102,50 +102,14 @@ export type AttachmentView =
 /** 缩略图在内存里只是一个 blob:记在本次运行里,超过这么久没人再取就丢。 */
 const THUMB_GC_MS = 30 * 60_000
 
-type ShownBytes = { blob: Blob; acknowledged?: Promise<void> }
-/** Who is waiting on the bytes of a shown read (a preview's progress bar), per source: the read reports, they listen. */
-const shownProgress = new Map<string, Set<(done: number, total: number) => void>>()
-
 /**
- * The bytes a preview shows (the attachment content cache, @@@client-state-model §3: immutable content, ❌ a replica of
- * changing data): read once per source and version, kept 30 minutes after nothing shows them. A first read shows before
- * the server acknowledges it; a refused acknowledgement drops the entry, so the next open asks again.
+ * A preview's bytes, read and acknowledged by the server on every open (❌ a cache: a withdrawn file, or a member removed
+ * from the group, must not keep showing what the server would now refuse).
  */
-const attachmentShown = replica({
-  name: 'attachment-shown',
-  scope: 'account',
-  read: async (_owner: string, key: string, source: AttachmentSource): Promise<ShownBytes> => {
-    const bytes = await attachmentBytes(source, 'shown', undefined, undefined, (done, total) => { for (const hear of shownProgress.get(key) ?? []) hear(done, total) })
-    if (bytes.status !== 'ready') throw new Error(bytes.status)
-    // The server withdrew what is shown (its acknowledgement failed): the entry goes (the read finishing now does not put
-    // it back), so the next preview reads again.
-    const acknowledged = bytes.acknowledged?.catch((error: unknown) => {
-      attachmentShown.forget(key, source)
-      throw error
-    })
-    return { blob: bytes.blob, ...(acknowledged ? { acknowledged } : {}) }
-  },
-  fresh: Infinity,
-  keep: THUMB_GC_MS,
-})
-
-/** A preview's bytes through the content cache; `progress` hears the read when it is this caller's to wait for. */
-export async function shownAttachmentBytes(source: AttachmentSource, progress?: (done: number, total: number) => void): Promise<ShownBytes> {
-  // Only content that cannot change is kept (a file's version, a message's attachment, a session file by hash): a URL
-  // is read each time.
-  if (source.kind === 'url') {
-    const bytes = await attachmentBytes(source, 'shown', undefined, undefined, progress)
-    if (bytes.status !== 'ready') throw new Error(bytes.status)
-    return bytes
-  }
-  const key = sourceKeyOf(source)
-  const listeners = shownProgress.get(key) ?? new Set()
-  if (progress) shownProgress.set(key, listeners.add(progress))
-  try {
-    return await attachmentShown.fetch(key, source)
-  } finally {
-    if (progress) { listeners.delete(progress); if (!listeners.size) shownProgress.delete(key) }
-  }
+export async function shownAttachmentBytes(source: AttachmentSource, progress?: (done: number, total: number) => void): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
+  const bytes = await attachmentBytes(source, 'shown', undefined, undefined, progress)
+  if (bytes.status !== 'ready') throw new Error(bytes.status)
+  return bytes
 }
 /** 内容不会变的来源:一条消息 / 一个附件 / 群文件的某一版。 */
 const immutableSource = (source: AttachmentSource) => source.kind === 'message' || source.kind === 'attachment' || source.kind === 'item' || source.kind === 'session-file'
