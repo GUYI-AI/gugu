@@ -60,8 +60,13 @@ describe('atomic device registration client/database contract #2863', () => {
       const oldId = randomUUID()
       await withContractDatabase(async db => {
         await db.query(`INSERT INTO identity.gugu_devices(device_id,user_id,machine_id,tier,label,hostname,platform,status,capabilities)
-          VALUES ($1,$2,$3,$4,'Custom label','old','linux','offline',$5::jsonb)`, [oldId, owner, input.machine_id, input.tier,
+          VALUES ($1,$2,$3,$4,'old','old','linux','offline',$5::jsonb)`, [oldId, owner, input.machine_id, input.tier,
           JSON.stringify({ host_kind: 'desktop', terminals: [], runtimes: ['old'] })])
+        await db.query("SELECT set_config('request.jwt.claims',$1,false)", [JSON.stringify({ sub: owner, role: 'authenticated' })])
+        await db.query('SET ROLE authenticated')
+        try {
+          await db.query('SELECT identity.rename_device($1,$2)', [oldId, 'Custom label'])
+        } finally { await db.query('RESET ROLE') }
       })
       const client = { ...clientAs(owner), from: () => { throw new Error('raw registration is forbidden') } } as unknown as DeviceHeartbeatTableClient
       const cached: string[] = []
