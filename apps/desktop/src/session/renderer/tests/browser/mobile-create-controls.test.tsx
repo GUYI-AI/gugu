@@ -35,7 +35,7 @@ function Harness({ projectTask = false }: { projectTask?: boolean }) {
   const projects = [{ chatId: 'project', name: '一个用于窄屏验收的长项目名称', homes: new Map<string, string>() }]
   return <><CreateTarget machines={machines} machine={machines.find((m) => m.device.device_id === machineId)} machineLabel={(d) => d.label}
     onMachine={setMachine} projects={projects} project={projects.find((p) => p.chatId === projectId) ?? null} onProject={setProject} busy={false}
-    projectTask={projectTask ? { onFolder: () => undefined } : undefined}
+    projectTask={projectTask ? { open: false, onFolder: () => undefined } : undefined}
     configuration={{ options, selection, onChange: setSelection, models: null, modelsState: 'ready', skills, onSkills: setSkills }} />
     <div style={{ flex: '0 0 auto' }}><ChatComposer mobile editorOptions={{ inputTestId: 'chat-composer' }} onSubmit={vi.fn()} inputHeader={<SelectedCreationSkills skills={skills} onChange={setSkills} />} /></div>
   </>

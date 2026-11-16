@@ -37,7 +37,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   existingSession?: { agentName: string; model?: ExistingSessionModel }
   controlsExtra?: ReactNode
   /** An in-place project task already owns its project; its folder determines the run device. */
-  projectTask?: { onFolder: () => void }
+  projectTask?: { onFolder: () => void; open: boolean }
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const { t: tm } = useTranslation('main')
@@ -68,12 +68,16 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
       {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
+        menuExpanded={!!view && compact && view !== 'skills'}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />}
       {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
+          menuExpanded={projectTask.open}
           testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
       : menu.includes('project') && <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
+        menuExpanded={view === 'project'}
         testId="agent-watch-create-project" onClick={() => setView('project')} />}
       {menu.includes('skills') && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
+        menuExpanded={view === 'skills'}
         testId="agent-watch-create-skills" buttonRef={skillsButton} onClick={() => { setSearch(''); setView('skills') }} />}
       {controlsExtra}
     </PhoneComposerControlRow></div>
