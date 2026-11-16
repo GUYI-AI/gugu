@@ -58,7 +58,8 @@ definePhoneMarketUpdates(async () => {
   if (!result.success) throw new Error(result.error)
   return result.data!
 })
-/** phoneApps' `tell`: the list told to the replica, and the market asked again when a version changed. */
+/** phoneApps' `tell` as played here: the list told to the replica, and the market asked again when a version changed (that
+ * the store itself asks on a version change is measured on the real store, phoneApps76). */
 const tell = (versionChanged = false) => {
   tellInstalled('phone', listed())
   if (versionChanged) void marketUpdates.refresh('phone')
@@ -152,9 +153,12 @@ describe('「App」 on the phone: a row is a name and how it stands', () => {
     await harness.render(createElement(Apps))
     await until('notes offers its update', () => row('notes')?.textContent?.includes('1.1.0') === true)
     phone.marketUpdates.mockResolvedValue(NOTHING_NEWER)
-    await act(async () => { store.manifests[0]!.version = '1.1.0'; tell(true) })
-    await until('the offer is gone', () => phone.marketUpdates.mock.calls.length >= 2)
-    store.manifests[0]!.version = '1.0.0'
+    try {
+      await act(async () => { store.manifests[0]!.version = '1.1.0'; tell(true) })
+      await until('the offer is gone', () => row('notes')?.textContent?.includes('更新到') === false)
+      expect(row('notes')?.textContent).toContain('版本 1.1.0')
+      expect(phone.marketUpdates.mock.calls.length).toBeGreaterThanOrEqual(2)
+    } finally { store.manifests[0]!.version = '1.0.0' }
   })
 })
 
