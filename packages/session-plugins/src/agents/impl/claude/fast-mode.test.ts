@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { acpSessionMetaSchema } from '@gugu/session-core/acp';
 import { provider } from './index';
 import { platformModel } from './platform-model';
 import { materializeClaudeSessionBundle } from './session-bundle';
@@ -24,25 +25,24 @@ describe('Claude session Fast settings', () => {
     expect(platformModel.load(model)).toEqual({ settingsOverride: { fastMode: false } });
   });
 
-  it.each([true, false])('delivers explicit %s in native ACP startup without a platform model', (fastMode) => {
+  // The ACP leg's Fast is the `fast` config option armed at startup (SessionManager.applyInitialFastMode).
+  // `options.settings` crosses the main→runtime wire as a settings-file path; an inline document there is
+  // rejected by the wire schema before the adapter is spawned, so every native Claude session stalled.
+  it.each([
+    ['Fast on', { dialect: 'provider-env' as const, fastMode: true }],
+    ['Fast off', { dialect: 'provider-env' as const, fastMode: false }],
+    ['UltraCode with a protected document', {
+      dialect: 'provider-env' as const, fastMode: false, reasoningEffort: 'ultracode',
+      platformSettingsEnv: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' },
+    }],
+  ])('native ACP startup meta (%s) crosses the runtime wire', (_label, model) => {
     const materialized = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
-      mcpServers: [], env: {}, model: { dialect: 'provider-env', fastMode },
-      autonomy: null, promptBlocks: {}, packages: [],
+      mcpServers: [], env: {}, model, autonomy: null, promptBlocks: {}, packages: [],
     });
-    if (fastMode) expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode: true } } } });
-    else expect((materialized.acp?.meta as {claudeCode?: {options?: Record<string, unknown>}})?.claudeCode?.options).not.toHaveProperty('settings');
+    const meta = materialized.acp?.meta;
+    expect(acpSessionMetaSchema.safeParse(meta).success).toBe(true);
+    expect(meta).not.toHaveProperty(['claudeCode', 'options', 'settings']);
     expect(materialized.argsAppend).toEqual([]);
-    expect(materialized.env).toEqual({});
-  });
-
-  it('keeps ACP Fast and UltraCode together without copying protected credentials into settings', () => {
-    const materialized = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
-      mcpServers: [], env: {}, model: {
-        dialect: 'provider-env', fastMode: false, reasoningEffort: 'ultracode',
-        platformSettingsEnv: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' },
-      }, autonomy: null, promptBlocks: {}, packages: [],
-    });
-    expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { ultracode: true } } } });
     expect(JSON.stringify(materialized)).not.toContain('fixture-token');
   });
 
