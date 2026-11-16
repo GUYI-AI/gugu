@@ -31,6 +31,11 @@ export function readAttachmentCreation(key: string): SessionCreateAttachmentDraf
   return attempts.get(key)?.request ?? null
 }
 
+/** A remounted page must reconnect to the captured device, even if its default run machine changed. */
+export function readAttachmentCreationDevice(key: string): string | null {
+  return attempts.get(key)?.deviceId ?? null
+}
+
 export function completeAttachmentCreation(key: string, request: SessionCreateAttachmentDraftRequest): void {
   const attempt = attempts.get(key)
   if (attempt?.request === request && attempt.result?.attachmentDraft.state === 'admitted') attempts.delete(key)

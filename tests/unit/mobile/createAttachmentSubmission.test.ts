@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import type { SessionCreateAttachmentDraftResult } from '@gugu/session-core/session-record/creation-attachment-protocol'
-import { completeAttachmentCreation, readAttachmentCreation, submitAttachmentCreation,
+import { completeAttachmentCreation, readAttachmentCreation, readAttachmentCreationDevice, submitAttachmentCreation,
   type CreationAttachmentPorts } from '../../../apps/desktop/src/mobile/agent-watch/create-attachment-submission'
 
 function fixture(key: string) {
@@ -37,6 +37,7 @@ it('creates a file-only first turn, places all original files, then admits the o
     placements: [expect.objectContaining({ attachmentId: 'one.txt' }), expect.objectContaining({ attachmentId: 'two.txt' })] }))
   completeAttachmentCreation(input.key, receipt.request)
   expect(readAttachmentCreation(input.key)).toBeNull()
+  expect(readAttachmentCreationDevice(input.key)).toBeNull()
 })
 
 it('retains the same task, File and per-file placement after a partial upload failure', async () => {
@@ -84,6 +85,8 @@ it('does not move an uncertain task to another device or edited draft', async ()
   const { input, ports } = fixture('retarget')
   vi.mocked(ports.create).mockRejectedValueOnce(new Error('host reply lost'))
   await expect(submitAttachmentCreation(input)).rejects.toThrow('host reply lost')
+  expect(readAttachmentCreationDevice(input.key)).toBe('device')
+  expect(readAttachmentCreationDevice(input.key + ':other-owner')).toBeNull()
   await expect(submitAttachmentCreation({ ...input, deviceId: 'other-device' })).rejects.toThrow('previous attachment task')
   await expect(submitAttachmentCreation({ ...input, request: { ...input.request, prompt: 'changed' } })).rejects.toThrow('previous attachment task')
   expect(ports.create).toHaveBeenCalledTimes(1)

@@ -12,6 +12,7 @@ import {
   reconcileModel,
   selectHarness,
   selectedModelName,
+  submittedCreationSelection,
 } from '@/mobile/agent-watch/create-session-form'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 
@@ -190,4 +191,12 @@ describe('phone creation in the shared form', () => {
     const unreadable = { ...phone, harnesses: [{ ...phone.harnesses[0]!, chatAvailable: false }] }
     expect(createBlocker(unreadable, defaultSelection(unreadable))).toBe('no_usable_harness')
   })
+})
+
+it('keeps the submitted native model, permission, reasoning and explicit Fast intent while retrying', () => {
+  expect(submittedCreationSelection({ harness: 'codex', prompt: '', model: 'native-original', permissionMode: 'read-only', effort: 'high', fastMode: true }))
+    .toEqual({ harness: 'codex', model: 'native-original', permissionMode: 'read-only', effort: 'high', fastMode: true })
+  expect(submittedCreationSelection({ harness: 'claude', prompt: '', fastMode: false }))
+    .toEqual({ harness: 'claude', model: null, permissionMode: null, effort: null, fastMode: false })
+  expect(submittedCreationSelection({ harness: 'pi', prompt: '' })).not.toHaveProperty('fastMode')
 })

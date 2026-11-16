@@ -48,7 +48,7 @@ import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draf
 import { createAttachmentDraftAdapter } from './create-attachment-adapter'
 import { creationThinking } from './creation-thinking'
 import { creationAttachmentPorts } from './create-attachment-rpc'
-import { completeAttachmentCreation, readAttachmentCreation, submitAttachmentCreation } from './create-attachment-submission'
+import { completeAttachmentCreation, readAttachmentCreation, readAttachmentCreationDevice, submitAttachmentCreation } from './create-attachment-submission'
 import './task-flow-catalog'
 import {
   createBlocker,
@@ -56,6 +56,7 @@ import {
   initialSelection,
   lastUsedDropped,
   reconcileModel,
+  submittedCreationSelection,
   toSessionSummary,
   type CreateSelection,
   type LastUsedItem,
@@ -105,10 +106,13 @@ export function CreateSessionPage({
   const rows = useMemo(() => createMachines(project, machines), [project, machines])
   const runKey = project?.chatId ?? ''
   const { machine: machineId, pick } = useProjectRunMachine(runKey, runCandidates(rows, project), project?.chatId)
-  const machine = rows.find((row) => row.device.device_id === machineId)
+  const submittedDeviceId = ownerId ? readAttachmentCreationDevice(mobileCreationDraftKey(ownerId)) : null
+  const machine = rows.find((row) => row.device.device_id === (submittedDeviceId ?? machineId))
   const previousMachine = useRef<typeof machine>(undefined)
+  const previousOwner = useRef(ownerId)
+  if (previousOwner.current !== ownerId) { previousOwner.current = ownerId; previousMachine.current = undefined }
   if (machine) previousMachine.current = machine
-  const editingMachine = machine ?? previousMachine.current
+  const editingMachine = machine ?? (submittedDeviceId && previousMachine.current?.device.device_id !== submittedDeviceId ? undefined : previousMachine.current)
   const target = (busy: boolean, configuration?: CreationConfiguration) => (
     <CreateTarget projects={projects} project={project} onProject={setProjectKey} machines={rows} machine={machine} onMachine={pick} machineLabel={machineLabel}
       conversationKey={`create:${ownerId ?? 'signed-out'}:${taskGroup?.chatId ?? ''}`}
@@ -218,7 +222,7 @@ function CreateOnMachine({
         modelTouched.current = attempt !== null
         setPhoneAttempt(attempt && !('attachments' in attempt) ? attempt : null)
         setOptionCatalog({ key: catalogKey, value: next })
-        setSelection(attempt ? { ...initialSelection(next), harness: attempt.harness, model: attempt.model ?? null } : initialSelection(next))
+        setSelection(attempt ? submittedCreationSelection(attempt) : initialSelection(next))
       })
       .catch((err) => { if (!cancelled) setOptionsError(describe(err)) })
     return () => { cancelled = true }
@@ -241,11 +245,13 @@ function CreateOnMachine({
         if (cancelled) return
         setModelCatalog({ key: catalogKey, value: next })
         setModelsState('ready')
-        setSelection((current) => reconcileModel(current, next, modelTouched.current, options?.lastUsed))
+        const attempt = ownerId ? readAttachmentCreation(mobileCreationDraftKey(ownerId))
+          ?? (phone ? readPhoneSessionCreate(ownerId, device.device_id) : null) : null
+        setSelection((current) => attempt ? submittedCreationSelection(attempt) : reconcileModel(current, next, modelTouched.current, options?.lastUsed))
       })
       .catch(() => { if (!cancelled) setModelsState('failed') })
     return () => { cancelled = true }
-  }, [device.device_id, online, harness, model, reloadKey, phone, options, catalogKey])
+  }, [device.device_id, online, harness, model, reloadKey, phone, options, catalogKey, ownerId])
 
   const blocker = options ? createBlocker(options, selection) : null
   const readingModelDefault = !modelTouched.current && (!models || models.harness !== harness) && modelsState !== 'failed'

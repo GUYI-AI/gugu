@@ -5,6 +5,7 @@ import type {
   SessionpagePermissionMode,
   SessionpageSessionCreateModels,
   SessionpageSessionCreateOptions,
+  SessionpageSessionCreateRequest,
   SessionpageSessionCreateResult,
   SessionpageSessionSummary,
 } from '@gugu/session-core/session-record/contract'
@@ -33,6 +34,12 @@ export type CreateSelection = {
   /** 推理档 id(目录 efforts 里的);null = 引擎默认。换 harness 必清。 */
   effort: string | null
   fastMode?: boolean
+}
+
+/** An unconfirmed task keeps its submitted options; a new default/catalog cannot rewrite that intent. */
+export function submittedCreationSelection(request: SessionpageSessionCreateRequest): CreateSelection {
+  return { harness: request.harness, model: request.model ?? null, permissionMode: request.permissionMode ?? null,
+    effort: request.effort ?? null, ...(request.fastMode !== undefined ? { fastMode: request.fastMode } : {}) }
 }
 
 /**
