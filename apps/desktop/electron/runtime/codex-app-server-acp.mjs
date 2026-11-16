@@ -111,6 +111,14 @@ const declaredContextWindow = configuredContextWindow()
  * 不污染用户的会话库。
  *
  * 值**原样透传**,❌ 不规范化大小写:实测默认那条报的是 `OpenAI`,而 resume 收的就是这个串。
+ *
+ * ## 跨计费路不再走 resume
+ *
+ * 新版 codex 不许在 resume 时换 provider(`config_manager.rs` `load_for_resume`:「Cannot change this
+ * thread's model provider from … on resume」,-32600)。所以宿主跨计费路重开时不再 resume 原线程,
+ * 而是开新线程(codex descriptor `sourceChangeSession: 'replace'`)。这里仍带上这个进程的 provider:
+ * 同路时它与 rollout 里那条相同、不改变什么;万一某条路径仍跨路 resume,codex 会响亮拒绝,
+ * ❌ 不会悄悄沿用 rollout 里那条 provider、拿错的凭据跑。
  */
 let processModelProvider = null
 let processModelProviderKnown = false

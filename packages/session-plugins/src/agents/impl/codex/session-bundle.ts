@@ -180,7 +180,10 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      // A Codex thread keeps the provider it was created on: app-server refuses `thread/resume` under
+      // another one ("Cannot change this thread's model provider … on resume", codex-rs
+      // `config_manager.rs` `load_for_resume`). A cross-route reload therefore opens a new thread.
+      sourceChangeSession: 'replace',
     },
     'app-server': {
       delivery: 'credential-proxy',
