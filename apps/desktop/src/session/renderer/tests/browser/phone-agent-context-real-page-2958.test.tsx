@@ -38,7 +38,7 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme
 })
 
-for (const width of [360, 390]) for (const theme of ['light', 'dark']) {
+for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
   it(`${width}/${theme}: actual Agent route and identity follow distinct IDs and a live rename`, async () => {
     await page.viewport(width, 844); setLocalePreference('zh-CN')
     writeThemePreference(theme); document.documentElement.setAttribute('data-phone-shell', '')
