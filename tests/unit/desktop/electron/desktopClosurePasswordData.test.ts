@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { syncDirectory } from '../../../../apps/desktop/electron/password-vault/sync'
@@ -10,7 +10,7 @@ const roots: string[] = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true }) })
 describe('native closed-account password directories', () => {
   it('removes the actual vault and sync key roots for A, including temporary writes, while preserving B', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'closure-password-data-')); roots.push(root)
+    const root = await mkdtemp(join(await realpath(tmpdir()), 'closure-password-data-')); roots.push(root)
     for (const owner of [A, B]) {
       await mkdir(join(root, owner), { recursive: true }); await writeFile(join(root, owner, 'vault'), owner)
       await mkdir(syncDirectory(root, owner), { recursive: true })
@@ -25,7 +25,7 @@ describe('native closed-account password directories', () => {
     await eraseClosedAccountPasswordData(root, A)
   })
   it('refuses an alias in the sync account root and does not erase its B target', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'closure-password-alias-')); roots.push(root)
+    const root = await mkdtemp(join(await realpath(tmpdir()), 'closure-password-alias-')); roots.push(root)
     await mkdir(syncDirectory(root, B), { recursive: true }); await writeFile(join(syncDirectory(root, B), 'key'), 'B')
     await symlink(syncDirectory(root, B), syncDirectory(root, A), 'dir')
     await expect(eraseClosedAccountPasswordData(root, A)).rejects.toThrow('alias')

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
@@ -18,7 +18,7 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const roots: string[] = []
 afterEach(async () => { io.beforeWrite = undefined; for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 async function fixture(rpc: (name: string) => Promise<unknown>) {
-  const root = await mkdtemp(join(tmpdir(), 'closure-sync-')); roots.push(root)
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'closure-sync-')); roots.push(root)
   const key = randomBytes(32)
   const sync = new VaultSync({ root: syncDirectory(root, A), ownerId: A, deviceId: 'fixture-device', changed() {}, rpc,
     keys: { verifyPerson: async () => {}, wrap: async (bytes, binding) => JSON.stringify(seal(key, bytes, binding)),
