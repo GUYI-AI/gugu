@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { hashKey, notifyManager } from '@tanstack/react-query'
+import { notifyManager } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
