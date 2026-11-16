@@ -29,7 +29,8 @@ export function DesktopLiveWindow({ source, sources = [source], state, connected
     const body = element.closest('[data-live-window-conversation]');
     let composer: Element | undefined;
     const measure = () => {
-      const next = [...body?.querySelectorAll('[data-chat-composer-placement], [data-chat-bottom-dock], [data-region="composer"]') ?? []]
+      const next = ['[data-chat-composer-placement]', '[data-chat-bottom-dock]', '[data-region="composer"]']
+        .flatMap(selector => [...body?.querySelectorAll(selector) ?? []])
         .find(candidate => candidate.getBoundingClientRect().height > 0);
       if (next !== composer) { if (composer) observer.unobserve(composer); composer = next; if (composer) observer.observe(composer); }
       const box = element.getBoundingClientRect();

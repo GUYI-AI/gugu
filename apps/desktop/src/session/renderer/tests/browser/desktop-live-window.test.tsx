@@ -6,6 +6,8 @@ import '@/styles/tokens.css';
 import '@renderer/index.css';
 import { DesktopLiveWindow } from '../../features/live-window/DesktopLiveWindow';
 import { LiveWindowModel } from '../../features/live-window/model';
+import { AgentConversationView } from '@renderer/lib/chat/agent-conversation-view';
+import { loadChatUi } from '@renderer/lib/chat/chat-transcript';
 
 let root: Root | null = null, host: HTMLDivElement | null = null;
 afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; });
@@ -75,5 +77,37 @@ it('keeps top Browser and Computer tabs in the small and enlarged picture', asyn
     await vi.waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
     const box = host.querySelector('[data-live-window-picture]')!.getBoundingClientRect(), size = model.getSnapshot().source!.size!;
     expect(Math.abs(box.width - box.height * size.width / size.height)).toBeLessThan(1 / 32);
+  }
+});
+
+it('measures the shared composer inside the full-height composer region', async () => {
+  await page.viewport(1440, 960);
+  const { createChatContext, createChatState } = await loadChatUi();
+  const context = createChatContext({ locale: () => 'en-US' });
+  const chat = createChatState(context);
+  const source = { id: 'web', kind: 'browser' as const, deviceId: 'device', sessionId: 'task', agentId: 'agent',
+    title: 'Page', size: { width: 1280, height: 900 }, status: 'operating' as const };
+  const model = new LiveWindowModel('desktop');
+  model.activate({ conversationId: 'chat', deviceId: 'device', sessionId: 'task', agentId: 'agent', privateAgentChat: true, shown: true });
+  model.observe(model.getSnapshot().context!, [source]);
+  host = document.createElement('div'); host.className = 'gugu-skin emlight'; host.style.cssText = 'position:relative;width:1000px;height:800px';
+  document.body.append(host); root = createRoot(host);
+  try {
+    root.render(<div data-live-window-conversation style={{ position: 'relative', height: '100%' }}>
+      <div data-region="composer" style={{ position: 'relative', height: '100%' }}>
+        <AgentConversationView context={context} state={chat} composerPlacement="bottom" style={{ position: 'absolute', inset: 0 }}
+          composerContent={<div style={{ height: 118 }}><textarea aria-label="Reply" /></div>} />
+      </div>
+      <DesktopLiveWindow source={{ ...source, picture: <div /> }} state={model.getSnapshot().presentation!} dispatch={action => model.dispatch(action)} />
+    </div>);
+    await vi.waitFor(() => {
+      const composer = host!.querySelector('[data-chat-composer-placement="bottom"]')?.getBoundingClientRect();
+      expect(composer?.height ?? 0).toBeGreaterThanOrEqual(118);
+      const picture = host!.querySelector('[data-live-window="floating"]')?.getBoundingClientRect();
+      expect(picture?.width ?? 0).toBe(240);
+      expect(picture!.bottom).toBeLessThanOrEqual(composer!.top - 15);
+    });
+  } finally {
+    root.unmount(); root = null; chat.dispose(); context.dispose();
   }
 });
