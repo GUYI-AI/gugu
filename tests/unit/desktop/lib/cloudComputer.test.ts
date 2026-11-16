@@ -9,7 +9,6 @@ import {
   cloudComputerPollMs,
   cloudComputerWatchMs,
   cloudComputerProvisionSteps,
-  deviceNeedsWake,
   withCloudComputerPresence,
 } from '@/lib/cloudComputer'
 import { deviceRowModel } from '@/lib/deviceRowModel'
@@ -132,7 +131,6 @@ describe('休眠中 ≠ 离线', () => {
     expect(isDeviceSelectable(device('cloud', { cloud_computer: 'asleep' }))).toBe(true)
     expect(isDeviceSelectable(device('cloud', { cloud_computer: 'waking' }))).toBe(true)
     expect(isDeviceSelectable(device('box'))).toBe(false)
-    expect(deviceNeedsWake(device('cloud', { cloud_computer: 'awake', is_online: true }))).toBe(false)
   })
 })
 

@@ -35,10 +35,8 @@ function isBodyRow(value: unknown): value is BodyRow {
 
 export function createAssistantPanelBodies(input: { store: () => Promise<AgentWatchLocalStore>; active: (owner: string) => boolean }) {
   const rows = new Map<string, BodyRow>()
-  const listeners = new Set<() => void>()
   let stamp = 0
   let tail = Promise.resolve()
-  const notify = () => { for (const listener of [...listeners]) listener() }
   const persist = (run: (store: AgentWatchLocalStore) => Promise<void>) => { tail = tail.then(async () => run(await input.store())).catch(() => undefined) }
   const remove = (key: string) => { rows.delete(key); persist((store) => store.delete('meta', key)) }
   /**
@@ -48,11 +46,9 @@ export function createAssistantPanelBodies(input: { store: () => Promise<AgentWa
   let loading: Promise<void> | null = null
   const load = () => loading ??= input.store().then((store) => store.readAll('meta')).then((saved) => {
     for (const row of saved) if (isBodyRow(row) && !rows.has(row.key)) { rows.set(row.key, row); stamp = Math.max(stamp, row.savedAt) }
-    notify()
   }).catch(() => undefined)
   return {
     get ready() { return load() },
-    subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener) } },
     peek(owner: string, assistant: string, item: AssistantPanelItem): Uint8Array | undefined {
       void load()
       if (!input.active(owner)) return undefined
@@ -76,7 +72,6 @@ export function createAssistantPanelBodies(input: { store: () => Promise<AgentWa
         total -= old.bytes
         remove(old.key)
       }
-      notify()
     },
     /** Bodies of items no longer listed (a newer snapshot dropped or replaced them) leave. */
     forgetUnlisted(owner: string, assistant: string, snapshot: AssistantPanelSnapshot): void {

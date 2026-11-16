@@ -3,7 +3,6 @@ import {
   CloudComputerWakeError,
   CLOUD_COMPUTER_WAKE_TIMEOUT_MS,
   cloudComputerFailureKind,
-  cloudComputerNeedsWake,
   cloudComputerOverdue,
   cloudComputerPresence,
   isCloudComputerNotOpen,
@@ -89,10 +88,7 @@ export function cloudComputerPollMs(snapshot: CloudComputerSnapshot | null, devi
   return null
 }
 
-/**
- * 挂着的界面多久再问一次:按此刻读到的值定(❌ 一个手写的轮询 effect)。设备行(「醒了的那台上线没有」)这一刻从设备读数里取:
- * 只为定间隔,❌ 画。窗口在后台时 react-query 不按间隔读,回到前台那一下 `refreshOnFocus` 会问。
- */
+/** 挂着的界面多久再问一次,按此刻读到的值定;设备行(「醒了的那台上线没有」)只为定间隔取一刻,❌ 画。 */
 export function cloudComputerRefreshMs(value: CloudComputerState | undefined): number | false {
   if (!value?.available) return false
   return cloudComputerPollMs(value.snapshot, readCachedDevices()) ?? cloudComputerWatchMs(value.snapshot) ?? false
@@ -112,7 +108,7 @@ export function useCloudComputer(): Reading<CloudComputerState> {
   return useReplica(cloudComputer, [])
 }
 
-/** The reading changed (a read, a write, an account switch): for logic outside React (a link's reachability). */
+/** For logic outside React (a link's reachability). */
 export function subscribeCloudComputer(listener: () => void): () => void {
   return cloudComputer.subscribe([], () => listener())
 }
@@ -133,8 +129,6 @@ export function cloudFailureOf(reading: Reading<CloudComputerState>): CloudCompu
 export function canSetUpCloudAssistant(reading: Reading<CloudComputerState>): boolean {
   return reading.state === 'value' && reading.value.available && reading.error === null
 }
-
-// ── 叫醒被拒(④ 瞬时状态,属于账号:换号 / 登出清空) ──────────────────────────────────────────────────────────────
 
 /**
  * 叫醒被管家拒了(积分用完 / 会员到期 / 没有这项权益)的那几台:它收回着、却醒不来 —— 它上面的 agent ❌ 当「收回着、有事自己醒」
@@ -160,8 +154,6 @@ export function useWakeRefusal(snapshot: CloudComputerSnapshot | null): { device
   return deviceId ? { deviceId, kind: refusals[deviceId]! } : null
 }
 
-// ── 账号边界:换号 / 登出时停掉在途的叫醒、清掉叫醒被拒 ──────────────────────────────────────────────────────────
-
 /** 换账号时停掉在途的叫醒(❌ 拿新账号的 /state 接着等旧账号的那台)。 */
 let wakeAbort = new AbortController()
 type ConnectionWake = { promise: Promise<void>; abort: AbortController; users: number; settled: boolean }
@@ -182,8 +174,6 @@ export function followCloudComputerAccount(event: string, userId: string | null)
 }
 
 observeRendererSession(({ event, session }) => followCloudComputerAccount(event, session?.user.id ?? null))
-
-// ── 动作 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** 管家拒绝叫醒的那几类:权益 / 积分的事,再叫也一样,直到人去续费 / 充值。 */
 const WAKE_REFUSALS: ReadonlySet<CloudComputerFailureKind> = new Set(['plan_required', 'credits_exhausted', 'membership_expired'])
@@ -334,11 +324,6 @@ export function wakeAndWaitOnline(deviceId: string, deps: { isOnline: (deviceId:
     shared.promise.then(() => finish(resolve), error => finish(() => reject(error)))
     if (deps.signal!.aborted) onAbort()
   })
-}
-
-/** 这一行是不是要先叫醒的云电脑(睡着 / 正在醒)。 */
-export function deviceNeedsWake(device: Pick<Device, 'cloud_computer'> | null | undefined): boolean {
-  return cloudComputerNeedsWake(device?.cloud_computer ?? null)
 }
 
 export type CloudComputerStepStatus = 'pending' | 'running' | 'done'
