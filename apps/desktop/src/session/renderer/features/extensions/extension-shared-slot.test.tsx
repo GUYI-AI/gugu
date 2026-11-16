@@ -6,8 +6,8 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const store = vi.hoisted(() => ({ claim: vi.fn(() => 'token'), release: vi.fn() }));
-vi.mock('./extension-view-store', () => ({ extensionViewStore: store }));
+const store = vi.hoisted(() => ({ claim: vi.fn(() => 'token'), release: vi.fn(), paintedPages: new Set<string>() }));
+vi.mock('./extension-view-store', async (original) => ({ ...await original<object>(), extensionViewStore: store }));
 vi.mock('./extension-tab-toolbar', () => ({ ExtensionTabToolbar: () => null }));
 vi.mock('@/lib/taskConversation', () => ({
   useTaskConversation: (id: string | null) => id ? 'private-chat' : null,

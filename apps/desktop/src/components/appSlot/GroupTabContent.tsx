@@ -18,8 +18,7 @@ import { availableInstallOffers, type AppInstallOffer, type MarketOffer } from '
 import { groupUpdateFor } from '../../session/shared/extensions/app-card-state'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { groupPageSlot, isFolderItem, isUnresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { LoadingIndicator } from '../../lib/loading/LoadingIndicator'
-import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
+import { PageLoading } from '../../lib/loading/PageLoading'
 import { askFileOpen, closeChatTab, closeUnresolved, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
@@ -436,9 +435,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       <AppPeekSlot sessionId={null} tabId={slot} narrow={mobile}>
         {/* Asked for, its host not answered yet: the tab is up, the page waits (`unresolvedItem`), as a preview loading does. */}
         {isUnresolvedItem(item) ? (
-          <div className="flex h-full items-center justify-center" data-testid="group-app-slot-opening">
-            <LoadingIndicator ariaLabel={translateSessionMessage('task.loading')} />
-          </div>
+          <div className="contents" data-testid="group-app-slot-opening"><PageLoading /></div>
         ) : null}
         {item.file && (!mobile || visible !== false) ? <MessageFilePreview fill tabbed={tabbed} mobile={mobile} message={item.message} onForward={onForward} file={{ kind: 'file', document: item.file.document, fileName: item.fileName ?? item.title, mimeType: item.file.contentType, sizeBytes: item.file.size, source: { kind: 'item', itemId: item.itemId!, version: item.file.version } }} onBack={mobile || backIsPanel ? back : undefined} onClose={close} /> : null}
         {desktop ? item.file || !kind ? null : (
@@ -455,8 +452,9 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
             {offerUnknown || offerFolds ? <div className="min-h-0 flex-1" data-testid="group-app-slot-raw-folded" /> : null}
             {/* What 「返回」 reaches stays as it was, hidden (G2) — a frame, unlike a desktop page, is not kept elsewhere. */}
             {frames.map((entry) => (
+              // Its own box: the loading mark over its frame covers the frame, not the page's header.
+              <div key={entry.pageKey} hidden={!entry.current} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <PhoneAppFrame
-                key={entry.pageKey}
                 chatId={chatId}
                 kind={entry.item.kind!}
                 itemId={entry.item.itemId}
@@ -465,6 +463,8 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
                 navigation={entry.current ? navigation : { canBack: false, canForward: false }}
                 onNavigate={(delta) => entry.current && pane ? pane.go(tabId, delta) : Promise.resolve(false)}
                 onOpenWith={(detail) => onOpenWith(detail, tabId)}
+                // Its document not painted yet: the same loading mark as the waiting page, over the blank frame.
+                placeholder={<PageLoading overlay />}
                 // Its file's waiting page as this tab's next page, the shell's waiting tab — or taken back (main's on the desktop).
                 onOpening={(file) => {
                   if (file.withdrawn) { closeUnresolved(chatId, file.itemId); return false }
@@ -476,6 +476,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
                 testId="group-app-frame"
                 missingTestId="group-app-slot-missing"
               />
+              </div>
             ))}
           </>
         )}

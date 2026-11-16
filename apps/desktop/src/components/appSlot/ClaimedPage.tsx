@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { extensionViewStore } from '../../session/renderer/features/extensions/extension-view-store'
 import { PeekCovered } from './peekCovered'
+import { UntilPagePainted } from '../../session/renderer/features/extensions/until-page-painted'
 import type { PreparedChatFile } from '../../session/shared/extensions/app-runtime-protocol'
 
 /** What in an ancestor can hide the slot without moving or resizing it (`RETAINED_SURFACE_HIDDEN_STYLE`). */
@@ -71,7 +72,7 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
         <p className="!p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]" data-testid="group-app-slot-no-page">
           {t('chatArea.openWith.unavailable')}
         </p>
-      ) : null}
+      ) : <UntilPagePainted kind={kind} place={{ chatId, tabId: slotId, ...(itemId ? { itemId } : {}) }} />}
     </div>
   )
 })

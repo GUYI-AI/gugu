@@ -4,6 +4,7 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { AppPeekSlot } from '@/components/appSlot/AppPeekSlot';
 import { ExtensionTabToolbar } from './extension-tab-toolbar';
 import { extensionViewStore } from './extension-view-store';
+import { UntilPagePainted } from './until-page-painted';
 import { useTaskConversation, useTaskProjectChat } from '@/lib/taskConversation';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
@@ -63,7 +64,9 @@ export function ExtensionSharedSlot({
       {/* What the page opens beside it (G1) goes in this slot too: side by side, or over it when narrow. */}
       <AppPeekSlot sessionId={sessionId ?? null} tabId={tabId}>
         {/* The page takes this box's corners too (page-corners.ts): a place that rounds it rounds the page. */}
-        <div ref={slotRef} className="min-h-0 flex-1 bg-background" data-extension-slot="" />
+        <div ref={slotRef} className="min-h-0 flex-1 bg-background" data-extension-slot="">
+          <UntilPagePainted kind={tabKind} place={{ ...(sessionId ? { sessionId } : {}), ...(chatId ? { chatId } : {}), ...(itemId ? { itemId } : {}), ...(perSession ? { perSession } : {}), tabId }} />
+        </div>
       </AppPeekSlot>
     </div>
   );

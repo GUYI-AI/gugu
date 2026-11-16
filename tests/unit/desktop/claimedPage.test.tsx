@@ -4,8 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const store = vi.hoisted(() => ({ claim: vi.fn(() => 1), release: vi.fn() }));
-vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store', () => ({ extensionViewStore: store }));
+const store = vi.hoisted(() => ({ claim: vi.fn(() => 1), release: vi.fn(), paintedPages: new Set<string>() }));
+vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store', async (original) => ({ ...await original<object>(), extensionViewStore: store }));
 vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
   installedExtensionsStore: { isLoaded: false, residentTabContributions: [] },
 }));

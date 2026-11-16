@@ -341,7 +341,8 @@ export const ExtensionPage = observer(function ExtensionPage({
       let changed: ReturnType<typeof setTimeout> | undefined;
       let frame = 0;
       const painted = () => {
-        if (webviewRef.current !== element || !claimOf()?.widget) return;
+        // Any page, not only a widget: until its first paint its slot shows through (a loading mark, a widget's snapshot).
+        if (webviewRef.current !== element) return;
         clearTimeout(fallback);
         paintedRef.current = true;
         if (pageKey) extensionViewStore.pagePainted(pageKey);
@@ -354,7 +355,8 @@ export const ExtensionPage = observer(function ExtensionPage({
         guestBinding.ready(element.getWebContentsId());
         guestReadyRef.current = element;
         aimAt(claimOf());
-        if (claimOf()?.widget) fallback = setTimeout(painted, 3_000);
+        // A page that never says it painted is shown anyway after three seconds.
+        fallback = setTimeout(painted, 3_000);
       };
       // guest 崩了:旧的 webContents id 作废,绑定也作废。重载一次,dom-ready 会再来一遍、重新 bind;
       // ❌ 不能留着一个死 id 等下一次认领去 retarget —— 那只会换来一条 warn 和一格永远的空白。
@@ -539,8 +541,9 @@ export const ExtensionPage = observer(function ExtensionPage({
 
   if (!surface && !managed) return null;
   const manifest = installedExtensionsStore.manifestFor(extensionId);
-  // A widget's page stays clear until it has painted: its slot's snapshot shows through, not a blank box.
-  const unpainted = !inline && !!claimOf()?.widget && (!pageKey || !extensionViewStore.paintedPages.has(pageKey));
+  // A page stays clear until it has painted: what its slot draws meanwhile shows through (a tab's loading mark, a widget's
+  // snapshot), not a blank box. A host-drawn page (settings) has no guest to wait for.
+  const unpainted = !inline && !managed && (!pageKey || !extensionViewStore.paintedPages.has(pageKey));
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}

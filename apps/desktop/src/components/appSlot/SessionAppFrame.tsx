@@ -2,6 +2,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { APP_OPEN_WITH_EVENT, WORKSPACE_APP_ID, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { AppPeekSlot } from './AppPeekSlot'
 import { PhoneAppFrame } from './PhoneAppFrame'
+import { PageLoading } from '../../lib/loading/PageLoading'
 import { useTaskConversation, useTaskProjectChat } from '@/lib/taskConversation'
 import { parseExtensionTabKind } from '../../session/shared/extensions/manifest'
 
@@ -20,9 +21,12 @@ export function SessionAppFrame({ kind, device, session }: { kind: string; devic
   return (
     // What the page opens beside it (G1) goes over it, with its back first (AppPeekSlot).
     <AppPeekSlot sessionId={null} tabId={tabId} narrow>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <PhoneAppFrame
         kind={kind}
         tabId={tabId}
+        // Its document not painted yet: the loading mark, as a chat's App page shows it.
+        placeholder={<PageLoading overlay />}
         chatId={session ? projectChat ?? conversation : null}
         {...(session && device
           ? { session: { id: session.id, deviceId: device.device_id, deviceLabel: device.label, online: device.is_online, ...(session.projectId ? { projectId: session.projectId } : {}) } }
@@ -32,6 +36,7 @@ export function SessionAppFrame({ kind, device, session }: { kind: string; devic
         testId={session ? 'session-app-frame' : 'app-page-frame'}
         missingTestId="session-app-missing"
       />
+      </div>
     </AppPeekSlot>
   )
 }

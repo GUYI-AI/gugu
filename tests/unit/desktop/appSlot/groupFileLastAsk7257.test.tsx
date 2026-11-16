@@ -7,7 +7,9 @@ import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHe
 import { APP_OPEN_WITH_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { OpenSuperseded } from '../../../../apps/desktop/src/lib/guguLinks'
 import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { askChat } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, shownPanelTab } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { groupPageSlot } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { extensionViewStore, residentPageKey, residentPlace } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store'
 import { ask, chatTabs, linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
@@ -187,5 +189,27 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     expect(loading()).toBeNull()
     expect(on('race-9')).toBe('A')
     expect(isUnresolvedItem(shownItem('race-9'))).toBe(false)
+  }, 30_000)
+
+  // The App page that took the wait's place keeps the same loading mark until its document's first paint (the resident
+  // layer keeps the page clear till then); a page painted once comes back without it.
+  it('the App page shows the loading mark until its first paint, and not again once painted', async () => {
+    const gates = holdAnswers()
+    await clickPill('race-10', 'A', gates)
+    expect(harness.container.querySelectorAll('[data-testid="page-loading"]')).toHaveLength(1)
+    await letGo(gates, 'A')
+    // Waiting page gone, App page there, the loading mark still on: never neither (React commits the swap in one render).
+    expect(harness.container.querySelector('[data-testid="group-app-slot-opening"]')).toBeNull()
+    expect(harness.container.querySelectorAll('[data-testid="page-loading"]')).toHaveLength(1)
+    const tab = shownPanelTab('race-10')!.tabId
+    const place = { chatId: 'race-10', tabId: groupPageSlot('race-10', tab), itemId: 'A' }
+    const token = extensionViewStore.claim('office.main', { ...place, element: document.createElement('div') })
+    // Its guest bound (the layer says so once the page is up): a bound page is kept while nobody looks.
+    extensionViewStore.setSurface(token, 1)
+    act(() => extensionViewStore.pagePainted(residentPageKey('office.main', residentPlace(place))))
+    expect(harness.container.querySelector('[data-testid="page-loading"]')).toBeNull()
+    extensionViewStore.release('office.main', token)
+    await harness.render(linkShell({ chatId: 'race-10' }))
+    expect(harness.container.querySelector('[data-testid="page-loading"]'), 'painted once: it comes back drawn').toBeNull()
   }, 30_000)
 })
