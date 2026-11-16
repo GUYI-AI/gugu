@@ -151,6 +151,7 @@ function SessionPill({ href, onClick, children, rest, sessionId }: DrawProps & {
   const reading = useReplica(localSessions, [])
   const session = reading.state === 'value' ? reading.value.find((row) => row.conversationId === sessionId) : undefined
   const unavailable = reading.state === 'error' || (reading.state === 'value' && !session)
+  // @@@reading-default - until the list answers, the pill shows the link's own words with no hover title; an unreadable list or a missing task is greyed above
   return <MentionPill href={href} icon={unavailable ? null : TASK_MARK} title={unavailable ? t('linkPill.unavailable') : session?.title ?? ''}
     unavailable={unavailable} onClick={onClick} rest={rest}>{session?.title ?? (unavailable ? t('linkPill.sessionUnavailable') : children)}</MentionPill>
 }
