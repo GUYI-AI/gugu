@@ -91,15 +91,15 @@ function useShownAsAssistant(appId: string | undefined, tab: string | undefined)
   return target.kind === 'app' && !!appId && target.extensionId === appId && !tab;
 }
 
-/**
- * 整页的顶栏:左边它的名字,右上角 ⧉ = 在新窗口打开(原型「它整页右上角 ⧉ = 窗口」)。⧉ 作用于这一页的内容,
- * 跟着内容走、贴窗口右缘(这页没有工作区面板那一簇),几何交给 <TabBarActionRow>,❌ 自己写 right-*。
- */
 /** The page this view shows of an App: the tab named, or its main page; null: the App has no such page here. */
 function pageOf(apps: InstalledApps, appId: string | undefined, tab: string | undefined) {
   return tab ? apps.allTabContributions.find((entry) => entry.extensionId === appId && entry.kind === `${appId}.${tab}`) ?? null : appId ? apps.mainTabOf(appId) : null;
 }
 
+/**
+ * 整页的顶栏:左边它的名字,右上角 ⧉ = 在新窗口打开(原型「它整页右上角 ⧉ = 窗口」)。⧉ 作用于这一页的内容,
+ * 跟着内容走、贴窗口右缘(这页没有工作区面板那一簇),几何交给 <TabBarActionRow>,❌ 自己写 right-*。
+ */
 const AppTitlebar = observer(function AppTitlebar() {
   const { translate } = useSessionMessages();
   const { params } = useParams('app');

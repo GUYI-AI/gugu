@@ -34,11 +34,8 @@ import { replica, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import type { SearchItem } from '@shared/core/search';
 
-/**
- * What this device's index answers for the palette's words (tasks and projects; the empty query = the newest tasks). No
- * push: a few seconds fresh, and kept a few seconds so typing back to a query draws it at once.
- */
-export const commandPaletteSearch = replica({
+/** This device's index answer for the palette's words (tasks, projects; empty query = newest tasks). No push. */
+const commandPaletteSearch = replica({
   name: 'commandPaletteSearch',
   scope: 'device',
   read: (_owner, query: string): Promise<SearchItem[]> => rpc.search.commandPalette({ query }),
@@ -71,10 +68,8 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
   const settled = debouncedQuery === search;
   const current = settled && reading.state === 'value' ? reading.value : null;
-  // The last words whose results were in: shown (dimmed after 150 ms: .gg-stale) while the next words' are on their way (review 4 Q5), ❌ the
-  // list emptied and refilled on every keystroke. View state of this palette, read through those words' own reading.
+  // The last words with non-empty results stay shown (.gg-stale) while the next words' are on their way (review 4 Q5).
   const [heldQuery, setHeldQuery] = useState<string | null>(null);
-  // Only results worth keeping in sight are held: words that found nothing hold nothing (the next words show placeholders).
   if (current && current.length > 0 && heldQuery !== debouncedQuery) setHeldQuery(debouncedQuery);
   const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });
   const results = current ?? (!commandsMode && held.state === 'value' ? held.value : null);

@@ -42,17 +42,12 @@ export interface WindowChromeState {
 // 模块级 store(④,属于这扇窗口,与账号无关)。第一次有人读时才接上,测试与没有桥的壳都不受模块加载顺序影响。
 type ChromeFacts = Omit<WindowChromeState, 'dw'>
 const chromeStores = new WeakMap<DesktopWindowBridge, SelectStore<ChromeFacts>>()
+let noBridgeFacts: ChromeFacts | null = null
 const NO_BRIDGE: Readable<ChromeFacts> = {
-  get: (() => {
-    let facts: ChromeFacts | null = null
-    return () => {
-      if (!facts) {
-        const documentLocale = typeof document === 'undefined' ? null : document.documentElement.lang
-        facts = { maximized: false, labels: hostCatalog(isResolvedLocale(documentLocale) ? documentLocale : 'zh-CN').windowChrome }
-      }
-      return facts
-    }
-  })(),
+  get: () => {
+    const documentLocale = typeof document === 'undefined' ? null : document.documentElement.lang
+    return noBridgeFacts ??= { maximized: false, labels: hostCatalog(isResolvedLocale(documentLocale) ? documentLocale : 'zh-CN').windowChrome }
+  },
   subscribe: () => () => undefined,
 }
 

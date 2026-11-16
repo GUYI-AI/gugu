@@ -98,10 +98,7 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/**
- * A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name.
- * `unknown`: an App's tab while what is installed is not known and its page has said nothing (drawn as a placeholder).
- */
+/** A panel tab's name: what its page called itself, else the App's tab title or the file's name; `unknown` = placeholder. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
   const installed = useInstalledApps(LOCAL_HOST);

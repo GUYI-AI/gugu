@@ -292,10 +292,8 @@ export function machineLibraryHost(device: LibraryRemoteDevice | null): LibraryH
 }
 
 /**
- * @@@library-host-of — the one resolver from a library host key to the host that answers for it (PR 3: a replica's `read`
- * is module level, so it asks by key, as `extensionsApiOf` does for Apps). A host is known by its key once a surface
- * shows it (`keepLibraryHost`, the provider that mounts it) or once it is built here (`local`, `machineLibraryHost`).
- * A key nobody kept is refused (❌ answered empty): a replica read for it fails loud.
+ * @@@library-host-of — the one resolver from a library host key to its host (a replica's `read` asks by key, as
+ * `extensionsApiOf` does). Known once a surface keeps it or it is built here; a key nobody kept fails loud (❌ empty).
  */
 const hostsByKey = new Map<string, LibraryHost>();
 
@@ -305,16 +303,15 @@ export function keepLibraryHost(host: LibraryHost): LibraryHost {
   return host;
 }
 
-export function libraryHostOf(hostKey: string): LibraryHost {
-  if (hostKey === LOCAL_HOST_KEY) return hostsByKey.get(hostKey) ?? LOCAL_LIBRARY_HOST;
-  const host = hostsByKey.get(hostKey);
-  if (!host) throw new Error(`No library host is kept for ${hostKey}`);
-  return host;
-}
-
 /** The host for a key if one is kept (a replica's `local` copy, which may have none yet). */
 export function peekLibraryHost(hostKey: string): LibraryHost | undefined {
   return hostKey === LOCAL_HOST_KEY ? hostsByKey.get(hostKey) ?? LOCAL_LIBRARY_HOST : hostsByKey.get(hostKey);
+}
+
+export function libraryHostOf(hostKey: string): LibraryHost {
+  const host = peekLibraryHost(hostKey);
+  if (!host) throw new Error(`No library host is kept for ${hostKey}`);
+  return host;
 }
 
 const LibraryHostContext = createContext<LibraryHost>(LOCAL_LIBRARY_HOST);

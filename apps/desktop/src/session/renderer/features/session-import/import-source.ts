@@ -58,10 +58,7 @@ export function resolveImportSource(deviceId: string, directTerminal = false): S
   return machineImportSource(deviceId, directTerminal);
 }
 
-/**
- * The confirm view's read of one session file on a machine (real turn count, first and last turns). Content of a file
- * that may change or vanish: read each time it is selected, held a minute, not pushed, not kept across restarts.
- */
+/** The confirm view's read of one session file on a machine: read each time it is selected (the file may change). */
 export const sessionImportPreview = replica({
   name: 'sessionImportPreview',
   scope: 'account',

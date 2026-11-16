@@ -45,15 +45,12 @@ export interface SearchView {
   loading: boolean
   error: Error | null
   taskIndex?: TaskTurnIndexStatus
-  /**
-   * The hits and counts shown are the previous words' while these words' are on their way (review 4 Q5): typing does not
-   * empty the list between keystrokes. The panel marks them as not this search's yet.
-   */
+  /** Hits and counts are the previous words' while these words' are on their way (review 4 Q5). */
   stale: boolean
 }
 
 /** Chat messages found in the cloud (message_search_as) for these words, in one conversation or every one. No push. */
-export const messageSearch = replica({
+const messageSearch = replica({
   name: 'messageSearch',
   scope: 'account',
   read: async (_owner, query: string, chatId: string | null): Promise<MessageRow[]> => {
@@ -65,11 +62,8 @@ export const messageSearch = replica({
   keep: 30_000,
 })
 
-/**
- * Chat messages stored on this device (the IM library's SQLite) for these words in one conversation: what answers
- * offline, so its read never waits for the network.
- */
-export const storedMessageSearch = replica({
+/** Chat messages stored on this device (SQLite) in one conversation: answers offline, never waits for the network. */
+const storedMessageSearch = replica({
   name: 'storedMessageSearch',
   scope: 'account',
   read: async (owner, query: string, chatId: string, from: string | null): Promise<MessageRow[]> => {
@@ -84,11 +78,8 @@ export const storedMessageSearch = replica({
   keep: 30_000,
 })
 
-/**
- * What was said in this device's local tasks for these words, with the index's state: read again every 2 s while the
- * index is still being prepared (hits grow as it fills), never once it is ready.
- */
-export const taskTurnSearch = replica({
+/** This device's task turns for these words, with the index state: read again every 2 s while it is still preparing. */
+const taskTurnSearch = replica({
   name: 'taskTurnSearch',
   scope: 'device',
   read: async (_owner, query: string): Promise<{ hits: TaskTurnHit[]; index: TaskTurnIndexStatus }> => {
@@ -150,12 +141,10 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const context: SearchContext = { summaries: useChatSummaries(), identities: useIdentities(), me: useSelfId(), online: useNetworkOnline() }
   const typed = useDebounce(text, 100)
   const current = useSearchView({ typed, chips }, facet, tasks, context, true)
-  // The last words (and chips) whose results were all in: shown, marked stale, while the next words' are on their way.
-  // View state of this panel (what it last showed), read through those words' own readings (`read: false`: no new read).
+  // The last words whose results were all in: shown, marked stale, while the next words' are on their way (`read: false`).
   const [held, setHeld] = useState<SearchWords | null>(null)
   const settled = current.hits !== null
-  // Only results worth keeping in sight are held (a search that found nothing, or none run yet, holds nothing: the next
-  // words draw their placeholders). Compared by content: a render may hand the same chips as a new array.
+  // Only non-empty results are held; chips compared by content (a render may hand the same chips as a new array).
   if (settled && current.hits!.length > 0 && (held?.typed !== typed || JSON.stringify(held.chips) !== JSON.stringify(chips))) setHeld({ typed, chips })
   const previous = useSearchView(held ?? { typed, chips }, facet, tasks, context, false)
   const view = !settled && held && previous.hits !== null
@@ -174,7 +163,6 @@ type SearchContext = {
 
 /** The view of one search (words and chips): every source's reading, merged. `read: false` shows what is there only. */
 function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks: boolean, { summaries, identities, me, online }: SearchContext, read: boolean): SearchView {
-  const asked = { read }
 
   const scopes: SearchChip[] = [...chips]
   let unresolved: string | null = null
@@ -204,12 +192,12 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
 
   const messagesApply = runnable && !inTask
   const turnsApply = runnable && !!query && tasks && !inChat && !from && kinds.length === 0
-  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null] : null, asked)
-  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null] : null, asked)
+  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null] : null, { read })
+  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null] : null, { read })
   const messages = localScope ? stored : cloud
   // The same words everywhere, for the line that says how many more the in: chip is hiding (the unscoped search).
-  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null] : null, asked)
-  const turns = useReplica(taskTurnSearch, turnsApply ? [query] : null, asked)
+  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null] : null, { read })
+  const turns = useReplica(taskTurnSearch, turnsApply ? [query] : null, { read })
   const storedRows = stored.state === 'value' ? stored.value : null
   useEffect(() => {
     if (!storedRows) return
@@ -221,7 +209,6 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
 
   // A source that applies and has not answered yet: the results are not known (❌ drawn as "nothing found" or a 0).
   const pending = (messagesApply && messages.state === 'unknown') || (turnsApply && turns.state === 'unknown')
-  // The rows are those of the sources that answered; one that failed adds none and `error` says so.
   const messageRows = answered(messagesApply ? [messages] : [])
   const turnHits = answered(turnsApply ? [turns] : [])
   const messageHits: SearchHit[] = messageRows.flat()
@@ -270,6 +257,5 @@ function answered<V>(readings: Reading<V>[]): V[] {
 }
 
 function errorOf(reading: Reading<unknown> | null): Error | null {
-  if (reading?.state === 'error') return reading.error
-  return reading?.state === 'value' ? reading.error : null
+  return reading?.state === 'error' || reading?.state === 'value' ? reading.error : null
 }

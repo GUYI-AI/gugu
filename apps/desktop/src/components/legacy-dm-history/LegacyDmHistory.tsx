@@ -52,10 +52,9 @@ function LegacyDmReader({ scope: owner, sessionId, mobile, onClose }: {
   const reading = useReplica(legacyDmList, owner.ownerUserId ? args : null);
   const list = reading.state === 'value' ? reading.value : null;
   // undefined = not chosen yet: a session's history with exactly one chat opens it; back (null) shows the list.
-  const [picked, setPicked] = useState<LegacyDm | null | undefined>(undefined);
+  const [picked, setSelected] = useState<LegacyDm | null | undefined>(undefined);
   const only = sessionId && list && list.rows.length === 1 && !list.after ? list.rows[0] : null;
   const selected = picked === undefined ? only : picked;
-  const setSelected = setPicked;
   const scope = list?.scope ?? null;
   const [paging, setPaging] = useState(false);
   const [pageError, setPageError] = useState<unknown>(null);

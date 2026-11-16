@@ -95,10 +95,8 @@ export type ProjectFoldersState = {
 };
 
 /**
- * One local project's folders, as the machine it lives on answers (rpc routes by projectId, lib/ipc.ts). A replica entry
- * per machine's local project: a remounted dock draws every folder it already read in its first frame, and the machines
- * are drawn in the project's member order, ❌ in the order they answer (new-agent cards went 3 → 6 and reordered).
- * Pushed by the machine (`projectFoldersChangedChannel`), so read once and refreshed by the watcher below.
+ * One local project's folders, as its machine answers (rpc routes by projectId). Drawn in member order, ❌ in the order
+ * machines answer (new-agent cards went 3 → 6 and reordered). Push-fed: refreshed by the watcher below.
  */
 export const projectFolders = replica({
   name: 'projectFolders',
@@ -112,10 +110,8 @@ export const projectFolders = replica({
 });
 
 /**
- * How many folders each machine of a project showed last, in member order: the only thing of folders kept across
- * restarts, so the first open after a restart draws every paper at once (names fill in, nothing moves, the count holds).
- * Keyed by the project's row and a hash of its members (another set of machines is another layout). Bounded: a project
- * holds at most MAX_PROJECT_FOLDERS folders, a row at most that many counts. Written as the folders settle.
+ * How many folders each member machine showed last (member order), kept across restarts so the first open draws every
+ * paper at once. Keyed by row and a hash of its members. Written as the folders settle, never read.
  */
 export const projectFolderLayout = replica({
   name: 'projectFolderLayout',
@@ -148,9 +144,7 @@ function watchMachine(machine: string | null): () => void {
   }
   return () => {
     const entry = watched.get(machine);
-    if (!entry) return;
-    entry.count -= 1;
-    if (entry.count > 0) return;
+    if (!entry || --entry.count > 0) return;
     entry.off();
     watched.delete(machine);
   };
@@ -181,8 +175,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     return () => offs.forEach((off) => off());
   }, [members]);
 
-  // A machine whose connection comes back (a cloud host waking) is asked again; so is one whose account record changed
-  // (folders attached or detached while it was away). Not a read into state: the replica holds the answer.
+  // A machine whose connection comes back, or whose account record changed while away, is asked again.
   // 读的是 mobx 里的设备行 —— 项目首页是 observer,那一份变了这里才重算。
   const connectionKey = JSON.stringify(members.map((projectId) => {
     const deviceId = machineRegistry.machineOf(projectId);
@@ -221,16 +214,12 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
 
   // What each machine answered: the count of each is what the next start draws first; a folder that appears in a
   // member's answer it did not have before (attached in another window, by an agent, undone) is the fresh one.
-  const answered = members.map((_id, index) => {
-    const reading = readings[index]!;
-    return reading.state === 'value' ? reading.value : null;
-  });
+  const answered = readings.map((reading) => (reading.state === 'value' ? reading.value : null));
   const seen = useRef<{ rowId: string; members: (ProjectFolder[] | null)[] } | null>(null);
   useEffect(() => {
     const before = seen.current?.rowId === rowId ? seen.current.members : null;
     seen.current = { rowId, members: answered };
-    // Each machine that answered gives its count; one that has not keeps the count it had (a machine offline for good
-    // must not keep the others' counts from being written).
+    // Each machine that answered gives its count; one that has not keeps its old count (❌ blocking the others' write).
     if (answered.some((list) => list !== null)) {
       const stored = layout.state === 'value' ? layout.value : null;
       const counts = answered.map((list, index) => (list ? list.length : stored?.[index] ?? null));

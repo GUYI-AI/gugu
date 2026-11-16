@@ -28,10 +28,7 @@ export type AppPromptRow = InstalledApps['appPrompts'][number] & { state: Prompt
 
 export interface PromptLibraryActions {
   prompts: PromptLibraryPrompt[];
-  /**
-   * Enabled Apps' prompts as the person sees them (`withOverrides`), hidden ones included so they can be restored; null
-   * while what is installed is not known yet.
-   */
+  /** Enabled Apps' prompts as seen (`withOverrides`), hidden ones included; null while what is installed is unknown. */
   appPrompts: AppPromptRow[] | null;
   /** 第一次读、还没读到。 */
   isLoading: boolean;

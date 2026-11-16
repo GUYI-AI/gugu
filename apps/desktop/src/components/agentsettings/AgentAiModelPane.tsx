@@ -134,8 +134,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       if (model.source === 'harness') ownOptions[model.id] = { name: model.name, description: model.description }
     }
   }
-  // The harness's own catalog is asked only when it can answer (a device, an engine, not cloud-only); while it is asked
-  // and not answered, the picker holds its place like the platform catalog does.
+  // While the harness's own catalog is asked and not answered, the picker holds its place like the platform catalog.
   const harnessUnknown = harnessReading.state === 'unknown' && Boolean(agent.device_id && engine && !cloudOnly)
   const options = (listed === null ? null : assembleComposerModelOptions(ownOptions, listed.map((model) => ({
       ...model, creditMultiplier: model.creditMultiplier ?? null, contextWindow: model.contextWindow ?? null,
@@ -143,8 +142,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const current = value === null ? null : parseSelection(value)
   const selectedOption = current === null || current.source === 'default' ? originalOption
     : current.source === 'byok' ? current.modelId : platformOptionId(current.modelId)
-  // A saved model its catalog (read) no longer lists: still the selection, named as retired — ❌ a raw id drawn as a name
-  // while the catalog is on its way (the picker is not drawn then).
+  // A saved model its catalog no longer lists: still the selection, named as retired (❌ a raw id drawn as a name).
   if (current !== null && current.source !== 'default' && !options[selectedOption]) {
     options[selectedOption] = { name: t('settings.model.retired', { model: current.modelId }) }
   }

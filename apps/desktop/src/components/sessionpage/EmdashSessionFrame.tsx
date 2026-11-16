@@ -210,10 +210,7 @@ const GUGU_SKIN_BRIDGE_CSS = `
 // electronAPI 那个名下:壳里多处拿它的真值判「是不是 Electron」)。必须在加载会话页 bundle 之前装好
 // —— bundle 的 ipc.ts 在模块求值时就取桥。
 let sessionHostClient: SessionHostWsClient | null = null
-/**
- * ④ The web shell's connection to its task host (state and endpoint), for `useSelect`: published by the one client
- * `installSessionHostBridge` makes and its state changes. Owner: this window's connection (not an account's).
- */
+/** ④ The web shell's task-host connection (state, endpoint), published by `installSessionHostBridge`. Owner: this window. */
 const hostConnection = createSelectStore<{ state: SessionHostConnectionState; endpoint: string } | null>(null)
 function installSessionHostBridge(): SessionHostWsClient | null {
   if (platform.kind === 'electron') return null

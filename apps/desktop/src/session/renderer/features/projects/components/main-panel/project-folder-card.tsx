@@ -104,11 +104,6 @@ function FrostedFront({ projectId, running, count, uid, W, paperW }: { projectId
   </>;
 }
 
-/** Redraw when an agent's avatar should be read again (its identity, its session's owner, the theme). */
-function useAvatarTick() {
-  useSelect(senderAvatarChanges, (seen) => seen);
-}
-
 function reducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 }
@@ -239,7 +234,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   touch?: boolean;
 }) {
   const { translate } = useSessionMessages();
-  useAvatarTick();
+  // Redraw when an agent's avatar should be read again (its identity, its session's owner, the theme).
+  useSelect(senderAvatarChanges, (seen) => seen);
   const [open, setOpen] = useState(false);
   const [dragover, setDragover] = useState(false);
   const [landing, setLanding] = useState(false);

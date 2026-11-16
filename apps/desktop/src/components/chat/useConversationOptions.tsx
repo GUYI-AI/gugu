@@ -14,10 +14,7 @@ import { replica, useReplica } from '@/lib/replica'
 
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
 
-/**
- * A conversation's model / effort / permission options, as its host answers them (this machine or another). No push
- * wired: read when a composer opens it (`fresh: 0`); a pick or a reload puts the options the host answered.
- */
+/** A conversation's model / effort / permission options as its host answers; no push, read on every open (`fresh: 0`). */
 const conversationOptions = replica({
   name: 'conversationOptions',
   scope: 'account',

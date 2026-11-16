@@ -1,17 +1,13 @@
-import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { replica } from '@/lib/replica';
 import type { LegacyDm, LegacyDmScope } from './data';
 
-export type LegacyDmListValue = { scope: LegacyDmScope | null; rows: LegacyDm[]; after: string | null };
-export type LegacyDmMessagesValue = { rows: MessageItem[]; beforeSeq: number | null };
+type LegacyDmListValue = { scope: LegacyDmScope | null; rows: LegacyDm[]; after: string | null };
 
 const data = () => import('./data');
 
 /**
- * The legacy DM archive (the account's whole archive, or one session's own agent's): its first page, and the pages the
- * reader asked for appended (`at(...).set`). The archive is frozen, so the entry is **never refreshed**: `fresh: Infinity`
- * and no refresh source anywhere (a refresh would drop the appended pages). Only a failed first read is read again. A
- * session with no verifiable identity has no history: `{ scope: null }`, a value.
+ * The legacy DM archive (the account's, or one session's agent's): first page plus pages appended by `at(...).set`.
+ * Frozen, so **never refreshed** (a refresh would drop the appended pages). No verifiable identity: `{ scope: null }`.
  */
 export const legacyDmList = replica({
   name: 'legacyDmList',
@@ -31,7 +27,7 @@ export const legacyDmList = replica({
 export const legacyDmMessages = replica({
   name: 'legacyDmMessages',
   scope: 'account',
-  read: async (owner: string, agentUserId: string | null, chatId: string): Promise<LegacyDmMessagesValue> => {
+  read: async (owner: string, agentUserId: string | null, chatId: string) => {
     const { readLegacyDmMessages } = await data();
     return readLegacyDmMessages({ ownerUserId: owner, ...(agentUserId ? { agentUserId } : {}) }, chatId);
   },
