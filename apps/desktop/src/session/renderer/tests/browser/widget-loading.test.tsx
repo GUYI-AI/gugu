@@ -9,7 +9,7 @@ import '@/styles/tokens.css'
 import '@renderer/index.css'
 
 const cache = vi.hoisted(() => ({ picture: null as Blob | null }))
-vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => cache.picture } }))
+vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => cache.picture, capture: () => ({ accountId: 'reader', generation: 0 }) } }))
 vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useAuth: () => ({ user: { id: 'reader' } }) }))
 vi.mock('@/store/theme', async original => ({ ...(await original<object>()), useTheme: () => ({ theme: 'light' }) }))
 vi.mock('react-i18next', async original => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key }) }))

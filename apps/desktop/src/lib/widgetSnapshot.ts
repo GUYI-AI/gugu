@@ -17,6 +17,8 @@ export const widgetSnapshot = replica({
   scope: 'account',
   networkMode: 'always',
   read: async (_owner: string, widgetId: string, theme: string, widthBucket: number): Promise<string | null> => {
+    // The picture store not bound to the account yet: not known, ❌ "no picture" remembered for the entry's life.
+    if (!widgetSnapshots.capture()) throw new Error('The widget picture store is not open for this account yet')
     const blob = await widgetSnapshots.read(widgetId, theme, widthBucket * 40)
     return blob ? widgetSnapshotDataUrl(blob) : null
   },
