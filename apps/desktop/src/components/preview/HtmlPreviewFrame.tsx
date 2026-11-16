@@ -12,7 +12,9 @@ const log = rendererLogger('html-preview');
 /** 登记一次预览的结果:拿到地址,或一句「起不来」的原因(画在预览位置上)。 */
 export type HtmlPreviewRegistration =
   | { ok: true; url: string; update: (html: string) => Promise<string>; release: () => void; assetsChanged?: (paths?: string[]) => Promise<boolean> }
-  | { ok: false; message: string };
+  | { ok: false; message: string; retryable?: true };
+
+class PreviewRegistrationRefusal extends Error {}
 
 interface HtmlPreviewFrameProps {
   fileName: string;
@@ -63,14 +65,22 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     void (async () => {
       const content = rawContentRef.current;
       const result = await queryClient.fetchQuery({
-        queryKey, gcTime: 0, retry: 3,
+        // Registration can be entirely local (IPC or a Blob URL); do not wait for an online event.
+        queryKey, gcTime: 0, networkMode: 'always',
+        retry: (failures, error) => {
+          const status = (error as { status?: number } | null)?.status;
+          const code = (error as { code?: string } | null)?.code;
+          return failures < 3 && !(error instanceof PreviewRegistrationRefusal)
+            && !(typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429)
+            && !['denied', 'not-found', 'invalid', 'server_outdated'].includes(code ?? '');
+        },
         queryFn: async ({ signal }) => {
           const result = await register(content);
           if (signal.aborted) {
             if (result.ok) result.release();
             throw signal.reason;
           }
-          if (!result.ok) throw new Error(result.message);
+          if (!result.ok) throw result.retryable ? new Error(result.message) : new PreviewRegistrationRefusal(result.message);
           return result;
         },
       });

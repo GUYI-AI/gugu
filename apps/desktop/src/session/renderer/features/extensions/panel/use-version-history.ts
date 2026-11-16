@@ -26,5 +26,5 @@ export function useVersionHistory(api: HistoryApi, extensionId: string, enabled 
   const state: Loadable<MarketVersionHistoryEntry[]> = query.data !== undefined
     ? { status: 'ready', data: query.data, error }
     : query.isError ? { status: 'error', error } : { status: enabled ? 'loading' : 'idle' };
-  return { state, retry: () => { void query.refetch(); } };
+  return { state, retry: () => { void query.refetch({ cancelRefetch: false }); } };
 }

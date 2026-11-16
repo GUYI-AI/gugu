@@ -7,6 +7,7 @@ import { FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { queryClient } from '@/lib/replica'
+import { onlineManager } from '@tanstack/react-query'
 
 const io = vi.hoisted(() => ({ bytes: vi.fn(), preview: vi.fn(), image: vi.fn(), external: vi.fn(), download: vi.fn() }))
 vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
@@ -15,9 +16,11 @@ vi.mock('@/lib/download', () => ({ downloadBlob: io.download }))
 const file: PreviewFile = { kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, source: { kind: 'message', messageId: 'missing-preview' } }
 const translate = i18n.getFixedT('zh-CN', 'messaging')
 const originalQueryOptions = queryClient.getDefaultOptions()
+const originalOnline = onlineManager.isOnline()
 describe('file preview missing-object actions', () => {
   let harness: ReturnType<typeof createReactHarness>
   beforeEach(async () => {
+    onlineManager.setOnline(true)
     queryClient.setDefaultOptions({ ...originalQueryOptions, queries: { ...originalQueryOptions.queries, retryDelay: 0 } })
     await i18n.changeLanguage('zh-CN')
     vi.stubGlobal('Blob', NodeBlob)
@@ -26,7 +29,7 @@ describe('file preview missing-object actions', () => {
     io.bytes.mockResolvedValue({ status: 'ready', blob: new Blob(['notes']) })
     harness = createReactHarness()
   })
-  afterEach(() => { harness.cleanup(); queryClient.setDefaultOptions(originalQueryOptions); vi.unstubAllGlobals() })
+  afterEach(() => { harness.cleanup(); queryClient.setDefaultOptions(originalQueryOptions); onlineManager.setOnline(originalOnline); vi.unstubAllGlobals() })
   const button = (label: string) => [...harness.container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.getAttribute('aria-label') === label)
   const download = () => button(translate('chatArea.filePreview.download'))
   const external = () => button(translate('chatArea.filePreview.openExternal'))
@@ -63,6 +66,12 @@ describe('file preview missing-object actions', () => {
     expect(io.image).not.toHaveBeenCalled()
     expect(io.external).not.toHaveBeenCalled()
     assertNoReadActions()
+  })
+  it('starts the byte reader while the window is offline', async () => {
+    onlineManager.setOnline(false)
+    await render()
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
+    expect(io.bytes).toHaveBeenCalledTimes(1)
   })
   it.each(['network', 'HTTP 403', 'HTTP 500', 'HTTP 503'])('retains an actual download retry after %s', async reason => {
     for (let attempt = 0; attempt < 4; attempt++) io.bytes.mockRejectedValueOnce(new Error(reason))

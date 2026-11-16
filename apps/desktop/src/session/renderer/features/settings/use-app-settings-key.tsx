@@ -62,7 +62,11 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
 
   return {
     settings,
-    refresh: () => appSettingsModel.refresh(key, host.key),
+    refresh: () => {
+      // A manual retry joins a read already running; cancelling a query cannot cancel its IPC request.
+      const queryKey = appSettingsModel.key(key, host.key);
+      return queryKey ? queryClient.refetchQueries({ queryKey, exact: true }, { cancelRefetch: false }) : Promise.resolve();
+    },
     /** Another machine cannot act now: offline, or its read failed (server too old / unreachable). Rows stay, controls grey. */
     unavailable: !!remote && (!remote.online || settings.state === 'error'),
     isSaving: updateMutation.isPending || resetMutation.isPending || resetFieldMutation.isPending,

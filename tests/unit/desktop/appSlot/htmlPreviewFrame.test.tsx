@@ -90,7 +90,7 @@ describe('shared HTML frame lifecycle', () => {
 
   it('shows registration failures and retries when the caller asks to reload', async () => {
     const register = vi.fn<(...args: string[]) => Promise<HtmlPreviewRegistration>>()
-      .mockResolvedValue({ ok: false, message: 'Host unavailable' })
+      .mockResolvedValue({ ok: false, message: 'Host unavailable', retryable: true })
     const draw = (reloadKey: number) => harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'body', register, reloadKey, onLink: vi.fn() }))
     await draw(0)
     await until('bounded automatic recovery is exhausted', () => harness.container.textContent!.includes('Host unavailable'))
@@ -105,7 +105,7 @@ describe('shared HTML frame lifecycle', () => {
     let changed!: (paths?: readonly string[]) => void
     const subscribeChanges = (listener: typeof changed) => { changed = listener; return vi.fn() }
     const register = vi.fn<(...args: string[]) => Promise<HtmlPreviewRegistration>>()
-      .mockResolvedValue({ ok: false, message: 'Host unavailable' })
+      .mockResolvedValue({ ok: false, message: 'Host unavailable', retryable: true })
     await harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'body', register, subscribeChanges, onLink: vi.fn() }))
     await until('bounded automatic recovery is exhausted', () => harness.container.textContent!.includes('Host unavailable'))
     expect(register).toHaveBeenCalledTimes(4)

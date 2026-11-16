@@ -180,7 +180,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     const source = file.source
     const queryKey = ['file-preview-read', reader, key, kind, attempt]
     if (kind !== 'unsupported') void queryClient.fetchQuery({
-      queryKey, gcTime: 0, retry: (failures, error) => failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true,
+      // The resolver may answer from a local Blob or IPC even when the browser is offline.
+      queryKey, gcTime: 0, networkMode: 'always', retry: (failures, error) => failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true,
       queryFn: async ({ signal }) => {
         let done: PreviewRead
         try { done = await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }) }
