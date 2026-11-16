@@ -11,7 +11,9 @@ import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
 import { extensionSurfaceStore } from '@renderer/features/extensions/extension-surface-store';
 import { ExtensionTabToolbar } from '@renderer/features/extensions/extension-tab-toolbar';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
-import { peekInstalledAppsTracked } from '@renderer/features/extensions/installed-extensions';
+import { installedExtensions, LOCAL_HOST, peekInstalledAppsTracked } from '@renderer/features/extensions/installed-extensions';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
 import { useAppPageTab } from '@renderer/features/extensions/extension-tab-provider';
 import { Unknown } from '@/components/ui/Unknown';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
@@ -233,7 +235,7 @@ export const auxLeadingReserve = (): number => (readRendererPlatform() === 'mac'
 
 /** 窗里的 App:顶上一条页签条(只有它一枚,右端「放回咕咕」),下面是它的页。 */
 const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowId: string; tabKind: string }) {
-  const { contribution, label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, `window:${windowId}`), tabKind);
+  const { contribution, label, tooltip, unknown, failed } = useAppPageTab(extensionSurfaceStore.said(null, `window:${windowId}`), tabKind);
   const focused = auxWindows.focusedWindowId === windowId;
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-aux-window={windowId}>
@@ -264,7 +266,8 @@ const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowI
           <ExtensionTabToolbar tabKind={tabKind} sessionId={null} tabId={`window:${windowId}`} />
           <AuxExtensionSurface windowId={windowId} tabKind={tabKind} extensionId={contribution.extensionId} />
         </>
-      ) : contribution === null ? <Unknown className="block h-auto w-full min-h-0 flex-1 rounded-none" /> : null}
+      ) : failed ? <ReadFailedLine className="p-3" message={messageForUser(failed)} onRetry={() => void installedExtensions.refresh(LOCAL_HOST)} />
+        : contribution === null ? <Unknown className="block h-auto w-full min-h-0 flex-1 rounded-none" /> : null}
     </div>
   );
 });

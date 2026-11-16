@@ -11,7 +11,9 @@ const io = vi.hoisted(() => ({
   settings: null as null | { autoGenerateName: boolean },
   generate: vi.fn(),
 }));
-vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({ useSessionSettings: () => io.settings }));
+vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
+  useSessionSettings: () => ({ settings: io.settings ? { state: 'value', value: io.settings, stale: false, error: null } : { state: 'unknown' }, reload: () => {} }),
+}));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { sessionCreate: { generateSessionName: (input: unknown) => io.generate(input) } } }));
 
 import { notifyManager } from '@tanstack/react-query';

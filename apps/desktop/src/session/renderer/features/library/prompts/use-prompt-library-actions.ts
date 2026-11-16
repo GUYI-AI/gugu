@@ -30,6 +30,8 @@ export interface PromptLibraryActions {
   prompts: PromptLibraryPrompt[];
   /** Enabled Apps' prompts as seen (`withOverrides`), hidden ones included; null while what is installed is unknown. */
   appPrompts: AppPromptRow[] | null;
+  /** What is installed could not be read: the Apps' prompts are not known (the person's own still are). */
+  appPromptsFailed: Error | null;
   /** 第一次读、还没读到。 */
   isLoading: boolean;
   /** 读写任一在途 → 入口置灰。 */
@@ -74,6 +76,7 @@ export function usePromptLibraryActions(store?: Pick<InstalledApps, 'appPrompts'
   return {
     prompts,
     appPrompts: apps && withOverrides(apps.appPrompts, overrides),
+    appPromptsFailed: !store && installed.state === 'error' ? installed.error : null,
     isLoading,
     isBusy: isLoading || isSaving,
     error,

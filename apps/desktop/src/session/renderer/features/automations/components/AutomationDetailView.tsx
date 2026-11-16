@@ -52,12 +52,13 @@ export const AutomationDetailView = observer(function AutomationDetailView(
 /**
  * The stored automation seeds its form once (its agent, then its model, then its effort), and the agent can be seeded only
  * from the machine's agent list. So the form is mounted once that list is read (or failed: the composer says so); until
- * then the sheet holds the form's place, ❌ seeded with no agent and showing the factory one (review 4 Q2, cell U2).
+ * then the sheet holds the form's place, ❌ seeded with no agent and showing the factory one (review 4 Q2, cell U2). A
+ * machine that cannot act now is not asked: its form is drawn read-only at once (nothing it seeds can be saved).
  */
 const AutomationSettingsDetailView = observer(function AutomationSettingsDetailView(props: AutomationDetailViewProps) {
   const { translate } = useSessionMessages();
   const agents = useAgents();
-  if (agents.state !== 'unknown') return <AutomationSettingsForm {...props} />;
+  if (agents.state !== 'unknown' || props.readOnly) return <AutomationSettingsForm {...props} />;
   return (
     <div className="flex h-full flex-col" data-testid="automation-detail-pending">
       <SheetHeader title={translate('automations.detailsLabel')} onClose={props.onClose} />

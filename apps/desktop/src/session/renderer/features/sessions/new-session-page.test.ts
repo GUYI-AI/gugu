@@ -53,7 +53,10 @@ const mocks = vi.hoisted(() => ({
   prompt: null as string | null,
   initialPrompt: undefined as string | undefined,
   onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void),
-  handleCreateSession: vi.fn()
+  handleCreateSession: vi.fn(),
+  sessionSettings: { state: 'value', value: { autoApproveByDefault: false, includeIssueContextByDefault: false }, stale: false, error: null } as
+    | { state: 'value'; value: object; stale: boolean; error: null } | { state: 'error'; error: Error },
+  reloadSettings: vi.fn()
 }));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
@@ -126,10 +129,7 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-project-git-contex
 }));
 
 vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
-  useSessionSettings: () => ({
-    autoApproveByDefault: false,
-    includeIssueContextByDefault: false
-  })
+  useSessionSettings: () => ({ settings: mocks.sessionSettings, reload: mocks.reloadSettings })
 }));
 
 vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
@@ -298,6 +298,8 @@ describe('NewSessionPage', () => {
     mocks.initialPrompt = undefined;
     mocks.onCreated = undefined;
     mocks.handleCreateSession.mockReset();
+    mocks.sessionSettings = { state: 'value', value: { autoApproveByDefault: false, includeIssueContextByDefault: false }, stale: false, error: null };
+    mocks.reloadSettings.mockReset();
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, '');
     composerDrafts.set(projectDraftKey('project-1'), '');
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -491,6 +493,15 @@ describe('NewSessionPage', () => {
       key: expect.stringMatching(/^session-create:/), tier: 'error', ongoing: true,
       title: expect.not.stringContaining('taskError.'),
     }));
+  });
+
+  it('settings that could not be read say so with a retry where the composer goes (❌ a placeholder for ever)', async () => {
+    mocks.sessionSettings = { state: 'error', error: new Error('settings unreadable') };
+    await renderPage();
+    const failed = container.querySelector('[data-read-failed]');
+    expect(failed?.textContent).toContain('settings unreadable');
+    await act(async () => { failed!.querySelector('button')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    expect(mocks.reloadSettings).toHaveBeenCalledTimes(1);
   });
 
   it('stays silent while nothing has failed', async () => {

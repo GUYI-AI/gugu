@@ -7,6 +7,8 @@ import { useCreateSessionState } from '@renderer/features/sessions/create-sessio
 import { useProjectGitContext } from '@renderer/features/sessions/create-session-modal/use-project-git-context';
 import { useSessionSettings, type NewTaskSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
 import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
 import { SessionField } from '@renderer/features/sessions/session-config/session-field';
 import type { ComposerVerbLook, InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { useInitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
@@ -41,11 +43,12 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 // Exported so the project home and the chat's task dispatch reuse this exact createSession input and submission path;
 // the context tray controls are shared too (composer-context-tray.tsx). 新建页在这份共享 composer 上加标题。
 export const NewSessionComposer = observer(function NewSessionComposer(props: Omit<NewSessionComposerProps, 'sessionSettings'>) {
-  const sessionSettings = useSessionSettings();
+  const { settings, reload } = useSessionSettings();
   // This device's new-task settings (default autonomy, issue context) seed the composer's state once: until they are
   // read the composer's place is held, ❌ a composer seeded with factory defaults that a late value can no longer change.
-  if (!sessionSettings) return <div className={sessionComposerFrameClassName}><Unknown className="h-[7.5rem] w-full" /></div>;
-  return <NewSessionComposerReady {...props} sessionSettings={sessionSettings} />;
+  if (settings.state === 'error') return <div className={sessionComposerFrameClassName}><ReadFailedLine message={messageForUser(settings.error)} onRetry={reload} /></div>;
+  if (settings.state === 'unknown') return <div className={sessionComposerFrameClassName}><Unknown className="h-[7.5rem] w-full" /></div>;
+  return <NewSessionComposerReady {...props} sessionSettings={settings.value} />;
 });
 
 type NewSessionComposerProps = Parameters<typeof NewSessionComposerReady>[0];

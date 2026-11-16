@@ -54,6 +54,12 @@ describe('AutomationDetailView — the stored form waits for the agent list', ()
     expect(container.querySelector('[data-testid="automation-detail-pending"]')).toBeNull();
   });
 
+  it('a machine that cannot act now (offline) draws its form read-only at once, ❌ placeholders for ever', () => {
+    act(() => root.render(<AutomationDetailView automation={automation} onClose={() => {}} readOnly />));
+    expect(io.formMounts).toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="automation-detail-pending"]')).toBeNull();
+  });
+
   it('a list that could not be read does not hold the form (the composer says the failure)', () => {
     io.agents = { state: 'error' };
     act(() => root.render(<AutomationDetailView automation={automation} onClose={() => {}} />));

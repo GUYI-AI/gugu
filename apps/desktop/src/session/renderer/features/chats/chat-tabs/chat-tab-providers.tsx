@@ -103,7 +103,8 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
   const installed = useInstalledApps(LOCAL_HOST);
   const said = extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId));
-  if (!isFolderItem(item) && item.kind && installed.state !== 'value') {
+  // Not read yet: the page's own title or a placeholder. Not readable: the name the tab was opened with (said where the list is drawn).
+  if (!isFolderItem(item) && item.kind && installed.state === 'unknown') {
     return { ...extensionTabTitle(said, said.title ?? ''), unknown: said.title === null };
   }
   const apps = installed.state === 'value' ? installed.value : null;
@@ -121,7 +122,7 @@ function PanelIcon({ item }: { item: PanelItem }) {
   const installed = useInstalledApps(LOCAL_HOST);
   if (isFolderItem(item)) return <Folder size={14} />;
   const extensionId = item.kind ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
-  if (extensionId && installed.state !== 'value') return <Unknown className="size-4 shrink-0" />;
+  if (extensionId && installed.state === 'unknown') return <Unknown className="size-4 shrink-0" />;
   const app = extensionId && installed.state === 'value' ? installed.value.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
   return app ? <RailAppIcon app={app} className="size-4" /> : <FileIcon filename={item.fileName ?? item.title} size={14} className="shrink-0 text-foreground-muted" />;
 }

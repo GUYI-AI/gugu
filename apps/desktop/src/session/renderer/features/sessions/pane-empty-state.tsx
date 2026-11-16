@@ -3,7 +3,8 @@ import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
-import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { installedExtensions, LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { messageForUser } from '@/lib/userFacingError';
 import { Unknown } from '@/components/ui/Unknown';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Button } from '@renderer/lib/ui/button';
@@ -99,7 +100,9 @@ export function useSessionWorkspaceActions(
   // 把它放到这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。
   // What is installed not known yet: one placeholder row where the Apps go (❌ 「no Apps」 before the list is read).
   const installed = useInstalledApps(LOCAL_HOST);
-  const extensionActions: WorkspacePanelAction[] = installed.state !== 'value'
+  const extensionActions: WorkspacePanelAction[] = installed.state === 'error'
+    ? [{ id: 'extensions-failed', label: `${messageForUser(installed.error)} · ${translate('extensions.retry')}`, icon: null, section: 'extensions', onClick: () => void installedExtensions.refresh(LOCAL_HOST) }]
+    : installed.state !== 'value'
     ? [{ id: 'extensions-unknown', label: '', icon: null, section: 'extensions', unknown: true, disabled: true, onClick: () => undefined }]
     : installed.value.enabledTabContributions.map((contribution) => ({
       id: contribution.kind,

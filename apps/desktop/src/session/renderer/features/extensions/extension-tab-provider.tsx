@@ -95,19 +95,20 @@ export class ExtensionTabResource implements TabResource {
  * installed title (`unknown` while neither is known: ❌ the raw kind). `file` names it unless it is the App's `chatFile`.
  */
 export function useAppPageTab(said: ExtensionSharedPresentation, tabKind: string, file?: string, stored?: string): {
-  /** null: what is installed is not known yet (undefined: known, and this App's tab is not in it). */
-  contribution: ExtensionTabContributionEntry | undefined | null; label: string; tooltip: string; unknown: boolean;
+  /** null: what is installed is not known yet (undefined: known, and this App's tab is not in it); `failed`: it could not be read. */
+  contribution: ExtensionTabContributionEntry | undefined | null; label: string; tooltip: string; unknown: boolean; failed: Error | null;
 } {
   const installed = useInstalledApps(LOCAL_HOST);
   if (installed.state !== 'value') {
-    if (said.title === null) return { contribution: null, label: '', tooltip: '', unknown: true };
-    return { contribution: null, ...extensionTabTitle(said, said.title), unknown: false };
+    const failed = installed.state === 'error' ? installed.error : null;
+    if (said.title === null) return { contribution: null, label: '', tooltip: '', unknown: true, failed };
+    return { contribution: null, ...extensionTabTitle(said, said.title), unknown: false, failed };
   }
   const apps = installed.value;
   const contribution = apps.allTabContributions.find((entry) => entry.kind === tabKind);
   // An App no longer installed keeps the name it had on the tab (`stored`, else its kind): the list says it is not there.
   const named = file !== undefined && !apps.isChatFile(tabKind, file) ? file : apps.tabTitle(tabKind) ?? stored ?? tabKind;
-  return { contribution, ...extensionTabTitle(said, named), unknown: false };
+  return { contribution, ...extensionTabTitle(said, named), unknown: false, failed: null };
 }
 
 /** File and folder pages share the same per-tab navigation context; hidden pages retain their own state. */

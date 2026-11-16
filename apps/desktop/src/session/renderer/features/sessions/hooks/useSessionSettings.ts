@@ -1,3 +1,4 @@
+import type { Reading } from '@/lib/replica';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import type { SessionSettings } from '@shared/core/app-settings';
 
@@ -5,11 +6,11 @@ export type NewTaskSettings = Pick<SessionSettings, 'autoGenerateName' | 'autoAp
 
 /**
  * The `sessions` fields the new-task flow starts from; the settings surface draws the reading itself (SessionSettingsRows).
- * null = this device's settings are not read yet: the flow waits (it seeds its state once), ❌ starts from defaults.
+ * Not read yet: the flow waits (it seeds its state once), ❌ starts from defaults; not readable: said, with `reload`.
  */
-export function useSessionSettings(): NewTaskSettings | null {
-  const { settings } = useAppSettingsKey('sessions');
-  if (settings.state !== 'value') return null;
+export function useSessionSettings(): { settings: Reading<NewTaskSettings>; reload: () => void } {
+  const { settings, reload } = useAppSettingsKey('sessions');
+  if (settings.state !== 'value') return { settings, reload };
   const { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault } = settings.value.value;
-  return { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault };
+  return { settings: { ...settings, value: { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault } }, reload };
 }

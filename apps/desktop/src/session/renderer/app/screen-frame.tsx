@@ -242,7 +242,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
   const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
-  const { contribution, label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, `screen:${blockId}`), tabKind);
+  const { contribution, label, tooltip, unknown, failed } = useAppPageTab(extensionSurfaceStore.said(null, `screen:${blockId}`), tabKind);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const focused = screenLayout.focusedBlockId === blockId;
@@ -282,7 +282,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
                 onClick={() => void followLink({ kind: 'app-detail', extensionId: contribution.extensionId })}>
                 <Settings className="size-3.5" />
               </button>
-            ) : contribution === null ? <Unknown className="size-6" /> : null}
+            ) : contribution === null && !failed ? <Unknown className="size-6" /> : null}
             {multi ? <CloseBlockButton blockId={blockId} /> : null}
           </TabBarActionRow>
         }

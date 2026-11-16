@@ -353,6 +353,9 @@ describe('global search panel', () => {
     expect(replicaClient.getQueryCache().find({ queryKey: ['messageSearch', 'me-1', 'orchid', null] })?.state.fetchStatus).toBe('paused')
     expect(remote.messages).not.toHaveBeenCalled()
     expect(remote.local).not.toHaveBeenCalled()
+    // Said, ❌ three placeholder rows for as long as the network is away.
+    expect(host.querySelector('[role=alert]')?.textContent).toMatch(/offline|没有网络/i)
+    expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
   })
 
   it('searches the stored messages of the signed-in account and changes ownership when the account changes', async () => {
@@ -370,14 +373,15 @@ describe('global search panel', () => {
     expect(remote.messages).not.toHaveBeenCalledWith('message_search_as', expect.objectContaining({ p_chat_id: GROUP }))
   })
 
-  it('without a signed-in account nothing is searched and an unexecuted local query is not drawn as no results', async () => {
+  it('without a signed-in account nothing is searched, and it says to sign in (❌ placeholders, ❌ no results)', async () => {
     remote.desktop = true
     setNetwork(false)
     publishSelfIdentity(null)
     publishRendererSession('SIGNED_OUT', null)
     resetSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] })
     await render('orchid')
-    expect(host.querySelector('[data-testid="global-search-pending"]')).not.toBeNull()
+    expect(host.querySelector('[role=alert]')?.textContent).toMatch(/Sign in to search|登录后/)
+    expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
     expect(host.textContent).not.toContain('globalSearch.emptyFor')
     expect(remote.local).not.toHaveBeenCalled()
     expect(remote.messages).not.toHaveBeenCalledWith('message_search_as', expect.objectContaining({ p_chat_id: GROUP }))

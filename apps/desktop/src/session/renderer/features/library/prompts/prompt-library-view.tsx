@@ -12,7 +12,9 @@ import { SearchInput } from '@renderer/lib/ui/search-input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import { APP_PROMPT_ACTIONS } from '@shared/prompt-library';
-import type { InstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { installedExtensions, LOCAL_HOST, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
 import { usePromptLibraryActions, type AppPromptRow, type PromptLibraryActions } from './use-prompt-library-actions';
 
 type PromptListItem = { title: string; prompt: string } | AppPromptRow;
@@ -149,7 +151,10 @@ export const PromptLibraryView = observer(function PromptLibraryView() {
       )}
       {/* 还没读到(在读 / 读不到):❌ 先画一句「还没有提示词」冒充它是空的。读不到时上面那一句说清楚。 */}
       {/* What is installed not read yet either: the Apps' sections would come in under the list, so it waits too. */}
-      {actions.isLoading || actions.appPrompts === null ? (
+      {actions.appPromptsFailed ? (
+        <ReadFailedLine className="px-3 py-2" message={messageForUser(actions.appPromptsFailed)} onRetry={() => void installedExtensions.refresh(LOCAL_HOST)} />
+      ) : null}
+      {actions.isLoading || (actions.appPrompts === null && !actions.appPromptsFailed) ? (
         <PageLoading />
       ) : !actions.hasData ? null : (
         <div className={cn('flex flex-col py-2', filteredItems.length === 0 && appSections.size === 0 && 'min-h-64')}>

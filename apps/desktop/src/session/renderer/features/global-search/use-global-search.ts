@@ -207,6 +207,9 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
   const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!from || row.sender_user_id === from.userId)
     && (kinds.length === 0 || kinds.every((kind) => messageKinds(row, me).has(kind)))
 
+  // Messages that cannot be asked now are said (❌ placeholders for ever): no account to search for, or the cloud offline.
+  const unasked = !messagesApply ? null : messageSearch.key(query, null) === null ? 'globalSearch.signedOut' as const
+    : !localScope && !online && messages.state === 'unknown' ? 'globalSearch.offline' as const : null
   // A source that applies and has not answered yet: the results are not known (❌ drawn as "nothing found" or a 0).
   const pending = (messagesApply && messages.state === 'unknown') || (turnsApply && turns.state === 'unknown')
   const messageRows = answered(messagesApply ? [messages] : [])
@@ -246,7 +249,7 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
       capped: everywhere.value.length >= SEARCH_LIMIT,
     } : null,
     loading: runnable && pending,
-    error: errorOf(messagesApply ? messages : null) ?? errorOf(everywhere) ?? errorOf(turnsApply ? turns : null),
+    error: unasked ? new Error(translateSessionMessage(unasked)) : errorOf(messagesApply ? messages : null) ?? errorOf(everywhere) ?? errorOf(turnsApply ? turns : null),
     taskIndex: turnsApply && turns.state === 'value' ? turns.value.index : undefined,
     stale: false,
   }
