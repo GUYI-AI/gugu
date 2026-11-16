@@ -12,7 +12,7 @@ beforeEach(() => {
   state.send.mockReset().mockResolvedValue({ id: 'message', status: 'accepted' }); state.projects.clear();
   state.projects.set('bound-project', { mountedProject: { sessionManager: { sessions: new Map([['bound-task', { viewModel: {} }]]) } } });
 });
-const origin = { extensionId: 'task-app', sessionId: 'bound-task', tabId: 'task-tab' };
+const origin = { extensionId: 'task-app', sessionId: 'bound-task', tabId: 'task-tab', pageId: null };
 
 it('uses the ordinary conversation RPC for the admitted bound task without changing run state', async () => {
   await applyExtensionHostAction({ origin, action: { kind: 'taskMessage', text: '请暂停。' } });
