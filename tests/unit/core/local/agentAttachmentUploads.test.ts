@@ -8,6 +8,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   rememberAgentUpload, resumeAgentUploads, setAgentUploadHost, uploadAgentFile, type AgentUploadRecord,
 } from '../../../../packages/core/src/local/agent/agentAttachmentUploads'
+import { AttachmentsError, retryableAttachmentError } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { FileDownloadFailure } from '../../../../packages/core/src/cloud/fileDownloadRetry'
 
 const ACCOUNT = 'owner-1', MESSAGE = 'm-1'
 let home: string, file: string, bytes: Buffer, previousHome: string | undefined
@@ -162,4 +164,12 @@ it('goes on under the upload the bytes were going up under: the parts already st
   await resumeAgentUploads()
   expect(s.calls).toEqual(['pending', 'upload-parts', 'put3', 'upload-parts', 'upload-complete', 'finish'])
   expect(await recorded()).toEqual([])
+})
+
+it('a storage request still failing on the network when its own retry window ran out is tried again; a refusal is not', () => {
+  // The host met this with the storage unreachable for minutes: each part's retry window ends in a FileDownloadFailure.
+  expect(retryableAttachmentError(new FileDownloadFailure('oss', 'https://oss.example/part', 90_000, new TypeError('fetch failed')))).toBe(true)
+  expect(retryableAttachmentError(new FileDownloadFailure('oss', 'https://oss.example/part', 90_000, Object.assign(new Error('busy'), { status: 503 })))).toBe(true)
+  expect(retryableAttachmentError(new AttachmentsError('finish', 409, 'upload_changed', 'not the declared file'))).toBe(false)
+  expect(retryableAttachmentError(new AttachmentsError('upload', 503, 'failed', 'busy'))).toBe(true)
 })

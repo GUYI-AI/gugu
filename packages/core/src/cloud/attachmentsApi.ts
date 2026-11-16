@@ -7,7 +7,7 @@
 //   place  → only put in the chat's folder (a new file, or a new version of one) — no message;
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
-import { retryFileDownload } from './fileDownloadRetry'
+import { FileDownloadFailure, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 import { sha256 as sha256Hash } from '@noble/hashes/sha2.js'
@@ -112,9 +112,12 @@ export async function uploadAttachmentBytes(
   }
 }
 
-/** A failure worth trying again: the network, a timeout or the server being busy (408, 429, 5xx), never a refusal. */
+/**
+ * A failure worth trying again: the network, a timeout or the server being busy (408, 429, 5xx), never a refusal. That
+ * includes a storage request that was still failing that way when its own retry window ran out (FileDownloadFailure).
+ */
 export function retryableAttachmentError(error: unknown): boolean {
-  return error instanceof TypeError || error instanceof AttachmentsError && (error.status === 408 || error.status === 429 || error.status >= 500)
+  return error instanceof TypeError || (error instanceof AttachmentsError || error instanceof FileDownloadFailure) && isTransientFileReadError(error)
 }
 
 /** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
