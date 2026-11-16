@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { hermesPromptMeta, indexHermesPrompts, originalHermesPrompt } from '../../../../packages/session-core/src/acp/hermes-prompt'
+import { withSessionAttachments } from '../../../../packages/core/src/cloud/sessionAttachments'
+import { nativePromptMeta, indexNativePrompts, originalNativePrompt } from '../../../../packages/session-core/src/acp/native-prompt'
 import {
   buildAgentDeliveryEnvelope,
   buildExtensionEnvelope,
@@ -88,8 +89,8 @@ describe('readDeliveryEnvelope — round trip with the producer', () => {
   ])('reads a Hermes delivery after a host-confirmed native prompt boundary: %s', (prefix) => {
     const envelope = renderDeliveryEnvelope(DM)
     const native = `${prefix}\n${envelope}`
-    const originals = indexHermesPrompts([{ kind: 'message', role: 'user', text: envelope, _meta: hermesPromptMeta([{ type: 'text', text: prefix }, { type: 'text', text: envelope }]) }])
-    const original = originalHermesPrompt(native, originals)!
+    const originals = indexNativePrompts([{ kind: 'message', role: 'user', text: envelope, _meta: nativePromptMeta([{ type: 'text', text: prefix }, { type: 'text', text: envelope }]) }])
+    const original = originalNativePrompt(native, originals)!
     expect(readDeliveryEnvelope(native)).toBeNull()
     expect(readDeliveryEnvelope(original)).toEqual(readDeliveryEnvelope(envelope))
     expect(recoverDeliveryEnvelopes(envelope, [original])).toBeNull()
@@ -266,6 +267,20 @@ describe('session-direct then / in_reply_to (owner 10-17)', () => {
     expect(envelope).toBe(buildSessionDirectEnvelope({ ...base, then: undefined, inReplyTo: undefined }))
     expect(envelope).not.toContain('then=')
     expect(envelope).not.toContain('in_reply_to=')
+  })
+})
+
+describe('session-direct files are references with their next step', () => {
+  const base = { senderSessionId: 's-1', senderTitle: 'Lane', messageId: 'm-1', at: '2026-11-15 10:00' }
+  const ref = { attachment_id: '44444444-4444-4444-8444-444444444444', file_name: 'report.pdf', sha256: 'a'.repeat(64), size_bytes: 5, content_type: 'application/pdf' }
+
+  it('names message_download_file in the arrival only when the body carries an attachment block', () => {
+    const arrival = (envelope: string) => envelope.match(/<arrival>(.*)<\/arrival>/)![1]
+    const plain = arrival(buildSessionDirectEnvelope({ ...base, content: 'done' }))
+    const withFiles = buildSessionDirectEnvelope({ ...base, content: withSessionAttachments('done', [ref]) })
+    expect(plain).not.toContain('message_download_file')
+    expect(arrival(withFiles)).toBe(`${plain} Its files are references: message_download_file {source_attachment_id} saves one on this computer.`)
+    expect(readDeliveryEnvelope(withFiles)?.body).toBe(withSessionAttachments('done', [ref]))
   })
 })
 

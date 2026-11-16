@@ -1,3 +1,4 @@
+import type { ComposerModelOption } from '@gugu/session-ui/react/components'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -340,7 +341,7 @@ function ChoiceList({
  * 模型那一页:第一行永远是「默认(让 harness 自己定)」,然后 harness 自家一组、咕咕平台一组
  * (与桌面下拉同序)。哪一组缺席就在组名下写机器报来的原因,❌ 不藏:空列表说不出「为什么空」。
  */
-function ModelChoices({
+export function ModelChoices({
   models,
   platformOnly = false,
   harnessName,
@@ -349,7 +350,9 @@ function ModelChoices({
   selection,
   onPick,
   onLeave,
+  sessionOptions,
 }: {
+  sessionOptions?: Record<string, ComposerModelOption>
   models: SessionpageSessionCreateModels | null
   platformOnly?: boolean
   /** 「你的 X 模型」的 X。 */
@@ -378,7 +381,7 @@ function ModelChoices({
     { source: 'harness', reason: models ? harnessEmptyText(models) : null },
     { source: 'gugu', reason: guguEmptyText(models?.guguReason) },
   ]
-  const choice = (id: string | null, name: string, desc?: string, extra?: Record<string, string>) => {
+  const choice = (id: string | null, name: string, desc?: string, extra?: Record<string, string>, disabled = false) => {
     const selected = selection.model === id
     return (
       <Button
@@ -386,6 +389,7 @@ function ModelChoices({
         variant="ghost"
         size="option"
         className="gg-aw-choice"
+        disabled={disabled}
         role="radio"
         aria-checked={selected}
         data-testid="agent-watch-create-choice"
@@ -404,6 +408,9 @@ function ModelChoices({
       </Button>
     )
   }
+  if (sessionOptions) return <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state="ready">
+    {Object.entries(sessionOptions).map(([id, option]) => choice(id, option.name, option.disabledReason ?? option.description, undefined, option.disabled))}
+  </div>
   return (
     <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state={state}>
       {choice(null, t('agentWatch.create.modelDefault'), defaultHint ?? t('agentWatch.create.modelDefaultHint'))}

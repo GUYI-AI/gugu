@@ -87,7 +87,7 @@ function optionHeight(label: string, ctx: MeasureCtx): number {
 function planHeader(item: PlanReview, ctx: MeasureCtx): string {
   const t = rowTranslator(ctx);
   const state = item.state === 'awaiting' ? t('transcript.awaitingPermission') : item.state === 'approved' ? t('transcript.planApproved') : item.state === 'rejected' ? t('transcript.planRejected') : null;
-  return t('transcript.planReview') + (state ? ` · ${state}` : '');
+  return t('transcript.planReview') + (state ? ` (${state})` : '');
 }
 
 function planExtra(item: PlanReview, ctx: MeasureCtx, render: () => JSX.Element = () => null): NoticeExtra {
@@ -135,7 +135,7 @@ function PlanReviewRender(props: { data: PlanReview; ctx: RenderCtx; vars: HookN
       ctx={props.ctx}
       vars={props.vars}
       tone={props.data.state === 'awaiting' ? 'suggestion' : 'notice'}
-      label={translate('transcript.planReview') + (state() ? ` · ${state()}` : '')}
+      label={translate('transcript.planReview') + (state() ? ` (${state()})` : '')}
       srLabel={translate('transcript.planReview')}
       slot="plan-review"
       extra={extra()}

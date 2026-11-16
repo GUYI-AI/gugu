@@ -163,7 +163,7 @@ export const AutomationRow = observer(function AutomationRow({
                     <Icon className={cn('size-3.5 shrink-0', textClass)} />
                   )}
                   {translate('automations.lastRunOn')}
-                  {time && <AbsoluteTime value={time} className="text-foreground-muted" />}·{' '}
+                  {time && <AbsoluteTime value={time} className="text-foreground-muted" />} {' '}
                   {formatRunTriggerKindLabel(translate, run.triggerKind)}
                 </span>
               );

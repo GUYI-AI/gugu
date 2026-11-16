@@ -23,6 +23,16 @@ describe('delivered message presentation', () => {
     expect(JSON.stringify(shown.guguDelivery)).not.toContain('Folder file');
     expect(JSON.stringify(shown.guguDelivery)).not.toContain('local path');
   });
+  it.each([
+    '[File at local path: /private/agent/deck.pdf]',
+    '[File at local path: /private/agent/deck.pdf (shared read-only copy: to change it, copy it to a file of your own; do not change its permissions)]',
+    '[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:x"}]',
+    '[Deleted: there are no bytes to fetch]',
+  ])('hides the line saying where the bytes are: %s', line => {
+    const text = renderDeliveryEnvelope({ route: 'chat', from: 'Sender', fromId: 'user:sender', messageId: `msg:${id}`, at: '', chat: 'chat', chatKind: 'dm',
+      content: `Here it is\n[附件] deck.pdf (application/pdf)\n${line}` });
+    expect(JSON.stringify(normalizeMessage({ ...item, text }).guguDelivery)).not.toContain(line.slice(1, 12));
+  });
   it('keeps ordinary local user prose, including a quoted path, unchanged', () => {
     const text = 'Please inspect /private/agent/image.png';
     expect(normalizeMessage({ ...item, text }).text).toBe(text);

@@ -29,6 +29,7 @@ import {
   normalizeMarkdownSourceWithLines,
   type MarkdownDialectOptions,
 } from '@gugu/session-shared/markdown/dialect';
+import { fileLabelParts } from '@gugu/session-shared/markdown';
 import type { Element, ElementContent, Root as HastRoot } from 'hast';
 import { toHtml } from 'hast-util-to-html';
 import type { Nodes, Root, RootContent } from 'mdast';
@@ -58,18 +59,19 @@ function mentionLabel(mention: MdastMention): string {
 function mentionChip(mention: MdastMention): Element {
   const id = mention.target ?? mention.label;
   const text = mentionLabel(mention);
-  // A file's place (` · 第 4 行`) stays whole: the name is what gets cut when the pill is too wide.
-  const cut = mention.mentionKind === 'file' ? text.indexOf(' · ') : -1;
+  // A file's place stays whole: the name is what gets cut when the pill is too wide (`fileLabelParts`).
+  const { name, place } = mention.mentionKind === 'file' ? fileLabelParts(text) : { name: text, place: '' };
   const span = (className: string, value: string): Element => ({ type: 'element', tagName: 'span', properties: { className: [className] }, children: [{ type: 'text', value }] });
-  const label = cut > 0 ? [span('gg-md-mention-label', text.slice(0, cut)), span('gg-md-mention-place', text.slice(cut))] : [span('gg-md-mention-label', text)];
+  const label = place ? [span('gg-md-mention-label', name), span('gg-md-mention-place', place)] : [span('gg-md-mention-label', name)];
   const icon: Element = {
     type: 'element',
     tagName: 'span',
     properties: {
       className: ['gg-md-mention-icon'],
-      dataIcon: mention.iconUrl ? 'url' : mention.iconClass ? 'class' : mention.mentionKind,
+      dataIcon: mention.iconUrl ? 'url' : mention.mentionKind,
       dataIconUrl: mention.iconUrl,
-      dataIconClass: mention.iconClass,
+      // A file's slot draws its family glyph (`FileMark`), read from the name.
+      dataIconName: mention.mentionKind === 'file' ? name : undefined,
     },
     children: [],
   };

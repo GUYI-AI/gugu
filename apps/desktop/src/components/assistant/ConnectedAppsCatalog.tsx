@@ -61,7 +61,7 @@ function ConnectedAppsCatalogContent({
       className="connected-app-row"
       data-testid={`assistant-connector-${app.id}`}
       leading={icon(app, 32)}
-      title={app.connectionStatus ? `${app.name} · ${app.connectionStatus}` : app.name}
+      title={app.connectionStatus ? `${app.name}: ${app.connectionStatus}` : app.name}
       description={app.description || <span aria-hidden="true">&nbsp;</span>}
       control={
         !app.connectionStatus && app.saved && app.state !== 'connected' ? (
@@ -176,7 +176,7 @@ function ConnectedAppsCatalogContent({
                   variant="ghost"
                   className="connected-app-featured-card"
                   onClick={() => openApp(app.id)}
-                  aria-label={`${t('connectors.catalog.viewApp')} · ${app.name}`}
+                  aria-label={`${t('connectors.catalog.viewApp')}: ${app.name}`}
                 >
                   <span className="connected-app-featured-icon">{icon(app, 48)}</span>
                   <span className="connected-app-featured-title">{app.name}</span>
@@ -228,7 +228,7 @@ function ConnectedAppsCatalogContent({
           clearLabel={t('connectors.catalog.clearSearch')}
           aria-label={
             view.category
-              ? `${t('connectors.catalog.search')} · ${categoryLabel(view.category, i18n.language)}`
+              ? `${t('connectors.catalog.search')}: ${categoryLabel(view.category, i18n.language)}`
               : t('connectors.catalog.search')
           }
           onValueChange={(query) => change({ ...view, query })}

@@ -481,7 +481,7 @@ export default {
     "tileSub_one": "{{count}} metric",
     "tileSub_other": "{{count}} metrics",
     "tileSubEmpty": "Sleep, activity, heart rate",
-    "from": "From {{device}} · updated {{time}}",
+    "from": "From {{device}}, updated {{time}}",
     "refresh": "Refresh",
     "loading": "Loading…",
     "emptyStateTitle": "Your health at a glance",
@@ -532,7 +532,7 @@ export default {
     "noData": "No data",
     "lastNight": "Last night",
     "nightOf": "Woke {{date}}",
-    "bedWake": "Asleep {{bed}} · woke {{wake}}",
+    "bedWake": "Asleep at {{bed}}, awake at {{wake}}",
     "inBed": "In bed {{duration}}",
     "stage": {
       "awake": "Awake",
@@ -543,7 +543,7 @@ export default {
     },
     "workouts": "Workouts",
     "noWorkouts": "No workouts in the last 7 days.",
-    "workoutHr": "Avg {{avg}} · max {{max}}",
+    "workoutHr": "Average heart rate {{avg}}, maximum {{max}}",
     "body": "Body",
     "bodyItem": {
       "weight_kg": "Weight",

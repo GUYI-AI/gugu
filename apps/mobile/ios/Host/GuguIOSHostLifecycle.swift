@@ -19,6 +19,7 @@ final class GuguIOSHostLifecycle {
     private final class Root {
         let lock = NSRecursiveLock()
         var entries: [String: Entry] = [:]
+        var locallyErasedOwners: Set<String> = []
     }
     private static let rootsLock = NSLock()
     private static var roots: [String: Root] = [:]
@@ -41,6 +42,17 @@ final class GuguIOSHostLifecycle {
         custody.lock.lock(); defer { custody.lock.unlock() }
         try check(binding)
         return try entry(binding).journal
+    }
+
+    /// Blocks reopening this closed identity while old callbacks still exist.
+    /// Other identities' entries and runtime phases remain byte-for-byte intact.
+    func sealForLocalAccountErase(ownerId: String) throws {
+        custody.lock.lock(); defer { custody.lock.unlock() }
+        guard !custody.entries.values.contains(where: { $0.binding.ownerId == ownerId && $0.phase != .stopped }) else {
+            throw Self.failure("closure_not_prepared", "Original local execution must finish stopping before erasure")
+        }
+        custody.locallyErasedOwners.insert(ownerId)
+        custody.entries = custody.entries.filter { $0.value.binding.ownerId != ownerId }
     }
 
     /// Explicit configure after a successful retirement. Never resumes any task.
@@ -160,6 +172,8 @@ final class GuguIOSHostLifecycle {
     }
     private func check(_ binding: GuguIOSHostBinding) throws {
         try binding.validate()
+        custody.lock.lock(); let erased = custody.locallyErasedOwners.contains(binding.ownerId); custody.lock.unlock()
+        guard !erased else { throw Self.failure("stale_context", "Original local account has been erased") }
         guard try verifiedIdentity() == binding else { throw Self.failure("stale_context", "Native owner or installation changed") }
     }
     private static func failure(_ code: String, _ message: String) -> GuguHostFailure {

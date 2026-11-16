@@ -27,7 +27,7 @@ describe('#6264 设备行模型', () => {
     )
     expect(model).toEqual({
       kind: 'server',
-      system: 'Ubuntu 22.04.5 LTS · arm64',
+      system: 'Ubuntu 22.04.5 LTS，arm64',
       version: '0.2.99',
       update: { state: 'ready', version: '0.3.0' },
       notices: [],

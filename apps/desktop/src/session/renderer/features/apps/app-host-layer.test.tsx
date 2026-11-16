@@ -43,7 +43,7 @@ let root: Root;
 let element: HTMLDivElement;
 const find = (testId: string) => element.querySelector(`[data-testid="${testId}"]`);
 const workAction = (extensionId: string, action: { kind: 'openWork'; ownerId: string; workId: string; sessionId: string } | { kind: 'closeWork' }) =>
-  act(async () => { await applyExtensionHostAction({ origin: { extensionId, sessionId: null, tabId: 'dock' }, action }); });
+  act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId, sessionId: null, tabId: 'dock' }, action }); });
 const open = (extensionId = 'today', ownerId = OWNER) => workAction(extensionId, { kind: 'openWork', ownerId, workId: WORK, sessionId: 'exec-a' });
 
 beforeEach(() => {
@@ -191,7 +191,7 @@ describe('the assistant\'s own pages over the App\'s panel, asked by the App', (
     ownerId: OWNER, chatId: null, chatReadFailed: false, assistant: null, assistantState: 'none', home: null, setup: 'shell', member: true, preparing: false,
     deviceCount: 1, ownerAvatar: null, ...over } as never);
   const ask = (screen: string, ownerId = OWNER) => act(async () => {
-    await applyExtensionHostAction({ origin: { extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'openAssistantScreen', screen, ownerId } as never });
+    await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'openAssistantScreen', screen, ownerId } as never });
   });
   const opened = () => readAppHostLayerBridge()!.getSnapshot().today?.kind ?? null;
 

@@ -34,7 +34,7 @@ type Host = {
   showSession(id: string): Promise<unknown>
   dispatch(text: string, options?: Record<string, unknown>): Promise<unknown>
   clipboard: { writeText(text: string): Promise<unknown> }
-  appFiles: Record<'annotateSelection' | 'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
+  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward' | 'sendSelection', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
   assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
@@ -45,12 +45,13 @@ const host = electron.exposed.__guguHost as Host
 
 /** Each verb that needs a gesture, called the way `window.gugu` calls it. */
 const gestureCalls: Record<string, () => Promise<unknown>> = {
-  filesAnnotateSelection: () => host.appFiles.annotateSelection({ ref: { workspace: 'session:s', id: 'notes.md' }, startLine: 3, endLine: 4, text: 'Selected text', annotation: 'Revise' }),
   taskMessage: () => host.taskMessage({ intent: 'pause' }),
   filesOpenWith: () => host.appFiles.openWith({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesUpload: () => host.appFiles.upload({}),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
+  // 54: the host's Send box beside a selection.
+  filesSendSelection: () => host.appFiles.sendSelection({ text: 'x', refs: [{ file: { workspace: 'session:s-1', id: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } }),
   filesOpenIn: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).openIn!({ ref: { workspace: 'session:s-1', id: 'a.md' }, app: 'finder' }),
   showMessage: () => host.showMessage('msg-1'),
   showSession: () => host.showSession('s-1'),

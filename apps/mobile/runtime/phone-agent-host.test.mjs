@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename, utimes, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -161,6 +161,21 @@ const untilNetworkQueued = (fx) => until(async () => {
   const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
   return !fx.host.state().execution && Object.values(journal.jobs).some(job => job.status === 'queued' && job.networkWait)
 }, fx.events)
+
+test('host start drops file-cache chunks older than an hour and keeps fresh ones', async () => {
+  const cache = (root) => join(root, 'hosts', ownerId, 'file-cache')
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }), { prepare: async ({ root }) => {
+    const stale = join(cache(root), `open-${'a'.repeat(64)}`), fresh = join(cache(root), `open-${'b'.repeat(64)}`)
+    await mkdir(stale, { recursive: true }); await writeFile(join(stale, '0'), 'x')
+    await mkdir(fresh, { recursive: true }); await writeFile(join(fresh, '0'), 'x')
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    await utimes(stale, old, old)
+  } })
+  try {
+    await until(async () => !(await readdir(cache(fx.root))).includes(`open-${'a'.repeat(64)}`), fx.events)
+    assert.deepEqual(await readdir(cache(fx.root)), [`open-${'b'.repeat(64)}`])
+  } finally { await fx.close() }
+})
 
 test('a read phone failure stays an error and the next real failed turn becomes unseen again', async () => {
   const fx = await fixture(async () => ({ status: 'failed', text: '', error: 'controlled turn failure' }))
@@ -844,14 +859,14 @@ test('a failed turn on a whispered message posts no public notice: it would tell
   } finally { await fx.close() }
 })
 
-test('an image attachment is durably admitted as safe metadata and acknowledged without fetching bytes during inbox delivery', async () => {
+test('an image attachment is durably admitted as the desktop reads it, a reference to fetch, without fetching bytes during inbox delivery', async () => {
   let prompt
   const fx = await fixture(async (command, hooks) => {
     if (!command.prompt.includes('gugu_delivery')) return { status: 'done', text: '[NO_REPLY]' }
     prompt = command.prompt
     assert.match(prompt, /message_download_file/)
     assert.match(prompt, /calendar\.png/)
-    assert.equal(prompt.includes('https://unreachable.invalid'), false)
+    assert.ok(prompt.includes('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:'), prompt)
     assert.equal(prompt.includes('[Image attached at local path:'), false)
     await hooks.extraTools.find((item) => item.name === 'message_send').execute('ack-image', { chat_id: chatId, text: '已收到附件消息', to_user_ids: [`user:${ownerId}`] })
     return { status: 'done', text: '已回复' }
@@ -1942,7 +1957,7 @@ test('resolves files at run time, warns without blocking later text, and persist
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'original caption', files: [ref], clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 2 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);
     assert.match(prompts[1], /^original caption\n\n/);
-    assert.match(prompts[1], /File not saved/);
+    assert.ok(prompts[1].includes(`[Not on this computer. To read or change it: message_download_file {file: "gugu-file://${ref.itemId}?v=${ref.version}"}]`), prompts[1]);
     assert.ok(fx.events.some(event => event.type === 'host_log' && event.level === 'warn' && event.message.includes(ref.itemId) && event.message.includes(created.conversationId)));
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'following text', clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 3 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);

@@ -417,6 +417,7 @@ export class AcpChatStore {
       permissionModeChangeNotice: computed,
       effort: computed,
       effortOptions: computed,
+      fastModeGroup: computed,
       commands: computed,
       permissionQueue: computed,
       queuedPrompts: computed,
@@ -431,6 +432,7 @@ export class AcpChatStore {
       setModel: action,
       setMode: action,
       setEffort: action,
+      setFastMode: action,
       resolvePermission: action,
       editQueuedPrompt: action,
       deleteQueuedPrompt: action,
@@ -557,6 +559,10 @@ export class AcpChatStore {
         { name: option.name, description: option.description },
       ])
     );
+  }
+
+  get fastModeGroup() {
+    return this.session?.config.current().fastMode ?? null;
   }
 
   get commands(): CommandItem[] {
@@ -1486,9 +1492,7 @@ export class AcpChatStore {
    * 写失败只报错不回滚:活会话上已经生效了,回滚活会话等于再改一次用户的设置。
    */
   private async _recordLiveSetting(
-    setting:
-      | { dimension: 'permission'; modeId: string }
-      | { dimension: 'effort'; value: string },
+    setting: Parameters<typeof rpc.sessions.recordLiveSessionSetting>[1],
   ): Promise<void> {
     if (this.runtimeView) return;
     try {
@@ -1740,6 +1744,21 @@ export class AcpChatStore {
       const result = await session.setModelOption('effort', effort);
       if (result.success && result.data.status === 'applied') {
         await this._recordLiveSetting({ dimension: 'effort', value: result.data.effectiveValue });
+      }
+      return this._settleLiveSetting('acpFailure.changeSetting', result);
+    } catch (error: unknown) {
+      this._toastError('acpFailure.changeSetting', error);
+      return null;
+    }
+  }
+
+  async setFastMode(enabled: boolean): Promise<LiveSettingOutcome> {
+    const session = this._requireSession('acpFailure.changeSetting');
+    if (!session) return null;
+    try {
+      const result = await session.setModelOption('fast', enabled ? 'on' : 'off');
+      if (result.success && result.data.status === 'applied') {
+        await this._recordLiveSetting({ dimension: 'fast', value: result.data.effectiveValue === 'on' });
       }
       return this._settleLiveSetting('acpFailure.changeSetting', result);
     } catch (error: unknown) {

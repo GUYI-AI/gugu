@@ -42,6 +42,7 @@ export type BuildSessionRowInput = {
   permissionMode: GuguPermissionMode;
   model?: string;
   effort?: string;
+  fastMode?: boolean;
   /** 资源库 → MCP:新建时带上的那几台(名字)。 */
   libraryMcp?: readonly string[];
   /**
@@ -134,6 +135,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
           permissionMode: input.permissionMode,
           ...(input.model && { model: input.model }),
           ...(input.effort && { effort: input.effort }),
+          ...(input.fastMode !== undefined && { fastMode: input.fastMode }),
           ...(input.libraryMcp?.length && { libraryMcp: [...input.libraryMcp] }),
           ...(initialQueue?.length && { initialQueue }),
           ...(firstUtterance && { firstUtterance }),
@@ -159,6 +161,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
           permissionMode: input.permissionMode,
           ...(input.model && { model: input.model }),
           ...(input.effort && { effort: input.effort }),
+          ...(input.fastMode !== undefined && { fastMode: input.fastMode }),
           ...(input.libraryMcp?.length && { libraryMcp: [...input.libraryMcp] }),
           ...(initialPrompt && { initialPrompt }),
           ...(firstUtterance && { firstUtterance }),

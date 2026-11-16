@@ -29,6 +29,11 @@ final class GuguIOSOwnerRetirementStore {
         let accessSHA256: String
     }
 
+    struct SignOutPreparation: Codable, Equatable {
+        let id: String
+        let original: Original
+    }
+
     struct Record: Codable, Equatable {
         let version: Int
         let id: String
@@ -138,6 +143,50 @@ final class GuguIOSOwnerRetirementStore {
         }
     }
 
+    /// Receipt storage stays available without preparation, but only a matching
+    /// completed sign-out can grant a native cancellation binding.
+    func preparedSignOut(expectedOwnerId: String, current: () throws -> Original?) throws -> SignOutPreparation? {
+        try transaction {
+            guard let value = try read(),
+                  !value.isPublicationOnly, value.target.ownerId == nil, value.target.accessSHA256 == nil,
+                  value.captureComplete, value.cleanupComplete,
+                  value.original?.binding.ownerId == expectedOwnerId else { return nil }
+            guard let original = try current(), value.original == original else { return nil }
+            return SignOutPreparation(id: value.id, original: original)
+        }
+    }
+
+    /// Compare the captured round and original main scope under the commit lock.
+    /// A different target, unfinished cleanup or changed login stays sealed.
+    @discardableResult func cancelSignOut(_ preparation: SignOutPreparation, current: () throws -> Original?) throws -> Bool {
+        try transaction {
+            guard Self.uuid(preparation.id), try current() == preparation.original else { throw Self.staleCancellation() }
+            guard let value = try read() else { return false }
+            guard value.id == preparation.id, !value.isPublicationOnly, value.target.ownerId == nil, value.target.accessSHA256 == nil,
+                  value.captureComplete, value.cleanupComplete, value.original == preparation.original else {
+                throw Self.staleCancellation()
+            }
+            try FileManager.default.removeItem(at: path)
+            try syncDirectory()
+            return true
+        }
+    }
+
+    /// A local erase cannot consume another identity's pending auth commit.
+    /// No network validation is possible after confirmed account closure.
+    func prepareLocalErase(ownerId: String) throws -> Bool {
+        try transaction {
+            guard let value = try read() else { return true }
+            let original = value.original?.binding.ownerId, target = value.target.ownerId
+            guard original == ownerId || target == ownerId else { return true }
+            guard (original == nil || original == ownerId), (target == nil || target == ownerId),
+                  value.captureComplete, value.cleanupComplete else { return false }
+            try FileManager.default.removeItem(at: path)
+            try syncDirectory()
+            return true
+        }
+    }
+
     static func digest(_ token: String) -> String {
         SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -204,5 +253,8 @@ final class GuguIOSOwnerRetirementStore {
     }
     private static func failure() -> GuguHostFailure {
         .init(code: "retirement_pending", message: "Original credential retirement remains unresolved")
+    }
+    private static func staleCancellation() -> GuguHostFailure {
+        .init(code: "stale_context", message: "Sign-out preparation no longer matches the saved login")
     }
 }

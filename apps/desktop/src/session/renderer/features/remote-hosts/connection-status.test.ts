@@ -64,7 +64,7 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
     expect(hostConnectionState({ online: true, loading: true, unreachable: true })).toBe('reconnecting');
     expect(hostConnectionState({ online: true, loading: true, unreachable: false })).toBe('connecting');
     expect(hostConnectionState({ online: true, loading: false, unreachable: false })).toBe('connected');
-    expect(hostStatusLabel('offline', 'Linux 1', '2026-09-23T10:00:00Z', NOW, zh)).toBe('Linux 1 离线 · 上次在线 2 小时前');
+    expect(hostStatusLabel('offline', 'Linux 1', '2026-09-23T10:00:00Z', NOW, zh)).toBe('Linux 1 离线，上次在线是 2 小时前。');
     expect(hostStatusLabel('reconnecting', 'Linux 1', null, NOW, zh)).toBe('正在重新连接 Linux 1…');
     expect(hostStatusLabel('connecting', 'Linux 1', null, NOW, zh)).toBe('正在连接 Linux 1…');
     expect(hostStatusLabel('connected', 'Linux 1', null, NOW, zh)).toBe('已连接 Linux 1');
@@ -73,7 +73,7 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
   it('聊天末尾那一行:离线说上次在线、不给按钮;断线给倒计时 + 立即重连;连着 / 第一次连不说话', () => {
     const base = { device: 'Linux 1', online: true, lastSeenAt: null, errorCode: null, now: NOW, translate: zh };
     expect(chatLinkRow({ ...base, online: false, lastSeenAt: '2026-09-23T11:00:00Z', phase: { kind: 'connected' } })).toEqual({
-      label: 'Linux 1 离线 · 上次在线 1 小时前，上线后自动恢复',
+      label: 'Linux 1 离线，上次在线是 1 小时前，上线后自动恢复。',
       action: null,
     });
     expect(chatLinkRow({ ...base, phase: { kind: 'waiting', attempt: 2, retryAt: NOW + 4_200 } })).toEqual({

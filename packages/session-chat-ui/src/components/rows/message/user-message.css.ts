@@ -153,9 +153,8 @@ export const attachmentStrip = style({
   vars: {
     '--gg-file-row-fg': vars.fg,
     '--gg-file-row-muted': vars.fgMuted,
+    '--gg-file-row-ring': vars.border,
     '--gg-file-row-fill': vars.bgHover,
-    '--gg-file-row-fill-hover': vars.bgPress,
-    '--gg-file-row-font-size': vars.typeChromeTinyFontSize,
   },
 });
 

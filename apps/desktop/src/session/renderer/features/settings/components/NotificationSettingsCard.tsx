@@ -9,12 +9,12 @@ import { extensionsInventoryChangedChannel } from '@shared/extensions/marketEven
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { messageForUser } from '@/lib/userFacingError';
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { SettingSwitch } from './SettingControls';
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives';
 
 /** Per-App permissions this device's owner took back (the bridge reads the same grant on every call). */
-const revokedPermissions = readModel({
+const revokedPermissions = replica({
   name: 'extensionRevokedPermissions',
   scope: 'device',
   read: async () => {
@@ -22,13 +22,13 @@ const revokedPermissions = readModel({
     if (!result.success || !result.data) throw new Error(result.error);
     return result.data;
   },
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 });
 events.on(extensionsInventoryChangedChannel, () => { void revokedPermissions.refresh(); });
 
 const AppNotificationPermissions = observer(function AppNotificationPermissions() {
   const { translate } = useSessionMessages();
-  const revoked = useReadModel(revokedPermissions, []);
+  const revoked = useReplica(revokedPermissions, []);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 

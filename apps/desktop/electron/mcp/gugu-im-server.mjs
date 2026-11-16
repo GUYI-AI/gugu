@@ -3,10 +3,10 @@ import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
-import { downloadSessionFile } from '@gugu/core/local/agent/sessionFileHandoff'
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
+import { openAsBlob } from 'node:fs'
 import { basename, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -16,14 +16,16 @@ import { tokenizeMarkdownMath } from '../../../../packages/core/src/shared/markd
 import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterNameMatching.mjs'
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
-import { fileStoreDirectory, saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
+import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
+import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
-import { workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
+import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
-import { attachmentFolderLine } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
+import { AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
@@ -435,7 +437,8 @@ function rpcErrorDetail(raw) {
 
 // The attachments function (core's one client, packages/core/src/cloud/attachmentsApi.ts): this session's server and token.
 async function attachmentsEndpoint(context, fetchImpl = fetch) {
-  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl }
+  // A main process: signed part PUTs go straight to the store, so large files upload in parts and resume.
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
 }
 // 鉴权失效只允许读取一次 host fresh token；transport/5xx 在 post helper 内按稳定 row 有界重试。
 function isRefreshableAuthError(err) {
@@ -653,7 +656,6 @@ function normToList(v) {
 function clampLimit(v, def, lo, hi) {
   return Math.min(Math.max(lo, Number(v) || def), hi)
 }
-const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 // 附件叫什么：默认就是磁盘上那个文件名，要改名才传 file_name。
 // 传了路径还要求再手打一遍文件名是多余的，而多余的那一遍正是打错字的地方。
 export function resolveUploadName(args) {
@@ -666,7 +668,7 @@ export function resolveUploadName(args) {
 // 这里原先收的是 content_base64，而 MCP 工具的调用方就是模型：它得把整串编码逐 token
 // 复制一遍，漂一次后面全部错位，base64 解码又不报错，于是坏文件静默发出去（#5828 实测
 // 16 KB 的文件毁掉 60%）。该参数已整个去掉，不留这条路。
-export async function readUploadBytes(label, args, maxBytes) {
+async function uploadTarget(label, args) {
   const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
   if (!filePath) throw new Error(`${label}: file_path is required`)
   if (!isAbsolute(filePath)) throw new Error(`${label}: file_path must be absolute, got ${filePath}`)
@@ -678,11 +680,22 @@ export async function readUploadBytes(label, args, maxBytes) {
     throw new Error(`${label}: cannot read ${target} (${err?.code || err?.message || 'unknown'})`)
   }
   if (!info.isFile()) throw new Error(`${label}: ${target} is not a file`)
-  if (info.size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
+  return { target, size: info.size }
+}
+export async function readUploadBytes(label, args, maxBytes) {
+  const { target, size } = await uploadTarget(label, args)
+  if (size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
   const buf = await readFile(target)
   // 读盘期间被换掉就不传——宁可响亮失败，也别传一份说不清是什么的东西出去。
-  if (buf.length !== info.size) throw new Error(`${label}: ${target} changed while reading`)
+  if (buf.length !== size) throw new Error(`${label}: ${target} changed while reading`)
   return buf
+}
+// An attachment goes up as a file-backed Blob: this code never reads the whole file, and the server's upload permit is the
+// one size limit. fetch still reads the body ahead of the socket, so the upload's memory peak is about the file's size
+// (a chunked upload bounds it to a chunk). A file-backed Blob also refuses to be read once the file changes on disk.
+async function uploadBlob(label, args, contentType) {
+  const { target } = await uploadTarget(label, args)
+  return openAsBlob(target, { type: contentType })
 }
 function parseJwtPayload(token) {
   const part = String(token || '').split('.')[1]
@@ -2206,19 +2219,27 @@ async function handleProfile(args, deps) {
 
 /** The bytes of a file on this computer that the shared classifier makes a text document; `null` for stored bytes. */
 async function documentUploadBytes(args) {
-  const bytes = await readUploadBytes('message_send_file', args, ATTACHMENT_MAX_BYTES)
+  // Only a file within the live text size can be a document: anything larger is never read here.
+  const { size } = await uploadTarget('message_send_file', args)
+  if (size > WORKSPACE_TEXT_MAX_BYTES) return null
+  const bytes = await readUploadBytes('message_send_file', args, WORKSPACE_TEXT_MAX_BYTES)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   return workspaceUploadKind(resolveUploadName(args), contentType, new Uint8Array(bytes)).kind === 'document' ? bytes : null
 }
 
-// gugu_file:send-file = 字节经 attachments/upload 直传 OSS,attachments/commit 放进会话的「附件」、发一条附件消息(#7290 gugu-3,
-// 和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, label, chatId, read) {
-  const bytes = read ?? await readUploadBytes(label, args, ATTACHMENT_MAX_BYTES)
+// gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
+// (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
+async function uploadForSend(args, deps, label, chatId) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+  const bytes = await uploadBlob(label, args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
-  return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType }, { chat_id: chatId, as: deps.context.agentId }) }
+  // Its bytes go up before anything is sent, so the same file from this agent to the same friend is one upload: sent again
+  // after a timeout or restart, it resumes. Another friend is another upload, so parallel sends never share one.
+  const sha = await fileSha256(String(args.file_path))
+  const request_id = await contentRequestId('send', deps.context.agentId, chatId ? `chat ${chatId}` : `friend ${String(args.friend_user_id)}`, sha, String(bytes.size))
+  return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
+    { chat_id: chatId, as: deps.context.agentId, request_id }) }
 }
 
 /**
@@ -2301,11 +2322,6 @@ async function handleOwnerFile(args, deps) {
 }
 
 /**
- * message_download_file { source_message_id }:把一条附件消息的字节下到本机,回本地路径。agent 指的是消息,❌ URL / 桶路径:
- * 先按 agent 本人判看不看得见(agentCanSee),字节从哪来由消息说 —— 老消息正文里的公开 URL,新消息指向群文件夹的那一版
- * (经 attachments/urls 以 agent 的身份签)。本地文件按内容的 sha256 起名(同一份字节只存一份)。
- */
-/**
  * 以谁的身份读这条消息的附件:agent 自己看得见就是它(零额外读取);看不见、而这是主人与好友的私聊(#84)
  * 就按主人 —— 与读历史同一个人,看不看得见、签名链接两处都按他。都不成立回 null。
  */
@@ -2316,23 +2332,57 @@ async function attachmentReaderOf(deps, message) {
   return (await agentCanSee(deps, message, ownerUserId)) ? ownerUserId : null
 }
 
-async function downloadAttachment(messageId, deps) {
-  if (!messageId) throw new Error('message_download_file: source_message_id is required')
-  const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
-  const readerId = message ? await attachmentReaderOf(deps, message) : null
-  if (!readerId) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
-  const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-  if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
-  if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
-  const file = await deps.resolveFile({ message_id: messageId }, readerId)
-  if (file.status !== 'ready') throw new Error(`message_download_file: the file of message ${messageId} is no longer readable`)
-  const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
-  if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the attachment') }
-  const saved = await saveToFileStore(file, home, attachment.fileName)
-  const folder = attachment.source.kind === 'item'
-    ? { file: groupFileLink(attachment.source.itemId, { version: attachment.source.version }), next: attachmentFolderLine(attachment.source.itemId, attachment.source.version) }
-    : {}
-  return JSON.stringify({ source_message_id: `msg:${messageId}`, ...saved, ...folder })
+/** message_download_file 的三种来源,各自变成 resolver 的一个 FileRef 和读者:消息、session 附件、群文件夹的那一版。 */
+async function downloadSourceOf(args, deps) {
+  if (args.source_message_id) {
+    const messageId = String(args.source_message_id)
+    const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
+    const reader = message ? await attachmentReaderOf(deps, message) : null
+    if (!reader) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
+    const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
+    if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
+    if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
+    const item = attachment.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
+    return { ref: { message_id: messageId }, reader, name: attachment.fileName, item, echo: { source_message_id: `msg:${messageId}` } }
+  }
+  if (args.source_attachment_id) {
+    const id = String(args.source_attachment_id)
+    return { ref: { attachment_id: id }, reader: deps.context.agentId, item: null, echo: { attachment_id: id } }
+  }
+  const link = parseGroupFileLink(String(args.file ?? '').trim())
+  if (!link) throw new Error(`message_download_file: file is a gugu-file://<item_id>?v=<n> link — not ${JSON.stringify(args.file)}`)
+  return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
+}
+
+// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:harness 的工具超时到了下载也不停,再调一次就接上。
+const downloading = new Map()
+
+/** message_download_file:唯一取字节的门。判读者 → resolver(字节从哪来由它定)→ 本机 file-store 的只读副本。 */
+async function downloadFile(args, deps) {
+  const source = await downloadSourceOf(args, deps)
+  const key = `${source.reader}\n${fileRefKey(source.ref)}`
+  let saving = downloading.get(key)
+  if (!saving) {
+    saving = (async () => {
+      // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
+      const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
+      let file = await deps.resolveFile(source.ref, source.reader)
+      while (file.status === 'pending' && Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
+        file = await deps.resolveFile(source.ref, source.reader)
+      }
+      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
+      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
+      const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
+      if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
+      const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
+      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+      return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
+    })().finally(() => downloading.delete(key))
+    downloading.set(key, saving)
+  }
+  return JSON.stringify({ ...source.echo, ...await saving })
 }
 
 /** message_send_file 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */
@@ -2415,11 +2465,16 @@ async function handleFile(args, deps) {
     }))) {
       fileName = resolveUploadName(args)
     } else {
-      const upload = await uploadForSend(args, deps, 'message_send_file', chatId, documentBytes ?? undefined)
-      const { endpoint, contentType, stagingKey } = upload
-      fileName = upload.fileName
+      // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
+      const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+      const bytes = documentBytes ?? await uploadBlob('message_send_file', args, contentType)
+      const endpoint = await deps.attachmentsEndpoint()
+      const declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: chatId, as: deps.context.agentId })
+      fileName = resolveUploadName(args)
       const commit = {
-        staging_key: stagingKey,
+        staging_key: declared.staging_key,
+        sha256: declared.sha256,
+        size_bytes: declared.size_bytes,
         message_id: messageId,
         chat_id: chatId,
         sender_user_id: deps.context.agentId,
@@ -2436,6 +2491,10 @@ async function handleFile(args, deps) {
         if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
       })
+      if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
+        { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}).catch((error) => {
+        throw new Error(`message_send_file: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
+      })
     }
     if (!message?.id) throw new Error('message_send_file: the server did not confirm the send')
     const pinned = typeof message.file_item_id === 'string' && Number.isInteger(message.file_version)
@@ -2447,14 +2506,6 @@ async function handleFile(args, deps) {
     const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
     return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
       source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
-  }
-  if (args.action === 'download-attachment') {
-    if (args.source_attachment_id) {
-      const home = deps.context.guguHome
-      if (!home) throw new Error('Gugu home is unavailable')
-      return JSON.stringify(await downloadSessionFile(await deps.attachmentsEndpoint(), String(args.source_attachment_id), deps.context.agentId, fileStoreDirectory(home), undefined, true))
-    }
-    return downloadAttachment(String(args.source_message_id ?? ''), deps)
   }
   throw new Error(`gugu_file: unknown action ${args.action}`)
 }
@@ -2637,7 +2688,7 @@ export const TOOL_DEFS = [
   {
     name: 'message_send_file',
     writer: true,
-    description: 'File delivery tool. file: a chat-folder file by its gugu-file://<id>?v=<n>; +file_path: next version. file_path: new file; temporary: cloud copy expires; for anything sent only to be looked at.',
+    description: 'file: a chat-folder file by its gugu-file://<id>?v=<n>; +file_path: next version. file_path: new file; temporary: cloud copy expires; for anything sent only to be looked at.',
     schema: z.object({
       file: z.string().optional(),
       file_path: uploadFilePathSchema.optional(),
@@ -2663,9 +2714,10 @@ export const TOOL_DEFS = [
   },
   {
     name: 'message_download_file',
-    description: 'Download original bytes from a visible chat message (source_message_id) or a session-message attachment reference (source_attachment_id). Returns file_path (read_only: true means a shared file: do not change it or its permissions; to change it, write your version to a new file of your own), actual size_bytes and full sha256; session files are verified against their reference.',
-    schema: z.object({ source_message_id: z.string().optional(), source_attachment_id: z.string().uuid().optional() }).refine(args => Boolean(args.source_message_id) !== Boolean(args.source_attachment_id), 'Give exactly one attachment source'),
-    handler: (args, deps) => handleFile({ ...args, action: 'download-attachment' }, deps),
+    description: 'Save one file on this computer, read-only; returns its file_path and sha256.',
+    schema: z.object({ source_message_id: z.string().optional(), source_attachment_id: z.string().uuid().optional(), file: z.string().optional().describe('gugu-file://<item_id>?v=<n>') })
+      .refine(args => [args.source_message_id, args.source_attachment_id, args.file].filter(Boolean).length === 1, 'Give exactly one of source_message_id, source_attachment_id, file'),
+    handler: (args, deps) => downloadFile(args, deps),
   },
   // ── topic_ ── 话题:从一条已有消息长出来的独立工作线。它本身就是一条 chat,所以收发/读历史仍走
   // message_*；删除必须由来源群管理员带上当前名称，由数据库校验。
@@ -3034,7 +3086,17 @@ export function advertisedTool(name, tool) {
     },
   )
   delete inputSchema.$schema
-  return { name, description: tool.description, inputSchema }
+  return { name, description: tool.description, inputSchema: withoutUuidPatterns(inputSchema) }
+}
+
+// @@@uuid-pattern - zod writes a uuid as format "uuid" plus a ~60-token regex. The format already tells the model, and zod
+// validates the call here either way; the regex was paid by every session for every uuid field of a listed tool.
+function withoutUuidPatterns(node) {
+  if (Array.isArray(node)) return node.map(withoutUuidPatterns)
+  if (!node || typeof node !== 'object') return node
+  return Object.fromEntries(Object.entries(node)
+    .filter(([key]) => !(key === 'pattern' && node.format === 'uuid'))
+    .map(([key, value]) => [key, withoutUuidPatterns(value)]))
 }
 
 // tools/list 必须枚举 **_registeredTools**,❌ 不能只 map TOOL_DEFS:session_*/app_* 两域是

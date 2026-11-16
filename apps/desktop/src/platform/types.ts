@@ -1,3 +1,4 @@
+import type { AccountClosureNative } from './accountClosure'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -89,6 +90,7 @@ export interface FeedbackLogTail {
 export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_full' | 'not_confirmed' | null
 
 export interface AppPlatform {
+  accountClosure: AccountClosureNative
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
   capabilities: PlatformCapabilities

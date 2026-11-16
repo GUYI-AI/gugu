@@ -183,13 +183,13 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
   it('a draft citing a working copy goes into that session as @file mentions: no chat pill points at such a file', async () => {
     const workspace = 'session:conv-agent';
     await draft({ text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
-    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent', projectId: 'p-1' }, text: '@[a.py](src/a.py) @[b.md · L3](b.md)\n' });
+    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent', projectId: 'p-1' }, text: '@[a.py](src/a.py) @[b.md (L3)](b.md)\n' });
   });
 
   it('a cited selection is a quote above the pill, a blank line apart: the quote does not take the pill in', async () => {
     const workspace = 'session:conv-agent';
     await draft({ text: '> picked words\n> more', refs: [{ file: { workspace, id: 'b.md' }, label: '第 3–4 行' }] });
-    expect(sessionDrafts.at(-1)?.text).toBe('> picked words\n> more\n\n@[b.md · 第 3–4 行](b.md)\n');
+    expect(sessionDrafts.at(-1)?.text).toBe('> picked words\n> more\n\n@[b.md (第 3–4 行)](b.md)\n');
     await draft({ text: 'look', refs: [{ file: { workspace, id: 'b.md' } }] });
     expect(sessionDrafts.at(-1)?.text).toBe('look\n@[b.md](b.md)\n');
   });
@@ -208,7 +208,7 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
       text: ' ',
       refs: [{ file: { ...entry, displayName: '工资表.xlsx', version: 6 }, at: { row: 3 }, label: ' Row 3 ' }, { file: { id: ITEM }, at: { row: 4, col: 'B' }, version: 5 }],
     });
-    expect(rpcs[2]!.args.p_content).toBe(`@[card\\[17\\].vote.json · Row 3](gugu-file://${ITEM}?v=6#row=3) @[card\\[17\\].vote.json](gugu-file://${ITEM}?v=5#row=4&col=B)`);
+    expect(rpcs[2]!.args.p_content).toBe(`@[card\\[17\\].vote.json (Row 3)](gugu-file://${ITEM}?v=6#row=3) @[card\\[17\\].vote.json](gugu-file://${ITEM}?v=5#row=4&col=B)`);
   });
 
   it('refused before anything is written, said how: refs into another chat than named, about, a ref whose chat is not the file\'s, a session file, a bad ref, two chats, a bad member, empty text', async () => {
@@ -381,16 +381,16 @@ describe('a draft: only into a composer — nothing sent, nothing asked', () => 
     expect(drafts.at(-1)).toEqual({ chatId: GROUP, text: '> line 3\n> line 4\n' });
     // The pills are the composer's to hold, beside the text: their words and their links, not text yet.
     await draft({ text: '> picked', refs: [{ file: entry, at: { row: 3 }, label: 'Row 3' }] });
-    expect(drafts.at(-1)).toEqual({ chatId: GROUP, text: '> picked\n', refs: [{ label: 'card[17].vote.json · Row 3', link: `gugu-file://${ITEM}?v=7#row=3` }] });
+    expect(drafts.at(-1)).toEqual({ chatId: GROUP, text: '> picked\n', refs: [{ label: 'card[17].vote.json (Row 3)', link: `gugu-file://${ITEM}?v=7#row=3` }] });
     // Pills alone: nothing to say is fine. A long label ends in an ellipsis at 60 characters; the link is whole.
     await draft({ text: '', refs: [{ file: entry, label: '这'.repeat(80) }] });
     const label = (drafts.at(-1) as { refs: { label: string }[] }).refs[0]!.label;
     expect([...label]).toHaveLength(60);
-    expect(label.startsWith('card[17].vote.json · 这')).toBe(true);
+    expect(label.startsWith('card[17].vote.json (这')).toBe(true);
     expect(label.endsWith('…')).toBe(true);
     // A line break in the words would end the pill where it stands (复核 51e9c2fa 要改 1): one line, spaces folded.
     await draft({ text: '', refs: [{ file: entry, label: '一\n\n# 标题\n[点我](https://evil.example)  ' }] });
-    expect((drafts.at(-1) as { refs: { label: string }[] }).refs[0]!.label).toBe('card[17].vote.json · 一 # 标题 [点我](https://evil.example)');
+    expect((drafts.at(-1) as { refs: { label: string }[] }).refs[0]!.label).toBe('card[17].vote.json (一 # 标题 [点我](https://evil.example))');
     // Cut between characters as a person sees them: a family emoji or a flag across the cut stays whole, or goes whole.
     for (const unit of ['👨‍👩‍👧‍👦', '🇨🇳']) {
       await draft({ text: '', refs: [{ file: entry, label: unit.repeat(50) }] });

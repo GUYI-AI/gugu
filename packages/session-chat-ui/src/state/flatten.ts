@@ -1,4 +1,5 @@
 import { conversationReferenceInFooter, conversationShowsName, conversationSpeaker, decorateConversationDensity, lastConversationMessage } from './conversation-density';
+import { toolActivationNames } from '../lib/tool-activation';
 import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
 import { sentMessagesOf, withSentReplies, withSettledSentReplies } from './sent-replies';
@@ -374,12 +375,14 @@ export function flattenTier(
       // Folded, a step's pictures would be out of sight: the line carries the last ones (tool-images.ts — seen unopened).
       // Open, each step below draws its own.
       const pictureStep = expanded ? undefined : op.rows.findLast(hasToolPictures) as ToolRunItem['pictureStep'];
+      const toolNames = op.rows.flatMap(row => 'toolCallId' in row || row.kind === 'tool-group' ? toolActivationNames(row) : row.kind === 'tool' ? [...(row.toolNames ?? [])] : []);
       processItem({
         kind: 'tool-run',
         id: runId,
         turnId,
         label: toolRunLabel(tallyToolRun(op.rows, ctx.agentConversation), ctx.translate),
         stepCount: op.rows.length,
+        ...(toolNames.length ? { toolNames } : {}),
         ...(live ? { live: true as const } : {}),
         ...(now ? { now } : {}),
         ...(pictureStep ? { pictureStep } : {}),

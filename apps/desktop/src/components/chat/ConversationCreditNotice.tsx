@@ -30,7 +30,7 @@ function AccountCreditNotice({ userId }: { userId: string }) {
   return <div data-testid="conversation-credit-notice" data-composer-top-band="credit" role="status"
     style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', padding: '4px 0', overflowWrap: 'anywhere' }}>
     {t('lowBalance.remaining', { credits: formatCredits(credits), count: creditCount(credits) })}
-    {billingLinksAvailable() && <>{' · '}
+    {billingLinksAvailable() && <>{' '}
     <Button variant="ghost" size="sm" onClick={openCreditSettings} style={{ display: 'inline', minHeight: 0, border: 'none', background: 'transparent', padding: 0, color: 'inherit', font: 'inherit', textDecoration: 'underline' }}>
       {t('lowBalance.topUp')}
     </Button></>}

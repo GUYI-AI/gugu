@@ -114,10 +114,10 @@ describe('workspace App: what the old workspace panel did', () => {
     const meta = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-meta`)!
     const cells = (id: string) => [...meta(id).children].map((cell) => cell.textContent)
     expect(cells('plan')).toEqual([clock(ago(60)), '10 B'])
-    expect(meta('plan').title).toBe('张三 创建 · 1小时前 · 已编辑 · 1分钟前')
+    expect(meta('plan').title).toBe('张三 于 1小时前 创建，编辑于 1分钟前')
     expect(cells('photo')).toEqual([clock(ago(120)), '100 B'])
     expect(cells('cfg'), 'the system is no one to name on the row').toEqual([clock(ago(7200)), '2 B'])
-    expect(meta('cfg').title).toBe('系统 创建 · 2小时前')
+    expect(meta('cfg').title).toBe('系统 于 2小时前 创建')
     expect(cells('old'), 'no creation metadata: no invented attribution').toEqual([clock(ago(10)), '1 B'])
   })
 
@@ -129,7 +129,7 @@ describe('workspace App: what the old workspace panel did', () => {
     await vi.waitFor(() => expect(app().shown).toBe('large.json'))
     expect($('doc-message').hidden).toBe(false)
     expect($('download').hidden).toBe(false)
-    expect(app().info).toContain('写手 (Agent) 创建 · 2分钟前')
+    expect(app().info).toContain('写手 (Agent) 于 2分钟前 创建')
     const sources = Array.from(document.querySelectorAll<HTMLButtonElement>('#doc-info .source'))
     expect(sources.map((b) => b.textContent)).toEqual(['第 1 条', '第 2 条'])
 
@@ -166,7 +166,7 @@ describe('workspace App: what the old workspace panel did', () => {
     contextChanged({ ...context, locale: 'en', file: { chat: 'chat-1', id: entry.id } })
     await vi.waitFor(() => expect(app().shown).toBe('plan.md'))
     const activity = $('doc-info').querySelector<HTMLElement>('.file-activity')!
-    expect(activity.textContent).toBe('Created by 张三 · 1 hour ago · Edited · 1 minute ago')
+    expect(activity.textContent).toBe('Created by 张三 1 hour ago, Edited 1 minute ago')
     expect(activity.title).toBe(activity.textContent)
     expect($('doc-info').querySelectorAll('.file-activity')).toHaveLength(1)
     contextChanged({ ...context })
@@ -174,9 +174,9 @@ describe('workspace App: what the old workspace panel did', () => {
   })
 
   test.each([
-    { locale: 'zh-CN', name: '李四', kind: 'human', at: ago(60), expected: '李四 编辑 · 1分钟前' },
-    { locale: 'en', name: 'Helper', kind: 'agent', at: ago(60), expected: 'Edited by Helper (agent) · 1 minute ago' },
-    { locale: 'en', name: 'Jane', kind: 'human', at: ago(3600), expected: 'Edited by Jane · 1 hour ago' },
+    { locale: 'zh-CN', name: '李四', kind: 'human', at: ago(60), expected: '李四 于 1分钟前 编辑' },
+    { locale: 'en', name: 'Helper', kind: 'agent', at: ago(60), expected: 'Edited by Helper (agent) 1 minute ago' },
+    { locale: 'en', name: 'Jane', kind: 'human', at: ago(3600), expected: 'Edited by Jane 1 hour ago' },
   ])('a known $kind editor appears in the list and open header ($locale, $at)', async ({ locale, name, kind, at, expected }) => {
     const entry = { ...entries[0], updatedAt: at, updatedBy: { id: 'editor', name, kind } }
     contextChanged({ ...context, locale })
@@ -425,9 +425,10 @@ describe('workspace App as a file manager: the host picks the App', () => {
     // 对照:没有认领的文件(旧宿主没有这两个字段)照原名显示,画它的后缀,按种类上色(owner 10-28)。
     const plain = document.querySelector('[data-id="plan"] .file-open') as HTMLButtonElement
     expect(plain.querySelector('.file-name')!.textContent).toBe('plan.md')
+    // The host's tile (<gugu-file-mark>, API 56) by the full name: family and word come from the host's table.
     const markOf = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-mark`)!
-    expect([markOf('plan').textContent, markOf('plan').dataset.family]).toEqual(['MD', 'text'])
-    expect([markOf('photo').textContent, markOf('photo').dataset.family]).toEqual(['PNG', 'image'])
+    expect([markOf('plan').localName, markOf('plan').getAttribute('name'), markOf('plan').getAttribute('mime'), markOf('plan').hasAttribute('tile')]).toEqual(['gugu-file-mark', 'plan.md', 'text/markdown', true])
+    expect([markOf('photo').localName, markOf('photo').getAttribute('name')]).toEqual(['gugu-file-mark', 'photo.png'])
   })
 
   // owner 10-17:群文件夹里的 markdown 画成文件夹 App 的图标太怪。认领它的 App 没给这类文件声明图标(icon: null)时,
@@ -436,8 +437,8 @@ describe('workspace App as a file manager: the host picks the App', () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     changed({ kind: 'entries', entries: [{ ...entries[2], id: 'bare', claimedBy: { id: 'workspace', name: '文件夹', icon: null } }], gone: [] })
     const mark = document.querySelector('[data-id="bare"] .file-mark') as HTMLElement
-    expect(mark.tagName).toBe('SPAN')
-    expect(mark.textContent).toBe('JSON')
+    expect(mark.localName).toBe('gugu-file-mark')
+    expect(mark.getAttribute('name')).toBe(entries[2]!.name)
     expect(mark.title).toBe('文件夹')
   })
 

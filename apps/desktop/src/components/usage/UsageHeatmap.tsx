@@ -74,6 +74,27 @@ export function UsageHeatmap({ data, today, formatValue }: {
   )
 }
 
+/** The heatmap before the days are read: its own grid (53 weeks, laid out by heat-graph), every cell a placeholder, so the
+ *  map lands without moving what follows. No values, no visible labels, no tooltip: nothing that reads as「没用过」. */
+export function UsageHeatmapBone({ today }: { today: string }) {
+  return (
+    <div className="gg-usage-bone" data-testid="usage-loading" aria-hidden="true">
+      <HeatGraph.Root data={[]} start={parseDay(addDays(today, -(HEATMAP_DAYS - 1)))} end={parseDay(today)} weekStart="monday"
+        colorScale={BONE_SCALE} className="gg-usage-heat">
+        <div className="gg-usage-months" />
+        <div className="gg-usage-heat-row">
+          {/* The weekday labels set the rows' height (not the cells): the same labels, unseen. */}
+          <div className="gg-usage-days invisible">
+            <HeatGraph.DayLabels>{({ label }) => <span>{label.row % 2 === 1 ? weekdayLabel(label.dayOfWeek) : ''}</span>}</HeatGraph.DayLabels>
+          </div>
+          <HeatGraph.Grid className="gg-usage-grid">{() => <HeatGraph.Cell className="gg-usage-cell" />}</HeatGraph.Grid>
+        </div>
+      </HeatGraph.Root>
+    </div>
+  )
+}
+const BONE_SCALE = HEAT_SCALE.map(() => 'var(--muted)')
+
 export function HeatLegend() {
   const { t } = useTranslation('settings')
   return (

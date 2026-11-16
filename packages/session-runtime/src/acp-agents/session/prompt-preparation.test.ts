@@ -4,7 +4,7 @@ import type { SessionCell } from './cell'
 import { FakeAcpAgent, requestActivityCell } from '../acp-test-support'
 import { setNativePromptPreparation } from './prompt-preparation'
 import { renderDeliveryEnvelope } from '../../../../core/src/local/agent/deliveryEnvelope'
-import { hermesPromptText, indexHermesPrompts, originalHermesPrompt } from '@gugu/session-core/acp/hermes-prompt'
+import { nativePromptText, indexNativePrompts, originalNativePrompt } from '@gugu/session-core/acp/native-prompt'
 import { pluginRegistry } from '@gugu/session-plugins/agents'
 
 const cells: SessionCell[] = []
@@ -19,17 +19,17 @@ function fixture(providerId = 'claude') {
   return { cell,agent }
 }
 
-it.each(['hermes', 'codex', 'claude'])('records a confirmed native/original prompt boundary only for %s when appropriate', async providerId => {
+it.each(['hermes', 'codex', 'claude'])('records a confirmed native/original prompt boundary for %s when its record keeps native prompts', async providerId => {
   const { cell, agent } = fixture(providerId)
   const original = '<resource_changes>User-authored XML</resource_changes>'
   setNativePromptPreparation(async () => ({ text: '<resource_changes>Host preparation</resource_changes>', accepted: async () => {} }))
   await cell.prompt({ text: original, origin: 'typed' })
-  const native = hermesPromptText(vi.mocked(agent.prompt).mock.calls[0]![0].prompt).text
+  const native = nativePromptText(vi.mocked(agent.prompt).mock.calls[0]![0].prompt).text
   const turns = [...cell.transcript.history, ...(cell.transcript.activeTurn ? [cell.transcript.activeTurn] : [])]
   expect(turns).toHaveLength(1)
   const users = turns.flatMap(turn => turn.items).filter(item => item.kind === 'message' && item.role === 'user')
   expect(users).toHaveLength(1)
-  expect(originalHermesPrompt(native, indexHermesPrompts(users))).toBe(providerId === 'hermes' ? original : undefined)
+  expect(originalNativePrompt(native, indexNativePrompts(users))).toBe(providerId === 'claude' ? undefined : original)
 })
 
 it('places conditional profile review before the delivery envelope and preserves the final reply instruction', async () => {

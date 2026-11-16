@@ -2,15 +2,15 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { LocalDeviceUnidentifiedError } from '../../../../apps/desktop/src/lib/localDeviceIdentity'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-// The read model reads for the signed-in account, as the product publishes it.
-;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'account-a')
+// The replica reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'account-a')
 
 const mocks = vi.hoisted(() => ({
   listDevices: vi.fn(),

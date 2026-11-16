@@ -33,7 +33,7 @@ import type { NormalizedEvent } from '../../../acp/reducer/normalized-event';
 import type { SessionPromptReceipt } from '../../../acp/session-protocol';
 import type { PermissionSubject, AcpPermissionOption } from '../../../acp/models/permissions';
 
-export type LiveSettingDimension = 'model' | 'permission' | 'effort';
+export type LiveSettingDimension = 'model' | 'permission' | 'effort' | 'fast';
 export type LiveSettingChannel =
   | 'acp-config-option'
   | 'acp-mode'
@@ -92,6 +92,7 @@ export interface LiveSettingsCapability {
   model?: LiveSettingCapability;
   permission?: LiveSettingCapability;
   effort?: LiveSettingCapability;
+  fast?: LiveSettingCapability;
 }
 
 const unsupportedLiveSetting: LiveSettingCapability = {
@@ -131,6 +132,7 @@ export const liveSettingsCapabilitySchema = z.object({
   model: liveSettingSchema.optional(),
   permission: liveSettingSchema.optional(),
   effort: liveSettingSchema.optional(),
+  fast: liveSettingSchema.optional(),
 });
 
 export type AcpSpawnContext = {
@@ -468,6 +470,13 @@ export interface IAcpBehavior {
    * 连在项目里 `/mcp` 关掉的那台;探针的 cwd 是临时目录,项目里的关闭名单管不到它)。
    */
   catalogProbeSessionMeta?: Record<string, unknown>;
+
+  /**
+   * Extra argv (and the files it names) for the model catalog probe, given that probe's scratch directory,
+   * which the probe deletes afterwards. For a harness that persists every `session/new`: without it each
+   * probe leaves an empty, untitled session in the user's own history (DeepSeek Harness lists them in its app).
+   */
+  catalogProbeOverlay?(scratchDir: string): { args: string[]; files: Array<{ path: string; content: string }> };
 
   /**
    * This harness answers `session/new` without a model option and publishes it right after in a

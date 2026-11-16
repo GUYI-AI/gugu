@@ -39,7 +39,7 @@ export async function verifyGitLabCredentials(
 
     const host = new URL(credentials.data.instanceUrl).host;
     const displayDetail =
-      username && displayName && username !== displayName ? `@${username} · ${host}` : host;
+      username && displayName && username !== displayName ? `@${username} (${host})` : host;
 
     return ok({
       displayName,

@@ -4,7 +4,7 @@ import type { AppPlatform } from '../../../../apps/desktop/src/platform/types'
 import type { DownloadSource } from '../../../../apps/desktop/src/session/shared/extensions/app-files-core'
 import type { packageBytes } from '../../../../apps/desktop/src/session/shared/extensions/attachment-install'
 import type { sendAttachmentBatch } from '../../../../apps/desktop/src/components/chat/sendAttachmentBatch'
-import { fileBlob, stageFileHandle } from '../../../../packages/core/src/shared/fileResolver'
+import { fileBlob, parseFileMetadata, stageFileHandle } from '../../../../packages/core/src/shared/fileResolver'
 import { saveFileHandle } from '../../../../packages/core/src/local/files/fileSnapshots'
 
 const actor = { accountId: 'owner', actorId: 'owner' }
@@ -278,5 +278,13 @@ describe('the canonical read-only file resolver', () => {
     for await (const chunk of result.stream()) chunks.push(chunk)
     expect(chunks).toEqual([]); expect(f.providers.managed).toHaveBeenCalledTimes(1)
     await result.dispose()
+  })
+  // Released clients read a declared file whose bytes have not arrived as an object not found; `upload` says which.
+  it('a pending attachment keeps the image size its sender declared, so its place is drawn at that size', () => {
+    const declared = { status: 'missing', code: 'object_not_found', sha256: null, size_bytes: 60 }
+    expect(parseFileMetadata({ ...declared, upload: 'pending', width: 800, height: 600 })).toEqual({ status: 'pending', sha256: null, width: 800, height: 600 })
+    expect(parseFileMetadata({ ...declared, upload: 'pending', width: null, height: null })).toEqual({ status: 'pending', sha256: null })
+    expect(parseFileMetadata({ ...declared, upload: 'failed' })).toEqual({ status: 'failed', sha256: null })
+    expect(parseFileMetadata(declared), 'without upload it is what it says').toEqual({ status: 'missing', sha256: null })
   })
 })

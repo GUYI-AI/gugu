@@ -218,7 +218,7 @@ export const Markdown = memo(function Markdown({
         if (href && groupFile && classes.includes(FILE_PILL_CLASS)) {
           const label = onlyText(children) ?? ''
           const picked = groupFile.version === undefined ? null : tRef.current('filePill.picked', { version: groupFile.version })
-          return <MentionPill href={href} file mention title={picked ? `${label} · ${picked}` : label} onClick={onClick} rest={attributes}>{children}</MentionPill>
+          return <MentionPill href={href} file={label} mention title={picked ? `${label} (${picked})` : label} onClick={onClick} rest={attributes}>{label || children}</MentionPill>
         }
         // A group file's link written as its name reads as the file list reads it (摩擦单 F39).
         const fileName = groupFile ? onlyText(children) : null

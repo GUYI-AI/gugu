@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { DeviceServerUpdate } from '@gugu/core/shared/types/deviceHost'
 import { serverMachineNotices, serverSupportsConfirmedRestart, type ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth'
@@ -6,7 +7,7 @@ import { isPhoneDevice } from '@gugu/core/cloud/devices'
 import type { DeviceBoundAgent } from './chat'
 
 /**
- * #6264「设置 → 设备」一行要说清的几件事,从设备行 + 这台桌面记下的 SSH 映射推出来(纯函数,可单测)。
+ * #6264「设置 → 设备」一行要说清的几件事,从设备行 + 这台桌面记下的 SSH 映射推出来,显示文本按界面语言格式化。
  * 每行:名字、系统、版本 + 可更新标记、最近在线、地址(可复制)、行内「需要更新」。老宿主不报的项一律按缺席处理,❌ 补默认值冒充事实。
  */
 
@@ -74,7 +75,7 @@ export function deviceSystem(device: Device): string | null {
   if (device.platform === 'cloud') return null
   const os = device.capabilities.os_name ?? PLATFORM_NAMES[device.platform.toLowerCase()] ?? null
   const arch = device.capabilities.arch ?? null
-  if (os && arch) return `${os} · ${arch}`
+  if (os && arch) return `${os}${metadataSeparator()}${arch}`
   return os ?? arch
 }
 

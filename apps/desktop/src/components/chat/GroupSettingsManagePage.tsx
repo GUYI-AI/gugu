@@ -5,6 +5,7 @@ import { GroupAgentFloodSettings } from './GroupAgentFloodSettings'
 import { joinModeDescription } from './chatPresentation'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 import { SettingsToggleRow } from './groupSettingsUi'
+import { Unknown } from '../ui/Unknown'
 import {
   settingsCenteredRowStyle,
   settingsInputStyle,
@@ -28,7 +29,8 @@ const limitStyle: CSSProperties = { ...settingsMutedTextStyle, display: 'flex', 
 export function GroupSettingsManagePage({ chatId, settings, totalMembers, onUpdate }: {
   chatId: string
   settings: GroupChatSettings
-  totalMembers: number
+  /** null until the roster is read. */
+  totalMembers: number | null
   onUpdate: (input: UpdateGroupChatSettingsInput) => Promise<boolean>
 }) {
   const { t } = useTranslation('messaging')
@@ -109,7 +111,7 @@ export function GroupSettingsManagePage({ chatId, settings, totalMembers, onUpda
       <div style={settingsCenteredRowStyle}>
         <div style={settingsRowTitleStyle}>{t('group.settings.memberLimit')}</div>
         <div style={limitStyle}>
-          <span>{totalMembers} /</span>
+          <span>{totalMembers ?? <Unknown className="w-[2ch]" />} /</span>
           <input
             type="number"
             min={1}

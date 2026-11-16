@@ -13,7 +13,7 @@ export {
   type SupportedLocale,
 } from './locale'
 export {
-  formatDate, formatNumber, formatRelativeTime,
+  formatDate, formatNumber, formatRelativeTime, metadataSeparator,
   type FormatRelativeTimeOptions,
 } from './format'
 export {

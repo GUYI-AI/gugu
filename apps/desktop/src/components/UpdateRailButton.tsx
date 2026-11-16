@@ -13,7 +13,7 @@ export function UpdateRailButton({ label, description, progress, busy, failed, o
   onClick?: () => void
 }) {
   return (
-    <Hint label={description ? `${label} · ${description}` : label}>
+    <Hint label={description ? `${label}: ${description}` : label}>
       <IconButton
         className="gg-sidebar-item gg-update-rail"
         aria-label={label}

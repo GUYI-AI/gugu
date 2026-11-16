@@ -19,7 +19,6 @@ import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/fi
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
-import { fileStoreDirectory } from '@gugu/core/local/files/fileSnapshots'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
@@ -575,6 +574,7 @@ import {
   formatBadgeCount,
   paintBadgeOnBitmap,
 } from './tray-badge'
+import { VIEW_STATE_SNAPSHOT_CHANNEL } from '../shared/view-state-snapshot'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostCatalog, updateRestartCopy, type HostCatalog } from '../shared/host-localization'
 
 // ── Dual-instance support ────────────────────────────────────────────────────
@@ -1058,7 +1058,6 @@ function createDeviceSessionpageBridge() {
   }
   return {
     ...bridge,
-    downloadAttachment: desktopFiles.download,
     appInbox: {
       refusal: (source: string) => appInboxPort().refusal(source),
       pull: (agentUserId: string, required?: string) => appInboxPort().pull(agentUserId, required),
@@ -1417,7 +1416,7 @@ const writeAppState = (state: Record<string, unknown>): void => writeStateFile(a
  * 建窗时用上次记住的色调(首次启动 = 产品默认的浅色),渲染层一落属性就同步过来改写并记住。
  * ❌ 别拿 `nativeTheme.shouldUseDarkColors` 冒充它:那是系统外观,不是用户在咕咕里选的那一项。
  */
-const WINDOW_TONE_BG = { light: '#ffffff', dark: '#111114' } as const
+const WINDOW_TONE_BG = { light: '#ffffff', dark: '#0f0f0f' } as const // = tokens.css --bg
 type WindowTone = keyof typeof WINDOW_TONE_BG
 
 let hostThemeColors: Record<string, string> | undefined
@@ -2361,6 +2360,16 @@ ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, str
 ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
   event.returnValue = app.getPreferredSystemLanguages()
 })
+// @@@view-state-snapshot — the renderer's view state before its first frame (shared/view-state-snapshot.ts). The window loads
+// after the session page module (loadMainWindowContents), so it is there; a failed read is logged and answered with null.
+ipcMain.on(VIEW_STATE_SNAPSHOT_CHANNEL, (event) => {
+  try {
+    event.returnValue = emdashBridgeModule?.viewStateSnapshot() ?? null
+  } catch (error) {
+    createLogger('view-state').error({ error: String(error) }, 'view state snapshot failed; the renderer starts without it')
+    event.returnValue = null
+  }
+})
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
 const betaTypingDiagnosticsEnabled = typingDiagnosticsEnabled(BETA_TYPING_DIAGNOSTICS_BUILD, process.env.GUGU_TYPING_DIAGNOSTICS)
@@ -2437,7 +2446,7 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
+  fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
@@ -3370,6 +3379,7 @@ const signalExit = createSignalExit({
   supervisedBy: () => process.env.GUGU_SERVER_SUPERVISED,
   markStopped: () => markStopped(process.env.GUGU_SERVER_HOME!),
   noteExitReason: () => noteExitReason(app.getPath('userData'), 'restart'),
+  flushStorage: () => emdashBridgeModule?.flushViewState(),
   killEngines: (label) => killEnginesOnCrash(label),
   exit: (code) => process.exit(code),
   host: () => deviceRuntimeHost,
@@ -3400,6 +3410,7 @@ process.on('uncaughtException', createFatalExit({
   record: (entry) => recordFatalSync({ dir: logDir, ...entry }),
   logger: createLogger('process'),
   reap: killEnginesOnCrash,
+  flushStorage: () => emdashBridgeModule?.flushViewState(),
   exit: (code) => process.exit(code),
 }))
 process.on('unhandledRejection', (reason) => {
@@ -4794,7 +4805,8 @@ app.whenReady().then(async () => {
             if (!agentId) throw new Error(`Session attachment recipient has no Agent identity: session:${target.sessionId}`)
             recipients.push(agentId)
           }
-          const endpoint = configuredEndpoint(auth.accessToken)
+          // The main process sends signed part PUTs straight to the store (a page cannot).
+          const endpoint = { ...configuredEndpoint(auth.accessToken), signedParts: true }
           signal.throwIfAborted()
           return uploadSessionFiles(endpoint, files, { agentId: sender.guguAgentUserId, sessionId: context.sessionId, recipients, beforeCommit: async () => signal.throwIfAborted() })
       }
@@ -5533,7 +5545,7 @@ app.whenReady().then(async () => {
             // 运行时分叉(侧边聊天)沿用启动输入解析出的同一权限档；ACP adapter 的进程参数
             // 与普通 app-server 由同一 session bundle 物化，不能在桥里另猜一档。
             autonomy: { permissionMode: resolveSessionPermissionMode(info) },
-            model: sessionBundleModelFor(info.providerId, 'acp', forkPlatform),
+            model: sessionBundleModelFor(info.providerId, 'acp', forkPlatform, info.fastMode),
           // spec `mcp-session-toggle`:用户为这条会话关掉的那几台。
           // ⚠️ 原样递,`[]` 也递 —— 归一成 undefined 会让「决定过但一台没关」
           //    与「从没碰过」同形,而这条会话的适配器独占正是按前者判的。
@@ -5816,7 +5828,7 @@ app.whenReady().then(async () => {
           additionalMcpServers: configuredMcp.servers,
           // 模型声明只交给「模型走自己配置文件」的那些家(判据与理由都在这个函数里)——
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
-          model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform),
+          model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
             host: primaryGuguMcpHost,
             resolveFile: desktopFiles.resolve,

@@ -1,4 +1,4 @@
-import { readModel } from '../../lib/readModel'
+import { replica } from '../../lib/replica'
 import { rendererLogger } from '../../lib/log'
 import { chatDb } from '../../lib/supabase'
 
@@ -10,7 +10,7 @@ const log = rendererLogger('files/storage-usage')
  * verified usage on screen while it is read again. Re-read every minute while shown (a placed file need not emit a chat
  * message); a failed read retries with backoff before it is reported.
  */
-export const fileStorageUsage = readModel({
+export const fileStorageUsage = replica({
   name: 'file-storage-usage',
   scope: 'account',
   read: async (userId, chatId: string): Promise<Usage> => {

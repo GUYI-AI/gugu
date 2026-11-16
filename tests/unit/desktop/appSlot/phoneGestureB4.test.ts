@@ -114,12 +114,12 @@ async function call(method: string, args: Record<string, unknown>): Promise<Reco
 
 /** Each verb that needs a gesture, with the arguments a page gives it. */
 const gestureCalls: Record<string, Record<string, unknown>> = {
-  filesAnnotateSelection: { ref: { workspace: 'session:s', id: 'notes.md' }, startLine: 3, endLine: 4, text: 'Selected text', annotation: 'Revise' },
   filesOpenWith: { ref: { name: 'a.md' } },
   filesUpload: { pick: true },
   filesDownload: { ref: { name: 'a.md' } },
   filesForward: { refs: [{ name: 'a.md' }] },
   filesOpenIn: { ref: { name: 'a.md' }, app: 'finder' },
+  filesSendSelection: { text: 'x', refs: [{ file: { name: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   showMessage: { id: 'msg-1' },
   showSession: { id: 's-1' },
   dispatch: { text: 'picked' },
@@ -267,7 +267,7 @@ describe('the phone refuses a verb outside the gesture it needs, in the same sen
     window.removeEventListener(APP_COMPOSE_EVENT, take)
     expect(composed).toEqual([
       { chatId: CHAT, text: '> picked\n' },
-      { chatId: CHAT, text: '', refs: [{ label: 'deck.pptx · 第 2 页', link: `gugu-file://${DECK}?v=3#slide=2` }] },
+      { chatId: CHAT, text: '', refs: [{ label: 'deck.pptx (第 2 页)', link: `gugu-file://${DECK}?v=3#slide=2` }] },
     ])
   })
 })

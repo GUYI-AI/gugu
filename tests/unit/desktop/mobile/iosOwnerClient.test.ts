@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const native = vi.hoisted(() => ({ isNative: true, platform: 'ios', available: true,
-  prepareSignOut: vi.fn(), publishSession: vi.fn(), getBinding: vi.fn(), retireSession: vi.fn() }))
+  prepareSignOut: vi.fn(), cancelSignOut: vi.fn(), publishSession: vi.fn(), getBinding: vi.fn(), retireSession: vi.fn() }))
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: () => native.isNative, getPlatform: () => native.platform,
     isPluginAvailable: (name: string) => name === 'GuguIOSOwner' && native.available },
@@ -10,9 +10,10 @@ vi.mock('@capacitor/core', () => ({
     return native
   },
 }))
-import { iosOwnerClient, prepareIOSSignOut } from '../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient'
+import { cancelIOSSignOut, iosOwnerClient, prepareIOSSignOut } from '../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient'
 
 const ownerId = '10000000-0000-0000-0000-000000000001'
+const localOperationId = 'captured-operation'
 const installationId = '30000000-0000-0000-0000-000000000003'
 const binding = { ownerId, installationId, deviceId: `phone-${installationId}-${ownerId}` }
 beforeEach(() => { vi.resetAllMocks(); native.isNative = true; native.platform = 'ios'; native.available = true })
@@ -92,6 +93,35 @@ describe('GuguIOSOwner client', () => {
   it.each([undefined, null, {}, { prepared: false }, { prepared: 'true' }])('rejects incomplete logout preparation %#', async reply => {
     native.prepareSignOut.mockResolvedValue(reply)
     await expect(prepareIOSSignOut(ownerId)).rejects.toMatchObject({ code: 'invalid_native_reply' })
+  })
+
+  it('cancels only the requested owner after an explicit native acknowledgement', async () => {
+    native.cancelSignOut.mockResolvedValue({ cancelled: true })
+    await expect(cancelIOSSignOut(ownerId, localOperationId)).resolves.toBeUndefined()
+    expect(native.cancelSignOut).toHaveBeenCalledExactlyOnceWith({ ownerId, localOperationId })
+    expect(native.publishSession).not.toHaveBeenCalled()
+  })
+  it.each([undefined, null, {}, { cancelled: false }, { cancelled: 'true' }, { prepared: true }])('rejects incomplete preparation cancellation %#', async reply => {
+    native.cancelSignOut.mockResolvedValue(reply)
+    await expect(cancelIOSSignOut(ownerId, localOperationId)).rejects.toMatchObject({ code: 'invalid_native_reply' })
+  })
+  it('preserves native stale cancellation failure', async () => {
+    const failure = { code: 'stale_context' }
+    native.cancelSignOut.mockRejectedValue(failure)
+    await expect(cancelIOSSignOut(ownerId, localOperationId)).rejects.toBe(failure)
+  })
+  it.each(['web', 'android', 'missing'])('does not cancel preparation without the iOS plugin on %s', async target => {
+    native.isNative = target !== 'web'; native.platform = target === 'android' ? 'android' : 'ios'; native.available = target !== 'missing'
+    await expect(cancelIOSSignOut(ownerId, localOperationId)).rejects.toMatchObject({ code: 'unavailable' })
+    expect(native.cancelSignOut).not.toHaveBeenCalled()
+  })
+  it('rejects an invalid cancellation owner before calling native', async () => {
+    await expect(cancelIOSSignOut('another-owner', localOperationId)).rejects.toMatchObject({ code: 'invalid_native_reply' })
+    expect(native.cancelSignOut).not.toHaveBeenCalled()
+  })
+  it.each(['', 'a'.repeat(257), '界'.repeat(86)])('rejects missing or oversized cancellation scope %#', async operation => {
+    await expect(cancelIOSSignOut(ownerId, operation)).rejects.toMatchObject({ code: 'invalid_native_reply' })
+    expect(native.cancelSignOut).not.toHaveBeenCalled()
   })
 
   it('rejects missing or malformed caller input without invoking native', async () => {

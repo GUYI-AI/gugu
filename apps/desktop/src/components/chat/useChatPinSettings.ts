@@ -1,27 +1,33 @@
 import { useEffect } from 'react'
-import { skipToken, useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { readChatPinSettings, setChatPinPreference, watchChatPinSettings, type ChatPinSettings } from '@/lib/chatPinSettings'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
-import { queryClient } from '@/lib/readModel'
+import { queryClient, replica, useReplica } from '@/lib/replica'
 import { useAuth } from '@/store/auth'
 import { useToast } from '../toastContext'
 
-const empty: ChatPinSettings = { topicIds: [] }
-const keyOf = (userId: string | undefined, chatId: string | null) => ['chat-pins', userId, chatId] as const
-// Subscription ownership only; preference values live exclusively in QueryClient.
+/** The topics this account pinned in a chat (its own settings row per chat); a change elsewhere arrives by the watch. */
+export const chatPins = replica({
+  name: 'chatPins',
+  scope: 'account',
+  read: (owner: string, chatId: string): Promise<ChatPinSettings> => readChatPinSettings(owner, chatId),
+  // Pushed: a value stays current until the watch says otherwise (the watch reads once more when it starts).
+  fresh: Infinity,
+})
+
+const NO_PINS: readonly string[] = []
+// Subscription ownership only; the pins live in the replica.
 const watches = new Map<string, { users: number; stop: () => void }>()
 
 function watch(userId: string, chatId: string) {
   const id = JSON.stringify([userId, chatId])
   let entry = watches.get(id)
   if (!entry) {
-    const queryKey = keyOf(userId, chatId)
-    const refresh = () => { void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey })) }
-    const stop = watchChatPinSettings(userId, chatId, refresh)
-    // The cached pins paint the first frame; changes made while nobody watched are read again now.
-    if (queryClient.getQueryData(queryKey)) refresh()
+    const stop = watchChatPinSettings(userId, chatId, () => { void chatPins.refresh(chatId) })
+    // The kept pins paint the first frame; changes made while nobody watched are read again now.
+    if (chatPins.peek(chatId).state === 'value') void chatPins.refresh(chatId)
     entry = { users: 0, stop }
     watches.set(id, entry)
   }
@@ -37,31 +43,27 @@ export function useChatPinSettings(chatId: string | null, enabled = true) {
   const { toast } = useToast()
   const { t } = useTranslation('messaging')
   const userId = user?.id
-  const query = useQuery({
-    queryKey: keyOf(userId, chatId), enabled,
-    queryFn: userId && chatId ? () => readChatPinSettings(userId, chatId) : skipToken,
-    retry: false, networkMode: 'always', staleTime: Infinity, gcTime: Infinity, refetchOnMount: false,
-  }, queryClient)
+  const reading = useReplica(chatPins, userId && chatId && enabled ? [chatId] : null)
   useEffect(() => {
     if (!userId || !chatId || !enabled) return
     return watch(userId, chatId)
   }, [userId, chatId, enabled])
   const mutation = useMutation({
     networkMode: 'always', scope: { id: `chat-settings:${userId}:${chatId}` },
-    mutationFn: (input: { userId: string | undefined; chatId: string | null; id: string; pinned: boolean }) => {
+    mutationFn: async (input: { userId: string | undefined; chatId: string | null; id: string; pinned: boolean }) => {
       if (!input.userId || !input.chatId) throw new Error('A signed-in chat is required')
-      return setChatPinPreference(input.userId, input.chatId, input.id, input.pinned)
-    },
-    onSuccess: async (pins, input) => {
-      const queryKey = keyOf(input.userId, input.chatId)
-      await queryClient.cancelQueries({ queryKey })
-      queryClient.setQueryData(queryKey, pins)
+      const entry = chatPins.at(input.chatId)
+      const pins = await setChatPinPreference(input.userId, input.chatId, input.id, input.pinned)
+      entry.set(pins)
+      return pins
     },
     onError: (error) => { rendererLogger('chat/pins').error({ error }, 'Saving chat pins failed'); toast(t('topic.pins.saveFailed'), 'error', messageForUser(error)) },
   }, queryClient)
   return {
-    ...(query.data ?? empty), ready: query.isSuccess, error: query.isError, saving: mutation.isPending,
-    retry: () => { void query.refetch() },
+    // @@@reading-default - pins not read: no topic is drawn as pinned yet, and `ready` keeps the pin toggles off until they are
+    topicIds: reading.state === 'value' ? reading.value.topicIds : NO_PINS,
+    ready: reading.state === 'value', error: reading.state === 'error', saving: mutation.isPending,
+    retry: () => { if (chatId) void chatPins.refresh(chatId) },
     set: (id: string, pinned: boolean) => mutation.mutate({ userId, chatId, id, pinned }),
   }
 }

@@ -11,6 +11,7 @@ import { CollapseHeader } from '@session-chat/components/primitives/CollapseHead
 import { defineUnit } from '@session-chat/core/units';
 import { Show } from 'solid-js';
 import type { ToolRunItem } from '@session-chat/model';
+import { activateToolRow } from '@session-chat/lib/tool-activation';
 import { toolRunNowLabel } from '@session-chat/state/tool-run';
 import { readableLabel, rowTranslator } from '../readable-label';
 import { ToolThumbs } from '../tools/tool/Tool';
@@ -19,7 +20,7 @@ import { STEP_STRIP_INSET } from '../tools/tool/tool-images';
 import { turnProcessHeaderSlot, turnProcessLine, turnProcessRow } from '../turn-process/turn-process.css';
 
 function summaryLayout(data: ToolRunItem, ctx: import('@session-chat/core/define').MeasureCtx) {
-  const now = data.now ? ` · ${toolRunNowLabel(data.now, rowTranslator(ctx))}` : '';
+  const now = data.now ? `: ${toolRunNowLabel(data.now, rowTranslator(ctx))}` : '';
   const command = data.now?.kind === 'command' ? ` ${data.now.command}` : '';
   const label = readableLabel(data.label + now + command, ctx, ctx.width - 20,
     ctx.theme.layout.agentConversation ? 12 : ctx.theme.config.roles.body.size);
@@ -72,7 +73,7 @@ export const toolRunUnitDef = defineUnit<ToolRunItem, { extraH: number }>({
         style={{ height: `${row().height}px` }}
       >
         <div class={turnProcessLine} data-slot="tool-timeline-line">
-          <div class={turnProcessHeaderSlot}>
+          <div class={turnProcessHeaderSlot} onClick={event => activateToolRow(event, props.data.toolNames)}>
             <CollapseHeader
               id={props.data.id}
               collapsible

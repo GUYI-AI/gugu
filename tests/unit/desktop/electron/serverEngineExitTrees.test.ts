@@ -71,8 +71,8 @@ describe.runIf(process.platform !== 'win32')('real host exit with a detached ACP
       // main's wiring of the real exit paths; the other native legs (codex, opencode, droid, programs, tunnel) are idle here.
       const killEnginesOnCrash=createNativeLegReap({logDir,serverMode:SERVER_MODE,logger:shutdownLogger,legs:()=>[['mise',killAllMiseProcessesSync]]});
       const {exitOnSignal}=createSignalExit({serverMode:SERVER_MODE,exitRestart:75,exitSignedOut:78,stopActivity(){},singleRun:isSingleServerRun,
-        sessionFileExists:()=>true,supervisedBy:()=>undefined,markStopped(){},noteExitReason(){},killEngines:killEnginesOnCrash,exit,host:()=>null,stopHost:async()=>{},warn(){}});
-      process.on('uncaughtException',createFatalExit({classify:()=>'defect',record(){},logger:shutdownLogger,reap:killEnginesOnCrash,exit}));
+        sessionFileExists:()=>true,supervisedBy:()=>undefined,markStopped(){},noteExitReason(){},flushStorage(){},killEngines:killEnginesOnCrash,exit,host:()=>null,stopHost:async()=>{},warn(){}});
+      process.on('uncaughtException',createFatalExit({classify:()=>'defect',record(){},logger:shutdownLogger,reap:killEnginesOnCrash,flushStorage(){},exit}));
       void(async()=>{
         const {logger}=createStubLogger();
         await spawnWorker({name:'fixture',entry:${JSON.stringify(workerEntry)},contract:defineContract({}),scope:createScope({logger}),supervision:{restart:'never'}});
