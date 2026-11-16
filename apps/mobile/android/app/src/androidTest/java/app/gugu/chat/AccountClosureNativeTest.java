@@ -151,4 +151,89 @@ public class AccountClosureNativeTest {
         reject("closure_storage_unavailable", () -> new AndroidAccountClosure(context).receipts.get(scope));
         assertArrayEquals(bad, Files.readAllBytes(file.toPath()));
     }
+
+    @Test public void migrationRetiresTheCommittedRegistrationInsteadOfTheInstallationKey() throws Exception {
+        String installation = GuguPhoneInstallation.identity(context).key, registration = UUID.randomUUID().toString();
+        PhoneRegistrationIdentity.open(context.getNoBackupFilesDir(), installation, () -> registration,
+            (temporary, target) -> Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE));
+        AndroidAccountClosure closure = new AndroidAccountClosure(context);
+        String committed = "phone-" + registration + "-" + a;
+        assertNotEquals(installation, registration); assertEquals(committed, closure.deviceId(a));
+        closure.prepareSignOut(a).get(5, TimeUnit.SECONDS);
+        reject("closure_not_prepared", () -> closure.retireDevice(a, "phone-" + installation + "-" + a));
+        closure.retireDevice(a, committed);
+        assertEquals(AccountClosurePreparation.RETIRED, new AccountClosurePreparation(context).state(a));
+        assertEquals(committed, new AndroidAccountClosure(context).deviceId(a));
+    }
+
+    @Test public void returningToAWaitsForTheOriginalAExitAndLeavesBRunning() throws Exception {
+        java.util.concurrent.CompletableFuture<Void> oldA = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<Void> currentB = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicInteger stoppedA = new java.util.concurrent.atomic.AtomicInteger(), stoppedB = new java.util.concurrent.atomic.AtomicInteger();
+        GuguAgentHostService.OWNED_RUNS.add(a, oldA, stoppedA::incrementAndGet);
+        signIn(b); GuguAgentHostService.OWNED_RUNS.add(b, currentB, stoppedB::incrementAndGet); GuguAgentHostService.reserveOwner(b);
+        try {
+            signIn(a); AndroidAccountClosure closure = new AndroidAccountClosure(context);
+            AccountClosureReceiptStore.Scope scope = scope("returning-A"); closure.receipts.put(scope, "opaque-A");
+            java.util.concurrent.CompletableFuture<Void> prepared = closure.prepareSignOut(a);
+            assertFalse(prepared.isDone()); assertTrue(GuguAgentHostService.ownerIsBusy(a));
+            assertEquals(AccountClosurePreparation.STOPPING, new AccountClosurePreparation(context).state(a));
+            reject("closure_not_prepared", () -> closure.retireDevice(a, closure.deviceId(a)));
+            reject("closure_not_prepared", () -> closure.erase(scope));
+            assertEquals(1, stoppedA.get()); assertEquals(0, stoppedB.get());
+            oldA.complete(null); prepared.get(5, TimeUnit.SECONDS);
+            closure.retireDevice(a, closure.deviceId(a)); assertEquals("complete", closure.erase(scope).status);
+            assertTrue(GuguAgentHostService.ownerIsBusy(b)); assertEquals(0, stoppedB.get());
+        } finally { oldA.complete(null); currentB.complete(null); GuguAgentHostService.releaseReservation(b); }
+    }
+
+    private static final class AttachedLegacyService extends GuguAgentService {
+        void attach(Context context) { attachBaseContext(context); }
+    }
+    private static void field(Class<?> type, Object target, String name, Object value) throws Exception {
+        java.lang.reflect.Field field = type.getDeclaredField(name); field.setAccessible(true); field.set(target, value);
+    }
+    private static void eof(GuguAgentService service) throws Exception {
+        java.lang.reflect.Method method = GuguAgentService.class.getDeclaredMethod("recordUnexpectedExit");
+        method.setAccessible(true); method.invoke(service);
+    }
+    @Test public void legacyEofDoesNotHoldAgentLockWhileWaitingForAuthAdmission() throws Exception {
+        AttachedLegacyService service = new AttachedLegacyService(); service.attach(context);
+        field(GuguAgentService.class, service, "owner", a);
+        field(GuguAgentService.class, null, "snapshot", new com.getcapacitor.JSObject().put("ownerId", a).put("status", "running"));
+        assertTrue(GuguAgentService.claim(a));
+        java.util.concurrent.CountDownLatch authHeld = new java.util.concurrent.CountDownLatch(1), releaseAuth = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean attemptClaim = new java.util.concurrent.atomic.AtomicBoolean(), claimedWithoutDeadlock = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        Thread admission = new Thread(() -> {
+            synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+                authHeld.countDown();
+                try {
+                    if (!releaseAuth.await(5, TimeUnit.SECONDS)) throw new AssertionError("Auth test gate was not released");
+                    if (attemptClaim.get()) { GuguAgentService.claim(b); claimedWithoutDeadlock.set(true); }
+                } catch (Throwable error) { failure.set(error); }
+            }
+        });
+        Thread worker = new Thread(() -> { try { eof(service); } catch (Throwable error) { failure.set(error); } });
+        java.util.concurrent.CompletableFuture<Boolean> probe = new java.util.concurrent.CompletableFuture<>();
+        Thread observer = new Thread(() -> probe.complete(GuguAgentService.isRunning()));
+        boolean lockAvailable = false;
+        try {
+            admission.start(); assertTrue(authHeld.await(5, TimeUnit.SECONDS)); worker.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (worker.getState() != Thread.State.BLOCKED && worker.isAlive() && System.nanoTime() < deadline) Thread.yield();
+            assertEquals(Thread.State.BLOCKED, worker.getState()); observer.start();
+            try { lockAvailable = probe.get(2, TimeUnit.SECONDS); }
+            catch (java.util.concurrent.TimeoutException expectedOldLockOrderFailure) { /* release below before failing */ }
+            attemptClaim.set(lockAvailable);
+        } finally {
+            releaseAuth.countDown(); admission.join(5000); worker.join(5000); observer.join(5000);
+            GuguAgentService.release();
+        }
+        assertTrue("EOF held the Agent monitor while blocked by auth", lockAvailable);
+        assertTrue(claimedWithoutDeadlock.get()); assertNull(failure.get());
+        assertFalse(admission.isAlive()); assertFalse(worker.isAlive()); assertFalse(observer.isAlive());
+        assertEquals("failed", GuguAgentService.readState(context, a).getString("status"));
+        GuguAgentService.forgetClosedOwner(a);
+    }
 }

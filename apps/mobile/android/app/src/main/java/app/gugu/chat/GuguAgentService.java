@@ -132,9 +132,7 @@ public class GuguAgentService extends Service {
                     if ("done".equals(type) || "failed".equals(type) || "cancelled".equals(type)) break;
                 }
             }
-            synchronized (LOCK) {
-                if ("running".equals(snapshot.optString("status"))) record(new JSObject().put("type", "failed").put("message", "手机运行时意外退出，请检查设备日志"));
-            }
+            recordUnexpectedExit();
         } catch (Exception error) {
             record(new JSObject().put("type", "failed").put("message", error.toString()));
         } finally {
@@ -199,6 +197,17 @@ public class GuguAgentService extends Service {
                 }
                 if ("done".equals(type) || "failed".equals(type) || "cancelled".equals(type)) snapshot.put("status", type);
                 persist();
+            }
+        }
+    }
+
+    private void recordUnexpectedExit() {
+        // Admission and record() acquire auth before LOCK. EOF must use that
+        // same order; holding LOCK while entering record() can deadlock claim.
+        synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            synchronized (LOCK) {
+                if ("running".equals(snapshot.optString("status")))
+                    record(new JSObject().put("type", "failed").put("message", "手机运行时意外退出，请检查设备日志"));
             }
         }
     }

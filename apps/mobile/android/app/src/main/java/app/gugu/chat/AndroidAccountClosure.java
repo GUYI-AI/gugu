@@ -44,7 +44,9 @@ final class AndroidAccountClosure {
             }, steps, this::retained, (scope, capturing) -> preparation.generation(scope.ownerId));
     }
     String deviceId(String owner) throws Exception {
-        return "phone-" + GuguPhoneInstallation.identity(context).key + "-" + GuguAgentHostPolicy.owner(owner);
+        String canonical = GuguAgentHostPolicy.owner(owner);
+        String registration = GuguPhoneRegistration.resolve(context, GuguPhoneInstallation.identity(context), canonical, null, null);
+        return "phone-" + registration + "-" + canonical;
     }
     CompletableFuture<Void> prepareSignOut(String owner) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
@@ -68,9 +70,12 @@ final class AndroidAccountClosure {
         });
     }
     void retireDevice(String owner, String expectedDeviceId) throws Exception {
+        // Registration migration can read the host store. Resolve outside the
+        // auth monitor, then recheck its owner under that monitor.
+        String registeredDevice = deviceId(owner);
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             requireCurrentOwner(owner);
-            if (!deviceId(owner).equals(expectedDeviceId) || preparation.state(owner) < AccountClosurePreparation.STOPPED || ownerBusy(owner))
+            if (!registeredDevice.equals(expectedDeviceId) || preparation.state(owner) < AccountClosurePreparation.STOPPED || ownerBusy(owner))
                 throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
             // The Android adapter calls this only after the existing owner-
             // scoped device removal acknowledges success. No new HTTP API here.

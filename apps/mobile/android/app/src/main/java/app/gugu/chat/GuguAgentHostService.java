@@ -41,6 +41,7 @@ public class GuguAgentHostService extends Service {
     private static final Map<String, JSObject> STATES = new HashMap<>();
     private static volatile GuguAgentHostService active;
     private static volatile String reservedOwner;
+    static final PhoneAgentOwnerRuns OWNED_RUNS = new PhoneAgentOwnerRuns();
     private static final String ACTION_CANCEL_NOTIFICATION_TASK = "app.gugu.chat.action.CANCEL_PHONE_AGENT_TASK";
     private volatile String notificationSignature;
     private final ExecutorService work = Executors.newCachedThreadPool();
@@ -96,6 +97,8 @@ public class GuguAgentHostService extends Service {
                 } else {
                     previous = run;
                     configured = new HostRun(owner, config, startId);
+                    HostRun owned = configured;
+                    OWNED_RUNS.add(owner, owned.exited, () -> { owned.closingAuth = true; owned.stop(); });
                     current = configured;
                     launch = true;
                 }
@@ -220,21 +223,16 @@ public class GuguAgentHostService extends Service {
     }
 
     static boolean ownerIsBusy(String owner) {
-        GuguAgentHostService service = active;
-        HostRun run = service == null ? null : service.current;
-        return owner.equals(reservedOwner) || (run != null && run.owner.equals(owner) && !run.exited.isDone());
+        return owner.equals(reservedOwner) || OWNED_RUNS.busy(owner);
     }
     static void forgetClosedOwner(String owner) { synchronized (LOCK) { STATES.remove(owner); } }
 
     static CompletableFuture<Void> stopOwnerAndWait(Context context, String owner, boolean clearCredentials) throws Exception {
-        GuguAgentHostService service = active;
-        HostRun run = service == null ? null : service.current;
-        if (run == null || !run.owner.equals(owner)) { stopOwner(context, owner, clearCredentials); return CompletableFuture.completedFuture(null); }
+        GuguAgentHostPolicy.owner(owner);
         var grants = GuguAgentService.permissions(context);
         if (owner.equals(grants.getString("owner", ""))) { grants.edit().clear().commit(); GuguNotificationListener.setCollecting(false); }
-        run.closingAuth = true;
-        run.stop();
-        return run.exited.thenRun(() -> {
+        releaseReservation(owner);
+        return OWNED_RUNS.stopAndAwait(owner).thenRun(() -> {
             try { if (clearCredentials) GuguAgentHostStore.clear(context, owner); }
             catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
             finally { releaseReservation(owner); }
