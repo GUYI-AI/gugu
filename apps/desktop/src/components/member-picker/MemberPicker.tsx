@@ -15,7 +15,7 @@ import { recentChatActivity, searchContacts, type ContactSearchHit } from '../..
 import { displayName, getPinyinInitial } from '../../lib/contactsListSort'
 import { rendererLogger } from '../../lib/log'
 import { contactRelations } from '../../lib/contactsReplicas'
-import { useReplica } from '../../lib/replica'
+import { useReplicaFetching } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { useContactsStore } from '../../store/contactsContext'
@@ -67,16 +67,17 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   usePhoneTaskDirectory()
   const { t } = useTranslation('contacts')
   const mobile = useMobileShell()
-  const { contacts, contactsStatus, loadingContacts, refreshContacts } = useContactsStore()
+  const { contacts, contactsStatus, loadingContacts: listRead, refreshContacts } = useContactsStore()
   const currentUserId = useAuth().user?.id ?? null
   const { chats } = useChatStore('chats')
   const devices = useDisplayDevices(useDevicesStore().devices)
   const live = useLiveDeviceSessions()
   const [openedAt] = useState(() => Date.now())
 
-  // 选成员要新鲜的候选:通讯录 revision 与弹窗开关可能同一帧到,打开时再取一次权威快照 —— 这一读就是 replica 的挂载重读
-  // (contactRelations 没有 fresh),在途期间 loadingContacts 为真,确认按钮等它。
-  useReplica(contactRelations, [])
+  // 选成员要新鲜的候选:通讯录 revision 与弹窗开关可能同一帧到,打开时再取一次权威快照(contactRelations 没有 fresh)。
+  // 在第一次渲染里就发出(❌ 等挂载后的 effect):第一帧确认按钮就等它,也不会先按上次的名单判「所选成员不可用」再收回。
+  useState(() => { void contactRelations.prefetch() })
+  const loadingContacts = useReplicaFetching(contactRelations, []) || listRead
   const reload = useCallback(() => refreshContacts().catch((error: unknown) => log.error({ error: String(error) }, 'refresh contacts failed')), [refreshContacts])
 
   const model = useMemo(

@@ -2,7 +2,7 @@
 //
 // 为什么要一个 hook 而不是每条系统消息各查一次:每个群**最多一条**台账(spec:只做一次),
 // 所以一条线查一次就够。逐条消息去查等于把 O(1) 做成 O(n) 次往返。
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { topicService, type AgentFloodAdjustment } from '@/lib/topics'
 import { agentFloodNotice } from '@/lib/agentFloodAdjustments'
 import { useReplica } from '@/lib/replica'
@@ -30,8 +30,13 @@ export function useAgentFloodNotice(
     if (messages[index]!.content_type === 'system') { latestSystemMessageId = messages[index]!.id; break }
   }
   const seen = latestSystemMessageId
+  // Opening a chat reads it already (the mount): only a system message landing on this chat since asks again
+  // (❌ a second read of the ledger each time a chat with a system message opens).
+  const shown = useRef<{ chatId: string | null; seen: string | null } | null>(null)
   useEffect(() => {
-    if (chatId && seen) void agentFloodNotice.refresh(chatId)
+    const before = shown.current
+    shown.current = { chatId, seen }
+    if (chatId && seen && before?.chatId === chatId && before.seen !== seen) void agentFloodNotice.refresh(chatId)
   }, [chatId, seen])
 
   return {

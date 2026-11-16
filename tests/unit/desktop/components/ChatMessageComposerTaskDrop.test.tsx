@@ -12,6 +12,7 @@ import { i18n } from '../../../../apps/desktop/src/i18n'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 import { freshReplicaAccount } from '../../../support/replicaAccount'
+import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
 
 const { resolveSession } = vi.hoisted(() => ({ resolveSession: vi.fn() }))
 const service = vi.hoisted(() => ({
@@ -38,7 +39,9 @@ const mention = (id: string): MentionItem => ({ id: `aid:${id}`, label: `aid:${i
 const input = () => harness.container.querySelector('[data-testid="chat-composer"]')!
 const dialog = () => document.querySelector('[role="dialog"]')
 const confirmButton = () => [...dialog()!.querySelectorAll<HTMLButtonElement>('button')].find((button) => /^添加/.test(button.textContent ?? ''))!
-async function renderGroup(props: Partial<ChatMessageComposerProps> = {}, contacts = [outside], refreshContacts = vi.fn(async () => {}), loadingContacts = false) {
+async function renderGroup(props: Partial<ChatMessageComposerProps> = {}, contacts = [outside], refreshContacts = vi.fn(async () => {}), loadingContacts = false, contactsRead: Promise<unknown> = Promise.resolve(contacts)) {
+  // The picker reads the contacts again when it opens (contactRelations): answered here as the context holds them.
+  vi.spyOn(contactsService, 'getContacts').mockReturnValue(contactsRead as never)
   await renderWithAppProviders(harness, <ChatMessageComposer onSend={vi.fn(async () => {})} chatId="chat" isGroupChat currentUserId="owner-1" groupMembers={[member]} {...props} />, {
     auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' }, contacts: { contacts, refreshContacts, loadingContacts },
   })
@@ -135,8 +138,8 @@ describe('task references in the shared chat composer', () => {
   })
 
   it('waits for refreshed eligibility before enabling confirmation', async () => {
-    // The picker's open-time read of the contacts is in flight (the contacts replica reads again when the picker mounts).
-    await renderGroup({}, [outside], vi.fn(async () => {}), true)
+    // The picker's open-time read of the contacts is in flight (the picker asks it in its first render).
+    await renderGroup({}, [outside], vi.fn(async () => {}), false, new Promise(() => {}))
     await drop()
     expect(confirmButton().disabled).toBe(true)
     expect(service.inviteGroupMember).not.toHaveBeenCalled()

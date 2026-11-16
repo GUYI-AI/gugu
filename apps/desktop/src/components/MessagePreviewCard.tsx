@@ -9,6 +9,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { useChatStore } from '../store/chatContext'
 import { useDevicesStore } from '../store/devicesContext'
 import { messageById } from '../lib/messageById'
+import { readRevisionResourceKey } from '../lib/accountRevisionCoordinator'
 import { useReplicas } from '../lib/replica'
 import { Avatar } from './Avatar'
 import { formatRelativeTime } from '../lib/relativeTime'
@@ -51,8 +52,14 @@ function usePromptMessages(
   const missing = ids.filter((id) => !byId.has(id))
   const readings = useReplicas(messageById, missing.map((id) => [id] as [string]))
   const missingKey = missing.join(',')
-  useEffect(() => missingKey ? subscribeAccountRevision('message_deleted', () => {
-    for (const id of missingKey.split(',')) void messageById.refresh(id)
+  // Only a prompt of this card that was deleted is read again (❌ every prompt for any deletion in the account).
+  useEffect(() => missingKey ? subscribeAccountRevision('message_deleted', (operations) => {
+    const shown = new Set(missingKey.split(','))
+    for (const operation of operations) {
+      if (operation.event !== 'message_deleted') continue
+      const { entityId } = readRevisionResourceKey(operation.payload, 'message_deleted')
+      if (entityId && shown.has(entityId)) void messageById.refresh(entityId)
+    }
   }) : undefined, [missingKey, subscribeAccountRevision])
   const read = new Map(missing.map((id, index) => [id, readings[index]!]))
   return (id) => {
