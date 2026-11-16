@@ -24,12 +24,14 @@ export function normalizePaths(s: string): string {
 
 export function serializeError(e: Error, seen = new WeakSet<object>()): Record<string, unknown> {
   seen.add(e);
-  return {
-    name: e.name,
-    message: e.message,
-    stack: e.stack ? normalizePaths(e.stack) : undefined,
-    ...('cause' in e ? { cause: prepareFields(e.cause, seen) } : {}),
-  };
+  try {
+    return {
+      name: e.name,
+      message: e.message,
+      stack: e.stack ? normalizePaths(e.stack) : undefined,
+      ...('cause' in e ? { cause: prepareFields(e.cause, seen) } : {}),
+    };
+  } finally { seen.delete(e); }
 }
 
 /**
@@ -49,16 +51,19 @@ export function prepareFields(value: unknown, seen = new WeakSet<object>()): unk
   if (Array.isArray(value)) {
     if (seen.has(value)) return '[Circular]';
     seen.add(value);
-    return value.map((v) => prepareFields(v, seen));
+    try { return value.map((v) => prepareFields(v, seen)); }
+    finally { seen.delete(value); }
   }
   if (value && typeof value === 'object') {
     if (seen.has(value)) return '[Circular]';
     seen.add(value);
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = prepareFields(v, seen);
-    }
-    return out;
+    try {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        out[k] = prepareFields(v, seen);
+      }
+      return out;
+    } finally { seen.delete(value); }
   }
   return value;
 }
