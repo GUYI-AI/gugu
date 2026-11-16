@@ -24,6 +24,7 @@ final class GuguIOSAccountClosure {
         let version: Int
         let scopeDigest: String
         let installationId: String
+        var signOutPreparation: GuguIOSOwnerRetirementStore.SignOutPreparation?
         var receipt: String?
         var nextStep: Int
         var complete: Bool
@@ -34,16 +35,22 @@ final class GuguIOSAccountClosure {
     private let installation: () throws -> String
     private let localAuthBarrier: (@escaping () throws -> Void) throws -> Void
     private let mainOwner: () throws -> String?
+    private let capturePreparation: (GuguIOSClosureScope) throws -> GuguIOSOwnerRetirementStore.SignOutPreparation?
+    private let cancelPreparation: (GuguIOSClosureScope, GuguIOSOwnerRetirementStore.SignOutPreparation) throws -> Void
     private let preparation: (GuguIOSClosureScope) throws -> Bool
     private let steps: [(GuguIOSClosureScope) throws -> Bool]
     private let retained: () throws -> [String]
 
     init(secrets: GuguIOSClosureSecrets, installation: @escaping () throws -> String,
          localAuthBarrier: @escaping (@escaping () throws -> Void) throws -> Void,
-         mainOwner: @escaping () throws -> String?, preparation: @escaping (GuguIOSClosureScope) throws -> Bool = { _ in true }, steps: [(GuguIOSClosureScope) throws -> Bool],
+         mainOwner: @escaping () throws -> String?,
+         capturePreparation: @escaping (GuguIOSClosureScope) throws -> GuguIOSOwnerRetirementStore.SignOutPreparation? = { _ in nil },
+         cancelPreparation: @escaping (GuguIOSClosureScope, GuguIOSOwnerRetirementStore.SignOutPreparation) throws -> Void = { _, _ in throw GuguIOSAccountClosure.failure("stale_context") },
+         preparation: @escaping (GuguIOSClosureScope) throws -> Bool = { _ in true }, steps: [(GuguIOSClosureScope) throws -> Bool],
          retained: @escaping () throws -> [String]) {
         self.secrets = secrets; self.installation = installation; self.localAuthBarrier = localAuthBarrier
-        self.mainOwner = mainOwner; self.preparation = preparation; self.steps = steps; self.retained = retained
+        self.mainOwner = mainOwner; self.capturePreparation = capturePreparation; self.cancelPreparation = cancelPreparation
+        self.preparation = preparation; self.steps = steps; self.retained = retained
     }
 
     func put(_ scope: GuguIOSClosureScope, receipt: String) throws {
@@ -58,7 +65,7 @@ final class GuguIOSAccountClosure {
             // The local slot is authoritative even after the remote session died.
             guard try self.mainOwner() == scope.ownerId else { throw Self.failure("wrong_local_owner") }
             let captured = Record(version: 1, scopeDigest: try self.key(scope), installationId: try self.installation(),
-                                  receipt: receipt, nextStep: 0, complete: false, retained: [])
+                                  signOutPreparation: try self.capturePreparation(scope), receipt: receipt, nextStep: 0, complete: false, retained: [])
             try self.save(captured)
         }
     }
@@ -73,6 +80,17 @@ final class GuguIOSAccountClosure {
         // Retain only the captured operation's tombstone for idempotent remove
         // and completed erase. It cannot authorize a fresh erase without receipt.
         try save(captured)
+    }
+    /// Keep the captured round in the tombstone: an old scope cannot cancel a
+    /// new preparation, even when its owner and saved Auth session are unchanged.
+    func cancelSignOut(_ scope: GuguIOSClosureScope) throws {
+        lock.lock(); defer { lock.unlock() }
+        try localAuthBarrier {
+            let captured = try self.requireRecord(scope)
+            guard captured.receipt == nil, !captured.complete, captured.nextStep == 0,
+                  let preparation = captured.signOutPreparation else { throw Self.failure("stale_context") }
+            try self.cancelPreparation(scope, preparation)
+        }
     }
     func eraseLocal(_ scope: GuguIOSClosureScope) throws -> Outcome {
         lock.lock(); defer { lock.unlock() }
@@ -102,6 +120,7 @@ final class GuguIOSAccountClosure {
         guard let bytes = try secrets.read(key(scope)) else { return nil }
         guard let captured = try? JSONDecoder().decode(Record.self, from: bytes), captured.version == 1,
               captured.scopeDigest == (try key(scope)), captured.installationId == (try installation()),
+              captured.signOutPreparation.map({ UUID(uuidString: $0.id)?.uuidString.lowercased() == $0.id }) ?? true,
               (0...steps.count).contains(captured.nextStep) else { throw Self.failure("closure_context_invalid") }
         return captured
     }

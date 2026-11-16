@@ -27,18 +27,20 @@ async function pick(input: HTMLInputElement, files: File[]) {
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
 }
 
-describe('phone input composer menu bar attachments', () => {
+describe('phone composer attachments', () => {
   it('offers Photos, Camera and File as separate entries, each opening its own picker', async () => {
     await mount()
-    await clickElement(q('[data-testid="phone-menu-attachments"]')!)
-    expect(q('[data-testid="chat-composer-attach-menu"]'), 'no duplicate attachment inside the input').toBeNull()
+    // The owner's 2026-11-16 correction restores the shared in-input paperclip.
+    await clickElement(q('[data-testid="chat-composer-attach-menu"]')!)
+    expect(q('[data-phone-composer-controls]'), 'human DMs have no menu bar').toBeNull()
+    expect(q('[data-phone-attachment]')).not.toBeNull()
     const panel = q('[data-testid="chat-composer-attach-panel"]')!
     expect([...panel.querySelectorAll('[data-testid^="chat-composer-attach-"]')].map((el) => el.getAttribute('data-testid')))
       .toEqual(['chat-composer-attach-photos', 'chat-composer-attach-camera', 'chat-composer-attach-file'])
     const opened: HTMLInputElement[] = []
     vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) { opened.push(this) })
     for (const id of ['photos', 'camera', 'file']) {
-      if (!q('[data-testid="chat-composer-attach-panel"]')) await clickElement(q('[data-testid="phone-menu-attachments"]')!)
+      if (!q('[data-testid="chat-composer-attach-panel"]')) await clickElement(q('[data-testid="chat-composer-attach-menu"]')!)
       await clickElement(q(`[data-testid="chat-composer-attach-${id}"]`)!)
       expect(q('[data-testid="chat-composer-attach-panel"]'), 'picking closes the panel').toBeNull()
     }
