@@ -3,6 +3,7 @@ import { extensionProjections } from './extension-projection-bridge';
 import { extensionTaskPages, taskPageForScreen } from './task-page-host';
 import { extensionsService } from './extensions-root';
 import { projectionTaskProject } from './projection-task';
+import { liveWindowActivity } from './live-window-activity';
 
 /** This read cannot acquire a page, start an App program or launch a native driver. */
 export async function readLiveWindowSources(sessionId: string): Promise<LiveWindowResourceDescriptor[]> {
@@ -11,13 +12,14 @@ export async function readLiveWindowSources(sessionId: string): Promise<LiveWind
   const result: LiveWindowResourceDescriptor[] = extensionProjections.describeSession(sessionId).map(source => {
     const manifest = extensionsService().get(source.extensionId).manifest;
     return { id: source.id, sessionId, type: 'app-projection', appId: source.extensionId, appVersion: manifest.version,
-      title: manifest.name, size: source.size };
+      title: manifest.name, size: source.size, activity: liveWindowActivity(sessionId, source.extensionId) };
   });
   const lease = extensionTaskPages.describeSession(sessionId)[0];
   if (lease) {
     const page = await taskPageForScreen(sessionId);
     lease.signal.throwIfAborted();
-    if (page && !page.isDestroyed()) result.unshift({ id: lease.id, sessionId, type: 'task-page', title: page.state().title, size: null });
+    if (page && !page.isDestroyed()) result.unshift({ id: lease.id, sessionId, type: 'task-page', title: page.state().title, size: null,
+      activity: liveWindowActivity(sessionId, 'browser-use') });
   }
   return result;
 }

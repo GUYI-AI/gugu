@@ -1,0 +1,74 @@
+import { act, useSyncExternalStore } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it } from 'vitest';
+import { page } from 'vitest/browser';
+import { LiveWindowHeaderIcon } from '../../features/live-window/LiveWindowHeaderIcon';
+import { LiveWindowModel } from '../../features/live-window/model';
+import { DesktopLiveWindow } from '../../features/live-window/DesktopLiveWindow';
+import { PhoneWatchWindow } from '@/mobile/agent-watch/PhoneWatchWindow';
+import type { LiveWindowContext, LiveWindowSource } from '../../features/live-window/types';
+import { until } from '../../../../../../../tests/support/awaitCondition';
+import '@/styles/tokens.css';
+
+const cleanups: Array<() => void> = [];
+afterEach(() => { cleanups.splice(0).reverse().forEach(cleanup => cleanup()); });
+const context: LiveWindowContext = { conversationId: 'private', deviceId: 'host', sessionId: 'task', agentId: 'agent', privateAgentChat: true, shown: true };
+const source = (kind: 'browser' | 'computer', activity: number, status: 'operating' | 'finished' = 'operating'): LiveWindowSource => ({
+  id: kind, kind, activity, status, deviceId: 'host', sessionId: 'task', agentId: 'agent', title: kind, size: { width: 1280, height: 900 },
+});
+
+async function mount(platform: 'desktop' | 'phone') {
+  await page.viewport(platform === 'phone' ? 390 : 1280, 844);
+  const host = document.body.appendChild(document.createElement('div'));
+  host.className = 'gugu-skin'; host.style.cssText = `position:relative;display:flex;flex-direction:column;width:${platform === 'phone' ? 390 : 1000}px;height:700px`;
+  const root = createRoot(host), model = new LiveWindowModel(platform); model.activate(context);
+  function View() {
+    const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot);
+    const sources = snapshot.sources.map(item => ({ ...item, picture: <div data-source={item.id}>Actual picture node</div> }));
+    return <><div style={{ display: 'flex', height: 44, flex: 'none' }}><LiveWindowHeaderIcon snapshot={snapshot} dispatch={action => model.dispatch(action)} /></div>
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {platform === 'phone' ? <PhoneWatchWindow sources={sources} selectedId={snapshot.source?.id ?? null} presentation={snapshot.presentation!}
+          visible={snapshot.visible} connected={snapshot.connected} dispatch={action => model.dispatch(action)} onError={error => { throw error; }}>
+          <div data-chat-viewport style={{ flex: 1 }} />
+          <div data-chat-composer-placement style={{ height: 80, flex: 'none' }}><textarea aria-label="Reply" /></div>
+        </PhoneWatchWindow> : snapshot.visible && snapshot.source ? <DesktopLiveWindow source={sources.find(item => item.id === snapshot.source!.id)!}
+          sources={sources} state={snapshot.presentation!} connected={snapshot.connected} dispatch={action => model.dispatch(action)} /> : null}
+      </div></>;
+  }
+  await act(async () => root.render(<View />));
+  cleanups.push(() => { act(() => root.unmount()); host.remove(); });
+  return { host, model };
+}
+
+describe.each(['desktop', 'phone'] as const)('%s active header', platform => {
+  it('toggles directly, remains hidden across later activity and uses the actual active source', async () => {
+    const { host, model } = await mount(platform);
+    expect(host.querySelector('[data-live-window-toggle]')).toBeNull();
+    await act(async () => model.observe(context, [source('browser', 1)]));
+    const toggle = host.querySelector<HTMLButtonElement>('[data-live-window-toggle]')!;
+    expect(toggle.dataset.kind).toBe('browser'); expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(host.querySelector('[role=menu]')).toBeNull();
+    await page.elementLocator(toggle).click();
+    expect(model.getSnapshot().visible).toBe(false);
+    await act(async () => model.observe(context, [source('browser', 1), source('computer', 2)]));
+    expect(toggle.dataset.kind).toBe('computer'); expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(model.getSnapshot().visible).toBe(false);
+    await page.elementLocator(toggle).click();
+    expect(model.getSnapshot()).toMatchObject({ visible: true, source: { kind: 'computer' } });
+    await until('two sources share one window', () => host.querySelectorAll('[role=tab]').length === 2);
+    expect(host.querySelectorAll(platform === 'phone' ? '[data-phone-watch-window]' : '[data-live-window]')).toHaveLength(1);
+  });
+  it('stops animation when done, keeps a disconnected picture and removes a truly closed source', async () => {
+    const { host, model } = await mount(platform);
+    await act(async () => model.observe(context, [source('browser', 1)]));
+    const toggle = host.querySelector<HTMLButtonElement>('[data-live-window-toggle]')!;
+    expect(toggle.dataset.running).toBe('true');
+    await act(async () => model.observe(context, [source('browser', 1, 'finished')]));
+    expect(toggle.hasAttribute('data-running')).toBe(false); expect(model.getSnapshot().visible).toBe(true);
+    await act(async () => model.activate({ ...context, connected: false }));
+    expect(toggle.dataset.disconnected).toBe('true');
+    expect(host.querySelector('[data-live-window-disconnected]')?.textContent).toMatch(/Computer disconnected|电脑已断开/);
+    await act(async () => model.observe({ ...context, connected: false }, []));
+    expect(host.querySelector('[data-live-window-toggle]')).toBeNull();
+  });
+});

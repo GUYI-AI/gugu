@@ -48,7 +48,7 @@ it('only reveals desktop controls on hover, keeps the full portrait source, and 
   proportional();
 });
 
-it('keeps the small picture clear and switches complete Web and Computer sources only after enlarging', async () => {
+it('keeps top Browser and Computer tabs in the small and enlarged picture', async () => {
   await page.viewport(1440, 960);
   const model = new LiveWindowModel('desktop');
   const context = { conversationId: 'chat', deviceId: 'device', sessionId: 'session', agentId: 'agent', privateAgentChat: true, shown: true };
@@ -65,11 +65,11 @@ it('keeps the small picture clear and switches complete Web and Computer sources
   host = document.createElement('div'); host.className = 'gugu-skin emlight'; host.style.cssText = 'position:relative;width:1000px;height:800px';
   document.body.append(host); root = createRoot(host); root.render(<Harness />);
   await vi.waitFor(() => expect(host!.querySelector('[data-live-window-picture]')).not.toBeNull());
-  expect(host.querySelector('[role="tablist"]')).toBeNull();
+  expect(host.querySelectorAll('[role="tab"]')).toHaveLength(2);
   model.dispatch({ type: 'enlarge' });
   await vi.waitFor(() => expect(host!.querySelectorAll('[role="tab"]')).toHaveLength(2));
   const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-  expect(tabs.map(tab => tab.textContent)).toEqual(expect.arrayContaining([expect.stringMatching(/^(Web|网页)$/), expect.stringMatching(/^(Computer|电脑)$/)]));
+  expect(tabs.map(tab => tab.textContent)).toEqual(expect.arrayContaining([expect.stringMatching(/^(Browser|浏览器)$/), expect.stringMatching(/^(Computer|电脑)$/)]));
   for (const tab of tabs) {
     await page.elementLocator(tab).click();
     await vi.waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));

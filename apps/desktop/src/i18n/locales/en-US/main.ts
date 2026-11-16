@@ -7,10 +7,10 @@ export default {
     "portrait": "Portrait",
     "dock": "Dock to edge",
     "restore": "Show picture, drag to either edge",
-    "close": "Close last picture",
+    "close": "Hide picture",
     "sources": "Picture source",
-    "web": "Web",
-    "computer": "Desktop"
+    "web": "Browser",
+    "computer": "Computer"
   },
   "referralPreview": {
     "contactCaption": "Scan to add me as a contact",
