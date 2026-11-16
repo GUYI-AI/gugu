@@ -29,6 +29,7 @@ vi.mock('@renderer/app/aux-window-host', () => ({ auxLeadingReserve: () => 0, Pu
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellTitlebarDragRegion: () => null }));
 vi.mock('../titlebar-actions', () => ({ TabBarActionRow: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock('../view/session-main-column', () => ({ SessionMainColumn: () => null }));
+vi.mock('../../live-window/DesktopLiveWindowHeader', () => ({ DesktopLiveWindowHeader: () => null }));
 vi.mock('../session-tab-registry', () => ({ sessionTabView: { TabLayoutProvider: ({ children }: { children: React.ReactNode }) => <>{children}</> } }));
 vi.mock('../use-cloud-computer-gate', () => ({ useCloudComputerGate: () => null }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: {} }));
