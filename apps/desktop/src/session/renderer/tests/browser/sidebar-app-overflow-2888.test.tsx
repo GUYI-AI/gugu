@@ -12,30 +12,29 @@ const state = vi.hoisted(() => ({
   apps: [] as { extensionId: string; kind: string; name: string; iconDataUrl: null }[],
   open: vi.fn(),
 }))
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({
-  ...await original<typeof import('@/session/renderer/features/extensions/installed-extensions-store')>(),
+vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({
+  InstalledExtensionsStore: class {}, WORKSPACE_APP_ID: 'workspace',
   installedExtensionsStore: {
     get dockedApps() { return state.apps }, get openableApps() { return state.apps },
     get dock() { return state.apps.map(app => app.extensionId) },
     manifestFor: () => undefined, updateCount: 0,
   },
 }))
-vi.mock('@/session/renderer/features/extensions/app-dock', async original => ({
-  ...await original<typeof import('@/session/renderer/features/extensions/app-dock')>(),
+vi.mock('@/session/renderer/features/extensions/app-dock', () => ({
+  pinToDock: vi.fn(), wireAppQuit: vi.fn(),
   openApp: state.open, appIsRunning: () => false, openAppInWindow: vi.fn(), quitApp: vi.fn(), setDock: vi.fn(), unpinFromDock: vi.fn(),
 }))
-vi.mock('@/session/renderer/lib/stores/app-state', async original => ({
-  ...await original<typeof import('@/session/renderer/lib/stores/app-state')>(),
+vi.mock('@/session/renderer/lib/stores/app-state', () => ({
+  sidebarStore: {},
   appState: { navigation: { currentViewId: 'apps', viewParamsStore: {}, navigate: vi.fn() } },
 }))
-vi.mock('@/lib/assistantEntry', async original => ({
-  ...await original<typeof import('@/lib/assistantEntry')>(),
+vi.mock('@/lib/assistantEntry', () => ({
+  openAssistantPageInApp: vi.fn(), readAssistantEntryTarget: () => ({ kind: 'chat' }), assistantAppUsable: () => false,
   ASSISTANT_APP_ID: 'assistant', useAssistantEntryTarget: () => ({ kind: 'chat' }),
   assistantEntryUnread: () => false, openAssistantEntry: vi.fn(),
 }))
-vi.mock('@/lib/productTour', async original => ({
-  ...await original<typeof import('@/lib/productTour')>(),
-  TOUR_STEPS: [], resumableStep: () => null, useProductTourState: () => ({ data: null }),
+vi.mock('@/lib/productTour', () => ({
+  TOUR_FILMS: [], TOUR_STEPS: [], resumableStep: () => null, useProductTourState: () => ({ data: null }),
 }))
 vi.mock('@/platform', async original => {
   const module = await original<typeof import('@/platform')>()
