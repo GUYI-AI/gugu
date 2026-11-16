@@ -485,6 +485,15 @@ export interface IAcpBehavior {
   catalogModelsInConfigUpdate?: boolean;
 
   /**
+   * This harness answers `session/new` with its own model list even when nobody is signed in, and none of those
+   * models can run without its account. After such a `ready` read the catalog probe asks this harness's sign-in
+   * status (`auth.checkStatus`, the same reading as the account row): signed out ⇒ `auth-required`. An `unknown`
+   * reading keeps the list. Do not declare it for a harness whose list works signed out (free models), or whose
+   * adapter already answers `authRequired` itself.
+   */
+  catalogNeedsSignIn?: boolean;
+
+  /**
    * 进程级认证,「报了才认」(#2507 Antigravity 的网关):`initialize` 时在 `clientCapabilities.auth._meta` 里声明
    * `clientAuthMeta`;agent 在 `authMethods` 里报了 `methodId`,就在开第一条会话前 `authenticate {methodId}` 一次。
    * 没报(那条进程不是带着连接起的)就一个请求都不多发。模型目录探针读这一格,与这一家 `connect` 里的会话同一条。

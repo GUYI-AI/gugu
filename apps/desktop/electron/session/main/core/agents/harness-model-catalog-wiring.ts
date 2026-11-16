@@ -19,6 +19,7 @@ import {
   setAcpSpawnResolver,
   setCatalogKeyResolver,
   setCatalogStore,
+  setHarnessSignInReader,
   setSpawnIdentityResolver,
   type AcpSpawnSpec,
 } from './harness-model-catalog';
@@ -59,6 +60,10 @@ export function wireHarnessModelCatalog(): void {
 
   // 按腿分缓存只看声明(#6246):腿的配置根不同的家才分,其余两条腿共用一份 —— 否则每家多冷启一次。
   setCatalogKeyResolver(harnessCatalogKey);
+
+  // `catalogNeedsSignIn` harnesses: the account row's own reading (agent-config worker, the CLI and config root
+  // a session runs). A failed read is `unknown`, which keeps the list.
+  setHarnessSignInReader(readHarnessSignIn);
 
   setCatalogStore({
     read: async () => {
@@ -205,7 +210,20 @@ export async function resolveHarnessModelCatalogSpawn(
     ...(acp.catalogProbeSessionMeta ? { sessionMeta: acp.catalogProbeSessionMeta } : {}),
     ...(acp.catalogModelsInConfigUpdate ? { modelsInConfigUpdate: true } : {}),
     ...(acp.authenticateWhenAdvertised ? { authenticateWhenAdvertised: acp.authenticateWhenAdvertised } : {}),
+    ...(acp.catalogNeedsSignIn ? { catalogNeedsSignIn: true } : {}),
   };
+}
+
+async function readHarnessSignIn(pluginId: string): Promise<{ kind: 'authenticated' | 'unauthenticated' | 'unknown'; reason?: 'expired' }> {
+  try {
+    const { getAgentConfigRuntimeClient } = await import('@main/core/agent-config/runtime-process/host');
+    const result = await (await getAgentConfigRuntimeClient()).refreshAuthStatus({ providerId: pluginId });
+    if (result.success) return result.data;
+    log.warn({ pluginId, error: result.error }, 'model catalog: sign-in reading failed');
+  } catch (error) {
+    log.warn({ pluginId, error: String(error) }, 'model catalog: sign-in reading failed');
+  }
+  return { kind: 'unknown' };
 }
 
 /**

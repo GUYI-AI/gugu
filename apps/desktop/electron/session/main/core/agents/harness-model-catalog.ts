@@ -45,7 +45,6 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
-import { MessageChannel } from 'node:worker_threads';
 import { spawnOwnedChild, type OwnedChild } from '@gugu/session-core/exec';
 import { defaultEngineTreeOps, signalEngineTree } from '@gugu/session-core/acp/node';
 import { errorDetail } from '@gugu/session-shared';
@@ -57,18 +56,6 @@ import { mergeTrustedSessionMeta } from '../acp/runtime-process/session-meta';
 import { createLogger } from '../../../../lib/logger';
 
 const log = createLogger('harness-model-catalog');
-
-function yieldEventLoop(): Promise<void> {
-  return new Promise((resolve) => {
-    const channel = new MessageChannel();
-    channel.port1.once('message', () => {
-      channel.port1.close();
-      channel.port2.close();
-      resolve();
-    });
-    channel.port2.postMessage(undefined);
-  });
-}
 
 /** 一条模型选项。字段就是协议给的那三个 —— 协议没有的，这里也不编。 */
 export interface HarnessModelChoice {
@@ -239,7 +226,25 @@ export type AcpSpawnSpec = {
   modelsInConfigUpdate?: boolean;
   /** 插件的 `acp.authenticateWhenAdvertised`:agent 报了这个方法就先认证、再开探针那条会话(与真会话同一条)。 */
   authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
+  /** The plugin's `acp.catalogNeedsSignIn`: a `ready` own read is checked against `readHarnessSignIn`. */
+  catalogNeedsSignIn?: boolean;
 };
+
+/**
+ * This harness's sign-in reading (`auth.checkStatus`, the account row's reading), for `catalogNeedsSignIn` harnesses.
+ * Injected for the same reason as the resolvers below: the reading lives in the agent-config runtime, not here.
+ * A reading that cannot be taken is `unknown`.
+ */
+export type HarnessSignInReader = (pluginId: string) => Promise<{ kind: 'authenticated' | 'unauthenticated' | 'unknown'; reason?: 'expired' }>;
+
+let readHarnessSignIn: HarnessSignInReader = async (pluginId) => {
+  throw new Error(`model catalog probe: ${pluginId} declares catalogNeedsSignIn but the host installed no sign-in reader`);
+};
+
+export function setHarnessSignInReader(reader: HarnessSignInReader): void {
+  readHarnessSignIn = reader;
+}
+
 /** `null` = 这家插件不说 ACP（→ `unsupported`）；`'not-found'` = 没有这个插件（→ `not-installed`）。 */
 export type AcpSpawnResolver = (
   pluginId: string,
@@ -875,7 +880,7 @@ async function probeOnce(
       // 一条 unhandled rejection。挂个空 catch 把它收掉（结果已经不重要了）。
       processFailed.catch(() => {});
 
-      const rpc = new AcpProbeClient(child, pluginId);
+      const rpc = new AcpProbeClient(child);
       // 三条**真实**终止条件,一条墙钟都不参与判「快慢」:
       //  · adapter 答了 → 有读数;
       //  · adapter 退了 → `processFailed`(进程自己给的事实);
@@ -884,7 +889,9 @@ async function probeOnce(
       try {
         const sessionMeta = mergeTrustedSessionMeta(spec.sessionMeta, probeCredentials?.sessionMeta);
         const state = await Promise.race([
-          rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised),
+          rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised,
+            // Only the own-route read: a placeholder or connection pass runs on credentials that are not this account.
+            spec.catalogNeedsSignIn && !probeCredentials ? () => isSignedOut(pluginId) : undefined),
           processFailed,
           watchdog.stalled,
         ]);
@@ -916,6 +923,16 @@ async function probeOnce(
       // 临时目录清不掉不该让探测失败。
     });
   }
+}
+
+/**
+ * `catalogNeedsSignIn`: a list this harness printed while signed out is not a list anyone can run.
+ * Only a signed-out reading counts. `unknown` keeps the list: an instrument that cannot read is not a negative
+ * reading. A login marked expired keeps it too: the renderer's expiry overlay owns that state (`withAuthExpiry`).
+ */
+async function isSignedOut(pluginId: string): Promise<boolean> {
+  const reading = await readHarnessSignIn(pluginId);
+  return reading.kind === 'unauthenticated' && reading.reason !== 'expired';
 }
 
 /**
@@ -1051,16 +1068,12 @@ function describe(state: HarnessCatalogState): string {
 class AcpProbeClient {
   private buffer = '';
   private nextId = 1;
-  private authStatusKind: string | undefined;
   private readonly pending = new Map<
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
 
-  constructor(
-    private readonly child: ChildProcessWithoutNullStreams,
-    private readonly pluginId: string,
-  ) {
+  constructor(private readonly child: ChildProcessWithoutNullStreams) {
     child.stdout.on('data', (chunk: Buffer) => this.onData(chunk.toString()));
     // stderr 只排空:adapter 的日志不该把管道堵死,也不该混进协议流。
     child.stderr.resume();
@@ -1104,10 +1117,6 @@ class AcpProbeClient {
       } else if (msg.method === 'session/update') {
         const update = (msg.params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[] } } | undefined)?.update;
         if (update?.sessionUpdate === 'config_option_update') this.onConfigUpdate(update.configOptions ?? []);
-      } else if (msg.method === '_auth/status_update') {
-        const kind = (msg.params as { authStatus?: { kind?: unknown } } | undefined)
-          ?.authStatus?.kind;
-        if (typeof kind === 'string') this.authStatusKind = kind;
       } else if (typeof msg.method === 'string' && id !== undefined) {
         // adapter 反过来问我们（权限、读写文件）。探针一律拒：它不该产生任何副作用。
         this.send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'probe: unsupported' } });
@@ -1133,6 +1142,8 @@ class AcpProbeClient {
     model?: string,
     modelsInConfigUpdate?: boolean,
     authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
+    /** `catalogNeedsSignIn`: asked once the session opened. Signed out ⇒ `auth-required`, efforts kept. */
+    signedOut?: () => Promise<boolean>,
   ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,
@@ -1230,20 +1241,6 @@ class AcpProbeClient {
       throw error;
     }
 
-    // Claude publishes its account identity on the connection/session boundary. Let pending
-    // stdout parsing finish before trusting a model catalog: `none` means the native source is
-    // unavailable even when session/new itself was able to initialize. A MessageChannel turn
-    // observes a late notification without depending on wall-clock timers or fake-timer state.
-    if (this.pluginId === 'claude') await yieldEventLoop();
-    if (this.pluginId === 'claude' && this.authStatusKind === 'none') {
-      return {
-        kind: 'auth-required',
-        authMethods: initAuthMethods,
-        efforts: [],
-        selectedEffort: null,
-      };
-    }
-
     let response = created as {
       sessionId?: string;
       configOptions?: RawConfigOption[];
@@ -1287,6 +1284,8 @@ class AcpProbeClient {
     const configModels = toChoices(modelOption);
     const reportedModels = toAvailableModels(response?.models?.availableModels);
     const models = [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
+    // The login entry is what `initialize` advertised, as for an `authRequired` refusal that carries none.
+    if (await signedOut?.()) return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };
     if (models.length === 0) {
       // 这家 harness 说了 ACP，但没有模型选择这回事。不是错误，就是没得选。
       return { kind: 'ready', models: [], selected: null, efforts, selectedEffort };
