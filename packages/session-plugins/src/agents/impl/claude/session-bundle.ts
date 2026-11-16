@@ -705,8 +705,8 @@ export function materializeClaudeSessionBundle(
   } : null;
   const options = {
     ...(reviewerSettings ? { settings: reviewerSettings.path } : {}),
-    // ❌ No inline `settings` here: on the ACP wire `options.settings` is a settings-file path
-    // (acpSessionMetaSchema), and only the host that owns such a file sets it (platform sessions).
+    // ACP `options.settings` names a host-owned file, never an inline object. The apply layer
+    // writes the reviewer artifact; a protected platform document can replace its path.
     // A native session's Fast reaches Claude through the ACP `fast` config option at startup
     // (SessionManager.applyInitialFastMode), so an inline copy would be a second path that the
     // wire rejects before the adapter is ever spawned.
