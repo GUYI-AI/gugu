@@ -22,14 +22,16 @@ import { publishChatSummaries } from '@/lib/chatSummariesBridge'
 import { installOwnedAgentEntry } from '@/lib/ownedAgentConversation'
 import { APP_SHOW_SESSION_EVENT } from '@/session/shared/extensions/app-runtime-protocol'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chat, device, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), topicError: null as string | null }))
-vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()), useTopicsOfChat: () => ({ topics: null, loading: actions.topicError === null, error: actions.topicError, reload: actions.reloadTopics }) }))
+const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), followLink: vi.fn(() => true), topics: null as TopicSummary[] | null, topicError: null as string | null }))
+vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()), useTopicsOfChat: () => ({ topics: actions.topics, loading: actions.topics === null && actions.topicError === null, error: actions.topicError, reload: actions.reloadTopics }) }))
+vi.mock('@/lib/guguLinks', async original => ({ ...(await original<object>()), followLink: actions.followLink }))
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({ props: {
   modelOptions: { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: 'glm', onModelChange: actions.pickModel,
 }, confirmation: null, steers: false }) }))
@@ -66,7 +68,7 @@ async function mount(sessionId:string,entry:string|null,full=false){
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'16px'})
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
-afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.followLink.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
  await mount('room-task','chat:room');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
@@ -78,6 +80,25 @@ it('a standalone Agent offers only its children and no Topics button',async()=>{
  await mount('solo',null);await until('standalone anchor',()=>!!document.querySelector('[data-anchor-kind="agent"]'))
  expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('排版子智能体');expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
+})
+it('an existing room task opens its short Topics menu and dispatches the actual topic id',async()=>{
+ const topic:TopicSummary={chat_id:'long-room-topic',name:'这是一个必须在菜单里完整显示而不是铺到输入框菜单栏里的话题名称',source_message_id:'topic-anchor',creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}
+ actions.topics=[topic]
+ await mount('room-task','chat:room',true)
+ const trigger=harness!.container.querySelector<HTMLButtonElement>('[data-testid="phone-room-topics"]')!
+ expect(trigger.textContent).toBe('话题')
+ expect(trigger.getAttribute('aria-expanded')).toBe('false')
+ expect(trigger.querySelectorAll('svg')).toHaveLength(1)
+ await page.getByTestId('phone-room-topics').click()
+ expect(trigger.getAttribute('aria-expanded')).toBe('true')
+ const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
+ const name=panel.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
+ expect(name.textContent).toBe(topic.name)
+ expect(getComputedStyle(name).whiteSpace).toBe('normal')
+ expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth)
+ await page.getByRole('button',{name:topic.name,exact:true}).click()
+ expect(actions.followLink).toHaveBeenCalledExactlyOnceWith({kind:'chat',chatId:topic.chat_id})
+ await until('topic navigation closes the panel',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
 })
 it('an unrelated task does not inherit room navigation',async()=>{
  await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()
