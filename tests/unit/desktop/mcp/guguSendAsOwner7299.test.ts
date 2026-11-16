@@ -125,6 +125,21 @@ describe('owner-requested attachments (#7299; #7290 gugu-3: upload, then commit 
     expect(uploads.map(({ name, type, bytes }) => ({ name, type, size: bytes.length }))).toEqual([{ name: 'large.pdf', type: 'application/pdf', size: 30 * 1024 * 1024 }])
     expect(commits).toHaveLength(1)
   })
+  it('the same file to the same friend is one upload (it resumes); to another friend it is another', async () => {
+    const file = fixture('same.pdf', 'same bytes')
+    const permits: string[] = []
+    for (const friendId of [friend, friend, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc']) {
+      const { d } = deps()
+      const fetch = (await d.attachmentsEndpoint()).fetch
+      d.attachmentsEndpoint = async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch: (async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/attachments/upload')) permits.push(JSON.parse(String(init?.body)).request_id)
+        return fetch(url, init)
+      }) as typeof globalThis.fetch })
+      await callTool(fileContext, 'message_send_file_as_owner', { friend_user_id: `user:${friendId}`, file_path: file }, d)
+    }
+    expect(permits[0]).toBe(permits[1])
+    expect(permits[2]).not.toBe(permits[0])
+  })
   it('retries a lost send response with the same upload and request key', async () => {
     const { d, uploads, commits } = deps(['lost', 'ok'])
     await callTool(fileContext, 'message_send_file_as_owner', { friend_user_id: args.friend_user_id, file_path: fixture('retry.pdf') }, d)

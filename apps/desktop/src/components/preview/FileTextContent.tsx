@@ -81,7 +81,7 @@ export function FileTextContent({ content, kind, style, onCite, onSend }: {
     if (!selection) return
     const { startLine, endLine, text } = selection.quote
     const at = selection.range.getBoundingClientRect()
-    act({ text, at: { lines: startLine === endLine ? String(startLine) : `${startLine}-${endLine}` } }, at)
+    act({ text, at: { lines: startLine === endLine ? String(startLine) : `${startLine}-${endLine}` }, code: kind === 'text' }, at)
     root.current?.ownerDocument.getSelection()?.removeAllRanges()
     close()
   }

@@ -472,6 +472,13 @@ export interface IAcpBehavior {
   catalogProbeSessionMeta?: Record<string, unknown>;
 
   /**
+   * Extra argv (and the files it names) for the model catalog probe, given that probe's scratch directory,
+   * which the probe deletes afterwards. For a harness that persists every `session/new`: without it each
+   * probe leaves an empty, untitled session in the user's own history (DeepSeek Harness lists them in its app).
+   */
+  catalogProbeOverlay?(scratchDir: string): { args: string[]; files: Array<{ path: string; content: string }> };
+
+  /**
    * This harness answers `session/new` without a model option and publishes it right after in a
    * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
    */

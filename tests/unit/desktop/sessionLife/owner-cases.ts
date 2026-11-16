@@ -436,7 +436,9 @@ export const ownerCases: readonly { name: string; run: () => Promise<void> }[] =
     const { seq: row } = r.send(); await r.owner.quiescent('s');
     const view = r.owner.read('s'); assert.equal(view.kind, 'failed'); assert.equal(view.failure?.at, null);
     assert.equal(r.rows.get(row)!.state, 'queued'); assert.deepEqual(r.dispatched, []);
-    assert.equal(r.active.size, 0); assert.equal(r.failures.length, 1);
+    // The rejected stage itself is reported first; the throwing report-failure is the second failure.
+    assert.equal(r.active.size, 0); assert.equal(r.failures.length, 2);
+    assert.match(String(r.failures[0]), /Start stage 'platform' failed/);
   } },
   { name: 'a channel failure racing the exit keeps the first fact: the exit cause becomes the failure hold', async run() {
     const r = rig({ failAt: 'channel', exitBeforeFail: true }); r.session(); await r.owner.signIn('A');

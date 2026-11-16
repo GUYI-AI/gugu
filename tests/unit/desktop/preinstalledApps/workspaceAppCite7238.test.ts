@@ -181,6 +181,8 @@ describe('Cite: pills to the picked lines, their words quoted above', () => {
     expect(gugu.dispatch).toHaveBeenCalledOnce()
     // A phrase inside a line: that line, and the words picked.
     expect(gugu.dispatch.mock.calls[0]![0]).toBe('> 目标：十月上线 负责人：小王\n\n> 支付接口')
+    // Cited, the selection bar goes, as after Send.
+    await until('the selection bar has gone', () => !document.body.classList.contains('has-selection'))
     expect(refsOfLastCompose()).toEqual([
       { file: entry, at: { lines: '3-4', h: fingerprint('目标：十月上线\n负责人：小王') }, label: 'Lines 3–4' },
       { file: entry, at: { lines: '7', h: fingerprint('- 支付接口可能延期') }, label: 'Line 7' },

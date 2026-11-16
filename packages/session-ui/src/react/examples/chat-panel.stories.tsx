@@ -22,7 +22,7 @@ import type {
   MentionItem,
 } from '../components/chat-composer';
 import type { ComposerPermissionRequest } from '../components/chat-composer/permission-band';
-import { basename, fileIconClass } from '../components/prompt-editor/mention-pill-helpers';
+import { basename } from '../components/prompt-editor/mention-pill-helpers';
 import type { PromptEditorRef } from '../components/prompt-editor/types';
 import { Box } from '../primitives/box';
 import { Button } from '../primitives/button';
@@ -122,13 +122,11 @@ const chatMentionProvider: MentionProvider = {
   resolve(token: string) {
     const match = MOCK_FILES.find((f) => f.label === token || f.name === token);
     if (!match) return null;
-    const iconClass = match.kind === 'file' ? (fileIconClass(match.label) ?? undefined) : undefined;
     return {
       id: match.id,
       label: match.label,
       name: match.name ?? basename(match.label),
       kind: match.kind,
-      iconClass,
     };
   },
 };
