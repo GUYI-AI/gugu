@@ -206,6 +206,13 @@ function forgetRefusal(deviceId: string | null): void {
   putRefusals(rest)
 }
 
+// A refused machine that left `asleep` (woken elsewhere, after a top-up): the refusal is over (❌ said again the next time
+// it sleeps).
+cloudComputer.subscribe([], ({ reading }) => {
+  const snapshot = cloudSnapshotOf(reading)
+  if (snapshot?.deviceId && snapshot.state !== 'asleep') forgetRefusal(snapshot.deviceId)
+})
+
 function requireClient() {
   const client = rendererCloudComputerClient()
   if (!client) throw new CloudComputerError(0, 'unavailable', 'cloud computer manager URL is not configured')
