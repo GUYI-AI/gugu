@@ -64,7 +64,7 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
     aria-haspopup={menuExpanded === undefined ? undefined : 'dialog'} aria-expanded={menuExpanded}
     data-testid={testId} data-active={active || undefined} onPointerDown={preserveComposerFocus}
     onMouseDown={preserveComposerFocus} onClick={onClick}>
-    {icon}<span className="gg-phone-composer-control-label">{label}</span>
+    {menuExpanded === undefined && icon}<span className="gg-phone-composer-control-label">{label}</span>
     {menuExpanded !== undefined && (menuExpanded
       ? <ChevronDown data-phone-menu-direction="down" aria-hidden />
       : <ChevronUp data-phone-menu-direction="up" aria-hidden />)}

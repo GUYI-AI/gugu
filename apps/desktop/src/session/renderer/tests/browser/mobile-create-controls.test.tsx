@@ -131,13 +131,16 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   }
 })
 
-it('keeps narrow English labels complete and makes the last control reachable through the real scrollport', async () => {
+it('keeps narrow English controls on one line without unnecessary scrolling and opens the final control', async () => {
   await mount('dark', 'en-US')
   await page.viewport(320, 640)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   const items = row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+  expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
+  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) {
+    expect(button.querySelectorAll('svg')).toHaveLength(1)
     await revealPhoneControl(items, button)
     expect(button.getBoundingClientRect().top).toBe(buttons[0]!.getBoundingClientRect().top)
     const label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!

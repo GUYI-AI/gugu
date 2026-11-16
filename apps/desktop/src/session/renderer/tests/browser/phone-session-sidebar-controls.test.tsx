@@ -126,7 +126,7 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  } finally { window.removeEventListener(OPEN_LINK_TARGET,capture) }
 })
 
-it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row keeps full labels and scrolls to a clickable final agent control',async({width,theme})=>{
+it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one glyph per label and a clickable final agent control',async({width,theme})=>{
  await mount('room-task','chat:room',true,width,theme)
  await vi.waitFor(()=>{
   const controls=harness!.container.querySelectorAll<HTMLElement>('[data-phone-composer-controls] .gg-phone-composer-control')
@@ -141,9 +141,11 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
  const buttons=[...row.querySelectorAll<HTMLElement>('.gg-phone-composer-control')]
  expect(buttons.map(button=>button.textContent)).toEqual(['工作','技能','话题','智能体'])
  const items=row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+ expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
  for(const [index,button] of buttons.entries()){
+  expect(button.querySelectorAll('svg')).toHaveLength(1)
   await revealPhoneControl(items,button)
   const box=button.getBoundingClientRect(),style=getComputedStyle(button)
   expect(box.y).toBe(buttons[0]!.getBoundingClientRect().y)
