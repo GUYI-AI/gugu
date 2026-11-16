@@ -21,8 +21,11 @@ export function useChatChannels(): {
   const client = useMemo(() => rendererChatChannelsClient(), [])
   const reading = useReplica(chatChannels, [])
   useEffect(() => watchConnections(), [])
-  // A change this surface made answers with the whole list: put it (bound to the account now).
-  const apply = useCallback((next: ChatChannelList) => { chatChannels.set([], next) }, [])
+  // A change this surface made answers with the whole list after an await: put it in the account this render drew (the
+  // handler holds this `apply` across its await), ❌ whichever account is signed in when it answers.
+  const owner = chatChannels.key()?.[1] ?? null
+  const entry = useMemo(() => (owner ? chatChannels.at() : null), [owner])
+  const apply = useCallback((next: ChatChannelList) => { entry?.set(next) }, [entry])
   const refresh = useCallback(() => chatChannels.refresh(), [])
   if (reading.state === 'unknown') return { client, list: null, status: 'loading', error: '', refresh, apply }
   if (reading.state === 'error') return { client, list: null, status: 'failed', error: t('connectors.loadFailed'), refresh, apply }

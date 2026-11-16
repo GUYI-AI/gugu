@@ -110,3 +110,18 @@ describe('what reads the channels again (signal tier)', () => {
     expect(state.list).toBe(connected)
   })
 })
+
+describe('a change answering after the account changed', () => {
+  it("lands in the account that asked, ❌ in the next one (the list a disconnect answered for A is never B's)", async () => {
+    mocks.list.mockReturnValue(new Promise(() => {}))
+    await harness.render(<Probe />)
+    // The surface's `apply`, as a click handler holds it across its await.
+    const applyForA = state.apply
+    const answeredForA = { ...snapshot, channels: [{ kind: 'wechat' }] } as unknown as ChatChannelList
+    mocks.owner += 1
+    await act(async () => { publishRendererSession('SIGNED_IN', { user: { id: `channel-owner-${mocks.owner}` }, access_token: 'fixture' } as Session) })
+    await act(async () => applyForA(answeredForA))
+    expect(chatChannels.peek()).toEqual({ state: 'unknown' })
+    expect(state.list).toBeNull()
+  })
+})
