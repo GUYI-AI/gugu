@@ -130,31 +130,45 @@ queryClient.getQueryCache().subscribe((event) => {
 /** The feeds of `watch` models now running: one per model, owner and group, with how many surfaces hold it. */
 const watches = new Map<string, { users: number; stop: () => void }>()
 
+/** The feed each shown entry opened, released under the same group (a group can move, e.g. a project to another machine). */
+const feedsOf = new WeakMap<Query, string[]>()
+
 function followWatch(query: Query, delta: 1 | -1): void {
   const [name, owner, ...args] = query.queryKey as [string, string, ...unknown[]]
-  holdFeed(name, owner, args, delta)
+  if (!definitions.get(name)?.watch) return
+  if (delta > 0) {
+    const id = holdFeed(name, owner, args)
+    feedsOf.set(query, [...(feedsOf.get(query) ?? []), id])
+  } else {
+    const id = feedsOf.get(query)?.pop()
+    if (id) releaseFeed(id)
+  }
 }
 
-function holdFeed(name: string, owner: string, args: unknown[], delta: 1 | -1): void {
-  const definition = definitions.get(name)
-  const watch = definition?.watch
-  if (!watch) return
-  const group = (args: unknown[]) => hashKey([name, owner, watch.group ? watch.group(...args) : null])
-  const id = group(args)
+function feedId(name: string, owner: string, args: unknown[]): string {
+  const group = definitions.get(name)!.watch!.group
+  return hashKey([name, owner, group ? group(...args) : null])
+}
+
+/** Start (or join) the feed of this entry's group; a group starting reads again what it already holds. */
+function holdFeed(name: string, owner: string, args: unknown[]): string {
+  const definition = definitions.get(name)!
+  const id = feedId(name, owner, args)
   const running = watches.get(id)
-  if (running) {
-    running.users += delta
-    if (running.users > 0) return
-    watches.delete(id)
-    running.stop()
-    return
-  }
-  if (delta < 0) return
-  watches.set(id, { users: 1, stop: watch.start(owner, ...args) })
+  if (running) { running.users += 1; return id }
+  watches.set(id, { users: 1, stop: definition.watch!.start(owner, ...args) })
   const held = queryClient.getQueryCache().findAll({ queryKey: [name, owner] })
-    .filter((entry) => entry.state.data !== undefined && group(entry.queryKey.slice(2)) === id)
+    .filter((entry) => entry.state.data !== undefined && feedId(name, owner, entry.queryKey.slice(2)) === id)
   // As `refresh`: a read already on its way began before the feed listened, so it is replaced (unless the model shares reads).
-  for (const entry of held) void queryClient.invalidateQueries({ queryKey: entry.queryKey, exact: true }, { cancelRefetch: !definition!.refreshJoinsRead })
+  for (const entry of held) void queryClient.invalidateQueries({ queryKey: entry.queryKey, exact: true }, { cancelRefetch: !definition.refreshJoinsRead })
+  return id
+}
+
+function releaseFeed(id: string): void {
+  const running = watches.get(id)
+  if (!running || --running.users > 0) return
+  watches.delete(id)
+  running.stop()
 }
 
 /**
@@ -602,10 +616,10 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     },
     hold: (...args) => {
       const k = key(...args)
-      if (!k) return () => undefined
-      holdFeed(definition.name, k[1] as string, args, 1)
+      if (!k || !definition.watch) return () => undefined
+      const id = holdFeed(definition.name, k[1] as string, args)
       let held = true
-      return () => { if (held) { held = false; holdFeed(definition.name, k[1] as string, args, -1) } }
+      return () => { if (held) { held = false; releaseFeed(id) } }
     },
     forget: (...args) => {
       const k = key(...args)

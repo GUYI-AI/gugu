@@ -96,7 +96,8 @@ export type ProjectFoldersState = {
 
 /**
  * One local project's folders, as its machine answers (rpc routes by projectId). Drawn in member order, ❌ in the order
- * machines answer (new-agent cards went 3 → 6 and reordered). Push-fed: refreshed by the watcher below.
+ * machines answer (new-agent cards went 3 → 6 and reordered). Push-fed by each member's machine (one subscription per
+ * machine while its folders are shown); folders read while nobody listened (back on the home page) are read again then.
  */
 export const projectFolders = replica({
   name: 'projectFolders',
@@ -107,6 +108,18 @@ export const projectFolders = replica({
     return result.data;
   },
   fresh: Infinity,
+  watch: {
+    group: (projectId) => machineRegistry.machineOf(projectId) ?? null,
+    start: (_owner, projectId) => {
+      const machine = machineRegistry.machineOf(projectId) ?? null;
+      const offs = [
+        onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId: changed }) => { void projectFolders.refresh(changed); }),
+        // Another machine's copy joined or left the project's group: its folders are read again with the rest.
+        onMachineEvent(machine, projectGroupBindingChangedChannel, () => { void projectFolders.refresh(); }),
+      ];
+      return () => offs.forEach((off) => off());
+    },
+  },
 });
 
 /**
@@ -129,27 +142,6 @@ function membersHash(memberIds: readonly string[]): string {
   return hash.toString(16);
 }
 
-// The machines' pushes, one subscription per machine however many surfaces show its folders.
-const watched = new Map<string | null, { count: number; off: () => void }>();
-function watchMachine(machine: string | null): () => void {
-  const current = watched.get(machine);
-  if (current) current.count += 1;
-  else {
-    const offs = [
-      onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId }) => { void projectFolders.refresh(projectId); }),
-      // Another machine's copy joined or left the project's group: its folders are read again with the rest.
-      onMachineEvent(machine, projectGroupBindingChangedChannel, () => { void projectFolders.refresh(); }),
-    ];
-    watched.set(machine, { count: 1, off: () => offs.forEach((off) => off()) });
-  }
-  return () => {
-    const entry = watched.get(machine);
-    if (!entry || --entry.count > 0) return;
-    entry.off();
-    watched.delete(machine);
-  };
-}
-
 /**
  * @param rowId 代表这个项目的那一行(侧栏那一行)的本地项目 id
  * @param memberIds 这个项目在各台机器上的本地项目(含 rowId;没合并就只有它)
@@ -168,12 +160,6 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     setAsked((n) => n + 1);
     for (const id of ids) void projectFolders.refresh(id);
   }, []);
-
-  // Each member's machine says when its folders change.
-  useEffect(() => {
-    const offs = [...new Set(members.map((id) => machineRegistry.machineOf(id) ?? null))].map(watchMachine);
-    return () => offs.forEach((off) => off());
-  }, [members]);
 
   // A machine whose connection comes back, or whose account record changed while away, is asked again.
   // 读的是 mobx 里的设备行 —— 项目首页是 observer,那一份变了这里才重算。
