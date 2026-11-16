@@ -119,8 +119,7 @@ export function watchAppSettingsChanges(): void {
   if (watching) return;
   watching = events.on(appSettingsChangedChannel, ({ key }) => {
     if (pendingWrites.has(key)) return;
-    // Read even with no surface showing it: logic outside React decides on these values (`getAppSettingValueSnapshot`).
-    void appSettingsModel.refresh(key, LOCAL_SETTINGS_HOST_KEY).then(() => appSettingsModel.prefetch(key, LOCAL_SETTINGS_HOST_KEY));
+    invalidateAppSettingsKey(key);
   });
 }
 
@@ -161,25 +160,31 @@ export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value
   return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.update(key, value as never) as Promise<void>;
 }
 
-/** Write a local key outside React (device preferences): optimistic, held as in I4, put back when main refuses. */
-export function writeLocalAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K]): Promise<void> {
-  const reading = appSettingsModel.peek(key, LOCAL_SETTINGS_HOST_KEY);
+/**
+ * The one write of a settings key (this device's, or another machine's by its host key): drawn at once, held against this
+ * window's own broadcast (`beginAppSettingsWrite`), put back when main refuses (the refusal reaches the caller), and read
+ * again when it settles either way — the broadcasts dropped meanwhile may have carried another window's change (I4).
+ */
+export function writeAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
+  const reading = settingsModelOf(host).peek(key, host);
   if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
   const prev = (reading.value as SettingsMeta<K>).value;
-  const done = beginAppSettingsWrite(key);
-  setAppSettingsValueInCache(key, value);
-  return updateAppSettingsRequest(key, value)
+  const done = host === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {};
+  setAppSettingsValueInCache(key, value, host);
+  return updateAppSettingsRequest(key, value, host)
     .catch((error: unknown) => {
-      setAppSettingsValueInCache(key, prev);
+      setAppSettingsValueInCache(key, prev, host);
       settingsLog.error({ key, error: String(error) }, `settings ${key}: main refused the write; the shown value is put back`);
       throw error;
     })
     .finally(() => {
       done();
-      invalidateAppSettingsKey(key);
+      invalidateAppSettingsKey(key, host);
     });
 }
 
+/** Read a key again, even with no surface showing it: logic outside React decides on these values (`getAppSettingValueSnapshot`). */
 export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K, host = LOCAL_SETTINGS_HOST_KEY): void {
-  void settingsModelOf(host).refresh(key, host);
+  const model = settingsModelOf(host);
+  void model.refresh(key, host).then(() => model.prefetch(key, host));
 }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getAppSettingValueSnapshot: vi.fn(),
   setAppSettingsValueInCache: vi.fn(),
-  updateAppSettingsRequest: vi.fn(() => Promise.resolve()),
+  updateAppSettingsRequest: vi.fn((_key: string, _value: unknown) => Promise.resolve()),
   showModal: vi.fn(),
 }));
 
@@ -13,6 +13,7 @@ vi.mock('@renderer/features/settings/app-settings-client', () => ({
   updateAppSettingsRequest: mocks.updateAppSettingsRequest,
   invalidateAppSettingsKey: vi.fn(),
   beginAppSettingsWrite: () => () => {},
+  writeAppSetting: (key: string, value: unknown) => mocks.updateAppSettingsRequest(key, value),
 }));
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));

@@ -95,4 +95,13 @@ describe('设置里跟机器走的那几组(默认 tmux、仓库)跟着所选机
     expect(api?.unavailable).toBe(true);
   });
 
+  it('d22 读过、又离线了:上次读到的那份照画(只读),不去问', async () => {
+    await mount(remote(true).host);
+    expect(d22.getWithMeta).toHaveBeenCalledTimes(1);
+    await mount(remote(false).host);
+    expect(api?.settings.state === 'value' && api.settings.value.value).toEqual({ tmuxByDefault: true });
+    expect(api?.unavailable).toBe(true);
+    expect(d22.getWithMeta).toHaveBeenCalledTimes(1);
+  });
+
 });

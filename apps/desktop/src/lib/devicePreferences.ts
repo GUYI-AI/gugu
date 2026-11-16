@@ -5,7 +5,7 @@ import {
   appSettingsModel,
   LOCAL_SETTINGS_HOST_KEY,
   watchAppSettingsChanges,
-  writeLocalAppSetting,
+  writeAppSetting,
   type SettingsMeta,
 } from '@renderer/features/settings/app-settings-client'
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings'
@@ -113,7 +113,7 @@ export function appSettingsPreferences(): DevicePreferences {
       const reading = appSettingsModel.peek(key, LOCAL_SETTINGS_HOST_KEY)
       if (reading.state !== 'value') throw new Error(`device preference ${name}: its setting was never read`)
       const next = put((reading.value as SettingsMeta<AppSettingsKey>).value as never, value) as AppSettings[AppSettingsKey]
-      void writeLocalAppSetting(key, next).catch(() => { /* put back and said by writeLocalAppSetting */ })
+      void writeAppSetting(key, next).catch(() => { /* put back and said by writeAppSetting */ })
     },
     // eslint-disable-next-line react-hooks/rules-of-hooks -- `use` is a hook: called only from `useDevicePreference`.
     use: (name) => mapReading(name, useReplica(appSettingsModel, [SOURCES[name].key, LOCAL_SETTINGS_HOST_KEY])),
