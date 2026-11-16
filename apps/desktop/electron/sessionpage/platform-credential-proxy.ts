@@ -98,7 +98,12 @@ export async function proxyPlatformCredentialRequest(
         if (!upstreamResponse.complete && !harnessGone) gatewayCut = true
       })
       pipeline(upstreamResponse, response, (error) => {
-        if (httpError) options.httpError?.(httpError.finish(!error && upstreamResponse.complete))
+        try {
+          if (httpError) options.httpError?.(httpError.finish(!error && upstreamResponse.complete))
+        } catch {
+          // Passive diagnostics must not interrupt stream completion or transport cleanup.
+          // Do not log the thrown value: diagnostic failures may themselves contain secrets.
+        }
         if (observer) options.streamTiming?.(observer.finish(!error && upstreamResponse.complete))
         if (!error) return
         upstreamRequest?.destroy()

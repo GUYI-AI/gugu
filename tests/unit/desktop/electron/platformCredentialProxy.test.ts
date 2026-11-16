@@ -21,6 +21,27 @@ afterEach(async () => {
 })
 
 describe('the host credential relay', () => {
+  it('finishes the response and stream completion when the HTTP diagnostic callback throws', async () => {
+    const wire = 'event: error\ndata: {"type":"error"}\n\n'
+    const upstream = await serve((_request, response) => {
+      response.writeHead(400, { 'content-type': 'text/event-stream' })
+      response.end(wire)
+    })
+    const httpError = vi.fn(() => { throw new Error('synthetic observer failure') })
+    const streamTiming = vi.fn()
+    const relay = await serve((request, response) => {
+      void proxyPlatformCredentialRequest(request, response, {
+        upstream: () => new URL(upstream), localOnlyHeaders: new Set(),
+        credential: async () => 'fresh', refresh: vi.fn(), warn: vi.fn(), httpError, streamTiming,
+      })
+    })
+    const result = await fetch(relay, { method: 'POST', body: '{}' })
+    expect(result.status).toBe(400)
+    expect(await result.text()).toBe(wire)
+    await vi.waitFor(() => expect(streamTiming).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ complete: true })))
+    expect(httpError).toHaveBeenCalledTimes(1)
+  })
+
   it('observes a synthetic 400 before ACP wrapping without changing its wire response or retrying', async () => {
     const id = '20261116000000000000000000aBcDeFgHiJkLm'
     const wire = JSON.stringify({ request_id: id, error: { type: 'invalid_request_error',
