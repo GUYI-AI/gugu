@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentCapabilities } from '@shared/core/agents/agent-payload';
 import {
   accountRowOf,
+  agentAccessMethods,
   mergeAccountRows,
   resolveAccountRow,
   resolveAccountTargets,
@@ -324,5 +325,25 @@ describe('mergeAccountRows(资源库一行、一颗按钮,#6335 owner 定)', () 
     expect(merged).toMatchObject({ status: 'signed-out', message: '没有找到凭据', canSignIn: true, pendingLegs: [] });
     expect(merged.steps).toEqual([row]);
     expect(mergeAccountRows([])).toBeNull();
+  });
+});
+
+describe('agentAccessMethods: what the connection panel offers, from the same declarations', () => {
+  const agent = (id: string, capabilities: Partial<AgentCapabilities>) =>
+    ({ id, capabilities, status: 'available' }) as unknown as AgentPayload;
+  it.each([
+    ['claude', CLI_LOGIN, ['account', 'api-key', 'endpoint']],
+    ['codex', CLI_LOGIN, ['account', 'api-key', 'endpoint']],
+    ['kimi', CLI_LOGIN, ['account']],
+    ['gemini', API_KEY_ONLY, []],
+    ['opencode', NO_AUTH, []],
+  ] as const)('%s', (id, capabilities, expected) => {
+    expect(agentAccessMethods(agent(id, capabilities))).toEqual(expected);
+  });
+  it('an API-key connection lists its address field only when it has one', () => {
+    const keyed = (endpoint: 'none' | 'optional' | 'required') =>
+      agent('pi', { auth: { kind: 'none' }, apiKeyConnection: { kind: 'supported', endpoint, model: 'required', evidence: 'test' } } as Partial<AgentCapabilities>);
+    expect(agentAccessMethods(keyed('none'))).toEqual(['api-key']);
+    expect(agentAccessMethods(keyed('required'))).toEqual(['api-key', 'endpoint']);
   });
 });

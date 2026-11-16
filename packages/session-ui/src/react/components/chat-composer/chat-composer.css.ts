@@ -867,8 +867,21 @@ export const settingRow = style({
  * 又不至于变成一块自创配色的彩片。❌ 不加边框/底色 —— 菜单项自己有 hover 态。
  */
 export const settingRowUnlock = style({
+  // Its own line under the group label: beside a short label (「你的 Codex 模型」) the two-line row read as one sentence.
+  flexBasis: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  textAlign: 'start',
   color: vars.surfaceInfoForeground,
   whiteSpace: 'nowrap',
+});
+
+/** The second line under it: how this agent can be connected. One size down, muted, like a model's description. */
+export const settingRowUnlockDetail = style({
+  fontSize: tokenVars.textTiny,
+  lineHeight: tokenVars.textTinyLineHeight,
+  color: vars.foregroundMuted,
 });
 
 /** 二级列表:模型/档位多了自己滚,不外溢出面板。 */

@@ -849,7 +849,7 @@ export const WithGroupedModels: Story = {
  * 没登录那家 harness 时,模型清单里那一组「去登录」—— 渐进披露(owner 2026-08-28 定稿)。
  *
  * 用咕咕自己的模型不需要登录任何一家,所以底排不弹任何东西;用户**点开模型清单**、
- * 正在挑模型时,才在自家模型那一组下面看到「登录以使用 X 模型」。
+ * 正在挑模型时,才在自家模型那一组下面看到「添加个人 X 连接」。
  *
  * ⚠️ 旧版是「清单为空时那一枚标签顶掉整个模型行」。它几乎永不出现 —— 咕咕自家的模型
  * 一直在,清单从来不空。两个状态各摆一遍:还有档位可选的,和什么都没有的。
@@ -863,8 +863,9 @@ function ModelUnlockDemo() {
         modelOptions={null}
         modelUnlock={{
           groupLabel: 'Kimi 自家模型',
-          label: '登录以使用 Kimi 模型',
-          title: '登录 Kimi 之后就能选它自家的模型。',
+          label: '添加个人 Kimi 连接',
+          title: '添加 Kimi 连接后这里显示你的模型',
+          detail: '账号登录',
         }}
         onModelUnlock={() => {}}
         effortOptions={{
@@ -880,8 +881,9 @@ function ModelUnlockDemo() {
         modelOptions={null}
         modelUnlock={{
           groupLabel: 'Qwen 自家模型',
-          label: '登录以使用 Qwen 模型',
-          title: '登录 Qwen 之后就能选它自家的模型。',
+          label: '添加个人 Qwen 连接',
+          title: '添加 Qwen 连接后这里显示你的模型',
+          detail: '账号登录 / API Key / 自定义 Base URL',
         }}
         onModelUnlock={() => {}}
         onSubmit={() => {}}

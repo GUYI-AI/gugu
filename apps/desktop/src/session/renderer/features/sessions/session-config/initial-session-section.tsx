@@ -1,5 +1,5 @@
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
+import { agentAccessMethods, agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@shared/core/sessions/new-session-defaults';
 import {
@@ -148,6 +148,19 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
   if (attachment.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(attachment.previewUrl);
 }
 
+
+/**
+ * @@@unlock-detail-variant - the second line under "Add a personal {name} connection" (wording pending design):
+ * `fixed` = one sentence for every agent; `declared` = the connection panel's own ways in (`agentAccessMethods`).
+ */
+const UNLOCK_DETAIL = 'declared' as 'fixed' | 'declared';
+
+const ACCESS_METHOD_KEYS = {
+  account: 'harnessCatalog.accessAccount',
+  'api-key': 'harnessCatalog.accessApiKey',
+  endpoint: 'harnessCatalog.accessEndpoint',
+} as const;
+
 export type InitialSessionState = {
   provider: AgentProviderId | null;
   setProvider: (provider: AgentProviderId | null) => void;
@@ -227,7 +240,7 @@ export type InitialSessionState = {
    * 而它又必须**排在清单最前**:owner 2026-08-28 实测放末尾时它躺在咕咕那十几个模型下面,
    * 「我翻了半天才找到」。
    */
-  harnessModelUnlock: { groupLabel: string; label: string; title: string } | null;
+  harnessModelUnlock: { groupLabel: string; label: string; title: string; detail?: string } | null;
   /**
    * 选中的平台模型 id,null = 用 harness 自家模型(纯 BYOK)。
    * composer 是会话的唯一决策点:这里为 null 就不注入平台环境,即使 agent 级 model_access
@@ -999,6 +1012,11 @@ export function useInitialSessionState(
   // 按这条腿的程序判(#6335,`resolveLegLoginGate`):主程序那一路仍是「目录 auth-required 且声明了登录」。
   const harnessSignIn = legLoginGate.signIn ? openAgentAccount : null;
   // 同一个判据算两次没有意义:能去登录才给入口,不能去就一个字都不画(控件要么真生效要么不渲染)。
+  const accessMethodsLine = UNLOCK_DETAIL === 'fixed'
+    ? translate('harnessCatalog.accessFixed')
+    : agentAccessMethods(agents?.find((agent) => agent.id === providerId))
+      .map((method) => translate(ACCESS_METHOD_KEYS[method]))
+      .join(' / ');
   const harnessModelUnlock = harnessSignIn
     ? {
         // 这三格构成模型清单**里**的一组(组头 + 一条可点的动作),用户点开清单挑模型时才看见。
@@ -1015,6 +1033,8 @@ export function useInitialSessionState(
               label: translate('harnessCatalog.unlockModels', { name: agentDisplayName }),
               title: translate('harnessCatalog.unlockModelsHint', { name: agentDisplayName }),
             }),
+        // The second line names what the click offers: the connection panel's own ways in.
+        ...(accessMethodsLine ? { detail: accessMethodsLine } : {}),
       }
     : null;
   // 一行说明,不是弹窗也不是阻断:分组为什么不在,用户有权知道 —— 主进程给原因码,这里翻成人话。
