@@ -565,7 +565,7 @@ export type FrameToHost =
   | { m: typeof APP_FRAME_MARKER; t: 'hello' }
   /** The runtime listens for its sync port now: the outer page hands it over (摩擦单 F28). */
   | { m: typeof APP_FRAME_MARKER; t: 'sync-port' }
-  /** The document's first contentful paint: a widget's placeholder gives way to it, as the desktop preload's `gugu-widget-painted`. */
+  /** The document's first contentful paint, sent for every page (not only widgets): its placeholder gives way to it, as the desktop preload's `gugu-page-painted`. */
   | { m: typeof APP_FRAME_MARKER; t: 'painted' }
   /**
    * `call`: a program's request made inside one tool call — that call's id, as main minted it (program-call.ts).

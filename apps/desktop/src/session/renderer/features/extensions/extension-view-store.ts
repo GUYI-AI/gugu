@@ -86,6 +86,7 @@ class ExtensionViewStore {
   private readonly stacks = new Map<string, ExtensionViewClaim[]>();
   /** 已经有人要过、此刻活着的常驻页。根层只给这些建页。 */
   readonly residentPages = observable.map<string, ExtensionResidentPage>({}, { deep: false });
+  /** Resident pages whose document has drawn its first contentful paint (`gugu-page-painted`, sent for every page). */
   readonly paintedPages = observable.set<string>();
   /** 每张常驻页最近一次被认领的先后,销毁最久没用的那张时用。 */
   private readonly usedAt = new Map<string, number>();
@@ -104,7 +105,7 @@ class ExtensionViewStore {
   private readonly idleWidgets = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
-    makeObservable(this, { claim: action, release: action, forgetOpened: action, forgetIdle: action, forgetSlot: action, closeSlot: action, forgetWidgets: action, widgetPainted: action });
+    makeObservable(this, { claim: action, release: action, forgetOpened: action, forgetIdle: action, forgetSlot: action, closeSlot: action, forgetWidgets: action, pagePainted: action });
   }
 
   /** The page now drawing this claim is bound (the layer says so). A claim already released: nothing to note. */
@@ -212,7 +213,7 @@ class ExtensionViewStore {
     for (const page of [...this.residentPages.values()]) if (page.kind === kind && !this.claims.has(page.key)) this.drop(page.key);
   }
 
-  widgetPainted(key: string, painted = true): void {
+  pagePainted(key: string, painted = true): void {
     if (painted && this.residentPages.has(key)) this.paintedPages.add(key);
     else this.paintedPages.delete(key);
   }
