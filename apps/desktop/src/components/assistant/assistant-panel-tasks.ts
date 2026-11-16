@@ -5,19 +5,12 @@ import { OPEN_ASSISTANT_TASK_CHAT,type AssistantTaskChat } from '../../lib/assis
 import { assistantWorkTasks,assistantWorkStatus } from './assistant-work-projection'
 import {AssistantWorkNotReady,assistantWorkRecords,useAssistantWorkRecords,useAssistantWorkTitles} from './assistant-work-records'
 
-type Scope = { ownerId:string;assistantId:string;assertCurrent?:()=>void }
+type Scope = { ownerId:string;assistantId:string }
 const rows = (records:readonly AssistantWorkTask[]) => assistantWorkTasks(records).map(task => {
   const presence=task.agentId ? getAgentPresenceSnapshot(task.agentId) : null
   return { ...task,status:assistantWorkStatus(task.outcome,presence?.reading ?? null),
     harness:presence?.payload?.agentType ?? null,unseen:presence?.local?.unseen ?? false }
 })
-/** Both shells share this cloud read; no home readiness or observed session directory participates. */
-export async function readAssistantPanelTasks(scope:Scope) {
-  scope.assertCurrent?.()
-  const records=await assistantWorkRecords.fetch(scope.assistantId)
-  scope.assertCurrent?.()
-  return rows(records)
-}
 export type AssistantPanelTask = ReturnType<typeof rows>[number]
 /** What opening a row asks the task window for; an App's panel (#1925, AppWorkLedgerHost) opens the very same. */
 export function assistantPanelTaskChat(scope:Pick<Scope,'assistantId'>,task:Omit<AssistantPanelTask,'status'|'harness'|'unseen'>):AssistantTaskChat {
