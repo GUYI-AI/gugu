@@ -60,7 +60,7 @@ export function prepareFields(value: unknown, seen = new WeakSet<object>()): unk
     try {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        out[k] = prepareFields(v, seen);
+        Object.defineProperty(out, k, { value: prepareFields(v, seen), enumerable: true, configurable: true, writable: true });
       }
       return out;
     } finally { seen.delete(value); }
