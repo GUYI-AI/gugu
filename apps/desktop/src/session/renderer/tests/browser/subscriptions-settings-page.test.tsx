@@ -16,7 +16,7 @@ import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentD
 import { CliAgentsList } from '@renderer/features/settings/agents-page/CliAgentsList';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '@/lib/replica';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import { modalStore } from '@renderer/lib/modal/modal-store';
@@ -75,9 +75,12 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
   const agents = new Proxy({}, { get: (_, key) => answers[String(key)] ?? pending });
   const namespace = new Proxy({}, { get: () => pending });
   const original = await importOriginal<typeof import('@renderer/lib/ipc')>();
+  const rpc = new Proxy({}, { get: (_, key) => (key === 'agents' ? agents : namespace) }) as typeof original.rpc;
   return {
     ...original,
-    rpc: new Proxy({}, { get: (_, key) => (key === 'agents' ? agents : namespace) }),
+    rpc,
+    // The agent readings ask this computer through `rpcOn(null)` (agent-replicas.ts): the same host.
+    rpcOn: ((machine) => (machine ? original.rpcOn(machine) : rpc)) as typeof original.rpcOn,
     // 「关掉并切换」的进度由测试按主进程的样子推。
     onMachineEvent: ((machine, event, cb) => {
       if (event.name !== 'subscriptions:switch-progress') return original.onMachineEvent(machine, event, cb);
@@ -215,6 +218,9 @@ async function openSwitch(provider: string) {
   await until('the current connection can be switched', () => switchTrigger(provider)?.hasAttribute('data-disabled') === false);
   await userEvent.click(page.getByTestId(`subscription-switch-${provider}`));
 }
+
+// The page belongs to the signed-in person (`useAuth` above): the session that signs them in is published to the readings too.
+followRendererSession('SIGNED_IN', 'subscription-test');
 
 beforeEach(() => {
   queryClient.clear();
