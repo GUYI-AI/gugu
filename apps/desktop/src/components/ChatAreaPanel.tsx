@@ -70,7 +70,6 @@ import { useMessageSelectMode } from './chat/useMessageSelectMode'
 import { IconButton } from './ui/IconButton'
 import { ChatTailNotice } from './chat/ChatTailNotice'
 import { useChatSearch } from './chat/useChatSearch'
-import { SearchTrailBar } from './chat/SearchTrailBar'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 export { ChatNotificationLevelControl } from './chat/ChatNotificationLevelControl'
 import { ChatSettingsPanel } from './chat/ChatSettingsPanel'
@@ -657,7 +656,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         )}
         actions={headerActions}
       />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
-      <SearchTrailBar chatId={activeChatId} surface={surfaceElement} enabled={surfaceVisible} />
 
       <div
         style={{
@@ -738,7 +736,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* @@@1506 - Agent 运行状态：输入框上方的轻量浮动文字（owner #1506：无重白板，打字时也能瞥见）。群聊列出在跑的 agent（可点 → @mention）；
           单聊是运行中/思考中（流式正文仍留消息流）。运行条那一行是固定高的一行(群、agent 私聊才有),没有底,消息从它后面滚过;运行条出现、消失不改变布局。 */}
-      <ChatBottomDock reserve={chatListRows.length === 0} above={isRoomChatSurface && !chrome?.hideRunningStatus && <RunningBarSlot>
+      <ChatBottomDock reserve={chatListRows.length === 0} running={isRoomChatSurface && !chrome?.hideRunningStatus && groupRunTokens.length > 0} above={isRoomChatSurface && !chrome?.hideRunningStatus && <RunningBarSlot>
       {!chrome?.hideRunningStatus && (
         // @@@1696 群聊运行态：横排单行「运行 token」(流光动词) + cap +N。数据 = 在跑(transient)的 agent，
         // stateKey 由 presence recentActions 的最新 kind 派生，展示文案由 RunningTokenBar 翻译；

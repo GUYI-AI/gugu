@@ -6,6 +6,7 @@ export interface LiveWindowContext {
   agentId: string;
   privateAgentChat: boolean;
   shown: boolean;
+  connected?: boolean;
 }
 
 export interface LiveWindowSize { width: number; height: number }
@@ -23,6 +24,7 @@ export interface LiveWindowSource {
   title: string;
   size: LiveWindowSize | null;
   status: 'operating' | 'finished';
+  activity?: number;
 }
 
 export interface LiveWindowPresentation {
@@ -43,9 +45,12 @@ export interface LiveWindowSnapshot {
   source: LiveWindowSource | null;
   visible: boolean;
   operating: boolean;
+  headerSource: LiveWindowSource | null;
+  connected: boolean;
 }
 
 export type LiveWindowAction =
+  | { type: 'toggle-window' }
   | { type: 'reveal'; shown: boolean }
   | { type: 'set-orientation'; orientation: 'portrait' | 'landscape' }
   | { type: 'enlarge' }

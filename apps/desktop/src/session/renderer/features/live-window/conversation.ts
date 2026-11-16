@@ -38,6 +38,16 @@ export class LiveWindowConversation {
   getContext() { return this.context; }
   addCleanup(cleanup: () => void): void { if (this.disposed) cleanup(); else this.cleanups.add(cleanup); }
   picture(id: string): HTMLElement | null { return this.pictures.get(id)?.element ?? null; }
+  setConnected(connected: boolean): void {
+    if ((this.context.connected !== false) === connected || this.disposed) return;
+    this.context = { ...this.context, connected };
+    this.publish();
+    if (connected && this.context.shown) { this.startObservation(); void this.refresh(); }
+    else {
+      this.generation++; this.offSources?.(); this.offSources = null; this.observing = false;
+      for (const picture of this.pictures.values()) this.freeze(picture);
+    }
+  }
   setOperating(value: boolean): void {
     if (this.operating === value || this.disposed) return;
     this.operating = value;
@@ -60,7 +70,7 @@ export class LiveWindowConversation {
     }
   }
   private startObservation(): void {
-    if (this.offSources || this.observing || this.disposed) return;
+    if (this.offSources || this.observing || this.disposed || this.context.connected === false) return;
     const generation = this.generation;
     this.observing = true;
     void this.transport.observe(this.context.sessionId, () => { void this.refresh(); }).then(off => {
@@ -69,14 +79,14 @@ export class LiveWindowConversation {
     }, error => { if (generation === this.generation && !this.disposed) { this.observing = false; this.report(error); } });
   }
   refresh(): Promise<void> {
-    if (this.disposed || !this.context.shown || !this.context.privateAgentChat) return Promise.resolve();
+    if (this.disposed || !this.context.shown || !this.context.privateAgentChat || this.context.connected === false) return Promise.resolve();
     if (this.reading) { this.readAgain = true; return this.reading; }
     const generation = this.generation;
     this.reading = (async () => {
       do {
         this.readAgain = false;
         const descriptors = await this.transport.list(this.context.sessionId);
-        if (this.disposed || generation !== this.generation || !this.context.shown) return;
+        if (this.disposed || generation !== this.generation || !this.context.shown || this.context.connected === false) return;
         const selected = descriptors.filter(source => source.type === 'task-page'
           || source.type === 'app-projection' && source.appId === 'computer-use');
         for (const picture of this.pictures.values()) picture.present = false;
@@ -87,12 +97,15 @@ export class LiveWindowConversation {
             element.dataset.liveWindowPicture = descriptor.id;
             picture = { descriptor, source: { id: descriptor.id, kind: descriptor.type === 'task-page' ? 'browser' : 'computer',
               deviceId: this.context.deviceId, sessionId: this.context.sessionId, agentId: this.context.agentId,
-              title: descriptor.title, size: descriptor.size, status: 'finished' },
+              title: descriptor.title, size: descriptor.size, activity: descriptor.activity, status: 'finished' },
               element, present: true, epoch: 0, view: null, viewPainted: false, opening: null, frozenView: null };
             this.pictures.set(descriptor.id, picture);
           }
           picture.present = true; picture.descriptor = descriptor;
-          picture.source = { ...picture.source, title: descriptor.title, size: descriptor.size ?? picture.source.size };
+          picture.source = { ...picture.source, title: descriptor.title, size: descriptor.size ?? picture.source.size, activity: descriptor.activity };
+        }
+        for (const [id, picture] of this.pictures) if (!picture.present) {
+          this.freeze(picture); void picture.frozenView?.close().catch(this.report); picture.element.remove(); this.pictures.delete(id);
         }
         this.publish();
         this.startPictures();
@@ -111,13 +124,13 @@ export class LiveWindowConversation {
       if (!previous || picture.present || !previous.present) latest.set(picture.source.kind, picture);
     }
     const sources = [...latest.values()].map(picture => {
-      picture.source = { ...picture.source, status: picture.present && this.operating ? 'operating' : 'finished' };
+      picture.source = { ...picture.source, status: picture.present && this.operating && this.context.connected !== false ? 'operating' : 'finished' };
       return picture.source;
     });
     this.model.observe(this.context, sources);
   }
   private startPictures(): void {
-    if (!this.context.shown || !this.operating || this.disposed || this.model.getSnapshot().presentation?.mode === 'closed') return;
+    if (!this.context.shown || !this.operating || this.context.connected === false || this.disposed || this.model.getSnapshot().presentation?.mode === 'closed') return;
     const displayed = new Set(this.model.getSnapshot().sources.map(source => source.id));
     for (const picture of this.pictures.values()) {
       if (!picture.present || !displayed.has(picture.source.id) || picture.view || picture.opening) continue;
@@ -138,7 +151,7 @@ export class LiveWindowConversation {
           interactive: false,
           localTouchViewing: this.model.platform === 'phone' && picture.source.kind === 'computer',
           painted: frame => {
-            if (frame && !this.disposed && epoch === picture.epoch) {
+            if (frame && !this.disposed && picture.present && this.pictures.get(picture.source.id) === picture && epoch === picture.epoch) {
               if (!painted) {
                 painted = picture.viewPainted = true;
                 next.style.visibility = '';
@@ -153,7 +166,7 @@ export class LiveWindowConversation {
           error: error => { if (!this.disposed && epoch === picture.epoch) this.report(error); },
         }); } catch (error) { next.remove(); throw error; }
         const view = { ...mounted, close: async () => { try { await mounted.close(); } finally { next.remove(); } } };
-        if (this.disposed) { await view.close(); return; }
+        if (this.disposed || !picture.present || this.pictures.get(picture.source.id) !== picture) { await view.close(); return; }
         if (epoch !== picture.epoch || !this.context.shown || !this.operating) {
           if (painted) { picture.frozenView = view; await view.freeze(); }
           else await view.close();

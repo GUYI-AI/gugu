@@ -14,6 +14,7 @@ $backup = "$target.gugu-backup-$app"
 $powershell = (Get-Process -Id $PID).Path
 $results = @()
 $links = Join-Path $root 'links.ini'
+$failLog = Join-Path $root 'installer\fixture.log'
 $oldLink = Join-Path $root 'old.lnk'
 $newLink = Join-Path $root 'new-menu\new.lnk'
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
@@ -21,7 +22,7 @@ function Invoke-Phase($phase, [int]$expected = 0) {
   $prior=$ErrorActionPreference
   try {
     $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
-    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links -FailureLog $failLog
     $code=$LASTEXITCODE
   } finally { $ErrorActionPreference=$prior }
   Assert ($code -eq $expected) "$phase returned $code, expected $expected"
@@ -99,6 +100,11 @@ try {
   try { Invoke-Phase commit 2 } finally { $locked.Dispose() }
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Locked old application was changed'
   $results += 'locked old executable fails without losing installation'
+  $failures = @(Get-Content -LiteralPath $failLog -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
+  Assert ($failures.Count -eq 2) "Expected 2 recorded failures, found $($failures.Count)"
+  Assert ($failures[0].phase -eq 'finish' -and $failures[0].error -match 'registration') 'Registration failure was not recorded'
+  Assert ($failures[1].phase -eq 'commit' -and $failures[1].version -eq '0.3.5' -and $failures[1].cause) 'Locked-tree failure was not recorded with its cause'
+  $results += 'every failure is recorded for the next app start; successes record nothing'
 
   Invoke-Phase prepare
   Payload $stage 'committed'

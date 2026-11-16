@@ -26,7 +26,7 @@ function dockRule(column: string): CSSStyleRule {
  * `above` 是运行条那一行:固定高度,里面有没有 pill 都不改变这一摞的高度,所以运行条出现、消失不改变布局。
  * reserve:没有消息流可让(空态、骨架)时,在列底占一格同高的位置,空态的内容不被盖住。
  */
-export function ChatBottomDock({ reserve, above, children }: { reserve: boolean; above?: ReactNode; children: ReactNode }) {
+export function ChatBottomDock({ reserve, above, running = false, children }: { reserve: boolean; above?: ReactNode; running?: boolean; children: ReactNode }) {
   const mobile = useMobileShell()
   const ref = useRef<HTMLDivElement | null>(null)
   const columnId = useId()
@@ -60,7 +60,7 @@ export function ChatBottomDock({ reserve, above, children }: { reserve: boolean;
   return (
     <>
       {reserve && !mobile && <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)] shrink-0" />}
-      <div ref={ref} data-chat-bottom-dock="" className={mobile ? 'gg-phone-chat-dock' : `${composerSlotClass} absolute!`}>
+      <div ref={ref} data-chat-bottom-dock="" data-running-status={running || undefined} className={mobile ? 'gg-phone-chat-dock' : `${composerSlotClass} absolute!`}>
         <div className={`${composerSlotInnerClass} pb-0! pointer-events-none!`}>{above}</div>
         <div className={composerSlotInnerClass}>{children}</div>
       </div>
