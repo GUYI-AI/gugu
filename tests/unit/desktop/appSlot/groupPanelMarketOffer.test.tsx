@@ -29,12 +29,12 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
     setEnabled: vi.fn(),
   },
 }))
-const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>() }))
+const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>(), fail: false }))
 /** The packages shared in the chat, as the chat's attachments say them. */
 const sharedList = () => [...sharedHere.packages.values()] as { card: { source: { kind: string; url?: string }; messageId: string }; manifest: unknown }[]
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
   ...(await original<object>()),
-  chatPackageCards: async () => sharedList().map((pkg) => pkg.card),
+  chatPackageCards: async () => { if (sharedHere.fail) throw new Error('offline'); return sharedList().map((pkg) => pkg.card) },
   readPackageSummary: async (key: string) => ({ ok: true, manifest: sharedList().find((pkg) => (pkg.card.source.kind === 'url' ? `url:${pkg.card.source.url}` : `msg:${pkg.card.messageId}`) === key)!.manifest }),
   newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
@@ -66,6 +66,7 @@ beforeEach(() => {
   HTMLElement.prototype.checkVisibility = () => false
   install([])
   sharedHere.packages = new Map()
+  sharedHere.fail = false
   here.market = { success: true, data: [] }
   for (const tab of panelTabsOf('group-1')) closeChatTab('group-1', tab.tabId)
   vi.mocked(appsHere!.marketOffers).mockClear()
@@ -153,5 +154,21 @@ describe('a group JSON file already open in Workspace', () => {
       expect(appsHere!.installFromMarket).toHaveBeenCalledWith({ ref: { extensionId: manifest.id, version: manifest.version }, chatId: file.chatId })
       expect(offer()).toBeNull()
     }
+  })
+})
+
+describe("this chat's shared packages cannot be read (review DE-2)", () => {
+  it('the file opens as it would with nothing shared (❌ an empty page held back for good)', async () => {
+    const workspace = { ...slides('1.0.0'), id: 'workspace', contributes: { tabs: [{ name: 'main', title: 'Workspace', opensFiles: { chat: ['.json'] } }] } } as ExtensionManifest
+    install([workspace])
+    sharedHere.fail = true
+    const typedName = 'notes.json'
+    vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => ({
+      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, peekInstalledApps('local')!.manifests, 'chat', () => null) },
+    }))
+    await openFile()
+    await until('Workspace opened the JSON', () => shownItem('group-1')?.kind === 'workspace.main')
+    await until('the market answered', () => vi.mocked(appsHere!.marketOffers).mock.calls.length > 0)
+    await until('the page is drawn, not held back', () => harness.container.querySelector('[data-testid="group-app-slot-raw-folded"]') === null)
   })
 })

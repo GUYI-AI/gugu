@@ -155,8 +155,13 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   [typedName, shared, market, installed])
   useEffect(() => setOfferFailed(null), [typedName, chatId])
   useEffect(() => setRawShown(false), [item.itemId, chatId])
-  /** A file opened before this chat's packages were read: held back for that moment, so an offer is not preceded by its raw JSON. */
-  const offerUnknown = appsHere !== null && !!item.kind && !!item.itemId && (!shared || !installed)
+  /**
+   * A file opened before what decides its offer is read (this chat's packages, what is installed, the market): held back
+   * for that moment, so an offer is not preceded by its raw JSON. Only while unknown: a read that failed decides "no
+   * offer from it" and the page is drawn (❌ held back for good).
+   */
+  const offerUnknown = appsHere !== null && !!item.kind && !!item.itemId
+    && (sharedReading.state === 'unknown' || installedReading.state === 'unknown' || (!!typedName && marketReading.state === 'unknown'))
   /** The open file's raw page folds under an offer for it (not under one for a file nobody here opens). */
   const offerFolds = offer !== null && !rawShown
 
