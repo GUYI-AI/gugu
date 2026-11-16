@@ -26,6 +26,10 @@ export const ownSettings = replica({
   scope: 'account',
   read: readRow,
   fresh: 10_000,
+  // A transient failure is read again quietly (1 s, 2 s, 4 s): first-run hints, the tour and the occupation hide while the
+  // row is unknown, and one failed read would otherwise hide them until something else reads the row (review T-2).
+  retry: 3,
+  retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000),
   // The `user` row's display values (an occupation, which hints were seen): their first frame after a restart. Other
   // scopes are not drawn at start; a group's row is the other model's (sharing the slots, every group opened pushed the
   // `user` row out of the snapshot after four).

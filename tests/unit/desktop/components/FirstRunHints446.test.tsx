@@ -198,18 +198,58 @@ describe('contextual hints at the entries each device draws', () => {
     await waitForCondition(() => !!bubble('collaboration'), 'page becomes visible')
   })
 
-  it('a failed read shows no hint and says nothing; reading the row again shows it', async () => {
+  it('silently backs off a transient read failure and restores the Chinese hint', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     io.read.mockRejectedValueOnce(new Error('permission denied'))
     addEntry('phone', 'assistant')
     await mount('phone')
-    await waitForCondition(() => ownSettings.peek('user').state === 'error', 'read failed')
+    await advance(0)
+    expect(io.read).toHaveBeenCalledTimes(1)
     expect(bubble('assistant')).toBeNull()
     expect(document.querySelector('[role="alert"], [data-testid="first-run-hint-error"]')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/permission denied|Retry|Could not read/)
-    await act(async () => { await ownSettings.refresh('user') })
-    await waitForCondition(() => !!bubble('assistant'), 'hint after a read')
+    await advance(999)
+    expect(io.read).toHaveBeenCalledTimes(1)
+    await advance(1)
+    expect(io.read).toHaveBeenCalledTimes(2)
+    await advance(1)
     expect(bubble('assistant')?.textContent).toContain('咕咕是你的个人助理')
+    expect(bubble('assistant')?.textContent).toContain('知道了')
+    expect(document.body.textContent).not.toMatch(/permission denied|Retry|Could not read/)
     expect(io.dismiss).not.toHaveBeenCalled()
+  })
+
+  it.each(['phone', 'desktop'] as const)('%s: exhausts silent reads without inventing progress, then recovers on a real refetch', async (device) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    io.read.mockRejectedValue(new Error('local request failed: code=1'))
+    addEntry(device, 'assistant')
+    await mount(device)
+    await advance(7000)
+    expect(io.read).toHaveBeenCalledTimes(4)
+    await advance(60_000)
+    expect(io.read).toHaveBeenCalledTimes(4)
+    expect(document.querySelector('[data-testid^="first-run-hint-"], [role="alert"], [data-sonner-toast]')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/code=1|Retry|提示进度/)
+    // No progress made up: the reading is an error, never a value.
+    expect(ownSettings.peek('user').state).toBe('error')
+    expect(io.dismiss).not.toHaveBeenCalled()
+    io.read.mockImplementation(async () => account)
+    await act(async () => { await ownSettings.refresh('user') })
+    await advance(1)
+    expect(bubble('assistant')?.textContent).toContain('知道了')
+    expect(shownProgress()).toEqual({ version: 1, dismissed: [] })
+  })
+
+  it('cancels a pending read retry when its surface unmounts', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    io.read.mockRejectedValue(new Error('offline'))
+    addEntry('phone', 'assistant')
+    const h = await mount('phone')
+    await advance(0)
+    expect(io.read).toHaveBeenCalledTimes(1)
+    // Unmounted only: the read stays in the cache, its retry does not run on with nobody showing it.
+    h.cleanup({ keepReads: true })
+    await advance(60_000)
+    expect(io.read).toHaveBeenCalledTimes(1)
   })
 
   it('silently retries a dismissed hint save without asking the user to retry', async () => {
