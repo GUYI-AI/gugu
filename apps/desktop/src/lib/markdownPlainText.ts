@@ -7,15 +7,29 @@ const INLINE_CODE = /((`+)(?!`)[^\n]*?\2(?!`))/
  * leftover markers outside code are dropped too, not just matched pairs.
  */
 export function markdownPlainText(text: string): string {
-  return text
-    .replace(/`{3}[\s\S]*?`{3}/g, '')
-    .replace(/^ {0,3}~{3,}[^\n]*\n[\s\S]*?^ {0,3}~{3,}[ \t]*(?:\n|$)/gm, '')
+  return withoutFencedBlocks(text)
     .split(INLINE_CODE)
     .filter((_, index) => index % 3 !== 2)
     .map((part, index) => (index % 2 === 1 ? part : plainSegment(part)))
     .join('')
     .replace(/\s*\n+\s*/g, ' ')
     .trim()
+}
+
+function withoutFencedBlocks(text: string): string {
+  let fence: { marker: string; length: number } | null = null;
+  return text.split('\n').filter(line => {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (match && match[1][0] === fence.marker && match[1].length >= fence.length && !match[2].trim()) fence = null;
+      return false;
+    }
+    if (match && (match[1][0] !== '`' || !match[2].includes('`'))) {
+      fence = { marker: match[1][0], length: match[1].length };
+      return false;
+    }
+    return true;
+  }).join('\n');
 }
 
 function replaceInlineLinks(text: string): string {
