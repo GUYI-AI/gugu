@@ -69,6 +69,8 @@
   box-shadow: none;
   position: relative;
   z-index: 1;
+  /* Line-state changes must not interpolate touch-target dimensions or insets. */
+  transition-property: background-color, color, opacity, box-shadow;
 }
 [data-slot='composer'][data-phone-capsule] [data-phone-editor-toggle] {
   align-self: start;
@@ -139,6 +141,9 @@
 /* A compact two-line box fits the existing 32px expand and 44px send targets
    without intersecting their hit areas; expanded editing keeps its own inset. */
 [data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-editor-toggle] { margin-top: 0; }
+/* 32px + 44px targets leave 4px separation inside the 80px two-line box.
+   The old 4px bottom margin spent that entire gap and the real boxes overlapped. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-send] { margin-bottom: 0; }
 [data-slot='composer'][data-phone-capsule][data-phone-attachment-row] button[data-phone-attachment] {
   grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 52px;
