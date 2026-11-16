@@ -2234,9 +2234,11 @@ async function uploadForSend(args, deps, label, chatId, read) {
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   const bytes = read ?? await uploadBlob(label, args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
-  // The same file from this agent to this chat is one upload: sent again after a timeout or restart, it resumes.
+  // The same file from this agent to the same place (this chat, or the owner's friend it goes to) is one upload: sent again
+  // after a timeout or restart, it resumes. Different places are different uploads, so parallel sends never share one.
   const sha = read ? createHash('sha256').update(read).digest('hex') : await fileSha256(String(args.file_path))
-  const request_id = await contentRequestId('chat', deps.context.agentId, chatId ?? '', sha, String(bytes.size ?? bytes.byteLength))
+  const place = chatId ? `chat ${chatId}` : `friend ${String(args.friend_user_id)}`
+  const request_id = await contentRequestId('send', deps.context.agentId, place, sha, String(bytes.size ?? bytes.byteLength))
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
     { chat_id: chatId, as: deps.context.agentId, request_id }) }
 }

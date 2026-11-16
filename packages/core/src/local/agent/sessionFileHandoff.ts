@@ -30,9 +30,11 @@ export async function uploadSessionFile(endpoint: AttachmentsEndpoint, file: Ses
   // permit is the only size limit.
   const bytes = await openAsBlob(source, { type: contentType })
   if (sender.expectedSha256 && sender.expectedSha256 !== sha) throw new Error('Registered artifact changed before upload')
-  // The same file from the same agent to the same session is one upload: sent again, it resumes where it stopped.
+  // The same file from the same agent session to the same recipients is one upload: sent again, it resumes where it
+  // stopped. Other recipients are another upload, so one file handed to several sessions at once never shares one.
   const stagingKey = sender.stagingKey ?? await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, {
-    chat_id: null, as: sender.agentId, request_id: await contentRequestId('session', sender.agentId, sender.sessionId, sha, String(size)),
+    chat_id: null, as: sender.agentId,
+    request_id: await contentRequestId('session', sender.agentId, sender.sessionId, [...sender.recipients].sort().join(','), sha, String(size)),
   })
   await sender.onStaged?.(stagingKey)
   await sender.beforeCommit?.()
