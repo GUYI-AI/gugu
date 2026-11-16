@@ -6,7 +6,8 @@
 <title>文件</title>
 <link rel="stylesheet" href="style.css" />
 </head>
-<body data-state="message" data-mode="split">
+<!-- `reading`: nothing drawn until the page knows what it shows, so the host's loading mark stays (app.js `reveal`). -->
+<body class="reading" data-state="message" data-mode="split">
   <aside class="files" aria-label="files" tabindex="0">
     <header class="files-toolbar files-tools">
       <div id="place-switch" class="place-switch" role="group">
