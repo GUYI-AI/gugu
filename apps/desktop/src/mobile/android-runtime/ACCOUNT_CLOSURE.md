@@ -30,14 +30,15 @@ change iOS code or the public v0 interface.
 ## Verification status
 
 TypeScript composition tests (12 cases) and repository typecheck passed.
-Android Java compilation and all 128 JVM tests passed, including 15 new closure
+Android Java compilation and all 130 JVM tests passed, including 15 new closure
 cases. Whole-repository zero-warning ESLint, typecheck and source checks also
 passed. The JVM/test APK builds used an ignored compile-only web asset for
 Capacitor configuration; they do not validate the product web bundle or UI.
 Android Keystore instrumented tests passed on an isolated Android 14 / API 34
-AVD: six new closure cases plus nine existing host recovery cases. Tests use
+AVD: seven new closure cases, nine existing host recovery cases and one native
+configuration callback regression. Tests use
 separate temporary storage and local synthetic identities, never a real account
-or backend. The B-account proof covers stored bytes and grants; it does not
+or backend. The B-account proof covers stored bytes, grants and native runtime claims; it does not
 claim a live B Agent process or a physical-device secure-hardware attestation.
 Both test packages were uninstalled and the own AVD was shut down. Full CI
 remains pending; this is not a release verdict.

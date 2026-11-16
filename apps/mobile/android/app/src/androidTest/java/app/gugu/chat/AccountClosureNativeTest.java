@@ -132,6 +132,16 @@ public class AccountClosureNativeTest {
         reject("closure_not_prepared", () -> AccountClosurePreparation.requireAuthWrite(context, envelope(a)));
         AccountClosurePreparation.requireAuthWrite(context, envelope(b));
     }
+    @Test public void anotherOwnersNativeRuntimeClaimsSurviveAsPreparationAndErase() throws Exception {
+        AndroidAccountClosure closure = new AndroidAccountClosure(context);
+        GuguAgentHostService.reserveOwner(b); assertTrue(GuguAgentService.claim(b));
+        try {
+            assertTrue(GuguAgentHostService.ownerIsBusy(b)); assertTrue(GuguAgentService.ownerIsBusy(b));
+            ready(closure); AccountClosureReceiptStore.Scope scope = scope("only-A"); closure.receipts.put(scope, "opaque-A");
+            assertEquals("complete", closure.erase(scope).status);
+            assertTrue(GuguAgentHostService.ownerIsBusy(b)); assertTrue(GuguAgentService.ownerIsBusy(b));
+        } finally { GuguAgentHostService.releaseReservation(b); GuguAgentService.release(); }
+    }
     @Test public void corruptCiphertextRejectsWithoutReplacingItOrReturningNull() throws Exception {
         AndroidAccountClosure closure = new AndroidAccountClosure(context); ready(closure); Set<String> before = protectedNames();
         AccountClosureReceiptStore.Scope scope = scope("corrupt"); closure.receipts.put(scope, "opaque-corrupt");
