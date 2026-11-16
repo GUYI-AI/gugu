@@ -2,7 +2,8 @@
  * actual overflow and footer geometry are checked separately in Chromium.
  */
 export function layOutRailDock(): () => void {
-  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')!
+  const ownHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+  const height = ownHeight ?? Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')!
   const rect = HTMLElement.prototype.getBoundingClientRect
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
     configurable: true,
@@ -12,7 +13,8 @@ export function layOutRailDock(): () => void {
     return this.matches('.gg-sidebar-item') ? DOMRect.fromRect({ width: 40, height: 40 }) : rect.call(this)
   }
   return () => {
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', height)
+    if (ownHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', ownHeight)
+    else Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight')
     HTMLElement.prototype.getBoundingClientRect = rect
   }
 }
