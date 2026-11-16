@@ -233,10 +233,11 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       .catch(error => log.error('Human tool results could not resume', { sessionId, error: String(error) }));
     void persistSessionMcpServers(sessionId, command.input.providerId, command.input.cwd, f.mcpDisabledServers, injection.extensionDelivery);
     const previous = fork ? null : known().providerSessionId ?? null;
-    // A route-switch fork is a new native id carrying the whole context: the conversation continues. Its pending mark
-    // names the source id, which is no longer the recorded one, so it is spent (see routeSwitchForkSource).
+    // A route-switch fork is a new native id carrying the conversation; how much of it the session itself says. Its
+    // pending mark names the source id, which is no longer the recorded one, so it is spent (see routeSwitchForkSource).
     const nativeSession = previous === null ? null
-      : result.data.providerSessionId === previous || command.input.forkKeepsAgent ? 'preserved' : 'replaced';
+      : command.input.forkKeepsAgent ? 'route-switched'
+        : result.data.providerSessionId === previous ? 'preserved' : 'replaced';
     const waiting = (fork ? forkStore : lifeStore).pending(sessionId);
     backlogThrough = Math.max(-1, ...waiting.queued, ...waiting.dispatching);
     return lease({ gen, timing: 'next-tool-call', nativeSession }) as AdmittedChannel;

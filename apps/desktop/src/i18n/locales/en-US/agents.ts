@@ -344,6 +344,7 @@ export default {
       "appliedHot": "Applied: the running task switched in place.",
       "appliedReloadPreserved": "Applied: the task was reopened with its history restored.",
       "appliedReloadReplaced": "Applied: the agent started a new session of its own; the conversation history in Gugu is kept, but the agent does not carry over its earlier context.",
+      "appliedReloadRouteSwitched": "Applied: switched billing route.",
       "appliedReload": "Applied: the task was reopened.",
       "appliedNextSession": "Saved: this Agent has no running task right now; it takes effect from its next task.",
       "applyFailed": "The device could not apply this selection. It said:",

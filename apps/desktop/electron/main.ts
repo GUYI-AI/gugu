@@ -4045,7 +4045,7 @@ async function applyAgentModelSelectionOnDevice(input: {
   agentUserId: string
   engineId: string | null
   selection: AgentModelSelection
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const localAgent = await findLocalAgentByUserId(input.agentUserId, process.env)
   if (!localAgent) throw new Error('这个 Agent 不在当前设备上运行')
   const engineId = catalogEngineIdForAgent(localAgent, engineIdForAgentType) ?? input.engineId

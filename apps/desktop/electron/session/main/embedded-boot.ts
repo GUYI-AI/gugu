@@ -1180,10 +1180,11 @@ export function acpStartInputFor(
  * 重载后 harness 自己那条原生会话的去向,读的是重载**实际**拿回来的 session id,❌ 按意图推断。
  * `preserved` = 同一条原生会话接回来了(harness 自己的历史在);`replaced` = 按插件的
  * `sourceChangeSession=replace` 起了一条新的原生会话(咕咕这边的对话记录仍在,harness 自己的上下文从零开始)。
- * `sourceChangeSession=fork` 分叉出来的那条 id 虽新,带着全部上下文,所以算 `preserved`(ACP 腿由 LifeView 报)。
+ * `route-switched` = 按 `sourceChangeSession=fork` 换了计费路:新的原生会话带着这段对话过去,带过去多少由会话里那一行说
+ * (压缩摘要可能带不过去),所以这里只说「换了计费路」,❌ 说成「接着原来的」(ACP 腿由 LifeView 报)。
  * `not-started` = 这条会话从没起来过(#7092):只把新选择落进了记录,没停也没起 —— 调用方按正常首启起它。
  */
-export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'not-started'
+export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'route-switched' | 'not-started'
 
 /**
  * 重载一条活着的 ACP 会话 —— **换掉会话级注入,但保住这条会话的历史**。
@@ -1417,7 +1418,7 @@ export async function reloadEmdashSession(input: {
         const { pendingRestart: _pendingRestart, providerSessionState: _providerSessionState, ...cleanConfig } = currentConfig
         await db.update(sessions).set({ config: cleanConfig }).where(eq(sessions.id, sessionId))
       }
-      return { nativeSession: resumed.providerSessionId === providerSessionId || forkProviderSession ? 'preserved' : 'replaced' }
+      return { nativeSession: forkProviderSession ? 'route-switched' : resumed.providerSessionId === providerSessionId ? 'preserved' : 'replaced' }
     } catch (error) {
       if (configBeforePatch) {
         const message = error instanceof Error ? error.message : String(error)
@@ -1793,7 +1794,7 @@ export async function applyEmdashSessionModelSelection(input: {
     | { source: 'platform'; modelId: string; protocol: string }
   /** 这条会话此刻跑在哪条计费路上 —— 由宿主按活会话持有的平台记录判，❌ 这里不猜。 */
   runningOn: 'platform' | 'own'
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const { sessionId, selection } = input
   const reason = 'model-switch'
   if (selection.source === 'default') {
@@ -1828,7 +1829,7 @@ export async function applyEmdashSessionModelSelection(input: {
 function reloadOutcome(reloaded: { warning?: string; nativeSession: ReloadNativeSession }): {
   applied: 'reload' | 'next-session'
   warning?: string
-  nativeSession?: 'preserved' | 'replaced'
+  nativeSession?: 'preserved' | 'replaced' | 'route-switched'
 } {
   const warning = reloaded.warning ? { warning: reloaded.warning } : {}
   if (reloaded.nativeSession === 'not-started') return { applied: 'next-session', ...warning }
