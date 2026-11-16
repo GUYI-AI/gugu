@@ -12,6 +12,7 @@ import type { LiveWindowContext } from './types';
 import type { LiveWindowTabResource } from './live-window-tab';
 import { DesktopLiveWindow } from './DesktopLiveWindow';
 import { bindDesktopLiveWindowActivity } from './desktop-context';
+import { remoteHostsStore } from '../remote-hosts/remote-hosts-store';
 
 export const DesktopLiveWindowConversation = observer(function DesktopLiveWindowConversation({ kind, children }: {
   kind: 'acp-chat' | 'session'; children: ReactNode;
@@ -44,7 +45,8 @@ const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projec
   context.shown = (shown || screenShown) && pageShown;
   const transport = useMemo(() => desktopLiveWindowTransport(machine), [machine]);
   // The lifetime-bound host observer remains authoritative when another tab evicts this chat's React view.
-  const live = useLiveWindowConversation({ context, platform: 'desktop', transport });
+  const connected = !machine || remoteHostsStore.connectionState(machine) === 'connected';
+  const live = useLiveWindowConversation({ context, platform: 'desktop', connected, transport });
   useEffect(() => { bindDesktopLiveWindowActivity(live.conversation); }, [live.conversation]);
   const mode = live.presentation?.mode;
   useEffect(() => { if (shown) live.dispatch({ type: 'select-tab', tab: 'chat' }); }, [shown, live.conversation]);
@@ -94,6 +96,6 @@ const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projec
   }, [surface, shown, live.conversation]);
   return <div data-live-window-chat={chatTabId} className="contents">
     {live.visible && live.source && live.presentation && mode !== 'tabbed' && <DesktopLiveWindow
-      source={live.sources.find(source => source.id === live.source?.id)!} sources={live.sources} state={live.presentation} dispatch={live.dispatch} onWidth={onWidth} />}
+      source={live.sources.find(source => source.id === live.source?.id)!} sources={live.sources} state={live.presentation} connected={live.connected} dispatch={live.dispatch} onWidth={onWidth} />}
   </div>;
 });

@@ -18,7 +18,8 @@ import './task-flow-catalog'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
 
 export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void }
-  & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'>
+  & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'
+    | 'permissionModeOptions' | 'selectedPermissionMode' | 'onPermissionModeChange'>
 type View = 'device' | 'harness' | 'model' | 'effort' | 'permission' | 'project' | 'skills'
 export type CreationConfiguration = {
   options: SessionpageSessionCreateOptions | null; selection: CreateSelection
@@ -48,12 +49,14 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const baseSelectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
   const selectedHarness = baseSelectedHarness && configuration ? { ...baseSelectedHarness, permissionModes: createPermissionModes(baseSelectedHarness, configuration.models, configuration.modelsState, configuration.selection) } : baseSelectedHarness
   const existingEfforts = Object.entries(existingSession?.model?.effortOptions ?? {}).map(([id, option]) => ({ id, ...option }))
+  const existingPermissions = existingSession?.model?.onPermissionModeChange
+    ? Object.entries(existingSession.model.permissionModeOptions ?? {}) : []
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
       ? tm('agentWatch.create.modelLoading') : tm('agentWatch.create.modelDefault')))
   const phone = !!machine && isPhoneDevice(machine.device)
   const menu = phoneMenuBar(existingSession ? 'agent' : projectTask ? 'projectTask' : 'create', {
-    work: !existingSession || !!machine || !!existingSession.model?.options,
+    work: !existingSession || !!machine || !!existingSession.model?.options || existingPermissions.length > 0,
     project: !existingSession && !projectTask, folder: !!projectTask,
     skills: !!machine && !phone && (!existingSession || !!configuration?.selection.harness),
   })
@@ -98,6 +101,9 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
           onEffortChange={existingSession.model.onEffortChange} fastMode={existingSession.model.fastMode}
           onFastModeChange={existingSession.model.onFastModeChange} disabled={busy} phoneActions />}
         {!!configuration?.models?.efforts.length && <Summary dimension="effort" title={t('effort')} value={selectedEffortName(configuration.models, configuration.selection) ?? tm('agentWatch.create.modelDefault')} onClick={() => setView('effort')} />}
+        {existingPermissions.length > 0 && <Summary dimension="permission" title={t('permission')}
+          value={existingSession?.model?.permissionModeOptions?.[existingSession.model.selectedPermissionMode ?? '']?.name ?? t('permission')}
+          disabled={busy} onClick={() => setView('permission')} />}
         {!phone && !!selectedHarness?.permissionModes.length && <Summary dimension="permission" title={t('permission')} value={configuration?.selection.permissionMode ? tm(`agentWatch.create.permission.${configuration.selection.permissionMode}.name`) : tm('agentWatch.create.modelDefault')} onClick={() => setView('permission')} />}
       </>}
       {view === 'project' && <div role="radiogroup">
@@ -118,7 +124,11 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         {configuration.models?.efforts.map((one) => <Choice key={one.id} id={one.id} dimension="effort" name={one.name} description={one.description}
           selected={configuration.selection.effort === one.id} onClick={() => select({ ...configuration.selection, effort: one.id })} />)}
       </div>}
-      {view === 'permission' && configuration && <div role="radiogroup">
+      {view === 'permission' && existingPermissions.length > 0 ? <div role="radiogroup" aria-label={t('permission')}>
+        {existingPermissions.map(([id, option]) => <Choice key={id} id={id} dimension="permission" name={option.name} description={option.description}
+          selected={existingSession?.model?.selectedPermissionMode === id} disabled={busy}
+          onClick={() => { existingSession?.model?.onPermissionModeChange?.(id); setView('device') }} />)}
+      </div> : view === 'permission' && configuration && <div role="radiogroup">
         <Choice id="" dimension="permission" name={tm('agentWatch.create.modelDefault')} selected={!configuration.selection.permissionMode} onClick={() => select({ ...configuration.selection, permissionMode: null })} />
         {selectedHarness?.permissionModes.map((mode) => <Choice key={mode} id={mode} dimension="permission" name={tm(`agentWatch.create.permission.${mode}.name`)}
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}

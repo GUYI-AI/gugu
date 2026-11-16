@@ -7,9 +7,9 @@ export default {
     "portrait": "转回竖屏",
     "dock": "收到边上",
     "restore": "展开画面，可拖动吸附两侧",
-    "close": "关闭最后画面",
+    "close": "收起画面",
     "sources": "画面来源",
-    "web": "网页",
+    "web": "浏览器",
     "computer": "电脑"
   },
   "referralPreview": {
@@ -675,6 +675,7 @@ export default {
     "library": "资源库",
     "apps": "App",
     "appDockFailed": "左栏没能改动",
+    "moreApps": "更多 App",
     "appOpen": "打开",
     "appOpenInWindow": "在新窗口打开",
     "appSettings": "App 设置",
