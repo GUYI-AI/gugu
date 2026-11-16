@@ -304,7 +304,9 @@ export function AppManagePage({
         </div>
       ) : null}
       {programs.length > 0 ? (
-        tools.state === 'value' && tools.value && tools.value.length > 0 ? (
+        // Live and not read yet: what decides the heading (how many tools) is unknown, so its place, ❌ 「给 agent 的工具」 first.
+        toolsLive && api.agentTools && tools.state === 'unknown' ? <Row title={<Unknown className="w-24" />} testId="app-manage-tools" />
+        : tools.state === 'value' && tools.value && tools.value.length > 0 ? (
           <Collapsible className="mg-row is-block" data-testid="app-manage-tools">
             <CollapsibleTrigger className="mg-row-toggle">
               <span>{translate('extensions.manageTools', { n: String(tools.value.length) })}</span>
@@ -322,9 +324,9 @@ export function AppManagePage({
             </CollapsibleContent>
           </Collapsible>
         ) : (
-          // Live and not read yet: being asked (❌ 「开着时这里列出工具」, AP3); not live, or it says none: what it adds when on.
-          <Row title={translate('extensions.addsTools')} note={toolsLive && tools.state === 'unknown' && api.agentTools ? translate('extensions.inspecting')
-            : tools.state === 'error' ? translate('extensions.loadFailed') : translate('extensions.addsToolsWhenOn', { programs: listOf(programs, locale) })} testId="app-manage-tools" />
+          // Not live, or it says none: what it adds when on (❌ 「开着时这里列出工具」, AP3).
+          <Row title={translate('extensions.addsTools')} note={tools.state === 'error' ? translate('extensions.loadFailed')
+            : translate('extensions.addsToolsWhenOn', { programs: listOf(programs, locale) })} testId="app-manage-tools" />
         )
       ) : null}
       {manifest.contributes.skills ? (

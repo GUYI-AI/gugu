@@ -94,6 +94,21 @@ describe('App 设置页', () => {
     expect(api.agentTools).toHaveBeenCalledWith({ extensionId: 'notes' });
   });
 
+  it('the tools heading waits for the tools: never 「给 agent 的工具」 first and then 「工具（N）」', async () => {
+    let answer!: (reply: unknown) => void;
+    const agentTools = vi.fn(() => new Promise((resolve) => { answer = resolve; }));
+    await render({ api: { ...api, agentTools } }, async (document) => {
+      const row = () => document.querySelector('[data-testid="app-manage-tools"]');
+      expect(row()?.textContent).not.toContain('extensions.addsTools');
+      expect(row()?.textContent).not.toContain('extensions.inspecting');
+      expect(row()?.querySelector('[data-unknown]')).not.toBeNull();
+      await act(async () => { answer({ success: true, data: [{ name: 'add', about: 'Add a note' }, { name: 'list', about: null }] }); });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(row()?.textContent).toContain('extensions.manageTools(2)');
+      expect(row()?.querySelector('[data-unknown]')).toBeNull();
+    });
+  });
+
   it('a section it has nothing for is not drawn: an App from a folder has no version history, the phone no agents', async () => {
     await render({ origin: 'folder' }, async (document) => {
       expect(document.querySelector('[data-testid="app-manage-history"]')).toBeNull();

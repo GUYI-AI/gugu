@@ -2,6 +2,7 @@ import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react';
 import { useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
 import { appPlaces } from '../market-replicas';
 import { ChevronRight } from '@/lib/icons';
 import { AppPlacesEditor, AppPlacesSummary } from '@/components/extensionBundle/AppPlaces';
@@ -45,7 +46,8 @@ export function AppGivenSection({
     setFailed('');
     void appPlaces.refresh(hostKey, extensionId);
   };
-  if (reading.state === 'unknown') return <p className="text-sm text-foreground-passive" data-testid="extension-given-loading">{translate('extensions.manageGivenLoading')}</p>;
+  // Its place, the size of the line it becomes (lib/replica.ts): ❌ a 「checking…」 sentence that a fast read replaces at once.
+  if (reading.state === 'unknown') return <Unknown className="w-48" />;
   const change = async (changes: readonly PlaceChange[]) => {
     setBusy(true);
     try {
