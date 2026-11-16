@@ -58,7 +58,7 @@ for (const width of [320, 390]) for (const theme of ['dark', 'light'] as const) 
     expect(expandBox.height).toBeGreaterThanOrEqual(32)
     expect(sendBox.height).toBeGreaterThanOrEqual(44)
     expect(expandBox.bottom, 'Expand and Send retain distinct touch targets').toBeLessThanOrEqual(sendBox.top + 0.5)
-    await page.screenshot({ element: harness.container, path: `__screenshots__/H-${width}-${theme}-two-lines.png` })
+    await page.screenshot({ element: harness.container, path: `__screenshots__/owner-phone-regression/H-shared-composer-${width}-${theme}-two-lines.png` })
     await setLines(3)
     const attach = composer.querySelector<HTMLElement>('[data-phone-attachment]')!
     expect(getComputedStyle(attach).display).not.toBe('none')
