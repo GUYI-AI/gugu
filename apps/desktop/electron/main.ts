@@ -14,6 +14,7 @@ import { createAssistantWorkAvailabilityNotifier } from '@gugu/core/cloud/assist
 import { registerFileViewerMenus } from './file-viewer-context-menu'
 import { registerContentContextMenus } from './content-context-menu'
 import { configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { resumeAgentUploads, setAgentUploadHost } from '@gugu/core/local/agent/agentAttachmentUploads'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
@@ -2180,7 +2181,7 @@ function startDeviceRuntimeWhenRendererReady(): void {
       createHandlers: (io) => createPrimaryDeviceRpcHandlers(io),
       askerLimits: deviceRpcAskerLimitsFromEnv(process.env),
       broadcastEvents: { 'files.transfer': () => drainProjectFiles() },
-      onSubscribed: () => { drainProjectFiles() },
+      onSubscribed: () => { drainProjectFiles(); resumeAgentFiles() },
     }),
     ...heartbeatRowSources,
     // server 首次注册报的名字(deviceLabelOption):经远程 SSH 装上的报人填的 SSH 别名 / 主机(登录时记在 connect-via.json);
@@ -2452,6 +2453,16 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
+// Agents' files sent before their bytes are this host's to finish (agentAttachmentUploads): the same moments that
+// reconcile project transfers (subscribed, resumed) resume them, and a failed upload retries by itself.
+setAgentUploadHost({
+  signedIn: async () => {
+    const auth = await desktopAuthProvider().getAuth()
+    return auth?.userId && auth.accessToken ? { account: auth.userId, endpoint: { ...configuredEndpoint(auth.accessToken), signedParts: true } } : null
+  },
+  log: createLogger('agent-uploads'),
+})
+function resumeAgentFiles() { void resumeAgentUploads().catch(error => createLogger('agent-uploads').warn({ error: String(error) }, 'Agent upload reconciliation failed')) }
 const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot,
   owner: async () => (await desktopAuthProvider().getAuth())?.userId ?? null,
   alive: scope => !!webContents.fromId(scope) && !webContents.fromId(scope)!.isDestroyed(),
@@ -3809,7 +3820,7 @@ if (inheritedOwnerTimeZone) applyOwnerTimeZoneContext(inheritedOwnerTimeZone)
 const resumeAccountMessaging = createAccountResumeHandler({
   kickInbox: kickInboxForAgent,
   reconnect: resumeElectronSupabaseRealtime,
-  reconcile: async () => { await reconcileSessionpagePlatformOnResume?.() },
+  reconcile: async () => { resumeAgentFiles(); await reconcileSessionpagePlatformOnResume?.() },
   notifyCommands: () => deviceRuntimeHost?.notifyCommandsChanged(),
 })
 
