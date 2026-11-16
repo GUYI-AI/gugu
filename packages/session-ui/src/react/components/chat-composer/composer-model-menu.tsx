@@ -254,7 +254,10 @@ export interface ComposerModelMenuProps {
   triggerTitle?: string;
   modelItems: ComposerModelItem[];
   selectedModel?: string;
-  /** The model options are not read yet: the trigger holds the name's place (@@@unknown-slot), ❌ the literal "Model". */
+  /**
+   * The model options, or what decides which one is selected, are not read yet: the trigger holds the name's place
+   * (@@@unknown-slot), ❌ the literal "Model", ❌ `selectedModel` (a guess until then).
+   */
   modelUnknown?: boolean;
   onModelChange?: (modelId: string) => void;
   /**
@@ -374,7 +377,9 @@ export function ComposerModelMenu({
       : null;
   const showUpgradeDetail = detailCard.activeKey === UPGRADE_DETAIL_KEY && !!modelUpgrade;
 
-  const selectedModelItem = selectedModel
+  // While what decides the model is unknown, the selected id is only a guess (the harness default before the remembered
+  // choice is read): the trigger holds the name's place, ❌ draws the guess and then switches (@@@unknown-slot).
+  const selectedModelItem = selectedModel && !modelUnknown
     ? (modelItems.find((m) => m.id === selectedModel) ?? null)
     : null;
   const selectedEffortItem = selectedEffort
@@ -561,7 +566,7 @@ export function ComposerModelMenu({
           {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;
               没 armed 时退回该模型自己的默认档,再压一档不透明度 —— 那是目录里的出厂
               默认,用户写在 ~/.codex/config.toml 里的值会盖过它,我们读不到。 */}
-          {effectiveEffortItem ? (
+          {effectiveEffortItem && !modelUnknown ? (
             <span
               data-slot="composer-effort"
               className={styles.modelTriggerEffort}
