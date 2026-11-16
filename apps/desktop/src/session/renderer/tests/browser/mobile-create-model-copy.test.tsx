@@ -27,7 +27,7 @@ vi.mock('@renderer/features/projects/components/main-panel/project-run-machine',
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
   machineRpc: () => { throw new Error('Skills RPC is outside this model display test') },
-  fetchCreateOptions: async () => ({ projects: [], lastUsed: null, harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
+  fetchCreateOptions: async () => ({ projects: [], lastUsed: { projectId: 'model-copy-workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: 'native:sol', effort: null }, harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
   fetchCreateModels: fixture.models, createSession: fixture.create,
   fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.create,
 }))
