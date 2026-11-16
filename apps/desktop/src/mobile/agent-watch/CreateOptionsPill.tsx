@@ -26,6 +26,7 @@ import { composerTierLabel } from '@renderer/features/sessions/session-config/us
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import './task-flow-catalog'
+import './agent-watch.css'
 
 /**
  * 新建会话的「harness · 模型」胶囊:摆在输入框那一行、只写值、抽屉下钻(顶层 = 摘要行,点进各维)、
@@ -408,11 +409,11 @@ export function ModelChoices({
       </Button>
     )
   }
-  if (sessionOptions) return <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state="ready">
+  if (sessionOptions) return <div className="gg-aw-choice-group gg-aw-model-choices" role="radiogroup" data-dimension="model" data-state="ready">
     {Object.entries(sessionOptions).map(([id, option]) => choice(id, option.name, option.disabledReason ?? option.description, undefined, option.disabled))}
   </div>
   return (
-    <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state={state}>
+    <div className="gg-aw-choice-group gg-aw-model-choices" role="radiogroup" data-dimension="model" data-state={state}>
       {choice(null, t('agentWatch.create.modelDefault'), defaultHint ?? t('agentWatch.create.modelDefaultHint'))}
       {state === 'loading' ? (
         <div className="gg-aw-choice-desc gg-aw-choice-note" data-testid="agent-watch-create-models-note">
