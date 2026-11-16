@@ -266,8 +266,9 @@ export const featuredShot = replica({
     return { src };
   },
   fresh: Infinity,
-  // ~2 KB with its placeholder (a 48 px JPEG); one that would not fit is kept without it (the whole field dropped).
-  persist: { maxBytes: 3072, maxEntries: 2, carry: (shot: FeaturedShot | null) => (shot && JSON.stringify(shot).length > 3000 ? { src: shot.src } : shot) },
+  // ~1.7 KB with its placeholder (a 48 px JPEG); one that would not fit is kept without it (the whole field dropped). Three:
+  // every first-screen featured card (the hero row).
+  persist: { maxBytes: 2048, maxEntries: 3, carry: (shot: FeaturedShot | null) => (shot && JSON.stringify(shot).length > 1900 ? { src: shot.src } : shot) },
 });
 
 const PLACEHOLDER_WIDTH = 48;

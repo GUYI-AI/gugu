@@ -8,7 +8,7 @@ import { Button } from '@renderer/lib/ui/button';
 import type { SessionTranslate } from '../extension-consent';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { ExtensionMonogram } from './extension-monogram';
-import { isDecoded } from './decoded-shots';
+import { decodeShot, isDecoded } from './decoded-shots';
 import type { ExtensionPendingAction } from './extension-pending';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
@@ -62,20 +62,21 @@ export function AppFeaturedCard({
   const isPending = reading.state === 'unknown';
   const isError = reading.state === 'error';
   const retry = () => void featuredShot.refresh(hostKey, id, version);
-  // 骨架第一次换成图时等 `<img>` 解码好才露出来(❌ 先画一帧空的);之后换新一版浏览器自己留着旧的。
+  // 骨架第一次换成图时等 `<img>` 解码好才露出来(❌ 先画一帧空的);之后换新一版浏览器自己留着旧的。重启后留下的小图在手就先画它,
+  // 大图解码好在同一个 `<img>` 里换上。
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [painted, setPainted] = useState(() => Boolean(shot && isDecoded(shot.src)));
-  // @@@effect-flow(render) - decodes the featured picture already read so it is drawn only when decoded
+  // @@@effect-flow(render) - decodes the featured picture in hand (a kept one: its picture, behind its placeholder) so it is drawn only when decoded
   useEffect(() => {
     if (painted || !shot) return;
     let alive = true;
     const done = () => alive && setPainted(true);
-    void (imageRef.current?.decode() ?? Promise.resolve()).then(done, done);
+    void (shot.placeholder ? decodeShot(shot.src) : imageRef.current?.decode() ?? Promise.resolve()).then(done, done);
     return () => {
       alive = false;
     };
   }, [painted, shot]);
-  const hidden = !painted;
+  const hidden = !painted && !shot?.placeholder;
 
   const card = variant === 'card';
   const artwork = isPending || isError || Boolean(shot);
@@ -98,13 +99,12 @@ export function AppFeaturedCard({
           <>
             <img
               ref={imageRef}
-              src={shot.src}
+              src={painted || !shot.placeholder ? shot.src : shot.placeholder}
               alt=""
               style={hidden ? { visibility: 'hidden' } : undefined}
             />
-            {hidden ? (shot.placeholder
-              ? <img className="absolute inset-0 h-full w-full object-cover" src={shot.placeholder} alt="" aria-hidden="true" />
-              : <Skeleton className="absolute inset-0 rounded-none" role="status" aria-label={translate('extensions.loading')} aria-busy="true" />
+            {hidden ? (
+              <Skeleton className="absolute inset-0 rounded-none" role="status" aria-label={translate('extensions.loading')} aria-busy="true" />
             ) : null}
             {!card ? (
               <button type="button" className="mk-hero-open" aria-label={translate('extensions.detailsOf', { name })} />
