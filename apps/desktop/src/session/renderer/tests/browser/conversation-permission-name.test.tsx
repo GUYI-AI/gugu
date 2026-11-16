@@ -2,6 +2,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { useConversationOptions } from '@/components/chat/useConversationOptions';
+import { followRendererSession } from '@/lib/replica';
 import { i18n } from '@/i18n';
 
 const state = vi.hoisted(() => ({ withModelMenu: true }));
@@ -15,6 +16,9 @@ vi.mock('@/components/assistant/assistantTimelineClient', () => ({
     }),
   }),
 }));
+
+// The options are an account's reading: the product shows a conversation only to a signed-in person.
+followRendererSession('SIGNED_IN', 'reader');
 
 let root: Root | undefined;
 afterEach(async () => {

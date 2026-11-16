@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { queryClient } from '@/lib/replica'
+import { followRendererSession, queryClient } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { useState } from 'react'
 import { ComposerModelMenu } from '@gugu/session-ui/react/components'
@@ -200,6 +200,9 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
     })
   }
 }))
+
+// The panels open inside the signed-in app: the model catalog a switch refreshes is an account's reading.
+followRendererSession('SIGNED_IN', 'reader')
 
 let root: Root
 let host: HTMLDivElement
