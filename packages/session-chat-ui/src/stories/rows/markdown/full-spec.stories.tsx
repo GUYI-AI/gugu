@@ -28,7 +28,6 @@ const KNOWN_MENTIONS: Record<string, ChatMentionMeta> = {
     label: 'src/auth/jwt.ts',
     name: 'jwt.ts',
     kind: 'file',
-    iconClass: 'devicon-typescript-plain colored',
   },
   'issue-42': {
     id: 'issue-42',

@@ -102,7 +102,7 @@ function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: S
       {/* The selected words as the bubble draws them (formulas too), out of their `> ` quote: at most three lines, then … */}
       {cite.quote ? <div className="gg-selection-send-quote"><Markdown trust="chat" content={cite.quote.replace(/^> ?/gm, '')} /></div> : null}
       <div className="gg-md gg-selection-send-pills">
-        {cite.pills.map((label, index) => <MentionPill key={index} href="" title={label} file mention onClick={event => event.preventDefault()}>{label}</MentionPill>)}
+        {cite.pills.map((label, index) => <MentionPill key={index} href="" title={label} file={label} mention onClick={event => event.preventDefault()}>{label}</MentionPill>)}
       </div>
       <div className="gg-selection-send-note">
         <NoteEditor inputTestId="selection-send-note" placeholder={t('selectionSend.placeholder')} disabled={sending} mentionProvider={mentionProvider}
