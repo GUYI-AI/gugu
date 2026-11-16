@@ -74,7 +74,9 @@ describe('installer archive boundaries', () => {
         if (result.error) throw result.error
         expect(result.status, result.stderr).toBe(0)
       } })
-      expect(readFileSync(join(hook, 'built.txt'), 'utf8')).toBe('ready')
+      const appRequire = createRequire(join(directory, 'package.json'))
+      const installedHook = dirname(appRequire.resolve('test-native-hook/package.json'))
+      expect(readFileSync(join(installedHook, 'built.txt'), 'utf8')).toBe('ready')
       expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/build'))).toBe(false)
     } finally { rmSync(directory, { recursive: true, force: true }) }
   }, 30_000)
