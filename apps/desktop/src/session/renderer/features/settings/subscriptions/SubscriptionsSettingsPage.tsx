@@ -78,8 +78,9 @@ function SubscriptionList({ machine }: { machine: string | null }) {
   const error = reading.state === 'error' || reading.state === 'value' ? reading.error : null;
   const installed = useMemo(() => (reading.state === 'value' ? reading.value.filter(isInstalledAgent).sort(compareAgents) : null), [reading]);
   return (
+    // The hint under the rows waits for them: rows landing later are added below, ❌ inserted above it (it moved down).
     <SettingsGroup
-      footer={<SettingsNote>{translate('subscriptions.connections.hint')}</SettingsNote>}
+      footer={reading.state === 'unknown' ? undefined : <SettingsNote>{translate('subscriptions.connections.hint')}</SettingsNote>}
     >
       {officialServicesEnabled() ? <GuguSubscriptionRow /> : null}
       {error && (

@@ -48,7 +48,7 @@ const ICONS = {
 vi.mock('@renderer/lib/ipc', async (importOriginal) => {
   const pending = () => new Promise(() => {});
   const answers: Record<string, (...args: never[]) => Promise<unknown>> = {
-    listManagement: async () => [
+    listManagement: async () => { await control.agentsHold; return [
       CLAUDE,
       ...(control.codex ? [{ id: 'codex', name: 'Codex', reading: 'installed', status: 'available', capabilities: CLAUDE.capabilities }] : []),
       ...(control.others ? [KIMI, PI] : []),
@@ -63,7 +63,7 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
         sessions: { kind: 'stateless' },
         ...agent.capabilities,
       },
-    })),
+    })) },
     listIcons: async () => ICONS,
     modelCatalog: async () => ({ state: { kind: 'ready', models: [] }, refreshing: false }),
     // 资源库详情(与订阅页同一块「连接」,#2507)。
@@ -94,6 +94,7 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
 // 套餐读数可以被按住不答(看「刷新」读着的时候画成什么样)。
 const control = vi.hoisted(() => ({
   hold: null as Promise<void> | null,
+  agentsHold: null as Promise<void> | null,
   membershipError: false,
   held: 0,
   created: null as Record<string, unknown> | null,
@@ -225,6 +226,7 @@ followRendererSession('SIGNED_IN', 'subscription-test');
 beforeEach(() => {
   queryClient.clear();
   control.hold = null;
+  control.agentsHold = null;
   control.membershipError = false;
   control.held = 0;
   control.created = null;
@@ -642,6 +644,21 @@ it('Codex shows both the five-hour and weekly windows directly on opening subscr
   expect(row.querySelector('[role="meter"][aria-label="5 小时"], [role="meter"][aria-label="5 hours"]')).not.toBeNull();
   expect(row.querySelectorAll('[role="meter"]')).toHaveLength(2);
   expect(row.querySelector('[data-testid="subscription-check-now-codex"]')).toBeNull();
+  expect(thrown).toEqual([]);
+});
+
+it('the hint under the agent rows waits for the rows: rows answering late are added above nothing, ❌ pushing it down', async () => {
+  let answer!: () => void;
+  control.agentsHold = new Promise<void>(resolve => { answer = resolve; });
+  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  const hint = () => [...host.querySelectorAll('p, div')].find(node => node.textContent === 'All sessions use the current connection. Switching closes running sessions; their next message continues on the new connection.');
+  await until('the Gugu row is drawn', () => !!host.querySelector('[data-testid="subscription-row-gugu"]'));
+  expect(hint()).toBeUndefined();
+  answer();
+  await until('the agent rows are drawn', () => !!host.querySelector('[data-testid="subscription-row-claude"]'));
+  await until('the hint is drawn', () => hint() !== undefined);
+  const row = host.querySelector('[data-testid="subscription-row-claude"]')!;
+  expect(row.compareDocumentPosition(hint()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(thrown).toEqual([]);
 });
 
