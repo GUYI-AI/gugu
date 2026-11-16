@@ -13,6 +13,7 @@ const machineOf = (machine: MachineArg): string | null => (machine === 'local' ?
 export const homeDirectory = replica({
   name: 'homeDirectory',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, machine: MachineArg): Promise<string> => {
     const home = await rpcOn(machineOf(machine)).app.getHomeDirectory();
     if (!home) throw new Error(translateSessionMessage('projects.dirTree.homeUnavailable'));
@@ -25,6 +26,7 @@ export const homeDirectory = replica({
 export const projectPathInspection = replica({
   name: 'projectPathInspection',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: MachineArg, path: string) =>
     rpcOn(machineOf(machine)).projects.inspectProjectPath({ type: 'local', path }),
   fresh: 0,

@@ -306,6 +306,7 @@ export const extensionSettings = replica({
 export const appPlaces = replica({
   name: 'appPlaces',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner: string, hostKey: string, extensionId: string): Promise<EnablePlace[]> => unwrap(await extensionsApiOf(hostKey).appPlaces({ extensionId }), 'App places'),
 });
 

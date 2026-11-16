@@ -25,6 +25,7 @@ import { Unknown } from '../ui/Unknown'
 const groupAppHasFiles = replica({
   name: 'groupAppHasFiles',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner: string, chatId: string, extensionId: string) => {
     const files = await appsHere?.groupFilesOpenedBy({ chatId, extensionId })
     return !!files?.success && (files.data?.length ?? 0) > 0

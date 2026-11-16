@@ -14,6 +14,7 @@ const registryLog = rendererLogger('ssh-registry')
 export const sshMachineAddresses = replica({
   name: 'sshMachineAddresses',
   scope: 'account',
+  networkMode: 'always',
   read: async (): Promise<Array<[string, string]>> => {
     const electron = desktopIpc()
     if (!electron) return []

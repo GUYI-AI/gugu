@@ -40,6 +40,7 @@ const TITLE_MODEL_OFF = '__off__';
 const sessionTitleModels = replica({
   name: 'sessionTitleModels',
   scope: 'account',
+  networkMode: 'always',
   // async 包一层:没有宿主时 invoke 是**同步**抛的(浏览器测试、宿主还没接上),要让它也落进读失败。
   read: async () => parseSessionTitleModelOptions(await invokeOnMachine(null, SESSION_TITLE_MODELS_CHANNEL)),
   fresh: 10 * 60_000,

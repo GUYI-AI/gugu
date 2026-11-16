@@ -102,6 +102,7 @@ export type ProjectFoldersState = {
 export const projectFolders = replica({
   name: 'projectFolders',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, projectId: string): Promise<ProjectFolder[]> => {
     const result = await rpc.projects.listProjectFolders(projectId);
     if (!result.success) throw new Error(result.error.message ?? `listing the folders of ${projectId} failed`, { cause: result.error });

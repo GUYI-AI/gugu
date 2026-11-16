@@ -37,6 +37,7 @@ export type RemoteDirectory = {
 export const remoteDirectory = replica({
   name: 'remoteDirectory',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, deviceId: string, path: string, showHidden: boolean): Promise<RemoteDirectory> => {
     // @@@remote-dir-no-retry (#670) - a directory listing either resolves or it doesn't; retrying only doubles the wait.
     const response = await deviceFsListDirectory(deviceId, { path, show_hidden: showHidden }, { timeoutMs: LIST_DIRECTORY_TIMEOUT_MS, retryOnTimeout: false })

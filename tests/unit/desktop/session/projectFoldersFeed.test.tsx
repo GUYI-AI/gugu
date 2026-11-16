@@ -57,3 +57,16 @@ it('folders read before reopening the home page are read again when it opens, an
   expect(list).toHaveBeenCalledTimes(1)
   again.cleanup({ keepReads: true })
 })
+
+it("with the browser offline, this computer's project folders are still read (they never leave this device; review A9)", async () => {
+  const { onlineManager } = await import('@tanstack/react-query')
+  onlineManager.setOnline(false)
+  try {
+    const harness = createReactHarness()
+    await harness.render(createElement(Home))
+    await act(async () => { await vi.waitFor(() => expect(shown).toEqual([`/work-${machine.version}`])) })
+    harness.cleanup({ keepReads: true })
+  } finally {
+    onlineManager.setOnline(true)
+  }
+})

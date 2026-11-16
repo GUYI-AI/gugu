@@ -73,6 +73,7 @@ export const agentModelSelection = replica({
 export const sessionCreateModels = replica({
   name: 'sessionCreateModels',
   scope: 'account',
+  networkMode: (_deviceId: string, _harness: string, _view: unknown, _model: unknown, via: SessionCreateVia) => (via === 'local' ? 'always' : 'online'),
   read: (_owner, deviceId: string, harness: string, sessionView: SessionpageSessionView | null, model: string | null, via: SessionCreateVia) =>
     fetchSessionCreateModels(deviceId, harness, sessionView, model, via),
   fresh: 5 * 60_000,

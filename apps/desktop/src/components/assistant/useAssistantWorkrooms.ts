@@ -22,6 +22,7 @@ type WorkroomSources = { sessions: SessionpageSessionSummary[]; bindings: { proj
 export const assistantWorkroomSources = replica({
   name: 'assistantWorkroomSources',
   scope: 'account',
+  networkMode: platform.capabilities.agentRuntime ? 'always' : 'online',
   read: async (_owner: string, machine: string | null): Promise<WorkroomSources> => {
     // A phone reads the home through that machine's pipe (`machine` is never null there).
     const rpc = platform.capabilities.agentRuntime ? rpcOn(machine) : machineRpc(machine!)

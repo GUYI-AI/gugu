@@ -18,6 +18,7 @@ export type ConversationTarget = { deviceId: string; sessionId: string; local: b
 const conversationOptions = replica({
   name: 'conversationOptions',
   scope: 'account',
+  networkMode: (_deviceId: string, _sessionId: string, local: boolean) => (local ? 'always' : 'online'),
   read: (_owner: string, deviceId: string, sessionId: string, local: boolean, phoneHost: boolean): Promise<SessionpageSessionOptionsWithMenu> =>
     conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read(),
   fresh: 0,

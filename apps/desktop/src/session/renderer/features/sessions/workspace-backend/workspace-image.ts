@@ -6,6 +6,7 @@ import { workspaceEvents, workspaceRpc } from './workspace-backend';
 export const workspaceImage = replica({
   name: 'workspaceImage',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, projectId: string, workspaceId: string, path: string): Promise<string | null> => {
     const result = await workspaceRpc(projectId).files.readImage(projectId, workspaceId, path);
     if (!result.success) throw new Error(`reading the image ${path} failed`, { cause: result.error });

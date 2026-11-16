@@ -28,6 +28,7 @@ const backoff = (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000);
 export const agentsMetadata = replica({
   name: 'agentsMetadata',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: Machine) => rpcOn(machine).agents.list() as Promise<AgentPayload[]>,
   // This computer's list changes by a push (`wireAgentReadings`); another machine's by what someone did in its terminal.
   fresh: 30_000,
@@ -37,6 +38,7 @@ export const agentsMetadata = replica({
 export const managementAgents = replica({
   name: 'managementAgents',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: Machine) => rpcOn(machine).agents.listManagement() as Promise<AgentPayload[]>,
   fresh: 30_000,
 });
@@ -45,6 +47,7 @@ export const managementAgents = replica({
 export const managementAgent = replica({
   name: 'managementAgent',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: Machine, id: string) => rpcOn(machine).agents.getManagement(id) as Promise<AgentPayload | null>,
   retry: true,
   retryDelay: backoff,
@@ -73,6 +76,7 @@ export const agentIcons = replica({
 export const harnessModelCatalog = replica({
   name: 'harnessModelCatalog',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, providerId: string, leg: SessionpageLeg, machine: Machine) =>
     rpcOn(machine).agents.modelCatalog(providerId, leg) as Promise<HarnessCatalogLookup>,
   refreshOnFocus: true,
@@ -83,6 +87,7 @@ export const harnessModelCatalog = replica({
 export const harnessModelCredential = replica({
   name: 'harnessModelCredential',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, providerId: string, modelId: string, machine: Machine): Promise<HarnessModelCredentialStatus> => {
     const runtime = await getAgentConfigRuntimeClient(machine);
     const result = await runtime.modelCredential({ providerId, modelId });
@@ -97,6 +102,7 @@ export const harnessModelCredential = replica({
 export const agentInstallationStatus = replica({
   name: 'agentInstallationStatus',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: Machine) => rpcOn(machine).agents.listAgentInstallationStatus() as Promise<AgentInstallationStatus[]>,
   fresh: 30_000,
   retry: true,
@@ -107,6 +113,7 @@ export const agentInstallationStatus = replica({
 export const installSourceVersions = replica({
   name: 'installSourceVersions',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: Machine, id: string) =>
     rpcOn(machine).agents.getInstallSourceVersions(id as never) as Promise<InstallSourceVersions>,
   fresh: 30 * 60_000,
@@ -118,6 +125,7 @@ export const installSourceVersions = replica({
 export const agentSettings = replica({
   name: 'agentSettings',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: Machine, id: string) => rpcOn(machine).agents.getSettings(id) as Promise<AgentSettings | null>,
   fresh: 60_000,
 });

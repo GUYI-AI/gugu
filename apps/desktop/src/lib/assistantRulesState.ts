@@ -20,6 +20,7 @@ import '../i18n/registerMainCatalog'
 export const assistantRulesState = replica({
   name: 'assistantRulesState',
   scope: 'account',
+  networkMode: 'always',
   read: async (): Promise<AssistantRulesState> => {
     const ipc = desktopIpc()
     if (!ipc) return { pending: false, stuck: false }

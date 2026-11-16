@@ -25,6 +25,7 @@ export type RunStatusFilter = 'done' | 'failed' | 'skipped' | 'all';
 export const automations = replica({
   name: 'automations',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: AutomationMachine): Promise<Automation[]> => apiOf(machine).listAutomations(),
   fresh: Infinity,
 });
@@ -32,6 +33,7 @@ export const automations = replica({
 export const automationNextRun = replica({
   name: 'automationNextRun',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: AutomationMachine, automationId: string): Promise<AutomationRun | null> =>
     apiOf(machine).getNextScheduledRun(automationId),
   fresh: Infinity,
@@ -40,6 +42,7 @@ export const automationNextRun = replica({
 export const automationLatestRun = replica({
   name: 'automationLatestRun',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: AutomationMachine, automationId: string): Promise<AutomationRun | null> =>
     apiOf(machine).getLatestRun(automationId),
   fresh: Infinity,
@@ -49,6 +52,7 @@ export const automationLatestRun = replica({
 export const automationRunPage = replica({
   name: 'automationRunPage',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: AutomationMachine, automationId: string, page: number, status: RunStatusFilter): Promise<AutomationRun[]> =>
     apiOf(machine).listAutomationRuns(automationId, RUN_PAGE_SIZE + 1, page * RUN_PAGE_SIZE, status === 'all' ? undefined : status),
   fresh: Infinity,
@@ -58,6 +62,7 @@ export const automationRunPage = replica({
 export const automationRunCounts = replica({
   name: 'automationRunCounts',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: AutomationMachine, automationId: string) => apiOf(machine).countAutomationRunsByStatus(automationId),
   fresh: Infinity,
 });
@@ -66,6 +71,7 @@ export const automationRunCounts = replica({
 export const sessionSchedules = replica({
   name: 'sessionSchedules',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: AutomationMachine): Promise<SessionSchedule[]> => apiOf(machine).listSessionSchedules(),
   fresh: Infinity,
 });

@@ -8,6 +8,7 @@ import type { SessionpageListeningPort } from '@gugu/session-core/session-record
 export const remotePortForwards = replica({
   name: 'remotePortForwards',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, deviceId: string): Promise<RemotePortsSnapshot> => {
     const result = await rpc.remotePorts.list({ deviceId });
     if (!result.success) throw new Error(`remote ports of ${deviceId} not listed (${result.error.type})`, { cause: result.error });
@@ -20,6 +21,7 @@ export const remotePortForwards = replica({
 export const machineListeningPorts = replica({
   name: 'machineListeningPorts',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, deviceId: string): Promise<{ supported: boolean; ports: SessionpageListeningPort[] }> => {
     const result = await rpcOn(deviceId).machine.listeningPorts();
     if (!result.success) throw new Error(result.error.message, { cause: result.error });

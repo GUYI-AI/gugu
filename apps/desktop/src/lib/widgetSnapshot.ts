@@ -15,6 +15,7 @@ export const widgetSnapshotDataUrl = (blob: Blob) => new Promise<string>((resolv
 export const widgetSnapshot = replica({
   name: 'widgetSnapshot',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner: string, widgetId: string, theme: string, widthBucket: number): Promise<string | null> => {
     const blob = await widgetSnapshots.read(widgetId, theme, widthBucket * 40)
     return blob ? widgetSnapshotDataUrl(blob) : null

@@ -62,6 +62,7 @@ export function resolveImportSource(deviceId: string, directTerminal = false): S
 export const sessionImportPreview = replica({
   name: 'sessionImportPreview',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, deviceId: string, filePath: string, engine: PreviewLocalSessionParams['engine']) =>
     resolveImportSource(deviceId).preview({ filePath, engine }),
   fresh: 0,

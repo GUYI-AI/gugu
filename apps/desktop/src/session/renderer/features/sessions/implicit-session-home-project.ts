@@ -129,6 +129,7 @@ function removeFailedImplicitProject(
 export const implicitSessionHome = replica({
   name: 'implicitSessionHome',
   scope: 'account',
+  networkMode: 'always',
   read: () => ensureImplicitSessionHomeProjectId(),
   fresh: Infinity,
 });

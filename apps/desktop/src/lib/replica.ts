@@ -75,11 +75,12 @@ type Definition<A extends unknown[], V> = {
   /** Read again this often while a surface shows it (ms); a function of the value shown decides per value (false = not now). */
   refreshEvery?: number | ((value: V | undefined) => number | false)
   /**
-   * `always`: read even while the browser says it is offline (a read that never leaves this device, e.g. the local message
-   * library); a read that needs the network then fails loud instead of waiting unknown. Default: `always` for `device`
-   * (its reads go to this device's host), `online` for `account` (a read waits for the network to come back).
+   * `always`: read even while the browser says it is offline — a read that goes to this device (its main process, the
+   * local library; main reaching another machine is main's to answer), so it fails loud instead of waiting unknown. A
+   * function decides per entry (a model that reads this computer or the cloud by its arguments). Default: `always` for
+   * `device`, `online` for `account` (a cloud read waits for the network to come back).
    */
-  networkMode?: 'online' | 'always'
+  networkMode?: 'online' | 'always' | ((...args: Later<A>) => 'online' | 'always')
   /**
    * A push-fed model's change feed (pair with `fresh: Infinity`): `start` runs when the first surface showing an entry of
    * a group appears and the function it returns when the last one goes; `group` says which entries share one feed (default:
@@ -558,7 +559,8 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
-    networkMode: definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
+    networkMode: typeof definition.networkMode === 'function' ? definition.networkMode(...(key.slice(2) as Later<A>))
+      : definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
     ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
   })
   const key = (...args: A): QueryKey | null => {

@@ -64,6 +64,7 @@ export function resolveMachineProject(target: MachineCreateTarget): Promise<stri
 const machineProject = replica({
   name: 'machineProject',
   scope: 'account',
+  networkMode: 'always',
   read: async (_owner, deviceId: string, projectId: string): Promise<string> => {
     const id = await resolveMachineProject({ deviceId, ...(projectId ? { projectId } : {}) });
     if (!id) throw new ImplicitSessionHomeProjectError('unavailable');

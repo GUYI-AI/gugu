@@ -20,6 +20,7 @@ const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
 const deviceFreeCredits = replica({
   name: 'deviceFreeCreditsStatus',
   scope: 'account',
+  networkMode: 'always',
   read: async () => (await platform.readDeviceFreeCreditsStatus?.()) ?? null,
   persist: { maxBytes: 256, maxEntries: 1 },
 });
