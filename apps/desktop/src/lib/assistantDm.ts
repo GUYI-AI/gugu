@@ -20,6 +20,7 @@ export const assistantDm = replica({
     }
   },
   fresh: Infinity,
-  // One chat id (~40 B in a ~110 B entry); the assistant and, after a move or a re-provision, the one before it.
-  persist: { maxBytes: 128, maxEntries: 2 },
+  // One chat id in an entry keyed by two uuids: 167 B measured, 188 B with its last-use stamp. The assistant and, after a
+  // move or a re-provision, the one before it.
+  persist: { maxBytes: 256, maxEntries: 2 },
 })
