@@ -82,8 +82,9 @@ beforeEach(() => {
 // Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
 // the setup above, whose closing of tabs is itself remembered).
 beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
-afterEach(() => {
+afterEach(async () => {
   harness.cleanup()
+  ;(await import('@/lib/replica')).followRendererSession('SIGNED_OUT', null)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   HTMLElement.prototype.checkVisibility = checkVisibility
@@ -103,9 +104,11 @@ describe('unclaimed group files use the message preview from every entry', () =>
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report-png')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     boundary.read.mockResolvedValue({ status: 'ready', blob: new Blob(['png'], { type: 'image/png' }) })
-    const folder = openPanelItem('preview-group', folderItem())
-    const file = detail('png')
-    await slot(file, true, { from: shownPanelTab('preview-group')!.tabId })
+    // A chat of its own per run: the chat's tabs (module state) of the other run are not this one's.
+    const chatId = `preview-group-${mobile ? 'phone' : 'desktop'}`
+    const folder = openPanelItem(chatId, folderItem())
+    const file = { ...detail('png'), chatId }
+    await slot(file, true, { from: shownPanelTab(chatId)!.tabId })
     expect(boundary.image).not.toHaveBeenCalled()
     expect(shownPanelTab(file.chatId)?.tabId).toBe(folder)
     expect(panelTabsOf(file.chatId)).toHaveLength(1)

@@ -5,6 +5,7 @@ import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { FilePreviewHost } from '../../../../apps/desktop/src/components/chat/filePreviewHost'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const { readBytes, metadata, devices } = vi.hoisted(() => ({
   readBytes: vi.fn(async (): Promise<unknown> => { throw new Error('File device is unavailable or its transfer timed out') }),
@@ -35,7 +36,7 @@ const kept = (online: boolean, label: string | null) => ({ status: 'ready', revi
 describe('a project file whose machine is off', () => {
   let harness: ReturnType<typeof createReactHarness>
   let pane: HTMLElement
-  beforeEach(() => { harness = createReactHarness(); pane = document.createElement('section'); document.body.append(pane) })
+  beforeEach(async () => { await freshReplicaAccount('preview-reader'); harness = createReactHarness(); pane = document.createElement('section'); document.body.append(pane) })
   afterEach(() => { harness.cleanup(); pane.remove(); vi.clearAllMocks(); devices.rows = [] })
   const draw = () => harness.render(createElement(FilePreviewHost.Provider, { value: { target: pane, onOpenChange: () => undefined } }, createElement(Conversation)))
   const settle = () => act(async () => { await new Promise((done) => setTimeout(done, 0)) })

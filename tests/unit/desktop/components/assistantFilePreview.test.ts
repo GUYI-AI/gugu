@@ -3,6 +3,7 @@ import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { FilePreviewHost } from '../../../../apps/desktop/src/components/chat/filePreviewHost'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const { openResource, readBytes } = vi.hoisted(() => ({
   openResource: vi.fn(async () => undefined),
@@ -30,7 +31,7 @@ function Conversation({ restore }: { restore?: () => void }) {
 describe('personal assistant file preview', () => {
   let harness: ReturnType<typeof createReactHarness>
   let target: HTMLElement | undefined
-  beforeEach(() => { harness = createReactHarness() })
+  beforeEach(async () => { await freshReplicaAccount('preview-reader'); harness = createReactHarness() })
   afterEach(() => { harness.cleanup(); target?.remove(); target = undefined; vi.clearAllMocks() })
 
   it('shows the actual Markdown in the dedicated right pane, with no Folder App', async () => {

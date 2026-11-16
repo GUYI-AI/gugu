@@ -7,6 +7,7 @@ import { useMessageFilePreview } from '../../../../apps/desktop/src/components/c
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import { NATIVE_BACK_EVENT } from '../../../../apps/desktop/src/components/ui/sheetStack'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { readingZoomMemory: true } } }))
 vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
@@ -23,7 +24,7 @@ function Conversation({ mobile }: { mobile: boolean }) {
   </>
 }
 let ui: ReturnType<typeof createReactHarness>
-beforeEach(() => { ui = createReactHarness(); setLocalePreference('en-US') })
+beforeEach(async () => { await freshReplicaAccount('preview-reader'); ui = createReactHarness(); setLocalePreference('en-US') })
 afterEach(() => ui.cleanup())
 describe('file preview within a task conversation', () => {
   it('uses the original desktop task pane, preserves its mounted draft, and restores it on close', async () => {

@@ -5,7 +5,7 @@ import { messageActionItems } from './messageActionItems'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
 import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
-import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
+import { isMpegTsVideo, type AttachmentSource, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
@@ -13,11 +13,13 @@ import { attachmentBytes, attachmentPreview, shownAttachmentBytes, openAttachmen
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
-import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
+import { holderOfflineText, offlineHolder, useHolderBack, type OfflineHolder } from '../../lib/fileHost'
+import { replica, useReplica } from '../../lib/replica'
+import { createSelectStore, useSelect } from '../../lib/selectStore'
 import { messageForUser } from '../../lib/userFacingError'
 import { useToast } from '../toastContext'
 import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
-import { classifyDocumentPreview, documentPreviewNeedsFetch, type DocumentPreviewKind } from './documentPreview'
+import { classifyDocumentPreview } from './documentPreview'
 import { savedFileName } from '../../session/shared/extensions/app-runtime-protocol'
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
@@ -56,11 +58,15 @@ export interface HostedPreviewSource {
 }
 export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { source: HostedPreviewSource; document?: undefined }
 
+/** What the shown bytes are read from: plain data, and for a hosted file the read its opener gave. */
+type BytesOf = { source: AttachmentSource | Pick<HostedPreviewSource, 'kind' | 'key' | 'read'>; document?: boolean; mimeType: string }
+type ShownBytes = { blob: Blob; acknowledged?: Promise<void> }
+
 /**
  * 预览要读的那份字节:经 lib/attachmentBytes(签名链接 + Cache Storage);条目删了就说出来。
  * shown:先显示、后核验,`acknowledged` 失败时由显示它的预览撤下;下载不走这条。progress:读到哪了(预览的进度条)。
  */
-async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { shown?: true; progress?: (done: number, total: number) => void } = {}): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
+async function previewBytes(file: BytesOf, options: { shown?: true; progress?: (done: number, total: number) => void } = {}): Promise<ShownBytes> {
   if (file.source.kind === 'hosted') return { blob: await file.source.read() }
   // A file this device sent this run is read from here: while it uploads, and after, without downloading it back.
   const sent = file.document ? null : sentFileCopy(file.source)
@@ -71,53 +77,72 @@ async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { sh
     if (!document) throw new Error('gone')
     return { blob: new Blob([document.text], { type: file.mimeType }) }
   }
-  // A preview reads through the attachment content cache (opened again: no second download); a download reads the file.
   if (options.shown) return shownAttachmentBytes(file.source, options.progress)
   const bytes = await attachmentBytes(file.source, 'full', undefined, undefined, options.progress)
   if (bytes.status !== 'ready') throw new Error(bytes.status)
   return bytes
 }
 
+/** A preview's read that failed, and the machine it waits for when that is why (asked afresh after this failure). */
+class UnreadPreview extends Error {
+  constructor(readonly failure: unknown, readonly holder: OfflineHolder | null) { super(failure instanceof Error ? failure.message : String(failure)) }
+}
+async function unreadPreview(source: BytesOf['source'], failure: unknown): Promise<UnreadPreview> {
+  // A project file kept on a machine that is off now says so, from a fresh read of where it is kept.
+  return new UnreadPreview(failure, source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null)
+}
+
+/**
+ * How far the bytes a preview is reading have come (0–1), per preview key: written by the read in flight and removed when
+ * it settles (the read owns its entry; nothing outlives a read). Absent: not known (the provider has not said).
+ */
+const previewProgress = createSelectStore<ReadonlyMap<string, number>>(new Map())
+function noteProgress(key: string, fraction: number | null): void {
+  const now = previewProgress.get()
+  if (fraction === null && !now.has(key)) return
+  const next = new Map(now)
+  if (fraction === null) next.delete(key); else next.set(key, fraction)
+  previewProgress.publish(next)
+  previewProgress.notify()
+}
+
+/**
+ * The bytes a preview shows (review A3): every opening reads them and the server acknowledges that read (`fresh: 0`), and
+ * nothing is kept once no preview shows them (`keep: 0`) — a withdrawn file, or a member removed from the group, never keeps
+ * showing what the server would now refuse. `attempt`: the same preview reading again (its machine is back). Never waits
+ * for the network: a read that cannot be done says so, as the preview always did.
+ */
+const previewShown = replica({
+  name: 'preview-shown',
+  scope: 'account',
+  read: async (_owner: string, key: string, _attempt: number, file: BytesOf): Promise<ShownBytes> => {
+    try {
+      const bytes = await previewBytes(file, { shown: true, progress: (done, total) => { if (total > 0) noteProgress(key, done / total) } })
+      // Whoever draws these bytes hears a refusal; one that nobody draws any more is not an unhandled rejection.
+      bytes.acknowledged?.catch(() => undefined)
+      return bytes
+    } catch (error) {
+      throw await unreadPreview(file.source, error)
+    } finally {
+      noteProgress(key, null)
+    }
+  },
+  fresh: 0,
+  keep: 0,
+  networkMode: 'always',
+})
+
 /**
  * What a preview of this kind shows (`kind` from `classifyDocumentPreview`): a video, its signed link (<video> reads it in
- * ranges); anything else, its bytes — as text for what is read as text. A file gone throws `gone`. The chat's preview and
- * a peek beside an App (AppPeek) read it this one way.
+ * ranges) or an object URL of its bytes when they are here; anything else, its bytes — as text for what is read as text. A
+ * file gone says `gone`. The chat's preview and a peek beside an App (AppPeek) read it this one way.
  */
-type PreviewRead = { content: string | ArrayBuffer | null; binary?: boolean; acknowledged?: Promise<void>; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; release?: () => Promise<void>; error?: string; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
+type PreviewRead = { content: string | ArrayBuffer | null; binary?: boolean; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; error?: string; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
 function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
+  if (error instanceof UnreadPreview) return error.holder ? { content: null, errorStatus: 'failed', error: holderOfflineText(error.holder) } : previewFailure(error.failure, t)
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   return { content: null, errorStatus, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
-}
-async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
-  // A video read whole from here (a working copy, or a file this device sent this run) plays from its own bytes.
-  const whole = documentPreviewNeedsFetch(kind) ? null : file.source.kind === 'hosted' ? await file.source.read() : file.document ? null : sentFileCopy(file.source)
-  if (whole) {
-    const videoUrl = URL.createObjectURL(whole)
-    return { content: null, videoUrl, expiresAt: Infinity, release: async () => URL.revokeObjectURL(videoUrl) }
-  }
-  if (file.source.kind !== 'hosted' && !documentPreviewNeedsFetch(kind)) {
-    const preview = await attachmentPreview(file.source)
-    if (preview.status !== 'ready') throw new Error(preview.status)
-    let objectUrl: string | undefined
-    const renew = async () => {
-      const content = await preview.content()
-      if (!(content instanceof Blob)) return { videoUrl: content.url, expiresAt: content.expiresAt }
-      objectUrl ??= URL.createObjectURL(content)
-      return { videoUrl: objectUrl, expiresAt: Infinity }
-    }
-    const release = async () => { if (objectUrl) URL.revokeObjectURL(objectUrl); await preview.dispose() }
-    try { return { content: null, ...await renew(), renew, release } } catch (error) { await release(); throw error }
-  }
-  const { blob, acknowledged } = await previewBytes(file, { shown: true, progress })
-  if (kind === 'image') {
-    const content = URL.createObjectURL(blob)
-    return { content, acknowledged, release: async () => URL.revokeObjectURL(content) }
-  }
-  // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is shown
-  // like any video this preview cannot play.
-  if (kind === 'text' && await isMpegTsVideo(file.fileName, blob)) return { content: null, binary: true, acknowledged }
-  return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer(), acknowledged }
 }
 
 /** The host's preview wherever a file opens: messages, the chat's folder and an App's peek. */
@@ -126,7 +151,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const { toast } = useToast()
   const kind = classifyDocumentPreview(file)
   const key = file.source.kind === 'hosted' ? file.source.key : sourceKeyOf(file.source)
-  const activeKey = useRef(key)
   const viewerRef = useRef<HTMLElement>(null)
   useEffect(() => {
     if (readOnly || !viewerRef.current || (file.source.kind !== 'item' && file.source.kind !== 'hosted' && !message)) return
@@ -142,15 +166,89 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     }), (error) => toast(error instanceof Error ? error.message : String(error), 'error'))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- source identity retains the menu snapshot across unrelated renders
   }, [key, file.fileName, message?.id, kind, mobile, toast, readOnly])
-  const [read, setRead] = useState<PreviewRead | null>(null)
-  /** How far the bytes being read have come (0–1); unknown until the provider carrying them says. */
-  const [fraction, setFraction] = useState<number | undefined>(undefined)
   // A chat folder's HTML document is given its folder: the files its page names beside it are shown (preview-protocol).
   const [besideOffline, setBesideOffline] = useState<{ machine: string; deviceId: string } | null>(null)
-  // The machine a failed read waits for: when the device list sees it go from off to on, the file is read again by itself.
-  const [waitingFor, setWaitingFor] = useState<{ deviceId: string; itemId?: string; version?: number } | null>(null)
+  // The machine the files beside it wait for: when the device list sees it go from off to on, the file is read again by itself.
+  const [besideWaiting, setBesideWaiting] = useState<{ deviceId: string; itemId?: string; version?: number } | null>(null)
   const [attempt, setAttempt] = useState(0)
-  useHolderBack(waitingFor, () => { setWaitingFor(null); setBesideOffline(null); setAttempt((n) => n + 1) })
+  /** This opening of this file: a read again (the machine back) is a new one. */
+  const opening = `${attempt}:${key}`
+  // A video streams from its signed link unless its bytes are already here (a working copy, a file this device sent this run).
+  const streamed = useMemo(() => kind === 'video' && file.source.kind !== 'hosted' && (!!file.document || !sentFileCopy(file.source)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the source's identity is its key
+    [key, kind, file.document])
+  const bytesOf: BytesOf = { source: file.source.kind === 'hosted' ? { kind: 'hosted', key: file.source.key, read: file.source.read } : file.source, document: file.document, mimeType: file.mimeType }
+  const bytes = useReplica(previewShown, kind === 'unsupported' || streamed ? null : [key, attempt, bytesOf])
+  /** How far the bytes being read have come (0–1); unknown until the provider carrying them says. */
+  const fraction = useSelect(previewProgress, (progress) => progress.get(key))
+  const shownBytes = bytes.state === 'value' ? bytes.value : null
+  /** What the bytes in hand became for the viewer; drawn only for those bytes. */
+  const [drawn, setDrawn] = useState<{ of: ShownBytes; read: PreviewRead } | null>(null)
+  // @@@effect-flow(render) - turns the bytes in hand into what the viewer draws (an image's or a video's object URL, revoked
+  // with them; text; an ArrayBuffer; the MPEG-TS sniff); the server refusing the read it acknowledges takes that down and says why
+  useEffect(() => {
+    if (!shownBytes) return
+    let live = true, refused = false, release: (() => void) | undefined
+    const draw = (next: PreviewRead) => { if (live) setDrawn({ of: shownBytes, read: next }) }
+    const { blob, acknowledged } = shownBytes
+    // Shown before the server acknowledged the read: a refusal takes it down and says why.
+    acknowledged?.catch((error: unknown) => { refused = true; release?.(); release = undefined; draw(previewFailure(error, t)) })
+    const content = async (): Promise<PreviewRead> => {
+      if (kind === 'image' || kind === 'video') {
+        const url = URL.createObjectURL(blob)
+        release = () => URL.revokeObjectURL(url)
+        return kind === 'image' ? { content: url } : { content: null, videoUrl: url, expiresAt: Infinity }
+      }
+      // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is
+      // shown like any video this preview cannot play.
+      if (kind === 'text' && await isMpegTsVideo(file.fileName, blob)) return { content: null, binary: true }
+      return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer() }
+    }
+    void content().then((next) => { if (!refused) draw(next) }, (error: unknown) => { if (!refused) draw(previewFailure(error, t)) })
+    return () => { live = false; release?.() }
+  }, [shownBytes, kind, file.fileName, t])
+  /** A streamed video's link for this opening, or why it could not be had (and the machine that keeps it, when that is why). */
+  const [stream, setStream] = useState<{ opening: string; read: PreviewRead; holder: OfflineHolder | null } | null>(null)
+  // @@@effect-flow(lifecycle) - a streamed video holds its signed preview (renewed when the link expires, disposed when the
+  // preview closes) for the preview's life; state holds only its link, or why it could not be had
+  useEffect(() => {
+    if (!streamed || file.source.kind === 'hosted') return
+    const source = file.source, at = opening
+    let live = true, release: (() => Promise<void>) | undefined
+    void attachmentPreview(source).then(async (preview) => {
+      if (preview.status !== 'ready') throw new Error(preview.status)
+      let objectUrl: string | undefined
+      const renew = async () => {
+        const content = await preview.content()
+        if (!(content instanceof Blob)) return { videoUrl: content.url, expiresAt: content.expiresAt }
+        objectUrl ??= URL.createObjectURL(content)
+        return { videoUrl: objectUrl, expiresAt: Infinity }
+      }
+      const dispose = async () => { if (objectUrl) URL.revokeObjectURL(objectUrl); await preview.dispose() }
+      try {
+        const link = await renew()
+        if (!live) return dispose()
+        release = dispose
+        setStream({ opening: at, holder: null, read: { content: null, ...link, renew } })
+      } catch (error) { await dispose(); throw error }
+    }).catch(async (error: unknown) => {
+      const unread = await unreadPreview(source, error)
+      if (live) setStream({ opening: at, holder: unread.holder, read: previewFailure(unread, t) })
+    })
+    return () => { live = false; void release?.() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the opening names the source and the attempt
+  }, [opening, streamed])
+  /** What this opening learnt since it drew: the file missing (a download or an open said so), or its video failing. */
+  const [noted, setNoted] = useState<{ opening: string; read: PreviewRead } | null>(null)
+  const read: PreviewRead | null = noted?.opening === opening ? noted.read
+    : kind === 'unsupported' ? null
+    : streamed ? (stream?.opening === opening ? stream.read : null)
+    : bytes.state === 'unknown' ? null
+    : bytes.state === 'error' ? previewFailure(bytes.error, t)
+    : drawn?.of === bytes.value ? drawn.read : null
+  // The machine a failed read waits for: when it is back, the file is read again by itself.
+  const failedHolder = streamed ? (stream?.opening === opening ? stream.holder : null) : bytes.state === 'error' && bytes.error instanceof UnreadPreview ? bytes.error.holder : null
+  useHolderBack(besideWaiting ?? failedHolder, () => { setBesideWaiting(null); setBesideOffline(null); setAttempt((n) => n + 1) })
   const itemId = file.source.kind === 'item' ? file.source.itemId : null
   const at = useFilePlace(itemId)
   const hostedHtml = file.source.kind === 'hosted' ? file.source.registerHtml : undefined
@@ -163,54 +261,26 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       outside: t('attachmentView.besideOutside'),
       offline: t('attachmentView.besideOffline'),
       palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
-    }, (holder) => { setBesideOffline(holder); setWaitingFor(holder) })
+    }, (holder) => { setBesideOffline(holder); setBesideWaiting(holder) })
   }, [hostedHtml, itemId, t])
-  // @@@effect-flow(command) - opening a preview: its bytes come from the attachment content cache; the server's acknowledgement (a
-  // refusal takes a shown preview down), the read's progress, object URLs / video links and the offline-machine
-  // explanation are this opening's flow
-  useEffect(() => {
-    activeKey.current = key
-    let live = true, release: PreviewRead['release']
-    setRead(null)
-    setFraction(undefined)
-    const source = file.source
-    if (kind !== 'unsupported') void readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }).then(
-      (done) => {
-        release = done.release
-        // Shown before the server acknowledged the read: a refusal takes it down and says why.
-        done.acknowledged?.catch((error) => { if (!live) return; void release?.(); release = undefined; setRead(previewFailure(error, t)) })
-        if (!live) { void release?.(); return }
-        setRead(done)
-      },
-      async (error) => {
-        // A project file kept on a machine that is off now says so, from a fresh read of where it is kept.
-        const offline = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
-        if (!live) return
-        setWaitingFor(offline)
-        setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
-      },
-    )
-    return () => { live = false; void release?.() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- source kind/id/version and the preview kind identify the bytes; attempt reads them again
-  }, [key, kind, file.document, message?.id, message?.chat_id, t, attempt])
   const renewVideo = async (video: HTMLVideoElement) => {
-    const current = read
+    const current = read, at = opening
     if (video.dataset.renewing) return
-    const fail = (error?: unknown) => setRead(row => row === current ? { ...row, ...previewFailure(error, t) } : row)
+    const fail = (error?: unknown) => setNoted({ opening: at, read: { ...current, ...previewFailure(error, t) } })
     if (!current?.renew || Date.now() < (current.expiresAt ?? Infinity)) { fail(); return }
     video.dataset.renewing = 'true'
     const time = video.currentTime, playing = !video.paused
     try {
       const next = await current.renew()
       video.addEventListener('loadedmetadata', () => { video.currentTime = time; if (playing) void video.play().catch(fail) }, { once: true })
-      setRead(row => row === current ? { ...row, ...next } : row)
+      setStream((row) => row?.read === current ? { ...row, read: { ...current, ...next } } : row)
     } catch (error) { fail(error) } finally { delete video.dataset.renewing }
   }
   const missing = read?.errorStatus === 'missing'
   const rememberMissing = (error: unknown) => {
     const failure = previewFailure(error, t)
     if (failure.errorStatus !== 'missing') return false
-    if (activeKey.current === key) setRead(failure)
+    setNoted({ opening, read: failure })
     return true
   }
   const savedName = savedFileName({ name: file.fileName, contentType: file.mimeType })

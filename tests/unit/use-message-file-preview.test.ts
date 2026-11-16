@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { MessageActionItem } from '@/components/chat/messageActionItems'
 import type { PreviewFile } from '@/components/chat/useMessageFilePreview'
+import { freshReplicaAccount } from '../support/replicaAccount'
 
 // 字节、链接、交给系统应用都经 lib/attachmentBytes(一个入口);这里把它换掉,判的是预览自己的状态机。
 const bytesMocks = vi.hoisted(() => {
@@ -87,7 +88,8 @@ describe('useMessageFilePreview', () => {
     return preview.panel
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await freshReplicaAccount('preview-reader')
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     bytesMocks.downloadAttachment.mockResolvedValue(undefined)
     bytesMocks.attachmentPreview.mockResolvedValue({ status: 'ready', content: async () => ({ url: 'https://cdn.test/signed', expiresAt: Date.now() + 60_000 }), dispose: vi.fn() })
