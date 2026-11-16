@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { ChevronDown, X } from '@/lib/icons'
+import { ChevronDown, ChevronUp, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import { PhoneViewportContext } from '../usePhoneViewport'
+import '../agent-watch/create-controls-catalog'
 import './phone-composer-controls.css'
 
 export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
@@ -45,7 +46,9 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
     data-testid={testId} data-active={active || undefined} onPointerDown={preserveComposerFocus}
     onMouseDown={preserveComposerFocus} onClick={onClick}>
     {icon}<span className="gg-phone-composer-control-label">{label}</span>
-    {menuExpanded !== undefined && <ChevronDown aria-hidden />}
+    {menuExpanded !== undefined && (menuExpanded
+      ? <ChevronDown data-phone-menu-direction="down" aria-hidden />
+      : <ChevronUp data-phone-menu-direction="up" aria-hidden />)}
     {dot && <span className="gg-phone-composer-control-dot" />}
   </Button>
 }
@@ -104,6 +107,7 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
         <div className="gg-phone-composer-sheet-head">
           <Dialog.Title>{title}</Dialog.Title>
           <IconButton size="lg" aria-label={t('close')} className="gg-phone-composer-sheet-close"
+            data-testid={`${testId}-close`}
             onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClose}><X /></IconButton>
         </div>
         <div className="gg-phone-composer-sheet-list">{children}</div>

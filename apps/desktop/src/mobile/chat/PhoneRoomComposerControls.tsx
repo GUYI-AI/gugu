@@ -51,7 +51,7 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
     <PhoneComposerControlRow>
       {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} active={!!current} dot={choices.hasUnread}
         testId="phone-room-topics" onClick={() => setView('topics')} />}
-      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'topics' ? <div role="radiogroup" aria-label={t('topics')}>
