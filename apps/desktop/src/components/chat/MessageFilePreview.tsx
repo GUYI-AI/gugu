@@ -24,6 +24,7 @@ import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { useFilePlace } from '../preview/file-place'
+import { PreviewReadLimitError } from '../preview/preview-read-limit-error'
 
 const fileOpenLog = rendererLogger('chat/file-open')
 
@@ -92,7 +93,7 @@ function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead 
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   const status = (error as { status?: number } | null)?.status
-  const retryable = errorStatus === 'failed' && !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429)
+  const retryable = errorStatus === 'failed' && !(error instanceof PreviewReadLimitError) && !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429)
   return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
 async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
