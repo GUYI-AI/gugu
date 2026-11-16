@@ -1,3 +1,4 @@
+import { phoneAgentHeaderName } from '../chat/phone-navigation-context'
 import { PhoneSessionSidebarControls } from '../chat/PhoneSessionSidebarControls'
 import { usePhoneSessionSidebar } from '../chat/usePhoneSessionSidebar'
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
@@ -199,7 +200,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const shownStatus = useShownAgentStatus()
   const agentUserId = session.agent?.userId
   const identity = useAvatarIdentity(agentUserId ?? '')
-  const shownName = useShownAgentName({ name: session.title, createdAt: identity?.created_at ?? undefined })
+  const shownName = useShownAgentName({ name: phoneAgentHeaderName(session.title, identity?.display_name), createdAt: identity?.created_at ?? undefined })
   // A machine that does not answer: its agent's presence (which outlives it as long as its lease) is not shown. Offline
   // only when the device is; while connecting the avatar claims nothing.
   const presentation = !answering ? (agentUserId && connection === 'device_offline' ? presentAgentStatus({ reading: null, reachability: 'offline' }) : null)
@@ -229,6 +230,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       </span>
     ) : undefined,
     headerTestId: 'agent-watch-hero',
+    context: { sessionId: session.conversationId, agentId: agentUserId ?? null },
   }
   // Keep the same task composer even before a cold offline phone has any timeline.
   // Its durable input queue waits for the host's stable acknowledgement contract.
