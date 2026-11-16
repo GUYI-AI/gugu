@@ -29,6 +29,7 @@ import {
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
+import { createAttachmentDraft, admitCreatedAttachments } from './creation-attachment-production';
 import { createSkills } from '../agents/create-skills';
 import * as service from './service';
 import { prefetchFiles } from './turn-files';
@@ -118,6 +119,8 @@ function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | un
 }
 
 export const sessionTimelineController = createRPCController({
+  sessionCreateAttachmentDraft: createAttachmentDraft,
+  sessionAdmitCreatedAttachments: admitCreatedAttachments,
   prefetchFiles,
   taskExchanges: (input: TaskExchangeRequest) => readTaskExchanges(input),
   taskExchangesSubscribe: withSender(async (sender: number, input: TaskExchangeRequest & { subscriptionId: string }) => {
