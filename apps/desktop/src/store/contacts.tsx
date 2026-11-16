@@ -297,11 +297,14 @@ export function ContactsProvider({ children, active = true }: { children: React.
     await updateAgentProfile(agentId, { avatar: contactsService.agentLookAvatarUrl(look) })
   }, [updateAgentProfile])
 
-  /** 删掉一个联系人 / 自家 agent 之后(云端已确认):本地先拿掉它,再按权威数据重读。 */
-  const dropContactAndReload = useCallback(
+  /** 删掉一个联系人 / 自家 agent:云端确认后,本地先拿掉它(落在发起删除的那个账号,❌ 换号后的下一个),再按权威数据重读。 */
+  const removeContact = useCallback(
     async (contactId: string) => {
-      contactRelations.set([], (current) => current?.filter((contact) => contact.id !== contactId))
-      contactGroups.set([], (current) => current?.map((group) => ({
+      const relations = contactRelations.at()
+      const groups = contactGroups.at()
+      await contactsService.removeContact(contactId)
+      relations.set((current) => current?.filter((contact) => contact.id !== contactId))
+      groups.set((current) => current?.map((group) => ({
         ...group,
         contactIds: group.contactIds.filter((id) => id !== contactId),
       })))
@@ -313,14 +316,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       ])
     },
     [loadContacts, loadGroups, loadRequests, refreshChats],
-  )
-
-  const removeContact = useCallback(
-    async (contactId: string) => {
-      await contactsService.removeContact(contactId)
-      await dropContactAndReload(contactId)
-    },
-    [dropContactAndReload],
   )
 
   const removeOwnedAgent = useCallback(

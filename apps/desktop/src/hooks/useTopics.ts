@@ -133,12 +133,14 @@ export function useTopicsOfChat(
       const read = ++reads
       latest.set(topicChatId, read)
       const current = () => active && latest.get(topicChatId) === read
+      // Bound before the awaits: a topic read for this account lands in it (❌ the next one's line).
+      const entry = topicsOfChat.at(sourceChatId)
       try {
         const { rows, record } = await readTopics(userId, sourceChatId, topicChatId)
         if (!current()) return
         await record()
         if (!current()) return
-        topicsOfChat.set([sourceChatId], (shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
+        entry.set((shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
       } catch (err) {
         if (!current()) return
         // One topic could not be read: read the whole line again (I1), its failure is the line's reading.

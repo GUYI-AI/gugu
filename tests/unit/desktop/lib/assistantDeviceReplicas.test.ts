@@ -66,6 +66,15 @@ describe('assistantRulesState', () => {
     await expect(assistantRulesState.fetch()).resolves.toEqual({ pending: false, stuck: false })
     expect(ipc.invoke).toHaveBeenCalledTimes(1)
   })
+
+  it("is the signed-in account's: after A signs out and B signs in, A's wait is not shown (account scan)", async () => {
+    ipc.invoke.mockResolvedValue({ pending: true, stuck: false })
+    followRendererSession('SIGNED_IN', 'owner-a')
+    await assistantRulesState.fetch()
+    followRendererSession('SIGNED_OUT', null)
+    followRendererSession('SIGNED_IN', 'owner-b')
+    expect(assistantRulesState.peek()).toEqual({ state: 'unknown' })
+  })
 })
 
 describe('quickChatState', () => {

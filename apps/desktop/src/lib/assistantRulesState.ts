@@ -11,14 +11,15 @@ import { replica, useReplica, type Reading } from './replica'
 import '../i18n/registerMainCatalog'
 
 /**
- * Main's answer (device scope). With no desktop IPC (a phone, a web page) nothing hosts an assistant here, so it truly does
- * not wait: `{pending: false, stuck: false}` is the value, ❌ a placeholder. Main pushes every change with its value
+ * Main's answer for the signed-in account (account scope: whether it waits depends on whether this account has an
+ * assistant here, so an account switch never shows the last account's wait). With no desktop IPC (a phone, a web page)
+ * nothing hosts an assistant here, so it truly does not wait: `{pending: false, stuck: false}` is the value, ❌ a placeholder. Main pushes every change with its value
  * (`rulesStateChanged`), so a read value stays current (`fresh: Infinity`). Not kept across restarts (a restored `pending`
  * would flash "preparing").
  */
 export const assistantRulesState = replica({
   name: 'assistantRulesState',
-  scope: 'device',
+  scope: 'account',
   read: async (): Promise<AssistantRulesState> => {
     const ipc = desktopIpc()
     if (!ipc) return { pending: false, stuck: false }
@@ -26,8 +27,11 @@ export const assistantRulesState = replica({
   },
   fresh: Infinity,
   watch: {
-    start: () => desktopIpc()?.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => assistantRulesState.set([], value as AssistantRulesState))
-      ?? (() => undefined),
+    // Main publishes for the account signed in now: put it there (bound per feed, which follows the account).
+    start: () => {
+      const entry = assistantRulesState.at()
+      return desktopIpc()?.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => entry.set(value as AssistantRulesState)) ?? (() => undefined)
+    },
   },
 })
 
