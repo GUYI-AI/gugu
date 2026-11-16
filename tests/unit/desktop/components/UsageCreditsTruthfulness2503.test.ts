@@ -383,6 +383,28 @@ describe('#2503 用量与订阅积分的诚实性', () => {
     } finally { shown.mockRestore(); stop(); harness.cleanup() }
   })
 
+  it('with only the model catalog following the plan (no surface shows the credits), a return that finds another plan says so (#7056)', async () => {
+    vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ planId: 'default', tier: 'free', expiresAt: null }) }))
+    const changed = vi.fn()
+    const stop = onPlanChange(changed)
+    const shown = vi.spyOn(document, 'visibilityState', 'get')
+    const comeBack = async () => {
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    }
+    try {
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ expiresAt: new Date(Date.now() + 30 * 24 * hour) }) }))
+      await comeBack()
+      expect(changed).toHaveBeenCalledTimes(1)
+    } finally { shown.mockRestore(); stop() }
+  })
+
   it('会员行读取失败不能冒充免费档', async () => {
     vi.mocked(readCreditV2Account).mockResolvedValue(account({ balanceError: new Error('membership down') }))
     const harness = await renderMembership()

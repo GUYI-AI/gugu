@@ -12,7 +12,7 @@ import {
   subscribePrivateUserEventBus,
   unsubscribePrivateUserEventBus,
 } from '../realtimeChannel'
-import { replica, useReplica } from '../replica'
+import { onReturn, replica, useReplica } from '../replica'
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
 import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
@@ -103,17 +103,27 @@ function watchBilling(userId: string): () => void {
   }
 }
 
-/** The account's plan changed (a membership bought, renewed or lapsed — read on a return or pushed): what it unlocks may differ. */
+/**
+ * The account's plan changed (a membership bought, renewed or lapsed): what it unlocks may differ. While followed, the
+ * credits are read again on every return to the app, whether or not a surface shows them (a membership bought on the web
+ * is pushed nowhere, #7056); a surface showing them adds their billing feed.
+ */
 export function onPlanChange(listener: () => void): () => void {
+  if (!officialServicesEnabled()) return () => undefined
   const planOf = (reading: ReturnType<typeof creditAccount.peek>): string | null =>
     (reading.state === 'value' ? JSON.stringify(reading.value.plan ?? null) : null)
   let seen = planOf(creditAccount.peek())
-  return creditAccount.subscribe([], ({ reading }) => {
+  const stopChanges = creditAccount.subscribe([], ({ reading }) => {
     const plan = planOf(reading)
     if (plan === null) return
     if (seen !== null && plan !== seen) listener()
     seen = plan
   })
+  // Marked stale, then read (or joined: a surface showing the credits reads them on the same return).
+  const readNow = () => { void creditAccount.refresh(); void creditAccount.fetch().catch(() => undefined) }
+  if (seen === null) readNow()
+  const stopReturns = onReturn(readNow)
+  return () => { stopReturns(); stopChanges() }
 }
 
 /** 手动催一次(充值回来、用户点刷新)。 */

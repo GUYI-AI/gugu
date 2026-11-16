@@ -115,6 +115,11 @@ export function readOnReturn(watch: (back: () => void) => () => void): void {
   focusManager.setEventListener((handleFocus) => watch(() => handleFocus()))
 }
 
+/** Hear the returns `readOnReturn` reports (the same moment `refreshOnFocus` models read), for a follower outside React. */
+export function onReturn(listener: () => void): () => void {
+  return focusManager.subscribe((focused) => { if (focused) listener() })
+}
+
 queryClient.mount()
 /**
  * The failure of a read that has no value, kept while it is read again: react-query empties `error` when the next read
