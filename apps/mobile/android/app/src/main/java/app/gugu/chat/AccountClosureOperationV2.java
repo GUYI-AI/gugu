@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -19,8 +21,47 @@ final class AccountClosureOperationV2 {
     static final String CAPTURED = "captured", PREPARING = "preparing", LOCAL_PREPARED = "local_prepared";
     interface NativeIdentity { Identity read() throws Exception; }
     interface Runtime {
-        CompletableFuture<Void> stopAndDrain(String owner) throws Exception;
+        CompletableFuture<Void> stopAndDrain(SideEffects admission) throws Exception;
         boolean busy(String owner) throws Exception;
+    }
+    interface LocalEffect { void run() throws Exception; }
+    private static final Map<Object, SideEffects> ADMISSIONS = new IdentityHashMap<>();
+    /** Native-only proof, minted from the protected record; never constructed by a caller. */
+    final class SideEffects {
+        final String ownerId;
+        private final AccountClosureReceiptStore.Scope scope;
+        private final Metadata captured;
+        private SideEffects(AccountClosureReceiptStore.Scope scope, Metadata captured) {
+            this.scope = scope; this.captured = captured; ownerId = captured.ownerId;
+        }
+        void check() throws Exception {
+            synchronized (authLock) { requireActive(); }
+        }
+        void runLocal(LocalEffect effect) throws Exception {
+            synchronized (authLock) { requireActive(); effect.run(); }
+        }
+        private void requireActive() throws Exception {
+            synchronized (ADMISSIONS) {
+                if (ADMISSIONS.get(authLock) != this) throw failure("scope_conflict");
+            }
+            requireEnabled(); Record record = require(scope);
+            if (!record.sid.equals(captured.originalAuthSessionId) || !record.installation.equals(captured.installationId)
+                || !record.device.equals(captured.canonicalDeviceId) || !record.generation.equals(captured.nativeGeneration) || record.revision != captured.localRevision
+                || !PREPARING.equals(record.checkpoint)) throw failure("scope_conflict");
+        }
+    }
+    /** Called under the same native Auth lock by its replacement writer. Same-SID
+     * refreshes remain legal; a different owner/SID cannot cross stop dispatch. */
+    static void requireAuthMutation(Object authLock, String owner, String sid) throws Exception {
+        if (!Thread.holdsLock(authLock)) throw failure("scope_conflict");
+        synchronized (ADMISSIONS) {
+            SideEffects active = ADMISSIONS.get(authLock);
+            if (active != null && (!active.captured.ownerId.equals(owner) || !active.captured.originalAuthSessionId.equals(sid)))
+                throw failure("scope_conflict");
+        }
+    }
+    static boolean hasSideEffectAdmission(Object authLock) {
+        synchronized (ADMISSIONS) { return ADMISSIONS.containsKey(authLock); }
     }
     interface Entropy { void fill(byte[] bytes); }
     static final class Identity {
@@ -108,8 +149,22 @@ final class AccountClosureOperationV2 {
     CompletableFuture<Metadata> prepare(AccountClosureReceiptStore.Scope scope) throws Exception {
         final Metadata captured = beginOrRestoreOperation(scope);
         final Metadata preparing = checkpointOperation(scope, captured.localRevision, captured.nativeGeneration, "request_local_preparation");
-        // Never hold the auth owner monitor while stopping or awaiting runtime callbacks.
-        return runtime.stopAndDrain(scope.ownerId).thenApply(unused -> {
+        final SideEffects admission;
+        synchronized (authLock) {
+            admission = new SideEffects(scope, preparing);
+            synchronized (ADMISSIONS) {
+                if (ADMISSIONS.containsKey(authLock)) throw failure("scope_conflict");
+                ADMISSIONS.put(authLock, admission);
+            }
+            try { admission.requireActive(); }
+            catch (Exception refused) { synchronized (ADMISSIONS) { ADMISSIONS.remove(authLock); } throw refused; }
+        }
+        final CompletableFuture<Void> drain;
+        // Dispatch with a native owner/SID mutation fence, not with the Auth monitor
+        // held across service locks. Release the fence BEFORE awaiting exit proofs.
+        try { drain = runtime.stopAndDrain(admission); }
+        finally { synchronized (authLock) { synchronized (ADMISSIONS) { ADMISSIONS.remove(authLock); } } }
+        return drain.thenApply(unused -> {
             try {
                 if (runtime.busy(scope.ownerId)) throw failure("closure_not_prepared");
                 synchronized (authLock) {

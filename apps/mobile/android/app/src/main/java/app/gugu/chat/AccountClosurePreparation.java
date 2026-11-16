@@ -54,9 +54,24 @@ final class AccountClosurePreparation {
         }
     }
     static void requireAuthWrite(Context context, String value) throws Exception {
+        AndroidAccountClosureV2.requireAuthMutation(value);
         String owner = AccountClosureAuthSlot.ownerOf(value);
         if (owner != null && new AccountClosurePreparation(context).state(owner) >= ERASING)
             throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
+    }
+    static void requireCompletion(int expectedState, String expectedGeneration, int currentState, String currentGeneration)
+        throws AccountClosureReceiptStore.Failure {
+        if (expectedState < STOPPING || expectedState > RETIRED || expectedState != currentState
+            || expectedGeneration == null || expectedGeneration.isEmpty() || !expectedGeneration.equals(currentGeneration))
+            throw new AccountClosureReceiptStore.Failure("scope_conflict");
+    }
+    interface CompletionFence { void check() throws Exception; }
+    interface StoppedCommit { void run() throws Exception; }
+    static void completeCaptured(int expectedState, String expectedGeneration, int currentState, String currentGeneration,
+                                 CompletionFence fence, StoppedCommit commit) throws Exception {
+        fence.check();
+        requireCompletion(expectedState, expectedGeneration, currentState, currentGeneration);
+        if (expectedState == STOPPING) commit.run();
     }
     private String key(String owner) throws Exception {
         GuguAgentHostPolicy.owner(owner);

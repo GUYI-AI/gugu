@@ -50,12 +50,16 @@ final class AndroidAccountClosure {
         return "phone-" + registration + "-" + canonical;
     }
     CompletableFuture<Void> prepareSignOut(String owner) throws Exception {
+        final int expectedState;
+        final String expectedGeneration;
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             requireCurrentOwner(owner);
             AndroidAccountClosureV2.requireNoCapturedOperation(context, owner);
             int state = preparation.state(owner);
             if (state >= AccountClosurePreparation.ERASING) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
             if (state == 0) preparation.set(owner, AccountClosurePreparation.STOPPING);
+            expectedState = preparation.state(owner);
+            expectedGeneration = preparation.generation(owner);
         }
         // No auth lock is held while a runtime drains. Its last callbacks may
         // need that same lock; erasure itself never takes either runtime lock.
@@ -66,7 +70,10 @@ final class AndroidAccountClosure {
                 try {
                     requireCurrentOwner(owner);
                     if (ownerBusy(owner)) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
-                    if (preparation.state(owner) < AccountClosurePreparation.STOPPED) preparation.set(owner, AccountClosurePreparation.STOPPED);
+                    AccountClosurePreparation.completeCaptured(expectedState, expectedGeneration,
+                        preparation.state(owner), preparation.generation(owner),
+                        () -> AndroidAccountClosureV2.requireNoCapturedOperation(context, owner),
+                        () -> preparation.set(owner, AccountClosurePreparation.STOPPED));
                 } catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
             }
         });

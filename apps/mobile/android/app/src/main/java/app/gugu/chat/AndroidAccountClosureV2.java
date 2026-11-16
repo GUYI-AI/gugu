@@ -40,18 +40,18 @@ final class AndroidAccountClosureV2 {
         return new AccountClosureOperationV2(GuguAuthStoragePlugin.STORAGE_LOCK,
             new AccountClosureEncryptedFiles(context, installation), () -> capture(owner, installation, device.get()),
             new AccountClosureOperationV2.Runtime() {
-                public CompletableFuture<Void> stopAndDrain(String drainingOwner) throws Exception {
-                    synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
-                        capture(drainingOwner, installation, device.get());
+                public CompletableFuture<Void> stopAndDrain(AccountClosureOperationV2.SideEffects admission) throws Exception {
+                    String drainingOwner = admission.ownerId;
+                    admission.runLocal(() -> {
                         var grants = GuguAgentService.permissions(context);
                         if (drainingOwner.equals(grants.getString("owner", ""))) {
                             if (!grants.edit().clear().commit())
                                 throw new AccountClosureReceiptStore.Failure("closure_storage_unavailable");
                             GuguNotificationListener.setCollecting(false);
                         }
-                    }
-                    return CompletableFuture.allOf(GuguAgentHostService.stopOwnerAndWait(context, drainingOwner, false),
-                        GuguAgentService.stopOwnerAndWait(drainingOwner)).thenRun(() -> {
+                    });
+                    return CompletableFuture.allOf(GuguAgentHostService.stopOwnerRuntimeAndWaitForClosure(admission),
+                        GuguAgentService.stopOwnerAndWaitForClosure(admission)).thenRun(() -> {
                             try { device.set(new AndroidAccountClosure(context).deviceId(drainingOwner)); }
                             catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
                         });
@@ -82,5 +82,18 @@ final class AndroidAccountClosureV2 {
             String installation = GuguPhoneInstallation.identity(context).key;
             AccountClosureOperationV2.requireNoCapturedOperation(new AccountClosureEncryptedFiles(context, installation), installation, owner);
         }
+    }
+    static void requireAuthMutation(String envelope) throws Exception {
+        if (!AccountClosureOperationV2.hasSideEffectAdmission(GuguAuthStoragePlugin.STORAGE_LOCK)) return;
+        String owner = AccountClosureAuthSlot.ownerOf(envelope), sid = null;
+        if (owner != null) {
+            JSONObject session = new JSONObject(new JSONObject(envelope).getString("raw"));
+            String[] jwt = session.getString("access_token").split("\\.", -1);
+            if (jwt.length != 3) throw new AccountClosureReceiptStore.Failure("scope_conflict");
+            JSONObject claims = new JSONObject(new String(Base64.decode(jwt[1], Base64.URL_SAFE | Base64.NO_WRAP), StandardCharsets.UTF_8));
+            if (!owner.equals(claims.getString("sub"))) throw new AccountClosureReceiptStore.Failure("scope_conflict");
+            sid = claims.getString("session_id");
+        }
+        AccountClosureOperationV2.requireAuthMutation(GuguAuthStoragePlugin.STORAGE_LOCK, owner, sid);
     }
 }
