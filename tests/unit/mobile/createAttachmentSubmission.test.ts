@@ -101,3 +101,15 @@ it('shares one in-flight submission across duplicate sends/remounts', async () =
   expect(ports.create).toHaveBeenCalledTimes(1)
   expect(ports.admit).toHaveBeenCalledTimes(1)
 })
+
+it('retains an admitted receipt until the page completes its handover, so a remount cannot create the task again', async () => {
+  const { input, ports } = fixture('late-page')
+  const first = await submitAttachmentCreation(input)
+  expect(readAttachmentCreation(input.key)).toBe(first.request)
+  const resumed = await submitAttachmentCreation(input)
+  expect(resumed.result).toBe(first.result)
+  expect(ports.create).toHaveBeenCalledTimes(1)
+  expect(ports.place).toHaveBeenCalledTimes(2)
+  expect(ports.admit).toHaveBeenCalledTimes(1)
+  completeAttachmentCreation(input.key, resumed.request)
+})

@@ -325,6 +325,9 @@ function CreateOnMachine({
           if (!files.length) forgetPhoneSessionCreate(ownerId!, device.device_id, request)
           if (page.active) setPhoneAttempt(null)
         }
+        // A different page may now own the visible draft. Keep this admitted receipt and its original Files
+        // until that page explicitly resumes the same creation, rather than making its restored files a new task.
+        if (attachmentReceipt && !page.active) return
         submittedDraft?.accepted(originalText, files)
         if (page.active) skillDraft.update([])
         if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
