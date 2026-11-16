@@ -37,6 +37,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   const [revealed, setRevealed] = useState(false)
   const [moving, setMoving] = useState<PhoneWatchBox | null>(null)
   const drag = useRef<{ id: number; x: number; y: number; box: PhoneWatchBox; handle: boolean; moved: boolean; latest: PhoneWatchBox } | null>(null)
+  const handleMoved = useRef(false)
   const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const orientation = useRef<ReturnType<typeof createPhoneWatchOrientation> | null>(null)
   const active = visible && sources.length > 0 && presentation.mode !== 'closed'
@@ -125,6 +126,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
     if (event.button !== 0 || event.target instanceof Element && event.target.closest('button') && !isHandle) return
     smallAction.reset()
     event.preventDefault()
+    if (isHandle) handleMoved.current = false
     const box = isHandle ? handle : placed
     drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, box, latest: box, handle: isHandle, moved: false }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -135,6 +137,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
     const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y
     gesture.moved ||= Math.hypot(dx, dy) > 4
     if (!gesture.moved) return
+    if (gesture.handle) handleMoved.current = true
     gesture.latest = movePhoneWatch(gesture.box, { x: gesture.handle ? 0 : 16, y: 8, width: area.width - (gesture.handle ? 0 : 32), height: area.height - 16 }, dx, dy)
     setMoving(gesture.latest)
   }
@@ -148,7 +151,8 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
         : { type: 'position', small: { corner: phoneWatchCorner(gesture.latest, area) } })
       return
     }
-    if (gesture.handle) { dispatch({ type: 'position', small: { corner: cornerFromPhoneDock(presentation.dock) } }); dispatch({ type: 'undock' }); return }
+    // Keep the handle attached until its click, so touch compatibility clicks cannot hit the chat underneath.
+    if (gesture.handle) return
     setRevealed(true)
     if (revealTimer.current) clearTimeout(revealTimer.current)
     revealTimer.current = setTimeout(() => setRevealed(false), 3000)
@@ -195,7 +199,14 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
     }}>{children}</div>
     {docked && <Button variant="ghost" size="sm" data-phone-watch-handle data-edge={presentation.dock.edge} aria-label={t('controlWatch.restore')}
       style={handleStyle} onPointerDown={event => begin(event, true)} onPointerMove={move} onPointerUp={end}
-      onPointerCancel={() => { drag.current = null; setMoving(null) }} onClick={event => { if (event.detail === 0) { dispatch({ type: 'position', small: { corner: cornerFromPhoneDock(presentation.dock) } }); dispatch({ type: 'undock' }) } }}>
+      onPointerCancel={() => { drag.current = null; handleMoved.current = true; setMoving(null) }} onClick={event => {
+        const moved = handleMoved.current
+        handleMoved.current = false
+        event.preventDefault(); event.stopPropagation()
+        const pointerClick = event.detail > 0 || ('pointerType' in event.nativeEvent && Boolean(event.nativeEvent.pointerType))
+        if (moved && pointerClick) return
+        dispatch({ type: 'position', small: { corner: cornerFromPhoneDock(presentation.dock) } }); dispatch({ type: 'undock' })
+      }}>
       <span data-phone-watch-capsule>{!ended && <span data-phone-watch-active />}<span data-phone-watch-grip /></span>
     </Button>}
   </div>
