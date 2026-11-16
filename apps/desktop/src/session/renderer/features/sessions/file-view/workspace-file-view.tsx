@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MessageFilePreview, type HostedPreviewFile } from '@/components/chat/MessageFilePreview';
+import { PreviewReadLimitError } from '@/components/preview/preview-read-limit-error';
 import { downloadBlob } from '@/lib/download';
 import { messageForUser } from '@/lib/userFacingError';
 import { rpc } from '@renderer/lib/ipc';
@@ -36,7 +37,7 @@ async function readBytes(projectId: string, workspaceId: string, path: string, i
     const read = inWorkspace ? files.readFile : files.readExternalFile;
     const result = await read(projectId, workspaceId, path, EDITOR_CONFIRM_FILE_BYTES);
     if (!result.success) throw new Error('message' in result.error ? result.error.message : String(result.error));
-    if (result.data.truncated) throw new Error(`File too large: ${result.data.totalSize} bytes`);
+    if (result.data.truncated) throw new PreviewReadLimitError(result.data.totalSize);
     return new Blob([result.data.content], { type: 'text/plain' });
   }
   // Inside the workspace: read in chunks, so a large PDF opens (the inline read below is one message, capped at 10 MB). The

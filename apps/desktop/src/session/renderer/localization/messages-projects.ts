@@ -57,7 +57,11 @@ export const enUSProjectMessages = {
   'browser.clearDataFailedDetail': 'This browser tab is no longer open.',
   'browser.clearStorageTitle': 'Clear browser storage?',
   'browser.clearStorageDescription':
-    'This clears cookies, local storage, IndexedDB, and cache for {profileLabel}. Browser tabs using the same storage boundary will be signed out.',
+    'Clear sign-in sessions, cache, and website data for the browser profile “{profileLabel}”. All tabs using this profile will be signed out of websites. Other profiles are not affected.',
+  'browser.clearStorageDescriptionDefault':
+    'Clear sign-in sessions, cache, and website data for the default browser profile. All tabs using the default profile will be signed out of websites. Other profiles are not affected.',
+  'browser.clearStorageDescriptionIsolated':
+    'Clear sign-in sessions, cache, and website data for this isolated browser profile. Tabs sharing this isolated profile will be signed out of websites. Other profiles are not affected.',
   'browser.clearStorageConfirm': 'Clear Storage',
 
   // ── browser: load errors (Chromium ERR_* / numeric code stay raw) ───────
@@ -301,7 +305,11 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'browser.clearDataFailedDetail': '这个浏览器页签已经关闭。',
   'browser.clearStorageTitle': '清除浏览器存储？',
   'browser.clearStorageDescription':
-    '这会清除 {profileLabel} 的 Cookie、本地存储、IndexedDB 和缓存。使用同一存储边界的浏览器标签页将被登出。',
+    '清除浏览器配置「{profileLabel}」的网站登录状态、缓存和网站数据。使用此配置的所有标签页将退出网站登录，其他配置不受影响。',
+  'browser.clearStorageDescriptionDefault':
+    '清除默认浏览器配置的网站登录状态、缓存和网站数据。使用默认配置的所有标签页将退出网站登录，其他配置不受影响。',
+  'browser.clearStorageDescriptionIsolated':
+    '清除当前独立浏览器配置的网站登录状态、缓存和网站数据。共用此独立配置的标签页将退出网站登录，其他配置不受影响。',
   'browser.clearStorageConfirm': '清除存储',
 
   // ── browser: load errors (Chromium ERR_* / numeric code stay raw) ───────

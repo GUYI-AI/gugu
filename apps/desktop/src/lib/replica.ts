@@ -406,13 +406,13 @@ const IDLE_KEY = ['read-model:idle'] as const
  * The reading for these arguments. `null` arguments = nothing to read yet (no subject): `unknown`, nothing requested.
  * Account models read only while the account's session is live; until then a snapshot from the last run is shown as is.
  */
-export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean } = {}): Reading<V> {
+export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean; retry?: number } = {}): Reading<V> {
   const current = useSyncExternalStore(subscribeAccount, accountSnapshot)
   const definition = definitions.get(model.name)!
   const k = args ? model.key(...args) : null
   // `read: false`: show what is there (a snapshot, another reader's value) without asking yet.
   const canRead = !!k && options.read !== false && (definition.scope === DEVICE || current.live)
-  const result = useQuery({ ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: canRead }, queryClient) as UseQueryResult<V>
+  const result = useQuery({ ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), ...(options.retry === undefined ? {} : { retry: options.retry }), enabled: canRead }, queryClient) as UseQueryResult<V>
   return k ? readingOf(result) : UNKNOWN
 }
 
