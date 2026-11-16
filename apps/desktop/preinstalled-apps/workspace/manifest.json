@@ -9,8 +9,8 @@
     }
   },
   "author": "咕咕",
-  "version": "0.2.81",
-  "apiVersion": 54,
+  "version": "0.2.84",
+  "apiVersion": 56,
   "platforms": ["desktop", "phone"],
   "entry": "index.html",
   "icon": "icon.png",
@@ -30,7 +30,6 @@
         "title": "文件",
         "icon": "icon.png",
         "opensFiles": { "chat": [".md", ".json", ".txt"], "session": ["*"] },
-        "fileIcons": { ".md": "md.png", ".json": "json.png" },
         "sideWidth": 480
       }
     ],

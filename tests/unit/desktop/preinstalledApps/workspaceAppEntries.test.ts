@@ -425,9 +425,10 @@ describe('workspace App as a file manager: the host picks the App', () => {
     // 对照:没有认领的文件(旧宿主没有这两个字段)照原名显示,画它的后缀,按种类上色(owner 10-28)。
     const plain = document.querySelector('[data-id="plan"] .file-open') as HTMLButtonElement
     expect(plain.querySelector('.file-name')!.textContent).toBe('plan.md')
+    // The host's tile (<gugu-file-mark>, API 56) by the full name: family and word come from the host's table.
     const markOf = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-mark`)!
-    expect([markOf('plan').textContent, markOf('plan').dataset.family]).toEqual(['MD', 'text'])
-    expect([markOf('photo').textContent, markOf('photo').dataset.family]).toEqual(['PNG', 'image'])
+    expect([markOf('plan').localName, markOf('plan').getAttribute('name'), markOf('plan').getAttribute('mime'), markOf('plan').hasAttribute('tile')]).toEqual(['gugu-file-mark', 'plan.md', 'text/markdown', true])
+    expect([markOf('photo').localName, markOf('photo').getAttribute('name')]).toEqual(['gugu-file-mark', 'photo.png'])
   })
 
   // owner 10-17:群文件夹里的 markdown 画成文件夹 App 的图标太怪。认领它的 App 没给这类文件声明图标(icon: null)时,
@@ -436,8 +437,8 @@ describe('workspace App as a file manager: the host picks the App', () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     changed({ kind: 'entries', entries: [{ ...entries[2], id: 'bare', claimedBy: { id: 'workspace', name: '文件夹', icon: null } }], gone: [] })
     const mark = document.querySelector('[data-id="bare"] .file-mark') as HTMLElement
-    expect(mark.tagName).toBe('SPAN')
-    expect(mark.textContent).toBe('JSON')
+    expect(mark.localName).toBe('gugu-file-mark')
+    expect(mark.getAttribute('name')).toBe(entries[2]!.name)
     expect(mark.title).toBe('文件夹')
   })
 

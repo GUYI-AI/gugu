@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 /**
  * @@@composer-toolbar-disclosure — composer 底排的**渐进披露**档位。
@@ -168,7 +169,11 @@ export function useToolbarDisclosure(): ToolbarDisclosure {
       cancelAnimationFrame(settle)
       // 变窄:低的档只会更放不下,从当前档接着判(多半一次读)。变宽:要回到 0 重爬(变宽了要能爬回来),
       // 但等宽度停下再爬一次 —— 侧栏一拉一收,宽度每帧都在变,每帧从 0 爬一遍是每帧好几次强制排版。
-      if (previous !== null && width < previous) setRecheck((n) => n + 1)
+      // Narrowing fits in this frame (flushSync): the observer runs before paint, and a deferred render paints the
+      // narrowed row with the wide row's labels (a fold that lands 180 px narrower in one frame drew them over each
+      // other). It cannot loop: the climb only goes up, at most MAX_LEVEL steps, each one narrower, and the width the
+      // levels change is not the row's own (the guard above returns on it).
+      if (previous !== null && width < previous) flushSync(() => setRecheck((n) => n + 1))
       else settle = requestAnimationFrame(() => { settle = requestAnimationFrame(restart) })
     })
     observer.observe(el)

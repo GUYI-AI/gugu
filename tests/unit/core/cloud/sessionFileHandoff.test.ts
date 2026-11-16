@@ -90,3 +90,14 @@ it('revokes prepared references if a later file fails before delivery', async ()
  await expect(uploadSessionFiles(endpoint, [{ file_path: file }, { file_path: file }], { agentId: 'sender', sessionId: 's', recipients: ['receiver'] })).rejects.toThrow(/permission revoked/)
  expect(prepared).toHaveLength(1); expect(revoked).toEqual(prepared)
 })
+it('the same file to the same recipients is one upload (it resumes); to other recipients it is another, so parallel hand-offs never share one',async()=>{
+ const root=await directory();const input=join(root,'original.bin');await writeFile(input,original)
+ const ids:string[]=[]
+ for (const recipients of [['b','a'],['a','b'],['a','c']]) {
+  const fx=fixture()
+  await uploadSessionFile(fx.endpoint,{file_path:input},{agentId:'sender',sessionId:'s',recipients})
+  ids.push(JSON.parse(String(fx.fetcher.mock.calls.find(([url])=>String(url).endsWith('/upload'))![1]?.body)).request_id)
+ }
+ expect(ids[0],'the same recipients in any order').toBe(ids[1])
+ expect(ids[2],'other recipients').not.toBe(ids[0])
+})

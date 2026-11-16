@@ -1,3 +1,4 @@
+import { codeQuote } from './code-quote.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
@@ -15,7 +16,7 @@ import { lineNumberSelection, previewSelectionLines, previewSelectionText } from
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -1824,8 +1825,8 @@ function shownName(entry) {
 }
 
 // A file's mark: the icon the App that opens it declared for its kind (entry.claimedBy.icon, worked out by the host) —
-// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else its suffix on a square coloured by its
-// family (list.js), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
+// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else the host's file tile (<gugu-file-mark>,
+// the same as on its output cards), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
 function fileMark(entry) {
   const icon = entry.claimedBy?.icon
   if (icon) {
@@ -1833,12 +1834,11 @@ function fileMark(entry) {
     mark.title = entry.claimedBy.name
     return mark
   }
-  const { label, family } = markOf(entry)
-  const mark = document.createElement('span')
-  mark.className = 'file-mark file-badge'
-  mark.dataset.family = family
-  mark.textContent = label
-  mark.setAttribute('aria-hidden', 'true')
+  // The full name (not displayName): its last suffix says the family.
+  const mark = Object.assign(document.createElement('gugu-file-mark'), { className: 'file-mark' })
+  mark.setAttribute('name', entry.name ?? '')
+  if (entry.contentType) mark.setAttribute('mime', entry.contentType)
+  mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
   if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
@@ -1870,7 +1870,6 @@ function thumbInto(el, entry) {
     if (!url) return
     el.style.backgroundImage = `url("${url}")`
     el.classList.add('has-thumb')
-    el.textContent = ''
   }
   el.thumbWanted = () => {
     if (!thumbs.has(key)) thumbs.set(key, new Promise((done) => {
@@ -3306,6 +3305,8 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   if (!cited) return
   try {
     await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
+    // Words picked go with the selection; a block cited from its menu had none on screen to drop.
+    if (!whole && picks.some((pick) => pick.text)) dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
@@ -3320,13 +3321,16 @@ async function send(current = state.current, picks = state.picks) {
   if (!cited || !at) return
   try {
     const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
-    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') {
-      document.getSelection()?.removeAllRanges()
-      showSelection([], null)
-    }
+    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// Cited or sent, the words are on their way: the selection and its bar go, as after a copy into somewhere else.
+function dropSelection() {
+  document.getSelection()?.removeAllRanges()
+  showSelection([], null)
 }
 
 // What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
@@ -3334,12 +3338,7 @@ async function send(current = state.current, picks = state.picks) {
 function citeOf(current, picks, whole = false) {
   if (!current || (!whole && !picks.length)) return null
   if (whole) return { text: '', refs: [{ file: current.entry }] }
-  const quote = (text) => {
-    if (current.file.type === 'text') return `> ${plainWords(text)}`
-    const body = text.replace(/\s+$/, '')
-    const fence = '`'.repeat(Math.max(3, ...(body.match(/`+/g) ?? []).map((run) => run.length + 1)))
-    return [fence, ...body.split('\n'), fence].map((line) => `> ${line}`).join('\n')
-  }
+  const quote = (text) => (current.file.type === 'text' ? `> ${plainWords(text)}` : codeQuote(text))
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
   if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }

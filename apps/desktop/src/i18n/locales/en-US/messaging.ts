@@ -1,5 +1,5 @@
 export default {
-  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}" },
+  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
   "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
   "agent": {
     "identity": {
@@ -266,6 +266,7 @@ export default {
     }
   },
   "chatList": {
+    "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
     "create": "New",
@@ -883,7 +884,6 @@ export default {
     "reference": { "loading": "Loading…", "unreadable": "A message you cannot see", "widgetUnreadable": "A widget you cannot see", "widgetRetracted": "This widget was retracted", "widgetElsewhere": "This widget is in another conversation", "locate": "Go to original", "locateActive": "Go to active widget", "previewQuote": "[Quote]", "previewMessage": "[Quoted message]" },
     "widgetUnavailable": { "missing": "App is not installed.", "disabled": "App is switched off.", "view": "This App view is unavailable.", "platform": "This App cannot run here." }
   },
-  "searchTrail": {"position": "“{{query}}” {{index}}/{{total}}", "positionNoWords": "{{index}}/{{total}}", "previous": "Previous", "next": "Next (⌘G)", "results": "Results", "close": "Close search"},
   "outbox": {
     "selectFileAgain": "Upload interrupted. Select the file again.",
     "sourceNotSent": "The original message was not sent. Retry it before forwarding again.",

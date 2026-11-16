@@ -1,5 +1,5 @@
 export default {
-  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行" },
+  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
   "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。", "sent": "已发送" },
   "agent": {
     "identity": {
@@ -265,6 +265,7 @@ export default {
     }
   },
   "chatList": {
+    "createAgent": "创建智能体",
     "addContact": "添加联系人",
     "clearSearch": "清除搜索",
     "create": "新建",
@@ -880,7 +881,6 @@ export default {
     "reference": { "loading": "正在读取…", "unreadable": "一条你看不到的消息", "widgetUnreadable": "一个你看不到的 widget", "widgetRetracted": "这个 widget 已撤回", "widgetElsewhere": "这个 widget 在别的会话中", "locate": "定位原消息", "locateActive": "定位活的 widget", "previewQuote": "[引用]", "previewMessage": "[引用消息]" },
     "widgetUnavailable": { "missing": "尚未安装 App。", "disabled": "App 已关闭。", "view": "此 App 视图不可用。", "platform": "此设备无法运行此 App。" }
   },
-  "searchTrail": {"position": "「{{query}}」第 {{index}}/{{total}} 条", "positionNoWords": "第 {{index}}/{{total}} 条", "previous": "上一条", "next": "下一条 (⌘G)", "results": "结果", "close": "退出搜索"},
   "outbox": {
     "selectFileAgain": "上传已中断，请重新选择文件。",
     "sourceNotSent": "原消息尚未送达，请先重试原消息再转发。",

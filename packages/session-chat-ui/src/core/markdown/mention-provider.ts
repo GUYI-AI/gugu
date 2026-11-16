@@ -35,13 +35,6 @@ export interface ChatMentionMeta {
   /** Harness identity retained for DOM inspection and host styling. */
   engine?: string;
   /**
-   * Optional CSS class for the pill icon (e.g. a devicon class like
-   * `devicon-react-original colored`). When supplied it is rendered as an
-   * `<i class={iconClass}>` to match a host icon set exactly; otherwise the
-   * built-in kind SVG is used.
-   */
-  iconClass?: string;
-  /**
    * Optional image URL for the pill icon. Hosts use this for provider-specific
    * assets that are not available as CSS classes.
    */
