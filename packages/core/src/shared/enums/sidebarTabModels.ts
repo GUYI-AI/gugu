@@ -1,5 +1,5 @@
 // 'assistant'(#7199 个人助理)只在手机壳里有:桌面上它是最左栏那一格打开的会话页视图(在 'tasks' 底下),❌ 进这个列表。
-export type SidebarTab = 'assistant' | 'tasks' | 'chats' | 'contacts' | 'settings'
+export type SidebarTab = 'assistant' | 'tasks' | 'chats' | 'contacts' | 'team' | 'settings'
 
 export const SIDEBAR_TABS: SidebarTab[] = ['tasks', 'chats', 'contacts', 'settings']
 

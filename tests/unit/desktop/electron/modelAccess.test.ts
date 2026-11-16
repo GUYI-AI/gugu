@@ -21,7 +21,7 @@ vi.mock('@gugu/core/cloud/config', () => ({
   getSupabaseUrl: () => 'https://db.example.test',
 }))
 
-import { listPlatformModels, resolveAgentModelLaunch } from '../../../../apps/desktop/electron/model-access'
+import { listPlatformModels, resolveAgentModelLaunch, issuePlatformModelAccess, renewPlatformModelAccess, revokePlatformModelAccess, checkpointPlatformModelAccess, modelAccessFailureReason } from '../../../../apps/desktop/electron/model-access'
 import { createLogger } from '../../../../apps/desktop/electron/lib/logger'
 import { parsePlatformReasoningEfforts } from '../../../../apps/desktop/src/session/shared/core/agents/platform-model'
 
@@ -376,4 +376,158 @@ describe('reasoning efforts from the directory (#6447)', () => {
     await expect(issuedCallableRoutes(['gpt-image-2'])).resolves.toEqual({})
     expect(warn).toHaveBeenCalledWith({ received: 'object' }, expect.stringContaining('not an object'))
   })
+})
+
+describe('fixed team model funding', () => {
+  const taskId = 'runtime-task-a'
+  const funding = { kind: 'team', team_id: 'team-a', member_id: 'member-a', task_id: taskId, unit_version: 2, locked_at: '2026-11-15T00:00:00Z' }
+  const teamAuth = { userId: 'principal-a', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'principal-a', session_id: 'auth-session-a', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }
+  const request = { authProvider: {} as never, agentUserId: 'agent-team-a', engineId: 'codex', modelId: 'model-a', protocol: 'openai-responses' as const, sessionId: taskId }
+  beforeEach(() => {
+    vi.stubEnv('GUGU_HOME', mkdtempSync(join(tmpdir(), 'gugu-team-access-')))
+    vi.stubEnv('GUGU_PLATFORM_MODELS_ENABLED', 'true')
+    coreMocks.requireRuntimeAuth.mockResolvedValue(teamAuth)
+  })
+  const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: teamAuth.userId, member_state: 'active', membership_revision: 9, stop_reason: null }
+  function issueReply(sessionId: string) {
+    return { session_id: sessionId, relay_url: 'https://gateway.example.test', token: 'synthetic-ticket', model: 'model-a', protocol: 'openai-responses', expires_at: '2099-11-15T01:00:00Z', funding }
+  }
+  it('sends the team context once per issue and retains task/funding during keep-from replacement and renewal', async () => {
+    let issued = 0
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      const body = JSON.parse(String(init?.body)); calls.push(body)
+      return new Response(JSON.stringify(body.action === 'renew' ? { expires_at: '2099-11-15T02:00:00Z', funding } : issueReply(`team-access-${++issued}`)))
+    })
+    const first = await issuePlatformModelAccess(request)
+    const next = await issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })
+    await renewPlatformModelAccess(request.authProvider, next.accessSessionId)
+    expect(calls[0]).toMatchObject({ action: 'issue', team_id: 'team-a', member_identity_id: teamAuth.userId, task_id: taskId, expected_membership_revision: 9 })
+    expect(calls[1]).toMatchObject({ action: 'issue', keep_from_session_id: first.accessSessionId, task_id: taskId })
+    expect(calls[0].idempotency_key).toMatch(/^[0-9a-f-]{36}$/)
+    expect(calls[1].idempotency_key).not.toBe(calls[0].idempotency_key)
+    expect(calls[2]).toEqual({ action: 'renew', session_id: next.accessSessionId })
+    expect(next.teamTask).toEqual(first.teamTask)
+  })
+  it('refuses reissue under a switched personal actor before making another request', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context } : issueReply('team-access-a'))))
+    const first = await issuePlatformModelAccess(request)
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ userId: 'personal-b', accessToken: 'personal-token' })
+    await expect(issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })).rejects.toThrow()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+  it('classifies structured team limits without exposing backend diagnostics', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context } : {
+      error: { code: 'credits_exhausted', reason_code: 'team_credits_exhausted', message: 'private diagnostic' },
+    }), { status: String(url).includes('team-billing') ? 200 : 409 }))
+    const error = await issuePlatformModelAccess(request).catch(error => error)
+    expect(error.reason_code).toBe('team_credits_exhausted')
+    expect(error.message).not.toContain('private diagnostic')
+    expect(modelAccessFailureReason(error)).toBe('team-credits-exhausted')
+  })
+  it('preserves session_ended for rotation without treating it as an exhausted team pool', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context }
+      : { reason: 'session_ended' }), { status: String(url).includes('team-billing') ? 200 : 409 }))
+    const error = await issuePlatformModelAccess(request).catch(error => error)
+    expect(error.reason).toBe('session_ended')
+    expect(error.reason_code).toBeUndefined()
+    expect(modelAccessFailureReason(error)).not.toMatch(/team-.*(?:cap|exhausted)/)
+  })
+  it('replays the exact persisted issue after response loss, even if the latest context revision and stop reason changed', async () => {
+    const calls: Record<string, unknown>[] = []
+    let latest: Record<string, unknown> = { ...context }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: latest }))
+      calls.push(JSON.parse(String(init?.body)))
+      if (calls.length === 1) throw new TypeError('Synthetic lost response')
+      return new Response(JSON.stringify(issueReply(`ticket-${calls.length}`)))
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toThrow()
+    latest = { ...context, membership_revision: 10, stop_reason: 'team_credits_exhausted' }
+    await issuePlatformModelAccess(request)
+    expect(calls[1]).toEqual(calls[0])
+    expect(calls[1].expected_membership_revision).toBe(9)
+    latest = { ...context }
+    await issuePlatformModelAccess(request)
+    expect(calls[2].idempotency_key).not.toBe(calls[1].idempotency_key)
+  })
+  it.each(['issue_intent_ended', 'issue_revision_conflict'])('ends the persisted issue only on authoritative terminal code %s', async code => {
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: { ...context, membership_revision: calls.length ? 10 : 9 } }))
+      calls.push(JSON.parse(String(init?.body)))
+      return calls.length === 1 ? new Response(JSON.stringify({ error: { code } }), { status: 409 }) : new Response(JSON.stringify(issueReply('new-ticket')))
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code })
+    await issuePlatformModelAccess(request)
+    expect(calls[1].idempotency_key).not.toBe(calls[0].idempotency_key)
+    expect(calls[1].expected_membership_revision).toBe(10)
+  })
+  it.each(['billing_unavailable', 'version_conflict'])('retains the pending UUID for a nonterminal %s response', async code => {
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      calls.push(JSON.parse(String(init?.body)))
+      return calls.length === 1 ? new Response(JSON.stringify({ error: { code } }), { status: code === 'billing_unavailable' ? 503 : 409 }) : new Response(JSON.stringify(issueReply('same-intent-ticket')))
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code })
+    await issuePlatformModelAccess(request)
+    expect(calls[1]).toEqual(calls[0])
+  })
+  it('retains the generated utility task ID along with the key across response loss', async () => {
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      const body = JSON.parse(String(init?.body)); calls.push(body)
+      if (calls.length === 1) throw new TypeError('Synthetic lost response')
+      return new Response(JSON.stringify({ ...issueReply('utility-ticket'), funding: { ...funding, task_id: body.task_id } }))
+    })
+    const utility = { ...request, sessionId: undefined }
+    await expect(issuePlatformModelAccess(utility)).rejects.toThrow()
+    const issued = await issuePlatformModelAccess(utility)
+    expect(calls[1]).toEqual(calls[0])
+    expect(issued.teamTask?.funding.task_id).toBe(calls[0].task_id)
+  })
+  it('does not use a pending issue receipt to bypass a currently disabled membership', async () => {
+    let issueCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: { ...context, member_state: issueCalls ? 'disabled' : 'active' } }))
+      issueCalls++; throw new TypeError('Synthetic lost response')
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toThrow()
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code: 'membership_disabled' })
+    expect(issueCalls).toBe(1)
+  })
+  it('refuses old live tickets after the same principal signs in with a different Auth session, but still settles them', async () => {
+    const calls: Record<string, unknown>[] = []
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      const body = JSON.parse(String(init?.body)); calls.push(body)
+      return new Response(JSON.stringify(body.action === 'issue' ? issueReply('session-bound-ticket') : { state: 'ended', settled: true }))
+    })
+    const first = await issuePlatformModelAccess(request)
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ ...teamAuth, accessToken: teamAuth.accessToken.replace(teamAuth.accessToken.split('.')[1], Buffer.from(JSON.stringify({ sub: teamAuth.userId, session_id: 'auth-session-b', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')) })
+    await expect(renewPlatformModelAccess(request.authProvider, first.accessSessionId)).rejects.toMatchObject({ code: 'team_task_auth_session_changed' })
+    await expect(issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })).rejects.toMatchObject({ code: 'team_task_auth_session_changed' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    await checkpointPlatformModelAccess(request.authProvider, first.accessSessionId)
+    await revokePlatformModelAccess(request.authProvider, first.accessSessionId)
+    expect(calls.slice(1).map(call => call.action)).toEqual(['checkpoint', 'revoke'])
+    const restarted = await issuePlatformModelAccess(request)
+    expect(restarted.teamTask?.authSessionId).toBe('auth-session-b')
+    expect(restarted.teamTask?.funding).toEqual(first.teamTask?.funding)
+    expect(calls.at(-1)?.idempotency_key).not.toBe(calls[0].idempotency_key)
+  })
+  it('retains an unacknowledged intent and refuses automatic replay under a new login session', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      throw new TypeError('Synthetic lost response')
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toThrow()
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ ...teamAuth, accessToken: `head.${Buffer.from(JSON.stringify({ sub: teamAuth.userId, session_id: 'auth-session-b', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` })
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code: 'team_task_auth_session_changed' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
 })

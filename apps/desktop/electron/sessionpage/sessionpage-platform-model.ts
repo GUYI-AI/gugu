@@ -68,11 +68,14 @@ import { hostCatalog, type HostCatalog } from '../../shared/host-localization'
 import { quoteShellArg } from '../session/main/utils/shellEscape'
 
 import { proxyPlatformCredentialRequest, withinCredentialDeadline } from './platform-credential-proxy'
+import { assertTeamTaskSession, readTeamModelContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from '../team-model-funding'
+import { requireRuntimeAuth } from '@gugu/core'
 
 const log = createLogger('sessionpage/platform-model')
 
 /** Sessions holding a platform token, so the token is released when the session ends. */
 const activeAccessSessions = new Map<string, {
+  teamTask?: TeamTaskIdentity
   accessSessionId: string
   authProvider: RuntimeAuthProvider
   /** 续期定时器;会话一结束就必须清掉,否则我们会替一个已经不存在的会话续命。 */
@@ -126,6 +129,7 @@ const activeAccessSessions = new Map<string, {
  * 没配置(测试、没有数据目录)时一切照旧。
  */
 export type PersistedRelaySession = {
+  teamTask?: TeamTaskIdentity
   /** conversation id */
   key: string
   accessSessionId: string
@@ -183,6 +187,7 @@ function persistRelaySession(sessionId: string): void {
   relayPersistence.sessions.put({
     key: sessionId,
     accessSessionId: held.accessSessionId,
+    ...(held.teamTask ? { teamTask: held.teamTask } : {}),
     credentialRoute: held.credentialRoute,
     ...(held.settingsPath ? { settingsPath: held.settingsPath } : {}),
     ...(held.credentialConfigPath ? { credentialConfigPath: held.credentialConfigPath } : {}),
@@ -276,6 +281,7 @@ async function restoreRelaySessions(input: RelayRestoreInput): Promise<RelayRest
     }
     credentialRoutes.set(record.credentialRoute, record.key)
     activeAccessSessions.set(record.key, {
+      ...(record.teamTask ? { teamTask: record.teamTask } : {}),
       accessSessionId: record.accessSessionId,
       authProvider: input.authProvider,
       // 令牌没落盘:置空并标「续期失败」,第一次有人来要票时 credentialForRuntimeRequest 以同一条会话重签。
@@ -415,6 +421,11 @@ async function proxyPlatformRequest(
       throw new PlatformCredentialUnavailableError('service-unavailable', error)
     }
   }
+  const teamRefusal = (error: unknown) => {
+    const reason = teamModelStopReason(error)
+    return { code: reason ? 'credits_exhausted' : 'team_access_denied', ...(reason ? { reason_code: reason } : {}),
+      message: reason ? credentialUnavailableCopy()[reason === 'team_credits_exhausted' ? 'teamCredits' : 'teamMonthlyCap'] : credentialUnavailableCopy().serviceUnavailable }
+  }
   await proxyPlatformCredentialRequest(request, response, {
     upstream: () => new URL(`${held.relayUrl.replace(/\/$/, '')}${suffix}${search}`),
     localOnlyHeaders: LOCAL_ONLY_REQUEST_HEADERS,
@@ -434,6 +445,25 @@ async function proxyPlatformRequest(
       }
       return next
     },
+    ...(held.teamTask ? {
+      refreshForbidden: true,
+      refusal: async (_status: number, retried: boolean) => {
+        try {
+          const auth = await requireRuntimeAuth(held.authProvider, 'team task refusal')
+          assertTeamTaskSession(auth, held.teamTask)
+          const context = await withinCredentialDeadline(readTeamModelContext(auth, fetch))
+          if (context.teamId !== held.teamTask!.funding.team_id || context.memberId !== held.teamTask!.funding.member_id
+            || context.memberIdentityId !== held.teamTask!.memberIdentityId) throw new TeamFundingError('team_identity_required')
+          if (context.stopReason) {
+            const error = new TeamFundingError('credits_exhausted', context.stopReason)
+            await tellCredentialRefusal(sessionId, new PlatformCredentialUnavailableError(modelAccessFailureReason(error), error))
+            return teamRefusal(error)
+          }
+          return retried ? teamRefusal(null) : null
+        } catch (error) { return teamRefusal(error) }
+      },
+      refusalError: teamRefusal,
+    } : {}),
     warn: event => log.warn({ sessionId, path: suffix, ...event, error: event.code }, event.kind === 'stream'
       ? '平台中转:网关中途掐断了回答,给 harness 的那条也当场断开'
       : '平台中转:连不上网关'),
@@ -485,7 +515,9 @@ async function ensureCredentialEndpoint(): Promise<{ baseUrl: string; secret: st
         if (unavailable && !response.headersSent) {
           await tellCredentialRefusal(sessionId, error)
           response.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-          response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', code: 'gugu_credential_unavailable', message: unavailable } }))
+          const reason = teamModelStopReason(error)
+          response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', code: reason ? 'credits_exhausted' : 'gugu_credential_unavailable',
+            ...(reason ? { reason_code: reason } : {}), message: unavailable } }))
           return
         }
         if (!response.headersSent) response.writeHead(502).end()
@@ -750,14 +782,20 @@ const CREDENTIAL_UNAVAILABLE_COPY: Record<ModelAccessFailureReason, PlatformCred
   'model-unavailable': 'modelUnavailable',
   'unreachable': 'unreachable',
   'service-unavailable': 'serviceUnavailable',
+  'team-monthly-cap-reached': 'teamMonthlyCap',
+  'team-credits-exhausted': 'teamCredits',
 }
 
 export class PlatformCredentialUnavailableError extends Error {
   readonly kind: PlatformCredentialUnavailableKind
+  readonly code?: 'credits_exhausted'
+  readonly reason_code?: import('@gugu/session-core/session-record/team-credits').TeamCreditStopReason
   constructor(readonly reason: ModelAccessFailureReason, cause: unknown) {
     super(`platform runtime credential could not be reissued: ${reason}`, { cause })
     this.name = 'PlatformCredentialUnavailableError'
     this.kind = CREDENTIAL_UNAVAILABLE_COPY[reason]
+    const team = teamModelStopReason(cause)
+    if (team) { this.code = 'credits_exhausted'; this.reason_code = team }
   }
 }
 
@@ -855,6 +893,8 @@ export function configurePlatformCredentialCopy(
 
 /** 给 agent 界面看的那一句;认不出的失败(会话已结束之类)返回 null,由调用方按内部错误处理。 */
 export function credentialUnavailableMessage(error: unknown): string | null {
+  const team = teamModelStopReason(error)
+  if (team) return credentialUnavailableCopy()[team === 'team_credits_exhausted' ? 'teamCredits' : 'teamMonthlyCap']
   return error instanceof PlatformCredentialUnavailableError ? credentialUnavailableCopy()[error.kind] : null
 }
 
@@ -892,6 +932,11 @@ export async function credentialForRuntimeRequest(sessionId: string): Promise<st
   if (!held?.credentialRoute) throw new Error('platform runtime credential session is not active')
 
   if (held.rotationPromise) await held.rotationPromise
+  // A still-valid gateway ticket cannot outlive the login session that authorized its team task.
+  if (held.teamTask) {
+    try { assertTeamTaskSession(await requireRuntimeAuth(held.authProvider, 'team task request'), held.teamTask) }
+    catch (cause) { throw new PlatformCredentialUnavailableError(modelAccessFailureReason(cause), cause) }
+  }
 
   // The helper/relay is the last wall-clock check before a harness sends a request. A stale timer
   // must never turn into a stale token: expiry and an observed renewal failure both rotate
@@ -901,7 +946,7 @@ export async function credentialForRuntimeRequest(sessionId: string): Promise<st
     const backoff = activeIssueBackoff(sessionId, held.agentUserId, held.modelId ?? null)
     if (backoff) {
       // 退避窗口内:还有没过期的令牌就先用着,没有就当场给出同一个原因 —— ❌ 不打控制面。
-      if (!usable()) throw backoff.error
+      if (!usable() || held.teamTask) throw backoff.error
     } else {
       try {
         if (!await rotatePlatformLease(sessionId)) {
@@ -926,13 +971,17 @@ export async function credentialForRuntimeRequest(sessionId: string): Promise<st
           { sessionId, kind: unavailable.kind, attempts, retryAt: new Date(retryAt).toISOString(), err: error },
           usable() ? '平台运行时令牌重新签发失败，暂继续使用当前未过期令牌' : '平台运行时令牌重新签发失败，退避后再试',
         )
-        if (!usable()) throw unavailable
+        if (!usable() || held.teamTask) throw unavailable
       }
     }
   }
   const current = activeAccessSessions.get(sessionId)
   const token = current?.token
   if (!token) throw new Error('platform runtime credential is unavailable')
+  if (current.teamTask) {
+    try { assertTeamTaskSession(await requireRuntimeAuth(current.authProvider, 'team task credential'), current.teamTask) }
+    catch (cause) { throw new PlatformCredentialUnavailableError(modelAccessFailureReason(cause), cause) }
+  }
   return token
 }
 
@@ -1237,6 +1286,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
       }
       : held.launch.platformProvider
     held.accessSessionId = replacement.accessSessionId
+    held.teamTask = replacement.teamTask
     held.token = replacement.token
     held.relayUrl = replacement.relayUrl
     noteMembershipLocked(sessionId, held, replacement.membershipLocked)
@@ -1954,6 +2004,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
   }
   if (credentialProxyRoute) credentialRoutes.set(credentialProxyRoute, input.sessionId)
   activeAccessSessions.set(input.sessionId, {
+    ...(launch.access.teamTask ? { teamTask: launch.access.teamTask } : {}),
     accessSessionId: launch.access.accessSessionId,
     authProvider: input.authProvider,
     token: launch.access.token,

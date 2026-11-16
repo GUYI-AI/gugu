@@ -37,6 +37,8 @@ const GUGU_REASONS: Record<GuguCatalogReason, GuguReasonCopy> = {
     action: 'switch-model',
   },
   'unknown': { copy: 'guguCatalog.reason.unknown', action: 'retry' },
+  'team-monthly-cap-reached': { copy: 'transcript.teamMonthlyCapReached', action: null },
+  'team-credits-exhausted': { copy: 'transcript.teamCreditsExhausted', action: null },
 };
 
 export function guguReasonCopy(kind: GuguCatalogReason): GuguReasonCopy {

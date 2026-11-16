@@ -147,7 +147,7 @@ export type RecordBoundary = { messageId?: string } & (
   /** 被打断（用户 ESC、进程被杀）。 */
   | { kind: 'turn_aborted' }
   /** 没做完：harness 自己记下的报错（claude 的 `isApiErrorMessage` 行）。`detail` = what the failing side recorded it said. */
-  | { kind: 'turn_failed'; creditExhausted?: true; detail?: string });
+  | { kind: 'turn_failed'; creditExhausted?: true; teamCreditReason?: import('./team-credits').TeamCreditStopReason; detail?: string });
 
 /**
  * 一条解码后的记录。`key` 是跨来源身份键：同一件事从两个来源各报一次也只算一次。
@@ -1008,6 +1008,8 @@ export type GuguCatalogReason =
   | 'membership-required'
   /** 选的咕咕模型下架了、或网关一条渠道都不卖它(服务端 `model_unavailable`,#7103):换个模型。 */
   | 'model-unavailable'
+  | 'team-monthly-cap-reached'
+  | 'team-credits-exhausted'
   /** 认不出的串(老版本宿主送来的原文):与 `service-unavailable` 同一句,❌ 原样显示。 */
   | 'unknown';
 
@@ -1030,6 +1032,7 @@ const LEGACY_GUGU_CATALOG_REASONS: ReadonlyArray<[string, GuguCatalogReason]> = 
 const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
+  'team-monthly-cap-reached', 'team-credits-exhausted',
 ]);
 
 /** 读一格 `catalogError` / `guguReason`:null = 没有要说的;其余一定落在某个码上。 */
