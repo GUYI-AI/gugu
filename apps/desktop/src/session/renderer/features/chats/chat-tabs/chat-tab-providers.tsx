@@ -8,7 +8,7 @@ import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { RailAppIcon } from '@/components/RailAppIcon';
 import { FileHostMark } from '@/components/appSlot/FileHostMark';
 import { openFileStorageSettings, useFileHost } from '@/lib/fileHost';
-import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
+import { extensionSurfaceStore, extensionTabTitle, type ExtensionSharedPresentation } from '@renderer/features/extensions/extension-surface-store';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { declaredMenuCommands, runExtensionCommand } from '@renderer/features/extensions/extension-commands';
@@ -97,14 +97,16 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/** A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name. */
+/**
+ * A panel tab's name as its strip says it: what its page called itself, else — a file's page — the file's name (the App
+ * opening it is no second name for it: waiting, opened, drawn, one name), else the App's tab title.
+ */
+export function panelPresentation(said: ExtensionSharedPresentation, item: PanelItem, folderName: string) {
+  const file = item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
+  return extensionTabTitle(said, isFolderItem(item) ? folderName : item.kind && !file ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title, file);
+}
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
-  const folderName = useChatFolderName();
-  return extensionTabTitle(
-    extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
-    isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
-    item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined,
-  );
+  return panelPresentation(extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)), item, useChatFolderName());
 }
 
 const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
