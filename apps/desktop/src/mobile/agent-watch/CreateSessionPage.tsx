@@ -349,7 +349,7 @@ function CreateOnMachine({
         const gugu = guguReasonInText(code)
         const attachmentError = files.length || attachmentAttempt
         const attachmentCopy = code === 'creation_attachments_pending' ? 'attachmentPending'
-          : code === 'creation_attachments_unconfirmed' ? 'attachmentUnconfirmed'
+          : code === 'creation_attachments_unconfirmed' || code === 'attachment_creation_unverified' ? 'attachmentUnconfirmed'
             : code === 'creation_attachments_account_changed' ? 'attachmentAccountChanged'
               : code === 'creation_attachments_original_missing' ? 'attachmentOriginalMissing' : null
         setCreateError(attachmentError ? attachmentCopy ? tFlow(attachmentCopy) : messageForUser(err) : phone ? describe(err) : code === 'harness_install_failed'
