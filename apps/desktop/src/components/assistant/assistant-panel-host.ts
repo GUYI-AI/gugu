@@ -23,8 +23,16 @@ const bridge: AssistantPanelBridge = {
       if (!token) throw new AssistantPanelError('signed-out','PANEL_SIGNED_OUT')
       return { token,chatId,ownerId,accountId: () => getRendererSession()?.user.id ?? null }
     }
-    // The snapshot is read through the `assistantPanel` replica (one read path; a read already on its way is shared).
-    const cloud = { ...assistantPanelCloud,snapshot: (id: string) => assistantPanel.fetch(id) }
+    // The snapshot is read through the `assistantPanel` replica (one read path). A read already on its way began before
+    // this ask — after a commit, before the write (I2): ❌ joined (its revision would be the next save's expected one);
+    // read now, and its answer joins the entry by revision (`merge`).
+    const cloud = { ...assistantPanelCloud,snapshot: async (id: string) => {
+      if (!assistantPanel.isFetching(id)) return assistantPanel.fetch(id)
+      const entry = assistantPanel.at(id)
+      const snapshot = await bridge.panelSnapshot(ownerId,id)
+      entry.set((shown) => (shown && BigInt(shown.revision) > BigInt(snapshot.revision) ? shown : snapshot))
+      return snapshot
+    } }
     return createAssistantPanelFiles({ ownerId,assistantId,deviceId,cloud,
       cache: assistantPanelReadCache(ownerId,assistantId),
       assertCurrent: () => assertAssistantPanelOwner(ownerId),

@@ -17,6 +17,15 @@ vi.mock('@/lib/realtimeChannel', () => ({
   unsubscribePrivateUserEventBus: () => undefined,
 }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }))
+// The panel files the host makes: the cloud client it hands them (its snapshot is the one a commit reads after).
+const files = vi.hoisted(() => ({ cloud: null as null | { snapshot: (id: string) => Promise<{ revision: string }> } }))
+vi.mock('@gugu/core/cloud/assistantPanelFiles', async (original) => {
+  const real = await original<typeof import('@gugu/core/cloud/assistantPanelFiles')>()
+  return { ...real, createAssistantPanelFiles: (input: Parameters<typeof real.createAssistantPanelFiles>[0]) => {
+    files.cloud = input.cloud as unknown as typeof files.cloud
+    return real.createAssistantPanelFiles(input)
+  } }
+})
 
 const { assistantPanel, assistantPanelReadCache } = await import('@/components/assistant/assistant-panel-replica')
 // The shell's half: the panel bridge (the cloud read) and the session-restore prefetch (C7).
@@ -56,6 +65,30 @@ it('a read or a write never puts back an older server revision than the one show
   // A removal the cloud confirmed at a later revision leaves at once.
   cache.forget('memory', 'newest', '7')
   expect(cache.peekSnapshot()).toMatchObject({ revision: '7', items: [] })
+})
+
+it('the panel files\' snapshot after a write does not join a read that began before it (I2)', async () => {
+  await vi.waitFor(() => expect(assistantPanel.peek('assistant').state).toBe('value'))
+  // The sign-in's reads have all landed.
+  await vi.waitFor(() => expect(assistantPanel.isFetching('assistant')).toBe(false))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await vi.waitFor(() => expect(assistantPanel.isFetching('assistant')).toBe(false))
+  // A read on its way (begun before the write).
+  let before!: (value: AssistantPanelSnapshot) => void
+  cloud.snapshot.mockReturnValueOnce(new Promise((resolve) => { before = resolve }))
+  void assistantPanel.refresh('assistant')
+  void assistantPanel.prefetch('assistant')
+  await vi.waitFor(() => expect(assistantPanel.isFetching('assistant')).toBe(true))
+  // The write landed (revision 4); the files ask the snapshot now.
+  cloud.snapshot.mockResolvedValueOnce(snap('4'))
+  const bridge = (window as unknown as { __GUGU_ASSISTANT_PANEL__: { files: (input: object) => unknown } }).__GUGU_ASSISTANT_PANEL__
+  bridge.files({ ownerId: 'owner', assistantId: 'assistant', chatId: 'dm', deviceId: 'home' })
+  const asked = files.cloud!.snapshot('assistant')
+  // The earlier read answers with what it saw before the write.
+  before(snap('3'))
+  expect((await asked).revision).toBe('4')
+  await vi.waitFor(() => expect(assistantPanel.isFetching('assistant')).toBe(false))
+  expect(assistantPanel.peek('assistant')).toMatchObject({ state: 'value', value: { revision: '4' } })
 })
 
 it('the on-device copy is the first value of a cold start (async local), then the read replaces it', async () => {
