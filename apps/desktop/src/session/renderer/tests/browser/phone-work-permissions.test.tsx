@@ -26,12 +26,12 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const host = vi.hoisted(() => ({ set: vi.fn(), supported: true, selected: ':danger-full-access', fail: false }))
+const host = vi.hoisted(() => ({ set: vi.fn(), supported: true, selected: ':danger-full-access', fail: false, review: false }))
 vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
   ...await original<typeof import('@/components/assistant/assistantTimelineClient')>(),
   conversationOptionClient: () => {
     const read = () => ({
-      mode: host.supported ? { selected: host.selected, available: [{ id: ':workspace', name: '编辑', description: '工作区权限' }, { id: ':danger-full-access', name: '完全访问', description: '保留原生权限含义' }] } : null,
+      mode: host.supported ? { selected: host.selected, available: [{ id: ':workspace', name: '编辑', description: '工作区权限' }, { id: ':danger-full-access', name: '完全访问', description: '保留原生权限含义' }, ...(host.review ? [{ id: 'auto-review', name: 'AI 帮我审', description: '原生审查' }] : [])] } : null,
       model: { selected: 'native-model', available: [{ id: 'native-model', name: 'Native Codex model' }] },
       effort: null,
       fast: null,
@@ -89,7 +89,7 @@ afterEach(() => {
   document.body.className = bodyClass
   if (bodyStyle === null) document.body.removeAttribute('style')
   else document.body.setAttribute('style', bodyStyle)
-  host.set.mockClear(); host.supported = true; host.selected = ':danger-full-access'; host.fail = false
+  host.set.mockClear(); host.supported = true; host.selected = ':danger-full-access'; host.fail = false; host.review = false
 })
 
 
@@ -148,4 +148,34 @@ it('does not invent permission choices when the host supplies no switchable mode
   expect(document.querySelector('[data-dimension="permission"]')).toBeNull()
   expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
   expect(host.set).not.toHaveBeenCalled()
+})
+
+it('carries an admitted native Auto option through Work and reflects only the accepted host mode', async () => {
+  host.review = true
+  await mount()
+  await openPermissions()
+  await page.getByRole('radio', { name: /AI 帮我审/ }).click()
+  await until('accepted Auto mode is shown in Work', () => document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent?.includes('AI 帮我审') === true)
+  expect(host.set).toHaveBeenCalledExactlyOnceWith('mode', 'auto-review')
+  expect(host.selected).toBe('auto-review')
+  expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
+})
+
+it('does not offer Auto in Work when the host excludes it', async () => {
+  await mount()
+  await openPermissions()
+  await expect.element(page.getByRole('radio', { name: /AI 帮我审/ })).not.toBeInTheDocument()
+  expect(host.set).not.toHaveBeenCalled()
+})
+
+it('retains the original mode when the host rejects Auto in Work', async () => {
+  host.review = true
+  host.fail = true
+  await mount()
+  await openPermissions()
+  await page.getByRole('radio', { name: /AI 帮我审/ }).click()
+  await until('Auto rejection is visible', () => document.body.textContent?.includes('Permission update rejected') === true)
+  expect(host.set).toHaveBeenCalledExactlyOnceWith('mode', 'auto-review')
+  expect(host.selected).toBe(':danger-full-access')
+  expect(document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent).toContain('完全访问')
 })

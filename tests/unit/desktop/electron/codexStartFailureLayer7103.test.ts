@@ -49,7 +49,7 @@ describe('#7103 Codex 起步失败按层分', () => {
       startupTimeoutMs: 500,
     })
     const failed = await session
-      .start(await root(), { tuiLoads: 'create', threadStart: { approvalsReviewer: 'user' } })
+      .start(await root(), { tuiLoads: 'create', threadStart: { unsupportedTuiField: 'user' } })
       .then(() => null, (error: unknown) => error)
     expect(failed).toBeInstanceOf(Error)
     expect(failed).not.toBeInstanceOf(HarnessStartupError)

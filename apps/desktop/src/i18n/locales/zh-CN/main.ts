@@ -298,6 +298,7 @@ export default {
         "plan": { "name": "只出方案", "desc": "只想不动手，不真的执行工具" },
         "read-only": { "name": "只读", "desc": "能看不能改，动手前问你;你在 harness 自己设置里放行过的工具除外" },
         "edit": { "name": "可改文件", "desc": "改文件不用问，其余危险操作仍会问" },
+        "ai-review": { "name": "AI 帮我审", "desc": "需要授权时交给 AI 审查。连续被拒达到上限时会停下来请你处理。" },
         "full-access": { "name": "全部放行", "desc": "跳过所有权限检查" }
       },
       "permissionDefaultHint": "不指定，按「可改文件」",

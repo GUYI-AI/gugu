@@ -569,6 +569,7 @@ export {
   type CodexPlatformAuthRequest,
   type CodexPlatformProviderBlock,
 } from './impl/codex/platform-model';
+export { claudeReviewSettings } from './impl/claude/auto-review';
 export { claudeAcpPlatformSessionMeta, claudeSessionFlagSettings, type ClaudeAcpPlatformSessionMeta } from './impl/claude/platform-model';
 export { materializePiModelConfig } from './impl/pi/session-bundle';
 // 宿主登记中继入口用的变量名 —— 只此一份,❌ 在 worker-manifest 里另写一个字面量。

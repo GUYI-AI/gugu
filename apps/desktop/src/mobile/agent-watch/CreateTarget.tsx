@@ -11,7 +11,7 @@ import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
 import { ComposerThinking, type ChatComposerProps, type ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
-import { harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
+import { createPermissionModes, harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
@@ -47,7 +47,8 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const [search, setSearch] = useState('')
   const modelButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
-  const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const baseSelectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const selectedHarness = baseSelectedHarness && configuration ? { ...baseSelectedHarness, permissionModes: createPermissionModes(baseSelectedHarness, configuration.models, configuration.modelsState, configuration.selection) } : baseSelectedHarness
   const existingEfforts = Object.entries(existingSession?.model?.effortOptions ?? {}).map(([id, option]) => ({ id, ...option }))
   const existingPermissions = existingSession?.model?.onPermissionModeChange
     ? Object.entries(existingSession.model.permissionModeOptions ?? {}) : []

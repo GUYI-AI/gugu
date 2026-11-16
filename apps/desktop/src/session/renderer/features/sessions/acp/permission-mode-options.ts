@@ -1,5 +1,6 @@
 import {
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   GUGU_PERMISSION_MODES,
   type GuguPermissionMode,
   isDestructivePermissionMode,
@@ -23,10 +24,14 @@ export function sessionPermissionModeOptions(
   options: Options | null,
   liveSetting?: Pick<LiveSettingCapability, 'channel'> | null,
   sessionModes?: 'permission' | 'none',
+  billing?: { route: 'own' | 'platform' | 'unknown'; modeMap?: ProviderPermissionModeMap },
 ): Options | null {
   if (sessionModes === 'none') return null;
   if (liveSetting?.channel === 'unsupported') return null;
-  return options;
+  if (!options || !billing) return options;
+  return Object.fromEntries(Object.entries(options).filter(([id]) => permissionModeSupportsBillingRoute(
+    classifyProviderPermissionMode(id, billing.modeMap), billing.modeMap, billing.route,
+  )));
 }
 
 /**
@@ -39,11 +44,12 @@ export function detachedPermissionModeOptions(
   tier: GuguPermissionMode | null,
   modeMap: ProviderPermissionModeMap | undefined
 ): { options: Options; selected: string } | null {
-  if (!tier || !modeMap) return null;
+  if (!tier || tier === 'ai-review' || !modeMap) return null;
   const selected = modeMap[tier]?.id;
   if (!selected) return null;
   const options: Options = {};
   for (const rung of GUGU_PERMISSION_MODES) {
+    if (rung === 'ai-review') continue;
     const id = modeMap[rung]?.id;
     if (id) options[id] = { name: id, destructive: isDestructivePermissionMode(id) };
   }
@@ -76,13 +82,14 @@ function reportedIdFor(
  * 所以:**声明了映射表就只摆它声明过的那几档**(id 仍是原生 id,发下去照样认);
  * **没声明表就一个字都不动** —— 猜着改一半正是混杂的来源。
  *
- * ⚠️ 收敛的代价:同归一档的其余原生档(claude 的 `auto` / `dontAsk`)不再单列。
+ * Native dontAsk remains a read-only alias. Eligible auto is a separate AI-review row, filtered by the host first.
  */
 /** 咕咕四档的显示名(下拉、确认框共用这一份)。 */
 export const PERMISSION_TIER_LABEL_KEYS = {
   plan: 'taskConfig.permissionPlan',
   'read-only': 'taskConfig.permissionReadOnly',
   edit: 'taskConfig.permissionEdit',
+  'ai-review': 'taskConfig.permissionAiReview',
   'full-access': 'taskConfig.permissionFullAccess',
 } as const satisfies Record<GuguPermissionMode, SessionMessageLookupKey>;
 
@@ -107,6 +114,10 @@ export function localizePermissionModeOptions(
     edit: {
       name: translate(PERMISSION_TIER_LABEL_KEYS.edit),
       description: translate('taskConfig.permissionEditHint'),
+    },
+    'ai-review': {
+      name: translate('taskConfig.permissionAiReview'),
+      description: translate('taskConfig.permissionAiReviewHint'),
     },
     'full-access': {
       name: translate(PERMISSION_TIER_LABEL_KEYS['full-access']),
