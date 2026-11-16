@@ -191,8 +191,13 @@ describe('share and invite surfaces use the approved roles without changing acti
     await until('the lookup sheet finished entering', () => dialog.getAnimations({ subtree: true }).every((animation) => animation.playState === 'finished'));
     expect(tier(textElement(dialog, t('groupInvite.joinTitle')))).toEqual([16, 24]);
     expect(tier(textElement(dialog, t('groupInvite.lookingUp')))).toEqual([14, 20]);
-    await act(async () => lookup.resolve({ status: 'lookup_error', group: null }));
-    expect(tier(textElement(dialog, t('groupInvite.lookupFailed')))).toEqual([14, 20]);
+    // A failed lookup is a rejection (contactsService.lookupPublicGroupInvite throws); the dialog says so, with a retry.
+    await act(async () => lookup.reject(new Error('lookup_public_group failed')));
+    const failed = [...dialog.querySelectorAll<HTMLElement>('div')].findLast((element) => element.textContent?.startsWith(t('groupInvite.lookupFailed')));
+    expect(failed, t('groupInvite.lookupFailed')).toBeTruthy();
+    expect(tier(failed!)).toEqual([14, 20]);
+    expect(t('common.retry')).not.toBe('common.retry');
+    expect(failed!.querySelector('button')?.textContent).toBe(t('common.retry'));
     const close = dialog.querySelector<HTMLButtonElement>(`[aria-label="${t('common.close')}"]`)!;
     expect(close.getBoundingClientRect().height).toBe(32);
     await userEvent.click(close);
