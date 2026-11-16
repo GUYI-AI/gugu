@@ -65,7 +65,8 @@ async function mount(sessionId:string,entry:string|null,full=false,width=390,the
  const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'})]
  publishChatSummaries(chats);dispose=installOwnedAgentEntry({open:()=>false,owns:()=>true})
  publishDirectoryDevices([device('qa-device',[],{is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
- harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'16px'})
+ // The production full screen already supplies its body inset; only isolated controls need a fixture inset.
+ harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:full?'0':'16px'})
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
 afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
@@ -85,13 +86,22 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  const topic:TopicSummary={chat_id:'long-room-topic',name:'这是一个必须在菜单里完整显示而不是铺到输入框菜单栏里的话题名称',source_message_id:'topic-anchor',creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}
  actions.topics=[topic]
  await mount('room-task','chat:room',true)
+ await vi.waitFor(()=>{
+  const button=harness!.container.querySelector<HTMLElement>('[data-testid="phone-room-topics"]')
+  expect(button,harness!.container.innerHTML).not.toBeNull()
+  expect(button!.getBoundingClientRect().width).toBeGreaterThan(0)
+  expect(button!.getBoundingClientRect().height).toBeGreaterThan(0)
+ },{timeout:10000})
  const trigger=harness!.container.querySelector<HTMLButtonElement>('[data-testid="phone-room-topics"]')!
  expect(trigger.textContent).toBe('话题')
  expect(trigger.getAttribute('aria-expanded')).toBe('false')
  expect(trigger.querySelectorAll('svg')).toHaveLength(1)
  const box=trigger.getBoundingClientRect(),icon=trigger.querySelector('svg')!.getBoundingClientRect()
  await page.elementLocator(trigger).click({position:{x:icon.left+icon.width/2-box.left,y:icon.top+icon.height/2-box.top}})
- expect(trigger.getAttribute('aria-expanded')).toBe('true')
+ await vi.waitFor(()=>{
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  expect(document.querySelector('[data-testid="phone-room-controls-sheet"] .gg-phone-room-topic-name')?.textContent).toBe(topic.name)
+ },{timeout:10000})
  const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
  const name=panel.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
  expect(name.textContent).toBe(topic.name)
