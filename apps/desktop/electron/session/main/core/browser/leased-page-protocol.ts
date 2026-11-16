@@ -15,6 +15,7 @@ export function leasePageProtocol(contents: WebContents, options: { ready: Promi
       input.sent(method, params, sessionId, native);
       if (!commands.signal.aborted) {
         const call = signal && lifetimes.get(signal);
+        if (call?.aborted) { feedback.invalidate(); return; }
         if (call && !watched.has(call)) {
           const stop = feedback.followCall(call);
           const ended = () => watched.delete(call);

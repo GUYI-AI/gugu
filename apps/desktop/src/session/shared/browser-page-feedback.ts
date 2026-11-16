@@ -87,7 +87,7 @@ export class BrowserPageFeedback {
       : method === 'Input.insertText' ? '输入' : method === 'Input.dispatchKeyEvent' ? '按键'
         : method === 'Page.navigate' ? '打开网页' : method === 'Page.reload' ? '刷新网页' : '查看网页';
     const id = `dispatch-${++this.serial}`, revision = this.revision;
-    if (pointer) this.cursor = undefined;
+    if (pointer) { this.cursor = undefined; if (params.type === 'mousePressed') this.gesture = undefined; }
     this.at = undefined; this.action = { id, label: `正在${verb}`, phase: 'running' }; this.changed(); this.correlate(this.operation()!.id, revision);
     void native.then(() => {
       if (this.revision !== revision || this.action?.id !== id) return;
@@ -112,7 +112,7 @@ export function browserFrameFeedback(before: Snapshot, after: Snapshot, width: n
   if (before.stamp !== after.stamp || before.target.id !== after.target.id || before.target.revision !== after.target.revision) return undefined;
   const cursor = after.cursor && after.cursor.x < width && after.cursor.y < height ? after.cursor : undefined;
   return { target: after.target,
-    ...(cursor ? { cursor } : {}), ...(after.action ? { action: after.action } : {}) };
+    ...(cursor ? { cursor } : {}), ...(after.action?.phase === 'running' ? { action: after.action } : {}) };
 }
 
 /** Browser-generated monotonic frame time, in the same domain as Performance.Timestamp. No receipt-time guessing. */
