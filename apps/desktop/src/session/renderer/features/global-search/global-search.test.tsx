@@ -9,6 +9,7 @@ import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
 import { publishChatSummaries, publishContactSummaries } from '@/lib/chatSummariesBridge'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { takeTaskReveal } from '@/hooks/useSourceMessageReveal'
+import { takeFlashWords } from '@/lib/sourceMessageReveal'
 import type { TaskTurnHit } from '@shared/core/search'
 import { GlobalSearch } from './global-search'
 import { messageKinds } from './use-global-search'
@@ -518,6 +519,7 @@ describe('global search panel', () => {
     await render('回滚')
     await act(async () => options()[1]!.click())
     expect(Object.keys(sessionSnapshot()!).sort()).toEqual(['chips', 'facet', 'selectedId', 'text'])
+    expect(takeFlashWords(OLD), 'its words wait for that message\'s flash').toBe('回滚')
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()

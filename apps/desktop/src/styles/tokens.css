@@ -1495,11 +1495,23 @@ body.barcode-scanner-active #root {
   0%, 18% {
     background: var(--accent-tint-row);
     box-shadow: 0 0 0 2px var(--accent-glow-soft);
+    --msg-src-flash-words: var(--text-selection);
   }
   100% {
     background: transparent;
     box-shadow: 0 0 0 2px transparent;
+    --msg-src-flash-words: transparent;
   }
+}
+/* 从搜索结果跳来时，命中词在这一行里标出来，随整行一起淡掉(MessageRow 只在闪的期间挂 ::highlight)。
+   注册成 <color> 才能插值淡出；::highlight 从所在元素继承自定义属性。 */
+@property --msg-src-flash-words {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+::highlight(gugu-search-hit) {
+  background-color: var(--msg-src-flash-words);
 }
 .msg-src-flash {
   border-radius: var(--radius-control);
