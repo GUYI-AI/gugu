@@ -432,7 +432,7 @@ describe('making, moving, uploading, deleting', () => {
     expect($('conflicts').hidden).toBe(false)
     await until('the remaining actions are enabled', () => !$('conflict-list').querySelector<HTMLButtonElement>('button')!.disabled)
     ;[...$('conflict-list').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '两个都留')!.click()
-    await until('both explicit choices completed', () => $('conflicts').hidden)
+    await until('both explicit choices completed', () => $('conflicts').hidden === true)
     expect(ENTRIES.some(entry => entry.id === 'deal2')).toBe(true)
     expect(ENTRIES.some(entry => entry.id === 'other2')).toBe(true)
   })
