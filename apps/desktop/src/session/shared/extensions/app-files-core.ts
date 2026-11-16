@@ -1171,17 +1171,20 @@ export function createAppFiles(platform: FilesPlatform) {
 
     groupChange,
 
-    /** One of them, as `openTarget` answers for a page: what to open, and what kind of file it is. */
-    async groupFile(chatId: string, itemId: string) {
+    /**
+     * One of them, as `openTarget` answers for a page: what to open, and what kind of file it is. `chatId` omitted (a
+     * link names only the file): the chat is the file's own, in the answer.
+     */
+    async groupFile(chatId: string | undefined, itemId: string) {
       const local = await localRevision(String(itemId));
       if (local) {
-        if (local.chat_id !== chatId) throw new AppFileError('not-found', 'No such file in this chat');
-        return { chatId, itemId: local.item_id!, name: local.file_name, typedName: typedFileName({ name: local.file_name, contentType: local.content_type }), file: { document: false, contentType: local.content_type, version: local.version!, size: local.size_bytes } };
+        if (chatId !== undefined && local.chat_id !== chatId) throw new AppFileError('not-found', 'No such file in this chat');
+        return { chatId: local.chat_id!, itemId: local.item_id!, name: local.file_name, typedName: typedFileName({ name: local.file_name, contentType: local.content_type }), file: { document: false, contentType: local.content_type, version: local.version!, size: local.size_bytes } };
       }
       const { token, userId } = await platform.account();
       const row = await itemById(token, String(itemId), userId);
-      if (row && row.chat_id !== chatId) chatId = await resourceChatIdOf(token, chatId, userId);
-      if (!row || row.chat_id !== chatId) throw new AppFileError('not-found', 'No such file in this chat');
+      if (row && chatId !== undefined && row.chat_id !== chatId) chatId = await resourceChatIdOf(token, chatId, userId);
+      if (!row || (chatId !== undefined && row.chat_id !== chatId)) throw new AppFileError('not-found', 'No such file in this chat');
       return { chatId: row.chat_id, itemId: row.id, name: row.filename, typedName: typedFileName({ name: row.filename, contentType: row.content_type }), file: { document: row.kind === 'document', contentType: row.content_type, version: row.version, size: row.size_bytes ?? 0 }, ...openingOf(row, userId) };
     },
 

@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, createElement, Fragment } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
 import { APP_OPEN_WITH_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
-import { ask, chatTabs, shownItem } from './chatTabsHarness'
+import { OpenSuperseded } from '../../../../apps/desktop/src/lib/guguLinks'
+import { askChat } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { ask, chatTabs, linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
  * #7257 (review 2, point 5): the file a group's panel ends on is the one asked last. Two pills clicked one after the other
  * (A, then B), each answered by the host when the test lets it go — in either order: the panel ends on B. So too when the
  * later ask is a file clicked in an App's list (`files.openWith`, its answer already in hand). The host's answers are
- * held open.
+ * held open. A pill is a file link: the shell asks the host once (`useLinkNavigation`) and hands the chat the answer; the
+ * earlier pill is told it was superseded (`OpenSuperseded`), not that it failed.
  */
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
@@ -45,19 +48,24 @@ const unopened = () => harness.container.querySelector('[data-testid="group-app-
 const settled = () => new Promise<void>((done) => setTimeout(done, 0))
 
 /** The host's answers, held until the test lets each go: `fail` answers it as the host's error. */
+/** The chat the pills' files are in: the host's answer names it (a link names only the file). */
+let fileChat = ''
 function holdAnswers() {
   const gates = new Map<string, (fail?: string) => void>()
   vi.mocked(appsHere!.groupFileOpener).mockImplementation(
-    (args: { chatId: string; itemId: string }) =>
-      new Promise((resolve) => gates.set(args.itemId, (fail) => resolve((fail ? { success: false, error: fail } : { success: true, data: detailOf(args.chatId, args.itemId) }) as never))),
+    (args: { chatId?: string; itemId: string }) =>
+      new Promise((resolve) => gates.set(args.itemId, (fail) => resolve((fail ? { success: false, error: fail } : { success: true, data: detailOf(fileChat, args.itemId) }) as never))),
   )
   return gates
 }
+const pills = new Map<string, Promise<unknown>>()
 async function clickPill(chatId: string, itemId: string, gates: Map<string, unknown>) {
-  await harness.render(chatTabs({ chatId }))
-  ask(chatId, { itemId, at: { slide: '1' } })
+  fileChat = chatId
+  await harness.render(linkShell({ chatId }))
+  pills.set(itemId, pill(itemId, { slide: '1' }))
   await until(`${itemId} is asked of the host`, () => gates.has(itemId))
 }
+const outcomeOf = (itemId: string) => pills.get(itemId)!.then(() => 'opened', (error: unknown) => error instanceof OpenSuperseded ? 'superseded' : `failed: ${String(error)}`)
 async function letGo(gates: Map<string, (fail?: string) => void>, itemId: string, fail?: string) {
   await act(async () => {
     gates.get(itemId)!(fail)
@@ -74,6 +82,8 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await until('the panel took B', () => on('race-1') === 'B')
     await letGo(gates, 'A')
     expect(on('race-1'), '对照:父提交在 A 的回答晚到时停在 A 上').toBe('B')
+    expect(await outcomeOf('A')).toBe('superseded')
+    expect(await outcomeOf('B')).toBe('opened')
   }, 30_000)
 
   it('A answered first, then B: A is no longer the latest ask by then — not shown; B', async () => {
@@ -84,6 +94,7 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     expect(on('race-2'), 'A is not the latest ask: its answer is not shown').toBe(null)
     await letGo(gates, 'B')
     expect(on('race-2')).toBe('B')
+    expect(await outcomeOf('A')).toBe('superseded')
   }, 30_000)
 
   it('the earlier one failing late says nothing over the later one', async () => {
@@ -95,6 +106,7 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await letGo(gates, 'A', 'the file is gone')
     expect(unopened()).toBe(null)
     expect(on('race-3')).toBe('B')
+    expect(await outcomeOf('A'), 'replaced before it failed: superseded, not the failure').toBe('superseded')
   }, 30_000)
 
   // A file clicked in an App's list comes as the chat shell hands it (MainLayout: its chat up, the host's answer with it).
@@ -118,5 +130,45 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     expect(on('race-5'), 'another chat\'s file is not opened here').toBe(null)
     await letGo(gates, 'P')
     expect(on('race-5'), '对照:11bd96dbf5 先加序号再核群,P 被丢，面板什么都不开').toBe('P')
+    expect(await outcomeOf('P')).toBe('opened')
+  }, 30_000)
+
+  // One order of asks per chat (chat-layouts `noteAsk`): an App's page opening a file here directly (`openWith`, no mailbox)
+  // is as much a later ask as one through it.
+  it('a pill waiting, then this chat\'s App page opens Y itself: Y, and the pill is superseded', async () => {
+    const gates = holdAnswers()
+    let openWith!: (detail: never) => void
+    fileChat = 'race-6'
+    await harness.render(linkShell({ chatId: 'race-6', exposeOpenWith: (fn) => { openWith = fn as never } }))
+    pills.set('A', pill('A', { slide: '1' }))
+    await until('A is asked of the host', () => gates.has('A'))
+    await act(async () => { openWith(detailOf('race-6', 'Y') as never); await settled() })
+    expect(on('race-6')).toBe('Y')
+    await letGo(gates, 'A')
+    expect(on('race-6'), 'A answered after Y was opened here: not opened over it').toBe('Y')
+    expect(await outcomeOf('A')).toBe('superseded')
+  }, 30_000)
+
+  it('a pill waiting, then another chat is asked something: the pill still opens', async () => {
+    const gates = holdAnswers()
+    await clickPill('race-7', 'A', gates)
+    act(() => askChat('race-7-elsewhere', { app: 'workspace' }))
+    await letGo(gates, 'A')
+    expect(on('race-7')).toBe('A')
+    expect(await outcomeOf('A')).toBe('opened')
+  }, 30_000)
+
+  // A chat's opener going away or another mounting is no ask of the person's: the waiting pill is not given up for it.
+  it.each(['unmounts', 'mounts'])('a pill waiting while another opener of the same chat %s: the pill still opens', async (change) => {
+    const gates = holdAnswers()
+    fileChat = 'race-8'
+    const shell = (second: boolean) => createElement(Fragment, null, linkShell({ chatId: 'race-8' }), second ? chatTabs({ chatId: 'race-8' }) : null)
+    await harness.render(shell(change === 'unmounts'))
+    pills.set('A', pill('A', { slide: '1' }))
+    await until('A is asked of the host', () => gates.has('A'))
+    await harness.render(shell(change === 'mounts'))
+    await letGo(gates, 'A')
+    expect(on('race-8')).toBe('A')
+    expect(await outcomeOf('A')).toBe('opened')
   }, 30_000)
 })
