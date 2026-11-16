@@ -56,21 +56,6 @@ export function useDetailedPlatformCatalog(wanted: boolean): Reading<PlatformCat
   return reading.state === 'value' && reading.error ? { state: 'error', error: reading.error } : { state: 'unknown' }
 }
 
-/**
- * The catalog's earlier names, registered without `persist` for one reason: a snapshot entry whose name has no model is
- * kept as "not registered yet" (its chunk may load later) and would lie in the account block for 30 days. Registered,
- * these names are judged like any model and, persisting nothing, their entries leave the snapshot at once. Never read.
- */
-// These registrations can be deleted once the snapshot's 30-day clean-up window has passed since platformCatalog shipped
-// (SNAPSHOT_MAX_AGE_MS in lib/replica.ts): by then no snapshot can still hold an entry under either name.
-for (const retired of ['platformModels', 'platformModelsV2']) {
-  replica({
-    name: retired,
-    scope: 'account',
-    read: () => Promise.reject(new Error(`${retired} is retired: read platformCatalog`)),
-  })
-}
-
 /** What one agent is set to use (desired / applied / the device's refusal), as the cloud row says. */
 export const agentModelSelection = replica({
   name: 'agentModelSelection',

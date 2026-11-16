@@ -72,15 +72,4 @@ describe('platformCatalog in the snapshot', () => {
     await catalog.fetch()
     expect(catalogDetailed((catalog.peek() as unknown as { value: never[] }).value)).toBe(true)
   })
-
-  it('the earlier names’ entries leave the snapshot when the module registers (❌ kept 30 days as "not registered yet")', async () => {
-    const at = Date.now()
-    const stale = Object.fromEntries(['platformModels', 'platformModelsV2'].map((name) => {
-      const key = [name, ACCOUNT]
-      return [hashKey(key), { key, value: [row(1)], at }]
-    }))
-    localStorage.setItem(BLOCK, JSON.stringify(stale))
-    await freshStart()
-    expect(Object.values(block()).map((entry) => entry.key[0])).toEqual([])
-  })
 })
