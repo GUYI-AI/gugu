@@ -20,8 +20,10 @@ import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { conversationLink, parseGuguLink } from '@gugu/core/shared/ui/guguLink'
 import { ToastContext } from '../../../../apps/desktop/src/components/toastContext'
+import { createRoot } from 'react-dom/client'
 import { clickElement, createNode, createReactHarness, message } from '../../../support/testHarness'
-import { chatOnScreen } from '../../../../apps/desktop/src/lib/onScreenChat'
+import { chatOnScreen, useReportChatOnScreen } from '../../../../apps/desktop/src/lib/onScreenChat'
+import { publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { askChat, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { APP_OPEN_WITH_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_COMPOSE_EVENT, APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
@@ -1283,6 +1285,62 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
     expect(openNativeConversation).not.toHaveBeenCalled()
   }
   expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: fileAnswer('F1', chatId), message: source })
+})
+
+// A link with no message of its own (a file link in a message's text) opens its file's tab early only in the chat the
+// person is looking at: the one holding the focus, on screen. Anything else reported on screen is no hint.
+describe('MainLayout: where a body link opens its waiting tab', () => {
+  const reporters: Array<() => void> = []
+  /** Something on screen reporting a chat (a chat block, the App's conversation column, QuickChat). */
+  function report(chatId: string) {
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    act(() => root.render(createNode(function Reporter() { useReportChatOnScreen(chatId); return null })))
+    reporters.push(() => act(() => root.unmount()))
+  }
+  const focus = (chatId: string | null) => publishSidebarChatView({ focusedChatId: chatId, groups: [], oneList: true })
+  afterEach(() => { reporters.splice(0).forEach((stop) => stop()); focus(null) })
+  const waitingIn = (chatId: string) => { const ask = takeChatAsk(chatId); return !!ask && 'unresolved' in ask }
+
+  it('on the task page with the App\'s conversation column on screen: nothing opens early there; the answer opens the file\'s chat', async () => {
+    chatStoreMock.chats = [{ id: 'column-chat', kind: 'dm' }, { id: 'file-group', kind: 'group' }] as never
+    fileOwner.mockResolvedValue({ data: { chat_id: 'file-group' }, error: null })
+    await renderMainLayoutWithToast()
+    report('column-chat')
+    focus('task-conversation')
+    let opened!: Promise<unknown>
+    act(() => { opened = openLinkTarget({ kind: 'file', itemId: 'F7' }); void opened.catch(() => undefined) })
+    expect(waitingIn('column-chat'), 'no waiting ask in the column\'s chat').toBe(false)
+    expect(sessionPageViewRequests.openChat).not.toHaveBeenCalledWith('column-chat', false, 'resource')
+    await act(async () => { await opened })
+    expect(sessionPageViewRequests.openChat.mock.calls).toEqual([['file-group', false, 'resource']])
+    expect(takeChatAsk('file-group')).toMatchObject({ itemId: 'F7', opener: { chatId: 'file-group' } })
+  })
+
+  it('one group on the chat page: its waiting tab is asked of it in the click\'s own task', async () => {
+    chatStoreMock.chats = [{ id: 'single-group', kind: 'group' }] as never
+    fileOwner.mockResolvedValue({ data: { chat_id: 'single-group' }, error: null })
+    await renderMainLayoutWithToast()
+    report('single-group')
+    focus('single-group')
+    let opened!: Promise<unknown>
+    act(() => { opened = openLinkTarget({ kind: 'file', itemId: 'F8' }); void opened.catch(() => undefined) })
+    expect(waitingIn('single-group')).toBe(true)
+    await act(async () => { await opened })
+  })
+
+  it('several chats side by side: the one holding the focus', async () => {
+    chatStoreMock.chats = [{ id: 'block-a', kind: 'group' }, { id: 'block-b', kind: 'group' }] as never
+    fileOwner.mockResolvedValue({ data: { chat_id: 'block-b' }, error: null })
+    await renderMainLayoutWithToast()
+    report('block-a'); report('block-b'); focus('block-a')
+    focus('block-b')
+    let opened!: Promise<unknown>
+    act(() => { opened = openLinkTarget({ kind: 'file', itemId: 'F6' }); void opened.catch(() => undefined) })
+    expect(waitingIn('block-a')).toBe(false)
+    expect(waitingIn('block-b')).toBe(true)
+    await act(async () => { await opened })
+  })
 })
 
 // An agent's file goes up beside its task (which may take a while): the host refusing it before that leaves no waiting

@@ -43,14 +43,12 @@ export function isChatOnScreen(chatId: string): boolean {
 }
 
 /**
- * 人正看着的那条会话(点下去的那一刻读):侧栏发布的 `focused` 摆在屏上就是它 —— 屏上几块并排时,指针按进一块
- * (onPointerDownCapture → focusScreenBlock → 导航到那条对话)就让它成了 `focused`。`focused` 不在报的里面时,取报的
- * 里面任一块(Map 的插入顺序:不是「最近报的」那块),只有屏上就一块时才必然是对的;屏上没有会话(任务页)= null。
+ * 人正看着的那条会话(点下去的那一刻读):握着焦点的那条(`focused`)摆在屏上才算 —— 屏上几块并排时,指针按进一块
+ * (onPointerDownCapture → focusScreenBlock → 导航到那条对话)就让它成了 `focused`。焦点不在一条摆着的会话上(任务页,
+ * 旁边的 App 会话列 / QuickChat 也报着;键盘激活、焦点没动)= null:❌ 从报着的几条里猜一条。
  */
 export function chatInView(focused: string | null): string | null {
-  const shown = [...shownByReporter.values()]
-  if (focused && shown.includes(focused)) return focused
-  return shown.at(-1) ?? null
+  return focused && [...shownByReporter.values()].includes(focused) ? focused : null
 }
 
 /** 这条会话此刻摆没摆在界面上,不论 App 在不在前台:人一回来就看得见它(比如那里一条发送失败的行)。 */

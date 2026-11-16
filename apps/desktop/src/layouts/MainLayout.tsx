@@ -317,6 +317,8 @@ function InnerLayout({
     return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
   }, [enterChat, openChatBlock, setActiveChatId, readChats])
   const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').AppDetailLink>()
+  /** The chat this shell shows (`shownChatId` below), read when a link opens. */
+  const shownChatRef = useRef<string | null>(null)
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
     openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
@@ -334,7 +336,9 @@ function InnerLayout({
       if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
       await (waiting ?? askFileOpen(chatId, target, source, opener))
     },
-    currentChat: () => chatInView(readSidebarChatView().focusedChatId),
+    // The chat holding the focus: the desktop's one list says which (several can be on screen); without it (the phone, one
+    // chat at a time) the chat this shell shows.
+    currentChat: () => { const view = readSidebarChatView(); return chatInView(view.oneList ? view.focusedChatId : shownChatRef.current) },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
     openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
     openProject: (projectId) => { setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('project', { projectId }) },
@@ -380,6 +384,7 @@ function InnerLayout({
     setNewProjectRequest((n) => n + 1)
   }, 'push'), [setActiveTab])
   const shownChatId = activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null
+  shownChatRef.current = shownChatId
   useReportChatOnScreen(shownChatId)
   // showSessionCreate already derives "closed" the instant activeTab leaves 'chats', but the underlying state must
   // reset too — otherwise switching back to chats later silently resurrects a create page the user never reopened.
