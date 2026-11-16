@@ -8,7 +8,6 @@ import {
 } from '@renderer/features/automations/session-schedule-format';
 import { sessionSchedules } from '@renderer/features/automations/automation-replicas';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
-import { Unknown } from '@/components/ui/Unknown';
 import type { Reading } from '@/lib/replica';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpcOn } from '@renderer/lib/ipc';
@@ -26,18 +25,17 @@ import { sessionComposerTrayTriggerClassName } from './session-composer-styles';
 import { SessionScheduleTimeEditor } from './session-schedule-time-editor';
 import type { TriggerConfig } from '@shared/core/automations/config';
 
-/** Whether the schedule's place is taken: by the chip, by its placeholder while unknown, or by the failure. */
+/** Taken by the chip or the failure; free while not known (most tasks have none: ❌ a placeholder that gives way). */
 export function scheduleSlotShown(reading: Reading<readonly SessionSchedule[]>): boolean {
-  return reading.state !== 'value' || reading.value.length > 0;
+  return reading.state === 'error' || (reading.state === 'value' && reading.value.length > 0);
 }
 
-/** The schedule's place: the chip, a chip-sized placeholder while unknown (❌ "no schedule"), or the failure. */
+/** The schedule's place, where `scheduleSlotShown`: the chip, or the failure with a retry. */
 export function SessionScheduleSlot({ machine, reading }: { machine: string | null; reading: Reading<readonly SessionSchedule[]> }) {
-  if (reading.state === 'unknown') return <Unknown className="h-5 w-32" />;
   if (reading.state === 'error') {
     return <RefreshFailed error={reading.error} onRetry={() => void sessionSchedules.refresh(machine ?? 'local')} />;
   }
-  return <SessionScheduleChip machine={machine} schedules={reading.value} />;
+  return reading.state === 'value' ? <SessionScheduleChip machine={machine} schedules={reading.value} /> : null;
 }
 
 /**
