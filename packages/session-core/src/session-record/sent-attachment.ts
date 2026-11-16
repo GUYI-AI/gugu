@@ -1,3 +1,4 @@
+import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
 import type { TranscriptItem } from '../acp/models/turns/turn';
 import { isGuguServer } from '../acp/models/turns/opened-outputs';
 import { sentMessageId } from './reply-process';
@@ -23,8 +24,7 @@ export function sentAttachmentOf(item: TranscriptItem): SentAttachment | null {
   if (!name?.trim()) return null;
   const chatId = typeof output.source_link === 'string' ? parseConversationLink(output.source_link)?.chatId : undefined;
   const mime = output.mime_type ?? output.mime ?? args.mime_type;
-  const kind = typeof mime === 'string' && mime ? (mime.startsWith('image/') ? 'image' : 'file')
-    : /\.(?:png|jpe?g|gif|webp|avif|bmp|svg|ico|heic)$/i.test(name) ? 'image' : 'file';
+  const kind = attachmentKind({ fileName: name, mimeType: typeof mime === 'string' ? mime : '' });
   // Resolve the authorized message first: it supplies both the folder and the pinned file revision.
   return { messageId: id, name, kind, href: sentAttachmentLink(id, chatId), ...(typeof args?.caption === 'string' && args.caption ? { caption: args.caption } : {}) };
 }

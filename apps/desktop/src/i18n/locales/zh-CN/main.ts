@@ -148,10 +148,7 @@ export default {
       "exportMarkdown": "导出为 Markdown"
     },
     "attachment": {
-      "add": "添加附件",
-      "remove": "移除 {{name}}",
-      "cancel": "取消上传 {{name}}",
-      "retry": "重传"
+      "add": "添加附件"
     },
     "tool": {
       "groupCount": "{{count}} 次工具调用",

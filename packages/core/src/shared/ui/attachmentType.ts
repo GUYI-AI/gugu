@@ -1,4 +1,4 @@
-import { resolveAttachmentMimeType } from '@gugu/core/shared/imageMime.mjs'
+import { resolveAttachmentMimeType } from '../imageMime.mjs'
 
 const extensions: Record<string, string> = {
   pdf: 'pdf', doc: 'word', docx: 'word', xls: 'excel', xlsx: 'excel', xlsm: 'excel',
@@ -24,3 +24,6 @@ export function attachmentTypeKey(file: { fileName: string; mimeType: string }):
   const extension = file.fileName.toLowerCase().split('.').pop() ?? ''
   return types[mime] ?? extensions[extension] ?? (mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : mime.startsWith('video/') ? 'video' : null)
 }
+
+/** Drawn as a picture or as a file: the same reading as the type label above. */
+export const attachmentKind = (file: { fileName: string; mimeType: string }): 'image' | 'file' => attachmentTypeKey(file) === 'image' ? 'image' : 'file'
