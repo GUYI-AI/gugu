@@ -201,10 +201,10 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
         if (!live) { void release?.(); return }
         setRead(done)
       },
-      async (error) => {
-        // A project file kept on a machine that is off now says so, from a fresh read of where it is kept.
-        const offline = error instanceof OfflinePreviewRead ? error.holder : source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
+      (error) => {
         if (!live) return
+        // The query already checked the holder afresh. Cancellation must not start another metadata read after sign-out.
+        const offline = error instanceof OfflinePreviewRead ? error.holder : null
         setWaitingFor(offline)
         setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
       },
