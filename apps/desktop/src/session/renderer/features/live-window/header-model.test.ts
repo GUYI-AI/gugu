@@ -33,6 +33,13 @@ describe.each(['desktop', 'phone'] as const)('%s header viewing', platform => {
     model.observe(chat, [picture('browser', 4)]);
     expect(model.getSnapshot().visible).toBe(false);
   });
+  it('keeps Browser before Computer even when Computer is discovered first', () => {
+    const model = new LiveWindowModel(platform); model.activate(chat);
+    model.observe(chat, [picture('computer', 1)]);
+    model.observe(chat, [picture('computer', 1), picture('browser', 2)]);
+    expect(model.getSnapshot().sources.map(source => source.kind)).toEqual(['browser', 'computer']);
+    expect(model.getSnapshot().source?.kind).toBe('browser');
+  });
   it('does not expose the icon in groups, topics or another conversation', () => {
     const model = new LiveWindowModel(platform); model.activate(chat); model.observe(chat, [picture('browser', 1)]);
     for (const conversationId of ['group', 'topic']) {

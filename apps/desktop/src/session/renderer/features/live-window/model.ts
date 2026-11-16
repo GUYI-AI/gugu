@@ -48,7 +48,8 @@ export class LiveWindowModel {
       this.entries.set(id, entry);
     } else entry.context = { ...context };
     const accepted = context.privateAgentChat ? incoming.filter(source => bound(context, source) && !!source.id) : [];
-    const next = accepted.map(source => ({ ...source, size: source.size && { ...source.size } }));
+    const next = accepted.map(source => ({ ...source, size: source.size && { ...source.size } }))
+      .sort((a, b) => Number(a.kind === 'computer') - Number(b.kind === 'computer'));
     // A completed turn still has its resource. A successful empty host list means it was actually closed.
     const newcomers = next.filter(source => source.status === 'operating' && !entry!.presentation.dismissedSourceIds.includes(source.id)
       && !entry!.sources.some(old => old.id === source.id && old.status === 'operating'));
