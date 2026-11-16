@@ -22,6 +22,18 @@ if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Diagnostic-only: bounded phase names and monotonic offsets, never payloads or identities.
+const diagnosticPhases = new Set<string>(["answer-applied", "answer-received", "browser-closed", "browser-spawn-called", "browser-spawned", "cleanup-entered", "first-wait-complete", "first-wait-entered", "frame-encoded", "http-module", "http-offer", "http-viewer", "input-driver-applied", "input-driver-entered", "input-result-received", "paint-one-received", "pixels-decoded", "viewer-answer-accepted", "viewer-answer-start", "viewer-channel-ready", "viewer-closed", "viewer-closed-error", "viewer-error", "viewer-frame-matched", "viewer-generation-received", "viewer-input-result", "viewer-script-started", "viewer-video-frame", "wait-timeout"]);
+const diagnosticSeen = new Set<string>();
+const diagnosticStart = performance.now();
+function mark(phase: string, rendererElapsedMs?: number): void {
+  if (!diagnosticPhases.has(phase) || diagnosticSeen.has(phase)) return;
+  diagnosticSeen.add(phase);
+  process.stderr.write('REAL_ELECTRON_FIXTURE_PHASE=' + JSON.stringify({ phase,
+    elapsedMs: performance.now() - diagnosticStart,
+    ...(rendererElapsedMs === undefined ? {} : { rendererElapsedMs }) }) + '\n');
+}
+
 void app.whenReady().then(async () => {
   const id = 'projection-media-native-fixture', service = extensionsService();
   const bundle = path.join(app.getPath('userData'), 'fixture-app');
@@ -58,7 +70,7 @@ void app.whenReady().then(async () => {
   await source.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0;background:rgb(26,96,190)"><textarea style="width:60px;height:20px"></textarea><script>document.querySelector("textarea").focus()</script>'));
   const publisher = await runtime.create({
     input: async (input, { signal }) => { signal.throwIfAborted(); assert.equal(input.kind, 'text');
-      if (input.kind === 'text') { inputCalls++; await source.webContents.insertText(input.text); } },
+      if (input.kind === 'text') { mark('input-driver-entered'); inputCalls++; await source.webContents.insertText(input.text); mark('input-driver-applied'); } },
     disconnect: async () => { disconnected++; }, close: () => { stopped = true; },
     refresh: async () => { await capture(); },
   });
@@ -74,14 +86,14 @@ void app.whenReady().then(async () => {
       const feed = bridge.mediaFeed(page, sourceId, bound, () => {
         const decode = createProjectionImageDecoder(nativeImage.createFromBuffer, { r: 0, g: 0, b: 0 });
         return async (frame, signal) => {
-          const lease = await decode(frame, signal); pixels.push(lease.data);
+          const lease = await decode(frame, signal); mark('pixels-decoded'); pixels.push(lease.data);
           const at = (80 * frame.width + 110) * 4; decoded.push([...lease.data.subarray(at, at + 4)]); return lease;
         };
       }, async (size, signal, onControl) => {
         const media = await openMediaProcess({ ...size, executable: process.env.GUGU_TEST_MEDIA_HELPER!,
           ffmpeg: process.env.GUGU_PROJECTION_FFMPEG!, fps: 10, bitrate: 500000, signal,
           onControl: raw => { const packet = JSON.parse(raw); if (packet.type === 'ack') viewerGeneration ||= packet.generation; onControl(raw); } });
-        return { ...media, async publish(sequence, data) { const receipt = await media.publish(sequence, data);
+        return { ...media, async publish(sequence, data) { const receipt = await media.publish(sequence, data); mark('frame-encoded');
           encoded.set(sequence, receipt.rtpTimestamp); return receipt; } };
       });
       feeds.set(feed.lease, feed); return feed.lease;
@@ -96,14 +108,22 @@ void app.whenReady().then(async () => {
     assert.ok(opened?.offer);
     server = createServer(async (request, response) => {
       try {
-        if (request.url === '/viewer.mjs') { response.setHeader('Content-Type', 'text/javascript'); response.end(fs.readFileSync(path.join(process.cwd(), 'apps/desktop/native/projection-media/web/viewer.mjs'))); return; }
-        if (request.url === '/offer') { response.end(JSON.stringify(opened.offer)); return; }
-        if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); return; }
+        if (request.url === '/viewer.mjs') { mark('http-module'); response.setHeader('Content-Type', 'text/javascript'); response.end(fs.readFileSync(path.join(process.cwd(), 'apps/desktop/native/projection-media/web/viewer.mjs'))); return; }
+        if (request.url === '/offer') { mark('http-offer'); response.end(JSON.stringify(opened.offer)); return; }
+        if (request.method !== 'POST') { if (request.url === '/') mark('http-viewer'); response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); return; }
         let data = '';
         for await (const chunk of request) { data += chunk; if (data.length > 128 * 1024) throw new Error('Fixture message too large'); }
-        if (request.url === '/answer') await signals.receive(context, { type: 'answer', id: opened.id, sdp: JSON.parse(data) });
-        else if (request.url === '/paint') paints.push(JSON.parse(data));
-        else if (request.url === '/result') outcomes.push(JSON.parse(data));
+        if (request.url === '/fixture-phase') {
+          try {
+            const value = JSON.parse(data);
+            if (typeof value?.phase === 'string' && value.phase.startsWith('viewer-')
+              && Number.isFinite(value.elapsedMs) && value.elapsedMs >= 0) mark(value.phase, value.elapsedMs);
+          } catch { /* A diagnostic packet must not become the pipeline's fault. */ }
+        } else if (request.url === '/answer') {
+          mark('answer-received'); await signals.receive(context, { type: 'answer', id: opened.id, sdp: JSON.parse(data) }); mark('answer-applied');
+        } else if (request.url === '/paint') {
+          paints.push(JSON.parse(data)); if (paints.at(-1)?.sequence === 1) mark('paint-one-received');
+        } else if (request.url === '/result') { outcomes.push(JSON.parse(data)); mark('input-result-received'); }
         else if (request.url === '/error') throw new Error(data);
         response.end('{}');
       } catch (error) { fault = error; response.statusCode = 400; response.end(String(error)); }
@@ -111,19 +131,22 @@ void app.whenReady().then(async () => {
     const listening = server;
     await new Promise<void>(resolve => listening.listen(0, '127.0.0.1', resolve));
     const address = server.address(); assert.ok(address && typeof address !== 'string');
+    mark('browser-spawn-called');
     browser = spawn(process.env.GUGU_TEST_CHROMIUM!, ['--headless=new', '--autoplay-policy=no-user-gesture-required',
       '--disable-dev-shm-usage', `--user-data-dir=${path.join(app.getPath('userData'), 'headless-viewer')}`, `http://127.0.0.1:${address.port}`], { stdio: ['ignore', 'ignore', 'pipe'] });
+    browser.once('spawn', () => mark('browser-spawned'));
     let stderr = '';
     browser.stderr?.on('data', data => { stderr = (stderr + data).slice(-4096); });
     const chromium = browser;
-    browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { exited = true; resolve(); }); });
+    browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { mark('browser-closed'); exited = true; resolve(); }); });
     const until = async (condition: () => boolean) => {
       const deadline = Date.now() + 12000;
       while (!condition()) { if (fault) throw fault; if (exited) throw new Error('Chromium exited: ' + stderr);
-        if (Date.now() > deadline) throw new Error('Pipeline timed out: ' + stderr); await pause(20); }
+        if (Date.now() > deadline) { mark('wait-timeout'); throw new Error('Pipeline timed out: ' + stderr); } await pause(20); }
     };
-    phase = 'first-paint';
+    phase = 'first-paint'; mark('first-wait-entered');
     await until(() => paints.some(paint => paint.sequence === 1) && outcomes.length > 0);
+    mark('first-wait-complete');
     const first = paints.find(paint => paint.sequence === 1)!;
     for (const [channel, wanted] of [26, 96, 190].entries()) assert.ok(Math.abs(first.rgb[channel]! - wanted) < 12, JSON.stringify(first));
     assert.equal(first.rtpTimestamp, encoded.get(1));
@@ -157,6 +180,7 @@ void app.whenReady().then(async () => {
     process.stdout.write('PROJECTION_PIPELINE_RESULT=' + JSON.stringify({ passed: true, ownership, device, paints, decoded, inputCalls, reused: pixels[0] === pixels[1],
       home: process.env.GUGU_HOME, userData: app.getPath('userData'), electron: process.versions.electron }) + '\n');
   }, async () => {
+    mark('cleanup-entered');
     try { await signals.dispose(); }
     finally {
       if (!exited) browser?.kill('SIGTERM'); await browserExit;
@@ -170,17 +194,23 @@ void app.whenReady().then(async () => {
 
 const html = `<!doctype html><meta charset="utf-8"><video autoplay muted playsinline></video><canvas width="128" height="96"></canvas><script type="module">
 import {openProjectionVideo} from '/viewer.mjs';
+const phaseStart=performance.now(), phaseSeen=new Set();
+const trace=phase=>{if(phaseSeen.has(phase))return;phaseSeen.add(phase);
+ void fetch('/fixture-phase',{method:'POST',body:JSON.stringify({phase,elapsedMs:performance.now()-phaseStart})}).catch(()=>{});};
 (async()=>{
+ trace('viewer-script-started');
  let generation, sent=false;
  const video=document.querySelector('video'), ctx=document.querySelector('canvas').getContext('2d');
- await openProjectionVideo({video,offer:await(await fetch('/offer')).json(),
- answer:async sdp=>{const response=await fetch('/answer',{method:'POST',body:JSON.stringify(sdp)});if(!response.ok)throw new Error(await response.text())},
- onControl:raw=>{const value=JSON.parse(raw);if(value.type==='projection-generation')generation=value.generation;
- else if(value.type==='input-result')void fetch('/result',{method:'POST',body:raw})},
- onFrame:(frame,send)=>{if(!frame||!generation)return;ctx.drawImage(video,0,0,128,96);const p=ctx.getImageData(110,80,1,1).data;
+ if(typeof video?.requestVideoFrameCallback==='function')video.requestVideoFrameCallback(()=>trace('viewer-video-frame'));
+ const viewer=await openProjectionVideo({video,offer:await(await fetch('/offer')).json(),
+ answer:async sdp=>{trace('viewer-answer-start');const response=await fetch('/answer',{method:'POST',body:JSON.stringify(sdp)});if(!response.ok)throw new Error(await response.text());trace('viewer-answer-accepted')},
+ onControl:raw=>{const value=JSON.parse(raw);if(value.type==='projection-generation'){generation=value.generation;trace('viewer-generation-received');}
+ else if(value.type==='input-result'){trace('viewer-input-result');void fetch('/result',{method:'POST',body:raw})}},
+ onFrame:(frame,send)=>{if(!frame||!generation)return;trace('viewer-frame-matched');ctx.drawImage(video,0,0,128,96);const p=ctx.getImageData(110,80,1,1).data;
  send(JSON.stringify({type:'ack',generation,frame:frame.sequence}));
  void fetch('/paint',{method:'POST',body:JSON.stringify({...frame,rgb:[p[0],p[1],p[2]]})});
  if(!sent){sent=true;send(JSON.stringify({type:'input',generation,frame:frame.sequence,sequence:1,input:{kind:'text',text:'整链中文🙂'}}))}}
- });
-})().catch(error=>fetch('/error',{method:'POST',body:String(error)}));
+ });trace('viewer-channel-ready');
+ void viewer.closed.then(()=>trace('viewer-closed'),()=>trace('viewer-closed-error'));
+})().catch(error=>{trace('viewer-error');return fetch('/error',{method:'POST',body:String(error)})});
 </script>`;
