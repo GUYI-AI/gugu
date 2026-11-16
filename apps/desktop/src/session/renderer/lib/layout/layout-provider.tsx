@@ -96,31 +96,10 @@ export function sidebarRailTextOpacity(progress: number): number {
   return clamp01(2 * progress - 1);
 }
 
-/** 侧栏里文字跟着它淡入淡出的那个 CSS 变量(内容层上设,left-sidebar 里各段文字读)。 */
-export const SIDEBAR_TEXT_OPACITY_VAR = '--gg-sidebar-text';
-
-/**
- * #2548 the open/close progress itself (0 = the rail, 1 = expanded), as a CSS variable on the content layer: geometry that
- * has to move with everything else (the 「+」 sliding onto the avatars' axis, 创建智能体 narrowing) reads it. No rail = 1.
- */
-export const SIDEBAR_PROGRESS_VAR = '--gg-sidebar-progress';
-
-/**
- * #2548 on the rail a row's unread count sits on the avatar's top-right corner. It fades in near the end of collapsing
- * (mock v18: 快到头时头像右上角的数字淡入) and out first when expanding: the mirror of the text, offset so that the two
- * are both 0 around SIDEBAR_RAIL_LAYOUT_BELOW, where the count changes place.
- */
-export function sidebarRailBadgeOpacity(progress: number): number {
-  return clamp01((0.4 - progress) * 3);
-}
-
-/** The CSS variable the rail's corner badge reads (same layer as the text one). */
-export const SIDEBAR_BADGE_OPACITY_VAR = '--gg-sidebar-badge';
-
 /**
  * Below this progress the rows are laid out as the rail (the count on the avatar's corner, row bodies inert). The text
- * (sidebarRailTextOpacity) and the corner badge (sidebarRailBadgeOpacity) are both invisible around it, so the switch
- * between the two places is never seen: nothing jumps when collapsing starts.
+ * (sidebarRailTextOpacity) is invisible around it, so the names never jump. The corner count fades in when it takes its
+ * place (left-sidebar) and leaves with the rail layout when expanding.
  */
 export const SIDEBAR_RAIL_LAYOUT_BELOW = 0.45;
 
@@ -441,6 +420,32 @@ export function useLeftRailLayout(): boolean {
   const [railLayout, setRailLayout] = useState(() => sidebarRailLayout(leftProgress.get()));
   useMotionValueEvent(leftProgress, 'change', (progress) => setRailLayout(sidebarRailLayout(progress)));
   return leftRail > 0 && railLayout;
+}
+
+/**
+ * #2548 an element of the sidebar that moves with its open/close progress (0 = the rail, 1 = expanded; 1 without a rail):
+ * `follow` writes the element's own style for a progress, on mount and on every change. Each element is written on its own
+ * (opacity, padding, a mask), ❌ a CSS variable on the content layer: a custom property inherits, so writing one there each
+ * frame restyled every element under it (~37k with the rows mounted, 210–790 ms a frame), read or not.
+ */
+export function useSidebarProgressFollow<T extends HTMLElement>(follow: (element: T, progress: number) => void): RefObject<T | null> {
+  // Outside a workspace layout (a page without one) the element is drawn expanded.
+  const layout = useContext(WorkspaceLayoutContext);
+  const leftProgress = layout?.leftProgress;
+  const leftRailWidth = layout?.leftRailWidth;
+  const ref = useRef<T | null>(null);
+  const followRef = useRef(follow);
+  followRef.current = follow;
+  useLayoutEffect(() => {
+    const write = () => {
+      const rail = leftRailWidth?.get() ?? 0;
+      if (ref.current) followRef.current(ref.current, rail > 0 && leftProgress ? clamp01(leftProgress.get()) : 1);
+    };
+    write();
+    const off = [leftProgress?.on('change', write), leftRailWidth?.on('change', write)];
+    return () => off.forEach((stop) => stop?.());
+  }, [leftProgress, leftRailWidth]);
+  return ref;
 }
 
 export function WorkspaceLayoutContextProvider({ children }: { children: ReactNode }) {

@@ -12,12 +12,11 @@ import { requestShellChatAction, useProductTourOnScreen, useSidebarNotifications
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { SIDEBAR_PROGRESS_VAR, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { sidebarRailTextOpacity, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { cn } from '@renderer/utils/utils';
 import { LOCAL_SESSION_ENGINE_LABEL } from '@shared/core/session-import/session-import';
 import { AddProjectMenuItems } from './add-project-menu-items';
 import { nextSidebarIntro, SIDEBAR_INTRO_STEPS, sidebarIntroShown, type SidebarIntroEvent } from './sidebar-intro';
@@ -54,18 +53,20 @@ export function runOneListCreateAction(action: Exclude<OneListCreateAction, 'new
 const CREATE_MENU_ICON = { 'create-group': Users, 'new-project': FolderPlus, 'add-contact': UserRound } as const;
 const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project': 'task.projectNew', 'add-contact': 'sidebar.addContact' } as const;
 
-/** The open/close progress on the content layer (workspace-layout); 1 where there is none (expanded). */
-const PROGRESS = `var(${SIDEBAR_PROGRESS_VAR}, 1)`;
-
 /**
  * The top row's geometry as a function of the open/close progress p (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上):
  * side padding 12 → 20 and the gap 4 → 0 as p goes 1 → 0, 创建智能体 takes what is left (0 on the rail), so the 「+」 (32)
  * slides from the right end onto the avatars' axis (20 + 16 = 36) with the same progress as everything else.
  */
-const ONE_LIST_TOP_STYLE = {
-  paddingInline: `calc(20px - 8px * ${PROGRESS})`,
-  gap: `calc(4px * ${PROGRESS})`,
-} as const;
+function followTopRow(row: HTMLElement, progress: number) {
+  row.style.paddingInline = `${20 - 8 * progress}px`;
+  row.style.gap = `${4 * progress}px`;
+}
+
+/** What the rail hides along with the names: it takes their opacity (sidebarRailTextOpacity), on its own element. */
+function followNames(element: HTMLElement, progress: number) {
+  element.style.opacity = String(sidebarRailTextOpacity(progress));
+}
 
 /**
  * 创建智能体 (what 新建任务 does) and the 「+」 menu. Collapsed, the 「+」 is all the top keeps, so its menu leads with
@@ -74,15 +75,18 @@ const ONE_LIST_TOP_STYLE = {
 export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boolean; onCreateAgent: () => void }) {
   const { translate } = useSessionMessages();
   const [menuOpen, setMenuOpen] = useState(false);
+  const rowRef = useSidebarProgressFollow<HTMLDivElement>(followTopRow);
+  const createRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const menuLabel = [...(collapsed ? [translate('sidebar.createAgent')] : []), ...ONE_LIST_CREATE_MENU.map((action) => translate(CREATE_MENU_LABEL[action]))].join(' / ');
   return (
-    <div className="flex shrink-0 items-center pb-2" style={ONE_LIST_TOP_STYLE} data-sidebar-one-list-top="">
-      {/* Fades with the sidebar's text (--gg-sidebar-text, left-sidebar) and narrows to nothing: no side padding or border
+    <div ref={rowRef} className="flex shrink-0 items-center pb-2" data-sidebar-one-list-top="">
+      {/* Fades with the sidebar's text (followNames) and narrows to nothing: no side padding or border
           of its own (its label is centred, so expanded it looks the same), and its overflow is clipped on the way. Collapsed
           it is inert: out of the tab order and the pointer's way. */}
       <Button
+        ref={createRef}
         variant="primary"
-        className="min-w-0 flex-1 overflow-hidden opacity-(--gg-sidebar-text)"
+        className="min-w-0 flex-1 overflow-hidden"
         style={{ paddingInline: 0, borderInlineWidth: 0 }}
         inert={collapsed}
         onClick={onCreateAgent}
@@ -180,9 +184,6 @@ function importableTools(locale: string): string {
   return locale.startsWith('zh') ? labels.join('、') : new Intl.ListFormat(locale, { type: 'disjunction' }).format(labels);
 }
 
-/** What the rail hides along with the names: faded with them, and inert there (out of the pointer's way and the tab order). */
-const HIDDEN_ON_RAIL = 'opacity-(--gg-sidebar-text)';
-
 /**
  * The head, the window's top band over the list (proposal v1 ①, owner-approved): the collapse button, the bell, the search
  * box and 会话历史, in that order. The collapse button (chevrons only; its tooltip says what it does and the shortcut, as
@@ -207,6 +208,11 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   const historyShown = isCurrentView(currentView, 'session-history');
   const railed = !isLeftOpen;
   const intro = useSidebarIntro(innerShownFor, isLeftOpen);
+  // What the rail hides along with the names: faded with them (followNames), and inert there (out of the pointer's way and
+  // the tab order).
+  const bellRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  const searchRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  const historyRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const step = intro.step;
   const end = () => intro.move({ kind: 'end' });
   // 打开看看: the head button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
@@ -245,10 +251,10 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
         </IconButton>
       </Hint>
       {/* The bell (NeedsYouHost draws it into this slot) and the search box, as they are. */}
-      <div className={cn('flex shrink-0', HIDDEN_ON_RAIL)} inert={railed}>
+      <div ref={bellRef} className="flex shrink-0" inert={railed}>
         <NotificationSlot part="toggle" tone="strong" />
       </div>
-      <div className={cn('flex min-w-0 flex-1', HIDDEN_ON_RAIL)} inert={railed}>
+      <div ref={searchRef} className="flex min-w-0 flex-1" inert={railed}>
         <SidebarSearchTrigger />
       </div>
       <Hint label={historyLabel} side="bottom">
@@ -256,8 +262,8 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
             (navigateBack: the back button, Mod+[ and the window's ← take the same path), ❌ a second history here. */}
         <IconButton
           size="md"
+          ref={historyRef}
           tone="strong"
-          className={HIDDEN_ON_RAIL}
           inert={railed}
           aria-label={historyLabel}
           aria-pressed={historyShown}

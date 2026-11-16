@@ -17,7 +17,6 @@ const {
   sidebarEdgeDrag,
   sidebarEdgeSnapsOpen,
   sidebarOccupiedWidth,
-  sidebarRailBadgeOpacity,
   sidebarRailLayout,
   sidebarRailTextOpacity,
   useWorkspaceLayoutService,
@@ -123,20 +122,13 @@ describe('collapsing', () => {
   });
 });
 
-describe('the rail\'s corner badge moves with the same progress', () => {
-  it('fades in near the end of collapsing and out first when expanding', () => {
-    expect([1, 0.5, 0.4].map(sidebarRailBadgeOpacity)).toEqual([0, 0, 0]);
-    expect(sidebarRailBadgeOpacity(0.2)).toBeCloseTo(0.6);
-    expect([0.05, 0].map(sidebarRailBadgeOpacity)).toEqual([1, 1]);
-  });
-
-  it('the count changes place (row end ↔ avatar corner) where neither the text nor the badge can be seen', () => {
+describe('the rail layout switches where the names cannot be seen', () => {
+  it('the count changes place (row end ↔ avatar corner) where the text is invisible', () => {
     expect(sidebarRailLayout(1)).toBe(false);
     expect(sidebarRailLayout(0.5)).toBe(false);
     expect(sidebarRailLayout(0)).toBe(true);
     for (const p of [SIDEBAR_RAIL_LAYOUT_BELOW - 0.04, SIDEBAR_RAIL_LAYOUT_BELOW, SIDEBAR_RAIL_LAYOUT_BELOW + 0.04]) {
       expect(sidebarRailTextOpacity(p)).toBe(0);
-      expect(sidebarRailBadgeOpacity(p)).toBe(0);
     }
   });
 });

@@ -1,4 +1,4 @@
-import { motion, useTransform, type MotionStyle } from 'framer-motion';
+import { motion, useTransform } from 'framer-motion';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
@@ -6,15 +6,10 @@ import {
   INNER_SIDEBAR_MIN_WIDTH_PX,
   innerSidebarMaxWidth,
   innerSidebarShownWidth,
-  SIDEBAR_BADGE_OPACITY_VAR,
   SIDEBAR_MIN_WIDTH_PX,
-  SIDEBAR_PROGRESS_VAR,
-  SIDEBAR_TEXT_OPACITY_VAR,
   sidebarOccupiedWidth,
-  sidebarRailBadgeOpacity,
-  sidebarRailTextOpacity,
 } from '@renderer/lib/layout/layout-provider';
-import { clamp01, panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
+import { panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -121,7 +116,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   //
   // GUYI-AI/gugu#2548 收起成一列头像(收起宽 > 0)也不吃这套:那一列就是展开态本身,只是窄 —— 内容宽就是占位宽
   // (收起宽 → 整宽),不滑、不淡;行跟着缩到头像那么宽(选中底色也是),头像左缘不动,所以每个头像、每颗按钮都在原坐标。
-  // 文字跟着同一条进度淡入淡出(sidebarRailTextOpacity,经 CSS 变量交给 left-sidebar)。收起宽是这几个量的一员
+  // 文字跟着同一条进度淡入淡出(sidebarRailTextOpacity,left-sidebar 的列表遮罩 + 顶上几颗按钮各自写)。收起宽是这几个量的一员
   // (motion value),❌ 读 React 状态:变换只在挂上那一刻拿一次闭包,动画中途读到的是旧值。
   const dockedContent = (progress: number, width: number) =>
     panelContentLayout(progress, width, SIDEBAR_CONTENT_MIN_PX);
@@ -129,16 +124,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     latest[2] > 0
       ? sidebarOccupiedWidth(latest[0], latest[1], latest[2])
       : latest[0] <= 0 ? latest[1] : dockedContent(latest[0], latest[1]).width
-  );
-  const textOpacity = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
-    latest[1] > 0 ? sidebarRailTextOpacity(latest[0]) : 1
-  );
-  // The same progress for the geometry that moves with it (the 「+」, 创建智能体) and the rail's corner badge.
-  const railProgress = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
-    latest[1] > 0 ? clamp01(latest[0]) : 1
-  );
-  const badgeOpacity = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
-    latest[1] > 0 ? sidebarRailBadgeOpacity(latest[0]) : 0
   );
   const contentOpacity = useTransform(
     [leftProgress, peekProgress, leftWidth, leftRailWidth],
@@ -209,13 +194,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
             width: contentWidth,
             opacity: contentOpacity,
             x: contentX,
-            // A CSS variable bound to a motion value (motion sets it as a var each frame); MotionStyle does not type
-            // custom properties.
-            ...({
-              [SIDEBAR_TEXT_OPACITY_VAR]: textOpacity,
-              [SIDEBAR_PROGRESS_VAR]: railProgress,
-              [SIDEBAR_BADGE_OPACITY_VAR]: badgeOpacity,
-            } as MotionStyle),
             pointerEvents: isLeftOpen || isPeekVisible || leftRail > 0 ? 'auto' : 'none',
           }}
         >

@@ -135,3 +135,44 @@ for (const material of ['native', 'opaque'] as const) {
     expect(surfaceEdge(surface)).toEqual(expandedEdge);
   });
 }
+
+// A fold moves the names, the head's buttons and the top row each frame. A custom property written for that on the sidebar's
+// layer is inherited by every element under it, so the whole list restyled each frame (~37k elements with the rows mounted),
+// read or not. Each moving element gets its own style instead, and the names fade as one mask on the scroll box.
+it('a fold writes no custom property: the names fade as one mask on the scroll box', async () => {
+  await page.viewport(1000, 700);
+  harness = createReactHarness();
+  await harness.render(
+    <SessionLocalizationProvider>
+      <WorkspaceLayoutContextProvider>
+        <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+      </WorkspaceLayoutContextProvider>
+    </SessionLocalizationProvider>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const scroll = document.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!;
+  expect(scroll.style.maskImage).toBe('');
+  const written: string[] = [];
+  const masks: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      const style = (record.target as HTMLElement).style;
+      for (let index = 0; index < style.length; index++) if (style[index].startsWith('--')) written.push(style[index]);
+      if (record.target === scroll && scroll.style.maskImage) masks.push(scroll.style.maskImage);
+    }
+  });
+  observer.observe(aside, { subtree: true, attributes: true, attributeFilter: ['style'] });
+  document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
+  observer.disconnect();
+  expect([...new Set(written)]).toEqual([]);
+  // The avatars' column stays; right of it the names' opacity, 0 on the rail.
+  expect(masks.length).toBeGreaterThan(2);
+  expect(scroll.style.maskImage).toMatch(/^linear-gradient\(to right, black 68px, color-mix\(in srgb, black 0(?:\.0+)?%, transparent\) 68px\)/);
+  for (const testId of ['sidebar-create-agent', 'sidebar-session-history']) {
+    expect(document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!.style.opacity).toBe('0');
+  }
+  document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
+  await expect.poll(() => scroll.style.maskImage, { timeout: 3000 }).toBe('');
+});

@@ -6,7 +6,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { useLeftRailLayout, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { sidebarRailLayout, sidebarRailTextOpacity, useLeftRailLayout, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { cn } from '@renderer/utils/utils';
@@ -29,6 +29,34 @@ import { ONE_LIST_RAIL_PX, SidebarOneListHead, SidebarOneListTop } from './sideb
 // (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome); 已安排 in the bell's panel. 资源库 and 设置
 // are on the far-left rail (product spec, #7046) — they belong to the gugu shell. Collapsed = a rail of the list's avatars:
 // the same content, not moved, with its text hidden. Desktop only: the task renderer never runs in the phone shell.
+/**
+ * #2548 where the names start in the list's scroll box: its inset 12 + the row's padding 8 + the avatar 32 + the row gap 10.
+ * On the rail the title is 0 wide and the time starts one line gap (6) later; the corner count (left 28 + the inset) ends
+ * before that.
+ */
+const NAMES_START_PX = 62;
+const RAIL_NAMES_START_PX = 68;
+/** The scroll box's own mask (its class: the last 24px above the window's bottom edge fade out), kept under the names'. */
+const BOTTOM_FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)';
+
+/**
+ * #2548 the rows' names fade with the open/close progress (sidebarRailTextOpacity) as one mask on the scroll box: the
+ * avatars' column stays, everything right of it takes the names' opacity. One element's own style per frame, ❌ an opacity
+ * on every name: that restyled the whole list each frame.
+ */
+function followNamesMask(scroll: HTMLElement, progress: number) {
+  const text = sidebarRailTextOpacity(progress);
+  if (text >= 1) {
+    scroll.style.removeProperty('mask-image');
+    scroll.style.removeProperty('mask-composite');
+    return;
+  }
+  const edge = sidebarRailLayout(progress) ? RAIL_NAMES_START_PX : NAMES_START_PX;
+  // The names' opacity in 255ths: the 8-bit alpha an rgb() literal painted, so the fade's pixels are unchanged.
+  scroll.style.setProperty('mask-image', `linear-gradient(to right, black ${edge}px, color-mix(in srgb, black ${(Math.round(text * 255) / 2.55).toFixed(3)}%, transparent) ${edge}px), ${BOTTOM_FADE_MASK}`);
+  scroll.style.setProperty('mask-composite', 'intersect');
+}
+
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -77,6 +105,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // starts (or only on release, for a drag), the progress is what is on screen.
   const railLayout = useLeftRailLayout();
   const listRef = React.useRef<HTMLDivElement>(null);
+  const scrollRef = useSidebarProgressFollow<HTMLDivElement>(followNamesMask);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
   // button a no-op whenever the user was already sitting on that project's home — which is the default landing view.
@@ -115,17 +144,15 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       className={cn(
         'relative flex h-full flex-col border-r border-border bg-background-tertiary text-foreground-tertiary-muted transition-colors',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
-        // #2548 a row's text (name, preview, time, its unread count) follows the open/close
-        // progress (--gg-sidebar-text, workspace-layout: text only in the second half). On the rail the unread count sits on
-        // the avatar's top-right corner instead (the muted bell stays out) and fades in near the end (--gg-sidebar-badge).
-        // The count changes place at SIDEBAR_RAIL_LAYOUT_BELOW, where both are invisible, so nothing jumps. The rows narrow
-        // with the sidebar, so the selected background ends the size of the avatar's cell.
-        !railLayout && '[&_.gg-list-row-line>*]:opacity-(--gg-sidebar-text)',
+        // #2548 a row's text (name, preview, time, its unread count) follows the open/close progress through the scroll
+        // box's mask (followNamesMask: text only in the second half). On the rail the unread count sits on the avatar's
+        // top-right corner instead (the muted bell stays out) and fades in as it takes that place. The count changes place
+        // at SIDEBAR_RAIL_LAYOUT_BELOW, where the names are invisible. The rows narrow with the sidebar, so the selected
+        // background ends the size of the avatar's cell.
         railLayout && [
-          '[&_.gg-list-row-line>:not(.gg-list-row-trailing)]:opacity-(--gg-sidebar-text)',
           '[&_.gg-list-row-body]:pointer-events-none',
           '[&_.gg-list-row-trailing]:absolute [&_.gg-list-row-trailing]:top-1 [&_.gg-list-row-trailing]:left-7',
-          '[&_.gg-list-row-trailing]:opacity-(--gg-sidebar-badge)',
+          '[&_.gg-list-row-trailing>.gg-chip]:animate-in [&_.gg-list-row-trailing>.gg-chip]:fade-in [&_.gg-list-row-trailing>.gg-chip]:duration-150',
           '[&_.gg-list-row-trailing>:not(.gg-chip)]:hidden',
         ]
       )}
@@ -154,6 +181,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               flex column the content layer is shrunk to the container's height, scrollHeight collapses with it and the
               scrollbar never shows again. */}
           <div
+            ref={scrollRef}
             data-region="sidebar-scroll"
             // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto mask-b-from-[calc(100%-1.5rem)]"
