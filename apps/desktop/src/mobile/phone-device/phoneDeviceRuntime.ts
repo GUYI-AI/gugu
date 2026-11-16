@@ -45,6 +45,7 @@ import { createPhoneDeviceRpcHost } from './phoneDeviceRpcHost'
 import type { JoinDeviceTopic } from '@gugu/core/cloud/deviceRpcAttach'
 import { readPhoneDataStatus } from './phoneDataActions'
 import { phoneDeviceRow } from './phoneDeviceRow'
+import { registerGuguDevice } from '@gugu/core/cloud/deviceRegistration'
 import { readPhoneInstallation } from './phoneInstallation'
 import {
   effectiveGrants,
@@ -288,13 +289,15 @@ export function startPhoneDevice(options: {
       await readHost()
       return
     }
-    const { error } = await identityDb.from('gugu_devices').upsert(row as never, { onConflict: 'device_id' })
+    await registerGuguDevice(identityDb, row, { expectedDeviceId: deviceId }).catch((error: unknown) => {
+      if (alive) {
+        const message = errorText(error)
+        log.warn({ error: message }, 'phone device heartbeat failed')
+        publish({ link: { state: 'error', message, at: Date.now() } })
+      }
+      throw error
+    })
     if (!alive) return
-    if (error) {
-      log.warn({ error: error.message }, 'phone device heartbeat failed')
-      publish({ link: { state: 'error', message: error.message, at: Date.now() } })
-      throw new Error(error.message)
-    }
     publish({ lastHeartbeatAt: Date.now() })
     rpcHost?.beat()
     // 上一拍失败亮过「没连上」,这一拍写进去了、频道也在 ⇒ 回到已连接。
