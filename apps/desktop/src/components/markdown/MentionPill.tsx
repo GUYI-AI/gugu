@@ -10,10 +10,12 @@ import { FILE_PILL_CLASS } from './filePills'
  * pill, which copies back as one (hookFilePillCopy) where a link pill copies as its words; a link the reader cannot
  * open is drawn greyed.
  */
-export function MentionPill({ href, title, file, mention, unavailable, onClick, children, rest }: {
+export function MentionPill({ href, title, file, icon, mention, unavailable, onClick, children, rest }: {
   href: string
   title: string
   file?: string
+  /** The kind's line mark, drawn where a file's mark goes (LinkPill's marks). */
+  icon?: ReactNode
   mention?: boolean
   unavailable?: boolean
   onClick: (event: MouseEvent) => void
@@ -24,7 +26,8 @@ export function MentionPill({ href, title, file, mention, unavailable, onClick, 
   return (
     <a {...rest} className={`gg-md-mention ${FILE_PILL_CLASS}`} data-mention-kind={mention ? 'file' : 'link'} data-unavailable={unavailable ? 'true' : undefined}
       href={href} title={title} onClick={onClick}>
-      {file !== undefined ? <span className="gg-md-mention-icon" aria-hidden="true"><FileMark name={fileLabelParts(file).name} size={12} /></span> : null}
+      {file !== undefined ? <span className="gg-md-mention-icon" aria-hidden="true"><FileMark name={fileLabelParts(file).name} size={12} /></span>
+        : icon ? <span className="gg-md-mention-icon" aria-hidden="true">{icon}</span> : null}
       <span className="gg-md-mention-label">{name}</span>
       {place ? <span className="gg-md-mention-place">{place}</span> : null}
     </a>

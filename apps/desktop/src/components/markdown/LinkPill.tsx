@@ -11,12 +11,13 @@ import { quoteSummary } from '../chat/quoteSummary'
 import { GroupFileName } from './GroupFileName'
 import { MentionPill } from './MentionPill'
 import { linkPillTarget } from './linkPills'
-import { FILE_PILL_CLASS } from './filePills'
 import { conversationLink } from '@gugu/core/shared/ui/guguLink'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { messagesByIdPrefix } from '../../lib/messageIdPrefix'
 import { followLink } from '../../lib/guguLinks'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
+import { Bot, ListChecks, MessageSquare, Reply, User, Users } from '@/lib/icons'
+import { rpcOn } from '@renderer/lib/ipc'
 
 // Reads are key-only replicas (lib/replica).
 const linkedFile = replica({ name: 'link-pill-file', scope: 'account', keep: 5 * 60_000,
@@ -25,6 +26,21 @@ const linkedMessage = replica({ name: 'link-pill-message', scope: 'account', kee
   read: (accountId, messageId: string) => chatService.getMessageById(messageId, accountId) })
 const linkedMessagePrefix = replica({ name: 'link-pill-message-prefix', scope: 'account', keep: 5 * 60_000,
   read: (accountId, chatId: string, prefix: string) => messagesByIdPrefix(chatId, prefix, accountId) })
+// This machine's sessions, as the task list reads them: a session link names one by its title and harness.
+const localSessions = replica({ name: 'link-pill-sessions', scope: 'account', keep: 60_000,
+  read: async () => (await rpcOn(null).sessionTimeline.sessionsList()).sessions })
+
+/**
+ * Each kind's mark: one line glyph in the text's colour, nothing else (owner 2026-11-16: no faces in a pill). A kind gets a
+ * mark only where its words alone do not say what it is — a message's words read like any text, a task title like a
+ * name, a group's name like a topic's.
+ */
+const MESSAGE_MARK = <Reply size={12} />
+const TOPIC_MARK = <MessageSquare size={12} />
+const GROUP_MARK = <Users size={12} />
+const PERSON_MARK = <User size={12} />
+const AGENT_MARK = <Bot size={12} />
+const TASK_MARK = <ListChecks size={12} />
 
 type DrawProps = {
   href: string
@@ -43,6 +59,7 @@ export function LinkPill(props: DrawProps & { accountId: string }) {
   if (target?.kind === 'file') return <FilePill {...props} itemId={target.itemId} version={target.version} />
   if (target?.kind === 'chat' && target.messagePrefix) return <MessagePrefixPill {...props} chatId={target.chatId} prefix={target.messagePrefix} />
   if (target?.kind === 'chat') return <ChatPill {...props} chatId={target.chatId} messageId={target.messageId} />
+  if (target?.kind === 'session') return <SessionPill {...props} sessionId={target.sessionId} />
   return <>{props.children}</>
 }
 
@@ -65,7 +82,7 @@ function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps 
  * `msg:<prefix>` in a message (owner 2026-11-16), resolved in that message's own chat: one match is that message's pill
  * and opens it like any message link; several offer the candidates; none stays the words as written, saying so on hover.
  */
-function MessagePrefixPill({ onClick: _unresolved, children, rest, accountId, chatId, prefix }: DrawProps & { accountId: string; chatId: string; prefix: string }) {
+function MessagePrefixPill({ href, onClick: _unresolved, children, rest, accountId, chatId, prefix }: DrawProps & { accountId: string; chatId: string; prefix: string }) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const reading = useReplica(linkedMessagePrefix, [chatId, prefix])
@@ -77,11 +94,15 @@ function MessagePrefixPill({ onClick: _unresolved, children, rest, accountId, ch
   }
   if (found?.length === 0 || reading.state === 'error') return <span title={t('linkPill.noSuchMessage', { prefix: `msg:${prefix}` })}>{children}</span>
   if (!found) return <>{children}</>
+  // Several: the same pill as any message link, saying how many; it opens the candidates (owner 2026-11-16: one look).
   return (
     <DropdownMenu.Root modal={false}>
-      <DropdownMenu.Trigger className={`gg-md-mention ${FILE_PILL_CLASS}`} data-mention-kind="link" title={t('linkPill.severalMessages', { count: found.length, prefix: `msg:${prefix}` })}>
-        {children}
-      </DropdownMenu.Trigger>
+      <DropdownMenu.Trigger nativeButton={false} render={(props) => (
+        <MentionPill href={href} icon={MESSAGE_MARK} title={t('linkPill.severalMessages', { count: found.length, prefix: `msg:${prefix}` })} rest={props}
+          onClick={(event) => { event.preventDefault(); props.onClick?.(event as never) }}>
+          {t('linkPill.messages', { count: found.length })}
+        </MentionPill>
+      )} />
       <DropdownMenu.Content className="max-w-[360px]">
         {found.map((row) => <MenuItem key={row.id} onClick={() => open(row.id)}>{messageLabel(row, t, identitiesById[row.sender_user_id ?? '']?.display_name)}</MenuItem>)}
       </DropdownMenu.Content>
@@ -101,6 +122,7 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
   const reading = useReplica(linkedMessage, messageId ? [messageId] : null)
   const message = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error', isSuccess: reading.state === 'value' }
   let label: ReactNode = children
+  let icon: ReactNode = MESSAGE_MARK
   let unavailable = false
   if (messageId) {
     // The same checks as opening the link (useLinkNavigation): a live message in that chat.
@@ -109,8 +131,26 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
     if (row) label = messageLabel(row, t, row.sender_user_id ? identitiesById[row.sender_user_id]?.display_name : undefined)
   } else {
     const listed = chats.find(row => row.id === chatId)
-    // A group or topic reads as a channel, a direct chat as its name; one this window does not list keeps the link's words.
-    if (listed) label = listed.kind === 'group' || listed.kind === 'topic' ? `# ${listed.name}` : listed.name
+    // A group, a topic, a direct chat with a person or with an agent: the glyph the kind is drawn with, never a face.
+    if (listed) {
+      const peer = listed.peer_user_id ? identitiesById[listed.peer_user_id] : undefined
+      // A direct chat is named by the one on the other side, as the chat list names it.
+      label = listed.kind === 'group' || listed.kind === 'topic' ? listed.name : peer?.display_name ?? listed.name
+      icon = listed.kind === 'topic' ? TOPIC_MARK : listed.kind === 'group' ? GROUP_MARK
+        : listed.kind === 'ai' || peer?.type === 'agent' ? AGENT_MARK : PERSON_MARK
+    } else { unavailable = true; icon = null }
   }
-  return <MentionPill href={href} title={unavailable ? t('linkPill.unavailable') : typeof label === 'string' ? label : ''} unavailable={unavailable} onClick={onClick} rest={rest}>{label}</MentionPill>
+  // Unavailable: the words already name the kind, so the mark goes.
+  if (unavailable) { label = t(messageId ? 'linkPill.messageUnavailable' : 'linkPill.chatUnavailable'); icon = null }
+  return <MentionPill href={href} icon={icon} title={unavailable ? t('linkPill.unavailable') : typeof label === 'string' ? label : ''} unavailable={unavailable} onClick={onClick} rest={rest}>{label}</MentionPill>
+}
+
+/** A session (a task): the task mark and its title; one not on this machine is greyed. */
+function SessionPill({ href, onClick, children, rest, sessionId }: DrawProps & { accountId: string; sessionId: string }) {
+  const { t } = useTranslation('messaging')
+  const reading = useReplica(localSessions, [])
+  const session = reading.state === 'value' ? reading.value.find((row) => row.conversationId === sessionId) : undefined
+  const unavailable = reading.state === 'error' || (reading.state === 'value' && !session)
+  return <MentionPill href={href} icon={unavailable ? null : TASK_MARK} title={unavailable ? t('linkPill.unavailable') : session?.title ?? ''}
+    unavailable={unavailable} onClick={onClick} rest={rest}>{session?.title ?? (unavailable ? t('linkPill.sessionUnavailable') : children)}</MentionPill>
 }

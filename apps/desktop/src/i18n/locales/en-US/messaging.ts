@@ -354,7 +354,7 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
-  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "severalMessages": "{{count}} messages in this chat start with {{prefix}} — pick one"},
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "messageUnavailable": "Message unavailable", "chatUnavailable": "Chat unavailable", "sessionUnavailable": "Session unavailable", "messages": "{{count}} messages", "severalMessages": "{{count}} messages in this chat start with {{prefix}} — pick one"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",

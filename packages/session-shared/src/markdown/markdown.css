@@ -378,7 +378,9 @@
 /* A reference the reader cannot open (LinkPill): the link tint goes, leaving muted text on the neutral fill; the reason
    is its title. */
 .gg-md a.gg-file-pill[data-unavailable='true'],
-.gg-md a.gg-file-pill[data-unavailable='true']:hover { background: var(--md-fill-strong); color: var(--md-muted); }
+.gg-md a.gg-file-pill[data-unavailable='true']:hover { background: var(--md-fill-strong); color: var(--text-secondary, var(--md-muted)); }
+/* An agent's `@` mention: its mark sits in the name's line, the size of a pill's mark. */
+.gg-md [data-mention] > .gg-md-mention-mark { display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.15em; vertical-align: -0.1em; }
 /* Code coloured by `paintHighlight` (the transcript's runs, App pages through gugu.markdown()): every token carries the
    dual-theme vars. A host page says dark with `data-theme`, an App page with `data-gugu-theme`. */
 .gg-md pre code span[style*='--shiki-light'] { color: var(--shiki-light); }
