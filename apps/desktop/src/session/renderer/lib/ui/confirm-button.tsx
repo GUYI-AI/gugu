@@ -23,7 +23,7 @@ export function ConfirmButton({ disabled, children, ...props }: ConfirmButtonPro
     <Button ref={ref} disabled={disabled} {...props}>
       <span className="flex items-center gap-2">
         {children}
-        <BoundShortcut commandId="app.confirm" variant="keycaps" />
+        <BoundShortcut className="gg-confirm-shortcut" commandId="app.confirm" variant="keycaps" />
       </span>
     </Button>
   );
