@@ -43,6 +43,20 @@ export function isOwnerProfileNote(note: { file: string }): boolean {
   return note.file === OWNER_PROFILE_MEMORY_FILE;
 }
 
+/** 代码围栏内的示例不是记忆标题或索引条目。 */
+function visibleMemoryLines(text: string): string[] {
+  let fence: { marker: string; length: number } | null = null;
+  return text.split('\n').map(line => {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (match && match[1][0] === fence.marker && match[1].length >= fence.length && !match[2].trim()) fence = null;
+      return '';
+    }
+    if (match) { fence = { marker: match[1][0], length: match[1].length }; return ''; }
+    return line;
+  });
+}
+
 const MEMORY_KINDS: readonly MemoryKind[] = ['user', 'feedback', 'project', 'reference'];
 const memoryKind = (value: string | undefined): MemoryKind | undefined => {
   const aliases: Record<string, MemoryKind> = { 用户: 'user', 关于主人: 'user', 偏好: 'user', 反馈: 'feedback', 关于助理: 'feedback', 项目: 'project', 参考: 'reference', 资料: 'reference' };
@@ -68,7 +82,7 @@ export function parseMemoryNote(file: string, text: string, hint?: { title: stri
   const { fields, body } = readFrontmatter(text);
   // Missing metadata is a reference, not an invented claim about the person.
   const kind = memoryKind(fields.type) ?? memoryKind(fields.category) ?? hint?.kind ?? 'reference';
-  const heading = /^#{1,6}\s+(.+?)\s*$/m.exec(body)?.[1];
+  const heading = /^#{1,6}\s+(.+?)\s*$/m.exec(visibleMemoryLines(body).join('\n'))?.[1];
   const filename = file.replace(/\.md$/i, '');
   return {
     file,
