@@ -14,4 +14,14 @@ describe('native creation skills', () => {
     expect((await loadCreationSkills({ sessionCreateSkills: async () => ({ ok: true, value: { skills: [] } }) }, 'codex', null)).skills).toEqual([])
     await expect(loadCreationSkills({ sessionCreateSkills: async () => ({ ok: false, error: { message: 'offline' } }) }, 'claude', null)).rejects.toThrow('offline')
   })
+  it('preserves the native error code and message instead of returning an empty catalog', async () => {
+    const error = { code: 'skills_unavailable', message: 'EACCES: native skill metadata is unreadable' }
+    await expect(loadCreationSkills({ sessionCreateSkills: async () => ({ ok: false, error }) }, 'codex', 'project'))
+      .rejects.toMatchObject({ name: 'CreationSkillsReadError', ...error })
+  })
+  it('propagates the original transport rejection with its code', async () => {
+    const error = Object.assign(new Error('host disconnected'), { code: 'unreachable' })
+    await expect(loadCreationSkills({ sessionCreateSkills: async () => { throw error } }, 'codex', null)).rejects.toBe(error)
+  })
+
 })
