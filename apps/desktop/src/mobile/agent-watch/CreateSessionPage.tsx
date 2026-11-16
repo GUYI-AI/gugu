@@ -366,6 +366,7 @@ function CreateOnMachine({
     },
   })
 
+  // @@@effect-flow - acquire this editor's account-bound File draft and settle its hydration/cleanup barrier; no server reading is copied into view state.
   useEffect(() => {
     if (!ownerId) return
     const binding = bindCreationDraft(runtime.thread.composer, mobileCreationDraftKey(ownerId))
