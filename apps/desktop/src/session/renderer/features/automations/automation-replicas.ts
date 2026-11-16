@@ -10,7 +10,7 @@ import type { SessionSchedule } from '@shared/core/automations/session-schedule'
 
 // What 已安排 and a task's own schedules show of one machine: push-fed (`watch`), ❌ polled.
 
-/** `'local'` = this computer; another machine by its device id. */
+/** `'local'` = this computer, else a device id. */
 export type AutomationMachine = string;
 
 const hostOf = (machine: AutomationMachine) => (machine === 'local' ? null : machine);

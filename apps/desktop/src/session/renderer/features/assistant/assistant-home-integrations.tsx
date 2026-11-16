@@ -121,14 +121,13 @@ export const ConnectorLists = observer(function ConnectorLists({ onOpen }: { onO
         <span role={failure.tone === 'danger' ? 'alert' : 'status'} data-testid="assistant-connectors-read-failed">{failure.text}</span>
       </AssistantEmpty>
     );
-  // Which are connected could not be read: said, with a retry (❌ the placeholder for ever).
   if (integrations && !configuredConnections && configuredConnectionsError)
     return (
       <AssistantEmpty action={<button type="button" className="ta-pill-btn" onClick={reloadConnections}>{t('machine.retry')}</button>}>
         <span role="alert" data-testid="assistant-connectors-read-failed">{t('connectors.loadFailed')}</span>
       </AssistantEmpty>
     );
-  // Not known yet which are connected: one placeholder list, ❌ every connector drawn as "available" first (AP11).
+  // ❌ every connector drawn as "available" first (AP11).
   if (!integrations || !configuredConnections) return <AppConnectionListPlaceholder />;
   const ordered = connectorOrder(integrations, i18n.language);
   const connected = ordered.filter((i) => configuredConnections[i.id]);

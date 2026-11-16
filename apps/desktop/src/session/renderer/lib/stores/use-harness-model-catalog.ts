@@ -32,8 +32,7 @@ import { harnessModelCatalog } from './agent-replicas';
 /**
  * 这家 harness 现在能跑哪些模型 —— 问 harness 自己(the `harnessModelCatalog` replica, agent-replicas.ts).
  *
- * 作废归主进程管(harness 版本变更为主、TTL 兜底):面每次挂上来都问它一次(#7081),新不新鲜由它答;它说还在探
- * (`refreshing`)就过一会儿再问,一变 false 轮询自己停。要立刻重读走 `forceRefreshHarnessModelCatalog`(带 force)。
+ * 作废归主进程管(#7081);要立刻重读走 `forceRefreshHarnessModelCatalog`(带 force)。
  */
 function errorReason(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? '');
@@ -80,7 +79,6 @@ export function useHarnessModelCatalog(
   const machine = host?.deviceId ?? null;
   // 那台机器没连上就不问:问不到只会落一个「读取失败」,而那不是这家 agent 的问题;连上时自己重取。
   const reading = useReplica(harnessModelCatalog, providerId ? [providerId, leg, machine] : null, { read: host?.online !== false });
-  // 读失败画四态里那个「坏了 + 原因 + 重试」的分支;还没读到画 `unknown`(「读取中」,❌「没有模型」)。
   const probed: HarnessCatalogState = reading.state === 'value'
     ? reading.value.state
     : reading.state === 'error' ? { kind: 'unavailable', reason: errorReason(reading.error) } : { kind: 'unknown' };

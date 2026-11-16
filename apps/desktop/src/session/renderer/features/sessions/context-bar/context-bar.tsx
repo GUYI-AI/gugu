@@ -19,7 +19,7 @@ import { Unknown } from '@/components/ui/Unknown';
 
 interface ContextBarProps {
   sessionId: string | undefined;
-  /** null: whether the user hid the trigger is not read yet — the row keeps its height with a placeholder. */
+  /** null: not read yet. */
   hideTrigger?: boolean | null;
   /** 同一行「添加上下文」左边的东西(这个任务的定时芯片)。这一行被隐藏时它自己撑起这一行,❌ 跟着消失。 */
   leading?: ReactNode;

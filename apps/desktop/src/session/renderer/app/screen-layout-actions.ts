@@ -100,7 +100,6 @@ function pruneGoneApps(): void {
   reaction(
     () => {
       const installed = peekInstalledAppsTracked();
-      // Not known yet: nothing is taken off (only a list read says an App is gone).
       if (!installed) return '';
       const enabled = new Set<string>(installed.residentTabContributions.map((entry) => entry.kind));
       return appsOnScreen()

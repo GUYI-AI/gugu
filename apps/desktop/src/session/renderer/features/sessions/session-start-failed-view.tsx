@@ -189,7 +189,6 @@ function RuntimeUpgradeNotice({
   const { translate } = useSessionMessages();
   const agents = useAgents();
   const [panelOpen, setPanelOpen] = useState(false);
-  // The agent's name once the list is read; a list that could not be read leaves the id as the only clue.
   const harnessName = agents.state === 'value'
     ? agents.value.find((agent) => agent.id === requirement.providerId)?.name ?? requirement.providerId
     : agents.state === 'error' ? requirement.providerId : null;

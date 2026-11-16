@@ -92,8 +92,7 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
   const connected = connection === 'connected';
   // #7199 选了一台睡着的云电脑做目标 ❌ 当场叫醒:新建框里开始输入才叫(useWakeCloudOnInput,看一眼不该扣积分);
   // 醒了线自己连上、项目照常解析、发送键自己亮;草稿一直留着。
-  // The task workspace there: asked while the machine is connected. Held while it is away: the box keeps its project (❌
-  // "not known" every time the line drops). A read again that failed is no project (❌ the one from before the reconnect).
+  // Held while the machine is away (❌ "not known" every time the line drops); a failed read again is no project.
   const workspace = useReplica(machineTaskWorkspace, target && !target.projectId ? [target.deviceId] : null, { read: connected });
   const failure = workspace.state === 'error' || workspace.state === 'value' ? workspace.error : null;
   const label = device?.label ?? target?.deviceId ?? '';

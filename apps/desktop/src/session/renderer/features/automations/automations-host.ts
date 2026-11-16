@@ -36,7 +36,6 @@ export type AutomationsRemoteDevice = {
 };
 
 export type AutomationsHost = {
-  /** Which machine the page shows (the page remounts per machine): `local`, or `remote:<deviceId>`. */
   key: string;
   api: AutomationsRpc;
   /** null = 本机。 */

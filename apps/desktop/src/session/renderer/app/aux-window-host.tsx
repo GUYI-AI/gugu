@@ -138,7 +138,7 @@ function useWindowTitle(aux: AuxWindow): string {
   // 一个对话的一枚页签:标题是那个对话。
   if (aux.content.kind === 'chat-tab') return readChatSummary(aux.content.chatId)?.name ?? '';
   const { tabKind } = aux.content;
-  // Not known yet: no title (the window's title bar stays empty until it is), ❌ the raw kind.
+  // ❌ the raw kind while not known.
   return peekInstalledAppsTracked()?.allTabContributions.find((entry) => entry.kind === tabKind)?.title ?? '';
 }
 

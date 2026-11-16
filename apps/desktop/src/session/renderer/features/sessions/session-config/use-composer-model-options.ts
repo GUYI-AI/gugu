@@ -87,8 +87,7 @@ export function composerTierLabel(
 }
 
 /**
- * 组头里那个 agent 名字,在 agent 名单**读到之后**(还没读到时调用方不装配,见 useComposerModelOptions):
- * 名单里有它 → 名字;名单里没有它(刚退役)或名单读不到(`null`)→ id,那是仅剩的线索;没选 agent → `'agent'`。
+ * 组头里那个 agent 名字:名单里没有它(刚退役)或名单读不到(`null`)→ id,那是仅剩的线索;没选 agent → `'agent'`。
  *
  * ⚠️ 恒返回非空串:`composerModelOptions` 收到空名就**不给组头** —— 一列模型于是没了「这是谁的」那条界线。
  * 判据在 `composer-model-assembly.test.ts`。

@@ -33,7 +33,6 @@ function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
   useEffect(() => {
     let live = true;
     setOpener(null);
-    // What is installed unreadable: said with a retry (❌ an unhandled rejection and a blank pane).
     pickSessionOpener(target.path, target.ask).then((picked) => live && setOpener(picked), (failed: unknown) => live && setOpener({ failed }));
     return () => {
       live = false;

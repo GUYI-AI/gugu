@@ -96,7 +96,6 @@ export function AppFeaturedCard({
           </div>
         ) : shot ? (
           <>
-            {/* 这个 `<img>` 解码好之前骨架留着,❌ 画一张没解码完的大图。 */}
             <img
               ref={imageRef}
               src={shot.src}

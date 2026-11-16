@@ -15,7 +15,6 @@ import { SessionPlaceholder } from './SessionPlaceholder';
 
 interface AutomationRunRowProps {
   run: AutomationRun;
-  /** The automation's project (its runs' tasks live there); null = none. */
   projectId: string | null;
   /** #7221 agent 给自己排的:每次运行都送回这条会话,行指向它(而不是一条新建的会话)。 */
   deliveredTo?: string;

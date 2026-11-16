@@ -15,7 +15,6 @@ interface ChangesViewModeToggleProps {
 export function ChangesViewModeToggle({ value, onChange, label }: ChangesViewModeToggleProps) {
   const { translate } = useSessionMessages();
   const [open, setOpen] = useState(false);
-  // Not read yet: the button's place, ❌ a button that would switch away from a layout nobody chose.
   if (value === null) return <Unknown className="size-6" />;
   const nextMode: ChangesListViewMode = value === 'flat' ? 'tree' : 'flat';
   const Icon = value === 'flat' ? AlignJustify : ListTree;

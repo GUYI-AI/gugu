@@ -2,7 +2,7 @@ import type { GitChange } from '@gugu/session-core/git';
 import { replica, useReplica, type Reading } from '@/lib/replica';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 
-/** The files a commit changed: a commit never changes, so it is read once and kept a while after it is folded. */
+/** A commit never changes: read once, kept a while after it is folded. */
 export const commitFiles = replica({
   name: 'commitFiles',
   scope: 'device',

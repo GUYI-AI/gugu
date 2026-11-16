@@ -292,11 +292,9 @@ export async function recoverPendingMove(ownerUserId: string, assistantId: strin
 }
 
 /**
- * The move left half-done on this computer (the 「接着搬」 row): main's durable journal, read per assistant. Its synchronous
- * localStorage copy (`pendingMove`) is the first source (`local`), so the row is there on the first frame; main's answer
- * replaces it. Read again when a move ends (`subscribeMove`, AssistantMoveGroup; ❌ per progress tick) — the journal is written by the
- * move itself. Account scope, not kept across restarts (the local copy is).
- */
+* The move left half-done (「接着搬」): main's journal; its localStorage copy draws the first frame. Read again when a move
+* ends (❌ per progress tick).
+*/
 export const moveRecovery = replica({
   name: 'moveRecovery',
   scope: 'account',

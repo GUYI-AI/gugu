@@ -7,7 +7,7 @@ import { cn } from '@renderer/utils/utils';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 interface SectionHeaderProps {
-  /** null = not known yet (what the section lists is still being read): a placeholder holds its place. */
+  /** null = not known yet. */
   label: string | null;
   count: number | null;
   selectionState?: SelectionState;

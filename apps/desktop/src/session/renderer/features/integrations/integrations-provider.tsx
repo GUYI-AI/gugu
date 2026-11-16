@@ -32,7 +32,6 @@ type ConnectionStatusByIntegration = Partial<Record<string, ConnectionStatus>>;
 type ConnectionMutationResult = { success: true } | { success: false; error: string };
 type RawConnectionMutationResult = { success: boolean; error?: string; errorType?: ConnectionStatus['errorType'] };
 
-/** Each reading is null while not known (❌ an empty list, every connection "not connected"): a surface draws a placeholder. */
 type IntegrationsContextValue = {
   integrations: IntegrationMetadata[] | null;
   connectionOperations: ConnectionMetadataSnapshot['application'] | null;

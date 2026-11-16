@@ -138,7 +138,6 @@ async function loadModified(
   return state;
 }
 
-/** Retries of a transient failure: soon, then less soon (the write that caused it settles within a moment). */
 export const IMAGE_RETRY_DELAYS_MS = [120, 300, 600];
 
 /** Keyed by what names its bytes; bytes that change in place add the worktree's status revision. */

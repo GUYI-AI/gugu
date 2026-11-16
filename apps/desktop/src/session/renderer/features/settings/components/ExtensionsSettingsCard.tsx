@@ -166,7 +166,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // #6387
   const agentStatusReading = useReplica(extensionAgentStatus, [host.key], { read: !machineOffline });
   const agentStatus = agentStatusReading.state === 'value' ? agentStatusReading.value : null;
-  // The inventory's reads, failed (the last read or the refresh after it): said in place, and in the header for another machine.
   const failureOf = (reading: Reading<unknown>): Error | null => (reading.state === 'unknown' ? null : reading.error);
   const inventoryError = failureOf(installed) ?? failureOf(revokedReading) ?? failureOf(agentStatusReading);
   const notice = deviceScopeNotice(
@@ -360,7 +359,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       fullShelf?.items.find((item) => item.manifest.id === extensionId) ?? (await marketEntry.fetch(hostKeyRef.current, extensionId)),
     [fullShelf]
   );
-  /** Acts on an App's market entry; "not in the market" and "the market could not be read" (with a retry) are told apart. */
   const withShelfItem = async (extensionId: string, name: string, act: (item: ShelfItem) => void): Promise<void> => {
     try {
       const item = await shelfItemFor(extensionId);
@@ -406,7 +404,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     void refresh();
     // 打开设置页时也查一次「有什么要告诉你的」(spec:启动时一次、打开设置页时一次,
     // ❌ 轮询)。embedded.tsx 已经在启动时查过一次;这里是「打开设置页时」那一次。
-    // (Not read yet: the mount's read is that one.)
     if (marketUpdates.peek(host.key).state !== 'unknown') void marketUpdates.refresh(host.key);
     // 这一次和下面的市场清单都先从那台机器手上的目录答(❌ 等下载站);同时让它去下载站取一趟,回来的结果走
     // onMarketRefreshed。结果用回答带回:别的机器的推送未必转得到这个窗口。比这一版旧的机器没有这一问,照旧现取。
@@ -872,7 +869,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
    * 有能装的新版 = 更新;能打开 = 打开;都不是 = 只说「已安装」。`item` 是它在市场上的那一版(没有就只看装着的)。
    */
   const lifecycleOf = (extensionId: string, item?: Pick<ShelfItem, 'manifest' | 'cloud'>): AppLifecycle => {
-    // What is installed not known yet: no button (null draws nothing), ❌ 「安装」 for an App that may be installed.
+    // ❌ 「安装」 for an App that may be installed.
     if (!apps || !installedById) return null;
     const installed = installedById.get(extensionId);
     const fork = apps.origins[extensionId] === 'fork';
@@ -1146,7 +1143,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
 
   // ── App 设置页:只管装着的这一份。别处把它卸了就回清单 ──
   const managed = detail?.page === 'manage' ? installedById?.get(detail.extensionId) : undefined;
-  // Its permissions not read yet (or unreadable): the page waits for them, ❌ every switch drawn on (AP2).
+  // ❌ every switch drawn on (AP2).
   if (detail?.page === 'manage' && managed && apps && !revoked) {
     return (
       <div className="mk" data-testid="extensions-manage" ref={rootRef}>
@@ -1302,7 +1299,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 <span>{translate('extensions.marketOfflineUnreachable')}</span>
               </div>
             ) : null}
-            {/* A cold start: the first screen kept from the last run, card for card where the shelf will draw them. */}
             {!machineOffline && shelf.status === 'loading' && firstScreen && view === 'market' && chip === 'all' && debouncedQuery === '' ? (
               <AppMarketFirstScreen first={firstScreen} hostKey={host.key} chip={chip} onChipChange={setChip} />
             ) : !machineOffline && shelf.status === 'loading' ? (

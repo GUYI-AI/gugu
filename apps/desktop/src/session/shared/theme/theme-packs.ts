@@ -8,9 +8,7 @@
  * 一条路:上游配色(VS Code 的 colors / Obsidian 的变量)→ RawPalette → resolvePalette(补齐 + 表面阶梯 + 对比度兜底)
  * → paletteDeclarations → `:root[data-theme=…] { … }`。内置的七族是同一个 paletteFromVSCode 跑上游文件生成的数据,
  * 导入的走同一条路,只是数据当场算。
- *
- * Shared by main and the renderer: on desktop main derives the stylesheet from the stored slots (`slotsStylesheet`) and
- * hands it over before the first frame; the web / phone shell derives it in the page.
+ * Shared by main (the desktop's first-frame handover) and the renderer.
  */
 import Color from 'colorjs.io';
 import builtinThemePacks from './builtin-theme-packs.json';
@@ -367,7 +365,7 @@ export function isThemePack(value: unknown): value is ThemePack {
     && packModes(pack).every((mode) => typeof pack.modes[mode]?.bg === 'string' && typeof pack.modes[mode]?.fg === 'string');
 }
 
-/** A slot naming a pack that no longer exists (an imported one was removed) = Gugu's own colours for that mode. */
+/** A slot naming a pack that no longer exists = Gugu's own colours for that mode. */
 export function validThemePackSlots(slots: Partial<Record<ThemeMode, string>>, packs: readonly ThemePack[]): Partial<Record<ThemeMode, string>> {
   const out: Partial<Record<ThemeMode, string>> = {};
   for (const mode of ['dark', 'light'] as const) {

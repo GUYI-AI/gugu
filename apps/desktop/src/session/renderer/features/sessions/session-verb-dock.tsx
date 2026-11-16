@@ -82,7 +82,7 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
   return <SessionTaskDock projectId={projectId} verbKey={key} />;
 });
 
-/** The session agent's direct chat with me: a stable address ("ensure" may open it), read once, never pushed. */
+/** A stable address ("ensure" may open it), read once, never pushed. */
 const sessionAgentChat = replica({
   name: 'sessionAgentChat',
   scope: 'account',

@@ -103,7 +103,6 @@ export function useAppPageTab(said: ExtensionSharedPresentation, tabKind: string
   }
   const apps = installed.value;
   const contribution = apps.allTabContributions.find((entry) => entry.kind === tabKind);
-  // An App no longer installed keeps the name it had on the tab (`stored`, else its kind): the list says it is not there.
   const named = file !== undefined && !apps.isChatFile(tabKind, file) ? file : apps.tabTitle(tabKind) ?? stored ?? tabKind;
   return { contribution, ...extensionTabTitle(said, named), unknown: false, failed: null };
 }

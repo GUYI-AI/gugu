@@ -118,7 +118,6 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
       </div>
       <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
         className={stale ? 'max-h-96 overflow-y-auto p-1 gg-stale' : 'max-h-96 overflow-y-auto p-1'}>
-        {/* "No results" only once the words were searched: while the read is on its way the rows it will fill are held. */}
         {(commandsMode || current) && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">
             {translate('palette.noResults', { query: search })}

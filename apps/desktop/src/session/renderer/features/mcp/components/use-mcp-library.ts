@@ -61,7 +61,7 @@ export function useMcpLibrary() {
     onSettled: invalidate,
   }, queryClient);
 
-  // 内置那台的工具组开关:点下就画(开关不回弹);拒了就重读宿主那一份,重读也不行就回到点之前读到的(I4)。
+  // 工具组开关点下就画;拒了就重读宿主那一份(I4)。
   const setGuguToolsOff = useMutation({
     mutationFn: (off: GuguToolsOff) =>
       writeOver(mcpProvided, [host.key], (before) => before && { ...before, guguToolsOff: off }, () => host.mcpLibrary.setGuguToolsOff(off)),

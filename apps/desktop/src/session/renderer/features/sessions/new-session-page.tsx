@@ -230,8 +230,7 @@ export const NewSessionPage = observer(function NewSessionPage({
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  // An unselected project is a real first-class state, not an alias for projects[0]. The hidden execution context is
-  // prepared in the background; a failure is said under the composer.
+  // An unselected project is a real first-class state, not an alias for projects[0].
   const implicitProject = useReplica(implicitSessionHome, []);
   const implicitProjectId = implicitProject.state === 'value' ? implicitProject.value : undefined;
   const implicitProjectError = implicitProject.state === 'error'

@@ -39,14 +39,11 @@ function prefersDarkQuery(): MediaQueryList | null {
   return window.matchMedia('(prefers-color-scheme: dark)');
 }
 
-/** 桌面上主进程答不出系统外观(它那一侧已记原因)。 */
 export class SystemAppearanceReadError extends Error {}
 
 /**
- * 系统外观当下是不是深色。一个壳一个来源:
- *  - 桌面:问主进程(纯读,@@@native-appearance)。mac 上 themeSource 跟着用户的手选走,手选还在时 Chromium 的
- *    matchMedia 说的是那个手选、不是系统 —— 切到「跟随系统」那一帧拿它解析就会先画错一帧。主进程答不出来就抛。
- *  - web / 手机 / 测试:没有主进程,matchMedia 就是它的系统外观真值;拿不到 matchMedia(SSR)时按浅色。
+ * 系统外观当下是不是深色。桌面问主进程(@@@native-appearance):mac 上手选还在时 matchMedia 说的是手选、不是系统,
+ * 拿它解析会先画错一帧。web / 手机 / 测试:matchMedia;拿不到(SSR)按浅色。
  */
 export function systemPrefersDark(): boolean {
   const read = typeof window === 'undefined' ? undefined : window.electronAPI?.readSystemAppearance;
@@ -65,9 +62,7 @@ export function resolveThemePreference(preference: ThemePreference): HostTheme {
 }
 
 /**
- * 读用户选的那一项(存的值不认识时,读出来就是出厂的浅色:规则在 shared/device-preferences.ts 与主进程的 schema)。
- * null = 还不知道:只在桌面交接失败、设置也还没读到时(正常启动 preload 的交接在第一帧之前就答了,PR 3 D1–D3 实测)。
- * 这时谁都不改主题:屏幕上留着 index.html 引导脚本画的那一份。
+ * null = 还不知道(桌面交接失败、设置也还没读到):谁都不改主题,留着引导脚本画的那一份。
  */
 export function readThemePreference(): ThemePreference | null {
   const reading = devicePreferences.read('theme');
@@ -185,8 +180,7 @@ export function startHostThemeSystemSync(): () => void {
 let following = false;
 
 /**
- * 偏好在别处变了(另一个窗口、主进程):照样落到属性上。本窗口自己写的那一次属性已经落过,比对一下就跳过。
- * 整个文档一份,幂等。
+ * 偏好在别处变了(另一个窗口、主进程):照样落到属性上。整个文档一份,幂等。
  */
 function followThemePreference(): void {
   if (following) return;

@@ -209,9 +209,7 @@ export const sessionPlatformSelection = replica({
 });
 
 /**
- * Why the Gugu group is absent for this engine and leg, by the engine's own declarations (the same facts the host's gate
- * reads, sessionpage-platform-catalog.ts): no wire protocol = it cannot be pointed at the relay; no addressable identity
- * with a message transport on this leg = a platform token cannot be issued for it.
+ * Why the Gugu group is absent for this engine and leg, by the same facts the host's gate reads.
  */
 function gateReason(providerId: string, surface: SessionpageSessionSurface, agent: AgentPayload | undefined): string | null {
   if (!platformWireProtocol(providerId)) return guguCatalogReasonCode('not-routable');
@@ -256,7 +254,6 @@ export function usePlatformModelCatalog(
   const hostMachine = host?.deviceId ?? null;
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
   const online = machine === null || machine !== hostMachine || host?.online !== false;
-  // Restored from the snapshot (no multipliers or levels): unknown here until the read that follows lands.
   const catalog = useDetailedPlatformCatalog(providerId !== null);
   const agents = useReplica(agentsMetadata, providerId ? [machine] : null, { read: online });
   const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
@@ -274,7 +271,6 @@ export function usePlatformModelCatalog(
   const failed = catalog.state === 'error' || (catalog.state === 'value' && catalog.error !== null) || selection.state === 'error';
   const known = !providerId || (catalog.state !== 'unknown' && agents.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
   const catalogError = gate ?? (failed ? PLATFORM_CATALOG_RETRY_ERROR : null);
-  // An offered default must be a row the picker lists (as the host's gate requires).
   const agentDefault = selection.state === 'value' && selection.value.agentDefault
     && models.some((model) => model.id === selection.value.agentDefault!.modelId && offeredInModelPicker(model))
     ? selection.value.agentDefault : null;

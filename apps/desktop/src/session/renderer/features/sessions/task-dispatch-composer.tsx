@@ -78,7 +78,6 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
     if (carried) composerDrafts.set(draftKey, carried);
     return null;
   });
-  // What the person picked here (null = nothing picked yet: the chat's remembered project shows).
   const [picked, setPicked] = useState<{ projectId: string | undefined } | null>(null);
   const self = useReplica(thisDeviceId, []);
   const localDeviceId = self.state === 'value' ? self.value : null;
@@ -138,7 +137,6 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
       {!selection.known ? (
         selection.failed ? (
-          // A project picked by hand is the one sent to (`picked`); no composer until then.
           <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">
             <ComposerProjectPicker selectedId={undefined} onSelect={pickProject} />
             <ReadFailedLine message={translate('taskDispatch.projectMemoryFailed')} onRetry={retryMemory} />

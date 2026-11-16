@@ -37,7 +37,6 @@ export const machineListeningPorts = replica({
   fresh: 0,
 });
 
-/** For the address bar (shows nothing itself); returns stop. */
 export function holdRemotePorts(deviceId: string): () => void {
   const release = remotePortForwards.hold(deviceId);
   void remotePortForwards.prefetch(deviceId);

@@ -736,7 +736,6 @@ const ComposerForStore = observer(function ComposerForStore({
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
   // 只渲染成一个禁用图标按钮、列表根本不展开,所以这里**不**接安装动作 —— 接了也是死代码。
   // 分组口径仍与 initial-session-section 共用,见 `agent-availability-groups`。
-  // null while the list is not read: the locked agent icon holds its place (`agentOptionsLoading`).
   const agentOptions = useMemo<ComposerAgentOption[] | null>(
     () =>
       agents ? sortAgentsByAvailability(agents).map((a) => ({

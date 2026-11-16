@@ -42,7 +42,6 @@ export function wireInstalledExtensionTabs(): () => void {
 
 export async function registerInstalledExtensionTabs(): Promise<void> {
   ensureFollowing();
-  // A refresh alone reads only where shown.
   await installedExtensions.refresh(LOCAL_HOST);
   await installedExtensions.fetch(LOCAL_HOST);
 }

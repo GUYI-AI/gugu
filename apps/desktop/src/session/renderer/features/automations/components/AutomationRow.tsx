@@ -57,7 +57,6 @@ export const AutomationRow = observer(function AutomationRow({
   const next = useScheduledAutomationRun(automation.id);
 
   // #7221 agent 给自己排的:每次都送回建它的那条会话,状态就看那条会话的。
-  // Which task's status the row shows is known once the latest run is (until then no indicator, ❌ a guess).
   const sessionId = latest.state === 'value' ? (latest.value?.sessionId ?? automation.agentSessionId ?? null) : null;
   const projectId = automation.projectId ?? null;
   // 别的机器上的项目与本机的是同一张项目表、同一张任务表(#6264 一套工作台)。

@@ -8,7 +8,7 @@ import {
 import { VirtualizedChangesTree } from './virtualized-changes-tree';
 
 interface ChangesListOrTreeProps extends VirtualizedChangesListProps {
-  /** null: the layout setting is not read yet — rows of the list's height, no layout chosen. */
+  /** null: not read yet. */
   viewMode: ChangesListViewMode | null;
 }
 

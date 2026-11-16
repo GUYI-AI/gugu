@@ -92,7 +92,6 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
           <div className="flex flex-col gap-6 py-8">
             <section data-slot="mcp-library-gugu" className="flex flex-col">
               <SectionLabel className="!px-0">{translate('mcpLibrary.ownGroup')}</SectionLabel>
-              {/* Its three groups not read: a placeholder, or what failed with a retry (❌ an empty 「集成」 as if none were there). */}
               {library.provided.state === 'unknown' ? (
                 <Unknown className="my-2 h-8 w-full" />
               ) : library.provided.state === 'error' ? (

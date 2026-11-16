@@ -60,7 +60,6 @@ export const PullRequestsSection = observer(function PullRequestsSection({
         }
       : undefined;
   const branchCommits = useCommits(projectId, workspaceId, branchCommitRange);
-  // How far the branch is ahead decides what this section is (its commits, or pull requests): not known until read.
   const branchHead = branchCommitRange ? branchCommits.pages[0] : undefined;
   const showCreatePrModal = useShowModal('createPrModal');
   const { toast } = useToast();

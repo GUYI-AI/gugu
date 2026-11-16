@@ -7,10 +7,8 @@ import { harnessModelCredential } from './agent-replicas';
  * 「这家 harness 自报的某个自家模型,其 provider 在本机有没有凭据」—— composer 默认预选规则
  * (product spec「模型来源与 UI」,#4956)的渲染层读数(the `harnessModelCredential` replica).
  *
- * `null` = 还没读到:默认预选此刻判不了,模型触发器画占位(❌ 先按自家默认画、读到 'uncredentialed' 再跳到平台)。
- * 读失败 = `'unknown'`(判不出,见 `credentialStatus`):这条读数的诚实退化就是维持自家默认,失败本身在读数里,
- * 由 `harnessModelCredential` 的读记日志。
- * 没有要问的模型(这家目录没就绪)= `'unknown'`,不发请求。
+ * `null` = 还没读到:模型触发器画占位(❌ 先按自家默认画、读到 'uncredentialed' 再跳到平台)。
+ * 读失败或没有要问的模型 = `'unknown'`:维持自家默认。
  *
  * 登录动作之后整家重读:`harnessModelCredential.refresh(providerId)`(登录改变的是这家的整个凭据面)。
  */

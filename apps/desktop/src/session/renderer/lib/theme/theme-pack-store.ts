@@ -5,11 +5,8 @@
  *   - 选单模式主题:只填它那一格;当下生效的是另一种明暗时顺手把偏好切过去 —— 点一下就要看得见(owner 11-07 拍板);
  *   - 槽位空 = 那种明暗用咕咕默认。
  *
- * 落地是一段样式表(`<style id="gugu-theme-pack">`),由槽位 + 主题清单推出来(shared/theme/theme-packs.ts 的 slotsStylesheet),
- * 只算不存。一个壳一份存储(lib/devicePreferences.ts 同一个选择):
- *   - 桌面:槽位 = app 设置 `themePackSlots`;导入的主题 = 主进程 userData 下的文件;首帧的样式表由主进程算好,经 preload
- *     交给 index.html 的引导脚本;之后在页里按槽位 + 清单现算(同一个纯函数)。
- *   - web / 手机:槽位与导入的主题在 localStorage;样式表在页里算,顺手缓存一份给引导脚本首帧前插(它没有主进程可问)。
+ * 落地是一段样式表,由槽位 + 主题清单推出来(slotsStylesheet),只算不存。桌面:导入的主题在主进程,首帧的样式表由
+ * 主进程算好经 preload 交给引导脚本;web / 手机:都在 localStorage。
  * 只作用于这台电脑上的咕咕 —— 资源库别的格是分机器的,这一格不是。
  */
 import { replica, useReplica, type Reading } from '@/lib/replica';

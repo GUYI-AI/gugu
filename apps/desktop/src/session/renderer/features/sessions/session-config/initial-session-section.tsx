@@ -147,9 +147,8 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
 }
 
 export type InitialSessionState = {
-  /** The agent choice rests on what is read; while false `provider` means nothing and the agent trigger holds its place. */
+  /** While false `provider` (`modelKnown`: the model) means nothing and its trigger holds its place. */
   providerKnown: boolean;
-  /** Same for the model (harness catalog, Gugu catalog, credential). */
   modelKnown: boolean;
   provider: AgentProviderId | null;
   setProvider: (provider: AgentProviderId | null) => void;
@@ -525,7 +524,6 @@ export function useInitialSessionState(
     // 记忆单独一格传进去 —— 并进上面那个初值,换项目时的重置会连它一起抹掉(#5973)。
     // 亲手点过的那一家 > 上次真启动过的那家;出厂偏好猜出来的那家不算记忆,否则它排到「设置里的默认 Agent」
     // 前面,用户后来在设置里选的那家永远不生效。一个函数,主进程同用(`rememberedProviderOf`)。
-    // Not read yet: `undefined`, and the provider (so the model and effort) waits for it (`known`).
     memorySettings.state === 'value' ? rememberedProviderOf(memory) : undefined
   );
   const agentsReading = useAgents();

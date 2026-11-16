@@ -101,13 +101,11 @@ export const installedExtensions = replica({
   persist: {
     maxBytes: 2048,
     maxEntries: 1,
-    // Only this desktop's dock (the rail's first frame); a restored value (no list) is carried as it is.
     carry: (value: InstalledReading, hostKey: string) =>
       hostKey !== LOCAL_HOST ? undefined : value.list ? { dock: keptDockOf(value.list) } : value,
   },
 });
 
-/** Everything a surface derives from one host's list in one language, built once per (list, locale) (`appsOf`). */
 export class InstalledApps {
   readonly manifests: ExtensionManifest[];
   readonly variants: NonNullable<InstalledExtensionsList['variants']>;
@@ -223,7 +221,6 @@ export class InstalledApps {
     return this.tabs;
   }
 
-  /** The tabs a task can have of its own (its「+」, empty pane, the phone's task page); a switched-off App is left out. */
   get enabledTabContributions(): ExtensionTabContributionEntry[] {
     return this.allTabContributions.filter((entry) => entry.enabled && entry.ownPage && !entry.hidden);
   }
@@ -297,7 +294,6 @@ export function peekInstalledApps(hostKey: string = LOCAL_HOST): InstalledApps |
 export async function fetchInstalledApps(hostKey: string = LOCAL_HOST): Promise<InstalledApps> {
   const now = peekInstalledApps(hostKey);
   if (now) return now;
-  // A restored value (dock only) is fresh by time but says nothing of what is installed.
   if (installedExtensions.peek(hostKey).state === 'value') await installedExtensions.refresh(hostKey);
   const read = (await installedExtensions.fetch(hostKey)).list;
   if (!read) throw new Error('What is installed could not be read');

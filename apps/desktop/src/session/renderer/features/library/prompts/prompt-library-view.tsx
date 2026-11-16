@@ -149,7 +149,6 @@ export const PromptLibraryView = observer(function PromptLibraryView() {
         <DeviceScopeNoticeLine notice={{ kind: 'failed', text: translate('prompts.loadFailed'), retry: true, readOnly: false, inHeading: false, cached: false }} onRetry={actions.reload} />
       )}
       {/* 还没读到(在读 / 读不到):❌ 先画一句「还没有提示词」冒充它是空的。读不到时上面那一句说清楚。 */}
-      {/* What is installed not read yet either: the Apps' sections would come in under the list, so it waits too. */}
       {actions.appPromptsFailed ? (
         <ReadFailedLine className="px-3 py-2" message={messageForUser(actions.appPromptsFailed)} onRetry={() => void installedExtensions.refresh(LOCAL_HOST)} />
       ) : null}

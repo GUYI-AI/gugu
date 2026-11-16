@@ -59,7 +59,6 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
     []
   );
   const installed = useInstalledApps(LOCAL_HOST);
-  // The pages float over their slots, each slot drawing its own waiting state: none starts before the list is known.
   if (installed.state !== 'value') return <div ref={layerRef} data-slot="extension-view-layer" className="pointer-events-none absolute inset-0" />;
   const contributions = installed.value.residentTabContributions;
   const enabled = new Map<string, (typeof contributions)[number]>(

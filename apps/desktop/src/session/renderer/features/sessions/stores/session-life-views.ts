@@ -11,16 +11,13 @@ import type { Readable } from '@/lib/selectStore';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 
-/**
- * One mirror for every reader, keyed by machine and session: versions only compare within one machine and one link epoch
- * (a host that restarted counts from 1 again), so a link coming back drops that machine's views.
- */
+// Versions only compare within one machine and one link epoch (a restarted host counts from 1 again), so a link coming
+// back drops that machine's views.
 const views = observable.map<string, LifeView>();
 const failures = observable.map<string, string>();
 const requested = new Set<string>();
 
 export type LifeRoute = {
-  /** `''` = this machine. */
   key: string;
   read: (sessionId: string) => Promise<LifeView>;
   listen: (accept: (view: LifeView) => void) => () => void;

@@ -178,7 +178,6 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
   );
 });
 
-/** Rows not read yet: three row-sized placeholders (❌ "no services", ❌ an empty table). */
 function PortRowsUnknown() {
   return (
     <div className="px-2 py-2" data-testid="remote-ports-unknown">

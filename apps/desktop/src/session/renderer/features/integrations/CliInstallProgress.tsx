@@ -40,7 +40,6 @@ export function CliInstallProgress({ source, read, idle = null }: { source: stri
   const { t } = useTranslation('assistant')
   readers.set(source, read)
   const reading = useReplica(cliInstallProgress, [source])
-  // A failed read (or one failing over an earlier answer) shows `idle`: nothing is said as downloading that is not known.
   const progress = reading.state === 'value' && !reading.error ? reading.value : null
   if (!progress) return <>{idle}</>
   const total = progress.totalBytes

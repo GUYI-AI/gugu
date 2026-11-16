@@ -62,7 +62,6 @@ const AgentGrid: React.FC<{
   agents: AgentPayload[];
   busy: ReadonlySet<string>;
   /** #6264 此刻「登录已失效」的那几家 —— 图标上挂警示角标。 */
-  /** null = not known yet: no expiry mark is drawn. */
   expired: ReadonlySet<string> | null;
   onSelectAgent: (agentId: string) => void;
 }> = ({ agents, busy, expired, onSelectAgent }) => (

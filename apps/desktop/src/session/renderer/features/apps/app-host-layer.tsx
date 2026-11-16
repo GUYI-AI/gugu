@@ -200,7 +200,6 @@ export function AppHostLayerSources({ extensionId }: { extensionId: string }) {
   useEffect(() => {
     if (figureStale) setAssistantFigure(extensionId, null);
   }, [figureStale, extensionId]);
-  // Not read yet: no numbers read (they are read once the App is known to read the assistant).
   return installed.state === 'value' && readsAssistant(installed.value, extensionId) ? <AssistantAppCountsSource /> : null;
 }
 

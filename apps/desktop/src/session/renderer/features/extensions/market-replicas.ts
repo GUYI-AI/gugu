@@ -213,7 +213,6 @@ export const marketSearch = replica({
   watch: marketFeed,
 });
 
-/** null = not in the market. */
 export const marketEntry = replica({
   name: 'marketEntry',
   scope: 'device',
@@ -340,7 +339,6 @@ function onRefreshedOf(hostKey: string, listener: (refreshed: { outcome: string 
 
 const changedAt = new Map<string, string | null>();
 
-/** Once per `fetchedAt`. */
 export function marketChanged(hostKey: string, fetchedAt: string | null = null): boolean {
   if (fetchedAt !== null && changedAt.get(hostKey) === fetchedAt) return false;
   changedAt.set(hostKey, fetchedAt);

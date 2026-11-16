@@ -114,8 +114,7 @@ export function useAgentAuthStatuses(
 }
 
 /**
- * #6264 这台机器上此刻「登录已失效」的那几家 —— 只订阅那份 live state,❌ 探任何一家。
- * 资源库图标网格一次读完用。null = 还没读到 / 读不到:图标上不画失效标记(只在知道失效时画)。
+ * #6264 这台机器上此刻「登录已失效」的那几家 —— 只订阅,❌ 探。null:不画失效标记。
  */
 export function useExpiredAgentIds(enabled = true): ReadonlySet<string> | null {
   const list = useReplica(agentConfigList, enabled ? [null] : null);

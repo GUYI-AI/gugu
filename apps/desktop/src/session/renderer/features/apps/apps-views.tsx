@@ -91,7 +91,6 @@ function useShownAsAssistant(appId: string | undefined, tab: string | undefined)
   return target.kind === 'app' && !!appId && target.extensionId === appId && !tab;
 }
 
-/** The page this view shows of an App: the tab named, or its main page; null: the App has no such page here. */
 function pageOf(apps: InstalledApps, appId: string | undefined, tab: string | undefined) {
   return tab ? apps.allTabContributions.find((entry) => entry.extensionId === appId && entry.kind === `${appId}.${tab}`) ?? null : appId ? apps.mainTabOf(appId) : null;
 }
@@ -112,7 +111,7 @@ const AppTitlebar = observer(function AppTitlebar() {
   // The assistant's page: nothing of the App's on the band but a reported error's mark. Its page starts at the top, under
   // this band, so the band is not the window's handle while the page is drawn (a drag band over the App's webview takes
   // real clicks on its tabs, owner 11-12): the conversation's column carries the handle (AppConversationFrame `windowHandle`).
-  // What is installed not read yet (reload, restored window): the name's place is held, ❌ an empty band then a name (A6).
+  // ❌ an empty band then a name (A6).
   if (installed.state === 'unknown' && !assistantPage) {
     return <ShellTitlebar leftSlot={<Unknown className="h-4 w-24" />} />;
   }
@@ -182,7 +181,7 @@ const AppMainPanel = observer(function AppMainPanel() {
   return (
     <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
       {installed.state === 'unknown' ? (
-        // Not read yet: the whole page held (A6), ❌ 「已停用」 before the list says so.
+        // ❌ 「已停用」 before the list says so (A6).
         <div className="min-h-0 flex-1" data-testid="app-page-unknown" aria-busy="true" />
       ) : installed.state === 'error' ? (
         <div className="flex flex-col items-start gap-2 text-sm text-foreground-muted" style={{ padding: 24 }} data-testid="app-page-unreadable">

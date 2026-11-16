@@ -38,7 +38,6 @@ export function useCreateSessionState(
   }
 ) {
   const { settings } = useSessionSettings();
-  // null = the setting is not read yet: nothing is generated and the name stays pending until it is.
   const autoGenerateName: boolean | null = opts?.requireGeneratedName === true ? true : settings.state === 'value' ? settings.value.autoGenerateName : null;
 
   const [linkedType, setLinkedTypeRaw] = useState<LinkedType>(initialPR ? 'pr' : initialLinkedType);

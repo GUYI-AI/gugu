@@ -172,10 +172,7 @@ function entryTime(entry: DirectoryEntry): string | null {
   return null;
 }
 
-/**
- * The memory cards of a panel's `memory` collection (pure: a surface holding the panel snapshot derives them at render).
- * Each card's text is read when it is shown (`contentPending`, its `contentRevision`).
- */
+/** Pure: derived at render; each card's text is read when it is shown. */
 export function memoryNotesOf(rows: readonly AssistantPanelItem[], memoryDir: string): { notes: MemoryEntry[]; index: string | null } {
   const notes = rows.filter(row => typeof row.data.relativePath === 'string' && !String(row.data.relativePath).includes('/')
     && /\.md$/i.test(String(row.data.relativePath)) && !['MEMORY.md','working-context.md'].includes(String(row.data.relativePath)))

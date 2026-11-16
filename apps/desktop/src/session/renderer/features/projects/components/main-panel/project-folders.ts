@@ -26,7 +26,6 @@ export type ShownFolder = ProjectFolder & {
   offline: boolean;
   deviceId: string | null;
   stale?: boolean;
-  /** A paper held for a folder of a machine not answered yet (the last run's count): no name, no menu, same size. */
   placeholder?: true;
 };
 
@@ -94,9 +93,7 @@ export type ProjectFoldersState = {
   detach: (folder: ProjectFolder) => Promise<boolean>;
 };
 
-/**
-* One local project's folders, drawn in member order, ❌ in the order machines answer (cards went 3 → 6 and reordered).
- */
+/** One local project's folders, drawn in member order, ❌ in the order machines answer (cards went 3 → 6 and reordered). */
 export const projectFolders = replica({
   name: 'projectFolders',
   scope: 'account',
@@ -120,9 +117,7 @@ export const projectFolders = replica({
   },
 });
 
-/**
- * How many folders each member machine showed last, kept so the first open draws every paper at once.
- */
+/** How many folders each member machine showed last, kept so the first open draws every paper at once. */
 export const projectFolderLayout = replica({
   name: 'projectFolderLayout',
   scope: 'account',
