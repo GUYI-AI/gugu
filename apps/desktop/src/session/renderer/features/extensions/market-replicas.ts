@@ -17,6 +17,14 @@ import { decodeShot } from './panel/decoded-shots';
  * @@@client-state-model). The host's `changed` push refreshes the market models (their `watch`, one per host while shown).
  */
 
+// What the App page kept itself before the read model (panel/kept-shelf.ts, removed): a whole market catalog per machine
+// and a picture, in the localStorage quota the snapshot uses. Nothing reads them: dropped once this module loads.
+if (typeof localStorage !== 'undefined') {
+  const retired = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+    .filter((key): key is string => !!key && (key.startsWith('gugu.appsShelf.v1:') || key === 'gugu.appsShot.v1'));
+  for (const key of retired) localStorage.removeItem(key);
+}
+
 /** What the phone's App store answers for the market (registered by phoneMarketPage.ts). */
 export type PhoneMarket = {
   shelf: () => Promise<MarketShelfFull>;

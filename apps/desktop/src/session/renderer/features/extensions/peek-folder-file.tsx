@@ -9,6 +9,8 @@ import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { WorkspaceFileView } from '@renderer/features/sessions/file-view/workspace-file-view';
 import { ExtensionTabPane } from './extension-tab-pane';
 import { pickSessionOpener, type SessionOpener } from './open-with';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
 
 type FolderPeek = Extract<PeekTarget, { kind: 'folder' }>;
 
@@ -25,17 +27,27 @@ export const PeekFolderFile = observer(function PeekFolderFile({ target, tabId }
 
 function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
   const held = useHeldWorkspace(target);
-  const [opener, setOpener] = useState<SessionOpener | null>(null);
+  const [opener, setOpener] = useState<SessionOpener | { failed: unknown } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   // @@@effect-flow(command) - picks which App opens this file, asking the person in the chooser when several can
   useEffect(() => {
     let live = true;
-    void pickSessionOpener(target.path, target.ask).then((picked) => live && setOpener(picked));
+    setOpener(null);
+    // What is installed unreadable: said with a retry (❌ an unhandled rejection and a blank pane).
+    pickSessionOpener(target.path, target.ask).then((picked) => live && setOpener(picked), (failed: unknown) => live && setOpener({ failed }));
     return () => {
       live = false;
     };
-  }, [target.path, target.ask]);
+  }, [target.path, target.ask, attempt]);
   if (!opener || held === null) return null;
   if (held !== 'ready') return <Unread target={target} why={held} />;
+  if ('failed' in opener) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <ReadFailedLine message={messageForUser(opener.failed)} onRetry={() => setAttempt((n) => n + 1)} />
+      </div>
+    );
+  }
   if ('tabKind' in opener) {
     const extensionId = parseExtensionTabKind(opener.tabKind)?.extensionId ?? opener.tabKind;
     return (
