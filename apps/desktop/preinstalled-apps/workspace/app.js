@@ -3299,7 +3299,8 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   if (!cited) return
   try {
     await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
-    if (!whole) dropSelection()
+    // Words picked go with the selection; a block cited from its menu had none on screen to drop.
+    if (!whole && picks.some((pick) => pick.text)) dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
