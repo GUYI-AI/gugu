@@ -5,7 +5,7 @@ import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { ThemeProvider } from '@/store/theme'
 import { writeThemePreference } from '@renderer/lib/theme/host-theme'
-import { closeTopicTab, topicTabOf, infoTabOf } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeInfoTab, closeTopicTab, topicTabOf, infoTabOf } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@gugu/session-ui/styles/global'
@@ -31,13 +31,13 @@ vi.mock('@/lib/chat', async original => ({ ...await original<object>(), ...await
 vi.mock('@/lib/topics', async original => ({ ...await original<object>(), topicService: { listTopicsOfChat: vi.fn(async () => reads.topics) } }))
 vi.mock('@/hooks/useRoomCollab', async original => ({ ...await original<object>(), useRoomCollab: () => ({ snapshot: null, error: null, reload: vi.fn(), authorityRevision: 0 }) }))
 let harness: ReturnType<typeof createReactHarness> | undefined
-afterEach(() => { closeTopicTab('context-room'); harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
+afterEach(() => { harness?.cleanup(); closeInfoTab('context-room'); closeTopicTab('context-room'); document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
 
 for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
   it(`${width}/${theme}: real room route selects topic B, switches to A and returns to its source`, async () => {
     await page.viewport(width, 844); setLocalePreference('zh-CN')
     writeThemePreference(theme); document.documentElement.setAttribute('data-phone-shell', '')
-    closeTopicTab('context-room'); harness = createReactHarness()
+    closeInfoTab('context-room'); closeTopicTab('context-room'); harness = createReactHarness()
     Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
     const group = chat({ id: 'context-room', kind: 'group', name: '来源群' })
     await renderWithAppProviders(harness, <ThemeProvider><LocalizationProvider><PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--ta-panel-bg)' }}>
@@ -65,7 +65,10 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await page.elementLocator(header().querySelector<HTMLElement>('[role="button"]')!).click()
     await until('topic details keep the actual topic identity', () => infoTabOf(group.id)?.info.topic?.topicChatId === 'context-topic-a' && header()?.dataset.chatContextId === 'context-topic-a')
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-info-${width}-${theme}.png` })
-    await page.elementLocator(header().querySelector<HTMLButtonElement>('button')!).click()
+    // Info is a real pushed page; its Back covers the retained topic header.
+    // Click that visible page, never force-click the underlying topic button.
+    await expect.element(page.getByTestId('chat-settings-panel')).toBeVisible()
+    await page.getByTestId('chat-settings-panel').getByRole('button', { name: '返回', exact: true }).click()
     await until('details Back restores its topic', () => !infoTabOf(group.id)?.shown && header()?.dataset.chatContextId === 'context-topic-a')
     await page.elementLocator(header().querySelector<HTMLButtonElement>('button')!).click()
     await until('actual Back returns to room', () => topicTabOf(group.id) === null && header()?.dataset.chatContextId === 'context-room')
