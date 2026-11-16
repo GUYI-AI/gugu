@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useMobileShell } from '@/hooks/useMobileShell';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
@@ -61,6 +62,7 @@ export function ConfirmActionDialog({
   onClose,
 }: Props) {
   const { translate } = useSessionMessages();
+  const mobile = useMobileShell();
   const [dontAskAgain, setDontAskAgain] = useState(false);
   const [scopeChecked, setScopeChecked] = useState(false);
   const [optionChecked, setOptionChecked] = useState(option?.defaultChecked ?? false);
@@ -103,10 +105,10 @@ export function ConfirmActionDialog({
             <span className="min-w-0">{dontAskAgainLabel}</span>
           </label>
         ) : null}
-        <Button variant="outline" onClick={onCancel ?? onClose}>
+        <Button className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} variant="outline" onClick={onCancel ?? onClose}>
           {cancelLabel ?? translate('common.cancel')}
         </Button>
-        <ConfirmButton disabled={confirmDisabled} variant={variant} onClick={() => onSuccess({ dontAskAgain, scopeChecked, optionChecked })}>
+        <ConfirmButton className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} disabled={confirmDisabled} variant={variant} onClick={() => onSuccess({ dontAskAgain, scopeChecked, optionChecked })}>
           {confirmLabel ?? translate('common.confirm')}
         </ConfirmButton>
       </DialogFooter>
