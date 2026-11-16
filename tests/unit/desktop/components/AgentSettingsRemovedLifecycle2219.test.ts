@@ -55,7 +55,7 @@ describe('AgentSettingsModal removed lifecycle boundary (#2219)', () => {
       },
     )
     const deleteButton = Array.from(document.body.querySelectorAll('button')).find(
-      (button) => button.textContent === '归档任务',
+      (button) => button.textContent === '归档会话',
     ) as HTMLButtonElement | undefined
     expect(deleteButton, 'active owned agent exposes the real settings delete path').toBeTruthy()
     await clickElement(deleteButton!)
@@ -75,7 +75,7 @@ describe('AgentSettingsModal removed lifecycle boundary (#2219)', () => {
       { auth: { id: 'owner-1' }, contacts: { removeOwnedAgent } },
     )
     const archiveButton = Array.from(document.body.querySelectorAll('button')).find(
-      (button) => button.textContent === '归档任务',
+      (button) => button.textContent === '归档会话',
     ) as HTMLButtonElement | undefined
     await clickElement(archiveButton!)
     await waitForCondition(() => confirmOwnedAgentArchiveMock.mock.calls.length === 1, 'archive choice should open')
