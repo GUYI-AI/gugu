@@ -16,6 +16,7 @@
 .agent-question-card__answers { display: flex; flex-direction: column; gap: 12px; }
 .agent-question-card__answer { min-width: 0; }
 .agent-question-card__answer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--muted-fg); font-size: var(--font-caption); }
+.agent-question-card__answer-head > span { min-width: 0; overflow-wrap: anywhere; }
 .agent-question-card__answer-head button { flex-shrink: 0; }
 .agent-question-card__answer p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-question-card__custom { width: 100%; min-height: 54px; margin-top: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: inherit; resize: vertical; }
