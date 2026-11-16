@@ -12,12 +12,12 @@
 import type { MeasureCtx } from '@session-chat/core/define';
 import { readableLabel, rowTranslator } from '../readable-label';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { IconChevronDown, IconChevronRight, IconDocument, IconGlobe, IconImage } from '@session-chat/components/primitives/icons';
+import { FileTile, IconChevronDown, IconChevronRight, IconGlobe } from '@session-chat/components/primitives/icons';
 import { defineUnit } from '@session-chat/core/units';
 import { useChatTranslator } from '@session-chat/localization';
 import type { OpenedOutput, OpenedOutputItem } from '@session-chat/model';
 import { openedOutputLook } from '@session-chat/state/opened-outputs';
-import { Match, Show, Switch } from 'solid-js';
+import { Show } from 'solid-js';
 import { vars } from '@session-chat/styles/theme.css';
 import { card, cardClickable, chevron, detail, modeButton, modeLabel, nameRow, slot, text, tile } from './opened-output.css';
 
@@ -25,18 +25,6 @@ import { card, cardClickable, chevron, detail, modeButton, modeLabel, nameRow, s
 export const OPENED_OUTPUT_ROW_H = 72;
 /** 一组卡与上面回复、下面内容之间各一档。 */
 export const OPENED_OUTPUT_GAP = 8;
-
-/**
- * 类型色:一眼分出是什么(Codex 的 PDF 红、Slack / 微信文件的类型色块同一个意思)。只用主题里已有的几格色,
- * 底是同色 12% 叠在卡底上。
- */
-export function accentOf(look: ReturnType<typeof openedOutputLook>): string {
-  if (look.kind === 'page') return vars.link;
-  if (look.kind === 'image') return vars.diffAdded;
-  if (look.extension === 'PDF' || look.extension === 'PPT' || look.extension === 'PPTX') return vars.fgError;
-  if (look.extension === 'HTML' || look.extension === 'HTM') return vars.fgPermission;
-  return vars.fgMuted;
-}
 
 /**
  * 名字拆成「可省略的主干」和「留着的尾巴」:文件留扩展名连同它前面两个字(「…截图.png」),
@@ -165,19 +153,14 @@ export const openedOutputUnitDef = defineUnit<OpenedOutputItem, { rowH: number; 
           }
         }}
       >
-        <span
-          class={tile}
-          style={{ color: accentOf(look()), background: `color-mix(in srgb, ${accentOf(look())} 12%, transparent)` }}
+        <Show
+          when={look().kind === 'page'}
+          fallback={<span class={tile}><FileTile name={look().name} /></span>}
         >
-          <Switch fallback={<IconDocument />}>
-            <Match when={look().kind === 'page'}>
-              <IconGlobe />
-            </Match>
-            <Match when={look().kind === 'image'}>
-              <IconImage />
-            </Match>
-          </Switch>
-        </span>
+          <span class={tile} style={{ color: vars.link, background: `color-mix(in srgb, ${vars.link} 12%, transparent)` }}>
+            <IconGlobe />
+          </span>
+        </Show>
         <span class={text}>
           <span data-slot="opened-output-name" class={nameRow}>{layout().name.text}</span>
           <span data-slot="opened-output-detail" class={detail}>{layout().description.text}</span>
