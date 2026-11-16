@@ -10,7 +10,7 @@ import type { MarketListing } from '@shared/extensions/market-entries';
 import { marketHome, type MarketHome } from '@shared/extensions/market-home';
 import { extensionsInventoryChangedChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
-import { marketUpdates, peekInstalledApps, type InstalledApps } from './installed-extensions';
+import { installedExtensions, marketUpdates, peekInstalledApps, type InstalledApps } from './installed-extensions';
 import { appLifecycle } from './panel/app-lifecycle';
 import { decodeShot } from './panel/decoded-shots';
 
@@ -221,13 +221,26 @@ export const marketShelf = replica({
   persist: {
     maxBytes: 8448,
     maxEntries: 1,
-    // What is installed when the first screen is kept gives each card its button (read again with the shelf).
+    // Reads what is installed here and the offered updates at the moment of the write, to keep each card's button;
+    // `keepShelfButtonsCurrent` writes the shelf again when either changes, so an install is never kept as 「Install」.
     carry: (value: MarketShelf, hostKey: string, locale: string) =>
       hostKey.startsWith('remote:') ? undefined : !value.full ? value : value.full.errorKind ? undefined
         : { first: firstScreenOf(value.full, locale, hereNow(hostKey)) },
   },
   watch: marketFeed,
 });
+
+/** Keeps the kept first screen's buttons current: this computer's shelf is written again (same value) when what is installed
+ * here or the offered updates change, so its `carry` reads them anew. Returns the stop. */
+export function keepShelfButtonsCurrent(): () => void {
+  const keepAgain = () => {
+    for (const entry of marketShelf.entries(LOCAL_HOST)) {
+      if (entry.reading.state === 'value' && entry.reading.value.full) marketShelf.set(entry.args, (old) => old);
+    }
+  };
+  const stops = [installedExtensions.subscribe([LOCAL_HOST], keepAgain), marketUpdates.subscribe([LOCAL_HOST], keepAgain)];
+  return () => { for (const stop of stops) stop(); };
+}
 
 type MarketSearch = Pick<MarketShelfFull, 'errorKind' | 'items' | 'invalid' | 'total' | 'page' | 'hasMore'>;
 

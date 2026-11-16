@@ -35,6 +35,7 @@ const h = vi.hoisted(() => {
     marketRefresh: vi.fn(answer({ outcome: 'unchanged', fetchedAt: '2026-09-28T00:00:00.000Z' })),
     marketEntry: vi.fn(offline),
     installFromFolder: vi.fn(),
+    installFromMarket: vi.fn(),
     uninstall: vi.fn(async () => ({ success: true })),
   };
   return { manifest, api, ranking: vi.fn(async () => ({ data: [], error: null })), showConfirm: vi.fn(), pickFolder: vi.fn(async () => '/tmp/notes-next') };
@@ -589,7 +590,7 @@ describe('市场页 (#7059)', () => {
   });
 
   // 重启:渲染进程是新的(查询缓存是空的),手上只有快照里的那份第一屏(`marketShelf` 的 carry)。
-  it('重启后第一帧:画快照里的第一屏(卡片原位、按钮和精选图是同尺寸占位);读到以后原位换上', async () => {
+  it('重启后第一帧:画快照里的第一屏(卡片原位、存下的按钮,精选图是同尺寸占位);读到以后原位换上,读到之前按下的按钮读到后照真实状态执行', async () => {
     const stored = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => stored.get(key) ?? null,
@@ -617,8 +618,16 @@ describe('市场页 (#7059)', () => {
     // The featured picture is not kept: a placeholder of its size, ❌ the icon card.
     expect(heroArt()?.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(heroArt()?.querySelector('.mk-hero-big')).toBeNull();
+    // The kept button is drawn and counts: pressed now, it is carried out once the shelf is read, on what that read says.
+    const press = document.querySelector('[data-testid="market-row-action-arxiv"]') as HTMLElement | null;
+    expect(press?.getAttribute('data-lifecycle')).toBe('get');
+    h.api.installFromMarket.mockResolvedValue({ success: true, data: { outcome: 'installed' } });
+    act(() => press!.click());
+    expect(h.api.installFromMarket).not.toHaveBeenCalled();
     await act(async () => answer());
     await settle();
+    expect(h.api.installFromMarket).toHaveBeenCalledTimes(1);
+    expect(h.api.installFromMarket.mock.calls[0]![0]).toMatchObject({ ref: { extensionId: 'arxiv' } });
     expect(document.querySelector('[data-testid="extensions-market-first-screen"]')).toBeNull();
     expect(rows()).toEqual(['extension-card-arxiv', 'extension-card-trace']);
     expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));

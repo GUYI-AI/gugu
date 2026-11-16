@@ -897,6 +897,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     }
   };
 
+  // A kept first-screen button pressed before the shelf is read: carried out once the shelf and what is installed are read,
+  // on what they say then (❌ a press that does nothing; ❌ acting on the kept state).
+  const [keptPress, setKeptPress] = useState<string | null>(null);
+  const runLifecycleNow = useRef(runLifecycle);
+  runLifecycleNow.current = runLifecycle;
+  // @@@effect-flow(command) - runs a press made on a kept button when the reads it acts on have landed
+  useEffect(() => {
+    if (!keptPress || !fullShelf || !apps) return;
+    setKeptPress(null);
+    runLifecycleNow.current(keptPress, fullShelf.items.find((item) => item.manifest.id === keptPress));
+  }, [keptPress, fullShelf, apps]);
+
   /** 「对 agent 说」点一句:新建任务那一页,这句已经填在输入框里(它读新建框那一格草稿)。只在本机。 */
   const askAgent = remote
     ? undefined
@@ -1300,7 +1312,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               </div>
             ) : null}
             {!machineOffline && shelf.status === 'loading' && firstScreen && view === 'market' && chip === 'all' && debouncedQuery === '' ? (
-              <AppMarketFirstScreen first={firstScreen} hostKey={host.key} chip={chip} onChipChange={setChip} />
+              <AppMarketFirstScreen first={firstScreen} hostKey={host.key} chip={chip} onChipChange={setChip} onAction={setKeptPress} />
             ) : !machineOffline && shelf.status === 'loading' ? (
               <div className="mk-sec">
                 <ShelfSkeleton label={translate('extensions.loading')} />

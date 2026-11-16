@@ -240,11 +240,13 @@ export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, 
 }
 
 /** The first screen kept across restarts, card for card where the shelf will draw them, until it is read. */
-export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setChip }: {
+export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setChip, onAction = () => undefined }: {
   first: MarketFirstScreen;
   hostKey: string;
   chip: 'all' | MarketCategory;
   onChipChange: (chip: 'all' | MarketCategory) => void;
+  /** A kept button pressed: the host carries it out once the shelf is read (the kept button may be stale by then). */
+  onAction?: (extensionId: string) => void;
 }) {
   const { translate, locale } = useSessionMessages();
   const chipKeys: ('all' | MarketCategory)[] = ['all', ...first.categories];
@@ -260,7 +262,7 @@ export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setCh
     const card = first.grid[index];
     return card ? (
       <MarketAppRow key={card.id} id={card.id} name={card.name} subtitle={card.subtitle} iconUrl={card.iconUrl} deprecated={card.deprecated}
-        lifecycle={card.button ? keptLifecycle(card.button) : null} actionUnknown={!card.button} translate={translate} onOpen={nothing} onAction={nothing} />
+        lifecycle={card.button ? keptLifecycle(card.button) : null} actionUnknown={!card.button} translate={translate} onOpen={nothing} onAction={() => onAction(card.id)} />
     ) : slot(index);
   });
   return (
@@ -285,7 +287,7 @@ export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setCh
                 meta={[translate(`extensions.category.${card.category}`), translate('extensions.official'),
                   ...(language ? [translate('extensions.screenshotsIn', { language })] : [])].join(metadataSeparator())}
                 iconUrl={card.iconUrl} lifecycle={card.button ? keptLifecycle(card.button) : null} actionUnknown={!card.button}
-                translate={translate} onOpen={nothing} onAction={nothing} />
+                translate={translate} onOpen={nothing} onAction={() => onAction(card.id)} />
             );
           })}
         </AppShelfRow>

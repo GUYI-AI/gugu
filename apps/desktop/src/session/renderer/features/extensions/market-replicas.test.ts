@@ -7,7 +7,7 @@ vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, rpcOn: () => ({ e
 vi.mock('@renderer/utils/logger', () => ({ log: { warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn() } }));
 
-const { CARD_LIMITS, firstScreenOf, marketShelf, phoneShelfOf } = await import('./market-replicas');
+const { CARD_LIMITS, firstScreenOf, keepShelfButtonsCurrent, marketShelf, phoneShelfOf } = await import('./market-replicas');
 type MarketShelfFull = import('./market-replicas').MarketShelfFull;
 const { queryClient } = await import('@/lib/replica');
 const { installedExtensions, marketUpdates } = await import('./installed-extensions');
@@ -98,6 +98,22 @@ describe('the market shelf kept across restarts', () => {
     marketShelf.set(['local', 'en'], { full });
     first = (keptEntry()!.value as { first: ReturnType<typeof firstScreenOf> }).first;
     expect(first.grid[0]).not.toHaveProperty('button');
+  });
+
+  it('installing an App here writes the kept shelf again: its kept button is then 「Open」, ❌ the 「Install」 kept before', async () => {
+    const stop = keepShelfButtonsCurrent();
+    const items = Array.from({ length: 20 }, (_, index) => item(index));
+    const full = await phoneShelfOf(items);
+    const id = full.featured[0]!.manifest.id;
+    installHere([]);
+    marketShelf.set(['local', 'en'], { full });
+    const kept = () => (keptEntry()!.value as { first: ReturnType<typeof firstScreenOf> }).first.featured[0]!.button;
+    expect(kept()).toEqual({ kind: 'get' });
+    // Installed (no update offered): only what is installed changed, not the shelf.
+    const installed = { ...items.find((entry) => entry.manifest.id === id)!.manifest, version: '9.0.0' };
+    installedExtensions.set(['local'], { list: { extensions: [installed], invalid: [], disabled: [] } as never });
+    expect(kept()).toEqual({ kind: 'open' });
+    stop();
   });
 
   it('a card whose name does not fit is left out whole (its slot a placeholder), never cut short', async () => {

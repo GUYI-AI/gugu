@@ -19,7 +19,7 @@ vi.mock('./installed-extensions', () => ({ LOCAL_HOST: 'local', marketUpdates: {
 vi.mock('./market-replicas', () => ({ featuredShot: { entries: () => [
   { args: ['local', 'pomo', '1.0.0'], reading: { state: 'value', value: { src: 'https://dl.example/market/media/pomo/1.0.0.png', placeholder: 'data:x' } }, fetching: false },
   { args: ['local', 'none', '1.0.0'], reading: { state: 'value', value: null }, fetching: false },
-] } }));
+] }, keepShelfButtonsCurrent: () => () => undefined }));
 vi.mock('./panel/decoded-shots', () => ({ decodeShot: h.decode }));
 
 const { wireMarketRefresh } = await import('./wire-market-refresh');
