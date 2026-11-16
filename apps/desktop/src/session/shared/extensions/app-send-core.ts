@@ -138,7 +138,7 @@ async function pillsOf(token: string, refs: CheckedRef[]): Promise<{ chatId: str
     if (version != null && row.version != null && version > row.version) {
       throw new AppSendError('invalid', `File ${ref.file.id} is at version ${row.version}: a place cannot be picked on version ${version}`);
     }
-    const words = [oneLine(row.filename), ref.label].filter(Boolean).join(' · ');
+    const words = `${oneLine(row.filename)}${ref.label ? ` (${ref.label})` : ''}`;
     return { chatId: row.chat_id, label: clipped(words), link: groupFileLink(row.id, { version, at: ref.at }) };
   });
   const chats = new Set(pills.map((pill) => pill.chatId));

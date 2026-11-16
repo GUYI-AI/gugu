@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { commandRegistry } from '@renderer/lib/commands/registry'
+import { clearViewState, readViewState, takeLegacyLocalStorageForAccount, writeViewState, type ViewPanel } from '@/lib/viewStateTable'
 
 /** What a message is, for the quick filters: a picture or video, any other file, a link, or one that @-mentions me. */
 export type SearchKind = 'media' | 'file' | 'link' | 'mention'
@@ -66,24 +67,26 @@ export function reopenGlobalSearch(): void {
   if (!commandRegistry.dispatch('app.globalSearch')) throw new Error('No global search panel is mounted')
 }
 
-const RECENT_KEY = 'gugu.globalSearch.recent'
 const RECENT_MAX = 5
 /** Where recent words are kept: one conversation (「最近在这里搜过」), or EVERYWHERE for a search with none in scope. */
 export const EVERYWHERE = '*'
+// Per account and scope, view state (lib/viewStateTable). Kept in localStorage before, one record for every scope and no
+// account (`gugu.globalSearch.recent`): moved over once into the last signed-in account.
+const recentOf = (scope: string): ViewPanel => ({ conversation: scope, panel: 'search-recent' })
+takeLegacyLocalStorageForAccount((key) => key === 'gugu.globalSearch.recent', (_, raw, account) => {
+  for (const [scope, words] of Object.entries(JSON.parse(raw) as Record<string, unknown>)) {
+    if (Array.isArray(words)) writeViewState({ ...recentOf(scope), account }, { words: words.filter((word): word is string => typeof word === 'string').slice(0, RECENT_MAX) })
+  }
+})
 /** The last words searched in this scope whose result was opened, newest first (this device only). */
 export function recentSearches(scope: string): string[] {
-  const all = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '{}') as Record<string, string[]>
-  return all[scope] ?? []
+  return readViewState<{ words: string[] }>(recentOf(scope)).words ?? []
 }
 export function rememberSearch(scope: string, text: string): void {
-  const all = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '{}') as Record<string, string[]>
-  all[scope] = [text, ...(all[scope] ?? []).filter((old) => old !== text)].slice(0, RECENT_MAX)
-  localStorage.setItem(RECENT_KEY, JSON.stringify(all))
+  writeViewState(recentOf(scope), { words: [text, ...recentSearches(scope).filter((old) => old !== text)].slice(0, RECENT_MAX) })
 }
 export function forgetSearches(scope: string): void {
-  const all = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '{}') as Record<string, string[]>
-  delete all[scope]
-  localStorage.setItem(RECENT_KEY, JSON.stringify(all))
+  clearViewState(recentOf(scope))
 }
 
 /** Search one conversation (optionally one sender's messages in it): the global panel, scoped by removable chips. */

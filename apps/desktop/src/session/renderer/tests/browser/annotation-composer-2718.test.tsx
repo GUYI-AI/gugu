@@ -16,14 +16,13 @@ import '@/mobile/phone-shell.css';
 let harness: ReturnType<typeof createReactHarness> | null = null;
 afterEach(() => { harness?.cleanup(); harness = null; });
 
-it('places one annotation attachment above the phone input and offers edit only for browser comments', async () => {
+it('places one annotation attachment above the phone input with edit and delete for each comment', async () => {
   await page.viewport(390, 700);
   const id = crypto.randomUUID();
   const draft = sessionAnnotations.forSession(id);
-  draft.add({ kind: 'file', path: '/project/notes.md', startLine: 1, endLine: 2, text: 'File quote', annotation: 'File note' });
-  draft.add({ kind: 'browser', browserId: 'page', url: 'https://example.org/', selector: '#intro', targetPath: 'p#intro',
+  for (const n of [1, 2]) draft.add({ kind: 'browser', browserId: 'page', url: 'https://example.org/', selector: '#intro', targetPath: 'p#intro',
     rect: { x: 10, y: 10, width: 100, height: 20 }, viewport: { width: 400, height: 300, scrollX: 0, scrollY: 0 }, text: 'Page quote',
-    annotation: 'Browser note', screenshot: new File(['image'], 'browser-comment-1.png') });
+    annotation: 'Browser note', screenshot: new File(['image'], `browser-comment-${n}.png`) });
   harness = createReactHarness();
   await harness.render(<div data-phone-shell className="gugu-skin" style={{ width: 374, margin: 8 }}>
     <SessionLocalizationProvider><ChatComposer mobile canSubmit onSubmit={() => {}}
@@ -38,7 +37,7 @@ it('places one annotation attachment above the phone input and offers edit only 
   expect(attachment.textContent).not.toMatch(/[{}]/);
   await act(async () => {
     await userEvent.click(attachment.querySelector('button')!);
-    await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit annotation"],button[aria-label="修改批注"]').length === 1);
+    await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit annotation"],button[aria-label="修改批注"]').length === 2);
   });
   expect(document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]')).toHaveLength(2);
 });

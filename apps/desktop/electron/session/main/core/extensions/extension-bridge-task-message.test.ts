@@ -32,7 +32,7 @@ beforeEach(async () => {
 
 it('passes a fixed ordinary message and the host-bound task through the real bridge', async () => {
   expect(await call({ intent: 'pause' })).toEqual({ ok: true, value: undefined });
-  expect(deliver).toHaveBeenCalledExactlyOnceWith({ extensionId: 'task-app', sessionId: 'bound-task', tabId: 'task-tab', embedderId: 42 },
+  expect(deliver).toHaveBeenCalledExactlyOnceWith({ extensionId: 'task-app', sessionId: 'bound-task', tabId: 'task-tab', pageId: 7, embedderId: 42 },
     { kind: 'taskMessage', text: '请暂停。' });
 });
 

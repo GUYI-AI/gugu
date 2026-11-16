@@ -43,12 +43,12 @@ export const ComposerFolderPicker = observer(function ComposerFolderPicker({
   // 读到之前 / 读不到时不画:❌ 拿一个猜的根目录名冒充选择(读不到的原因卡片上照实说了)。
   if (!state.folders || !chosen) return null;
   const spansMachines = showMachine || !!machineLabelOf && new Set(state.folders.map((folder) => machineLabelOf(folder.deviceId))).size > 1;
-  const where = (folder: ShownFolder) => (spansMachines && machineLabelOf ? `${machineLabelOf(folder.deviceId)} · ${shortHome(folder.path)}` : shortHome(folder.path));
+  const where = (folder: ShownFolder) => (spansMachines && machineLabelOf ? `${machineLabelOf(folder.deviceId)}: ${shortHome(folder.path)}` : shortHome(folder.path));
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className={sessionComposerTrayTriggerClassName} data-testid="composer-folder-picker" title={chosen.path}>
         <Folder className="size-3 shrink-0" />
-        <span className="max-w-[240px] truncate">{showMachine && machineLabelOf ? `${machineLabelOf(chosen.deviceId)} · ` : ''}{label(chosen)}</span>
+        <span className="max-w-[240px] truncate">{showMachine && machineLabelOf ? `${machineLabelOf(chosen.deviceId)}: ` : ''}{label(chosen)}</span>
         <ChevronDown className="size-3 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" className="min-w-72 p-1">

@@ -15,9 +15,11 @@
  * entire atom at once.
  */
 
+import { fileLabelParts } from '@gugu/session-shared/markdown';
 import { cx } from '@session-ui/styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { File, X } from '../../../icons'
+import { X } from '../../../icons'
+import { FileMark } from '../../../file-mark';
 import type { MentionKind, MentionRole } from './types';
 import * as styles from './mention-pill.css';
 
@@ -44,6 +46,8 @@ export function MentionPill({
     ? ((node.attrs.title as string | null)?.trim() || name)
     : null;
   const pending = node.attrs.pending === true;
+  // A file's place stays whole and the name gives way, as in the sent message (`fileLabelParts`).
+  const { name: pillName, place } = isFile ? fileLabelParts(name) : { name, place: '' };
 
   // Hover-x: overlaid over the icon area on pill-hover
   const removeBtn = (
@@ -82,12 +86,13 @@ export function MentionPill({
             like Slack / Discord they are one token, removed whole by Backspace / Delete. */}
         {isFile && (
           <span className={styles.pillIconArea}>
-            <File aria-hidden style={{ width: '0.75rem', height: '0.75rem' }} />
+            <FileMark name={pillName} size={12} />
             {removeBtn}
           </span>
         )}
         {/* Display name */}
-        <span className={styles.pillName}>{isParticipant || kind === 'custom' ? '@' : ''}{name}</span>
+        <span className={styles.pillName}>{isParticipant || kind === 'custom' ? '@' : ''}{pillName}</span>
+        {place && <span className={styles.pillPlace}>{place}</span>}
         {node.attrs.annotation && <small data-mention-annotation="" className={styles.pillAnnotation}>{String(node.attrs.annotation)}</small>}
       </span>
     </NodeViewWrapper>

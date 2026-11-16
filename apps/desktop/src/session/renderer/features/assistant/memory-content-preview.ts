@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { Nodes } from 'mdast';
 import { parseMarkdown } from '@gugu/session-shared/markdown/dialect';
 
@@ -14,7 +15,7 @@ export function memoryContentPreview(body: string, limit = 320): string {
     if (facts.length >= 4) return;
     if (['heading', 'code', 'html', 'definition', 'footnoteDefinition'].includes(node.type)) return;
     if (node.type === 'paragraph' || node.type === 'tableRow') {
-      const text = (node.type === 'tableRow' ? node.children.map(inlineText).join(' · ') : inlineText(node)).replace(/\s+/g, ' ').trim();
+      const text = (node.type === 'tableRow' ? node.children.map(inlineText).join(metadataSeparator()) : inlineText(node)).replace(/\s+/g, ' ').trim();
       if (text) facts.push(text);
     } else if ('children' in node) node.children.forEach(collect);
   };

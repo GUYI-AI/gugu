@@ -23,12 +23,14 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_SELECTION_SEND_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
   EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
   type ResourceRemovalAsk,
+  type SelectionSendAsk,
   type VoiceNoteExportAsk,
   type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
@@ -49,6 +51,7 @@ import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { peekStore } from './peek-store';
 import { screenLayout } from '@renderer/app/screen-layout';
+import { auxWindows } from '@renderer/app/aux-windows';
 import { focusScreenBlock } from '@renderer/app/screen-layout-actions';
 import { appState } from '@renderer/lib/stores/app-state';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -56,7 +59,6 @@ import { askInShell, closeInShell, installConsentPrompt } from './install-consen
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
 import { closeAppModal, focusAppModalClose, showAppModal } from '@/components/appModal/appModal';
 import { groupPageSlot } from '@renderer/features/chats/chat-tabs/chat-panel-item';
-import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 
 /**
  * Performs the actions main has already decided an extension is allowed to take.
@@ -83,6 +85,24 @@ function findSessionView(sessionId: string): WorkspaceViewModel | undefined {
 }
 
 
+/** A page's <webview> (by webContents id), in the main window or a window of its own (aux-window-host.tsx); null if none. */
+function pageElement(webContentsId: number | null): BrowserWebviewElement | null {
+  if (webContentsId === null) return null;
+  for (const doc of auxWindows.documents()) {
+    for (const view of doc.querySelectorAll<BrowserWebviewElement>('webview')) {
+      try {
+        if (view.getWebContentsId() === webContentsId) return view;
+      } catch {
+        // Not attached yet: not the page asked about.
+      }
+    }
+  }
+  return null;
+}
+
+/** The document a page is drawn in: what the host draws for it goes there. */
+const pageDocument = (webContentsId: number | null): Document => pageElement(webContentsId)?.ownerDocument ?? document;
+
 function requireSessionView(sessionId: string | null): WorkspaceViewModel {
   const view = sessionId === null ? null : findSessionView(sessionId);
   if (!view) throw new Error('This session is no longer open');
@@ -99,7 +119,7 @@ export function applyExtensionHostAction(command: ExtensionHostActionCommand): E
   const { origin, action } = command;
   // A link's or a banner's click has no page behind it: only what names its own target is done for it.
   if (!origin) return runInAction(() => openForClick(action));
-  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId));
+  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId, origin.pageId));
 }
 
 function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
@@ -137,12 +157,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
   }
 }
 
-function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
-  if (action.kind === 'annotateFile') {
-    if (!sessionId) throw new Error('File annotations require their source session');
-    sessionAnnotations.forSession(sessionId).add({ kind: 'file', ...action.selection });
-    return;
-  }
+function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string, pageId: number | null): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
   // What a page says about itself: a task's tab or a group's slot (sessionId null), kept by page (extensionSurfaceStore.say).
   switch (action.kind) {
     case 'taskMessage': {
@@ -172,7 +187,9 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       })();
     case 'openAppModal': {
       let guest: BrowserWebviewElement | null = null;
-      let previous = document.activeElement;
+      // The window the asking page is drawn in: the main window, or a window of its own (aux-window-host.tsx).
+      const at = pageDocument(pageId);
+      let previous = at.activeElement;
       while (previous?.shadowRoot?.activeElement) previous = previous.shadowRoot.activeElement;
       const control = async (action: AppModalHostAction) => {
         const response = await desktopIpc()!.invoke(EXTENSION_BRIDGE_CHANNEL, { method: 'modalHost', args: action }) as ExtensionBridgeResponse;
@@ -187,7 +204,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       showAppModal({
         id: action.page.id, title: action.page.title, appName: action.page.appName, size: action.page.size,
         url: action.page.entryUrl, partition: action.page.partition,
-        opener: previous instanceof HTMLElement ? previous : document.body,
+        opener: previous instanceof at.defaultView!.HTMLElement ? previous as HTMLElement : at.body,
+        container: auxWindows.layerOf(at),
         focus, dismiss,
         attach(element) {
           guest = element as BrowserWebviewElement;
@@ -415,6 +433,21 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /**
+   * API 54 Send, over the page that asked, at its selection: the page's CSS px scaled to its guest's box here (its zoom
+   * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
+   */
+  [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
+    const { sessionId, webContentsId, open } = params as SelectionSendAsk;
+    const guest = pageElement(webContentsId);
+    if (!guest) return 'cancelled';
+    const box = guest.getBoundingClientRect(), { rect, viewport } = open, scale = box.width / viewport.width;
+    const anchor = new DOMRect(box.x + rect.x * scale, box.y + rect.y * scale, rect.width * scale, rect.height * scale);
+    if (anchor.right < box.left || anchor.left > box.right || anchor.bottom < box.top || anchor.top > box.bottom) return 'cancelled';
+    const { openSelectionSend } = await import('@/components/chat/selectionSendAsk');
+    const { draft, quote, pills } = open;
+    return openSelectionSend({ cite: { draft, quote, pills }, sessionId, anchor, cover: box, container: auxWindows.layerOf(guest.ownerDocument), closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
   },
   /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {

@@ -63,7 +63,7 @@ describe('member picker', () => {
     expect(rows()).toEqual(['helper'])
     await clickElement(q('[data-contact-option="helper"]')!)
     expect(chips()).toEqual(['Alice', 'Helper'])
-    expect(confirmText()).toBe('创建群聊 · 2 位成员')
+    expect(confirmText()).toBe('创建群聊（2 位成员）')
   })
 
   it('works from the keyboard: search + Enter picks and clears, Space toggles a focused row, Backspace drops the last pick', async () => {

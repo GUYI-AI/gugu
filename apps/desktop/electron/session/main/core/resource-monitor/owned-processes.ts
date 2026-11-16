@@ -35,7 +35,7 @@ export async function collectLedgerResourceRoots(processes: ResourceProcess[]): 
     if (!record || record.ownerMainPid !== process.pid) continue;
     const actual = live.get(record.pgid);
     if (!actual || !shouldReapEngineGroup({ liveCmdline: actual.command ?? '', recordedArgs: record.args, engineId: record.engineId })) continue;
-    roots.push({ id: `engine:${record.pgid}`, pid: record.pgid, kind: 'session', sessionId: record.conversationId, label: `${record.engineId} · ${record.conversationId.slice(0, 8)}` });
+    roots.push({ id: `engine:${record.pgid}`, pid: record.pgid, kind: 'session', sessionId: record.conversationId, label: `${record.engineId} (${record.conversationId.slice(0, 8)})` });
   }
   return roots;
 }

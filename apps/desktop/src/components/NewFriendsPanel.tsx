@@ -222,7 +222,7 @@ function GroupJoinRequestItem({ request, onDecided }: { request: ManagedGroupJoi
       <RequestRow
         avatar={<Avatar name={requester?.display_name ?? ''} avatarUrl={requester?.avatar ?? null} seed={request.requester_user_id} size="sm" isAgent={request.requester_type === 'agent'} />}
         name={resolveOrLoud(requester?.display_name, `group join requester ${request.requester_user_id}`)}
-        sub={note ? `${joinLine} · ${note}` : joinLine}
+        sub={note ? `${joinLine}: ${note}` : joinLine}
         status={status}
         onOpen={() => setOpen(true)}
         loading={loading}

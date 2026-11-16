@@ -1,0 +1,65 @@
+import { afterEach, expect, it } from 'vitest';
+import { page } from 'vitest/browser';
+import * as cmView from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
+import { documentToHtml } from '@gugu/session-chat-ui/markdown-html';
+import katex from 'katex';
+// @ts-expect-error The preinstalled App is an unbundled ES module.
+import { lineNumberSelection, previewSelectionLines, previewSelectionText } from '../../../../../preinstalled-apps/workspace/selection-lines.js';
+import { until } from '../../../../../../../tests/support/awaitCondition';
+
+let host: HTMLDivElement, view: EditorView;
+afterEach(() => { view?.destroy(); host?.remove(); document.getSelection()?.removeAllRanges(); });
+
+it('selects a source line and a Shift range through the actual Files gutter', async () => {
+  await page.viewport(900, 600);
+  host = document.createElement('div');
+  document.body.append(host);
+  view = new EditorView({ parent: host, doc: 'def greet(name):\n    title = "Hi"\n    message = title + name\n    return message', extensions: [lineNumberSelection({ view: cmView }), cmView.drawSelection()] });
+  await until('the editor paints its line numbers', () => [...host.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].some(el => el.textContent === '4'));
+  const number = (n: number) => [...host.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].find(el => el.textContent === String(n))!;
+  await page.elementLocator(number(2)).click();
+  expect(view.state.selection.main.from).toBe(view.state.doc.line(2).from);
+  expect(view.state.selection.main.to).toBe(view.state.doc.line(2).to);
+  await page.elementLocator(number(4)).click({ modifiers: ['Shift'] });
+  expect(view.state.selection.main.from).toBe(view.state.doc.line(2).from);
+  expect(view.state.selection.main.to).toBe(view.state.doc.line(4).to);
+});
+
+it('excludes the untouched next paragraph when a real triple-click selection ends at its start', async () => {
+  await page.viewport(900, 600);
+  host = document.createElement('div');
+  host.innerHTML = `<div class="gg-md">${documentToHtml('# 引用验收\n\n本目录用于临时引用验收，记录本次提交的简要说明。\n\n第二段保留独立的源行。', { trust: 'chat', sourceLines: true })}</div>`;
+  document.body.append(host);
+  const first = host.querySelector<HTMLElement>('[data-line="3-3"]')!;
+  const next = host.querySelector<HTMLElement>('[data-line="5-5"]')!;
+  await page.elementLocator(first).tripleClick();
+  const selection = document.getSelection()!;
+  expect(selection.toString()).toContain(first.textContent);
+  expect(selection.toString()).not.toContain(next.textContent);
+  const range = selection.getRangeAt(0);
+  expect([next, next.firstChild]).toContain(range.endContainer);
+  expect(range.endOffset).toBe(0);
+  expect(previewSelectionLines(range)).toEqual([3, 3]);
+  // An end point before the first text character is the same boundary as the block's own offset 0.
+  range.setEnd(next.firstChild!, 0);
+  expect(previewSelectionLines(range)).toEqual([3, 3]);
+  range.setEnd(next, 0);
+  expect(previewSelectionLines(range)).toEqual([3, 3]);
+  range.setEnd(next.firstChild!, 1);
+  expect(previewSelectionLines(range), 'a genuinely selected next character includes its source line').toEqual([3, 5]);
+});
+
+it('says a formula in a preview selection once, as its TeX', () => {
+  host = document.createElement('div');
+  // The preview's own drawing, and KaTeX's MathML form.
+  host.innerHTML = `<div class="gg-md">${documentToHtml('上确界 $\\sup a_n$ 就是极限。', { trust: 'chat', sourceLines: true })}`
+    + `<div data-line="3-3">${katex.renderToString('L-\\varepsilon', { displayMode: true, output: 'htmlAndMathml' })}</div></div>`;
+  document.body.append(host);
+  const range = document.createRange();
+  range.selectNodeContents(host.querySelector('[data-line="1-1"]')!);
+  expect(range.toString(), 'the page itself says it twice').toMatch(/\\sup a_n.*sup/);
+  expect(previewSelectionText(range)).toBe('上确界 $\\sup a_n$ 就是极限。');
+  range.selectNodeContents(host.querySelector('.gg-md')!);
+  expect(previewSelectionText(range)).toBe('上确界 $\\sup a_n$ 就是极限。$$L-\\varepsilon$$');
+});

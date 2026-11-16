@@ -29,7 +29,7 @@ import {
   type UsageTotals,
 } from '../../lib/usage/derive'
 import { useUsageData, type Loadable } from './useUsageData'
-import { HeatLegend, UsageHeatmap } from './UsageHeatmap'
+import { HeatLegend, UsageHeatmap, UsageHeatmapBone } from './UsageHeatmap'
 import { compact, duration, heightPx, plain } from './format'
 import { tokenAmounts } from '../../lib/usage/charts'
 import { Layers, Zap } from '@/lib/icons'
@@ -62,6 +62,8 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
     <div className="gg-usage" data-testid="activity-section">
       <div className="gg-usage-toolbar">
         <SectionLabel id="usage-activity">{t('usage.activity')}</SectionLabel>
+        {/* Before the device control: the control keeps the toolbar's end while the note comes and goes. */}
+        {data.syncing && <span className="gg-usage-caption mr-auto" data-testid="usage-syncing">{t('usage.syncing')}</span>}
         {data.devices === null ? <Unknown className="gg-usage-caption w-20" /> : deviceOptions.length > 1 || deviceId ? (
           <select
             // @@@6436 与设置里其它下拉(语言)同一种:手机上 44px 触控高度,桌面 32。
@@ -75,7 +77,6 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
             {deviceOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
           </select>
         ) : <span className="gg-usage-caption">{t('usage.allDevices')}</span>}
-        {data.syncing && <span className="gg-usage-caption mr-auto" data-testid="usage-syncing">{t('usage.syncing')}</span>}
       </div>
       {data.syncError && <span className="gg-usage-caption" data-testid="usage-sync-error" title={data.syncError}>{t('usage.syncError')}</span>}
 
@@ -102,10 +103,13 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
   )
 }
 
-/** 一段数据的三种状态统一在这里落地:加载是占位块,失败是一句明说,❌ 失败时不画一张全灰的图冒充「没用过」。 */
-function Guarded<T>({ state, height, children }: { state: Loadable<T>; height: number; children: ReactNode }) {
+/**
+ * 一段数据的三种状态统一在这里落地:加载是占位块,失败是一句明说,❌ 失败时不画一张全灰的图冒充「没用过」。
+ * 版面与数据无关的一段(热力图)给自己的 `placeholder`,首开不跳;其余按 `height` 画一块。
+ */
+function Guarded<T>({ state, height = 120, placeholder, children }: { state: Loadable<T>; height?: number; placeholder?: ReactNode; children: ReactNode }) {
   const { t } = useTranslation('settings')
-  if (state.status === 'loading') return <div className="gg-usage-skeleton" style={heightPx(height)} data-testid="usage-loading" />
+  if (state.status === 'loading') return placeholder ?? <div className="gg-usage-skeleton" style={heightPx(height)} data-testid="usage-loading" />
   // 失败原因只进 title(悬停可见、方便截图报障),❌ 不拼进句子:对用户不可操作(user-copy-leak-check)。
   if (state.status === 'error') return <span className="gg-usage-muted" data-testid="usage-error" title={state.error}>{t('usage.loadError')}</span>
   return <>{children}</>
@@ -204,7 +208,7 @@ function Activity({ usageState, today, metric, onMetric, range }: {
             items={(['sessions', 'tokens'] as const).map((m) => ({ value: m, label: t(`usage.metrics.${m}`), testId: `usage-metric-${m}` }))}
           />
         </div>
-        <Guarded state={usageState} height={120}>
+        <Guarded state={usageState} placeholder={<UsageHeatmapBone today={today} />}>
           <UsageHeatmap data={series} today={today} formatValue={formatValue} />
         </Guarded>
         <div className="gg-usage-heat-foot">

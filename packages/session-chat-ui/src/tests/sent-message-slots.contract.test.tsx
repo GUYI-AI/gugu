@@ -5,6 +5,7 @@ import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
 import { createChatState } from '@session-chat/state/chat-state';
 import type { TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import { FILE_ROW } from '@gugu/session-shared/file-row';
 import { until } from '../../../../tests/support/awaitCondition';
 
 const chat = '127ec4f0-30b1-4583-b469-706756153bdd';
@@ -103,4 +104,11 @@ it('offers the slot again when the turn is read again and the same message says 
   await until('the slot is offered again', () => offer.mock.calls.length === 2);
   expect(taken).toHaveBeenCalledTimes(1);
   expect((offer.mock.calls[1]![0].message as { content?: string }).content).toBe('Two items left, both small.');
+});
+
+it('holds a sent file at one file row before the host draws it — the row the host then draws', async () => {
+  const { state, offer, slot } = mount();
+  state.transcript.history.seed([{ ...turn([file()]), endedAt: 4000, outcome: { kind: 'done' as const } }]);
+  await until('the slot is offered', () => offer.mock.calls.length > 0);
+  expect(slot()?.style.height).toBe(`${FILE_ROW.height}px`);
 });

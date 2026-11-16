@@ -4,11 +4,11 @@ import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
 import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
 import { Sheet } from './ui/Sheet'
+import { useGrowingList, useOffsetInScroller } from '@gugu/session-ui/react/growing-list'
 import { DropdownMenu, MenuItem } from './ui/Menu'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 import { ContactsSectionState } from './contacts/ContactsSectionState'
@@ -26,6 +26,7 @@ import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
 import { useAuth } from '../store/auth'
 import { ChatRowContextMenu } from './chat/ChatRowContextMenu'
+import { warmRowAuthority } from './chat/useGroupChatSettings'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { formatCalendarDay } from '@/i18n/format'
 import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal'
@@ -100,7 +101,7 @@ interface ChatListPanelProps {
   leadChatId?: string | null
   /** 手机页头左上角(自己的头像 →「我的」)。 */
   headerLeading?: ReactNode
-  /** 手机右上「写」菜单里的「新项目」(#446)。 */
+  /** 手机右上加号菜单里的「新项目」。 */
   onNewProject?: () => void
 }
 
@@ -276,7 +277,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
       onClick={(event) => actions.openTopic(topic, event.metaKey || event.ctrlKey)}
       onFocus={() => actions.focus(topic.id)}
       onKeyDown={(event) => actions.keyDown(event, topic)}
-      onContextMenu={menu.onContextMenu}
+      onContextMenu={menu.onContextMenu} onPointerEnter={() => warmRowAuthority(topic.id)}
       {...(mobile ? longPress : {})}
       style={TOPIC_SUBROW_STYLE}
       leading={<MessageSquare size={13} style={TOPIC_SUBROW_ICON_STYLE} />}
@@ -360,7 +361,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
         onFocus={() => actions.focus(chat.id)}
         onKeyDown={(event) => actions.keyDown(event, chat)}
-        onContextMenu={menu.onContextMenu}
+        onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
         {...(mobile ? longPress : {})}
         leading={
           // Avatar — agent status lives in the corner badge (AvatarStatusBadge); the old
@@ -417,7 +418,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <>
             {/* owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。 */}
             {chat.is_muted && (
-              <span aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
+              <span className="gg-chat-row-muted" aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
                 <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
               </span>
             )}
@@ -479,16 +480,16 @@ interface PlusMenuItemsProps {
   onGroupChat: () => void
   onAddFriend: () => void
   onScan?: () => void
-  /** 手机(v7.12 稿 NewMenu,#446):有它时菜单是 发起群聊 / 新项目 / 添加联系人,新任务在项目群里派。 */
+  /** Phone More contains social/project actions; the separate pen owns Agent creation. */
   onNewProject?: () => void
   mobile?: boolean
 }
 
 function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, onNewProject, mobile = false }: PlusMenuItemsProps) {
   const { t } = useTranslation('messaging')
-  const phoneItems = onNewProject ? [
+  const phoneItems = mobile ? [
     { testid: 'plus-menu-create-group', icon: <Users size={15} />, label: t('chatList.createGroupMobile'), onClick: onGroupChat },
-    { testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject },
+    ...(onNewProject ? [{ testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject }] : []),
     { testid: 'plus-menu-add-friend', icon: <UserRound size={15} />, label: t('chatList.addContact'), onClick: onAddFriend },
   ] : null
   // design line 592: 新建群聊 (contacts icon) + 添加联系人 (add-person icon)
@@ -842,38 +843,20 @@ export function ChatListPanel({
   const hasSidebarLines = sidebarLines.length > 0
   const [sidebarScroller, setSidebarScroller] = useState<HTMLElement | null>(null)
   const windowRef = useRef<HTMLDivElement>(null)
-  const [windowMargin, setWindowMargin] = useState(0)
   useLayoutEffect(() => {
     if (inSidebar && listboxRef.current) setSidebarScroller(scrollingAncestor(listboxRef.current))
   }, [inSidebar])
-  const lineWindow = useVirtualizer({
+  // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row).
+  const windowMargin = useOffsetInScroller(windowRef, sidebarScroller, [hasSidebarLines])
+  const lineWindow = useGrowingList({
     count: sidebarLines.length,
     // A project line is keyed by its group chat: when that conversation arrives, its row takes the same line.
-    getItemKey: (index) => lineChatId(sidebarLines[index]!.row),
-    getScrollElement: () => sidebarScroller,
+    getKey: (index) => lineChatId(sidebarLines[index]!.row),
+    scroller: sidebarScroller,
     estimateSize: () => SIDEBAR_ENTRY_ESTIMATE,
-    // The first frame already shows the lines that fit, before the scroller's size is observed.
-    initialRect: { width: 0, height: sidebarScroller?.clientHeight || window.innerHeight },
-    overscan: 8,
     scrollMargin: windowMargin,
-    enabled: inSidebar && sidebarScroller !== null,
+    enabled: inSidebar,
   })
-  // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row), which
-  // re-render on their own: measure on the scroller's and its content's size changes.
-  useLayoutEffect(() => {
-    const lines = windowRef.current
-    const content = sidebarScroller?.firstElementChild
-    if (!lines || !sidebarScroller) return
-    const measure = () => {
-      const next = lines.getBoundingClientRect().top - sidebarScroller.getBoundingClientRect().top + sidebarScroller.scrollTop
-      setWindowMargin((previous) => (Math.abs(previous - next) < 0.5 ? previous : next))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(sidebarScroller)
-    if (content) observer.observe(content)
-    return () => observer.disconnect()
-  }, [sidebarScroller, hasSidebarLines])
   const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
   // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
   const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
@@ -1157,6 +1140,8 @@ export function ChatListPanel({
         actions={
           <>
             <NotificationSlot part="toggle" />
+            {mobile && onOpenSessionCreate && <IconButton size="md" data-testid={AUTOMATION_TEST_IDS.mobileSessionCreateAction}
+              aria-label={t('chatList.createAgent')} title={t('chatList.createAgent')} onClick={onOpenSessionCreate}><SquarePen /></IconButton>}
 
             <DropdownMenu.Root
               open={showPlusMenu}
@@ -1172,8 +1157,7 @@ export function ChatListPanel({
                 aria-label={t('chatList.create')}
                 title={t('chatList.create')}
               >
-                {/* 手机上是「写」(方框里一支笔,owner 10-26 改版稿);❌ 加号。 */}
-                {mobile ? <SquarePen /> : <Plus />}
+                <Plus />
               </DropdownMenu.Trigger>
               {showPlusMenu ? (
                 <DropdownMenu.Content

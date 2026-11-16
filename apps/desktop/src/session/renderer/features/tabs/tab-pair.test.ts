@@ -629,22 +629,20 @@ it('1000 random steps keep one strip, at most one pair, and never bring back a c
   }
 });
 
-it('persists only the shape, isolates accounts and does no storage work during construction', () => {
-  const values = new Map<string, string>();
-  let account = 'A';
-  let reads = 0;
-  const storage = { getItem: (key: string) => { reads++; return values.get(key) ?? null; }, setItem: (key: string, value: string) => { values.set(key, value); } };
-  const memory = accountTabPlacementMemory(() => account, () => storage);
-  expect(reads).toBe(0);
+it('persists only the shape per account in the view-state table, keeping the most recently placed that fit', () => {
+  let account = 'tab-placement-A';
+  const memory = accountTabPlacementMemory(() => account);
   memory.write('folder:/docs', 'separate');
-  account = 'B';
+  account = 'tab-placement-B';
   expect(memory.read('folder:/docs')).toBeUndefined();
   memory.write('folder:/docs', 'beside');
-  account = 'A';
+  account = 'tab-placement-A';
   expect(memory.read('folder:/docs')).toBe('separate');
-  const restarted = accountTabPlacementMemory(() => account, () => storage);
-  expect(restarted.read('folder:/docs')).toBe('separate');
-  expect([...values.values()].map((value) => JSON.parse(value))).toEqual([{ 'folder:/docs': 'separate' }, { 'folder:/docs': 'beside' }]);
+  expect(accountTabPlacementMemory(() => account).read('folder:/docs'), 'another instance (a restart reads the same table)').toBe('separate');
+  for (let i = 0; i < 300; i++) memory.write(`file:/projects/app/src/${i}.ts`, 'beside');
+  expect(memory.read('folder:/docs'), 'pushed out once newer ones fill the room').toBeUndefined();
+  expect(memory.read('file:/projects/app/src/299.ts')).toBe('beside');
+  expect(accountTabPlacementMemory(() => null).read('file:/projects/app/src/299.ts'), 'signed out: nothing').toBeUndefined();
 });
 
 describe('a resource keeps a working handle when its tab moves', () => {

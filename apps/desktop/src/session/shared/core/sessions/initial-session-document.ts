@@ -23,6 +23,7 @@ export type InitialSessionInput = {
   /** harness 自家模型 id;选了平台模型时必须为 null(模型由网关 token 钉死)。 */
   model: string | null;
   effort: string | null;
+  fastMode?: boolean;
   /**
    * 三态(口径见 SessionPlatformModel):`undefined` = 这条路径没有 composer 决策(回落 agent 级);
    * `null` = 明确选了 harness 自家;对象 = 咕咕平台模型。
@@ -56,6 +57,7 @@ export function buildInitialSessionDocument(
     // conversation config 记录并由共享注入边界读取,创建页与会话内不能各自推导。
     model: input.model ?? undefined,
     effort: input.effort ?? undefined,
+    ...(input.fastMode !== undefined ? { fastMode: input.platformModel === null && input.fastMode } : {}),
     // 三态:决策过就**一定**带上字段 —— 选 harness 也要显式 null。少了这个 null,主进程分不清
     // 「明确要 BYOK」和「这条路径根本没有 composer」。
     ...(input.platformModel !== undefined ? { platformModel: input.platformModel } : {}),

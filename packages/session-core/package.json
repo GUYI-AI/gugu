@@ -21,7 +21,7 @@
     "./deps/runtime": "./src/host-dependencies/runtime/index.ts",
     "./package.json": "./package.json",
     "./acp/client": "./src/acp/client.ts",
-    "./acp/hermes-prompt": "./src/acp/hermes-prompt.ts",
+    "./acp/native-prompt": "./src/acp/native-prompt.ts",
     "./session-record/contract": "./src/session-record/contract.ts",
     "./session-record/team-credits": "./src/session-record/team-credits.ts",
     "./session-record/window-cache/*": "./src/session-record/window-cache/*.ts",

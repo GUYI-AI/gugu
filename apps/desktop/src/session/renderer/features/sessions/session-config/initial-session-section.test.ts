@@ -38,7 +38,7 @@ import { buildInitialSession } from '../create-session-modal/build-create-sessio
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { runInAction } from 'mobx';
-import { queryClient } from '@/lib/readModel';
+import { queryClient } from '@/lib/replica';
 import { notifyManager } from '@tanstack/react-query';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
@@ -223,6 +223,12 @@ const harnessCatalogRef = vi.hoisted(() => ({ current: null as unknown }));
 function harnessCatalog(state: HarnessCatalogState) {
   harnessCatalogRef.current = state;
 }
+
+// Target capability queries have their own QueryClient-backed race tests.
+// These creation tests supply the default catalog directly.
+vi.mock('@renderer/lib/stores/use-target-model-catalog', () => ({
+  useTargetModelCatalog: () => undefined,
+}));
 
 vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
   HARNESS_MODEL_CATALOG_QUERY_KEY: ['agents', 'modelCatalog'],

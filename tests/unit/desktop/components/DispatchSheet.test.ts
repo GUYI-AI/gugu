@@ -182,6 +182,22 @@ describe('DispatchSheet', () => {
     await expect(picked).resolves.toEqual({ to: { agent: 'user:a-sibling' }, visible: false, text: '' })
   })
 
+  it('a pick is taken back by its chip\'s × or by its row again, and Send turns off again', async () => {
+    await act(async () => { void ask({ draft: false, offers: ['my-agent'], text: 'Take card x9zo' }) })
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    expect(ticked()).toEqual(['agent:user:a-other'])
+    const chip = [...document.body.querySelectorAll('button')].find((b) => b.textContent === 'Codex 5')
+    await click(chip)
+    expect(ticked()).toEqual([])
+    expect(button('发送')?.disabled).toBe(true)
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    expect(ticked()).toEqual([])
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-here"]'))
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    expect(ticked()).toEqual(['agent:user:a-other'])
+  })
+
   it('a new agent: its row picks { new }', async () => {
     let picked: Promise<unknown> = Promise.resolve()
     await act(async () => { picked = ask({ draft: false, offers: ['new-agent'], text: 'Make a deck' }) })

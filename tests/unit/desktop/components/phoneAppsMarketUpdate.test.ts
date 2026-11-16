@@ -63,7 +63,7 @@ const { followLink } = vi.hoisted(() => ({ followLink: vi.fn(() => true) }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', () => ({ followLink }))
 const { AppsSection } = await import('../../../../apps/desktop/src/components/settings/AppsSection')
 const { useOfferedVersions } = await import('../../../../apps/desktop/src/components/settings/phoneMarketPage')
-const { queryClient } = await import('../../../../apps/desktop/src/lib/readModel')
+const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
 const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
 const { installedExtensionsStore: store } = (await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')) as unknown as {
@@ -72,7 +72,7 @@ const { installedExtensionsStore: store } = (await import('../../../../apps/desk
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
-  // What the market says is a read model: each case starts without an answer, delivered in the act() that brought it.
+  // What the market says is a replica: each case starts without an answer, delivered in the act() that brought it.
   notifyManager.setScheduler((callback) => { callback() })
   queryClient.clear()
   harness = createReactHarness()
@@ -127,7 +127,7 @@ describe('「App」 on the phone: a row is a name and how it stands', () => {
     phone.marketUpdates.mockResolvedValue({ success: true, data: { checkedAt: '', updates: { notes: { version: '1.1.0', releaseNotes: '' } }, yanked: {}, deprecated: {} } })
     await harness.render(createElement(Apps))
     await until('notes offers its update', () => row('notes')?.textContent?.includes('1.1.0') === true)
-    expect(row('vote')?.textContent).toContain('1.0.0 · 来自 Alice')
+    expect(row('vote')?.textContent).toContain('版本 1.0.0，来自 Alice')
     expect(row('notes')?.querySelector('button')).toBeNull()
     await open('notes')
     await act(async () => { page('[data-testid="app-manage-notice"] .xp-link')!.click() })
@@ -140,7 +140,7 @@ describe('「App」 on the phone: a row is a name and how it stands', () => {
     await harness.render(createElement(Apps))
     await marketAnswered(1)
     expect(phone.market.refresh).toHaveBeenCalledTimes(1)
-    expect(row('notes')?.textContent).toContain('1.0.0 · 来自咕咕市场')
+    expect(row('notes')?.textContent).toContain('版本 1.0.0，来自咕咕市场')
     phone.marketUpdates.mockResolvedValue({ success: true, data: { checkedAt: '', updates: { notes: { version: '1.1.0', releaseNotes: '' } }, yanked: {}, deprecated: {} } })
     await act(async () => { for (const listener of phone.market.heard) listener({ outcome: 'unchanged', fetchedAt: '2026-10-16T01:00:00.000Z' }) })
     expect(phone.marketUpdates).toHaveBeenCalledTimes(1)
@@ -173,7 +173,7 @@ describe('「App」 on the phone: an App’s settings page', () => {
     await toggleEnabled()
     await until('vote was switched off', () => store.disabled.includes('vote'))
     expect(phone.setEnabled).toHaveBeenLastCalledWith('vote', false)
-    expect(row('vote')?.textContent).toContain('1.0.0 · 来自 Alice · 未启用')
+    expect(row('vote')?.textContent).toContain('版本 1.0.0，来自 Alice，未启用')
     expect(page('[data-testid="app-manage-uninstall-action"]')).not.toBeNull()
     await toggleEnabled()
     await until('vote was switched on', () => !store.disabled.includes('vote'))

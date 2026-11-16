@@ -423,7 +423,7 @@ export default defineConfig({
           // 字元格尺寸与 resize 时序 —— 旁边只要有个吃 CPU 的组件测试文件,它们就整片超时。
           fileParallelism: false,
           browser: browserOptions('session-browser'),
-          setupFiles: ['tests/support/browser-locale-reset.ts', 'tests/support/browser-read-model-reset.ts'],
+          setupFiles: ['tests/support/browser-locale-reset.ts', 'tests/support/browser-replica-reset.ts'],
           include: ['apps/desktop/src/session/renderer/tests/browser/**/*.test.{ts,tsx}'],
         },
       },
@@ -449,6 +449,8 @@ export default defineConfig({
         plugins: [solidPlugin()],
         optimizeDeps: {
           include: [
+            'libsodium-wrappers',
+            '@supabase/supabase-js',
             // The first-arrival contract uses the shared desktop/mobile host projector.
             // Its error localization imports React; prebundle it before the browser starts.
             'react/jsx-dev-runtime',

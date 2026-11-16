@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { queryClient as readModelClient } from '@/lib/readModel';
+import { queryClient as readModelClient } from '@/lib/replica';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -92,7 +92,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
     vi.stubGlobal('Event', dom.window.Event);
 
-    // The availability reading is a read model: it lives in the one client (lib/readModel), cleared after each case.
+    // The availability reading is a replica: it lives in the one client (lib/replica), cleared after each case.
     queryClient = readModelClient;
     container = dom.window.document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);

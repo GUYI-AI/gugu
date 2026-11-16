@@ -7,7 +7,7 @@ import { BuildTagBadge } from '@/components/BuildTagBadge';
 import { isBrowserPageOccluded } from '@renderer/features/browser/browser-page-occlusion';
 import '@/styles/tokens.css';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', async (original) => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }));
 
 let harness: ReturnType<typeof createReactHarness>;
 let popupFrame: HTMLIFrameElement | null = null;

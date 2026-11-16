@@ -1,4 +1,4 @@
-import { requirePreinstalledFiles, workspaceFileAnnotation } from '@shared/extensions/file-annotation';
+import { requirePreinstalledFiles, selectionSendOf } from '@shared/extensions/selection-send';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
@@ -19,6 +19,7 @@ import { extensionProjections } from './extension-projection-bridge';
 import { closeAppPageResources, layoutAppPageResources } from './app-page-resources';
 import { sendTaskMessage } from './task-message';
 import { log } from '@main/lib/logger';
+import { rendererDrawingId } from '../../../../window-drawer';
 import { events } from '@main/lib/events';
 import { extensionProgramNotifiedChannel } from '@shared/extensions/marketEvents';
 import { knownSessionMachine, type SessionMachine } from './app-programs-elsewhere';
@@ -51,10 +52,12 @@ import {
   callRefusal,
   type CallRefusalCaller,
 } from '@shared/extensions/bridge-protocol';
-import type {
-  ExtensionHostAction,
-  ExtensionHostActionOrigin,
-  ExtensionHostActionResult,
+import {
+  EXTENSION_SELECTION_SEND_METHOD,
+  type ExtensionHostAction,
+  type ExtensionHostActionOrigin,
+  type ExtensionHostActionResult,
+  type SelectionSendAsk,
 } from '@shared/extensions/host-actions';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
@@ -128,6 +131,8 @@ interface SurfaceBinding {
    * that goes wrong the moment there is more than one.
    */
   embedderId: number | null;
+  /** The page itself (its webContents id): what the host draws for it goes in the window `embedderId` is. */
+  pageId: number;
   /** Who is working this page (`getContext().operator`): the person for every page the host draws; an agent for its `app_check` page. */
   operator: ExtensionOperator;
   metrics: ExtensionSurfaceMetrics;
@@ -720,6 +725,7 @@ export async function bindExtensionSurface(input: {
     filePath,
     ...personOpened(filePath, input.byHost, input.operator),
     itemId: input.itemId ?? null,
+    pageId: input.webContentsId,
     embedderId: contents.hostWebContents?.id ?? null,
     operator: input.operator ?? { kind: 'person' },
     ...(input.modal ? { modal: input.modal } : {}),
@@ -1238,6 +1244,7 @@ function deliver(binding: SurfaceBinding, action: ExtensionHostAction): Promise<
       extensionId: binding.extensionId,
       sessionId: sessionOfBinding(binding),
       tabId: binding.tabId,
+      pageId: binding.pageId,
       embedderId: binding.embedderId,
     },
     action
@@ -1941,11 +1948,14 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
-    case 'filesAnnotateSelection': {
+    case 'filesSendSelection': {
       requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
-      const page = thePage(caller);
-      if (!sessionOfBinding(page)) throw Object.assign(new Error('File annotations require a session page'), { code: 'denied' });
-      return await deliver(page, { kind: 'annotateFile', selection: workspaceFileAnnotation(args, page.workspace) });
+      const page = thePage(caller), sessionId = sessionOfBinding(page);
+      if (!sessionId) throw Object.assign(new Error('Send needs a session page'), { code: 'denied' });
+      const ask: SelectionSendAsk = { sessionId, webContentsId: caller.pageId, open: selectionSendOf(args, page.workspace) };
+      const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
+      // Only the outcome goes back to the page: never the words, a member or a message id.
+      return await invokeInEmbedder(page.embedderId, EXTENSION_SELECTION_SEND_METHOD, ask) === 'sent' ? 'sent' : 'cancelled';
     }
     case 'taskMessage': {
       const service = extensionsService();
@@ -2637,11 +2647,11 @@ export function registerExtensionBridge(): void {
       const method = typeof request.method === 'string' ? request.method : '';
       const args = (request.args ?? {}) as Record<string, unknown>;
 
-      // Shell controls share the App request channel, restricted to the recorded owning window.
+      // Shell controls share the App request channel, restricted to the renderer drawing the owning window.
       if (method === 'modalHost') {
         try {
           const modal = appModals.get(String(args.id ?? ''));
-          if (event.sender.id !== modal.binding.embedderId) return denied("Only this modal's host window may control it");
+          if (modal.binding.embedderId === null || event.sender.id !== rendererDrawingId(modal.binding.embedderId)) return denied("Only this modal's host window may control it");
           switch (args.type) {
             case 'bind': {
               if (typeof args.webContentsId !== 'number') throw new Error('Missing modal content page');

@@ -19,6 +19,7 @@ export type ChatTranslationSubscriber = (listener: () => void) => () => void;
  * 只是把发现时机从运行时提前到编译时。
  */
 const fallbackMessages = {
+  'metadata.separator': ', ',
   'transcript.activityReceivedOne': "Received {count} message from {names}",
   'transcript.activitySentOne': "Sent {count} message to {names}",
   'transcript.activityGroupSentOne': "Sent {count} message in {names}",
@@ -105,7 +106,7 @@ const fallbackMessages = {
   'transcript.backgroundSource': 'Background',
   'transcript.processStepBackground': 'Moved to background ↓',
   'transcript.processStepStopped': 'Stopped',
-  'transcript.backgroundTasks.label': 'Background · {parts}',
+  'transcript.backgroundTasks.label': 'Background tasks ({parts})',
   'transcript.backgroundTasks.commandsOne': '{count} command',
   'transcript.backgroundTasks.commands': '{count} commands',
   'transcript.backgroundTasks.subagentsOne': '{count} subagent',
@@ -194,11 +195,11 @@ const fallbackMessages = {
   'transcript.toolRun.hook': 'triggered {count} hooks',
   'transcript.toolRun.toolOne': 'used {count} tool',
   'transcript.toolRun.tool': 'used {count} tools',
-  'transcript.planProgress': 'Plan · {done} of {total} done',
+  'transcript.planProgress': 'Plan: {done} of {total} complete',
   // agent 经 message_send / session_message 说的话,下面那一行去向(agent-send.def)。
   'transcript.agentSendTo': 'Sent to {chat}',
   'transcript.agentSendToYou': 'Sent to you',
-  'transcript.agentSendToChat': 'Sent · destination name unavailable',
+  'transcript.agentSendToChat': 'Sent; destination name unavailable.',
   'transcript.agentSendToThreadIn': 'Sent to a topic in {chat}',
   'transcript.agentSendToThread': 'Sent to a topic',
   'transcript.agentSendWhisperIn': 'Whispered in {chat}',

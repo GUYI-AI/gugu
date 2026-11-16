@@ -6,7 +6,7 @@ import { AppSendError, dispatchFromApp, type DispatchHere } from '@shared/extens
 import { createAppMessages } from '@shared/extensions/app-messages-core';
 import { createAppCloud, type CloudChannel } from '@shared/extensions/app-cloud-core';
 import { subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol';
-import { draftWithPills, stringifyMention } from '@gugu/session-shared/markdown';
+import { fileCiteDraft } from '@gugu/session-shared/markdown';
 import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
 import { log } from '@main/lib/logger';
 import { supabase } from '../../../../supabase';
@@ -100,12 +100,7 @@ async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ 
   const { sessionMachine } = await import('./app-programs-elsewhere');
   const projectId = (await agentSessionContext(id).catch(() => null))?.projectId ?? (await sessionMachine(id).catch(() => null))?.projectId;
   if (!projectId) throw new AppSendError('not-found', 'The session of this file is in no project here');
-  const mentions = refs.map(({ file, label }) => {
-    const target = file!.id as string;
-    const name = target.replace(/\\/g, '/').split('/').pop() ?? target;
-    return stringifyMention({ label: typeof label === 'string' && label ? `${name} · ${label}` : name, target, kind: 'file' });
-  });
-  return { session: { id, projectId }, text: `${draftWithPills(typeof args.text === 'string' ? args.text.trim() : '', mentions.join(' '))}\n` };
+  return { session: { id, projectId }, text: `${fileCiteDraft(typeof args.text === 'string' ? args.text : '', refs as { file: { id: string }; label?: unknown }[])}\n` };
 }
 
 export async function dispatchForApp(

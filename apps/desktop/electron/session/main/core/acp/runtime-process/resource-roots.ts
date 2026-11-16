@@ -10,7 +10,7 @@ export async function collectAcpResourceRoots(): Promise<ResourceProcessRoot[]> 
   if (handle.pid) roots.push({ id: 'acp-runtime', kind: 'runtime', label: 'ACP runtime', pid: handle.pid });
   const { data } = await handle.client.sessions.state(undefined, 'list').snapshot();
   const labels = await resourceSessionLabels(Object.keys(data));
-  const label = (session: typeof data[string]) => labels.get(session.sessionId) || session.title || `${session.providerId} · ${session.sessionId.slice(0, 8)}`;
+  const label = (session: typeof data[string]) => labels.get(session.sessionId) || session.title || `${session.providerId} (${session.sessionId.slice(0, 8)})`;
   const adapters = await Promise.all(Object.values(data).map(async session => {
     const process = await handle.client.adapterProvenance({ sessionId: session.sessionId });
     return process?.pid ? { session, pid: process.pid } : null;
@@ -25,7 +25,7 @@ export async function collectAcpResourceRoots(): Promise<ResourceProcessRoot[]> 
     roots.push({
       id: `acp-adapter:${pid}`, pid,
       kind: owners.length === 1 ? 'session' : 'runtime',
-      label: owners.length === 1 ? label(session) : `Shared adapter · ${owners.map(owner => label(owner.session)).join(', ')}`,
+      label: owners.length === 1 ? label(session) : `Shared adapter: ${owners.map(owner => label(owner.session)).join(', ')}`,
       ...(owners.length === 1 ? { sessionId: session.sessionId, projectId: session.projectId } : {}),
     });
   }

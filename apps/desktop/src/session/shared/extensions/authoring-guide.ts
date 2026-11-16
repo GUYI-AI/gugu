@@ -85,7 +85,7 @@ More \`guide_read\` topics:
         "name": "main",          // stable machine name, lowercase
         "title": "CSV",          // <= 48 chars
         "opensFiles": { "session": [".csv"] },  // claim: a session's .csv opens THIS tab
-        "fileIcons": { ".csv": "csv.png" },  // icon per claim (else generic)
+        "fileIcons": { ".csv": "csv.png" },  // own formats only (else a tile)
         "menu":    [{ "id": "reload",  "title": "Reload" }],   // <= 8
         "toolbar": [{ "id": "export",  "title": "Export" }]    // <= 6
       }
@@ -609,7 +609,7 @@ A text no live document holds (over 1 MiB, JSON that is no object, on another ma
 - \`gugu.files.writeText(file, text)\` saves over the version \`readText\` read: \`content-changed\` if the disk moved on, so read it, merge, save. A file deleted since is made again. \`unavailable\`: its machine cannot be reached; \`machine-outdated\`: it is too old for this call, and the host offers to update it. \`error.detail.machine\` names it in both.
 - \`gugu.files.exists(file)\`: whether it is there now.
 - \`gugu.files.onChanged({ workspace, id }, fn)\`: one file, by the name you gave. \`resync\`: anything may have changed (its machine is back). A file outside the working copy on another machine sends nothing.
-- API 53, preinstalled Files App only: \`gugu.files.annotateSelection(file, { startLine, endLine, text, annotation })\`, inside a real click/key, queues exactly one selected-text comment in this page's session. Both line numbers are positive integers, \`text\`/\`annotation\` are strings. The host checks the installed identity and working-copy binding; third-party Apps, other workspaces and calls without a gesture are refused. Nothing is sent; the session's shared annotation draft sends the JSON-encoded \`# Selected text:\` with the person's next message.
+- API 54, preinstalled Files App only: \`gugu.files.sendSelection({ text, refs, rect, viewport })\`, inside a real click/key, opens the host's Send box beside the selection (\`rect\` and \`viewport\` in the page's CSS px; \`refs\` 1–8 files of this page's session working copy, as a draft's). The host shows \`text\` and the pills as they will be sent, the person adds words and @, and the host sends into the page's session. Answers \`'sent'\` or \`'cancelled'\`, nothing else. Before any other App may call it, re-review that the person sees every word of \`text\` (it goes out as theirs).
 - After \`rename\`, \`move\` or \`remove\`, the host's panes that show the file follow it.
 - \`gugu.files.draft(file, text)\`: keep a file's unsaved edits on its machine for after a crash: without \`text\` it reads them, with \`null\` it drops them.
 - \`opensFiles.session: ["*"]\`: any file, behind every other claim.
@@ -657,7 +657,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
 - A session's working copy, listing and changing it on its own machine: \`apps-working-copy\`.
 - \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.
-  Default \`intent: 'preview'\`; double-click: \`intent: 'pinned'\`.
+  \`intent\`: \`'navigate'\` (default), \`'newTab'\` (double-click), \`'beside'\`.
   \`{ at }\`: opener's \`link\` place. Unclaimed: preview, or details/download. \`{ peek: true }\`: beside this page
   (always for project files). Gone/unreadable: \`not-found\`.
 - \`gugu.files.openWith(entry, { tab: 'explore' })\`: your own tab claiming the chat file in \`opensFiles.chat\`;
@@ -1154,6 +1154,7 @@ picture below this text is every piece, each captioned with the markup that draw
 - \`<gugu-avatar user="user:…">\` (\`size="xs|sm|md|lg"\`, \`name\` to show the name): a member of this chat, with their face. From API 27, declare \`chat:read\`; the elements share one member read per chat. Someone not in it: \`label="their name"\`.
 - \`<gugu-time datetime="…">\` (ISO or ms): 刚刚 / 3 分钟前 / 08:20 / 昨天 14:20 / 10月3日, kept current, in the person's language.
 - \`<gugu-empty icon="checklist"><strong>No votes yet</strong><small>Start one</small></gugu-empty>\`, with a \`button.primary\` last in it when there is something to do.
+- \`<gugu-file-mark name="a.pdf" tile>\` (API 56): a file as gugu draws it.
 
 ## Markdown
 

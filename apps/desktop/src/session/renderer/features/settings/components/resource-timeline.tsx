@@ -1,10 +1,11 @@
+import { metadataSeparator } from '@/i18n/format'
 import { messageForUser } from '@/lib/userFacingError';
 import { formatClock } from '@/i18n/format';
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '@renderer/lib/ipc';
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { appState } from '@renderer/lib/stores/app-state';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -27,7 +28,7 @@ const CAPTURE_SECONDS = 10;
 const RANGE_MS: Record<Range, number> = { all: 0, '15m': 900_000, '1h': 3_600_000 };
 
 /** The stored samples of one range, up to now. Read again on every new sample while the page is open. */
-const resourceHistory = readModel({
+const resourceHistory = replica({
   name: 'resourceHistory',
   scope: 'device',
   read: async (_device, range: Range, _attempt: number) => {
@@ -50,12 +51,12 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   const tick = snapshot ? Math.floor(snapshot.timestamp / 5000) : null;
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  const historyReading = useReadModel(resourceHistory, [range, revision]);
+  const historyReading = useReplica(resourceHistory, [range, revision]);
   const history: ResourceHistory | null = historyReading.state === 'value' ? historyReading.value : null;
   // ❌ 「还没有记录」 before the samples are read: the charts' place stays a placeholder until then.
   const unread = historyReading.state === 'unknown';
   const last = history?.points.at(-1);
-  const data = useMemo(() => timelineData(history?.points ?? []), [history]);
+  const data = useMemo(() => (history === null ? null : timelineData(history.points)), [history]);
   const peak = useMemo(() => ({ cpu: peakOf(history?.points, 'cpu'), memory: peakOf(history?.points, 'memory') }), [history]);
   // Live, the headline follows the live sample like the table below it (the last recorded point until the first one
   // arrives); off, it is the last recorded point — the store keeps its final snapshot after monitoring stops.
@@ -95,25 +96,25 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   }).catch(fail); };
   const lastMinute = t('resourceMonitor.lastMinute');
   const pageTiles = [
-    { key: 'longFrames', label: labels.longFrames, value: countText(recent?.longFrames), note: `${lastMinute} · ${t('resourceMonitor.longFramesNote')}` },
-    { key: 'slowInteractions', label: labels.slowInteractions, value: countText(recent?.slowInteractions), note: `${lastMinute} · ${t('resourceMonitor.slowInteractionsNote')}` },
-    { key: 'styleLayout', label: t('resourceMonitor.styleLayout'), value: recent?.styleLayoutMs === undefined ? '–' : `${Math.round(recent.styleLayoutMs)} ms`, note: `${lastMinute} · ${t('resourceMonitor.styleLayoutNote')}` },
+    { key: 'longFrames', label: labels.longFrames, value: countText(recent?.longFrames), note: `${lastMinute}${metadataSeparator()}${t('resourceMonitor.longFramesNote')}` },
+    { key: 'slowInteractions', label: labels.slowInteractions, value: countText(recent?.slowInteractions), note: `${lastMinute}${metadataSeparator()}${t('resourceMonitor.slowInteractionsNote')}` },
+    { key: 'styleLayout', label: t('resourceMonitor.styleLayout'), value: recent?.styleLayoutMs === undefined ? '–' : `${Math.round(recent.styleLayoutMs)} ms`, note: `${lastMinute}${metadataSeparator()}${t('resourceMonitor.styleLayoutNote')}` },
   ];
   const tiles = [
-    { key: 'cpu' as const, label: 'CPU', value: cpuText(now.cpu), note: `${t('resourceMonitor.oneCore')} · ${t('resourceMonitor.peak', { value: cpuText(peak.cpu) })} · ${t('resourceMonitor.cpuSecondary')}` },
-    { key: 'memory' as const, label: t('resourceMonitor.memory'), value: memoryText(now.memory), note: `${t(footprint ? 'resourceMonitor.footprintSum' : 'resourceMonitor.rssSum')} · ${t('resourceMonitor.peak', { value: memoryText(peak.memory) })}` },
+    { key: 'cpu' as const, label: 'CPU', value: cpuText(now.cpu), note: `${t('resourceMonitor.oneCore')}${metadataSeparator()}${t('resourceMonitor.peak', { value: cpuText(peak.cpu) })}${metadataSeparator()}${t('resourceMonitor.cpuSecondary')}` },
+    { key: 'memory' as const, label: t('resourceMonitor.memory'), value: memoryText(now.memory), note: `${t(footprint ? 'resourceMonitor.footprintSum' : 'resourceMonitor.rssSum')}${metadataSeparator()}${t('resourceMonitor.peak', { value: memoryText(peak.memory) })}` },
   ];
-  const chart = (metric: Metric, height: number) => <div aria-label={labels[metric]} style={{ height }}><TimelineChart data={data} metric={metric} compact={compact} select={select} labels={labels} /></div>;
+  const chart = (metric: Metric, height: number) => <div aria-label={labels[metric]} style={{ height }}>{data && <TimelineChart data={data} metric={metric} compact={compact} select={select} labels={labels} />}</div>;
 
   if (compact) return <section className="space-y-3 text-xs" aria-label={t('resourceMonitor.timeline')}>
     <ResourceSamplingStatus />
     <div className="grid grid-cols-[6.5rem_1fr] items-center gap-3">
       <div className="whitespace-nowrap">
-        <div className="text-foreground-muted">{labels.longFrames} · {labels.slowInteractions}</div>
-        <div className="text-base font-medium text-foreground tabular-nums">{countText(recent?.longFrames)} · {countText(recent?.slowInteractions)}</div>
+        <div className="text-foreground-muted">{labels.longFrames}  {labels.slowInteractions}</div>
+        <div className="text-base font-medium text-foreground tabular-nums">{countText(recent?.longFrames)}  {countText(recent?.slowInteractions)}</div>
         <div className="text-foreground-muted">{lastMinute}</div>
       </div>
-      {history?.points.length ? chart('stall', 48) : unread ? <Unknown className="h-12 w-full" /> : <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span>}
+      {history?.points.length ? chart('stall', 48) : unread ? <Unknown className="h-12 w-full" /> : history ? <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span> : null}
     </div>
     {tiles.map((tile) => <div key={tile.key} className="grid grid-cols-[6.5rem_1fr] items-center gap-3">
       <div className="whitespace-nowrap">
@@ -121,7 +122,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
         <div className="text-base font-medium text-foreground tabular-nums">{tile.value}</div>
         <div className="text-foreground-muted tabular-nums">{t('resourceMonitor.peak', { value: tile.key === 'cpu' ? cpuText(peak.cpu) : memoryText(peak.memory) })}</div>
       </div>
-      {history?.points.length ? chart(tile.key, 48) : unread ? <Unknown className="h-12 w-full" /> : <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span>}
+      {history?.points.length ? chart(tile.key, 48) : unread ? <Unknown className="h-12 w-full" /> : history ? <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span> : null}
     </div>)}
   </section>;
 
@@ -166,9 +167,9 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
       {history?.points.length ? (['stall', 'cpu', 'memory'] as const).map((metric) => <div key={metric} className="space-y-1">
         <div className="text-foreground-muted">{metric === 'stall' ? labels.stall : tiles.find((tile) => tile.key === metric)?.label}</div>
         {chart(metric, 96)}
-      </div>) : <p className="text-foreground-muted">{t('resourceMonitor.empty')}</p>}
+      </div>) : unread ? <Unknown className="h-24 w-full" /> : history ? <p className="text-foreground-muted">{t('resourceMonitor.empty')}</p> : null}
       {capture && <CaptureSummary capture={capture} />}
-      <p className="text-foreground-muted">{t('resourceMonitor.stored', { count: history?.count ?? 0, bytes: formatBytes(history?.bytes ?? 0), time: last ? formatClock(last.timestamp) : '–' })} {t('resourceMonitor.retention')}</p>
+      <p className="text-foreground-muted">{history ? t('resourceMonitor.stored', { count: history.count, bytes: formatBytes(history.bytes), time: last ? formatClock(last.timestamp) : '–' }) : unread ? <Unknown className="w-48" /> : null} {t('resourceMonitor.retention')}</p>
     </div>
     {(shownError || snapshot?.recordingError) && <p role="alert">{shownError || t('resourceMonitor.writeFailed')} <Button size="sm" variant="ghost" onClick={() => setRevision((n) => n + 1)}>{t('resourceMonitor.retry')}</Button></p>}
     {selected || live
@@ -183,7 +184,7 @@ function sampleContext(sample: ResourceSnapshot, t: ReturnType<typeof useSession
   const state = (w: (typeof windows)[number]) => t(!w.visible ? 'resourceMonitor.hidden' : w.minimized ? 'resourceMonitor.minimized' : 'resourceMonitor.visible');
   const titles = windows.map((w) => `${w.title} (${state(w)})`).join(' / ') || '–';
   const focused = windows.filter((w) => w.focused).map((w) => w.title).join(' / ') || '–';
-  return `${t('resourceMonitor.context')}: ${titles} · ${t('resourceMonitor.foreground')}: ${focused} · ${t('resourceMonitor.localTasks')} ${tasks?.total ?? '–'} (${t('resourceMonitor.running')} ${tasks?.running ?? '–'} · ${t('resourceMonitor.waiting')} ${tasks?.waiting ?? '–'} · ${t('resourceMonitor.scheduled')} ${tasks?.scheduled ?? '–'})`;
+  return `${t('resourceMonitor.context')}: ${titles}${metadataSeparator()}${t('resourceMonitor.foreground')}: ${focused}${metadataSeparator()}${t('resourceMonitor.localTasks')} ${tasks?.total ?? '–'} (${t('resourceMonitor.running')} ${tasks?.running ?? '–'}${metadataSeparator()}${t('resourceMonitor.waiting')} ${tasks?.waiting ?? '–'}${metadataSeparator()}${t('resourceMonitor.scheduled')} ${tasks?.scheduled ?? '–'})`;
 }
 
 type ChartData = { id: string; values: (ResourcePoint & { mem?: number; stall?: number; series: string })[] }[];
@@ -252,7 +253,7 @@ function CaptureSummary({ capture }: { capture: ResourceCapture }) {
     {capture.tasks.map((task, i) => <div key={i} className="grid grid-cols-[4rem_1fr] gap-2 tabular-nums">
       <span className="text-right text-foreground">{Math.round(task.ms)} ms</span>
       <span className="truncate text-foreground-muted" title={task.top.map((f) => `${f.frame} ${f.ms} ms`).join('\n')}>
-        {t('resourceMonitor.captureTask', { style: Math.round(task.styleMs), elements: task.styleElements, layout: Math.round(task.layoutMs), script: Math.round(task.scriptMs) })}{task.top[0] ? ` · ${task.top[0].frame}` : ''}
+        {t('resourceMonitor.captureTask', { style: Math.round(task.styleMs), elements: task.styleElements, layout: Math.round(task.layoutMs), script: Math.round(task.scriptMs) })}{task.top[0] ? ` ${task.top[0].frame}` : ''}
       </span>
     </div>)}
   </div>;

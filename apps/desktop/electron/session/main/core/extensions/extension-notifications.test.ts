@@ -71,13 +71,13 @@ describe('extension notifications (#6387)', () => {
   it('shows the banner under the extension\'s installed name', async () => {
     const { notifier, shown } = setup();
     await notifier.notify({ extensionId: 'notes', request: { title: 'Saved', body: '3 notes' } });
-    expect(shown[0]).toMatchObject({ title: 'Notes · Saved', body: '3 notes', silent: false });
+    expect(shown[0]).toMatchObject({ title: 'Notes: Saved', body: '3 notes', silent: false });
   });
 
   it('names the App in the interface language, as its manifest localizes it', async () => {
     const { notifier, shown } = setup({ manifestOf: () => ({ ...manifest, localized: { 'zh-CN': { name: '笔记' } } }), locale: () => 'zh-CN' });
     await notifier.notify({ extensionId: 'notes', request: { title: '已保存' } });
-    expect(shown[0]).toMatchObject({ title: '笔记 · 已保存' });
+    expect(shown[0]).toMatchObject({ title: '笔记: 已保存' });
   });
 
   it('answers only after the system does — a refused banner is not reported as shown', async () => {

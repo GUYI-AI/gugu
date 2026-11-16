@@ -8,7 +8,7 @@ type Process = NonNullable<ChatMessage['conversationProcess']>;
 
 export function processSummary(process: Process, translate: ReturnType<typeof rowTranslator>, elapsed: string | null) {
   const steps = process.steps ? translate(process.steps === 1 ? 'transcript.processStepsOne' : 'transcript.processSteps', { count: process.steps }) : null;
-  return [elapsed, steps].filter(Boolean).join(' · ');
+  return [elapsed, steps].filter(Boolean).join(translate('metadata.separator'));
 }
 
 export function processButtonLayout(process: Process, ctx: MeasureCtx) {
@@ -20,7 +20,7 @@ export function processButtonLayout(process: Process, ctx: MeasureCtx) {
   const label = readableLabel(summary, ctx, Number.MAX_SAFE_INTEGER, 12, 22, 400, true);
   if (!process.live) return { width: Math.min(ctx.width, label.width + 40), height: 22 };
   const available = Math.max(1, ctx.width - 40);
-  const prefix = readableLabel(`${translate(process.starting ? `transcript.${process.starting}` : 'transcript.thinkingLive')}${summary ? ' · ' : ''}`, ctx, available, 12, 22);
+  const prefix = readableLabel(`${translate(process.starting ? `transcript.${process.starting}` : 'transcript.thinkingLive')}${summary ? ' ' : ''}`, ctx, available, 12, 22);
   return { width: Math.min(ctx.width, prefix.width + label.width + 40),
     height: wrappedRowHeight([{ width: Math.min(available, prefix.width), height: prefix.height }, ...(summary ? [{ width: label.width, height: 22 }] : [])], available, 0) };
 }

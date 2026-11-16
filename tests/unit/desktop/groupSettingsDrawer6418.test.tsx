@@ -245,8 +245,9 @@ describe('settings held above the panel (the chat area): opening the panel reads
     getSettings.mockResolvedValue(settingsRow({ allow_member_invite: true }))
     await act(async () => { finishRead(settingsRow()); await Promise.resolve(); await Promise.resolve() })
     expect(switchByLabel('允许普通成员邀请联系人')?.getAttribute('aria-checked')).toBe('true')
-    // The opening read, the manage page's own (AgentFloodThresholdSetting), and the one read again after the dropped read.
-    await waitForCondition(() => getSettings.mock.calls.length === readsBefore + 3, 'the dropped read is read again')
+    // The opening read and the one read again after the dropped read: the manage page's threshold row reads the same
+    // reading (it used to read the settings itself, a third time).
+    await waitForCondition(() => getSettings.mock.calls.length === readsBefore + 2, 'the dropped read is read again')
   })
 
   it('a read that starts while a write is in flight is dropped, then read again when the write returns', async () => {

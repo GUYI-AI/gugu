@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { ReactNode } from 'react';
 import type { TFunction } from 'i18next';
 import { Heart, Moon, Zap } from '@/lib/icons';
@@ -99,7 +100,7 @@ function SignalCard({ signal, t }: { signal: HealthSignal; t: TFunction<'assista
         ) : cumulative && signal.value !== null ? (
           t('health.todaySoFar')
         ) : null}
-        {signal.baseline !== null ? <span> · {t('health.baseline', { value: signalValue(signal.key, signal.baseline, t) })}</span> : null}
+        {signal.baseline !== null ? <span>  {t('health.baseline', { value: signalValue(signal.key, signal.baseline, t) })}</span> : null}
       </span>
       <span className="ta-health-bars" aria-hidden>
         {signal.series.map((point, index) => (
@@ -167,7 +168,7 @@ function WorkoutRow({ workout, t }: { workout: HealthWorkout; t: TFunction<'assi
         </span>
       }
       title={workout.title || workout.name}
-      detail={`${dateTime(workout.start)} · ${facts.join(' · ')}`}
+      detail={`${dateTime(workout.start)}${metadataSeparator()}${facts.join(metadataSeparator())}`}
     />
   );
 }

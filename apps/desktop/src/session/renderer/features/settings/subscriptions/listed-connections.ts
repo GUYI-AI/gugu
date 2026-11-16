@@ -3,16 +3,16 @@ import type { SubscriptionPayer } from '@gugu/session-core/agents/plugins'
 import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { resolveAccountTargets } from '../agents-page/agent-account'
 import { connectionDetails, harnessConnections, queryView } from './subscription-queries'
-import { useReadModel } from '@/lib/readModel'
+import { useReplica } from '@/lib/replica'
 
 /** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
 export function useSubscriptionConnections(machine: string | null, agent: Pick<AgentPayload, 'id' | 'capabilities'>) {
-  return queryView(useReadModel(harnessConnections, agentConnectionForm(agent) !== null ? [machine, agent.id] : null))
+  return queryView(useReplica(harnessConnections, agentConnectionForm(agent) !== null ? [machine, agent.id] : null))
 }
 
 /** 一个连接的登录读数与套餐。菜单里的行、菜单外的「重新登录」与「现有 CLI 配置」列不列,读的是同一份。 */
 export function useConnectionDetails(machine: string | null, providerId: string, connectionId: string | undefined) {
-  return queryView(useReadModel(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null))
+  return queryView(useReplica(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null))
 }
 
 export type ConnectionDetails = NonNullable<ReturnType<typeof useConnectionDetails>['data']>

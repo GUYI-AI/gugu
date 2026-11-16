@@ -689,9 +689,10 @@ export type SessionpageSessionOptions = {
   mode: SessionOptionGroup | null;
   model: SessionOptionGroup | null;
   effort: SessionOptionGroup | null;
+  fast?: SessionOptionGroup | null;
 };
 
-export const SESSION_OPTION_DIMENSIONS = ['mode', 'model', 'effort'] as const;
+export const SESSION_OPTION_DIMENSIONS = ['mode', 'model', 'effort', 'fast'] as const;
 export type SessionOptionDimension = (typeof SESSION_OPTION_DIMENSIONS)[number];
 
 export type SessionpageSessionCancelRequest = { conversationId: string };

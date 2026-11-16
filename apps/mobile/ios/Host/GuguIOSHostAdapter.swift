@@ -188,6 +188,20 @@ final class GuguIOSHostAdapter {
         }
     }
 
+    /// Local-only close invalidates A's old replies without retiring B or lending
+    /// the closed credential to ordinary RPC. Caller has captured closure custody.
+    func sealForLocalAccountErase(ownerId: String) {
+        queue.sync {
+            let active = configured ?? configuringBinding ?? retiringBinding
+            guard active?.ownerId == ownerId else { return }
+            generationLock.lock(); generation += 1; generationLock.unlock()
+            configurationSequence += 1
+            if configured?.ownerId == ownerId { configured = nil; store = nil }
+            if configuringBinding?.ownerId == ownerId { configuringBinding = nil }
+            if retiringBinding?.ownerId == ownerId { retiringBinding = nil }
+        }
+    }
+
     /// Native sealed-retirement barrier. It invalidates only the original
     /// adapter binding; remote cleanup and local execution stop are separate.
     /// In-flight closures retain their old store so known receipts are not lost.

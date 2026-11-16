@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { notifyManager } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { readCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { createNode, createReactHarness } from '../../../support/testHarness'

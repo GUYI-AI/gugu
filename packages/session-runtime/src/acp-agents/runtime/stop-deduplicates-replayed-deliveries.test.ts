@@ -6,7 +6,7 @@ import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { mergeDeliveryEnvelopes, readDeliveryEnvelope, recoverDeliveryEnvelopes } from '../../../../core/src/local/agent/deliveryEnvelope';
-import { hermesPromptMeta, indexHermesPrompts, originalHermesPrompt } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptMeta, indexNativePrompts, originalNativePrompt } from '@gugu/session-core/acp/native-prompt';
 
 const recoveryHarness = (options: Parameters<typeof makeAcpHarness>[0] = {}) => makeAcpHarness({
   historyRecovery: pluginRegistry.get(options.providerId ?? 'claude')?.behavior.acp?.historyRecovery,
@@ -175,8 +175,8 @@ describe('a stopped native delivery already in provider history', () => {
     const rt = new AcpRuntime(h.deps);
     const unsent = DELIVERY.replace('msg:accepted-1', 'msg:unsent-2');
     const native = `<resource_changes>飞书已连接</resource_changes>\n<gugu_profile_review>Review profile</gugu_profile_review>\n${DELIVERY}`;
-    const originals = indexHermesPrompts([{ kind: 'message', role: 'user', text: DELIVERY, _meta: hermesPromptMeta([{ type: 'text', text: native }]) }]);
-    const received = readDeliveryEnvelope(originalHermesPrompt(native, originals)!)?.segments.flatMap((segment) => segment.facts?.messageId ? [segment.facts.messageId] : []) ?? [];
+    const originals = indexNativePrompts([{ kind: 'message', role: 'user', text: DELIVERY, _meta: nativePromptMeta([{ type: 'text', text: native }]) }]);
+    const received = readDeliveryEnvelope(originalNativePrompt(native, originals)!)?.segments.flatMap((segment) => segment.facts?.messageId ? [segment.facts.messageId] : []) ?? [];
     expect(received).toEqual(['msg:accepted-1']);
     expect(isOk(await rt.startSession(makeStartInput({
       providerId: 'hermes', sessionId: 'hermes-partial-recovery', providerSessionId: 'native-old',

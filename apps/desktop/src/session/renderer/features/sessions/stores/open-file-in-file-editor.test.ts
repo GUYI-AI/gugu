@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   showModal: vi.fn(),
+  revealLiveWindow: vi.fn(),
   openWithDefaults: {} as Record<string, string>,
   activePaneOpen: vi.fn(),
   fileExists: vi.fn(),
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     contributes: { tabs: Array<{ name: string; title: string; opensFiles?: { session?: string[]; group?: string[] } }> };
   }>,
 }));
+vi.mock('../../live-window/reveal-live-window', () => ({ revealLiveWindow: mocks.revealLiveWindow }));
 
 vi.mock('@renderer/features/extensions/register-extension-tabs', () => ({
   registerInstalledExtensionTabs: mocks.registerInstalledExtensionTabs,
@@ -125,6 +127,7 @@ describe('task file preview routing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.showModal.mockReset();
+    mocks.revealLiveWindow.mockReset().mockResolvedValue(undefined);
     mocks.showPage.mockReset();
     mocks.installedManifests.length = 0;
     mocks.openWithDefaults = {};
@@ -716,7 +719,7 @@ describe('task file preview routing', () => {
     dispose();
   });
 
-  it('#7317 opens a tab the host brings up on its own only where the task has none; one already there is left alone', async () => {
+  it('routes an automatic Computer Use preview into its admitted live picture without a duplicate App pane', async () => {
     mocks.registeredKinds.add('computer-use.preview');
     const open = (onResult: (result: { success: boolean }) => void) =>
       openHostRequestedExtensionInSessionWhenReady({
@@ -730,8 +733,8 @@ describe('task file preview routing', () => {
     const first = vi.fn();
     const disposeFirst = open(first);
     await vi.waitFor(() => expect(first).toHaveBeenCalledWith({ success: true }));
-    // Beside the conversation, and the tab the person is looking at stays in front.
-    expect(mocks.paneLayoutOpen).toHaveBeenCalledWith('computer-use.preview', {}, { from: null, intent: 'beside', activate: false });
+    expect(mocks.revealLiveWindow).toHaveBeenCalledWith('project-1', 'session-1', 'computer');
+    expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
 
     mocks.paneLayoutOpen.mockClear();
     mocks.openKinds.push('computer-use.preview');
@@ -741,6 +744,14 @@ describe('task file preview routing', () => {
     expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
     disposeFirst();
     disposeAgain();
+  });
+  it('does not acknowledge or open a legacy preview when the live source is refused', async () => {
+    mocks.revealLiveWindow.mockRejectedValue(new Error('source refused'));
+    const onResult = vi.fn();
+    const dispose = openHostRequestedExtensionInSessionWhenReady({ projectId: 'project-1', sessionId: 'session-1',
+      tabKind: 'computer-use.preview', intent: 'newTab', ifAbsent: true, onResult });
+    await vi.waitFor(() => expect(onResult).toHaveBeenCalledWith({ success: false, error: 'source refused' }));
+    expect(mocks.paneLayoutOpen).not.toHaveBeenCalled(); dispose();
   });
 
   it('registers newly installed extension tabs before opening one', async () => {

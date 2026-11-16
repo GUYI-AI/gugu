@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { agentLocationText } from '../../lib/agentRunningStatusModels'
 import type { TFunction } from 'i18next'
 import type { GroupJoinMode } from '@gugu/core/shared/types/chat'
@@ -26,7 +27,7 @@ export function localizedAgentHeaderStatus(
   const locationLabel = agentLocationText(location ?? null, t)
   return [label ? agentStatusText(label) : null, locationLabel, agentEngineDisplayName(engine)]
     .filter((segment): segment is string => Boolean(segment))
-    .join(' · ')
+    .join(metadataSeparator())
 }
 
 export function joinModeDescription(mode: GroupJoinMode, t: TFunction<'messaging'>): string {

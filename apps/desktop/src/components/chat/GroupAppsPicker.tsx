@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react'
+import type { RefObject } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import { X } from '@/lib/icons'
@@ -12,26 +12,36 @@ import { menuSurfaceClassName } from '../ui/Menu'
 import { openApp } from '../appSlot/useOpenApp'
 import { appsHere } from '../appSlot/appsHere'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
+import { replica, useReplicas } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
 
 /**
  * The Apps this group can open: those with a page of their own, and those with a file in this group's folder they open —
  * an agent's group game is the second kind and opens on its file, as its card's 「Open」 (5-minute game ①). An App that only
  * opens files and has none here would open nothing, so it is not listed.
  */
+// Whether this group's folder has a file the App opens: one reading per group and App.
+const groupAppHasFiles = replica({
+  name: 'groupAppHasFiles',
+  scope: 'account',
+  read: async (_owner: string, chatId: string, extensionId: string) => {
+    const files = await appsHere?.groupFilesOpenedBy({ chatId, extensionId })
+    return !!files?.success && (files.data?.length ?? 0) > 0
+  },
+})
+
+/** The Apps to list, and whether some file-only App is not answered yet (its row is a placeholder, ❌「无群应用」). */
 function useGroupApps(chatId: string) {
   const all = installedExtensionsStore.chatOpenableApps
-  const fileOnly = all.filter((app) => !installedExtensionsStore.mainTabOf(app.extensionId)).map((app) => app.extensionId).join('\n')
-  const [withFiles, setWithFiles] = useState<{ chatId: string; ids: ReadonlySet<string> }>({ chatId, ids: new Set() })
-  useEffect(() => {
-    let live = true
-    const ids = fileOnly ? fileOnly.split('\n') : []
-    void Promise.all(ids.map(async (extensionId) => {
-      const files = await appsHere?.groupFilesOpenedBy({ chatId, extensionId })
-      return files?.success && (files.data?.length ?? 0) > 0 ? [extensionId] : []
-    })).then((found) => { if (live) setWithFiles({ chatId, ids: new Set(found.flat()) }) })
-    return () => { live = false }
-  }, [chatId, fileOnly])
-  return all.filter((app) => installedExtensionsStore.mainTabOf(app.extensionId) || (withFiles.chatId === chatId && withFiles.ids.has(app.extensionId)))
+  const fileOnly = all.filter((app) => !installedExtensionsStore.mainTabOf(app.extensionId))
+  const readings = useReplicas(groupAppHasFiles, fileOnly.map((app) => [chatId, app.extensionId] as [string, string]))
+  const hasFiles = new Map(fileOnly.map((app, index) => [app.extensionId, readings[index]!]))
+  const apps = all.filter((app) => {
+    if (installedExtensionsStore.mainTabOf(app.extensionId)) return true
+    const reading = hasFiles.get(app.extensionId)
+    return reading?.state === 'value' && reading.value
+  })
+  return { apps, pending: readings.some((reading) => reading.state === 'unknown') }
 }
 
 export const GroupAppsPicker = observer(function GroupAppsPicker({ chatId, mobile, anchor, onClose }: {
@@ -41,7 +51,7 @@ export const GroupAppsPicker = observer(function GroupAppsPicker({ chatId, mobil
   onClose: () => void
 }) {
   const { t } = useTranslation('messaging')
-  const apps = useGroupApps(chatId)
+  const { apps, pending } = useGroupApps(chatId)
   const body = (
     <div data-testid={AUTOMATION_TEST_IDS.groupAppsPicker} className="p-2">
       <div className="flex items-center justify-between gap-2 px-2 pb-2">
@@ -55,7 +65,8 @@ export const GroupAppsPicker = observer(function GroupAppsPicker({ chatId, mobil
             </Button>
           </div>
       ))}
-      {apps.length === 0 && <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t(installedExtensionsStore.isLoaded ? 'header.noGroupApps' : 'common.loading')}</p>}
+      {pending ? <div className="px-2 py-2"><Unknown className="w-32" /></div>
+        : apps.length === 0 && <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t(installedExtensionsStore.isLoaded ? 'header.noGroupApps' : 'common.loading')}</p>}
     </div>
   )
   return mobile ? <Sheet onClose={onClose} finalFocus={anchor} mobileFitContent ariaLabel={t('header.groupApps')}>{body}</Sheet> : (

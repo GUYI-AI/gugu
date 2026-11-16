@@ -1,5 +1,5 @@
 /** Main-process contracts only. Do not expose this service through Agent/MCP/device RPC. */
-export type VaultCode = 'LOCKED' | 'UNAVAILABLE' | 'INVALID_INPUT' | 'NOT_INITIALIZED' | 'ALREADY_EXISTS'
+export type VaultCode = 'SYSTEM_STORAGE_UNAVAILABLE' | 'LOCKED' | 'UNAVAILABLE' | 'INVALID_INPUT' | 'NOT_INITIALIZED' | 'ALREADY_EXISTS'
   | 'DATA_MISSING' | 'DATA_DAMAGED' | 'WRONG_ACCOUNT' | 'WRONG_INSTALLATION' | 'CANNOT_UNLOCK'
   | 'RECOVERY_INVALID' | 'STALE_REFERENCE' | 'STORAGE_FAILED' | 'AUDIT_FAILED' | 'CANCELLED'
 export class VaultError extends Error {

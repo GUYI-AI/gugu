@@ -208,6 +208,33 @@ final class GuguIOSOwnerSession {
         }
     }
 
+    /// Receipt capture binds its operation to this durable preparation round.
+    func preparedSignOut(expectedOwnerId: String) throws -> GuguIOSOwnerRetirementStore.SignOutPreparation? {
+        lock.lock(); defer { lock.unlock() }
+        guard let retirementStore else { return nil }
+        return try retirementStore.preparedSignOut(expectedOwnerId: expectedOwnerId) {
+            guard let stored = try self.readStored(), stored.ownerId == expectedOwnerId else { throw Self.stale() }
+            return try self.originalRetirement(stored)
+        }
+    }
+
+    /// Release only this login's captured sign-out round. This never republishes
+    /// credentials or starts a native agent; a later publication must verify again.
+    func cancelSignOut(expectedOwnerId: String, preparation: GuguIOSOwnerRetirementStore.SignOutPreparation) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard let stored = try readStored(), stored.ownerId == expectedOwnerId,
+              let original = try originalRetirement(stored), original == preparation.original,
+              let retirementStore else { throw Self.stale() }
+        let cancelled = try retirementStore.cancelSignOut(preparation) {
+            try self.originalRetirement(self.readStored())
+        }
+        if cancelled || storageRetirementPending {
+            generation &+= 1
+            active = nil; retiring = false; storageRetirementPending = false
+            retirementAccess = nil; retirementVerifiedUntil = nil
+        }
+    }
+
     /// AuthStorage must call this barrier before committing retirement or another
     /// owner. A failed stop rejects the write and does not restore native access.
     func prepareMainWrite(nextOwnerId: String?, nextAccessToken: String? = nil, expectedOriginalOwnerId: String? = nil, completion: @escaping (Result<GuguIOSMainWritePermit, Error>) -> Void) {
@@ -322,6 +349,13 @@ final class GuguIOSOwnerSession {
         retirementAccess = nil
         retirementVerifiedUntil = nil
         if permit.holdsRetirement { retiring = false; storageRetirementPending = false }
+    }
+
+    /// Local closure storage uses the same lock as the synchronous auth commit.
+    /// It does not publish credentials, authenticate remotely or alter write permits.
+    func withLocalClosureStorage(_ body: () throws -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
+        try body()
     }
 
     private func readBackMainWrite(_ permit: GuguIOSMainWritePermit) throws -> GuguIOSStoredSession? {

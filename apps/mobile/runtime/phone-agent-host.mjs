@@ -25,8 +25,9 @@ import { startPhoneAgentRpc } from './phone-agent-rpc.mjs'
 import { phoneCommunicationTools, deliverPhoneOutbox } from './phone-agent-tools.mjs'
 import { phoneCalendarEventView } from '../../desktop/src/mobile/phone-device/phoneCalendarView.ts'
 import { phoneChatReadTools } from './phone-agent-chat.mjs'
-import { phoneFileTools, phoneInboxAttachmentRow, phoneTurnFiles } from './phone-agent-files.mjs'
+import { phoneFileTools, phoneTurnFiles } from './phone-agent-files.mjs'
 import { phoneWebTool } from './phone-agent-web.mjs'
+import { cleanupStaleRemoteFileDirectories } from '../../desktop/electron/remoteFileOpen.ts'
 import { phoneMemoryTools } from './phone-agent-memory.mjs'
 import { createPhoneSessionTools } from './phone-agent-sessions.mjs'
 import { createPhoneActionRuntime } from './phone-actions.mjs'
@@ -95,6 +96,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
+  // A download interrupted and never asked for again leaves its chunks in the file cache: drop the stale ones, as the
+  // desktop does at start (same function, same lifetime). A failure is reported, never a reason not to start.
+  void cleanupStaleRemoteFileDirectories(join(store.directory, 'file-cache'))
+    .catch((error) => warn(`stale file cache cleanup failed: ${error instanceof Error ? error.message : String(error)}`))
   const updateReadiness = () => {
     const wasReady = ready
     ready = startupComplete && authenticated && rpcConnected && heartbeatHealthy && !stopped && !signingOut
@@ -212,11 +217,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         if (!Array.isArray(raw)) throw new Error('agent inbox is not an array')
         const rows = raw.map(unreadRowFromRpc)
         for (const row of rows) rowsById.set(row.id, row)
-        return rows.map(phoneInboxAttachmentRow)
+        return rows
       },
       markRead: ({ chatId, messageId }) => cloud.rpc('identity', 'mark_read_on_deliver', { p_chat_id: chatId, p_message_id: messageId, p_user_id: agentUserId }),
       inject: async (input) => {
-        if (input.attachments?.length) throw new Error('附件未转换为手机宿主的文件元数据，未接收本次消息')
         const row = rowsById.get(input.sourceMessageId)
         if (!row) throw new Error('inbox admission has no authoritative source row')
         const confirmation = actions?.confirmationForMessage(agent, row)

@@ -81,7 +81,7 @@ describe('owner connection settings without an assistant or native host', () => 
     await render()
     const mine = [...harness.container.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab => tab.textContent === '我的连接')!
     await clickElement(mine)
-    expect(q('assistant-connector-github').textContent).toContain('GitHub · 状态待确认')
+    expect(q('assistant-connector-github').textContent).toContain('GitHub: 状态待确认')
     expect(harness.container.textContent).not.toMatch(/连接操作|核实|重试/)
     expect(harness.container.querySelectorAll('[role="tab"][aria-selected="true"]')).toHaveLength(1)
     await clickElement(q('assistant-connector-github'))

@@ -643,7 +643,7 @@
   /* ══════════════════════════════════════════════════════════════════════════
      ❌ 组件里别再写 #fff / #000 / bg-white / text-black / 裸 gray-* zinc-* 类:中性一律取下面这几个名字。
      @@@neutral-gray-7333 — #7333 起默认中性表面是**纯灰**(用户 2026-10-17 批准,F-01 的 --tint 冷色相旋钮退役);
-     前景用 #1a1c1f(亮)/ #dfdfdf(暗),它本身略带色 ⇒ 由它派生的次级文字也带一点,❌ 说成「全部 C=0」。 */
+     前景用 #0a0a0a(亮)/ #fafafa(暗);亮色的次级文字 #68696b 略带色,❌ 说成「全部 C=0」。 */
 
   /* @@@live-accent (Refs #6104) — design.md「One accent at a time, and the accent is blue」。
      --live 是全 app **唯一**表示 streaming / running / connected / currently selected 的色。
@@ -661,10 +661,13 @@
   --text-selection: color-mix(in oklab, var(--live) 32%, transparent);
 
   /* @@@canonical-tokens — 设计稿的 :root token 名。
-     #7333 起取值是纯灰表面(见上方 @@@neutral-gray-7333)。 */
-  --bg:       #181818; /* 内容表面 */
-  --page:     #121212; /* 窗口底层:rail、会话列表 */
-  --card:     #212121; /* 局部表面:分组卡、浮层(gray-fixed-800) */
+     #7333 起取值是纯灰表面(见上方 @@@neutral-gray-7333)。
+     @@@aui-ladder 暗色各级的明度取 assistant-ui 暗色的同名变量(owner 11-16「参照 assistant ui 来进行调色」),色度仍为 0:
+     bg = --background .17、card / popover = --card .215、muted = --muted .275、fg = --foreground .985、
+     muted-fg = --muted-foreground .708、faint-fg = --ring .556;page 它没有,保持比 bg 低 0.027。 */
+  --bg:       #0f0f0f; /* 内容表面 */
+  --page:     #0a0a0a; /* 窗口底层:rail、会话列表 */
+  --card:     #191919; /* 局部表面:分组卡、浮层 */
   /* Default group/project avatars: the twelve shared identity hue families. */
   --avatar-group-fill-1: #342a16;
   --avatar-group-stroke-1: #a48c5d;
@@ -702,15 +705,15 @@
   --avatar-group-fill-12: #39271b;
   --avatar-group-stroke-12: #b28467;
   --avatar-group-text-12: #e4baa0;
-  --popover:  #212121;
+  --popover:  #191919;
   --sidebar:  var(--page);
-  --fg:       #dfdfdf; /* gray-fixed-150 */
-  --muted:    #2a2a2a; /* 填充面(分段底、输入底):比 --card 高一档,卡片里也分得出 */
-  --menu-bg: var(--muted); /* 菜单比气泡(#262626)高一档:同色或更深时像气泡上的一个洞。只动菜单这一格,❌ 动 --popover:浮层里的 --muted 填充会融进底色 */
-  /* 次级文字 = 前景 62% 混进 --bg:对 --card 5.24、对 --muted 4.67(过 AA 4.5)。 */
-  --muted-fg: #939393;
-  /* 装饰色(图标、禁用、状态点),❌ 承载信息。图标也要分得出(WCAG 1.4.11):对 --muted 3.07,其余面更高。 */
-  --faint-fg: #747474;
+  --fg:       #fafafa;
+  --muted:    #282828; /* 填充面(分段底、输入底):比 --card 高一档,卡片里也分得出 */
+  --menu-bg: var(--muted); /* 菜单比对方气泡(#1f1f1f)高一档:同色或更深时像气泡上的一个洞。只动菜单这一格,❌ 动 --popover:浮层里的 --muted 填充会融进底色 */
+  /* 次级文字:对 --card 6.76、对 --muted 5.72(过 AA 4.5)。 */
+  --muted-fg: #a1a1a1;
+  /* 装饰色(图标、禁用、状态点),❌ 承载信息。图标也要分得出(WCAG 1.4.11):对 --muted 3.13,其余面更高。 */
+  --faint-fg: #737373;
   /* @@@primary-ink (Refs #6104) — design.md:chrome 是墨色,主按钮是前景/背景反相。
      暗色下「墨」就是近白的前景端 —— 值不变,只是不再写成 #fff 这个族外字面量。 */
   --primary:    var(--fg); /* 墨 = 前景(发送钮:前景底、表面色字) */
@@ -719,9 +722,9 @@
      原来是 #ffffff0e(alpha≈5.5%),本文件下方 prefers-contrast 那段的注释自己就写着
      「实测对比度约 1.05:1,对低视力用户等于不存在」——而那条只在用户主动打开系统开关时生效,
      常态值原封不动。现在常态就是 10%,prefers-contrast 那档继续往上加。 */
-  /* @@@hairline-7333 — 暗色分支:轻边界 8%、强调边界 16%。 */
-  --border: color-mix(in oklab, var(--fg) 8%, transparent);
-  --border-strong: color-mix(in oklab, var(--fg) 16%, transparent);
+  /* @@@hairline-7333 — 暗色分支:轻边界 10%、强调边界 15%(assistant-ui 的 --border / --input)。 */
+  --border: color-mix(in oklab, var(--fg) 10%, transparent);
+  --border-strong: color-mix(in oklab, var(--fg) 15%, transparent);
   --hover: color-mix(in oklab, var(--fg) 4%, transparent);
   /* @@@selected-neutral-7333 — 选中 = 前景 7.5% 的中性层(用户裁决);live 蓝只留给运行/连接/链接这类真实语义。 */
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent);
@@ -915,7 +918,7 @@
 
   --border-spinner-on-dark: color-mix(in oklab, var(--fg) 40%, transparent);
 
-  /* @@@canonical-tokens 浅色覆盖 —— #7333 亮色:#fff 内容 / #f9f9f9 底层 / #1a1c1f 前景。 */
+  /* @@@canonical-tokens 浅色覆盖 —— #7333 亮色:#fff 内容 / #f9f9f9 底层;前景、填充取 assistant-ui 亮色 --foreground .145、--muted .97(@@@aui-ladder)。 */
   --live: var(--live-light);
   /* 浅色 live(blue-500)对白底只有 3.67、对 --muted 3.14,写字不够 4.5。掺 20% 黑:#295fb7,对所有面 ≥5.2;式子跟着 live 走,主题包也照样适用。掺黑而不掺 --fg,是因为 .emlight 作用域没有自己的 --fg。 */
   --live-fg: color-mix(in oklab, var(--live) 80%, black);
@@ -962,11 +965,11 @@
   --popover:  #ffffff;
   --menu-bg: var(--popover);
   --sidebar:  var(--page);
-  --fg:       #1a1c1f; /* 亮色前景 */
-  --muted:    #ededed; /* 填充面(gray-fixed-100) */
-  /* 次级文字 = 前景 66% 混白:对 --bg 5.5、对 --page 5.22、对 --muted 4.69(都过 AA 4.5)。 */
+  --fg:       #0a0a0a; /* 亮色前景 */
+  --muted:    #f5f5f5; /* 填充面 */
+  /* 次级文字:对 --bg 5.5、对 --page 5.22、对 --muted 5.04(都过 AA 4.5)。 */
   --muted-fg: #68696b;
-  /* 装饰色:对 --muted 3.03(≥3,WCAG 1.4.11),其余面更高。 */
+  /* 装饰色:对 --muted 3.26(≥3,WCAG 1.4.11),其余面更高。 */
   --faint-fg: #878889;
   --primary:    var(--fg);
   --primary-fg: var(--bg);
@@ -1014,19 +1017,19 @@
   --bubble-mine: var(--bubble-own);
 }
 
-/* File-family marks share one App/host palette. Dark keeps the light hue and lightness at 85% chroma. */
+/* File-family marks share one App/host palette. Dark keeps the light hue at 85% chroma; where the light lightness is too dark to be ink on a dark tile, it is raised so each glyph reads >= 3.6:1 on its tile, on page and card alike. */
 :root {
   --file-generic: oklch(0.63634 0.01132 286.02);
   --file-pdf: oklch(0.61840 0.14465 27.02);
-  --file-word: oklch(0.57077 0.13565 260.18);
+  --file-word: oklch(0.59100 0.13565 260.18);
   --file-sheet: oklch(0.60970 0.11638 153.04);
   --file-slides: oklch(0.69924 0.12360 59.28);
-  --file-archive: oklch(0.55083 0.05070 66.06);
+  --file-archive: oklch(0.59100 0.05070 66.06);
   --file-image: oklch(0.63298 0.08133 207.76);
-  --file-video: oklch(0.55054 0.15088 291.37);
+  --file-video: oklch(0.60100 0.15088 291.37);
   --file-audio: oklch(0.61064 0.13170 357.37);
-  --file-code: oklch(0.44744 0.02913 261.32);
-  --file-text: oklch(0.47513 0.01492 285.71);
+  --file-code: oklch(0.59200 0.02913 261.32);
+  --file-text: oklch(0.59000 0.01492 285.71);
 }
 [data-theme="light"] {
   --file-generic: #8a8a93;
@@ -1507,9 +1510,17 @@ body.barcode-scanner-active #root {
    主区宽度一变(收放侧栏的每一帧、拖窗口、开关右栏),要重排的只是看得见的那几行,不随翻过的历史和公式量变多;页内查找照样搜得到。
    行挂上后先按真实内容排一次、画一帧,auto 记下真实高度,MessageRow 再打 data-laid-out 才允许跳过:跳过的行占着记下的真高,
    落点、恢复阅读位置、往上翻都不会先按占位排再跳。宽度变过之后再露出来的行按新宽度重排,视口上方的差由滚动锚定吸收(flowList)。
-   paint containment 会裁到框外的东西:来源消息闪烁的 2px 环画在框外,用 overflow-clip-margin 让出来。 */
-.gg-msg-row { contain-intrinsic-size: auto 160px; }
-.gg-msg-row[data-laid-out] { content-visibility: auto; overflow-clip-margin: 4px; }
+   跳过的是行里的消息列(名字行、气泡、表情回应),不是整行:content-visibility 带 paint containment,装在行上会把组尾的
+   头像层裁在这一行里,组尾在视口下面时头像就不画了(owner 10-25,StickyGroupAvatar)。头像列、时间分隔、话题锚点在框外。
+   列里画到框外的东西用 overflow-clip-margin 让出来,不然在屏幕上也被裁、点不到(paint containment 不分跳没跳过),
+   让出的宽度取头像栏的触控宽(下面 --msg-avatar-gutter-touch),它要盖住:已读环(锚在气泡左边,气泡撑满列时整个在列外;
+   手机点击区就是这个宽度,回缩 8px → 伸出 36px、下沉 14px;桌面 15+4 = 19px,MessageBubble)、气泡尾巴 8px
+   (messageBubbleChrome.css)、焦点环 4px。 */
+/* 头像栏宽(GroupAvatarSlot):桌面与头像按钮同宽;触控宽 = 手机的点击目标,已读环在手机上的点击区也用它。 */
+:root { --msg-avatar-gutter: 32px; --msg-avatar-gutter-touch: 44px; }
+/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的列先按占位排。 */
+.gg-msg-row [data-message-bubble-column] { contain-intrinsic-size: auto 160px; }
+.gg-msg-row[data-laid-out] [data-message-bubble-column] { content-visibility: auto; overflow-clip-margin: var(--msg-avatar-gutter-touch); }
 
 /* ── theme batch A:助理 App(.ta-*)的颜色取值 ───────────────────────────────────────────────
    从 assistant-today.css 原样搬来(owner 10-28 批的 token 方案:颜色只在 tokens.css 里写),
@@ -2140,7 +2151,7 @@ body.barcode-scanner-active #root {
    --usage-series-*:图表的分类色,两主题同值;10 个以内的图取奇数位(1,3,…,19),超过 10 个用全部 20 个。
    canvas 读不到 CSS 变量,图表经 tokenColor() 取值。
    --usage-tag-*:模型标签旁的小圆点(名字哈希到 12 色之一),两主题同值。原值搬来;标签点是非文本标识,两套底色上
-   都要 ≥3:1(亮底 #ffffff、暗底 #181818,单测守着),9、10 两档原值不够,因此换成同色系的邻档
+   都要 ≥3:1(亮底 #ffffff、暗底 --bg,单测守着),9、10 两档原值不够,因此换成同色系的邻档
    (#4f46e5 → #6366f1,#ca8a04 → #a16207)。
    --ok-fg / --warn-fg:状态色写字用 *-fg(≥4.5);--ok / --warn 只给点和填充。值按所有能放字的底(bg / page / card /
    muted,两套主题)算过,最低 5.85。 */

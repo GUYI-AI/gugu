@@ -88,6 +88,25 @@ beforeEach(() => {
   setProbeConnectionModelResolver(async () => null)
 })
 describe('ACP 模型目录探测', () => {
+  it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {
+    await useAgent(`
+const options = model => [
+  { id: 'model', category: 'model', type: 'select', currentValue: model, options: ['a', 'b'].map(value => ({ value, name: value })) },
+  ...(model === 'a' ? [{ id: 'fast', category: 'model_config', type: 'select', currentValue: 'off', options: ['off', 'on'].map(value => ({ value, name: value })) }] : []),
+];
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 'probe', configOptions: options('a') });
+  if (msg.method === 'session/set_config_option') return reply(msg.id, { configOptions: options(msg.params.value) });
+}
+`)
+    expect(await probeHarnessModelCatalog('codex', 'acp', 'a')).toMatchObject({
+      kind: 'ready', selected: 'a', fastMode: { configId: 'fast', selected: 'off', available: [{ id: 'off', name: 'off' }, { id: 'on', name: 'on' }] },
+    })
+    const unsupported = await probeHarnessModelCatalog('codex', 'acp', 'b')
+    expect(unsupported).toMatchObject({ kind: 'ready', selected: 'b' })
+    expect('fastMode' in unsupported).toBe(false)
+  })
   it.each(['target-low', 'target-none', 'ignored'])('reads the requested native model axis, refusing an unconfirmed switch (%s)', async (target) => {
     await useAgent(`
 const options = (model, levels) => [

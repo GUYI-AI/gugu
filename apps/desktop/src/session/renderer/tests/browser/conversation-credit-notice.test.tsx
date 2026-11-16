@@ -37,7 +37,7 @@ it.each([360, 390, 800])('keeps the quiet credit line above the real conversatio
   await until('real conversation composer and credit line mount', () => !!harness.container.querySelector('[data-slot="composer"]') && !!harness.container.querySelector('[data-testid="conversation-credit-notice"]'))
   const notice = harness.container.querySelector<HTMLElement>('[data-testid="conversation-credit-notice"]')!
   const composer = harness.container.querySelector<HTMLElement>('[data-slot="composer"]')!
-  expect(notice.textContent).toBe('剩 1 积分 · 充值')
+  expect(notice.textContent).toBe('剩 1 积分 充值')
   expect(notice.getBoundingClientRect().bottom).toBeLessThanOrEqual(composer.getBoundingClientRect().top)
   expect(notice.scrollWidth).toBeLessThanOrEqual(width - 24)
   expect(notice.querySelector('svg, [aria-label]')).toBeNull()

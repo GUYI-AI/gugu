@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { readModel, useReadModel } from '../../../lib/readModel'
+import { replica, useReplica } from '../../../lib/replica'
 import { useTranslation } from 'react-i18next'
 
 import { SERVER_SSH_INSTALL_CHANNELS, type ServerSshInstallInfo } from '../../../lib/serverSshInstall'
@@ -29,11 +29,11 @@ const faint = 'text-[var(--faint-fg)]'
 export const MACHINE_LIMIT_CHECK_INTERVAL_MS = 5_000
 
 /** What the one-line install command needs from this desktop (its address, the package to fetch). */
-const sshInstallInfo = readModel({
+const sshInstallInfo = replica({
   name: 'sshInstallInfo',
   scope: 'device',
   read: async () => (await desktopIpc()!.invoke(SERVER_SSH_INSTALL_CHANNELS.info)) as ServerSshInstallInfo,
-  persist: true,
+  persist: { maxBytes: 512, maxEntries: 1 },
 })
 
 /** 起点往前放一点:库的钟与这台电脑的钟差个几十秒也不漏。 */
@@ -57,7 +57,7 @@ export function OneLineInstall({
   const [refusal, setRefusal] = useState<(MachineLimitRefusal & { hostname: string | null }) | null>(null)
   const since = useRef<string | null>(null)
   if (since.current === null) since.current = new Date(Date.now() - MACHINE_LIMIT_CHECK_SLACK_MS).toISOString()
-  const infoReading = useReadModel(sshInstallInfo, desktopIpc() ? [] : null)
+  const infoReading = useReplica(sshInstallInfo, desktopIpc() ? [] : null)
   const info = infoReading.state === 'value' ? infoReading.value : null
   const [useWget, setUseWget] = useState(false)
   // 这一段出现时已有的机器:之后新出现、且在线的那台就是照这一行装上的。

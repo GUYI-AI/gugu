@@ -3,12 +3,12 @@ import { For, Show } from 'solid-js'
 import { defineUnit } from '@session-chat/core/units'
 import type { MeasureCtx } from '@session-chat/core/define'
 import { useCommands } from '@session-chat/components/contexts/CommandsContext'
-import { IconChevronDown, IconDocument, IconImage } from '@session-chat/components/primitives/icons'
+import { FileTile, IconChevronDown } from '@session-chat/components/primitives/icons'
 import { useChatTranslator } from '@session-chat/localization'
 import { basename } from '@session-chat/lib/path'
 import type { FileChangeSummaryItem } from '@session-chat/model'
 import { openedOutputLook } from '@session-chat/state/opened-outputs'
-import { accentOf, OPENED_OUTPUT_ROW_H, outputControlWidth, OutputRowEnd } from '../opened-output/opened-output.def'
+import { OPENED_OUTPUT_ROW_H, outputControlWidth, OutputRowEnd } from '../opened-output/opened-output.def'
 import { chevron, detail, nameRow, text, tile } from '../opened-output/opened-output.css'
 import { readableLabel, rowTranslator } from '../readable-label'
 import * as css from './file-change-summary.css'
@@ -46,7 +46,7 @@ const textWidth = (file: File, ctx: MeasureCtx) => ctx.width - BORDER - 24 - 40 
 /** Name, then 「已编辑 · +3 −0 · …/a/b」: both wrap where they must (never hidden), the row grows with them. */
 function fileLayout(file: File, ctx: MeasureCtx) {
   const name = readableLabel(basename(file.path), ctx, textWidth(file, ctx), 14, 20, 500)
-  const detailText = [rowTranslator(ctx)('transcript.edited'), statsText(file), lastTwoFolders(file.path)].filter(Boolean).join(' · ')
+  const detailText = [rowTranslator(ctx)('transcript.edited'), statsText(file), lastTwoFolders(file.path)].filter(Boolean).join(rowTranslator(ctx)('metadata.separator'))
   const description = readableLabel(detailText, ctx, textWidth(file, ctx), 12, 18)
   return { name, description, rowHeight: Math.max(OPENED_OUTPUT_ROW_H, name.height + description.height + 24) }
 }
@@ -116,9 +116,7 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
                     }
                   }}
                 >
-                  <span class={tile} style={{ color: accentOf(look()), background: `color-mix(in srgb, ${accentOf(look())} 12%, transparent)` }}>
-                    <Show when={look().kind === 'image'} fallback={<IconDocument />}><IconImage /></Show>
-                  </span>
+                  <span class={tile}><FileTile name={look().name} /></span>
                   <span class={text}>
                     <span class={nameRow}>{fileLayout(file, props.ctx.measureCtx!()).name.text}</span>
                     <span class={detail}><Detail text={fileLayout(file, props.ctx.measureCtx!()).description.text} counts={file} /></span>

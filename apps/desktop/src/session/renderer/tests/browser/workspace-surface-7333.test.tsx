@@ -5,13 +5,14 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
-import { WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
+import { readInterface, writeInterface } from '@/lib/viewStateTable'
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 // The shell toggle publishes host IPC; this case exercises the actual layout/context instead.
@@ -26,7 +27,7 @@ function Body() {
 }
 beforeEach(async () => {
   await page.viewport(1000, 700);
-  localStorage.removeItem('gugu.taskpage.sidebarWidth');
+  writeInterface('gugu.taskpage.sidebarWidth', undefined);
   document.documentElement.dataset.platform = 'mac';
   document.documentElement.dataset.theme = 'light';
   document.documentElement.dataset.windowMaterial = 'native';
@@ -75,7 +76,7 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   const localCenter = center(local);
   const draft = harness.container.querySelector<HTMLInputElement>('[aria-label="retained draft"]')!;
   await userEvent.click([...harness.container.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
-  await until('the real list collapse completes', () => shell.querySelector('aside')!.getBoundingClientRect().width < 0.5);
+  await until('the real list collapses to its rail', () => shell.querySelector('aside')!.getBoundingClientRect().width === SIDEBAR_RAIL_PX);
   expect(harness.container.querySelector('[aria-label="retained draft"]')).toBe(draft);
   expect(draft.value).toBe('keep this draft');
   expect(mounted).toHaveBeenCalledTimes(1);
@@ -137,7 +138,7 @@ for (const material of ['native', 'opaque']) {
 }
 
 it('a saved user sidebar width takes precedence over the unified navigation default', async () => {
-  localStorage.setItem('gugu.taskpage.sidebarWidth', '320');
+  writeInterface('gugu.taskpage.sidebarWidth', 320);
   harness = createReactHarness();
   await harness.render(<div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
     <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
@@ -146,8 +147,8 @@ it('a saved user sidebar width takes precedence over the unified navigation defa
   </div>);
   const aside = harness.container.querySelector('aside')!;
   expect(aside.getBoundingClientRect().width).toBe(320);
-  expect(localStorage.getItem('gugu.taskpage.sidebarWidth')).toBe('320');
-  localStorage.removeItem('gugu.taskpage.sidebarWidth');
+  expect(readInterface('gugu.taskpage.sidebarWidth')).toBe(320);
+  writeInterface('gugu.taskpage.sidebarWidth', undefined);
 });
 
 it('a place without the task list hides the sidebar as a retained surface: same node, never laid out again from scratch', async () => {

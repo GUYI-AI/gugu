@@ -5,7 +5,7 @@ import { useLayoutEffect, type ReactNode } from 'react';
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { InSettingsPanelProvider, PageHeader } from '@renderer/lib/components/page-header';
 import { modalStore } from '@renderer/lib/modal/modal-store';
-import { queryClient } from '@/lib/readModel';
+import { queryClient } from '@/lib/replica';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { BrowserSettingsCard } from './BrowserSettingsCard';
 import HiddenToolsSettingsCard from './HiddenToolsSettingsCard';

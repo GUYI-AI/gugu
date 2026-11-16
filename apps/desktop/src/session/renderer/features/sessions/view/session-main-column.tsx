@@ -13,7 +13,6 @@ import {
   putBackFromWindow,
   revealTabWindow,
 } from '@renderer/app/screen-layout-actions';
-import { auxWindows } from '@renderer/app/aux-windows';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneProvider } from '@renderer/features/tabs/pane-context';
@@ -21,7 +20,6 @@ import { edgeFirst, PANE_EDGES, PaneEdgeDropZones } from '@renderer/features/tab
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
-import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -38,6 +36,7 @@ import { SessionActionsProvider, SessionReadyGate } from './session-actions';
 import { activeChatSessionId, CHAT_TAB_KINDS } from './session-pane-policy';
 import { TerminalModelMenu } from './terminal-model-menu';
 import { useSessionStartupFailure } from '../use-session-startup-failure';
+import { DesktopLiveWindowHeader } from '../../live-window/DesktopLiveWindowHeader';
 
 /**
  * 会话页的主区(spec session-page「一屏几块」,#7052):一个会话一块,块里的格子按一棵树摆 —— 左右并排或上下叠着,
@@ -101,11 +100,9 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
       return () => openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId);
     });
     paneLayout.setWindowRevealer(revealTabWindow);
-    paneLayout.setPaneSizer(paneCellSize);
     return () => {
       paneLayout.setWindowOpener(null);
       paneLayout.setWindowRevealer(null);
-      paneLayout.setPaneSizer(null);
     };
     // blockContentOf 每次被调用时现读页签;它闭包里认的只有这几样。
   }, [paneLayout, projectId, pageSessionId, windowId]);
@@ -174,7 +171,6 @@ const PaneCell = observer(function PaneCell({
   draggingTabId: string | null;
 }) {
   const sessionView = useWorkspaceViewModel();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const block = useScreenBlock();
   const { paneLayout } = sessionView;
   const group = paneLayout.groups.find((g) => g.paneId === paneId);
@@ -186,7 +182,7 @@ const PaneCell = observer(function PaneCell({
     tabLeadingSlot: atLeftEdge ? <SessionGrip /> : undefined,
     tabTrailingSlot: <TabBarAddMenu />,
     actionsSlot: atWindowEdge ? <SessionBlockActions atScreenEdge={block.topRight} /> : undefined,
-    reserveShellRestoreLane: atLeftEdge && block.topLeft && !block.windowId && shellRestoreLaneTaken(isLeftOpen, leftRail),
+    reserveShellRestoreLane: atLeftEdge && block.topLeft && !block.windowId && shellRestoreLaneTaken(),
     leadingReservePx: atLeftEdge && block.windowId ? auxLeadingReserve() : undefined,
   };
   if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
@@ -205,23 +201,13 @@ const PaneCell = observer(function PaneCell({
   );
 });
 
-/** 一格此刻画出来多大:主窗里,或单独成窗的那扇窗里(格子 id 全局不重)。量不到(没画出来)= null。 */
-function paneCellSize(paneId: string): { width: number; height: number } | null {
-  const documents = [document, ...[...auxWindows.windows.values()].flatMap((w) => (w.handle && !w.handle.closed ? [w.handle.document] : []))];
-  for (const doc of documents) {
-    const rect = doc.querySelector(`[data-pane-cell="${CSS.escape(paneId)}"]`)?.getBoundingClientRect();
-    if (rect && rect.width > 0) return { width: rect.width, height: rect.height };
-  }
-  return null;
-}
-
 /**
  * 这一块(这个会话)自己的控制:在哪里打开项目、换模型(编程模式)、输出 / 来源。原来在聊天栏标题行右端;
  * 对话成了页签之后它们落在这一块右上那条页签条的右端(spec「页签条右端只放这一块自己的控制」)。
  * 动作对着这一块正在看的那条会话(子会话的页签在前面就是子会话)。
  */
 const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge }: { atScreenEdge: boolean }) {
-  const { sessionId: pageSessionId } = useSessionViewContext();
+  const { sessionId: pageSessionId, projectId } = useSessionViewContext();
   const { paneLayout } = useWorkspaceViewModel();
   const { blockId, multi, windowId } = useScreenBlock();
   const sessionId = activeChatSessionId(paneLayout);
@@ -230,6 +216,7 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   return (
     <TabBarActionRow atWindowEdge={atScreenEdge}>
       <SessionMachineStatus />
+      <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} paneLayout={paneLayout} />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。
           从没起过的会话只在首启失败时摆(#7092:会员模型被拒,换一个再起);正在首启的那段不摆,换了也赶不上这一次。 */}
       {session && sessionId && sessionViewOfRuntime(session.data.runtime ?? 'pty') === 'code'

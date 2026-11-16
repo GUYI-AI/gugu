@@ -282,6 +282,25 @@ import Foundation
         catch { throw GuguPushFailure(code: "retirement_unavailable", message: "The restricted native retirement capability is no longer valid") }
     }
 
+    /// No server call: unknown registration effects still require the original
+    /// pre-confirm cleanup and must not be discarded by local erasure.
+    func forgetClosedOwner(_ ownerId: String) throws {
+        guard rpc?.request.ticket.binding.ownerId != ownerId,
+              uncertain?.ticket.binding.ownerId != ownerId,
+              !known.values.contains(where: { $0.ticket.binding.ownerId == ownerId }) else {
+            throw GuguPushFailure(code: "closure_not_prepared", message: "Original push cleanup has not completed")
+        }
+        let owned = settled.filter { $0.value.ticket.binding.ownerId == ownerId }
+        serverClearedTickets.subtract(owned.keys)
+        settled = settled.filter { $0.value.ticket.binding.ownerId != ownerId }
+        cleanBindings.removeAll { $0.ownerId == ownerId }
+        if activeBinding?.ownerId == ownerId {
+            generation = UUID(); receipt = nil; activeBinding = nil; phase = .none
+            // seen has no owner index; preserve it and report it as unattributed.
+        }
+    }
+    var hasUnattributedDeduplication: Bool { !seen.isEmpty }
+
     /// Local withdrawal only. Known/pending writes survive for exact cleanup.
     func invalidate() {
         generation = UUID(); receipt = nil; activeBinding = nil; phase = .none
