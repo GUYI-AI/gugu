@@ -3,7 +3,6 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { i18n, setLocalePreference } from '@/i18n';
-import { readMobileShell } from '@/hooks/useMobileShell';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { ModalRenderer } from '@renderer/lib/modal/modal-renderer';
 import { showModal } from '@renderer/lib/modal/modal-provider';
@@ -39,9 +38,9 @@ afterEach(async () => {
   setLocalePreference(previousLanguage === 'zh-CN' ? 'zh-CN' : 'en-US');
 });
 
-async function mount(locale: 'zh-CN' | 'en-US', width: number) {
+async function mount(locale: 'zh-CN' | 'en-US', width: number, phone = false) {
   await page.viewport(width, 844);
-  if (readMobileShell()) document.documentElement.setAttribute('data-phone-shell', '');
+  document.documentElement.toggleAttribute('data-phone-shell', phone);
   setLocalePreference(locale);
   document.body.classList.add('gugu-skin', 'emlight');
   host = document.body.appendChild(document.createElement('div'));
@@ -86,7 +85,7 @@ it.each([
   ['zh-CN', 390, true],
   ['en-US', 360, true],
 ] as const)('%s at %ipx: confirmation touch targets and shortcuts follow the shell', async (locale, width, phone) => {
-  await mount(locale, width);
+  await mount(locale, width, phone);
   showModal('confirmActionModal', {
     title: translateSessionMessage('task.archiveTaskTitle'),
     description: translateSessionMessage('task.archiveSessionDescription'),
