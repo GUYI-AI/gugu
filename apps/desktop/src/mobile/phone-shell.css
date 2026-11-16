@@ -137,3 +137,11 @@
   overflow: hidden;
   background: var(--ta-panel-bg);
 }
+
+/* Shared confirmation dialogs keep desktop chrome; the phone host owns touch sizing. */
+[data-phone-shell] .gg-confirm-action-footer [data-slot='button'] {
+  min-height: var(--control-h-touch);
+}
+[data-phone-shell] .gg-confirm-shortcut {
+  display: none;
+}

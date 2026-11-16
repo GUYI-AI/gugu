@@ -8,6 +8,9 @@
 // 一个复数类别，`_one` 永远不会被选中，但 catalog 的共享类型是 `Record<keyof typeof enUS…, string>`，
 // 两侧 key 集合必须逐字相等，所以中文侧照样写满两个形态。
 export const enUSSessionWorkflowMessages = {
+  'file.unsavedChangesTitle': 'Unsaved changes',
+  'file.unsavedChangesDescription': 'Do you want to save the changes to <file>{fileName}</file>?',
+  'file.discardChanges': 'Discard',
   'transcript.copySelection': 'Copy selected text',
   'sessionImport.title': 'Import session',
   'sessionImport.done': 'Done',
@@ -238,12 +241,12 @@ export const enUSSessionWorkflowMessages = {
   'task.unpinFromSidebarFailed': 'Couldn’t unpin from the sidebar',
   'task.pinnedSessionGone': 'This task is no longer in the list.',
   'task.archive': 'Archive',
-  'task.archiveTaskTitle': 'Archive task',
-  'task.archiveTaskConfirm': 'Archive task',
-  // 会话那一层的正文:入口说「任务」(用户心智里一个 tab 就是一项任务),动的是这一条。
+  'task.archiveTaskTitle': 'Archive agent',
+  'task.archiveTaskConfirm': 'Archive agent',
+  // 归档这条智能体会话：说明从列表隐藏、停止运行与保留内容。
   // 带走多少条由下面那个勾选说 —— ❌ 在正文里再报一次数。
   'task.archiveSessionDescription':
-    'The task is hidden from the list and its agent stops. Nothing is deleted.',
+    'The agent is hidden from the list and stops running. Nothing is deleted.',
   // 显式分支而非 i18next 复数后缀 —— 与本文件 archiveTaskDescription* 同一个理由(见 messages.ts 头部:
   // 中文没有 `_one` 形态,写了也永远选不中)。英文这一条真的会读到「the 1 child sessions」,所以单复数
   // 各写一句。
@@ -614,6 +617,9 @@ export const enUSSessionWorkflowMessages = {
 } as const;
 
 export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflowMessages, string> = {
+  'file.unsavedChangesTitle': '未保存的更改',
+  'file.unsavedChangesDescription': '要保存对「<file>{fileName}</file>」的更改吗？',
+  'file.discardChanges': '不保存',
   'transcript.copySelection': '复制所选文字',
   'sessionImport.title': '导入会话',
   'sessionImport.done': '完成',
@@ -834,7 +840,7 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'task.archive': '归档',
   'task.archiveTaskTitle': '归档会话',
   'task.archiveTaskConfirm': '归档会话',
-  'task.archiveSessionDescription': '任务将从列表中隐藏，正在运行的 agent 会停止。不会删除任何内容。',
+  'task.archiveSessionDescription': '智能体将从列表中隐藏并停止运行。不会删除任何内容。',
   'task.archiveRemoveSocialIdentity': '同时移出所有群和联系人；恢复将创建新身份',
   'task.archiveSessionWithChildrenOne': '连同它下面的那个子会话一起归档',
   'task.archiveSessionWithChildren': '连同它下面的 {count} 个子会话一起归档',
