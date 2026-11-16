@@ -812,6 +812,7 @@ export default {
     },
     "lastSeen": "Last online {{time}}",
     "listFailed": "Couldn't load devices. Check your network.",
+    "sshListFailed": "Couldn't read which machines this computer reaches over SSH.",
     "loading": "Loading devices...",
     "loginState": {
       "reconnecting": "Reconnecting",

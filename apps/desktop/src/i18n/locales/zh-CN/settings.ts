@@ -812,6 +812,7 @@ export default {
     },
     "lastSeen": "上次在线 {{time}}",
     "listFailed": "无法加载设备，请检查网络。",
+    "sshListFailed": "没读到这台电脑通过 SSH 连的是哪几台机器。",
     "loading": "正在加载设备…",
     "loginState": {
       "reconnecting": "重连中",

@@ -1,6 +1,6 @@
 import { notifyCopied } from '@/lib/copyFeedback'
 import { billingLinksAvailable } from '../../lib/appLinks'
-import type { Reading } from '../../lib/replica'
+import { useReplica, type Reading } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -20,7 +20,8 @@ import {
 } from '../../lib/deviceRowModel'
 import { rendererLogger } from '../../lib/log'
 import { useSshSignInStates } from '../../hooks/useSshSignInStates'
-import { useSshLinkProblems, useSshMachineIds, useSshUpgrades } from '../../hooks/useSshLinkProblems'
+import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
+import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
 import { sshLinkFacts } from '../../lib/sshLinkOnline'
 import { requestSshServerUpgrade, signInSshMachine } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
@@ -125,7 +126,11 @@ export function DevicesSection({
   // 远程 SSH 的机器:在线与否、要不要先登录,只看这台电脑到它的设备连接(与侧栏、顶上卡片同一个读数)。
   const linkProblems = useSshLinkProblems()
   const upgrades = useSshUpgrades()
-  const sshMachineIds = useSshMachineIds()
+  // Which machines this desktop reaches over SSH: not read yet, each offline row's state waits; unreadable, said once above
+  // the list with a retry and the rows say what they know without it (❌ a placeholder forever).
+  watchSshMachineAddresses()
+  const sshMachines = useReplica(sshMachineAddresses, [])
+  const sshMachineIds = sshMachines.state === 'value' ? sshMachineIdsOf(sshMachines.value) : null
   const showTools = hasOtherMachines(devices)
   const visible = useMemo(
     () => (showTools ? filterDevices(devices, { query, filter, sshAddress: addressOf }) : devices),
@@ -173,7 +178,7 @@ export function DevicesSection({
       onUninstall={() => openUninstall(device)}
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
-      sshLink={sshMachineIds === null ? 'unknown' : sshMachineIds.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
+      sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
       onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
@@ -212,6 +217,13 @@ export function DevicesSection({
         <SettingsNote tone="danger">
           {t('devices.listFailed')}
           <Button variant="ghost" size="sm" onClick={() => void refresh()} style={{ marginLeft: 'var(--spacing-sm)' }}>{t('devices.retry')}</Button>
+        </SettingsNote>
+      )}
+
+      {sshMachines.state !== 'unknown' && sshMachines.error && (
+        <SettingsNote tone="danger">
+          {t('devices.sshListFailed')}
+          <Button variant="ghost" size="sm" onClick={() => void sshMachineAddresses.refresh()} style={{ marginLeft: 'var(--spacing-sm)' }}>{t('devices.retry')}</Button>
         </SettingsNote>
       )}
 
