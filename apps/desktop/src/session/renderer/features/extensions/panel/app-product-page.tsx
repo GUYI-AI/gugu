@@ -55,7 +55,7 @@ import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppShelfRow } from './app-shelf';
 import { VersionHistorySection, shortDate, type Loadable } from './app-version-history';
-import type { MarketVersionHistoryEntry } from '@shared/extensions/market';
+import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 
@@ -148,7 +148,7 @@ export function AppProductPage({
   const text = localizedManifestText(manifest, textLocale);
   const { compat, deprecated } = cloud;
   const [listing, setListing] = useState<Loadable<MarketListing> | { status: 'outdated' }>({ status: 'idle' });
-  const [history, setHistory] = useState<Loadable<MarketVersionHistoryEntry[]>>({ status: 'idle' });
+  const { state: history, retry: readHistoryAgain } = useVersionHistory(api, manifest.id);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutClamped, setAboutClamped] = useState(false);
@@ -178,25 +178,7 @@ export function AppProductPage({
     };
   }, [api, manifest.id, listedVersion]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setHistory({ status: 'loading' });
-    void api
-      .marketHistory({ extensionId: manifest.id })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result.success || !result.data) throw new Error(result.error ?? 'history unreadable');
-        setHistory({ status: 'ready', data: result.data });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        log.warn('extension version history unreadable:', error);
-        setHistory({ status: 'error' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, manifest.id]);
+
 
   const publishedAt = cloud.publishedAt;
   const permissions = declaredPermissions(manifest);
@@ -328,6 +310,7 @@ export function AppProductPage({
             <div className="mk-vers">
               <VersionHistorySection
                 state={history}
+                onReadAgain={readHistoryAgain}
                 extensionId={manifest.id}
                 installedVersion={installedVersion}
                 offeredVersion={null}
