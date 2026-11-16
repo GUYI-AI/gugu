@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
-  rememberAgentUpload, resumeAgentUploads, resumeAgentUploadsSoon, setAgentUploadHost, uploadAgentFile, type AgentUploadRecord,
+  rememberAgentUpload, resumeAgentUploads, setAgentUploadHost, uploadAgentFile, type AgentUploadRecord,
 } from '../../../../packages/core/src/local/agent/agentAttachmentUploads'
 
 const ACCOUNT = 'owner-1', MESSAGE = 'm-1'

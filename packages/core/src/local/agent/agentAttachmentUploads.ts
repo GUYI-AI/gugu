@@ -90,17 +90,14 @@ export function uploadAgentFile(home: string, record: AgentUploadRecord, endpoin
   const id = record.message_id, current = uploading.get(id)
   if (current) return current
   const run = (async (): Promise<AgentUploadResult> => {
-    let source: string
-    try {
-      source = await requireAgentFileAccess(record.path)
-      const info = await stat(source)
-      if (!info.isFile() || info.size !== record.size_bytes || await fileSha256(source) !== record.sha256) throw new Error('changed')
-    } catch (error) {
-      // Never other bytes in its place: readers see the attachment failed once its reading deadline passes.
-      const reason = (error as NodeJS.ErrnoException).code ?? (error as Error).message
+    // Never other bytes in its place: readers see the attachment failed once its reading deadline passes.
+    const source = await requireAgentFileAccess(record.path).catch((error: unknown) => { host?.log.warn({ messageId: id, error: String(error) }, 'agent upload source not readable'); return null })
+    const info = source ? await stat(source).catch(() => null) : null
+    const reason = !source ? 'not readable' : !info?.isFile() ? 'gone' : info.size !== record.size_bytes || await fileSha256(source) !== record.sha256 ? 'changed' : null
+    if (!source || reason) {
       await forgetAgentUpload(home, id)
       host?.log.error({ messageId: id, reason }, 'agent upload source is gone or changed; its bytes are not sent')
-      return { status: 'changed', reason }
+      return { status: 'changed', reason: reason ?? 'not readable' }
     }
     try {
       await finishDeclaredAttachment(endpoint, record, { bytes: await openAsBlob(source, { type: record.content_type }), name: record.file_name, contentType: record.content_type },
