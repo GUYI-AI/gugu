@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   agentStatus: 'missing' as string,
+  commitCount: 0, finalizeCount: 0,
   calls: [] as string[],
   createParams: [] as Array<{ projectId: string; sessionType?: string }>,
   acpStart: { success: true } as { success: boolean; error?: unknown },
@@ -115,8 +116,8 @@ vi.mock('@main/core/sessions/operations/createSession', () => ({
     state.createParams.push(params);
     return { success: true, data: {} };
   },
-  commitCreateSession: () => ({}),
-  finalizeCreateSession: () => ({ session: {} }),
+  commitCreateSession: () => { state.commitCount++; return {}; },
+  finalizeCreateSession: () => { state.finalizeCount++; return { session: {} }; },
 }));
 
 vi.mock('@main/core/sessions/session-service', () => ({
@@ -213,7 +214,7 @@ const readAuth = async () => {
   return result.success ? result.data ?? null : null;
 };
 
-const { createSession, createModels, startSession } = await import('./create-session');
+const { createSession, createModels, startSession, createAttachmentDraft } = await import('./create-session');
 const { AgentInstallFailedError } = await import('@main/core/agents/ensure-agent-installed');
 
 describe('createSession reasoning effort validation', () => {
@@ -563,5 +564,55 @@ describe('mobile creation Fast reaches the shared initial document', () => {
   it('hides Fast on the credit-billed catalog', async () => {
     const result = await createModels({ harness: 'codex', model: 'platform:deep' }, { readAuth });
     expect(result.ok && result.value.fast).toBeUndefined();
+  });
+});
+
+
+describe('attachment draft creation preflight and deferred launch', () => {
+  const sessionId = '4f405045-a722-4eef-a2e3-bf9cf8772294';
+  const messageId = 'cd19884e-fbc1-48b4-a9e8-50ef2774fe35';
+  beforeEach(() => {
+    state.agentStatus = 'available'; state.calls = []; state.createParams = []; state.commitCount = 0; state.finalizeCount = 0;
+    state.lifeEnqueued = []; state.lifeEnqueueError = null; state.acpStart = { success: true };
+    probe.fast = true; probe.efforts = []; probe.modelEfforts = {};
+  });
+  afterEach(() => { probe.fast = false; probe.efforts = []; probe.modelEfforts = {}; });
+  it.each(['general', 'code'] as const)('%s: preserves native Fast and stable IDs without queuing a caption or starting', async sessionView => {
+    const beforeCommit = vi.fn(async () => { expect(state.commitCount).toBe(0); });
+    const result = await createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', model: 'gpt-6-astra',
+      prompt: 'caption', sessionView, fastMode: true, initialMessageId: messageId, taskChatId: 'source-group' },
+    { sessionId, attachmentNames: ['photo.png'], beforeCommit });
+    expect(result).toMatchObject({ ok: true, value: { conversationId: sessionId, taskMessageId: messageId } });
+    expect(beforeCommit).toHaveBeenCalledOnce(); expect(state.commitCount).toBe(1); expect(state.finalizeCount).toBe(1);
+    const initial = (state.createParams[0] as unknown as { sessionConfig: { initialSession: Record<string, unknown> } }).sessionConfig.initialSession;
+    expect(initial).toMatchObject({ id: sessionId, initialMessageId: messageId, fastMode: true, platformModel: null, origin: { kind: 'create', firstUtterance: 'caption' } });
+    expect(initial).not.toHaveProperty('initialQueue'); expect(initial).not.toHaveProperty('initialPrompt');
+    expect(state.lifeEnqueued).toEqual([]); expect(state.calls).toEqual(['prepareCreateSession']);
+  });
+  it('uses the real file names for an attachment-only first utterance while keeping it unadmitted', async () => {
+    expect((await createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', prompt: '', initialMessageId: messageId },
+      { sessionId, attachmentNames: ['photo.png', 'notes.txt'], beforeCommit: async () => {} })).ok).toBe(true);
+    expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { origin: { kind: 'create', firstUtterance: 'photo.png notes.txt' } } } });
+    expect(state.lifeEnqueued).toEqual([]);
+  });
+  it('does not commit or launch if durable registration beforeCommit fails', async () => {
+    const denied = Object.assign(new Error('durable registration denied'), { code: 'EACCES' });
+    await expect(createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', prompt: 'caption' },
+      { sessionId, attachmentNames: ['photo.png'], beforeCommit: async () => { throw denied; } })).rejects.toBe(denied);
+    expect(state.commitCount).toBe(0); expect(state.finalizeCount).toBe(0); expect(state.lifeEnqueued).toEqual([]);
+  });
+  it.each([
+    { model: 'platform:deep', fastMode: true, code: 'fast_rejected' },
+    { model: 'gpt-6-astra', effort: 'not-offered', code: 'effort_rejected' },
+  ])('retains ordinary preflight rejection $code before registration', async ({ code, ...choice }) => {
+    const beforeCommit = vi.fn(async () => {});
+    expect(await createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', prompt: 'caption', ...choice },
+      { sessionId, attachmentNames: ['photo.png'], beforeCommit })).toMatchObject({ ok: false, error: { code } });
+    expect(beforeCommit).not.toHaveBeenCalled(); expect(state.commitCount).toBe(0); expect(state.createParams).toEqual([]);
+  });
+  it('keeps ordinary creation on the existing first-message admission path', async () => {
+    expect((await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'ordinary' })).ok).toBe(true);
+    expect(state.lifeEnqueued).toHaveLength(1);
+    expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { initialQueue: [{ text: 'ordinary', origin: 'manual' }] } } });
   });
 });
