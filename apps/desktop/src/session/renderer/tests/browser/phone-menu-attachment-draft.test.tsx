@@ -135,7 +135,7 @@ it('removing the final attachment does not restore a menu while text or composer
 function PendingAttachment({ state }: { state: ComposerAttachment['state'] }) {
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([{ id: 'pending-file', name: 'pending.bin', kind: 'file', state, cancelable: true }])
   return <SessionUiTheme theme="dark"><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
-    <ChatComposer mobile renderHeader={() => menu} attachments={attachments} onAttachmentsChange={setAttachments}
+    <ChatComposer mobile renderPhoneHeader={() => menu} attachments={attachments} onAttachmentsChange={setAttachments}
       inputHeader={<span data-testid="selected-skill-label">代码检查</span>} onSubmit={vi.fn()} />
   </MessageProvider></SessionUiTheme>
 }
