@@ -93,29 +93,29 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(current()).toBe('')
   })
 
-  it('an event during a retry is answered by one read after that retry, and nothing more', async () => {
+  it('an event refresh replaces a scheduled retry instead of leaving an extra read behind', async () => {
     read.mockRejectedValueOnce(new Error('offline'))
     await ui.render(createNode(Probe, {}))
     await advance(500)
     await reconnect()
-    // The first read (retrying) began before the event: it lands, then one more read (I2), then the reading is settled.
+    expect(read).toHaveBeenCalledTimes(2)
     await advance(30_000)
-    expect(read).toHaveBeenCalledTimes(3)
-    await advance(60_000)
-    expect(read).toHaveBeenCalledTimes(3)
+    expect(read).toHaveBeenCalledTimes(2)
   })
 
-  it('a late failed first read is retried and then read once more for the event; the settled reading is the newer one', async () => {
+  it('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
     const old = deferred<typeof empty>()
-    read.mockReturnValueOnce(old.promise).mockResolvedValueOnce(empty).mockResolvedValue({ failures: [failure], recovered: [] })
+    read.mockReturnValueOnce(old.promise).mockResolvedValue({ failures: [failure], recovered: [] })
     await ui.render(createNode(Probe, {}))
     await reconnect()
+    expect(current()).toBe('cmd')
     await act(async () => old.reject(new Error('old timeout')))
     await advance(30_000)
-    expect(read).toHaveBeenCalledTimes(3)
+    expect(read).toHaveBeenCalledTimes(2)
     expect(current()).toBe('cmd')
-    await advance(60_000)
-    expect(read).toHaveBeenCalledTimes(3)
+    // The superseded read still ran to its end and logged its own failure once (a model's read is not told it was
+    // superseded); nothing retried it and nothing was drawn from it.
+    expect(log.error).toHaveBeenCalledTimes(1)
   })
 
   it('cancels scheduled recovery on unmount', async () => {

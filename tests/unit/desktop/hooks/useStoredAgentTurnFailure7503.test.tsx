@@ -16,9 +16,12 @@ vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
 import { useStoredAgentTurnFailure } from '../../../../apps/desktop/src/hooks/useStoredAgentTurnFailure'
 import { freshReplicaAccount } from '../../../support/replicaAccount'
 
+/** Every failure a render drew, in order: an answer drawn even for one commit is in here. */
+const drawnFailures: (string | null)[] = []
 const failure = (revision = 'one', commandId = 'cmd') => ({ agentUserId: 'agent', commandId, revision, at: 1, reason: 'weeklyQuota' })
 function Probe({ chatId = 'chat', thread = null, anyChat = false }: { chatId?: string; thread?: string | null; anyChat?: boolean }) {
   const state = useStoredAgentTurnFailure(anyChat ? 'any-chat' : { chatId, threadRootId: thread }, ['agent'])
+  drawnFailures.push(state.failure?.commandId ?? null)
   return <div><span data-failure>{state.failure?.commandId}</span><button onClick={() => state.dismiss('cmd')}>dismiss</button></div>
 }
 let ui: ReturnType<typeof createReactHarness>
@@ -26,7 +29,8 @@ const current = () => ui.container.querySelector('[data-failure]')?.textContent
 const emit = (extra = {}) => act(async () => { bus.listener?.({ id: 'cmd', agent_user_id: 'agent', chat_id: 'chat', thread_root_id: null, status: 'error', ...extra }) })
 beforeEach(async () => {
   await freshReplicaAccount('owner')
- ui = createReactHarness(); read.mockReset().mockResolvedValue([]); bus.off.mockClear(); recover.agents = []; window.localStorage.clear() })
+  drawnFailures.length = 0
+  ui = createReactHarness(); read.mockReset().mockResolvedValue([]); bus.off.mockClear(); recover.agents = []; window.localStorage.clear() })
 afterEach(() => ui.cleanup())
 
 describe('其他设备的额度通知由命令结果驱动', () => {
@@ -85,11 +89,11 @@ describe('其他设备的额度通知由命令结果驱动', () => {
 
   it('迟到的旧读数不能盖掉新事件的结果', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])
-    // The event came while the first read was out: that read lands, then the replica reads once more (I2) — the old
-    // answer is never the one left shown.
-    await ui.render(createNode(Probe, {})); await emit()
-    await act(async () => old.resolve([failure('one', 'old')]))
-    await vi.waitFor(() => expect(current()).toBe('new'))
+    // The event came while the first read was out: read again at once (I2), and the old answer is never drawn.
+    await ui.render(createNode(Probe, {})); await emit(); expect(current()).toBe('new')
+    await act(async () => old.resolve([failure('one', 'old')])); expect(current()).toBe('new')
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(drawnFailures).not.toContain('old')
   })
   it('切聊天立即清掉前一个主体，旧请求失败也不能把错误挂到新聊天', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([])
