@@ -33,6 +33,9 @@ export interface HumanAuthSessionHost<Mirror extends { access_token: string; ref
   enter: () => Promise<void>
   /** Everyone else learns of the change after it is recorded, whether persistence succeeded or not. */
   changed: () => void
+  /** Optional native account-closure barrier. Runtime drains happen before it;
+   * only the short in-memory and on-disk credential mutation is serialized. */
+  mutate?<T>(nextUserId: string | null, operation: () => Promise<T>): Promise<T>
 }
 
 /**
@@ -42,15 +45,18 @@ export interface HumanAuthSessionHost<Mirror extends { access_token: string; ref
 export function createHumanAuthSessionIpc<Mirror extends { access_token: string; refresh_token?: string | null }, Written, Cleared>(
   host: HumanAuthSessionHost<Mirror, Written, Cleared>,
 ) {
+  const mutate = <T>(owner: string | null, operation: () => Promise<T>) => host.mutate ? host.mutate(owner, operation) : operation()
   return {
     async write(mirror: Mirror): Promise<Written> {
       const next = host.toAuth({ accessToken: mirror.access_token, refreshToken: mirror.refresh_token })
       await host.leaveIfChanging(next?.userId ?? null)
       try {
-        host.set(undefined)
-        host.set(next)
-        host.revoke()
-        return await host.persist(mirror)
+        return await mutate(next?.userId ?? null, async () => {
+          host.set(undefined)
+          host.set(next)
+          host.revoke()
+          return host.persist(mirror)
+        })
       } finally {
         host.changed()
         await host.enter()
@@ -59,9 +65,11 @@ export function createHumanAuthSessionIpc<Mirror extends { access_token: string;
     async clear(reason: unknown): Promise<Cleared> {
       await host.leaveIfChanging(null)
       try {
-        host.set(reason === 'lost' ? 'lost' : null)
-        host.revoke()
-        return await host.erase()
+        return await mutate(null, async () => {
+          host.set(reason === 'lost' ? 'lost' : null)
+          host.revoke()
+          return host.erase()
+        })
       } finally {
         host.changed()
       }

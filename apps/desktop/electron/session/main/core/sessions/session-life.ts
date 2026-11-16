@@ -11,6 +11,7 @@ import type { LifeStatus, LifeView } from '@shared/core/sessions/session-life';
 import type { LegAdapter, PendingRow } from './session-life-adapter';
 import type { EnqueuePending } from './session-pending';
 import { LifeEvents, UncommittedLifeEvent } from './session-life-events';
+import { SessionLifeOwnerDrain } from './session-life-drain';
 import type { NativeInputEvidence, NativeInputLookup } from '@gugu/core/local/agent/deliveryIdentity';
 
 export interface LifeStore {
@@ -101,6 +102,7 @@ function settledByHand(row: PendingRow): boolean {
  * external IO is ordered per session, while interrupts can abort a pending stage immediately.
  */
 export class SessionLife {
+  private readonly ownerDrain = new SessionLifeOwnerDrain();
   private readonly entries = new Map<string, Entry>();
   /** IO of a removed entry still running: a new entry of the same id starts behind it. */
   private readonly draining = new Map<string, Promise<void>>();
@@ -131,6 +133,18 @@ export class SessionLife {
    * A rejection means sign-out did not complete (epoch unchanged); the caller decides whether to retry.
    */
   signOut(): Promise<void> { return this.transition(() => this.leave()); }
+
+  /** Account closure never signs out a newer account and requires proof for
+   * removed forks and late start results as well as the current entries. */
+  async stopOwnerForClosure(userId: string): Promise<void> {
+    await this.transition(async () => {
+      if (this.account !== null && this.account !== userId) throw new Error('Session account changed before closure preparation');
+      await this.leave();
+    });
+    // A late native result may never return. Keep its proof pending without
+    // holding the identity transition queue hostage to that old account.
+    await this.ownerDrain.drain(userId);
+  }
 
   signIn(userId: string): Promise<void> { return this.transition(() => this.enter(userId)); }
 
@@ -484,7 +498,8 @@ export class SessionLife {
     if (life.kind === 'starting' && (!oldRun || !same(life.gen, oldRun.gen))) {
       entry.reconfigured = event.k === 'start' && event.origin === 'reconfigure';
       entry.attempt += 1;
-      entry.run = { gen: life.gen, abort: new AbortController(), adapter: this.ports.adapter(sessionId), unlisten: null };
+      if (this.account === null) throw new Error('Session start has no account owner');
+      entry.run = { gen: life.gen, abort: new AbortController(), adapter: this.ownerDrain.track(this.account, this.ports.adapter(sessionId)), unlisten: null };
     } else if (effects.some(effect => effect.e === 'dispatch')) {
       entry.reconfigured = false;
     }

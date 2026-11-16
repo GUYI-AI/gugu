@@ -83,6 +83,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   let facts: Facts | null = null;
   let identity: EmdashSessionIdentity | null = null;
   let platformPreparation: Promise<string | null> | null = null;
+  let lateTeardown: Promise<void> | null = null;
   // The start call while it is out: true once it admitted the channel, false when it failed. A session that closes
   // while the start is out (a resume of a record the engine no longer has closes as it refuses) is that start's
   // failure, reported by the start with its typed reason, never a bare exit that beats it.
@@ -304,10 +305,11 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       else if (platformPreparation) {
         // The attempt can stop before the platform stage took the ticket (its issue may still be out, or never answer):
         // settle only the generation this early operation owns, without waiting for it.
-        void platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined)
-          .catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
+        lateTeardown = platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined);
+        void lateTeardown.catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
       } else if (have.capabilities) await releaseEmdashPlatformSession(sessionId); // a session on its own model asks no ticket early
     },
+    async closureDrain() { if (lateTeardown) await lateTeardown; },
     onExit(have, cb) {
       const worker = read<Worker>(have.process);
       let fired = false;

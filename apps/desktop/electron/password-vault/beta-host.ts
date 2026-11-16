@@ -25,6 +25,7 @@ import { BetaRemoteLogins } from './beta-remote'
 import { PASSWORD_AGENT_RPC, remoteOpSchema, type RemoteCaller } from './server-delivery'
 import { agentCredential, planAgentSave, searchCredentials, type CredentialSearch } from './beta-agent-view'
 import type { FillInput } from './beta-runtime-port'
+import { PasswordAccountLifetime } from './account-lifetime'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
@@ -42,9 +43,23 @@ interface NativeHost { window(): BrowserWindow | null; account(): Promise<string
   notify(title: string, body: string): void }
 type Account = Awaited<ReturnType<typeof createAccount>>
 let native: NativeHost | undefined
-let current: Account | undefined
-let creating: Promise<Account> | undefined
 const unavailable = () => new VaultError('UNAVAILABLE')
+const accounts = new PasswordAccountLifetime<Account>({
+  currentOwner: async () => {
+    const owner = await native?.account()
+    if (owner && !/^[a-f0-9-]{36}$/i.test(owner)) throw unavailable()
+    return owner ?? null
+  },
+  create: owner => { if (!native) throw unavailable(); return createAccount(owner, native) },
+  invalidate(value) {
+    value.controller.abort(); value.login.invalidate(); value.saves.invalidate(); value.remote.invalidate()
+  },
+  async dispose(value) {
+    await value.pull.stop()
+    await value.vault.dispose()
+  },
+  unavailable,
+})
 const person = Object.freeze({})
 const changed = () => {
   const window = native?.window()
@@ -52,7 +67,7 @@ const changed = () => {
 }
 async function createAccount(ownerId: string, host: NativeHost) {
   const controller = new AbortController(), root = join(privatePasswordVaultDirectory(), ownerId)
-  const assertCurrent = () => { controller.signal.throwIfAborted(); if (current && current.ownerId !== ownerId) throw unavailable() }
+  const assertCurrent = () => { controller.signal.throwIfAborted(); if (accounts.isClosing(ownerId) || accounts.current && accounts.current.ownerId !== ownerId) throw unavailable() }
   const protection = async () => { if ((await protectedPrivateStorageStatus(PASSWORD_VAULT_STORAGE)).status !== 'ready') throw unavailable() }
   await protection()
   const access = createBetaPasswordAccess({ signal: controller.signal, toolScope: guguMcpToolScope,
@@ -115,6 +130,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
  * the screen is merely unlocked, never where it is locked; an active machine also takes over a request opened elsewhere. */
 function pulling(sync: VaultSync, host: Pick<NativeHost, 'presence' | 'notify'>, signal: AbortSignal) {
   let timer: ReturnType<typeof setTimeout> | undefined, last = 0, running = false, forced = false
+  let flight: Promise<void> | undefined
   const seen = new Map<string, number>()
   const urgent = () => {
     const view = sync.view()
@@ -146,7 +162,7 @@ function pulling(sync: VaultSync, host: Pick<NativeHost, 'presence' | 'notify'>,
   }
   const schedule = (delay: number) => {
     if (signal.aborted) return
-    clearTimeout(timer); timer = setTimeout(() => void run(), delay); timer.unref?.()
+    clearTimeout(timer); timer = setTimeout(() => { flight = run() }, delay); timer.unref?.()
   }
   signal.addEventListener('abort', () => { clearTimeout(timer); sync.dispose() }, { once: true })
   forced = true; schedule(0)
@@ -155,23 +171,19 @@ function pulling(sync: VaultSync, host: Pick<NativeHost, 'presence' | 'notify'>,
     soon: () => { if (Date.now() - last > 10_000) { forced = true; schedule(0) } },
     /** A local save: the first one creates the vault, so pull now. */
     now: () => { forced = true; schedule(0) },
+    /** Abort the account first, then wait for any in-flight sync file writes. */
+    stop: async () => { clearTimeout(timer); await flight },
   }
 }
 async function account(): Promise<Account> {
   if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
-  const ownerId = await native.account()
-  if (!ownerId || !/^[a-f0-9-]{36}$/i.test(ownerId)) throw unavailable()
-  if (current && current.ownerId !== ownerId) {
-    const old = current; current = undefined; old.controller.abort(); old.login.invalidate(); old.saves.invalidate(); old.remote.invalidate(); await old.vault.dispose()
-  }
-  if (current) return current
-  creating ??= createAccount(ownerId, native)
-  try {
-    current = await creating
-    if (await native.account() !== ownerId) { current.controller.abort(); throw unavailable() }
-    return current
-  }
-  finally { creating = undefined }
+  return accounts.get()
+}
+
+/** Private native cleanup hook. Never disposes another account's vault and
+ * never removes files until both the sync flight and serialized vault IO end. */
+export async function closePasswordVaultForAccountClosure(ownerId: string): Promise<void> {
+  await accounts.close(ownerId)
 }
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
@@ -190,9 +202,12 @@ export function installPasswordBetaHost(host: NativeHost): void {
       return await invokePasswordPerson(value, command)
     } catch { return { ok: false, code: 'UNAVAILABLE' } }
   })
-  app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); current?.saves.invalidate(); current?.remote.invalidate(); void current?.vault.dispose().catch(() => {}) })
+  app.once('before-quit', () => { if (accounts.current) void accounts.close(accounts.current.ownerId).catch(() => {}) })
 }
 async function invokePasswordPerson(value: Account, command: PasswordUiCommand): Promise<PasswordUiReply> {
+  return accounts.run(value, () => invokePasswordCommand(value, command))
+}
+async function invokePasswordCommand(value: Account, command: PasswordUiCommand): Promise<PasswordUiReply> {
   try {
     switch (command?.type) {
       case 'snapshot': value.pull.soon(); break

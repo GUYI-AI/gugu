@@ -111,6 +111,21 @@ describe('session-life ACP leg', () => {
     finish('prepared-generation');
     await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
   });
+  it('account closure waits for the detached ticket release while an ordinary stop still returns', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    const issue = Promise.withResolvers<string>(), released = Promise.withResolvers<void>();
+    h.preparePlatform.mockReturnValueOnce(issue.promise);
+    h.release.mockImplementationOnce(async () => { await released.promise; return undefined; });
+    const adapter = await boundAdapter();
+    await adapter.teardown({}, ctx());
+    let drained = false;
+    const closing = adapter.closureDrain!().then(() => { drained = true; });
+    issue.resolve('prepared-generation');
+    await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+    expect(drained).toBe(false);
+    released.resolve(); await closing;
+    expect(drained).toBe(true);
+  });
 
   it.each(['CANCELLED', 'HANDLER_ERROR', 'DISCONNECTED'])('owns a completed %s request without another admission', async code => {
     const adapter = await boundAdapter();
