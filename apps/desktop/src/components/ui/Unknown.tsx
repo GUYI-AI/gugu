@@ -8,5 +8,5 @@ import { cn } from '../../lib/utils'
  * the call site so the value lands without moving anything.
  */
 export function Unknown({ className }: { className?: string }) {
-  return <span aria-busy="true" data-unknown="" className={cn('gg-unknown inline-block h-[1lh] w-16 rounded-[var(--radius-control)] bg-muted align-top', className)} />
+  return <span aria-busy="true" data-unknown="" className={cn('gg-unknown inline-block h-[1lh] w-16 rounded-[var(--radius-control)] bg-[var(--muted)] align-top', className)} />
 }

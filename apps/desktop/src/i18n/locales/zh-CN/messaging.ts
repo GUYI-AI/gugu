@@ -281,7 +281,7 @@ export default {
     "moreTopics_other": "更多话题（{{count}}）",
     "empty": "暂无对话",
     "emptyHint": "点上方“新建 Agent”开始第一段对话",
-    "emptyHintMobile": "去「项目」页右上角新建 Agent，开始第一段对话",
+    "emptyHintMobile": "从右上角新建群聊或添加联系人，开始对话",
     "enableNotifications": "开启通知",
     "markRead": "标为已读",
     "removeProject": "移除项目",

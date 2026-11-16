@@ -282,7 +282,7 @@ export default {
     "moreTopics_other": "More topics ({{count}})",
     "empty": "No chats yet",
     "emptyHint": "Use “New Agent” above to start your first conversation",
-    "emptyHintMobile": "Create an agent from the Projects tab to start your first conversation",
+    "emptyHintMobile": "Use the menu in the top right to start a group chat or add a contact.",
     "enableNotifications": "Enable notifications",
     "markRead": "Mark as read",
     "removeProject": "Remove Project",

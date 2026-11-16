@@ -3904,6 +3904,12 @@ function mountJson(current) {
       extensions: [
         cm.basicSetup,
         cm.json(),
+        cm.language.syntaxHighlighting(cm.language.HighlightStyle.define([
+          { tag: [cm.lezerHighlight.tags.bool, cm.lezerHighlight.tags.null], color: 'var(--em-syntax-keyword)' },
+          { tag: cm.lezerHighlight.tags.string, color: 'var(--em-syntax-string)' },
+          { tag: cm.lezerHighlight.tags.number, color: 'var(--em-syntax-number)' },
+          { tag: cm.lezerHighlight.tags.propertyName, color: 'var(--em-foreground)' },
+        ])),
         cm.EditorView.lineWrapping,
         editorTheme(cm, false),
         selectionWatch(cm),

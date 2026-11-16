@@ -12,3 +12,7 @@
 .gg-hfile[data-mine] {
   --gg-file-row-muted: var(--text-on-bubble-muted);
 }
+
+.gg-hfile:not([data-mine]) .gg-file-row-detail {
+  color: var(--text-secondary);
+}

@@ -65,6 +65,10 @@ export const APP_PALETTE_COLORS = [
   ['--em-file-audio', 'var(--file-audio)'],
   ['--em-file-code', 'var(--file-code)'],
   ['--em-file-text', 'var(--file-text)'],
+  // Code editors in App frames use the host's theme-aware syntax roles.
+  ['--em-syntax-keyword', 'var(--syntax-keyword)'],
+  ['--em-syntax-string', 'var(--syntax-string)'],
+  ['--em-syntax-number', 'var(--syntax-number)'],
   // State overlays (translucent: right on any surface) and the shadows: lift for what floats, dialog for the dialog (#7333).
   ['--em-hover', 'var(--hover)'],
   ['--em-press', 'var(--press)'],
@@ -268,6 +272,14 @@ export function appPaletteCss(tokensCss) {
   const rules = parseRules(tokensCss);
   const colorsOf = (theme, active) => {
     const tokens = tokensFor(rules, theme, active);
+    // Syntax is intentionally scoped to the host's editor theme, not the default html palette.
+    // Import only those three roles; terminal and other component-scoped values stay scoped.
+    for (const rule of rules) {
+      if (rule.media !== null || !rule.selectors.includes(`.em${theme}`)) continue;
+      for (const [name, value] of rule.declarations) {
+        if (['--syntax-keyword', '--syntax-string', '--syntax-number'].includes(name)) tokens.set(name, value);
+      }
+    }
     return APP_PALETTE_COLORS.map(([name, token]) => [name, resolve(token, tokens, [name])]);
   };
   const dark = colorsOf('dark', []);

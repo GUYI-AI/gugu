@@ -1253,7 +1253,7 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   .mk .xp-history-note {
     order: 3;
     flex: 0 0 100%;
-    min-height: 0;
+    min-height: var(--control-h-touch);
   }
   .mk-dh {
     gap: 20px;
