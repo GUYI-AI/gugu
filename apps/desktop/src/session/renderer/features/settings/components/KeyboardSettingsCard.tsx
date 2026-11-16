@@ -2,6 +2,7 @@ import { useHotkeyRecorder, type Hotkey } from '@tanstack/react-hotkeys';
 import { RotateCcw, X } from '@/lib/icons'
 import React, { useEffect, useState } from 'react';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { commandPresentation } from '@renderer/lib/commands/presentation';
 import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
 import type { AppSettings } from '@shared/core/app-settings';
 import { SettingValue } from './SettingControls';
@@ -68,8 +69,8 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
       });
 
       if (conflict) {
-        const [, def] = conflict;
-        const msg = translate('keyboard.conflictDescription', { label: def.label });
+        const [conflictId] = conflict;
+        const msg = translate('keyboard.conflictDescription', { label: commandPresentation(conflictId, translate).label });
         toast({
           title: translate('keyboard.conflictTitle'),
           description: msg,
@@ -84,7 +85,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
       toast({
         title: translate('keyboard.updatedTitle'),
         description: translate('keyboard.updatedDescription', {
-          label: COMMANDS[editingKey].label,
+          label: commandPresentation(editingKey, translate).label,
           hotkey: describeHotkey(hotkey),
         }),
       });
@@ -107,7 +108,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     resetField(key);
     toast({
       title: translate('keyboard.resetTitle'),
-      description: translate('keyboard.resetDescription', { label: COMMANDS[key].label }),
+      description: translate('keyboard.resetDescription', { label: commandPresentation(key, translate).label }),
     });
   };
 
@@ -115,7 +116,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     update({ [key]: null });
     toast({
       title: translate('keyboard.removedTitle'),
-      description: translate('keyboard.removedDescription', { label: COMMANDS[key].label }),
+      description: translate('keyboard.removedDescription', { label: commandPresentation(key, translate).label }),
     });
   };
 
@@ -128,10 +129,11 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
           .map(([category, shortcuts]) => (
           <div key={category}>
             <div className="text-foreground-muted mb-3 text-xs font-medium tracking-wide uppercase">
-              {category}
+              {commandPresentation(shortcuts[0][0], translate).category}
             </div>
             <div className="space-y-3">
               {shortcuts.map(([key, def]) => {
+                const presentation = commandPresentation(key, translate);
                 const effectiveHotkey = getEffectiveHotkey(key, keyboard);
                 const capturing = editingKey === key && recorder.isRecording;
                 const cleared = keyboard[key] === null;
@@ -147,9 +149,9 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
                     className="group/shortcut flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-2"
                   >
                     <div className="min-w-0 flex-1 basis-64 space-y-1">
-                      <div className="text-sm break-words">{def.label}</div>
+                      <div className="text-sm break-words">{presentation.label}</div>
                       <div className="text-foreground-muted text-xs break-words">
-                        {def.description}
+                        {presentation.description}
                       </div>
                     </div>
                     <div className="ml-auto flex shrink-0 items-center gap-2">
