@@ -65,6 +65,17 @@ type Cli = { command: Parameters<Worker['client']['startSession']>[0] };
 const lease = <T>(value: T) => value as unknown;
 const read = <T>(value: object): T => value as T;
 
+/**
+ * A billing-route switch left this conversation's native session to be forked onto the new route (descriptor
+ * `sourceChangeSession: 'fork'`): the start forks it as the same agent instead of resuming it. Still a resume of this
+ * conversation for everything else (identity, capabilities, history facts), so the lifecycle stays `resume`.
+ */
+function routeSwitchForkSource(row: Row): string | undefined {
+  // Valid only while it names the recorded session: once the fork's new id is written, the mark is spent.
+  const pending = row.forkOnStartProviderSessionId;
+  return pending && pending === row.providerSessionId ? pending : undefined;
+}
+
 function lifecycleOf(row: Row, fork: RuntimeFork | null): Lifecycle {
   if (fork) return 'fork';
   if (row.providerSessionId) return 'resume';
@@ -114,10 +125,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     // Not yet claimed by a first start: a pending persistent fork rides on it. The creation turns are pending
     // rows (one queue), never part of the start.
     const unclaimed = session.providerSessionId == null;
+    const forkSource = routeSwitchForkSource(session);
     return {
       input: {
         ...acpStartInputFor(session, workspace.workspaceId, workspace.path),
         ...(unclaimed && session.forkFromProviderSessionId ? { forkFromProviderSessionId: session.forkFromProviderSessionId } : {}),
+        ...(forkSource ? { forkFromProviderSessionId: forkSource, forkKeepsAgent: true } : {}),
       },
     } as StartInput;
   }
@@ -220,7 +233,10 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       .catch(error => log.error('Human tool results could not resume', { sessionId, error: String(error) }));
     void persistSessionMcpServers(sessionId, command.input.providerId, command.input.cwd, f.mcpDisabledServers, injection.extensionDelivery);
     const previous = fork ? null : known().providerSessionId ?? null;
-    const nativeSession = previous === null ? null : result.data.providerSessionId === previous ? 'preserved' : 'replaced';
+    // A route-switch fork is a new native id carrying the whole context: the conversation continues. Its pending mark
+    // names the source id, which is no longer the recorded one, so it is spent (see routeSwitchForkSource).
+    const nativeSession = previous === null ? null
+      : result.data.providerSessionId === previous || command.input.forkKeepsAgent ? 'preserved' : 'replaced';
     const waiting = (fork ? forkStore : lifeStore).pending(sessionId);
     backlogThrough = Math.max(-1, ...waiting.queued, ...waiting.dispatching);
     return lease({ gen, timing: 'next-tool-call', nativeSession }) as AdmittedChannel;

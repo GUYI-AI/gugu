@@ -239,6 +239,15 @@ const acpConfigV1 = z.object({
    */
   forkFromProviderSessionId: z.string().optional(),
   /**
+   * 换计费路的重开(harness 声明 `sourceChangeSession: 'fork'`)留下的待办:下一次启动不续接 `session_id`
+   * 里的这条原生会话,而是在新路的进程里把它**分叉**成一条带着全部历史的新原生会话(同一个 agent,不是新 agent),
+   * 拿回的新 id 写进 `session_id`,这一格随之清掉。
+   *
+   * 记的是那条原生会话的 id,只在它仍等于 `session_id` 时有效 —— `session_id` 被别的写口换掉了,这一格就自然作废。
+   * 起不来也留着:重试仍要分叉,续接原线程在新路上必然被拒。
+   */
+  forkOnStartProviderSessionId: z.string().optional(),
+  /**
    * spec `mcp-session-toggle`:用户在 `/mcp` 面板里为**这一条会话**留下的开关。
    *
    * `mcpDisabledServers` 记的是**关掉的那几台**(而不是启用集合),因为「用户没碰过的都开着」

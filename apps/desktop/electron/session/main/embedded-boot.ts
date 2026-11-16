@@ -1180,6 +1180,7 @@ export function acpStartInputFor(
  * 重载后 harness 自己那条原生会话的去向,读的是重载**实际**拿回来的 session id,❌ 按意图推断。
  * `preserved` = 同一条原生会话接回来了(harness 自己的历史在);`replaced` = 按插件的
  * `sourceChangeSession=replace` 起了一条新的原生会话(咕咕这边的对话记录仍在,harness 自己的上下文从零开始)。
+ * `sourceChangeSession=fork` 分叉出来的那条 id 虽新,带着全部上下文,所以算 `preserved`(ACP 腿由 LifeView 报)。
  * `not-started` = 这条会话从没起来过(#7092):只把新选择落进了记录,没停也没起 —— 调用方按正常首启起它。
  */
 export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'not-started'
@@ -1331,6 +1332,11 @@ export async function reloadEmdashSession(input: {
     let configBeforePatch: typeof sessions.$inferSelect.config | null = null
     const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
     const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
+    if (sourceChanged && sourceChangeSession === 'fork') {
+      // No terminal leg declares it today: the terminal start has no route-switch fork, and resuming instead would
+      // be refused by the very harness that asked for a fork.
+      throw new Error(`session ${sessionId} PTY reload cannot fork its provider session onto another billing route`)
+    }
     const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
     let platformWritten = false
     if (input.resetModel) {
@@ -1596,6 +1602,15 @@ export async function reloadEmdashSession(input: {
     if (currentConfig) {
       const { providerSessionState: _cleared, ...configWithoutProviderState } = currentConfig
       if (input.resetModel || (nextModel && input.modelSource === 'platform')) delete configWithoutProviderState.model
+      // `fork`:原生会话 id 不动,只记下「下一次起要把它分叉到新路上」。起不来也留着 —— 重试仍得分叉。
+      // 起不来时的 `restoreConfig` 写回的是重开前那一份(没有这一格),与把模型选择写回原样同一个回滚。
+      if (sourceChangeSession === 'fork' && providerSessionIdBeforeReload) {
+        if (configWithoutProviderState.type !== 'acp') {
+          const message = `has no ACP record to fork its provider session from (${reason})`
+          throw new Error(`session ${sessionId} ${message}` + await restoreConfig(message))
+        }
+        configWithoutProviderState.forkOnStartProviderSessionId = providerSessionIdBeforeReload
+      }
       await db.update(sessions)
         .set({ config: configWithoutProviderState })
         .where(eq(sessions.id, sessionId))
@@ -1603,8 +1618,8 @@ export async function reloadEmdashSession(input: {
       // (#5869):这一格渲染进程手里也留着一份,而全仓只有 `set-session-id.ts` 那两个写口会把
       // 改动广播出去。跟着 config 一起裸写的话,记录里已经没有可续的会话,渲染端却还以为有 ——
       // 两边都不报错,只是下一次它会拿一个作废的 id 去续。
-      // `preserve` 那一支本来就是把原值写回去,等于没改,所以只有「换掉」这一支要动。
-      if (sourceChangeSession !== 'preserve' && providerSessionIdBeforeReload) {
+      // `preserve` 与 `fork` 都留着原值,所以只有「换掉」这一支要动。
+      if (sourceChangeSession === 'replace' && providerSessionIdBeforeReload) {
         await clearProviderSessionId(sessionId, providerSessionIdBeforeReload)
       }
     }

@@ -97,4 +97,11 @@ describe('resuming without replay (#980)', () => {
     });
     expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined });
   });
+
+  it('a route-switch fork continues this conversation: no replay, turn numbers after the stored ones', async () => {
+    const facts = await resumeHistoryFacts(input({ forkFromProviderSessionId: 'thread-1', forkKeepsAgent: true }), {
+      recordedDeliveryIds: async () => ['msg:a'], fillFromRecord: async () => undefined, turnIndexBase: async () => 5,
+    });
+    expect(facts).toEqual({ replayHistory: false, recordedDeliveryIds: ['msg:a'], turnIndexBase: 5 });
+  });
 });
