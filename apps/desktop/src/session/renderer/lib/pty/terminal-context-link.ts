@@ -121,5 +121,14 @@ function rangeContainsColumn(
 }
 
 function trimLinkText(text: string): string {
-  return text.replace(/[),.;:!?]+$/, '');
+  let result = text;
+  for (;;) {
+    const trimmed = result.replace(/[,. ;:!?]+$/, '');
+    if (trimmed !== result) { result = trimmed; continue; }
+    if (result.endsWith(')') && result.split(')').length > result.split('(').length) {
+      result = result.slice(0, -1);
+      continue;
+    }
+    return result;
+  }
 }
