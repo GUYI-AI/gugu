@@ -7,3 +7,5 @@ import { sessionTitleRequestBody } from '../../../../apps/desktop/src/session/sh
 it('keeps multi backtick inline code literal',()=>{const text='run ``a`b **literal** [x](y)`` now';expect(markdownPlainText(text)).toBe(text);expect(markdownPlainText('``**literal**``')).toBe('``**literal**``');});
 
 it('keeps escaped Markdown punctuation literal',()=>{expect(markdownPlainText('Use \\*\\*literal\\*\\* and \\[label\\](target)')).toBe('Use **literal** and [label](target)');expect(markdownPlainText('**bold** snake_case')).toBe('bold snake_case');});
+
+it('removes balanced Markdown link destinations',()=>{expect(markdownPlainText('see [Function](https://example.test/wiki/Function_(math)) now')).toBe('see Function now');expect(markdownPlainText('before ![plot](images/plot_(1).png) after')).toBe('before  after');expect(markdownPlainText('[Nested](https://example.test/a_(b_(c)))')).toBe('Nested');});

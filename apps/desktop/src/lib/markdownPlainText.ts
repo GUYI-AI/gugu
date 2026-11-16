@@ -18,15 +18,32 @@ export function markdownPlainText(text: string): string {
     .trim()
 }
 
+function replaceInlineLinks(text: string): string {
+  const pattern = /(!?)\[([^\]\n]*)\]\(/g;
+  let result = '';
+  let copied = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index < copied) continue;
+    let depth = 1;
+    let end = match.index + match[0].length;
+    for (; end < text.length && depth > 0; end += 1) {
+      if (text[end] === '(') depth += 1;
+      else if (text[end] === ')') depth -= 1;
+    }
+    if (depth !== 0) continue;
+    result += text.slice(copied, match.index) + (match[1] ? '' : match[2]);
+    copied = end;
+  }
+  return result + text.slice(copied);
+}
+
 function plainSegment(text: string): string {
   const literals: string[] = [];
   const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]\^_`{|}~])/g, (_, char: string) => {
     literals.push(char);
     return `\u0000${literals.length - 1}\u0000`;
   });
-  return escaped
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  return replaceInlineLinks(escaped)
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]+#+[ \t]*$/gm, '$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
