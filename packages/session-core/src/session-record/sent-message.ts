@@ -31,6 +31,7 @@ export function sentMessageOf(item: TranscriptItem): MessageItem | null {
   if (item.kind !== 'mcp-tool-call' || item.status !== 'done' || item.parentToolCallId || !isGuguServer(item.server)) return null;
   // A tool not in the agent's native list is called through catalog_call: the same send, its arguments one level in.
   const viaCatalog = catalogCall(item.tool, item.rawInput);
+  // message_send_file is the retired file send: transcripts from before it went are still drawn.
   const tool = /(?:^|__)(widget_send|message_send_file|message_send)$/.exec(viaCatalog?.tool ?? item.tool)?.[1];
   if (!tool) return null;
   const output = item.rawOutput || item.outputText;
@@ -41,7 +42,8 @@ export function sentMessageOf(item: TranscriptItem): MessageItem | null {
   if (!args || typeof args !== 'object') return null;
   const linked = typeof receipt?.source_link === 'string' ? parseConversationLink(receipt.source_link)?.chatId : undefined;
   const at = item.completedAt ?? item.at;
-  if (tool === 'message_send') {
+  const carriesFile = tool === 'message_send' && Boolean(args.file || args.file_path);
+  if (tool === 'message_send' && !carriesFile) {
     // Its receipt is the one-line `sent (id=…)`: the address the agent gave is the chat it named.
     const id = sentMessageId(item)?.replace(/^msg:/, '');
     const chatId = linked ?? (typeof args.chat_id === 'string' ? args.chat_id : null);
@@ -61,7 +63,8 @@ export function sentMessageOf(item: TranscriptItem): MessageItem | null {
   const name = receipt.file_name, size = receipt.size_bytes, mime = receipt.mime_type;
   if (typeof name !== 'string' || typeof size !== 'number' || typeof mime !== 'string') return null;
   const pinned = typeof receipt.file === 'string' ? parseGroupFileLink(receipt.file) : null;
-  return sentChatMessage({ id, chat_id: linked, content: attachmentEnvelope(name, size, mime), content_type: 'attachment', at,
+  const caption = carriesFile && typeof args.text === 'string' ? args.text : undefined;
+  return sentChatMessage({ id, chat_id: linked, content: attachmentEnvelope(name, size, mime, caption), content_type: 'attachment', at,
     ...(pinned?.version !== undefined ? { file_item_id: pinned.itemId, file_version: pinned.version } : {}),
     ...(typeof receipt.file_blob_id === 'string' ? { file_blob_id: receipt.file_blob_id } : {}) });
 }

@@ -8,7 +8,7 @@ import { groupFileLink } from './ui/guguLink'
  */
 export function attachmentFolderLine(itemId: string, version: number): string {
   const file = groupFileLink(itemId, { version })
-  return `[Folder file ${file} — show it again: message_send_file {file: "${file}"}; changed it: message_send_file {file: "${file}", file_path} sends your file as its next version, never as a new attachment]`
+  return `[Folder file ${file} — show it again: message_send {file: "${file}"}; changed it: message_send {file: "${file}", file_path} sends your file as its next version, never as a new attachment]`
 }
 
 /**

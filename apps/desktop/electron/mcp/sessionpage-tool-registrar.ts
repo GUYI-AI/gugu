@@ -33,6 +33,8 @@ export interface SessionpageToolDef {
   list?: SessionpageListSpec
   /** It returns a session: that gets its session_link (withSessionLink). Only session_spawn (owner 2026-11-15: rarely called, so the link costs no context elsewhere). */
   linksSession?: true
+  /** What the agent is shown of the host's answer, after windowing: drops host internals it never acts on. */
+  present?: (result: unknown) => unknown
 }
 
 export interface SessionpageListSpec extends ListSpec<Record<string, unknown>> {
@@ -148,6 +150,7 @@ export function registerSessionpageTools(
             result = await eachWindowed(def.list, windowResult(def.list, result, args), async (next) =>
               encodeResult(await dispatch(decodeAction(next), signal)))
           }
+          if (def.present) result = def.present(result)
         } catch (error) {
           auditToolCall({ phase: 'error', tool: def.name, action, error })
           throw error
