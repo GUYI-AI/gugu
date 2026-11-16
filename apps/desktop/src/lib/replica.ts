@@ -108,7 +108,7 @@ export const queryClient = new QueryClient({ defaultOptions: { queries: { queryF
 // Back to the foreground (`refreshOnFocus`) is the page becoming visible or its window being focused: a desktop window
 // switched to while visible is a return too (react-query alone hears only visibility).
 focusManager.setEventListener((handleFocus) => {
-  if (typeof window === 'undefined') return undefined
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined
   const back = () => handleFocus()
   window.addEventListener('visibilitychange', back, false)
   window.addEventListener('focus', back, false)
