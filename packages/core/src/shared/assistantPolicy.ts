@@ -124,7 +124,7 @@ export function ownerProfileMemoryFile(markdown: string, rules: AssistantProduct
 /** MEMORY.md 补上那一行(已有就不重复;没有索引就新建)。 */
 export function withOwnerProfileIndex(index: string | null, rules: AssistantProductRules): string {
   const current = index ?? ''
-  if (current.includes(`](${OWNER_PROFILE_MEMORY_FILE})`)) return current
+  if (current.includes(`](${OWNER_PROFILE_MEMORY_FILE})`) || current.includes(`](./${OWNER_PROFILE_MEMORY_FILE})`)) return current
   return (current.trim() ? `${current.replace(/\n+$/, '')}\n` : '') + `${ownerProfileIndexLine(rules)}\n`
 }
 
