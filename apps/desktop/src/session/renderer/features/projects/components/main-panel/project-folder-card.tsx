@@ -9,6 +9,7 @@ import type { ProjectFolder } from '@shared/core/projects/project-folders';
 import { basenameFromAnyPath, shortHome } from '@shared/path-name';
 import { senderAvatarChanges, senderAvatarUrl } from '@renderer/lib/chat/sender-avatar';
 import { useSelect } from '@/lib/selectStore';
+import { useDelayedBoolean } from '@renderer/lib/hooks/use-delay-boolean';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
@@ -234,6 +235,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   touch?: boolean;
 }) {
   const { translate } = useSessionMessages();
+  // The 「Reading folders…」 line follows the placeholder rule: shown only after 150 ms, so a read that answers sooner shows nothing.
+  const readingShown = useDelayedBoolean(state.folders === null, 150);
   // Redraw when an agent's avatar should be read again (its identity, its session's owner, the theme).
   useSelect(senderAvatarChanges, (seen) => seen);
   const [open, setOpen] = useState(false);
@@ -595,9 +598,9 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
         </div>
       </div>
       {state.folders !== null || !state.loadError ? (
-        <p className="gg-folder-card__hint" role={state.folders === null ? 'status' : undefined}>
+        <p className="gg-folder-card__hint" role={state.folders === null && readingShown ? 'status' : undefined}>
           {state.folders === null
-            ? translate('projects.folders.loading')
+            ? (readingShown ? translate('projects.folders.loading') : '\u00a0')
             : open
               ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
               : translate('projects.folders.hintClosed', { count: folders.length })}
