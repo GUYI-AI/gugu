@@ -122,6 +122,7 @@ export function SubscriptionConnections({
   const host = useLibraryHost()
   // A failed read says so at once on every surface (a value already read stays, with the failure next to it).
   const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent)
+  const connectionsError = connections.state === 'unknown' ? null : connections.error
   const empty = listed?.length === 0
   const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
     if (next && empty) setAdding(true)
@@ -149,7 +150,7 @@ export function SubscriptionConnections({
   const cliAccount =
     cliSignIn &&
     !!cli.row?.canSignIn &&
-    (native.data?.status.kind !== 'authenticated' || cli.row.status === 'partial')
+    ((native.state === 'value' ? native.value.status.kind : undefined) !== 'authenticated' || cli.row.status === 'partial')
   const accountMethod: AccountMethod = canSignIn ? 'connection' : cliAccount ? 'cli' : null
   const apiKeyMethod = form !== null
   const canAdd = accountMethod !== null || apiKeyMethod
@@ -187,7 +188,7 @@ export function SubscriptionConnections({
       // Commit the connection first. Model refresh failure must not disguise a successful switch.
       refresh()
       setOpen(false)
-      if (kind === 'select' || connections.data?.some((c) => c.current && c.id === id)) {
+      if (kind === 'select' || (connections.state === 'value' && connections.value.some((c) => c.current && c.id === id))) {
         await forceRefreshHarnessModelCatalog(agent.id, 'acp', machine)
       }
     }
@@ -349,11 +350,8 @@ export function SubscriptionConnections({
   )
   // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
   const current = listed?.find((c) => c.current)
-  const currentStatus = useConnectionDetails(
-    machine,
-    agent.id,
-    current?.kind === 'account' ? current.id : undefined
-  ).data?.status
+  const currentDetails = useConnectionDetails(machine, agent.id, current?.kind === 'account' ? current.id : undefined)
+  const currentStatus = currentDetails.state === 'value' ? currentDetails.value.status : undefined
   const currentSignIn = canSignIn && current && currentStatus?.kind === 'unauthenticated' && (
     <Button
       size={settingsRows ? 'sm' : 'xs'}
@@ -398,7 +396,7 @@ export function SubscriptionConnections({
         <ConnectionSettingsRows
           signIn={currentSignIn || undefined}
           connections={listed}
-          unreadable={!!connections.error && listed === undefined}
+          unreadable={!!connectionsError && listed === undefined}
           open={open}
           onOpenChange={setOpen}
           onSelect={select}
@@ -425,9 +423,9 @@ export function SubscriptionConnections({
                 }}
               />
             ) : (
-              connections.error && (
+              connectionsError && (
                 <p className="subscription-error" role="alert">
-                  {errorText(connections.error)}
+                  {errorText(connectionsError)}
                 </p>
               )
             )
@@ -485,10 +483,10 @@ export function SubscriptionConnections({
                 />
               </div>
             )}
-            {listed === undefined && !connections.error && <Unknown className="m-2 h-3 w-40" />}
-            {connections.error && (
+            {listed === undefined && !connectionsError && <Unknown className="m-2 h-3 w-40" />}
+            {connectionsError && (
               <p className="subscription-error p-2" role="alert">
-                {errorText(connections.error)}
+                {errorText(connectionsError)}
               </p>
             )}
             <DropdownMenuRadioGroup value={current?.id ?? ''} onValueChange={select}>
@@ -671,25 +669,26 @@ function ConnectionOption({
   onManageModels?: () => void
 }) {
   const { translate } = useSessionMessages()
-  const details = useConnectionDetails(machine, agent.id, connection.id)
+  const reading = useConnectionDetails(machine, agent.id, connection.id)
+  const details = reading.state === 'value' ? reading.value : undefined
+  const detailsError = reading.state === 'unknown' ? null : reading.error
   // 不切过去也看得到这个号还剩多少(10-30 owner):按连接读，与「订阅」行同一把键、同一份读数。
   // 没登录的号没有额度可读;API key 的余量只在厂商后台。
-  const usage = useSubscriptionUsage(machine, agent.id, connection.id, connection.kind !== 'api-key' && details.data?.status.kind === 'authenticated')
-  const quota = usage.data?.kind === 'windows' ? remainingLine(usage.data.windows, translate) : null
-  const nearlyUsed =
-    usage.data?.kind === 'windows' &&
-    usage.data.windows.some((window) => window.usedPercent >= NEARLY_USED_PERCENT)
-  const status = details.data?.status
+  const usage = useSubscriptionUsage(machine, agent.id, connection.id, connection.kind !== 'api-key' && details?.status.kind === 'authenticated')
+  const windows = usage.state === 'value' && usage.value.kind === 'windows' ? usage.value.windows : null
+  const quota = windows ? remainingLine(windows, translate) : null
+  const nearlyUsed = !!windows && windows.some((window) => window.usedPercent >= NEARLY_USED_PERCENT)
+  const status = details?.status
   const canSignIn =
     !!onSignIn && connection.kind === 'account' && status?.kind === 'unauthenticated'
   const name =
     connection.kind === 'native' ? translate('subscriptions.connections.existing') : connection.name
-  const plan = details.data?.plan
+  const plan = details?.plan
   const description =
     status?.kind === 'authenticated' && status.account
       ? status.account
       : // 「现有 CLI 配置」写它登的是谁、谁在付钱(Pi 这类没有账号读数的家靠这一条)。
-        connection.kind === 'native' && plan && nativeConfigured(details.data)
+        connection.kind === 'native' && plan && nativeConfigured(details)
         ? payerLine(plan, translate, false)
         : connection.kind === 'api-key'
         ? [
@@ -706,7 +705,7 @@ function ConnectionOption({
                 ? 'subscriptions.connections.expired'
                 : 'subscriptions.connections.signedOut'
             )
-          : details.isPending
+          : reading.state === 'unknown'
             ? <Unknown className="w-28" />
             : translate('subscriptions.connections.account')
   const Choice = selectItem ? SelectItem : DropdownMenuRadioItem
@@ -736,7 +735,7 @@ function ConnectionOption({
         data-testid={`connection-use-${connection.id}`}
         disabled={
           busy ||
-          details.isPending ||
+          reading.state === 'unknown' ||
           (connection.kind === 'account' && status?.kind !== 'authenticated')
         }
         className="subscription-connection-choice"
@@ -744,8 +743,8 @@ function ConnectionOption({
         <span>
           <span className="subscription-connection-name">
             {name}
-            {details.data?.plan?.plan && (
-              <span className="subscription-plan-badge">{details.data.plan.plan}</span>
+            {details?.plan?.plan && (
+              <span className="subscription-plan-badge">{details.plan.plan}</span>
             )}
           </span>
           <span className="subscription-connection-description block">{description}</span>
@@ -758,8 +757,8 @@ function ConnectionOption({
               {quota}
             </span>
           )}
-          {details.error && (
-            <span className="subscription-error block">{errorText(details.error)}</span>
+          {detailsError && (
+            <span className="subscription-error block">{errorText(detailsError)}</span>
           )}
         </span>
       </Choice>

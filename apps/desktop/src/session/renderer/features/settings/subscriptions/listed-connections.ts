@@ -2,20 +2,20 @@ import type { HarnessConnection } from '@gugu/session-core/workspace-server/agen
 import type { SubscriptionPayer } from '@gugu/session-core/agents/plugins'
 import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { resolveAccountTargets } from '../agents-page/agent-account'
-import { connectionDetails, harnessConnections, queryView } from './subscription-queries'
+import { connectionDetails, harnessConnections } from './subscription-queries'
 import { useReplica } from '@/lib/replica'
 
 /** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
 export function useSubscriptionConnections(machine: string | null, agent: Pick<AgentPayload, 'id' | 'capabilities'>) {
-  return queryView(useReplica(harnessConnections, agentConnectionForm(agent) !== null ? [machine, agent.id] : null))
+  return useReplica(harnessConnections, agentConnectionForm(agent) !== null ? [machine, agent.id] : null)
 }
 
 /** 一个连接的登录读数与套餐。菜单里的行、菜单外的「重新登录」与「现有 CLI 配置」列不列,读的是同一份。 */
 export function useConnectionDetails(machine: string | null, providerId: string, connectionId: string | undefined) {
-  return queryView(useReplica(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null))
+  return useReplica(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null)
 }
 
-export type ConnectionDetails = NonNullable<ReturnType<typeof useConnectionDetails>['data']>
+export type ConnectionDetails = Extract<ReturnType<typeof useConnectionDetails>, { state: 'value' }>['value']
 
 /** 读得出「谁在付钱」就说明这份配置真有东西(没登录、判不出都不算)。 */
 const CONFIGURED_PAYERS: ReadonlySet<SubscriptionPayer> = new Set(['subscription', 'api-key', 'custom-endpoint'])
@@ -53,14 +53,14 @@ export function useListedConnections(
   const offered = form !== null || cliSignIn
   const connections = useSubscriptionConnections(machine, agent)
   const native = useConnectionDetails(machine, agent.id, offered ? 'native' : undefined)
-  const configured = nativeConfigured(native.data)
-  const nativeRead = native.isSuccess || native.isError
+  const configured = nativeConfigured(native.state === 'value' ? native.value : undefined)
+  const nativeRead = native.state !== 'unknown'
   const listed: HarnessConnection[] | undefined = !offered
     ? []
     : !nativeRead
       ? undefined
       : form
-        ? connections.data?.filter((connection) => connection.kind !== 'native' || configured)
+        ? connections.state === 'value' ? connections.value.filter((connection) => connection.kind !== 'native' || configured) : undefined
         : configured
           ? [CLI_CONFIGURATION]
           : []

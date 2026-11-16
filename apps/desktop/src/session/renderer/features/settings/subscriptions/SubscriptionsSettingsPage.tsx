@@ -107,8 +107,10 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
   const usage = useSubscriptionUsage(machine, agent.id, connectionId, ready);
 
   const formatDateTime = (epochMs: number) => formatWhen(epochMs, locale);
-  const notes = plan.data ? planNotes(plan.data, translate, (at) => formatDate(at, locale)) : [];
-  const reading = quotaReading(plan.data, usage.data);
+  const planValue = plan.state === 'value' ? plan.value : undefined;
+  const notes = planValue ? planNotes(planValue, translate, (at) => formatDate(at, locale)) : [];
+  const reading = quotaReading(planValue, usage.state === 'value' ? usage.value : undefined);
+  const failure = (of: typeof usage | typeof connections) => (of.state === 'unknown' ? null : of.error);
 
   return (
     <SubscriptionServiceRow
@@ -128,9 +130,9 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
       <UsageBlock
         agentId={agent.id}
         reading={reading}
-        pending={ready ? usage.isPending : connections.isPending}
+        pending={(ready ? usage : connections).state === 'unknown'}
         // 连接读不出由上面那一块说(与资源库详情同一处),这里只说额度。
-        error={offered ? usage.error : (connections.error ?? usage.error)}
+        error={offered ? failure(usage) : (failure(connections) ?? failure(usage))}
         formatDateTime={formatDateTime}
       />
       {(notes.length > 0 || reading?.kind === 'windows') && <div className="subscription-reading-footer">

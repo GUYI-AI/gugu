@@ -1,7 +1,7 @@
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import type { AgentAuthStatus, SubscriptionPlanReading, SubscriptionUsageReading } from '@gugu/session-core/agents/plugins';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
-import { replica, useReplica, type Reading } from '@/lib/replica';
+import { replica, useReplica } from '@/lib/replica';
 
 /**
  * 套餐、用量、连接与登录读数 —— 一份读数一个读模型(这台设备上、按机器和那一家):「订阅」页、资源库「账号」那一行、
@@ -87,23 +87,12 @@ export function refreshSubscriptionReadings(machine?: Machine, providerId?: stri
   return Promise.all(models.map((model) => model.refresh(machine, providerId))).then(() => undefined);
 }
 
-/** The fields these pages read, projected from a reading: `data` while read, the failed read's `error`, `isPending` while unknown. */
-export function queryView<V>(reading: Reading<V>) {
-  return {
-    data: reading.state === 'value' ? reading.value : undefined,
-    error: reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null,
-    isPending: reading.state === 'unknown',
-    isSuccess: reading.state === 'value',
-    isError: reading.state === 'error',
-  };
-}
-
 export function useSubscriptionPlan(machine: Machine, agentId: string, connectionId?: string, enabled = true) {
-  return queryView(useReplica(subscriptionPlan, enabled ? [machine, agentId, connectionId ?? null] : null));
+  return useReplica(subscriptionPlan, enabled ? [machine, agentId, connectionId ?? null] : null);
 }
 
 export function useSubscriptionUsage(machine: Machine, agentId: string, connectionId: string | undefined, enabled: boolean) {
-  return queryView(useReplica(subscriptionUsage, enabled ? [machine, agentId, connectionId ?? null] : null));
+  return useReplica(subscriptionUsage, enabled ? [machine, agentId, connectionId ?? null] : null);
 }
 
 /** 连接动作被主进程拒绝:带着线上的原始错误,界面认得的就按自己的语言写,不认得的照 `message` 显示。 */

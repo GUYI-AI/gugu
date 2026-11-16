@@ -18,21 +18,21 @@ export function useConnectionStatus(
 ) {
   const { translate } = useSessionMessages()
   const { connections, form } = useListedConnections(machine, agent)
-  const currentConnection = connections.data?.find((connection) => connection.current)
+  const currentConnection = connections.state === 'value' ? connections.value.find((connection) => connection.current) : undefined
   // 有连接可管的家先等连接读回来:套餐、额度都按那个连接问。
   const ready = form === null || !!currentConnection
   const plan = useSubscriptionPlan(machine, agent.id, currentConnection?.id, ready)
   const { auth } = useAgentAuthStatus(agent.id, undefined, { machine })
-  const description = plan.data
-    ? payerLine(plan.data, translate, false)
-    : plan.error
+  const description = plan.state === 'value'
+    ? payerLine(plan.value, translate, false)
+    : plan.state === 'error'
       ? translate('subscriptions.unavailable.error', { message: errorText(plan.error) })
       : null
   // null = 还说不出:它要用的那几份(有账号登录的家:登录态;有连接的家:连接;套餐)还没读到。
   // 一次写定,❌ 先写「查询中」、再写付费方、再换成账号。没有账号登录的家(Pi 这类)登录态永远是空的,不等它。
   const signsIn = resolveAccountTargets(agent).length > 0
   const identity: string | null =
-    (signsIn && auth === null) || (form !== null && connections.data === undefined && !connections.error)
+    (signsIn && auth === null) || (form !== null && connections.state === 'unknown')
       ? null
       : auth?.status.kind === 'unauthenticated' && auth.status.reason === 'expired'
         ? translate('subscriptions.connections.expired')
@@ -41,9 +41,8 @@ export function useConnectionStatus(
           : auth?.status.kind === 'authenticated' && auth.status.account
             ? auth.status.account
             : description
-  const badge =
-    plan.data?.plan ??
-    (plan.data?.payer === 'api-key' || plan.data?.payer === 'custom-endpoint' ? 'API' : undefined)
+  const payer = plan.state === 'value' ? plan.value : undefined
+  const badge = payer?.plan ?? (payer?.payer === 'api-key' || payer?.payer === 'custom-endpoint' ? 'API' : undefined)
   return { identity, badge, plan, ready, currentConnection, connections }
 }
 
