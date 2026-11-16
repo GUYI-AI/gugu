@@ -1820,11 +1820,6 @@ body.barcode-scanner-active #root {
 .gg-winctl:hover { background-color: var(--hover); color: var(--text-primary); }
 .gg-winctl--close:hover { background-color: #E81123; color: #fff; }
 
-/* 悬浮显现:消息 hover 工具条/卡片快捷操作。❌ display:none 切换(闪跳);focus-within 保键盘可达。 */
-.gg-reveal { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
-.gg-reveal-host:hover .gg-reveal,
-.gg-reveal:focus-within { opacity: 1; }
-
 /* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1——
    只压时长的话 infinite 动画(spinner/pulse/shimmer)会变成每圈 0.01ms 的高频闪烁,比不降级更糟。 */
 @media (prefers-reduced-motion: reduce) {
@@ -2382,12 +2377,12 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* @@@reveal — how what stands for a value not read yet appears: the read model's placeholder (components/ui/Unknown.tsx,
-   `.gg-unknown`), a loading line (`.gg-reveal`), a search's previous results dimmed (`.gg-stale`). Nothing for 150 ms (a
+/* @@@placeholder-reveal — how what stands for a value not read yet appears: the read model's placeholder
+   (components/ui/Unknown.tsx, `.gg-unknown`), a loading line (`.gg-loading-line`), a search's previous results dimmed (`.gg-stale`). Nothing for 150 ms (a
    read that answers sooner leaves nothing drawn in between), then fading in over 250 ms, so a read that answers just after
    is replaced while still faint (❌ a flash of a bar). The same with reduced motion: an opacity change, no movement. */
-:root { --gg-reveal-delay: 150ms; --gg-reveal-duration: 250ms; }
-@keyframes gg-reveal { from { opacity: 0; } to { opacity: 1; } }
-.gg-unknown, .gg-reveal { animation: gg-reveal var(--gg-reveal-duration) linear var(--gg-reveal-delay) both; }
+:root { --gg-placeholder-delay: 150ms; --gg-placeholder-duration: 250ms; }
+@keyframes gg-placeholder-in { from { opacity: 0; } to { opacity: 1; } }
+.gg-unknown, .gg-loading-line { animation: gg-placeholder-in var(--gg-placeholder-duration) linear var(--gg-placeholder-delay) both; }
 @keyframes gg-stale-dim { from { opacity: 1; } to { opacity: 0.6; } }
-.gg-stale { animation: gg-stale-dim var(--gg-reveal-duration) linear var(--gg-reveal-delay) both; }
+.gg-stale { animation: gg-stale-dim var(--gg-placeholder-duration) linear var(--gg-placeholder-delay) both; }

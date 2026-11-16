@@ -79,7 +79,7 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
   // 发送暂不可用的唯一提示(安静补齐,❌ 显眼 loading)。
   const isBootstrapping = projectViewKind(getProjectStore(targetProjectId)) === 'bootstrapping';
   // Placed only when mounting outlasts 150 ms (a mount that finishes sooner draws no line that comes and goes, nor moves the
-  // composer), then fading in as a placeholder does (@@@reveal).
+  // composer), then fading in as a placeholder does (@@@placeholder-reveal).
   const connectingShown = useDelayedBoolean(isBootstrapping, 150);
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -133,7 +133,7 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
             />
           </ComposerTray>
           {connectingShown && (
-            <p className="gg-reveal mt-2 px-1 text-tiny text-foreground-passive">
+            <p className="gg-loading-line mt-2 px-1 text-tiny text-foreground-passive">
               {translate('projects.home.connecting')}
             </p>
           )}

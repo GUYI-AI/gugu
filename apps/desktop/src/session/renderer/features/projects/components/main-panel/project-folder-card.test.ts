@@ -314,8 +314,8 @@ describe('ProjectFolderCard', () => {
 
   it('shows loading instead of zero folders (fading in as a placeholder does) and waits before allowing the card to open', async () => {
     await renderCard(stateOf({ folders: null, chosen: null }));
-    // As a placeholder (@@@reveal): drawn faded out, appearing only after 150 ms — a read that answers sooner shows nothing.
-    const loading = [...container.querySelectorAll('.gg-reveal')].find((node) => node.textContent?.includes('正在读取文件夹'));
+    // As a placeholder (@@@placeholder-reveal): drawn faded out, appearing only after 150 ms — a read that answers sooner shows nothing.
+    const loading = [...container.querySelectorAll('.gg-loading-line')].find((node) => node.textContent?.includes('正在读取文件夹'));
     expect(loading).toBeDefined();
     expect(container.textContent).not.toContain('0 个文件夹');
     await act(async () => container.querySelector<HTMLElement>('[data-testid="project-folder-card"]')?.click());

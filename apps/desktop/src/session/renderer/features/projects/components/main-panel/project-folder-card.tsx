@@ -597,8 +597,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
       {state.folders !== null || !state.loadError ? (
         <p className="gg-folder-card__hint" role={state.folders === null ? 'status' : undefined}>
           {state.folders === null
-            // As a placeholder (@@@reveal): nothing for 150 ms, then fading in — a read that answers sooner shows nothing.
-            ? <span className="gg-reveal">{translate('projects.folders.loading')}</span>
+            // As a placeholder (@@@placeholder-reveal): nothing for 150 ms, then fading in — a read that answers sooner shows nothing.
+            ? <span className="gg-loading-line">{translate('projects.folders.loading')}</span>
             : open
               ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
               : translate('projects.folders.hintClosed', { count: folders.length })}
