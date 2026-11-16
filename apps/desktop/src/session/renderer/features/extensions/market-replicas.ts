@@ -244,18 +244,56 @@ export const marketListing = replica({
   fresh: Infinity,
 });
 
+/** A featured picture: its address, and once made, a small JPEG of it that a restart's first frame draws at once. */
+export type FeaturedShot = { src: string; placeholder?: string };
+
+/**
+ * The featured picture of an App version (its listing's first screenshot), read when it is decoded. The two first-screen
+ * entries are kept across restarts with a placeholder (owner 10-30: a picture once shown is not a skeleton again): the
+ * first frame draws the placeholder while the picture decodes (its address is content-hashed, in the HTTP cache).
+ */
 export const featuredShot = replica({
   name: 'featuredShot',
   scope: 'device',
-  read: async (_owner: string, hostKey: string, extensionId: string, version: string): Promise<{ src: string } | null> => {
+  read: async (_owner: string, hostKey: string, extensionId: string, version: string): Promise<FeaturedShot | null> => {
     const read = await marketListing.fetch(hostKey, extensionId, version);
     const src = 'listing' in read ? read.listing.screenshots[0] : undefined;
     if (!src) return null;
     await decodeShot(src);
+    // Made in the background (never holds this read): the bytes come through the host (the market sends no CORS headers).
+    const entry = featuredShot.at(hostKey, extensionId, version);
+    void placeholderOf(hostKey, src).then((placeholder) => { if (placeholder) entry.set((shown) => (shown?.src === src ? { src, placeholder } : shown)); });
     return { src };
   },
   fresh: Infinity,
+  // ~2 KB with its placeholder (a 48 px JPEG); one that would not fit is kept without it (the whole field dropped).
+  persist: { maxBytes: 3072, maxEntries: 2, carry: (shot: FeaturedShot | null) => (shot && JSON.stringify(shot).length > 3000 ? { src: shot.src } : shot) },
 });
+
+const PLACEHOLDER_WIDTH = 48;
+
+/** A 48 px JPEG of the picture, or none (an older host without `marketRead`, offline, not a market media file). */
+async function placeholderOf(hostKey: string, src: string): Promise<string | undefined> {
+  const pathname = new URL(src).pathname;
+  const at = pathname.indexOf('/media/');
+  const api = hostKey === PHONE_HOST ? null : extensionsApiOf(hostKey);
+  if (!api?.marketRead || at < 0) return undefined;
+  try {
+    const result = await api.marketRead({ path: decodeURIComponent(pathname.slice(at + 1)) });
+    if (!result.success || !result.data) return undefined;
+    const bytes = Uint8Array.from(atob(result.data.base64), (char) => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes]));
+    const canvas = document.createElement('canvas');
+    canvas.width = PLACEHOLDER_WIDTH;
+    canvas.height = Math.max(1, Math.round((PLACEHOLDER_WIDTH * bitmap.height) / bitmap.width));
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    return canvas.toDataURL('image/jpeg', 0.7);
+  } catch (error) {
+    log.warn('featured picture placeholder not made', { error: String(error) });
+    return undefined;
+  }
+}
 
 export const marketVersionHistory = replica({
   name: 'marketVersionHistory',

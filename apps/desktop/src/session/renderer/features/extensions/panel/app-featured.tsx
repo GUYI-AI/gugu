@@ -56,7 +56,7 @@ export function AppFeaturedCard({
   onAction: () => void;
   resource?: ResourceContext;
 }) {
-  // 底图只留在这次运行里(❌ 留到下次启动:重启后第一帧是同尺寸的骨架)。
+  // 重启后第一帧:留下的那份小图先画,大图解码好再换(owner 10-30)。
   const reading = useReplica(featuredShot, [hostKey, id, version]);
   const shot = reading.state === 'value' ? reading.value : null;
   const isPending = reading.state === 'unknown';
@@ -102,8 +102,9 @@ export function AppFeaturedCard({
               alt=""
               style={hidden ? { visibility: 'hidden' } : undefined}
             />
-            {hidden ? (
-              <Skeleton className="absolute inset-0 rounded-none" role="status" aria-label={translate('extensions.loading')} aria-busy="true" />
+            {hidden ? (shot.placeholder
+              ? <img className="absolute inset-0 h-full w-full object-cover" src={shot.placeholder} alt="" aria-hidden="true" />
+              : <Skeleton className="absolute inset-0 rounded-none" role="status" aria-label={translate('extensions.loading')} aria-busy="true" />
             ) : null}
             {!card ? (
               <button type="button" className="mk-hero-open" aria-label={translate('extensions.detailsOf', { name })} />

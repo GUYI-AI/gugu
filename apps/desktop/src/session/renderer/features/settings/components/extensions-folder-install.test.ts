@@ -644,12 +644,14 @@ describe('市场页 (#7059)', () => {
 
   // The featured picture is not kept across restarts any more (PLAN: HTTP cache + a same-size placeholder): the page never
   // asks a machine for the picture's bytes.
-  it('精选卡不再去读图的字节(marketRead):冷开画同尺寸占位,❌ 存缩略图', async () => {
-    const marketRead = vi.fn();
+  // Owner 10-30 (a picture once shown is not a skeleton again): once decoded, the card's picture gets a small placeholder
+  // made from its bytes (read through the host), kept for a restart's first frame; the card itself draws the picture.
+  it('精选卡的图解码好以后,在后台经 marketRead 读一次字节做首帧占位图;卡上画的是原图', async () => {
+    const marketRead = vi.fn(async () => ({ success: false, error: 'not in this test' }));
     (h.api as Record<string, unknown>).marketRead = marketRead;
     (h.api as Record<string, unknown>).marketListing = vi.fn(async () => readmeOf('1.0.0'));
     await render(false);
-    expect(marketRead).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(marketRead).toHaveBeenCalledWith({ path: 'media/pomo/1.0.0.png' }));
     expect(heroArt()?.querySelector('[role="alert"]')).toBeNull();
     expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));
   });
