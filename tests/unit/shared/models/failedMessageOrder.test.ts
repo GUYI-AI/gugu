@@ -39,6 +39,13 @@ describe('failed outgoing message positions', () => {
     expect(ids(mergeMessagesById([], [third, first, second], 'chat'))).toEqual(['first', 'second', 'third'])
   })
 
+  it('restores older failures using instants rather than the textual timezone offset', () => {
+    const before = { ...row('before', 10, 1), created_at: '2026-11-16T01:00:00+00:00' }
+    const failed = { ...row('failed', -1, 2, true), created_at: '2026-11-16T09:01:00+08:00' }
+    const later = { ...row('later', 11, 3), created_at: '2026-11-16T01:02:00+00:00' }
+    expect(ids(mergeMessagesById([before, later], [failed], 'chat'))).toEqual(['before', 'failed', 'later'])
+  })
+
   it('orders simultaneous local sends deterministically without changing server sequence numbers', () => {
     const earlier = row('a', -1, 2, true), later = row('b', -1, 2, true)
     const result = mergeMessagesById([row('before', 10, 1), row('after', 11, 3)], [later, earlier], 'chat')

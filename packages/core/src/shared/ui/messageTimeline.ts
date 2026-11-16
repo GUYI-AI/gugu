@@ -7,7 +7,7 @@ export function captureMessagePosition(rows: readonly MessageItem[], createdAt: 
 
 /** Old outbox records have the original send time, but no sequence anchor. */
 export function inferMessagePosition(rows: readonly MessageItem[], createdAt: string): NonNullable<MessageItem['local_timeline']> {
-  const preceding = rows.filter(row => row.seq > 0 && (row.local_timeline?.createdAt ?? row.created_at) <= createdAt)
+  const preceding = rows.filter(row => row.seq > 0 && Date.parse(row.local_timeline?.createdAt ?? row.created_at) <= Date.parse(createdAt))
   return { afterSeq: preceding.reduce((seq, row) => Math.max(seq, row.local_timeline?.afterSeq ?? row.seq), 0), createdAt }
 }
 
