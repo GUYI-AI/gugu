@@ -852,6 +852,27 @@ async function startApp(servers) {
   return appStarting
 }
 
+/**
+ * @@@codex-account-gate — Codex opens threads and lists its whole built-in model catalog without any
+ * login; the missing credential only shows up as a 401 on the first turn. So before opening a session,
+ * ask Codex itself (`account/read`): when this process's provider needs an OpenAI login
+ * (`requiresOpenaiAuth`) and Codex holds no account, refuse with ACP `authRequired` (-32000). The host
+ * already turns that code into its sign-in path: the model-catalog probe reads `auth-required`, a real
+ * session start shows the sign-in condition. Gugu's platform route and API-key connections declare a
+ * custom provider, which Codex reports as `requiresOpenaiAuth: false`, so they pass untouched.
+ * Measured on codex 0.163.0 and 0.169.0 (isolated CODEX_HOME): signed out → `{ account: null,
+ * requiresOpenaiAuth: true }`; only `OPENAI_API_KEY` in the environment → the same (the built-in
+ * provider sends no Authorization with it); after `codex login --with-api-key` → `{ account:
+ * { type: 'apiKey' }, … }`; custom provider → `requiresOpenaiAuth: false`.
+ * Session discovery (`session/list`) is not gated: listing past threads needs no account.
+ */
+async function requireCodexAccount() {
+  const read = await appRequest('account/read', {})
+  if (read?.requiresOpenaiAuth === true && !read.account) {
+    throw Object.assign(new Error('Authentication required: sign in to Codex (codex login) first.'), { code: -32000 })
+  }
+}
+
 async function startAppOnce(servers) {
   const mcp = mcpConfig(servers)
   appServerThreadConfig = mcp.config
@@ -2274,6 +2295,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/fork') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 运行时分叉(侧边聊天)不许在 codex 的线程台账里留痕 ⇒ `ephemeral: true`(缺省)。
     // 持久分叉(spec session-fork-share 的「Fork 会话」)正好相反:它就是要落成一条能重开的
@@ -2365,6 +2387,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/new') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     const started = await startThread({
       cwd: params.cwd,
@@ -2416,6 +2439,7 @@ async function handleAcpRequest(message) {
     const generation = ++loadGeneration
     const loadStartedAt = Date.now()
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 见 @@@resume-provider:resume 要用**这个进程**的 provider,❌ 不是 rollout 里记的那个。
     const resumeProvider = await processModelProviderOnce(params.cwd)
