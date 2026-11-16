@@ -23,8 +23,8 @@ const h = vi.hoisted(() => {
     success: true,
     data: { extensions: ids.map(item), invalid: [], errorKind: null, error: null, total: 4, page: at, hasMore, fetchedAt: '2026-10-16T01:00:00.000Z' },
   });
-  const answer = (data: unknown) => async () => ({ success: true, data });
-  const manifest = (id: string) => ({ id, name: id, version: '1.0.0', apiVersion: 25, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: id }] } });
+  const answer = (data: unknown) => async (): Promise<{ success: boolean; data?: unknown; error?: string }> => ({ success: true, data });
+  const manifest = (id: string) => ({ id, name: id, version: '1.0.0', apiVersion: 25, defaultLocale: 'en', entry: 'index.html', permissions: { capabilities: ['files:read'], network: [] }, contributes: { tabs: [{ name: 'main', title: id }] } });
   const api = {
     list: vi.fn(answer({ extensions: [manifest('notes')], invalid: [], icons: {}, disabled: [] })),
     variants: vi.fn(answer({ active: 'upstream', variants: [], behind: null })),
@@ -34,6 +34,7 @@ const h = vi.hoisted(() => {
     market: vi.fn(),
     marketRefresh: vi.fn(async () => ({ success: true, data: { outcome: 'unchanged', fetchedAt: '2026-10-16T01:00:00.000Z' } })),
     marketEntry: vi.fn(async () => ({ success: false, error: 'offline' })),
+    setPermissionGranted: vi.fn(),
   };
   const host = { key: 'remote:x', online: true, remote: true };
   return { item, page, api, host };
@@ -88,6 +89,7 @@ describe('the App page when a read fails or cannot be asked', () => {
     h.host.online = true;
     h.host.remote = true;
     h.api.market.mockReset().mockResolvedValue(h.page(['one', 'two'], 0, false));
+    h.api.revoked.mockReset().mockResolvedValue({ success: true, data: {} });
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
   });
 
@@ -155,5 +157,21 @@ describe('the App page when a read fails or cannot be asked', () => {
     await until('the next page drawn', cards, (ids) => ids.length === 4);
     expect(alert()).toBeNull();
     expect(h.api.market.mock.calls.filter(([args]) => args.query === 'x' && args.page === 0)).toHaveLength(1);
+  });
+
+  it('a permission taken back, refused, and its list unreadable again: the switch goes back to what was read before', async () => {
+    await open();
+    await click(doc().querySelector('[data-testid="extensions-tab-installed"]')!);
+    await until('its Apps drawn', () => doc().querySelector('[data-testid="extension-row-notes"] .mk-name'), (name) => name !== null);
+    await click(doc().querySelector('[data-testid="extension-row-notes"] .mk-name')!);
+    const row = () => doc().querySelector('[data-testid="app-permission-files:read"]');
+    await until('its permission drawn', row, (node) => node !== null);
+    expect(row()!.className).not.toContain('is-revoked');
+    h.api.setPermissionGranted.mockResolvedValue({ success: false, error: 'refused' });
+    h.api.revoked.mockResolvedValue({ success: false, error: 'host gone' } as never);
+    await click(row()!.querySelector('button')!);
+    await until('the refusal settled', () => h.api.revoked.mock.calls.length, (n) => n >= 2);
+    await turn();
+    expect(row()!.className).not.toContain('is-revoked');
   });
 });

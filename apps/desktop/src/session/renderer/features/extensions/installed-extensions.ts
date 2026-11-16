@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { observable, runInAction, type IObservableValue } from 'mobx';
 import { getLocaleSnapshot, subscribeLocale } from '@/i18n';
 import { useLocale } from '@/i18n/useLocale';
+import { writeOver } from '@/lib/replicaWrite';
 import { replica, useReplica, type Reading } from '@/lib/replica';
 import { rpc } from '@renderer/lib/ipc';
 import {
@@ -379,34 +380,14 @@ export function tellInstalled(hostKey: string, list: InstalledExtensionsList): v
   installedExtensions.at(hostKey).set({ list });
 }
 
-/**
- * `optimistic` drawn on the click, `write` asks the host, `settled` puts its answer (via `at`). A refusal reads the list
- * again (I4); if that fails too, the list goes back to before the click. The refusal reaches the caller.
- */
-export async function writeInstalled<R>(
+/** A write of the list (lib/replicaWrite `writeOver`): drawn on the click, the host's answer put, a refusal read again. */
+export function writeInstalled<R>(
   hostKey: string,
   optimistic: ((list: InstalledExtensionsList) => InstalledExtensionsList) | null,
   write: () => Promise<R>,
   settled: (answer: R) => (list: InstalledExtensionsList) => InstalledExtensionsList
 ): Promise<R> {
-  const entry = installedExtensions.at(hostKey);
-  const before = installedExtensions.peek(hostKey);
-  if (optimistic) entry.set(patchList(optimistic));
-  try {
-    const answer = await write();
-    entry.set(patchList(settled(answer)));
-    return answer;
-  } catch (error) {
-    if (optimistic) {
-      try {
-        await installedExtensions.refresh(hostKey);
-        await installedExtensions.fetch(hostKey);
-      } catch {
-        if (before.state === 'value') entry.set(before.value);
-      }
-    }
-    throw error;
-  }
+  return writeOver(installedExtensions, [hostKey], optimistic && patchList(optimistic), write, (answer) => patchList(settled(answer)));
 }
 
 /** An App's 「自动更新」, as the host keeps it. Back on, main updates it at once; the list says so when it lands. */

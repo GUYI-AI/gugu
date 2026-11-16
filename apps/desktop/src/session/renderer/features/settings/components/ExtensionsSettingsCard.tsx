@@ -24,6 +24,7 @@ import {
   type ExtensionDisclosureLevel,
 } from '@renderer/features/extensions/installed-extensions';
 import { useReplica, type Reading } from '@/lib/replica';
+import { writeOver } from '@/lib/replicaWrite';
 import { Unknown } from '@/components/ui/Unknown';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -709,23 +710,16 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     setPendingPermissions(permissionsInFlight.current);
     const apply = (list: readonly string[], on: boolean) =>
       on ? list.filter((entry) => entry !== permission) : [...new Set([...list, permission])];
-    const entry = revokedPermissions.at(host.key);
-    entry.set((current) => current && { ...current, [manifest.id]: apply(current[manifest.id] ?? [], granted) });
+    const take = (revoked: (current: string[]) => string[]) => (current: Record<string, string[]> | undefined) =>
+      current && { ...current, [manifest.id]: revoked(current[manifest.id] ?? []) };
     try {
-      const result = await api.setPermissionGranted({
-        extensionId: manifest.id,
-        permission,
-        granted,
-      });
-      if (!result.success || !result.data) {
-        throw new Error(result.error ?? '');
-      }
-      // What main enforces wins over what was assumed.
-      const { revoked: settled } = result.data;
-      entry.set((current) => current && { ...current, [manifest.id]: settled });
+      // What main enforces wins over what was assumed; refused and unreadable again, back to what was read before (I4).
+      await writeOver(revokedPermissions, [host.key], take((list) => apply(list, granted)), async () => {
+        const result = await api.setPermissionGranted({ extensionId: manifest.id, permission, granted });
+        if (!result.success || !result.data) throw new Error(result.error ?? '');
+        return result.data.revoked;
+      }, (settled) => take(() => settled));
     } catch (error) {
-      // Not kept: what main enforces is read again (I4), ❌ a guess at what was there before.
-      void revokedPermissions.refresh(host.key);
       toast({
         title: translateRef.current('extensions.permissionChangeFailed'),
         description: messageForUser(error),

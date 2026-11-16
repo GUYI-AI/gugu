@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
+import { writeOver } from '@/lib/replicaWrite';
 import { keepLibraryHost, libraryHostOf, useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import type { GuguToolsOff } from '@shared/gugu-tool-groups';
@@ -66,17 +67,10 @@ export function useMcpLibrary() {
     onSettled: invalidate,
   }, queryClient);
 
-  // 内置那台的工具组开关:点下就画(开关不回弹);宿主答了以它为准,拒了就重读宿主那一份(I4)。
+  // 内置那台的工具组开关:点下就画(开关不回弹);拒了就重读宿主那一份,重读也不行就回到点之前读到的(I4)。
   const setGuguToolsOff = useMutation({
-    mutationFn: async (off: GuguToolsOff) => {
-      const entry = mcpProvided.at(host.key);
-      entry.set((before) => before && { ...before, guguToolsOff: off });
-      try {
-        return await host.mcpLibrary.setGuguToolsOff(off);
-      } finally {
-        void mcpProvided.refresh(host.key);
-      }
-    },
+    mutationFn: (off: GuguToolsOff) =>
+      writeOver(mcpProvided, [host.key], (before) => before && { ...before, guguToolsOff: off }, () => host.mcpLibrary.setGuguToolsOff(off)),
   }, queryClient);
 
   // 正在检测的那几台(键 = `gugu:<名>` 或 `<家>:<名>`),以及各家那几台这一页上检测出来的结果。
