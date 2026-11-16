@@ -51,6 +51,8 @@ When one of these tools is not in your tool list, it is in \`catalog_list\`.
    \`app_create\`'s own description is the app.js skeleton: \`f.data\` is the file's JSON, live — read and
    write it as any object; several changes at once in \`f.transact(fn)\`. What many people add to (votes,
    cards) is a map keyed by id (\`f.data.votes[me] = choice\`), never an array index.
+   \`html\`…\`\` is markup only: no \`@click\` / \`onclick=\${fn}\` — a function goes in as text. Listen once, by
+   delegation: \`$('#shared').addEventListener('click', (e) => { const b = e.target.closest('[data-vote]'); if (b) f.data.votes[me] = b.dataset.vote })\`.
 2. \`app_install\` with \`source_dir\`, \`chat_id\` and \`data\` (the starting JSON, or \`{item_id}\` of a file
    already in the chat): one call makes the data file, checks the App on it and posts its card.
 3. \`app_check\` — runs a tab as a hidden page (a chat App: on its file, \`item_id\`) and reads back whether
