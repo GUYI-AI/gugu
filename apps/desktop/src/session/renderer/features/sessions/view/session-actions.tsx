@@ -1,7 +1,17 @@
-import { Archive, Pencil, Pin, PinOff, RotateCcw } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
+import { copySessionId } from '@renderer/features/sessions/copy-session-id';
+import { forkTask } from '@renderer/features/sessions/fork-task';
+import { sidebarPinMenuAction } from '@renderer/features/sidebar/sidebar-pin';
+import { setPinnedToSidebar } from '@renderer/features/sidebar/sidebar-pin-actions';
+import { rowPinOf } from '@renderer/features/sidebar/row-pin';
+import { useNavigate } from '@renderer/lib/layout/navigation-actions';
+import { useAgents } from '@renderer/lib/stores/use-agents';
+import { agentForksOn } from '@shared/core/agents/agent-payload';
+import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu';
+import { sessionMenuIcon, sessionMenuLabel } from '@/components/sessionMenuPresentation';
+import { useChatSummaries } from '@/lib/chatSummariesBridge';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
@@ -16,7 +26,8 @@ import { LegacyDmHistoryDialog } from '@/components/legacy-dm-history/LegacyDmHi
 import { useLegacyDmHistoryEntry } from '@/components/legacy-dm-history/useLegacyDmHistoryEntry';
 
 /**
- * 一条会话的动作 —— 置顶、重命名、重启本会话、归档(#7052)。「通用 / 编程」的手动切换已删:展示跟设置 → 通用的「终端」开关走。
+ * 一条会话的动作在页签右键里的那一份 —— 动作表是 session/shared/session-menu.ts 那一张(与侧栏行、聊天列表里我的
+ * agent 那一行、手机会话菜单同一张),这里只接上页签能跑的处理。
  *
  * 它们原来在聊天栏标题行的「⋯」里;会话的名字搬到它自己的页签上之后,这些动作跟着名字走:那枚页签的右键
  * (spec session-page:置顶 / 重命名 / 归档在这枚页签的右键里)。两种形态的会话页签(终端 / 聊天)读同一份,
@@ -34,6 +45,8 @@ const SessionActionsContext = createContext<SessionActions | null>(null);
 export function useSessionTabCommands(sessionId: string | undefined, rename: () => void): TabCommand[] {
   const actions = useContext(SessionActionsContext);
   const legacyHistory = useLegacyDmHistoryEntry(sessionId);
+  // 置顶 of a standalone agent is its chat-list row's (rowPinOf): the menu re-reads when the chat list changes.
+  useChatSummaries();
   if (!actions || !sessionId) return [];
   return actions.commandsFor(sessionId, rename, legacyHistory);
 }
@@ -42,6 +55,8 @@ export const SessionActionsProvider = observer(function SessionActionsProvider({
   const { translate } = useSessionMessages();
   const { projectId, sessionId: pageSessionId } = useSessionViewContext();
   const showConfirm = useShowModal('confirmActionModal');
+  const { data: agents } = useAgents();
+  const { navigate } = useNavigate();
 
   /**
    * 「重启本会话」按下确认之前攥着的那点东西 —— **两条腿都能重启**,所以认的是会话 id(宿主按它找记录)。
@@ -78,48 +93,44 @@ export const SessionActionsProvider = observer(function SessionActionsProvider({
       commandsFor(sessionId, rename, legacyHistory) {
         const session = sessionRegistry.get(pageSessionId)?.sessions.get(sessionId);
         if (!session) return [];
-        const pinned = session.data.isPinned ?? false;
-        return [
-          {
-            id: 'session:legacy-history', label: translate('legacyDm.history'), icon: Archive,
-            group: 'edit' as const, fold: true, ...legacyHistory, run: () => setLegacySessionId(sessionId),
-          },
-          {
-            id: 'session:pin',
-            label: translate(pinned ? 'task.unpin' : 'task.pin'),
-            icon: pinned ? PinOff : Pin,
-            group: 'edit' as const,
-            run: () => void sessionRegistry.get(sessionId)?.setSessionPinned(sessionId, !pinned),
-          },
-          {
-            id: 'session:rename',
-            label: translate('task.rename'),
-            icon: Pencil,
-            group: 'edit' as const,
-            shortcut: 'session.tabRename' as const,
-            // Inline on the tab when it can be (the tab's own field); the dialog otherwise.
-            run: () => rename(),
-          },
-          {
-            id: 'session:reload',
-            label: translate('task.manualReload'),
-            icon: RotateCcw,
-            group: 'edit' as const,
-            isAvailable: () => !reloading,
-            fold: true,
-            run: () => setPendingReload({ sessionId }),
-          },
-          {
-            id: 'session:archive',
-            label: translate('task.archiveTaskTitle'),
-            icon: Archive,
-            group: 'edit' as const,
-            run: () => requestArchiveSession({ projectId, sessionId }),
-          },
-        ];
+        const pin = rowPinOf(projectId, sessionId, {
+          pinned: session.data.isPinned === true,
+          setPinned: (pinned) => void sessionRegistry.get(sessionId)?.setSessionPinned(sessionId, pinned),
+        });
+        const sidebarPin = pin.row === 'chat' ? null : sidebarPinMenuAction({ parentSessionId: session.data.parentSessionId, isPinnedToSidebar: session.data.isPinnedToSidebar });
+        const harness = agents?.find((agent) => agent.id === session.data.providerId);
+        const run: Partial<Record<SessionMenuAction, () => void>> = {
+          pin: () => pin.setPinned(!pin.pinned),
+          'sidebar-pin': () => setPinnedToSidebar(projectId, sessionId, sidebarPin === 'pin'),
+          rename,
+          archive: () => requestArchiveSession({ projectId, sessionId }),
+          fork: () => forkTask({ projectId, sessionId, navigate, translate }),
+          'copy-id': () => void copySessionId(sessionId),
+          reload: () => setPendingReload({ sessionId }),
+          'legacy-history': () => setLegacySessionId(sessionId),
+        };
+        const items = sessionMenu('tab', {
+          pinned: pin.pinned,
+          sidebarPin,
+          canFork: agentForksOn(harness?.capabilities, session.data.runtime ?? 'pty'),
+          reloading,
+          // Whether the legacy history exists is read when the menu opens (useLegacyDmHistoryEntry): offered, then hidden.
+          hasLegacyHistory: true,
+        }, new Set(Object.keys(run) as SessionMenuAction[]));
+        return items.map((item): TabCommand => ({
+          id: `session:${item.id}`,
+          label: sessionMenuLabel(item.label),
+          icon: sessionMenuIcon(item.icon),
+          group: 'edit',
+          ...(item.fold ? { fold: true as const } : {}),
+          ...(item.id === 'rename' ? { shortcut: 'session.tabRename' as const } : {}),
+          ...(item.id === 'legacy-history' ? legacyHistory : {}),
+          ...(item.disabled ? { isEnabled: () => false } : {}),
+          run: run[item.id]!,
+        }));
       },
     }),
-    [pageSessionId, projectId, reloading, translate]
+    [agents, navigate, pageSessionId, projectId, reloading, translate]
   );
 
   return (

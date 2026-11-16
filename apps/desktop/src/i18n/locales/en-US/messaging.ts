@@ -303,8 +303,7 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin",
-    "unpinFromSidebar": "Unpin from sidebar"
+    "unpin": "Unpin"
   },
   "chatService": {
     "errors": {

@@ -1,5 +1,5 @@
-/** Row actions are shared by desktop context menus and future touch menus. */
-export type ConversationRowAction = 'mark-read' | 'pin' | 'unpin-from-sidebar' | 'notifications' | 'mark-all-read' | 'delete-chat' | 'remove-project'
+/** Row actions of a conversation (desktop context menu and phone long-press). My agent's row is its task: session-menu.ts. */
+export type ConversationRowAction = 'mark-read' | 'pin' | 'notifications' | 'mark-all-read' | 'delete-chat' | 'remove-project'
 /** Personal DM deletion requires an archived/removed owned Agent, matching delete_my_dm_conversation. */
 export function conversationCanDelete(kind: string | null, authority?: { can_dissolve?: boolean; can_archive_topic?: boolean } | null, ownedAgentDm?: { session_archived_at?: string | null; removed_at?: string | null }): boolean {
   return (kind === 'dm' && !!ownedAgentDm && (ownedAgentDm.session_archived_at != null || ownedAgentDm.removed_at != null)) || (kind === 'group' && authority?.can_dissolve === true) || (kind === 'topic' && authority?.can_archive_topic === true)
@@ -18,7 +18,7 @@ export function rowRoomCanDelete(chat: RoomRow, sourceOf: (id: string) => RoomRo
   return source.status !== 'archived' && (source.my_role === 'owner' || source.my_role === 'admin')
 }
 /** `'unknown'`: the authority to delete is not read yet — the item keeps its place, disabled, ❌ appears later. */
-export type ConversationRowMenuState = ({ kind: 'chat'; canDelete: boolean | 'unknown'; pinnedToSidebar?: boolean } | { kind: 'project' } | { kind: 'topic' }) & {
+export type ConversationRowMenuState = ({ kind: 'chat'; canDelete: boolean | 'unknown' } | { kind: 'project' } | { kind: 'topic' }) & {
   hasUnread: boolean
   hasAnyUnread?: boolean
   pinned?: boolean
@@ -28,7 +28,7 @@ export type ConversationRowMenuState = ({ kind: 'chat'; canDelete: boolean | 'un
 type RowMenuItem = {
   id: ConversationRowAction
   label: string
-  icon: 'read' | 'pin' | 'sidebar' | 'notifications' | 'trash'
+  icon: 'read' | 'pin' | 'notifications' | 'trash'
   disabled?: boolean
   danger?: boolean
   /** 收进「更多」:影响整张列表或不可撤回的,不是这一行的日常动作。 */
@@ -42,8 +42,6 @@ export function conversationRowMenu(state: ConversationRowMenuState): RowMenuIte
     ? [...common, { id: 'remove-project', label: 'removeProject', icon: 'trash', danger: true }]
     : [...common,
         { id: 'pin', label: state.pinned ? 'unpin' : 'pin', icon: 'pin' },
-        // #2548 an agent pinned to the desktop one list (固定到左侧栏) is unpinned from its row, next to 置顶.
-        ...(state.pinnedToSidebar ? [{ id: 'unpin-from-sidebar', label: 'unpinFromSidebar', icon: 'sidebar' } as const] : []),
         { id: 'notifications', label: state.notificationsMuted ? 'enableNotifications' : 'disableNotifications', icon: 'notifications' },
         { id: 'mark-all-read', label: 'markAllRead', icon: 'read', disabled: !state.hasAnyUnread, fold: true },
         ...(state.canDelete ? [{ id: 'delete-chat', label: 'delete', icon: 'trash', danger: true, fold: true, disabled: state.canDelete === 'unknown' } as const] : []),
