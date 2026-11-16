@@ -1,4 +1,5 @@
 import type { AttachmentAdapter } from '@assistant-ui/react'
+export type { Attachment as CreationDraftAttachment } from '@assistant-ui/react'
 import { MAX_ATTACHMENT_BYTES } from '@gugu/session-core/session-record/contract'
 import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { translateSessionMessage } from '@renderer/localization/locale-store'

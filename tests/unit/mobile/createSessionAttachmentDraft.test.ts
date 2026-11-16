@@ -1,8 +1,7 @@
 import { expect, it } from 'vitest'
-import type { Attachment } from '@assistant-ui/react'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { bindCreationDraft, mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
-import { createAttachmentDraftAdapter } from '../../../apps/desktop/src/mobile/agent-watch/create-attachment-adapter'
+import { createAttachmentDraftAdapter, type CreationDraftAttachment as Attachment } from '../../../apps/desktop/src/mobile/agent-watch/create-attachment-adapter'
 
 function composer(key: string) {
   const adapter = createAttachmentDraftAdapter(key)

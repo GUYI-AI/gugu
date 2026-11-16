@@ -21,7 +21,7 @@ function fixture(key: string) {
       context.published = ref
       return ref
     }),
-    admit: vi.fn(async () => { events.push('admit'); return { ...result, attachmentDraft: { ...result.attachmentDraft, state: 'admitted' } } }),
+    admit: vi.fn(async () => { events.push('admit'); return { ...result, attachmentDraft: { ...result.attachmentDraft, state: 'admitted' as const } } }),
   }
   const input = { key, ownerId: 'owner', deviceId: 'device', request, files, ports }
   return { input, result, ports, events }
