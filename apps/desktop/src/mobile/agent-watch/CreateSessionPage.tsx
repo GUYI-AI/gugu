@@ -2,6 +2,7 @@ import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererLogger } from '@/lib/log'
+import { messageForUser } from '@/lib/userFacingError'
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -289,7 +290,7 @@ function CreateOnMachine({
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
         if ((phone || files.length) && !ownerId) throw new Error('请先登录后创建 Agent')
-        if (attachmentAttempt && !files.length) throw new Error('请保留原附件并继续同一次创建，不能只发送文字')
+        if (attachmentAttempt && !files.length) throw Object.assign(new Error('Original creation attachments are required'), { code: 'creation_attachments_pending' })
         if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error('上次创建尚未确认，请先发送原来的任务以继续同一次创建')
         let request: SessionpageSessionCreateRequest = attachmentAttempt ?? phoneAttempt ?? {
           ...(phone ? { clientRequestId: crypto.randomUUID() } : {}),
@@ -314,7 +315,7 @@ function CreateOnMachine({
         const result = files.length
           ? (attachmentReceipt = await submitAttachmentCreation({ key: mobileCreationDraftKey(ownerId!), ownerId: ownerId!,
               deviceId: device.device_id, request, files: files.map((entry) => {
-                if (!entry.file) throw new Error('The original attachment is no longer available')
+                if (!entry.file) throw Object.assign(new Error('The original attachment is no longer available'), { code: 'creation_attachments_original_missing' })
                 return { id: entry.id, file: entry.file }
               }), ports: creationAttachmentPorts(device.device_id, phone, ownerId!) })).result
           : await (phone ? createPhoneSession : createSession)(device.device_id, request)
@@ -342,7 +343,12 @@ function CreateOnMachine({
         setPendingText(null)
         // 签咕咕额度被拒:那台机器报的是原因码(#7103),按原因说(与新建框咕咕那一组同一份文案)。
         const gugu = guguReasonInText(code)
-        setCreateError(phone || files.length || attachmentAttempt || code === 'host_update_required' ? describe(err) : code === 'harness_install_failed'
+        const attachmentError = files.length || attachmentAttempt
+        const attachmentCopy = code === 'creation_attachments_pending' ? 'attachmentPending'
+          : code === 'creation_attachments_unconfirmed' ? 'attachmentUnconfirmed'
+            : code === 'creation_attachments_account_changed' ? 'attachmentAccountChanged'
+              : code === 'creation_attachments_original_missing' ? 'attachmentOriginalMissing' : null
+        setCreateError(attachmentError ? attachmentCopy ? tFlow(attachmentCopy) : messageForUser(err) : phone ? describe(err) : code === 'harness_install_failed'
           ? t('agentWatch.create.agentInstallFailed')
           : code === 'harness_runtime_missing'
             ? t('agentWatch.create.agentRuntimeMissing')

@@ -45,7 +45,7 @@ export function submitAttachmentCreation({ key, ownerId, deviceId, request, file
   if (attempt) {
     if (attempt.ownerId !== ownerId || attempt.deviceId !== deviceId || attempt.input !== intent(request)
       || attempt.files.length !== files.length || attempt.files.some((entry, index) => entry.id !== files[index]?.id || entry.file !== files[index]?.file)) {
-      return Promise.reject(new Error('The previous attachment task is still pending; retry its original device, options and files'))
+      return Promise.reject(Object.assign(new Error('The previous attachment task is still pending; retry its original device, options and files'), { code: 'creation_attachments_pending' }))
     }
     if (attempt.running) return attempt.running
   } else {
@@ -88,7 +88,7 @@ export function submitAttachmentCreation({ key, ownerId, deviceId, request, file
     assertCreationAttachmentReceipt(original, admitted)
     if (admitted.attachmentDraft.state !== 'admitted' || admitted.conversationId !== created.conversationId
       || admitted.projectId !== created.projectId || admitted.attachmentTarget.agentUserId !== created.attachmentTarget.agentUserId
-      || admitted.attachmentTarget.chatId !== created.attachmentTarget.chatId) throw new Error('The host did not admit this task’s original attachment turn')
+      || admitted.attachmentTarget.chatId !== created.attachmentTarget.chatId) throw Object.assign(new Error('The host did not admit this task’s original attachment turn'), { code: 'creation_attachments_unconfirmed' })
     retained.result = admitted
     return { request: original, result: admitted }
   }
