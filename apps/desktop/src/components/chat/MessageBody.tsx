@@ -92,7 +92,7 @@ export function MessageBody({
     // #1515 段内软换行渲成 <br>:人手打的和 agent 发的一样(agent 群消息是给人在手机上看的,换行都是有意分行;与会话 transcript 一致)。
     // @@@2017 群内定向消息:渲染注入 nonce marker 后的正文(mention.content),并把本次 marker 传下 →
     // 只有被 to_user_ids 背书的 @Name 才渲成 mention;非群/whisper → content=undefined 用原始 raw、marker 空。
-    return <MessageReferenceContent content={partial ? raw : mention?.content ?? raw} chatId={msg.chat_id} slotMessageId={msg.id} renderText={content => <Markdown trust="chat" content={content} onAccent={msg.is_mine} hardBreaks mentionMarker={mention?.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind === 'workspace-file' && onOpenWorkspaceFile) { onOpenWorkspaceFile(link); return true } if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />} />
+    return <MessageReferenceContent content={partial ? raw : mention?.content ?? raw} chatId={msg.chat_id} slotMessageId={msg.id} renderText={content => <Markdown trust="chat" content={content} onAccent={msg.is_mine} hardBreaks messageChat={msg.chat_id} mentionMarker={mention?.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind === 'workspace-file' && onOpenWorkspaceFile) { onOpenWorkspaceFile(link); return true } if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />} />
   })()}</div>
 }
 

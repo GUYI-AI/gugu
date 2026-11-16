@@ -160,19 +160,23 @@ export function classifyFileLink(href: string): FileLinkClassification {
   return { kind: 'workspace-file', path, ...placed }
 }
 
-/** A conversation, optionally one message in it. The reader still checks access when opening it. */
-export type ConversationLink = { chatId: string; messageId?: string }
+/**
+ * A conversation, optionally one message in it. The reader still checks access when opening it. `messagePrefix`: the
+ * message written as the first 8+ characters of its id (owner 2026-11-16) — the reader resolves it in this chat
+ * (idPrefix.ts); it is never a `messageId`, so whatever stores or routes on one keeps requiring the full id.
+ */
+export type ConversationLink = { chatId: string; messageId?: string; messagePrefix?: string }
 
-const LINK = new RegExp(`^gugu-chat://(${UUID})(?:/(${UUID}))?/?$`, 'i')
+const MESSAGE_UUID = new RegExp(`^${UUID}$`, 'i')
+const LINK = new RegExp(`^gugu-chat://(${UUID})(?:/(${UUID}|[0-9a-f][0-9a-f-]{7,34}))?/?$`, 'i')
 
 /** A stable Markdown destination, shared by agent tools, chat and session transcripts. */
 export function conversationLink(chatId: string, messageId?: string): string {
   const href = `gugu-chat://${chatId}${messageId ? `/${messageId}` : ''}`
-  if (!parseConversationLink(href)) throw new Error('A conversation link requires a chat UUID and, optionally, a message UUID')
+  const parsed = parseConversationLink(href)
+  if (!parsed || (messageId && !parsed.messageId)) throw new Error('A conversation link requires a chat UUID and, optionally, a message UUID')
   return href
 }
-
-const MESSAGE_UUID = new RegExp(`^${UUID}$`, 'i')
 
 /**
  * The link to a message that was read from the database. Links address messages by UUID; a failure notice written
@@ -184,7 +188,9 @@ export function storedMessageLink(chatId: string, messageId: string): string {
 
 export function parseConversationLink(href: string): ConversationLink | null {
   const match = LINK.exec(href.trim())
-  return match ? { chatId: match[1]!.toLowerCase(), ...(match[2] ? { messageId: match[2].toLowerCase() } : {}) } : null
+  if (!match) return null
+  const message = match[2]?.toLowerCase()
+  return { chatId: match[1]!.toLowerCase(), ...(message ? MESSAGE_UUID.test(message) ? { messageId: message } : { messagePrefix: message } : {}) }
 }
 
 export type WidgetLink = { widgetId: string }

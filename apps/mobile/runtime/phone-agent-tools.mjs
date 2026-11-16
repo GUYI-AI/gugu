@@ -48,8 +48,9 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, sendSes
     const recipients = Array.isArray(args.to_user_ids) ? await Promise.all(args.to_user_ids.map(userId)) : null
     await chatAccess.beforeWrite(id, recipients)
     if (args.whisper && recipients?.length !== 1) throw new Error('悄悄话必须恰好指定一个收件人')
-    const messageId = stableId('phone-message', agent.agentUserId, job.id, id, body, recipients, args.reply_to_message_id ?? null, args.whisper === true)
-    const message = { id: messageId, chatId: id, agentUserId: agent.agentUserId, sessionId: agent.sessionId, usedGroups: [...(job.usedGroups ?? [])], permissionRequirements: structuredClone(job.permissionRequirements ?? []), toUserIds: recipients, content: body, replyToMessageId: args.reply_to_message_id ? uuid(bare(args.reply_to_message_id, 'msg'), 'reply source') : null, threadRootId: job.route?.chatId === id ? job.route.threadRootId ?? null : null, isWhisper: args.whisper === true }
+    const replyToMessageId = args.reply_to_message_id ? await chatAccess.messageId(args.reply_to_message_id, id, 'reply source') : null
+    const messageId = stableId('phone-message', agent.agentUserId, job.id, id, body, recipients, replyToMessageId, args.whisper === true)
+    const message = { id: messageId, chatId: id, agentUserId: agent.agentUserId, sessionId: agent.sessionId, usedGroups: [...(job.usedGroups ?? [])], permissionRequirements: structuredClone(job.permissionRequirements ?? []), toUserIds: recipients, content: body, replyToMessageId, threadRootId: job.route?.chatId === id ? job.route.threadRootId ?? null : null, isWhisper: args.whisper === true }
     store.state.outbox[messageId] ??= { ...message, status: 'pending', createdAt: new Date().toISOString() }
     await store.save()
     const data = await deliverPhoneOutbox(cloud, store, messageId, authorize)

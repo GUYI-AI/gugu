@@ -69,6 +69,8 @@ export interface MarkdownProps {
   className?: string
   /** File previews only: project a selected DOM range back to its original source lines. */
   sourceLines?: boolean
+  /** A chat message: the chat its `msg:<prefix>` ids resolve in (the dialect's messageChat). */
+  messageChat?: string
 }
 
 const DensityContext = createContext<MarkdownDensity>('compact')
@@ -125,7 +127,7 @@ const PLUGINS: PluginConfig = {
 // Plugin arrays keep their identity per dialect option set, so a re-render never re-creates the processor.
 const pluginCache = new Map<string, { remark: ReturnType<typeof markdownRemarkPlugins>; rehype: ReturnType<typeof markdownRehypePlugins> }>()
 function pluginsFor(options: MarkdownDialectOptions) {
-  const key = `${options.trust}|${options.hardBreaks ? 1 : 0}|${options.frontmatter ? 1 : 0}`
+  const key = `${options.trust}|${options.hardBreaks ? 1 : 0}|${options.frontmatter ? 1 : 0}|${options.messageChat ?? ''}`
   let entry = pluginCache.get(key)
   if (!entry) {
     // Link pills are a chat bubble's: documents and previews keep their links as written.
@@ -163,6 +165,7 @@ export const Markdown = memo(function Markdown({
   renderImage,
   className,
   sourceLines = false,
+  messageChat,
 }: MarkdownProps) {
   // Streamdown's memo ignores `components` and plugin arrays: callbacks are read through refs, and anything
   // that changes the element mapping is part of the key below.
@@ -177,7 +180,7 @@ export const Markdown = memo(function Markdown({
   tRef.current = t
   useEffect(() => hookFilePillCopy(), [])
 
-  const plugins = pluginsFor({ trust, hardBreaks, frontmatter })
+  const plugins = pluginsFor({ trust, hardBreaks, frontmatter, messageChat })
   const source = useMemo(() => normalizeMarkdownSource(displayAgentReferences(content)), [content])
   const sourcePlugins = useMemo<PluggableList>(() => sourceLines ? [...plugins.rehype, [rehypeSourceLines, { source, lineOf: normalizeMarkdownSourceWithLines(displayAgentReferences(content)).lineOf }]] : plugins.rehype, [content, plugins, source, sourceLines])
   const mobile = useMobileShell()
@@ -253,7 +256,7 @@ export const Markdown = memo(function Markdown({
   return (
     <DensityContext.Provider value={density}>
       <Streamdown
-        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}`}
+        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}|${messageChat ?? ''}`}
         mode="static"
         parseIncompleteMarkdown={false}
         lineNumbers={false}

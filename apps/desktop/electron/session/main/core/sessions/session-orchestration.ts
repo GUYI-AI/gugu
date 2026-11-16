@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { sessionDirectMessageId } from './session-direct-identity';
 import { parseGuguLink } from '@gugu/core/shared/ui/guguLink';
 import type { SessionSummary } from '@gugu/session-core/acp';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import type { MessagePreviewEntry, MessagePreviewProjection } from '@gugu/session-core/session-record/message-preview';
 import { readSessionPreview } from '@main/core/session-timeline/preview-rpc';
 import {
@@ -40,7 +40,7 @@ import {
 } from '@main/core/sessionpage/sessionpage-session-agent';
 import { sessionService } from '@main/core/sessions/session-service';
 import { db } from '@main/db/client';
-import { sessions } from '@main/db/schema';
+import { messages, sessions } from '@main/db/schema';
 import type { RemoteSessionCaller, AppSpawnAction } from '@gugu/session-core/session-record/contract';
 import { appDeviceId } from '@shared/extensions/machine-call';
 import { log } from '@main/lib/logger';
@@ -329,6 +329,19 @@ export async function localSessionIds(ids: readonly string[]): Promise<string[]>
     .from(sessions)
     .where(inArray(sessions.id, [...new Set(ids)]));
   return rows.map((row) => row.id);
+}
+
+/**
+ * The msg ids of the deliveries this session was given that start with `prefix` — what session_message's
+ * reply_to_message_id may name when written short (idPrefix.ts). Read from the envelopes as stored (`msg="msg:<uuid>"`).
+ */
+export async function receivedMessageIds(sessionId: string, prefix: string): Promise<string[]> {
+  const wanted = prefix.toLowerCase();
+  if (!/^[0-9a-f-]+$/.test(wanted)) return [];
+  const rows = await db.select({ content: messages.content }).from(messages)
+    .where(and(eq(messages.sessionId, sessionId), like(messages.content, `%msg="msg:${wanted}%`)));
+  const ids = rows.flatMap((row) => [...row.content.matchAll(/\bmsg="msg:([0-9a-f-]{36})"/gi)].map((match) => match[1]!.toLowerCase()));
+  return [...new Set(ids.filter((id) => id.startsWith(wanted)))];
 }
 
 // session_* 工具够得着这台机器上的任一会话,不看是谁 spawn 的。
