@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
-import { VaultSync, syncDirectory } from '../../../apps/desktop/electron/password-vault/sync'
+import { VaultSync, syncDirectory, type VaultSyncOptions } from '../../../apps/desktop/electron/password-vault/sync'
 import { seal, unseal } from '../../../apps/desktop/electron/password-vault/crypto'
 import { eraseClosedAccountPasswordData } from '../../../apps/desktop/electron/account-closure/password-data'
 
@@ -15,16 +15,17 @@ vi.mock('node:fs/promises', async original => {
   } }
 })
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const roots: string[] = []
-afterEach(async () => { io.beforeWrite = undefined; for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
-async function fixture(rpc: (name: string) => Promise<unknown>) {
-  const root = await mkdtemp(join(await realpath(tmpdir()), 'closure-sync-')); roots.push(root)
+afterEach(async () => { vi.useRealTimers(); io.beforeWrite = undefined; for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+async function fixture(rpc: (name: string) => Promise<unknown>, owner = A, sharedRoot?: string) {
+  const root = sharedRoot ?? await mkdtemp(join(await realpath(tmpdir()), 'closure-sync-')); if (!sharedRoot) roots.push(root)
   const key = randomBytes(32)
-  const sync = new VaultSync({ root: syncDirectory(root, A), ownerId: A, deviceId: 'fixture-device', changed() {}, rpc,
+  const options: VaultSyncOptions = { root: syncDirectory(root, owner), ownerId: owner, deviceId: 'fixture-device', changed() {}, rpc,
     keys: { verifyPerson: async () => {}, wrap: async (bytes, binding) => JSON.stringify(seal(key, bytes, binding)),
       unwrap: async (wrapped, binding) => unseal(key, JSON.parse(wrapped), binding) },
-    vault: { syncExport: async () => [], syncApply: async () => {} } })
-  return { sync, root, file: join(syncDirectory(root, A), 'sync-device.json') }
+    vault: { syncExport: async () => [], syncApply: async () => {} } }
+  return { sync: new VaultSync(options), options, root, file: join(syncDirectory(root, owner), 'sync-device.json') }
 }
 describe('VaultSync actual operation and write-queue shutdown', () => {
   it('waits for an admitted atomic device-file write before owner erasure, and cannot recreate it afterward', async () => {
@@ -56,5 +57,34 @@ describe('VaultSync actual operation and write-queue shutdown', () => {
     expect(rpc).toHaveBeenCalledTimes(1)
     expect(closed).toBe(true)
     await expect(f.sync.refresh()).rejects.toMatchObject({ code: 'UNAVAILABLE' })
+  })
+  it('blocks the delayed refresh scheduled by a refused publish after close, without recreating erased files', async () => {
+    const f = await fixture(async () => '0'); await f.sync.poll(); await f.sync.close()
+    const file = JSON.parse(await readFile(f.file, 'utf8')); file.merged = true
+    await writeFile(f.file, JSON.stringify(file))
+    const rpc = vi.fn(async () => { throw new Error('controlled offline') })
+    const sync = new VaultSync({ ...f.options, rpc })
+    vi.useFakeTimers()
+    await expect(sync.publish({ kind: 'delete', id: 'controlled-item' })).rejects.toMatchObject({ code: 'UNAVAILABLE' })
+    await sync.close(); await eraseClosedAccountPasswordData(f.root, A)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(rpc).toHaveBeenCalledTimes(1)
+    await expect(readFile(f.file)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('keeps B actual sync usable while A closes after an admitted write refusal', async () => {
+    const a = await fixture(async () => '0'), rpcB = vi.fn(async () => '0'), b = await fixture(rpcB, B, a.root)
+    await b.sync.poll()
+    const entered = Promise.withResolvers<void>(), refuse = Promise.withResolvers<void>()
+    io.beforeWrite = async path => { if (path.startsWith(a.file + '.')) { entered.resolve(); await refuse.promise; throw new Error('controlled write refused') } }
+    const poll = a.sync.poll().catch(error => error); await entered.promise
+    let closed = false
+    const closing = a.sync.close().then(() => { closed = true })
+    await Promise.resolve(); expect(closed).toBe(false)
+    refuse.resolve(); expect(await poll).toMatchObject({ message: 'controlled write refused' }); await closing
+    await eraseClosedAccountPasswordData(a.root, A)
+    await b.sync.poll(); expect(rpcB).toHaveBeenCalledTimes(2)
+    expect(await readFile(b.file, 'utf8')).toContain('fixture-device')
+    await expect(readFile(a.file)).rejects.toMatchObject({ code: 'ENOENT' })
+    await b.sync.close()
   })
 })
