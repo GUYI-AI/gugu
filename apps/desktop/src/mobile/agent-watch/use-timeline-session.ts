@@ -25,7 +25,7 @@ import {
 } from './agent-watch-store'
 import { settlePendingSends, userMessageIds, type PendingSend } from './pending-sends'
 import { loadRetryDelay, LOAD_RETRY_DELAYS_MS } from './record-wait'
-import { hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type TimelineLink } from './timeline-cache'
+import { forgetSessionStream, hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type TimelineLink } from './timeline-cache'
 import { useSelect } from '@/lib/selectStore'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
@@ -298,7 +298,7 @@ export function useTimelineSession(
     // 按下发送就画出来(pending-sends.ts 说了为什么):那台机器上的 agent 没在跑时,这次往返要先等它起来。
     // 还没和机器对过账就不画(SessionFollow.synced):认不准回显的乐观行宁可不要,退回等记录回来。
     const key = `${deviceId}/${sessionId}`
-    const pendingId = deviceId && sessionId && follows.get(followKey({ client, deviceId, sessionId, enabled }))?.synced ? `pending:${newLocalId()}` : null
+    const pendingId = deviceId && sessionId && follows.get(followKey({ deviceId, sessionId }))?.synced ? `pending:${newLocalId()}` : null
     // 受理/失败回来时人可能已经换到别的会话、在那边又发了一句:只动还是这条会话的那一份,❌ 把别人的清掉。
     const update = (next: (sends: readonly PendingSend[]) => readonly PendingSend[]) =>
       setPendingState((current) => (current.key === key ? { key, sends: next(current.sends) } : current))
@@ -320,7 +320,7 @@ export function useTimelineSession(
     } finally {
       setSending(false)
     }
-  }, [client, deviceId, sessionId, enabled])
+  }, [client, deviceId, sessionId])
 
   const [cancelling, setCancelling] = useState(false)
   const cancel = useCallback(async () => {
@@ -385,13 +385,8 @@ type SessionFollow = {
   resetOlder: () => void
 }
 const follows = new Map<string, SessionFollow>()
-const clientIds = new WeakMap<object, number>()
-let clientSequence = 0
-function followKey({ client, deviceId, sessionId, enabled }: FollowParams): string {
-  let id = clientIds.get(client)
-  if (id === undefined) clientIds.set(client, id = ++clientSequence)
-  return JSON.stringify([id, deviceId, sessionId, enabled])
-}
+/** One follow per session stream (the entry it writes): ❌ per client object or `enabled` (two follows writing one entry). */
+const followKey = sessionStreamKey
 
 /** The writers of one session's stream entry (the follow and the page's own actions write through them). */
 function streamWriters(streamKey: { deviceId: string; sessionId: string } | null, boundedWindow: boolean | undefined) {
@@ -420,6 +415,11 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
     follows.set(key, created)
     created.stop = runSessionFollow(created)
     follow = created
+  } else if (params.enabled && !follow.params.enabled) {
+    // A page that can reach the machine joins one that could not: the follow reads now (❌ stays on the cached picture).
+    follow.params = params
+    follow.stop()
+    follow.stop = runSessionFollow(follow)
   }
   const active = follow
   active.followers += 1
@@ -429,6 +429,9 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
     if (--active.followers > 0) return
     follows.delete(key)
     active.stop()
+    // Nobody follows it now: its link, phase and error were this follow's (❌ the next open's first frame); the next
+    // open starts from the timeline kept in memory, loading.
+    forgetSessionStream(params)
   }
 }
 

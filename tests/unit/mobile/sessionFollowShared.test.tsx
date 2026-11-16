@@ -43,8 +43,11 @@ function fakeClient() {
 }
 
 const sessions: Record<string, AgentWatchSession> = {}
-function Panel({ name, client }: { name: string; client: SessionpageTimelineClient }) {
-  sessions[name] = useTimelineSession(client, 'phone', 'machine-1', 'conversation-1', true)
+const firstFrames: Record<string, { phase: string; error: string | null }> = {}
+function Panel({ name, client, enabled = true }: { name: string; client: SessionpageTimelineClient; enabled?: boolean }) {
+  const session = useTimelineSession(client, 'phone', 'machine-1', 'conversation-1', enabled)
+  firstFrames[name] ??= { phase: session.phase, error: session.error }
+  sessions[name] = session
   return null
 }
 const texts = (session: AgentWatchSession) => session.timeline.turns.flatMap((turn) => turn.items.map((item) => ('text' in item ? item.text : '')))
@@ -79,5 +82,32 @@ describe('one session in two panels', () => {
 
     second.cleanup()
     expect(f.raw.unsubscribeSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('F2-1: two pages with different clients and one not able to reach the machine are still one follow of the stream', async () => {
+    const f = fakeClient()
+    const other = fakeClient()
+    await second.render(createNode(Panel, { name: 'page', client: other.client }))
+    await vi.waitFor(() => expect(sessions.page!.phase).toBe('ready'))
+    await first.render(createNode(Panel, { name: 'card', client: f.client, enabled: false }))
+    // The page that reaches the machine follows it; the card draws the same entry (❌ written over with "lost").
+    expect(other.raw.subscribeSession).toHaveBeenCalledTimes(1)
+    expect(f.raw.subscribeSession).not.toHaveBeenCalled()
+    await act(async () => { other.push(pushed(11, 'update')) })
+    expect(texts(sessions.card!)).toEqual(['行程单', 'update'])
+    expect(sessions.card!.link).not.toBe('lost')
+  })
+})
+
+describe('reopening a session', () => {
+  it('F2-2: the first frame of a reopened session is loading, ❌ the error page the last visit ended on', async () => {
+    const f = fakeClient()
+    f.raw.fetchSnapshot.mockRejectedValue(Object.assign(new Error('not allowed'), { code: 'permission_denied' }))
+    await first.render(createNode(Panel, { name: 'visit', client: f.client }))
+    await vi.waitFor(() => expect(sessions.visit!.phase).toBe('error'))
+    first.cleanup()
+    f.raw.fetchSnapshot.mockReturnValue(new Promise(() => {}))
+    await second.render(createNode(Panel, { name: 'again', client: f.client }))
+    expect(firstFrames.again).toEqual({ phase: 'loading', error: null })
   })
 })

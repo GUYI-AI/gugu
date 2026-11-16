@@ -487,6 +487,11 @@ export function updateSessionStream(key: TimelineCacheKey, change: (current: Ses
   putEntry(streams, id, change(streams.get().get(id) ?? initialSessionStream(key, boundedWindow)))
 }
 
+/** A session no page follows any more: its stream state goes (the timeline stays in the memory cache). */
+export function forgetSessionStream(key: TimelineCacheKey): void {
+  putEntry(streams, sessionStreamKey(key), undefined)
+}
+
 let streamAccount: string | null = null
 observeRendererSession(({ event, session }) => {
   const next = session?.user.id ?? null
