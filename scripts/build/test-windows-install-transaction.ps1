@@ -106,7 +106,7 @@ try {
   Assert ($failures[1].phase -eq 'commit' -and $failures[1].version -eq '0.3.5' -and $failures[1].cause) 'Locked-tree failure was not recorded with its cause'
   $results += 'every failure is recorded for the next app start; successes record nothing'
   Assert ($failures[1].step -like "$target -> *") 'Locked-tree failure did not name the refused rename'
-  Assert (@($failures[1].holders | Where-Object { $_ -match "^$PID .*open file" }).Count -eq 1) "Locked-tree failure did not name this process as the holder: $($failures[1].holders -join ' | ')"
+  Assert (@($failures[1].holders | Where-Object { $_ -match "^$PID .*\[handle .*fixture\.exe\]" }).Count -eq 1) "Locked-tree failure did not name this process as the holder: $($failures[1].holders -join ' | ')"
   $results += 'a refused rename names its step and the process holding the tree'
 
   # A process whose working directory is inside the old tree is a holder too, and is named as one.
@@ -115,7 +115,7 @@ try {
   $holder = Start-Process -FilePath $powershell -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -WorkingDirectory (Join-Path $target 'resources') -WindowStyle Hidden -PassThru
   try { Invoke-Phase commit 2 } finally { Stop-Process -Id $holder.Id -Force; $holder.WaitForExit() }
   $last = Get-Content -LiteralPath $failLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
-  Assert (@($last.holders | Where-Object { $_ -match "^$($holder.Id) .*working directory" }).Count -eq 1) "Working-directory holder was not named: $($last.holders -join ' | ')"
+  Assert (@($last.holders | Where-Object { $_ -match "^$($holder.Id) .*\[handle .*\\resources\]" }).Count -eq 1) "Working-directory holder was not named: $($last.holders -join ' | ')"
   $results += 'a process working inside the old tree is named as the holder'
 
   # A holder that lets go within the retry window (antivirus, indexer, an exiting process) no longer aborts the install.

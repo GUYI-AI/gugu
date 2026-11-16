@@ -60,67 +60,61 @@ function Move-Tree([string]$from, [string]$to) {
   }
 }
 function Get-TreeHolders([string]$dir) {
+  # Every open handle whose object lies under the tree, from the system handle table: files, directories and working
+  # directories alike, 32- and 64-bit processes alike. (Restart Manager reports no directory handles, and a 32-bit
+  # process's working directory is not in its 64-bit process parameters - that is exactly how the waiting UAC
+  # installer's handle was first missed.) Handles are duplicated into this process only to read their names.
   try {
     if (-not ('GuguTreeHolders' -as [type])) {
       Add-Type -TypeDefinition @"
-using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
+using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text; using System.Threading;
 public static class GuguTreeHolders {
-  [StructLayout(LayoutKind.Sequential)] struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
-  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct RM_PROCESS_INFO { public RM_UNIQUE_PROCESS Process;
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=256)] public string strAppName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=64)] public string strServiceShortName;
-    public int ApplicationType; public uint AppStatus; public uint TSSessionId; [MarshalAs(UnmanagedType.Bool)] public bool bRestartable; }
-  [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmStartSession(out uint h, int f, StringBuilder key);
-  [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint h);
-  [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmRegisterResources(uint h, uint n, string[] files, uint a, IntPtr b, uint c, string[] d);
-  [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint h, out uint needed, ref uint n, [In, Out] RM_PROCESS_INFO[] info, ref uint reasons);
-  // Processes holding any of the files open (Restart Manager), in batches.
-  public static List<string> FileHolders(string[] files) {
-    var found = new Dictionary<int,string>();
-    for (int i = 0; i < files.Length; i += 1000) {
-      var batch = new string[Math.Min(1000, files.Length - i)]; Array.Copy(files, i, batch, 0, batch.Length);
-      uint h; if (RmStartSession(out h, 0, new StringBuilder(64)) != 0) continue;
-      try {
-        if (RmRegisterResources(h, (uint)batch.Length, batch, 0, IntPtr.Zero, 0, null) != 0) continue;
-        uint needed = 0, n = 0, reasons = 0; RmGetList(h, out needed, ref n, null, ref reasons);
-        if (needed == 0) continue;
-        var info = new RM_PROCESS_INFO[needed]; n = needed;
-        if (RmGetList(h, out needed, ref n, info, ref reasons) != 0) continue;
-        for (int j = 0; j < n; j++) found[info[j].Process.dwProcessId] = info[j].strAppName + (string.IsNullOrEmpty(info[j].strServiceShortName) ? "" : " (service " + info[j].strServiceShortName + ")");
-      } finally { RmEndSession(h); }
-    }
-    var list = new List<string>(); foreach (var kv in found) list.Add(kv.Key + " " + kv.Value); return list;
-  }
-  [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr h, int c, ref PBI p, int l, out int r);
+  [StructLayout(LayoutKind.Sequential)] struct Entry { public IntPtr Object; public IntPtr Pid; public IntPtr Handle; public uint Access; public ushort Backtrace; public ushort Type; public uint Attributes; public uint Reserved; }
+  [DllImport("ntdll.dll")] static extern int NtQuerySystemInformation(int c, IntPtr b, int l, out int r);
+  [DllImport("ntdll.dll")] static extern int NtQueryObject(IntPtr h, int c, IntPtr b, int l, out int r);
   [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int a, bool i, int pid);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-  [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out IntPtr r);
-  [StructLayout(LayoutKind.Sequential)] struct PBI { public IntPtr R1; public IntPtr Peb; public IntPtr R2a; public IntPtr R2b; public IntPtr Pid; public IntPtr R3; }
-  // A process's working directory (read from its PEB; 64-bit processes). Restart Manager does not report directory handles.
-  public static string WorkingDirectory(int pid) {
-    IntPtr h = OpenProcess(0x0410, false, pid); if (h == IntPtr.Zero) return null;
+  [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll")] static extern bool DuplicateHandle(IntPtr sp, IntPtr sh, IntPtr tp, out IntPtr th, uint a, bool i, uint o);
+  [DllImport("kernel32.dll")] static extern uint GetFileType(IntPtr h);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] static extern uint QueryDosDevice(string d, StringBuilder t, int m);
+  // Object names can block on some file objects; each read gets a short budget on its own thread.
+  static string Name(IntPtr h) {
+    string res = null;
+    var t = new Thread(() => { IntPtr b = Marshal.AllocHGlobal(4096); try { int r; if (NtQueryObject(h, 1, b, 4096, out r) == 0) { int len = Marshal.ReadInt16(b); IntPtr p = Marshal.ReadIntPtr(b, IntPtr.Size); if (len > 0 && p != IntPtr.Zero) res = Marshal.PtrToStringUni(p, len / 2); } } finally { Marshal.FreeHGlobal(b); } });
+    t.IsBackground = true; t.Start(); return t.Join(200) ? res : null;
+  }
+  public static List<string> Under(string dir) {
+    var dev = new StringBuilder(512); QueryDosDevice(dir.Substring(0, 2), dev, 512);
+    string root = dev.ToString() + dir.Substring(2).TrimEnd('\\');
+    var found = new List<string>(); int len = 1 << 24, r; IntPtr buf;
+    while (true) { buf = Marshal.AllocHGlobal(len); int st = NtQuerySystemInformation(64, buf, len, out r); if (st == 0) break; Marshal.FreeHGlobal(buf); if (st != unchecked((int)0xC0000004)) throw new Exception("NtQuerySystemInformation 0x" + st.ToString("X")); len = Math.Max(len * 2, r + 65536); }
     try {
-      var p = new PBI(); int rl; if (NtQueryInformationProcess(h, 0, ref p, Marshal.SizeOf(p), out rl) != 0 || p.Peb == IntPtr.Zero) return null;
-      var b = new byte[8]; IntPtr r; if (!ReadProcessMemory(h, p.Peb + 0x20, b, 8, out r)) return null;
-      var pp = (IntPtr)BitConverter.ToInt64(b, 0); var us = new byte[16];
-      if (pp == IntPtr.Zero || !ReadProcessMemory(h, pp + 0x38, us, 16, out r)) return null;
-      int len = BitConverter.ToUInt16(us, 0); var s = new byte[len];
-      if (!ReadProcessMemory(h, (IntPtr)BitConverter.ToInt64(us, 8), s, len, out r)) return null;
-      return Encoding.Unicode.GetString(s);
-    } finally { CloseHandle(h); }
+      long count = Marshal.ReadInt64(buf); int size = Marshal.SizeOf(typeof(Entry)); var procs = new Dictionary<long, IntPtr>(); IntPtr me = GetCurrentProcess(); int fileType = -1;
+      for (long i = 0; i < count; i++) {
+        var e = (Entry)Marshal.PtrToStructure(buf + 16 + (int)(i * size), typeof(Entry)); long pid = e.Pid.ToInt64();
+        if (pid <= 4 || (fileType != -1 && e.Type != fileType)) continue;
+        IntPtr ph; if (!procs.TryGetValue(pid, out ph)) { ph = OpenProcess(0x40, false, (int)pid); procs[pid] = ph; }
+        IntPtr d; if (ph == IntPtr.Zero || !DuplicateHandle(ph, e.Handle, me, out d, 0, false, 2)) continue;
+        try {
+          if (fileType == -1) { if (GetFileType(d) != 1) continue; fileType = e.Type; }
+          string n = Name(d);
+          if (n != null && (n.Equals(root, StringComparison.OrdinalIgnoreCase) || n.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)))
+            found.Add(pid + "\t0x" + e.Access.ToString("X") + "\t" + n.Substring(dev.Length));
+        } finally { CloseHandle(d); }
+      }
+      foreach (var p in procs.Values) if (p != IntPtr.Zero) CloseHandle(p);
+    } finally { Marshal.FreeHGlobal(buf); }
+    return found;
   }
 }
 "@
     }
-    $prefix = $dir.TrimEnd('\') + '\'
     $processes = @{}; Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { $processes[[int]$_.ProcessId] = $_ }
-    $describe = { param($id, $why) $p = $processes[[int]$id]; "$id $(if ($p) { $p.Name } else { '?' }) [$why] $(if ($p) { $p.CommandLine })" }
-    $files = @(Get-ChildItem -LiteralPath $dir -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
-    $out = @([GuguTreeHolders]::FileHolders([string[]]$files) | ForEach-Object { $id, $name = $_ -split ' ', 2; & $describe $id "open file: $name" })
-    foreach ($id in $processes.Keys) {
-      $cwd = [GuguTreeHolders]::WorkingDirectory($id)
-      if ($cwd -and ($cwd.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or $cwd.TrimEnd('\') -eq $dir.TrimEnd('\'))) { $out += & $describe $id "working directory $cwd" }
-    }
-    return $out
+    return @([GuguTreeHolders]::Under($dir) | ForEach-Object {
+      $id, $access, $path = $_ -split "`t", 3; $p = $processes[[int]$id]
+      "$id $(if ($p) { $p.Name } else { '?' }) [handle $access on $($dir.Substring(0, 2))$path] $(if ($p) { $p.CommandLine })"
+    })
   } catch { return @("holder scan failed: $($_.Exception.Message)") }
 }
 function Save-State($s) {
