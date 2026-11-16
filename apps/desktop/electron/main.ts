@@ -1416,7 +1416,7 @@ const writeAppState = (state: Record<string, unknown>): void => writeStateFile(a
  * 建窗时用上次记住的色调(首次启动 = 产品默认的浅色),渲染层一落属性就同步过来改写并记住。
  * ❌ 别拿 `nativeTheme.shouldUseDarkColors` 冒充它:那是系统外观,不是用户在咕咕里选的那一项。
  */
-const WINDOW_TONE_BG = { light: '#ffffff', dark: '#111114' } as const
+const WINDOW_TONE_BG = { light: '#ffffff', dark: '#0f0f0f' } as const // = tokens.css --bg
 type WindowTone = keyof typeof WINDOW_TONE_BG
 
 let hostThemeColors: Record<string, string> | undefined

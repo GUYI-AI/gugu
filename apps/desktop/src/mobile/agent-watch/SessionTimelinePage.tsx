@@ -1,7 +1,9 @@
 import { PhoneSessionSidebarControls } from '../chat/PhoneSessionSidebarControls'
 import { usePhoneSessionSidebar } from '../chat/usePhoneSessionSidebar'
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
-import { PhoneLiveWindowConversation } from './PhoneLiveWindowConversation'
+import { PhoneLiveWindowConversation, PhoneLiveWindowSurface } from './PhoneLiveWindowConversation'
+import { PhoneLiveWindowTitle } from './PhoneLiveWindowTitle'
+import { useLiveWindowLabels } from '@/session/renderer/features/live-window/desktop-labels'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -102,6 +104,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 }) {
   const { t } = useTranslation('main')
   const { t: tc } = useTranslation('common')
+  const liveLabel = useLiveWindowLabels()
   const mobile = useMobileShell()
   const sidebar = usePhoneSessionSidebar({ sessionId: session.conversationId, entry: innerSidebarEntry ?? null })
   const { label: machineLabel } = useMachineLabel()
@@ -285,8 +288,14 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   }
 
   return (
+    <PhoneLiveWindowConversation enabled={mobile && !phoneHost && appKind === null} deviceId={device.device_id}
+      sessionId={session.conversationId} conversationId={session.chatId} agentId={agentUserId}
+      connected={connection === 'online'} operating={online && (attention === 'running' || attention === 'waiting')}>
+    {live => (
     <AgentWatchScreen
       {...taskHeader}
+      title={<PhoneLiveWindowTitle name={shownName} live={live} />}
+      subtitle={live?.operating && live.headerSource ? liveLabel(live.headerSource.kind === 'browser' ? 'usingBrowser' : 'usingComputer') : taskHeader.subtitle}
       onBack={appKind === PHONE_TASK_BROWSER ? () => setAppKind(null) : onBack}
       testId="agent-watch-timeline-page"
       actions={headerActions}
@@ -299,12 +308,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 
       {/* ⚠️ 此前是 `phase !== 'error'`:首次拉取失败就把时间线**和输入框**一起藏掉。
           缓存里有东西时那是白藏；重试耗尽走统一出口，内容照常给。 */}
-      <PhoneLiveWindowConversation enabled={mobile && !phoneHost && appKind === null} deviceId={device.device_id}
-        sessionId={session.conversationId} conversationId={session.chatId} agentId={agentUserId}
-        operating={online && (attention === 'running' || attention === 'waiting')}>
+      <PhoneLiveWindowSurface live={live}>
       <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
+          permissionsInWork={mobile && !appPanel}
           composerControls={mobile && !appPanel ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} nativeSkills={phoneHost ? <PhoneTaskSkills menuBar deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : undefined} /> : undefined}
           agentName={shownName}
           agentUserId={agentUserId}
@@ -353,9 +361,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       )}
 
       </div>
-      </PhoneLiveWindowConversation>
+      </PhoneLiveWindowSurface>
       {appKind === PHONE_TASK_BROWSER && <PhoneTaskBrowser key={`${device.device_id}:${session.conversationId}`} deviceId={device.device_id} sessionId={session.conversationId} onSent={() => setAppKind(null)} />}
       <SessionActions menu={sessionMenu} onArchived={onBack} />
     </AgentWatchScreen>
+    )}
+    </PhoneLiveWindowConversation>
   )
 })

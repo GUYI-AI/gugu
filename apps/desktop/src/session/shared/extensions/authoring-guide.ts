@@ -85,7 +85,7 @@ More \`guide_read\` topics:
         "name": "main",          // stable machine name, lowercase
         "title": "CSV",          // <= 48 chars
         "opensFiles": { "session": [".csv"] },  // claim: a session's .csv opens THIS tab
-        "fileIcons": { ".csv": "csv.png" },  // icon per claim (else generic)
+        "fileIcons": { ".csv": "csv.png" },  // own formats only (else a tile)
         "menu":    [{ "id": "reload",  "title": "Reload" }],   // <= 8
         "toolbar": [{ "id": "export",  "title": "Export" }]    // <= 6
       }
@@ -1154,6 +1154,7 @@ picture below this text is every piece, each captioned with the markup that draw
 - \`<gugu-avatar user="user:…">\` (\`size="xs|sm|md|lg"\`, \`name\` to show the name): a member of this chat, with their face. From API 27, declare \`chat:read\`; the elements share one member read per chat. Someone not in it: \`label="their name"\`.
 - \`<gugu-time datetime="…">\` (ISO or ms): 刚刚 / 3 分钟前 / 08:20 / 昨天 14:20 / 10月3日, kept current, in the person's language.
 - \`<gugu-empty icon="checklist"><strong>No votes yet</strong><small>Start one</small></gugu-empty>\`, with a \`button.primary\` last in it when there is something to do.
+- \`<gugu-file-mark name="a.pdf" tile>\` (API 56): a file as gugu draws it.
 
 ## Markdown
 

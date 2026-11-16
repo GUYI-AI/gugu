@@ -101,7 +101,7 @@ interface ChatListPanelProps {
   leadChatId?: string | null
   /** 手机页头左上角(自己的头像 →「我的」)。 */
   headerLeading?: ReactNode
-  /** 手机右上「写」菜单里的「新项目」(#446)。 */
+  /** 手机右上加号菜单里的「新项目」。 */
   onNewProject?: () => void
 }
 
@@ -418,7 +418,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <>
             {/* owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。 */}
             {chat.is_muted && (
-              <span aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
+              <span className="gg-chat-row-muted" aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
                 <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
               </span>
             )}
@@ -480,16 +480,16 @@ interface PlusMenuItemsProps {
   onGroupChat: () => void
   onAddFriend: () => void
   onScan?: () => void
-  /** 手机(v7.12 稿 NewMenu,#446):有它时菜单是 发起群聊 / 新项目 / 添加联系人,新任务在项目群里派。 */
+  /** Phone More contains social/project actions; the separate pen owns Agent creation. */
   onNewProject?: () => void
   mobile?: boolean
 }
 
 function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, onNewProject, mobile = false }: PlusMenuItemsProps) {
   const { t } = useTranslation('messaging')
-  const phoneItems = onNewProject ? [
+  const phoneItems = mobile ? [
     { testid: 'plus-menu-create-group', icon: <Users size={15} />, label: t('chatList.createGroupMobile'), onClick: onGroupChat },
-    { testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject },
+    ...(onNewProject ? [{ testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject }] : []),
     { testid: 'plus-menu-add-friend', icon: <UserRound size={15} />, label: t('chatList.addContact'), onClick: onAddFriend },
   ] : null
   // design line 592: 新建群聊 (contacts icon) + 添加联系人 (add-person icon)
@@ -1140,6 +1140,8 @@ export function ChatListPanel({
         actions={
           <>
             <NotificationSlot part="toggle" />
+            {mobile && onOpenSessionCreate && <IconButton size="md" data-testid={AUTOMATION_TEST_IDS.mobileSessionCreateAction}
+              aria-label={t('chatList.createAgent')} title={t('chatList.createAgent')} onClick={onOpenSessionCreate}><SquarePen /></IconButton>}
 
             <DropdownMenu.Root
               open={showPlusMenu}
@@ -1155,8 +1157,7 @@ export function ChatListPanel({
                 aria-label={t('chatList.create')}
                 title={t('chatList.create')}
               >
-                {/* 手机上是「写」(方框里一支笔,owner 10-26 改版稿);❌ 加号。 */}
-                {mobile ? <SquarePen /> : <Plus />}
+                <Plus />
               </DropdownMenu.Trigger>
               {showPlusMenu ? (
                 <DropdownMenu.Content
