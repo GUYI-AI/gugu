@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openFixture, type FixtureDb } from '@tooling/utils/db'
 import { EncryptedAppSecretsStore } from './secrets/encrypted-app-secrets-store'
 import { createDesktopClosureService } from '../../../account-closure/service'
+import { readDesktopClosureRetainedItems } from '../../../account-closure/retained-items'
 
 vi.mock('@main/db/client', () => ({ db: {}, sqlite: {} }))
 vi.mock('electron', () => ({ safeStorage: {} }))
@@ -9,6 +10,21 @@ let fixture: FixtureDb | undefined
 afterEach(() => { fixture?.close(); fixture = undefined })
 const scope = { ownerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', localOperationId: 'opaque-operation' }
 describe('desktop closure uses the existing protected database store', () => {
+  it('reports retained categories from actual presence and excludes its own custody records', async () => {
+    fixture = await openFixture('empty')
+    fixture.sqlite.exec('DELETE FROM sessions; DELETE FROM projects; DELETE FROM app_settings; DELETE FROM provider_accounts; DELETE FROM app_secrets')
+    const absent = { logs: false, sharedCache: false, runtimeLedger: false }
+    fixture.sqlite.prepare('INSERT INTO app_secrets(key,secret) VALUES(?,?)').run('account-closure:operation', 'sealed-custody')
+    expect(readDesktopClosureRetainedItems(fixture.sqlite, absent)).toEqual([])
+    fixture.sqlite.prepare('INSERT INTO projects(id,name,path) VALUES(?,?,?)').run('private-project', 'private-name', '/private/path')
+    fixture.sqlite.prepare('INSERT INTO sessions(id,project_id) VALUES(?,?)').run('private-session', 'private-project')
+    fixture.sqlite.prepare('INSERT INTO app_settings(key,value) VALUES(?,?)').run('private-setting', 'private-value')
+    fixture.sqlite.prepare('INSERT INTO app_secrets(key,secret) VALUES(?,?)').run('provider-secret', 'private-secret')
+    const retained = readDesktopClosureRetainedItems(fixture.sqlite, absent)
+    expect(retained).toEqual(['workspace-records', 'unattributed-session-history', 'device-settings', 'provider-credentials'])
+    expect(JSON.stringify(retained)).not.toContain('private')
+    expect(readDesktopClosureRetainedItems(fixture.sqlite, { ...absent, logs: true })).toContain('unattributed-diagnostic-logs')
+  })
   it.each(['unavailable', 'basic_text'] as const)('rejects %s without writing a plaintext receipt or installation binding', async mode => {
     fixture = await openFixture('empty')
     const encrypt = vi.fn(() => Buffer.from('encrypted'))

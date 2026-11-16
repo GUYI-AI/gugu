@@ -1,18 +1,22 @@
 import { join } from 'node:path'
+import { readdir } from 'node:fs/promises'
 import { app } from 'electron'
 import { listAgents, removeAgents } from '@gugu/core/local/state/agents'
 import { agentOwnerUserId } from '@gugu/core/local/state/agentOwner'
 import { removeAgentRuntimeSession } from '@gugu/core/local/agent/agentRuntimeSession'
 import { clearHumanAuthSession, readHumanAuthSession } from '@gugu/core/local/identity/humanAuthSession'
 import { privatePasswordVaultDirectory } from '@gugu/core/local/state/protectedPrivateStorage'
+import { resolveGuguHome } from '@gugu/core/local/state/paths'
 import { createDesktopClosureService } from '../../../account-closure/service'
 import { ClosureFailure } from '../../../account-closure/receipts'
 import { removeClosureOwnerDirectory } from '../../../account-closure/owner-directory'
 import { assertNoLiveAccountEngines } from '../../../account-closure/foreign-runtimes'
+import { readDesktopClosureRetainedItems } from '../../../account-closure/retained-items'
 import { closePasswordVaultForAccountClosure } from '../../../password-vault/beta-host'
 import { encryptedAppSecretsStore } from './secrets/encrypted-app-secrets-store'
 import { imMessagesController } from './im-messages/controller'
 import { flushLogWrites, setLogFileOwner } from '../lib/file-logger'
+import { sqlite } from '../db/client'
 
 interface NativeHost {
   currentOwner(): Promise<string | null | undefined>
@@ -20,6 +24,10 @@ interface NativeHost {
   detachMainLog(ownerId: string): Promise<string[]>
   clearAuthMirror(ownerId: string): Promise<void>
   profileBinding: string
+}
+async function nonempty(path: string, excluding?: string): Promise<boolean> {
+  try { return (await readdir(path)).some(name => name !== excluding) }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error }
 }
 
 /** Exported by the existing backend bundle. The protected secrets and message
@@ -74,6 +82,14 @@ export function createDesktopAccountClosureHost(host: NativeHost) {
         return true
       } },
     ],
-    retained: async () => ['workspace-files', 'unattributed-session-history', 'device-settings', 'provider-credentials', 'unattributed-diagnostic-logs', 'unattributed-runtime-records'],
+    retained: async () => {
+      const home = resolveGuguHome(process.env)
+      const caches = await Promise.all(['attachments', 'device-reads', 'project-files'].map(name => nonempty(join(home, name))))
+      return readDesktopClosureRetainedItems(sqlite, {
+        logs: await nonempty(join(app.getPath('userData'), 'logs'), 'users'),
+        sharedCache: caches.some(Boolean),
+        runtimeLedger: await nonempty(join(home, 'engine-pids')),
+      })
+    },
   })
 }
