@@ -10,7 +10,9 @@ vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, rpcOn: () => ({ e
 const { AppGivenSection } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-given-section')
 
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness() })
+// Which agents an App is given to are the signed-in account's (account scope): read for a signed-in account, as in the product.
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+beforeEach(() => { followRendererSession('SIGNED_IN', 'owner'); harness = createReactHarness() })
 afterEach(() => harness.cleanup())
 
 const api = vi.hoisted(() => ({
