@@ -216,6 +216,8 @@ export function createSessionCommandProvider(projectId: string, sessionId: strin
         {
           ...gitPushDef,
           // Dynamic label: push vs publish branch
+          labelKey: git?.isBranchPublished ? gitPushDef.labelKey : 'commands.session.gitPublish.label',
+          descriptionKey: git?.isBranchPublished ? gitPushDef.descriptionKey : 'commands.session.gitPublish.description',
           label: git?.isBranchPublished ? 'Git Push' : 'Git Publish Branch',
           description: git?.isBranchPublished
             ? 'Push commits to remote'
@@ -272,6 +274,8 @@ export function createSessionCommandProvider(projectId: string, sessionId: strin
         },
         {
           ...pinDef,
+          labelKey: sessionData?.isPinned ? 'commands.task.unpin.label' : pinDef.labelKey,
+          descriptionKey: sessionData?.isPinned ? 'commands.task.unpin.description' : pinDef.descriptionKey,
           label: sessionData?.isPinned ? 'Unpin Task' : 'Pin Task',
           description: sessionData?.isPinned
             ? 'Remove this task from pinned'

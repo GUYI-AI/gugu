@@ -5,7 +5,7 @@ import { useObserver } from 'mobx-react-lite';
 import { useState } from 'react';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { commandRegistry } from '@renderer/lib/commands/registry';
-import { commandPresentation } from '@renderer/lib/commands/presentation';
+import { paletteCommandPresentation } from '@renderer/lib/commands/presentation';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { rpc } from '@renderer/lib/ipc';
@@ -64,9 +64,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
     .map((command) => {
       const hostId = isHostCommandId(command.id) ? command.id : undefined;
       const def = hostId ? COMMANDS[hostId] : undefined;
-      const presentation = hostId ? commandPresentation(hostId, translate) : undefined;
-      const title = presentation?.label ?? command.label ?? command.id;
-      return { command, title, description: presentation?.description ?? command.description ?? '',
+      return { ...paletteCommandPresentation(command, translate),
         icon: def ? getCommandIcon(def.iconKey) : undefined, hotkey: hostId ? getEffectiveHotkey(hostId, keyboard) : null };
     })
     , search, ({ title, description }) => [title, description]));

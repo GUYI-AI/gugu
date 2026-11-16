@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMANDS } from '@shared/commands';
+import { paletteCommandPresentation } from '@renderer/lib/commands/presentation';
+import { enUSMessages, zhCNMessages } from '@renderer/localization/messages';
+import { rankPaletteMatches } from '../command-palette/palette-rank';
 import { createSessionCommandProvider } from './commands';
 
 // ACP imports chat-ui which calls document.createElement at module load time.
@@ -242,6 +245,89 @@ describe('createSessionCommandProvider', () => {
     for (const command of createSessionCommandProvider('project-1', 'conversation-1').getCommands()) {
       expect(command.id in COMMANDS).toBe(true);
     }
+  });
+
+  for (const [locale, messages, pinLabels, pushLabels] of [
+    ['en-US', enUSMessages, ['Pin Agent', 'Unpin Agent'], ['Git Publish Branch', 'Git Push']],
+    ['zh-CN', zhCNMessages, ['置顶智能体', '取消置顶智能体'], ['发布 Git 分支', '推送 Git 提交']],
+  ] as const) {
+    const translate = (key: keyof typeof enUSMessages) => messages[key];
+    const provider = () => createSessionCommandProvider('project-1', 'conversation-1');
+    const find = (query: string) => rankPaletteMatches(
+      provider().getCommands().map(command => paletteCommandPresentation(command, translate)),
+      query, row => [row.title, row.description]);
+
+    it.each([false, true])(`${locale} keeps pin presentation, search and the provider action aligned (%s)`, isPinned => {
+      const data = { id: 'conversation-1', isPinned };
+      const setPinned = vi.fn((next: boolean) => { data.isPinned = next; });
+      mocks.getRegisteredSessionData.mockReturnValue(data);
+      mocks.getSessionPageStore.mockReturnValue({ state: 'provisioned', setPinned });
+      const command = provider().getCommands().find(candidate => candidate.id === 'task.pin')!;
+      const row = paletteCommandPresentation(command, translate);
+
+      expect(row.command).toBe(command);
+      expect(row.title).toBe(pinLabels[Number(isPinned)]);
+      expect(find(row.title).some(item => item.command.id === 'task.pin')).toBe(true);
+      expect(find(pinLabels[1]).some(item => item.command.id === 'task.pin')).toBe(isPinned);
+      if (isPinned) expect(find(locale === 'en-US' ? 'Remove this agent from pinned' : '将当前智能体从置顶列表移除')
+        .some(item => item.command.id === 'task.pin')).toBe(true);
+      row.command.execute();
+      expect(setPinned).toHaveBeenCalledExactlyOnceWith(!isPinned);
+      const next = provider().getCommands().find(candidate => candidate.id === 'task.pin')!;
+      expect(paletteCommandPresentation(next, translate).title).toBe(pinLabels[Number(!isPinned)]);
+    });
+
+    it.each([false, true])(`${locale} keeps publish/push presentation, search and the provider action aligned (%s)`, isBranchPublished => {
+      const push = vi.fn(async () => ({ success: true }));
+      const publishBranch = vi.fn(async () => ({ success: true }));
+      const git = { isBranchPublished, branchName: 'topic', push };
+      mocks.getSessionGitWorktreeStore.mockReturnValue(git);
+      mocks.getGitRepositoryStore.mockReturnValue({ publishBranch });
+      mocks.getSessionPageStore.mockReturnValue({ state: 'provisioned', workspaceId: 'workspace-1' });
+      const command = provider().getCommands().find(candidate => candidate.id === 'session.gitPush')!;
+      const row = paletteCommandPresentation(command, translate);
+
+      expect(row.command).toBe(command);
+      expect(row.title).toBe(pushLabels[Number(isBranchPublished)]);
+      expect(find(row.title).some(item => item.command.id === 'session.gitPush')).toBe(true);
+      expect(find(pushLabels[0]).some(item => item.command.id === 'session.gitPush')).toBe(!isBranchPublished);
+      if (!isBranchPublished) expect(find(locale === 'en-US' ? 'Publish this branch to remote' : '将当前分支发布到远程仓库')
+        .some(item => item.command.id === 'session.gitPush')).toBe(true);
+      row.command.execute();
+      if (isBranchPublished) {
+        expect(push).toHaveBeenCalledExactlyOnceWith();
+        expect(publishBranch).not.toHaveBeenCalled();
+      } else {
+        expect(publishBranch).toHaveBeenCalledExactlyOnceWith('topic', 'workspace-1');
+        expect(push).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it('keeps the live Git handler when branch state changes after presentation', () => {
+    const push = vi.fn(async () => ({ success: true }));
+    const publishBranch = vi.fn(async () => ({ success: true }));
+    const git = { isBranchPublished: false, branchName: 'topic', push };
+    mocks.getSessionGitWorktreeStore.mockReturnValue(git);
+    mocks.getGitRepositoryStore.mockReturnValue({ publishBranch });
+    const provider = createSessionCommandProvider('project-1', 'conversation-1');
+    const command = provider.getCommands().find(candidate => candidate.id === 'session.gitPush')!;
+    const row = paletteCommandPresentation(command, key => enUSMessages[key]);
+    git.isBranchPublished = true;
+    row.command.execute();
+    expect(row.command).toBe(command);
+    expect(push).toHaveBeenCalledExactlyOnceWith();
+    expect(publishBranch).not.toHaveBeenCalled();
+  });
+
+  it('preserves extension presentation and its original handler', () => {
+    const command = { id: 'extension:test:action' as const, label: 'Extension action', description: 'Extension search words', execute: vi.fn() };
+    const row = paletteCommandPresentation(command);
+    expect(row.command).toBe(command);
+    expect(row.title).toBe(command.label);
+    expect(rankPaletteMatches([row], 'search words', item => [item.title, item.description])).toEqual([row]);
+    row.command.execute();
+    expect(command.execute).toHaveBeenCalledExactlyOnceWith();
   });
 
   // spec session-resume:任务内不再有「新建会话」这个动作 —— 新建必须带首轮,那个只填标题的
