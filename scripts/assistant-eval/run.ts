@@ -173,7 +173,7 @@ async function run(test: AssistantCase) {
     // Messaging descriptions match gugu-im-server.mjs; importing that ESM host also loads runtime dependencies.
     ['message_send', 'Set destination fields before writing text. Post a message to a chat; chat_id and to_user_ids are never inferred from the message that triggered you. Each call is independent; multiple distinct calls are valid. With reply_to_message_id a DM peer is implied; in a group still name recipients. Sessions: session_message.',
       { chat_id: z.string(), text: z.string(), reply_to_message_id: z.string().optional(), to_user_ids: z.array(z.string()).optional(), whisper: z.boolean().optional() }],
-    ['message_history', 'Read a chat’s main timeline, or one thread with thread_root_id, including the messages just before one you were sent.',
+    ['message_history', 'Read a chat’s main timeline, or one thread with thread_root_id, including the messages just before one you were sent. Rows carry seq; page back with limit and before_seq.',
       { chat_id: z.string(), limit: z.number().optional(), before_seq: z.number().optional(), thread_root_id: z.string().optional() }],
     ['session_ask_user', 'Ask one compact question and return pending.', { question: z.string() }],
     ['catalog_list', 'Discover less-used Gugu tools.', { name: z.string().optional() }],
