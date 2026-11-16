@@ -89,7 +89,7 @@ beforeEach(() => {
     expect(deviceId).toBe('return-device')
     expect(request.prompt).toBe('只核对返回路线')
     const session: SessionpageSessionSummary = { conversationId: 'created-return-session', title: '返回路线验收', projectId: 'workspace', harness: 'codex', runtime: 'acp',
-      supported: true, agentStatus: 'idle', agent: { userId: 'created-return-agent' } }
+      supported: true, agentStatus: 'idle', lastInteractedAt: null, agent: { userId: 'created-return-agent' } }
     // The controlled receipt changes directory presence to offline before showing
     // the real timeline, so this fixture cannot issue a real host/model request.
     fixture.devices[0]!.is_online = false
