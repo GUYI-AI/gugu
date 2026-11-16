@@ -151,7 +151,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
 // 54 (selection-send.ts): `files.sendSelection({ text, refs, rect, viewport })`, the preinstalled Files App only, inside a
 // real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
-export const EXTENSION_API_VERSION = 54;
+// 55: the same Send on a page of a chat's folder: into that chat (the page's, from the binding), @ its members, every
+// file one of that folder. 'sent' is queued, as a composer's message is, not delivered.
+export const EXTENSION_API_VERSION = 55;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
