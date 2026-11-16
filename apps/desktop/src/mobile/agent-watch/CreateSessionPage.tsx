@@ -88,6 +88,7 @@ export function CreateSessionPage({
   onCreated: (device: Device, ...created: Parameters<CreatedHandler>) => void
 }) {
   const { t } = useTranslation('main')
+  const ownerId = useAuth().user?.id ?? null
   const { devices: hosts, phones, cloudComputer } = useDevicesStore()
   const { isHome, label: machineLabel } = useMachineLabel()
   const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
@@ -119,6 +120,7 @@ export function CreateSessionPage({
   }
   return (
     <CreateOnMachine
+      key={ownerId ?? 'signed-out'}
       device={editingMachine.device}
       projectId={machine?.localProjectId ?? null}
       targetAvailable={!!machine}
@@ -346,6 +348,7 @@ function CreateOnMachine({
   useEffect(() => {
     if (!ownerId) return
     const binding = bindCreationDraft(runtime.thread.composer, mobileCreationDraftKey(ownerId))
+    void binding.ready.catch((error) => { if (page.active) setCreateError(describe(error)) })
     draft.current = binding
     return () => {
       binding.dispose()

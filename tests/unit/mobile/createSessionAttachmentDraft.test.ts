@@ -81,3 +81,25 @@ it('does not restore another account’s files into a reused composer', async ()
   expect(composerDrafts.forKey(key).pending).toHaveLength(1)
   rebound.dispose()
 })
+
+it('waits for a disposed account’s in-flight hydrate and clears its late files before binding the next account', async () => {
+  const oldKey = mobileCreationDraftKey('creation-files-hydrating-a')
+  const newKey = mobileCreationDraftKey('creation-files-hydrating-b')
+  const file = new File(['account A'], 'only-a.txt')
+  composerDrafts.forKey(oldKey).setPending([{ chip: { id: 'a-file', name: file.name, kind: 'file' }, file }])
+  const local = composer(oldKey)
+  let release!: () => void
+  const delay = new Promise<void>((resolve) => { release = resolve })
+  const add = local.addAttachment
+  local.addAttachment = async (picked) => { await delay; await add(picked) }
+  const old = bindCreationDraft(local, oldKey)
+  old.dispose()
+  const next = bindCreationDraft(local, newKey)
+  expect(composerDrafts.forKey(newKey).pending).toEqual([])
+  release()
+  await next.ready
+  expect(local.getState().attachments).toEqual([])
+  expect(composerDrafts.forKey(newKey).pending).toEqual([])
+  expect(composerDrafts.forKey(oldKey).pending[0]!.file).toBe(file)
+  next.dispose()
+})
