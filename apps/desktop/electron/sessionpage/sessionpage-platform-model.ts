@@ -113,6 +113,8 @@ const activeAccessSessions = new Map<string, {
   observationSink?: (observation: PlatformCredentialRuntimeObservation) => void
 }>()
 
+const platformClosureReleaseProofs = new PlatformClosureReleaseProofs()
+
 /**
  * #6264 由宿主供给凭据的终端会话(claude 的取票脚本、回环代理)活过宿主进程重启。
  *
@@ -275,6 +277,7 @@ async function restoreRelaySessions(input: RelayRestoreInput): Promise<RelayRest
       // 账本里没有这张票了(已被结清):认回也拿不到钱包,让第一次要票时重签(rotate 会带同一条会话的身份)。
       persistence.log.warn('认回的平台票不在账本里,第一次要票时重签', { sessionId: record.key, error: String(error) })
     }
+    platformClosureReleaseProofs.open(record.key, record.accessSessionId)
     credentialRoutes.set(record.credentialRoute, record.key)
     activeAccessSessions.set(record.key, {
       accessSessionId: record.accessSessionId,
@@ -1203,7 +1206,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
   const protocol = held.protocol
   const claudeHelperSession = Boolean(held.credentialConfigPath)
 
-  const pending = (async () => {
+  const pending = platformClosureReleaseProofs.rotation(sessionId, held.accessSessionId, async rotation => {
     // ❌ 这里不看盲续上限:rotate 只由真实使用触发(取票脚本 / 回环中转的请求、恢复闸的 ensureReady),
     // 走的是完整签发路径,服务端照常查登录、额度与模型上架 —— 见 MAX_RENEWED_LIFETIME_MS。
     const replacement = await issuePlatformModelAccess({
@@ -1217,11 +1220,12 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
       // harness 进程还是原来那个,它的可切清单是启动时那份 —— 新票继承旧票记下的那一份。
       keepFromAccessSessionId: held.accessSessionId,
     })
+    rotation.issued(replacement.accessSessionId)
     // The session may have been released while issue() was in flight. Do not commit a replacement
     // for a generation that teardown already removed; otherwise the new server lease would outlive
     // the conversation that owned it. (The replacement token lives only in memory — nothing to delete.)
     if (activeAccessSessions.get(sessionId) !== held) {
-      await revokePlatformModelAccess(held.authProvider, replacement.accessSessionId).catch((error: unknown) => {
+      await rotation.revoke(replacement.accessSessionId, () => revokePlatformModelAccess(held.authProvider, replacement.accessSessionId)).catch((error: unknown) => {
         log.error(
           { sessionId, accessSessionId: replacement.accessSessionId, err: error },
           '已结束会话的 replacement session 撤销失败',
@@ -1269,7 +1273,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
       outcome: 'success',
       classification: 'lease-reissued',
     })
-    await revokePlatformModelAccess(held.authProvider, previousAccessSessionId).catch((error: unknown) => {
+    await rotation.revoke(previousAccessSessionId, () => revokePlatformModelAccess(held.authProvider, previousAccessSessionId)).catch((error: unknown) => {
       log.error({ sessionId, accessSessionId: previousAccessSessionId, err: error }, '平台模型旧会话撤销失败')
     })
     log.info(
@@ -1278,7 +1282,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
     )
     scheduleRenewal(sessionId, replacement.expiresAt)
     return true
-  })()
+  })
   held.rotationPromise = pending
   try {
     return await pending
@@ -1953,6 +1957,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     modelCapability,
     switchableModels,
   }
+  platformClosureReleaseProofs.open(input.sessionId, launch.access.accessSessionId)
   if (credentialProxyRoute) credentialRoutes.set(credentialProxyRoute, input.sessionId)
   activeAccessSessions.set(input.sessionId, {
     accessSessionId: launch.access.accessSessionId,
@@ -2107,7 +2112,6 @@ function perSessionSelection(modelId: string, providerId: string): AgentModelSel
   return { source: 'platform', modelId, protocol }
 }
 
-const platformClosureReleaseProofs = new PlatformClosureReleaseProofs()
 
 /** Settle and revoke the token a session-page session was issued, if any. */
 export async function releasePlatformModelForSession(
@@ -2137,8 +2141,10 @@ export async function releasePlatformModelForSession(
 /** Strict closure acknowledgement comes from the actual native attempt. An
  * absent live record alone is never evidence that a previous release worked. */
 export async function releasePlatformModelForClosure(sessionId: string, generation: string) {
-  if (activeAccessSessions.get(sessionId)?.accessSessionId === generation)
-    await releasePlatformModelForSession(sessionId, generation).catch(() => undefined)
+  platformClosureReleaseProofs.sealAdmission(sessionId, generation)
+  const current = activeAccessSessions.get(sessionId)?.accessSessionId
+  if (current && platformClosureReleaseProofs.sameLifetime(sessionId, generation, current))
+    await releasePlatformModelForSession(sessionId, current).catch(() => undefined)
   return platformClosureReleaseProofs.require(sessionId, generation)
 }
 

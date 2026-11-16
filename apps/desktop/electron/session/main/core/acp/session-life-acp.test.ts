@@ -72,7 +72,7 @@ beforeEach(() => {
   h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; vi.clearAllMocks();
   const proofs = new Map<string, Promise<void>>();
   const actualRelease = (id: string, generation?: string) => {
-    const pending = h.release(id, generation); proofs.set(JSON.stringify([id, generation]), pending); return pending;
+    const pending = generation === undefined ? h.release(id) : h.release(id, generation); proofs.set(JSON.stringify([id, generation]), pending); return pending;
   };
   setEmdashPlatformRelease((id, generation) => {
     if (id === null) throw new Error('Unexpected fixture bulk release');

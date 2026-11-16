@@ -57,8 +57,10 @@ export function createHumanAuthSessionIpc<Mirror extends { access_token: string;
       const next = host.toAuth({ accessToken: mirror.access_token, refreshToken: mirror.refresh_token })
       const change = await host.prepareChange?.(next?.userId ?? null)
       await (change ? change.leave() : host.leaveIfChanging(next?.userId ?? null))
+      let changed = false
       try {
         const operation = async () => {
+          changed = true
           host.set(undefined)
           host.set(next)
           host.revoke()
@@ -66,22 +68,23 @@ export function createHumanAuthSessionIpc<Mirror extends { access_token: string;
         }
         return await (change ? change.mutate(operation) : mutate(next?.userId ?? null, operation))
       } finally {
-        host.changed()
-        await host.enter()
+        if (changed) { host.changed(); await host.enter() }
       }
     },
     async clear(reason: unknown): Promise<Cleared> {
       const change = await host.prepareChange?.(null)
       await (change ? change.leave() : host.leaveIfChanging(null))
+      let changed = false
       try {
         const operation = async () => {
+          changed = true
           host.set(reason === 'lost' ? 'lost' : null)
           host.revoke()
           return host.erase()
         }
         return await (change ? change.mutate(operation) : mutate(null, operation))
       } finally {
-        host.changed()
+        if (changed) host.changed()
       }
     },
   }
