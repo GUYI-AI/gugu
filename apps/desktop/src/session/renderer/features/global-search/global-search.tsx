@@ -138,10 +138,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   useEffect(() => { if (selectedLine >= 0) lineWindowRef.current?.scrollToIndex(selectedLine, { align: 'auto' }) }, [selectedLine])
 
   const open = (hit: SearchHit) => {
-    if (hit.kind === 'message') {
-      const hits = ordered.flatMap((one) => one.kind === 'message' ? [{ chatId: one.chatId, messageId: one.messageId }] : [])
-      updateSearchSession({ selectedId: hit.id, trail: { hits, index: hits.findIndex((one) => one.messageId === hit.messageId), query: view.query } })
-    }
+    if (hit.kind === 'message') updateSearchSession({ selectedId: hit.id })
     if (view.query) rememberSearch(recentScope, view.query)
     onOpen(); openHit(hit)
   }
