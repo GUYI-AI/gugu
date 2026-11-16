@@ -1,5 +1,3 @@
-import { requirePreinstalledFiles, workspaceFileAnnotation } from '../../session/shared/extensions/file-annotation'
-import { sessionAnnotations } from '../../session/renderer/features/sessions/annotations/session-annotations'
 import { composeChatDraft } from '@/lib/composeDraft'
 import { widgetContext } from '../../session/shared/extensions/widget-context'
 import { showRendererContentMenu } from '../../lib/contentContextMenu'
@@ -18,6 +16,7 @@ import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError
 import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
+import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
@@ -83,6 +82,7 @@ import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/s
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
 import { appToast } from '../../session/shared/extensions/app-toast'
+import { requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
 import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
@@ -677,11 +677,12 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
-      case 'filesAnnotateSelection': {
+      case 'filesSendSelection': {
         requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
-        if (!session) refused('denied', 'File annotations require a session page')
-        sessionAnnotations.forSession(session.id).add({ kind: 'file', ...workspaceFileAnnotation(args, sessionWorkspace(session.id)) })
-        return
+        if (!session) refused('denied', 'Send needs a session page')
+        const { draft, quote, pills } = selectionSendOf(args, sessionWorkspace(session.id))
+        // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
+        return await openSelectionSend({ cite: { draft, quote, pills }, sessionId: session.id, anchor: 'dock' })
       }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)

@@ -18,6 +18,7 @@ import { remoteHostsStore } from '../../session/renderer/features/remote-hosts/r
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Check } from '../../lib/icons'
 import { DispatchSheet } from '../chat/DispatchSheet'
+import { SelectionSendLayer } from '../chat/SelectionSend'
 
 type Ask = Extract<ExtensionConsentEventDetail, { type: 'ask' }>
 
@@ -51,11 +52,13 @@ function RequesterFace({ requester }: { requester: ExtensionConsentRequester }) 
  * they answer they are where they were. The session page asks through EXTENSION_CONSENT_EVENT.
  */
 export function ExtensionConsentSheet() {
-  // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`): the same shell, the same promise.
+  // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`), and a selection's Send: the same shell,
+  // the same promise.
   return (
     <>
       <InstallConsentSheet />
       <DispatchSheet />
+      <SelectionSendLayer />
     </>
   )
 }

@@ -9,8 +9,8 @@
     }
   },
   "author": "咕咕",
-  "version": "0.2.78",
-  "apiVersion": 53,
+  "version": "0.2.80",
+  "apiVersion": 54,
   "platforms": ["desktop", "phone"],
   "entry": "index.html",
   "icon": "icon.png",

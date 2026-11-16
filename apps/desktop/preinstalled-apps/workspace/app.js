@@ -1,4 +1,4 @@
-import { selectionComment, annotationLineNumbers, previewSelectionLines } from './comments.js'
+import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
 // markdown source editor with a preview, and JSON files as editable text. Several people and agents edit the same
@@ -12,7 +12,7 @@ import { selectionComment, annotationLineNumbers, previewSelectionLines } from '
 // Where it runs is read from the context, never assumed: with a chat it shows that chat's
 // workspace; with a file (ctx.file) it opens the file it was handed; with neither there is nothing to show.
 
-import { findIn, linesText, placeOf, plainWords, relocate, spanOf } from './lines.js'
+import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
 import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
@@ -153,7 +153,7 @@ const STRINGS = {
     copy: '复制',
     copied: '已复制',
     cite: '引用',
-    addToChat: '添加到对话', comment: '评论', commentPlaceholder: '添加可选评论…', commentFailed: '未能保存评论，请重试',
+    send: '发送',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -398,7 +398,7 @@ const STRINGS = {
     copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
-    addToChat: 'Add to chat', comment: 'Comment', commentPlaceholder: 'Add an optional comment…', commentFailed: 'Could not save the comment. Try again.',
+    send: 'Send',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -808,7 +808,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
-  $('annotate-sel').textContent = t.addToChat
+  $('send-sel').textContent = t.send
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -2773,7 +2773,6 @@ function closeCurrent() {
 }
 
 function clearShownFile() {
-  comment.close()
   syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
@@ -3047,7 +3046,7 @@ async function showWhole(current) {
       extensions: [
         cm.EditorView.editorAttributes.of({ class: 'code-view' }),
         cm.view.highlightActiveLine(),
-        annotationLineNumbers(cm),
+        lineNumberSelection(cm),
         cm.commands.history(),
         cm.keymap.of(cm.commands.historyKeymap),
         cm.code.editing({ language, dark: state.ctx.themeMode === 'dark', editable: !file.readOnly }),
@@ -3227,16 +3226,15 @@ async function mountPlain(current) {
 // (gugu.clipboard.writeText). Read at click time from here, because pressing a button may already have collapsed it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
-const comment = selectionComment({ document, labels: () => state.t, save: (file, selection) => gugu.files.annotateSelection(file, selection) })
 
 function showSelection(picks, end, inPreview = false) {
   state.picks = picks
-  $('annotate-sel').hidden = !state.ctx?.workspace?.sessionId || !state.current?.entry?.workspace
-  $('annotate-sel').disabled = picks.length !== 1 || !picks[0]?.lines
   selectionEnd = picks.length ? end : null
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
+  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
+  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3267,14 +3265,13 @@ function selectionWatch(cm) {
   })
 }
 
-// The preview's selection is the page's own; its lines are the ones its first and last block were written on.
+// The preview's selection is the page's own; its lines are the source lines its ends fall on (`previewSelectionLines`),
+// its words a formula's TeX once (`previewSelectionText`).
 document.addEventListener('selectionchange', () => {
   const picked = document.getSelection()
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) {
     const range = picked.getRangeAt(picked.rangeCount - 1)
-    const spanAt = (node) => spanOf((node.nodeType === 1 ? node : node.parentElement)?.closest('[data-line]')?.dataset.line)
-    const [start, end] = [spanAt(range.startContainer), spanAt(range.endContainer)]
-    const pick = { text: picked.toString(), lines: start && end ? [start[0], end[1]] : null }
+    const pick = { text: previewSelectionText(range), lines: previewSelectionLines(range) }
     showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true)
   } else if (picksInPreview) {
     showSelection([], null)
@@ -3292,19 +3289,51 @@ function refOf(current, { lines }) {
 
 // Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs), the words picked
 // quoted above them as a reader sees them (a block cited whole has none) — the person says what to do with them, @s whom
-// they like and sends it. A JSON file's view is not its text: its cite stays as it was, each range quoted with the lines
-// it is shown on, and a pill to the file. Called inside the click, as a draft needs.
+// they like and sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was,
+// each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
 async function cite(current = state.current, picks = state.picks, whole = false) {
-  if (!current || (!whole && !picks.length)) return
-  const quoted = ({ text, lines: [first, last] }) =>
-    `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
+  const cited = citeOf(current, picks, whole)
+  if (!cited) return
   try {
-    if (whole) await gugu.dispatch('', { draft: true, refs: [{ file: current.entry }] })
-    else if (current.file.type === 'text') await gugu.dispatch(picks.flatMap(({ text }) => (text ? [`> ${plainWords(text)}`] : [])).join('\n\n'), { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
-    else await gugu.dispatch(picks.map(quoted).join('\n\n'), { draft: true, refs: [{ file: current.entry }] })
+    await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
+// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Called inside the click, as the host requires.
+async function send(current = state.current, picks = state.picks) {
+  const cited = citeOf(current, picks)
+  const at = selectionEnd?.()
+  if (!cited || !at) return
+  try {
+    const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
+    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') {
+      document.getSelection()?.removeAllRanges()
+      showSelection([], null)
+    }
+  } catch (error) {
+    showBanner(failureText(error), 'error')
+  }
+}
+
+// What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
+// fenced so indentation and marks stay) and a pill per place.
+function citeOf(current, picks, whole = false) {
+  if (!current || (!whole && !picks.length)) return null
+  if (whole) return { text: '', refs: [{ file: current.entry }] }
+  const quote = (text) => {
+    if (current.file.type === 'text') return `> ${plainWords(text)}`
+    const body = text.replace(/\s+$/, '')
+    const fence = '`'.repeat(Math.max(3, ...(body.match(/`+/g) ?? []).map((run) => run.length + 1)))
+    return [fence, ...body.split('\n'), fence].map((line) => `> ${line}`).join('\n')
+  }
+  const quoted = ({ text, lines: [first, last] }) =>
+    `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
+  if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }
+  return { text: picks.map(quoted).join('\n\n'), refs: [{ file: current.entry }] }
 }
 
 // The shared content menu keeps the App's existing refs/line fingerprints and editor history.
@@ -4550,14 +4579,8 @@ function start() {
   $('copy-sel').onclick = () => copySelection()
   $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('cite-sel').onclick = () => cite()
-  $('annotate-sel').addEventListener('pointerdown', event => event.preventDefault())
-  $('annotate-sel').onclick = () => {
-    const pick = state.picks[0]
-    if (!state.current || state.picks.length !== 1 || !pick?.lines) return
-    const selected = document.getSelection()
-    const lines = picksInPreview && selected?.rangeCount ? previewSelectionLines(selected.getRangeAt(0)) ?? pick.lines : pick.lines
-    comment.open({ file: state.current.entry, pick: { ...pick, text: state.current.file.type === 'source' ? linesText(state.current.file.text, ...lines) : pick.text, lines: [...lines] }, anchor: selectionEnd })
-  }
+  $('send-sel').addEventListener('pointerdown', (event) => event.preventDefault())
+  $('send-sel').onclick = () => send()
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)
