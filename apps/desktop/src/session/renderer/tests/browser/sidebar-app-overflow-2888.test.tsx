@@ -85,11 +85,17 @@ for (const height of [600, 900]) for (const host of ['mac', 'win']) {
     assertFooterVisible()
     const prefix = visibleIds()
     expect(prefix).toEqual(state.apps.slice(0, prefix.length).map(app => app.extensionId))
+    if (import.meta.env.VITE_RAIL_CAPTURE === '1') {
+      const box = (selector: string) => harness.container.querySelector(selector)!.getBoundingClientRect().toJSON()
+      console.info('rail-layout-2888', JSON.stringify({ host, height, prefix, rail: box('.gg-sidebar-rail'), dock: box('.gg-sidebar-dock'), settings: box('[data-testid="sidebar-settings-nav"]'), footer: box('.gg-sidebar-bottom') }))
+      await page.screenshot({ path: `__screenshots__/rail-2888-${height}-${host}-closed.png` })
+    }
     const more = page.getByTestId('sidebar-more-apps')
     await userEvent.click(more)
     await until('the real menu is open', () => !!document.querySelector('[role="menu"]'))
     const rows = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')]
-    expect(rows.map(row => row.textContent)).toEqual(state.apps.slice(prefix.length).map(app => app.name))
+    expect(rows.map(row => row.querySelector('.gg-menu-item-label')?.textContent)).toEqual(state.apps.slice(prefix.length).map(app => app.name))
+    if (import.meta.env.VITE_RAIL_CAPTURE === '1') await page.screenshot({ path: `__screenshots__/rail-2888-${height}-${host}-more.png` })
     await userEvent.click(page.getByRole('menuitem', { name: 'App 32', exact: true }))
     expect(state.open).toHaveBeenCalledWith('app-32')
     expect(navigate).toHaveBeenCalledWith('tasks')
