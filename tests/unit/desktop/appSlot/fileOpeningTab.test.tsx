@@ -11,6 +11,7 @@ import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHe
 import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { askFileOpen, chatLayoutOf, closeChatTab, focusedChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { translateSessionMessage } from '../../../../apps/desktop/src/session/renderer/localization/locale-store'
 import type { AppOpenWithDetail } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 
@@ -39,15 +40,18 @@ const setAnswer = (itemId: string, detail: AppOpenWithDetail) => answers.set(ite
 const preview = (itemId: string, chatId = group): AppOpenWithDetail => ({ chatId, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, file: { document: false, contentType: 'text/markdown', version: 1, size: 3 }, choice: { kind: 'none' } } as AppOpenWithDetail)
 const claimed = (itemId: string): AppOpenWithDetail => ({ ...preview(itemId), choice: { kind: 'one', candidate: { tabKind: 'workspace.file', suffix: '.md' } } } as AppOpenWithDetail)
 
-function Shell() {
+/** The chat's panel: drawn or not (`panel`), taking asks or not just now (`canTake`). */
+function Panel({ canTake }: { canTake?: () => boolean }) {
+  return createElement('div', null, useChatOpener(group, undefined, canTake).overlay)
+}
+function Shell({ panel = true, canTake }: { panel?: boolean; canTake?: () => boolean }) {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }, { id: other, kind: 'group' }] as never, contacts: () => [],
     currentChat: () => state.onScreen, openChat() {}, openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
     openFile: (chatId, target, source, opener) => askFileOpen(chatId, target, source, opener),
   })
-  const opener = useChatOpener(group)
   const files = useMessageFilePreview({ mobile: false, visible: true, closeRightSurfaces() {}, toast })
   const card = (itemId: string) => createElement('button', { 'data-card': itemId, onClick: () => files.open({ kind: 'file', fileName: `${itemId}.md`, mimeType: 'text/markdown', sizeBytes: 3, source: { kind: 'item', itemId, version: 1 } }, { id: `m-${itemId}`, chat_id: group } as MessageItem) })
-  return createElement('div', null, opener.overlay, card('A'), card('B'), card('C'))
+  return createElement('div', null, panel ? createElement(Panel, { canTake }) : null, card('A'), card('B'), card('C'))
 }
 /** A card clicked; what is true right after the click handler returns is read synchronously by the caller. */
 const click = (itemId: string) => { act(() => harness.container.querySelector<HTMLButtonElement>(`[data-card="${itemId}"]`)!.click()) }
@@ -228,6 +232,49 @@ describe('on the phone', () => {
     expect(focusedChatTab(group)).toMatchObject({ kind: 'panel', tabId: waiting })
     await answer('A', preview('A'))
     expect(focusedChatTab(group)).toMatchObject({ kind: 'panel', tabId: waiting })
+    expect(isUnresolvedItem(tabs()[0]!.item)).toBe(false)
+  })
+})
+
+// The chat not yet taking the waiting ask when the open ends (not drawn yet, or not taking asks just now — an agent's
+// task page coming up): what the open left there goes with it, the ask in the chat's mailbox too.
+describe('a waiting ask the chat has not taken yet', () => {
+  const allow = { now: false }
+  const letTake = async () => act(async () => { allow.now = true; window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId: group } })); await new Promise<void>((done) => setTimeout(done, 0)) })
+
+  it.each(['not drawn', 'not taking asks'])('the host refuses while the chat is %s: no tab once it is, nothing left in its mailbox', async (why) => {
+    allow.now = false
+    await harness.render(why === 'not drawn' ? createElement(Shell, { panel: false }) : createElement(Shell, { canTake: () => allow.now }))
+    click('A')
+    expect(tabs()).toHaveLength(0)
+    await answer('A', 'No such file in this chat')
+    if (why === 'not drawn') await harness.render(createElement(Shell))
+    else await letTake()
+    expect(tabs()).toHaveLength(0)
+    expect(takeChatAsk(group)).toBeNull()
+  })
+
+  it('another chat\'s file while this chat is not drawn: nothing here, that chat is handed the file', async () => {
+    setAnswer('A', preview('A', other))
+    await harness.render(createElement(Shell, { panel: false }))
+    click('A')
+    await answer('A', preview('A', other))
+    await harness.render(createElement(Shell))
+    expect(tabs()).toHaveLength(0)
+    expect(takeChatAsk(group)).toBeNull()
+    expect(takeChatAsk(other)).toMatchObject({ itemId: 'A', opener: { chatId: other } })
+  })
+
+  it('the chat drawn late but before the answer: the waiting tab is there, then turns real in place', async () => {
+    await harness.render(createElement(Shell, { panel: false }))
+    click('A')
+    expect(tabs()).toHaveLength(0)
+    await harness.render(createElement(Shell))
+    await until('the waiting tab is taken', () => tabs().length === 1)
+    const waiting = tabs()[0]!
+    expect(isUnresolvedItem(waiting.item)).toBe(true)
+    await answer('A', preview('A'))
+    expect(tabs().map((tab) => tab.tabId)).toEqual([waiting.tabId])
     expect(isUnresolvedItem(tabs()[0]!.item)).toBe(false)
   })
 })

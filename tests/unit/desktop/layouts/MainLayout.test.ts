@@ -1285,6 +1285,20 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
   expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: fileAnswer('F1', chatId), message: source })
 })
 
+// An agent's file goes up beside its task (which may take a while): the host refusing it before that leaves no waiting
+// ask behind for the task page to open later.
+it.each(['owned', 'group'] as const)('a %s file the host refuses: nothing is left waiting in its chat', async kind => {
+  const chatId = 'refused-file-chat'
+  const source = message({ id: 'receipt-refused', chat_id: chatId, file_item_id: 'F9', file_version: 1 })
+  chatStoreMock.chats = [{ id: chatId, kind: kind === 'owned' ? 'dm' : 'group', peer_user_id: kind === 'owned' ? 'agent' : null }] as never
+  if (kind === 'owned') { taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]; taskRoute.remote = true }
+  fileOwner.mockResolvedValue({ data: null, error: null })
+  await renderMainLayoutWithToast()
+  await act(async () => { await expect(openLinkTarget({ kind: 'file', itemId: 'F9', version: 1 }, { message: source })).rejects.toThrow() })
+  await act(async () => { await new Promise((done) => setTimeout(done, 0)) })
+  expect(takeChatAsk(chatId)).toBeNull()
+})
+
 it('opens an owned agent\'s file beside its task on the phone, as on a computer', async () => {
   platformMock.kind = 'capacitor'
   platformMock.capabilities.sessionHost = false

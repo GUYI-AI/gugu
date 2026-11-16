@@ -43,8 +43,9 @@ export function isChatOnScreen(chatId: string): boolean {
 }
 
 /**
- * 人正看着的那条会话(点下去的那一刻读):屏上摆着几块时是握着焦点的那块(`focused`,侧栏发布的),否则是最后报的那一块;
- * 屏上没有会话(任务页)= null。
+ * 人正看着的那条会话(点下去的那一刻读):侧栏发布的 `focused` 摆在屏上就是它 —— 屏上几块并排时,指针按进一块
+ * (onPointerDownCapture → focusScreenBlock → 导航到那条对话)就让它成了 `focused`。`focused` 不在报的里面时,取报的
+ * 里面任一块(Map 的插入顺序:不是「最近报的」那块),只有屏上就一块时才必然是对的;屏上没有会话(任务页)= null。
  */
 export function chatInView(focused: string | null): string | null {
   const shown = [...shownByReporter.values()]

@@ -192,12 +192,6 @@ export function unresolvedTabOf(chatId: string): ChatPanelTab | null {
   return panelTabsOf(chatId).find((tab) => isUnresolvedItem(tab.item)) ?? null;
 }
 
-/** A file's waiting tab, gone: the open did not come to a page (failed, replaced, another chat's). One showing another file is left. */
-export const closeUnresolved = action(function closeUnresolved(chatId: string, itemId: string): void {
-  const tab = unresolvedTabOf(chatId);
-  if (tab && tab.item.itemId === itemId) closeChatTab(chatId, tab.tabId);
-});
-
 /** A tab clicked or asked for: it is the one shown (beside the chat when the two are a pair). */
 export const showChatTab = action(function showChatTab(chatId: string, tabId: string): void {
   const layout = chatLayoutOf(chatId);
@@ -407,3 +401,19 @@ export function takeChatAsk(chatId: string | null | undefined): ChatOpenAsk | nu
   asks.delete(chatId);
   return what;
 }
+
+/**
+ * What an open that did not come to a page (failed, replaced, another chat's file) left in this chat, gone: its waiting
+ * tab, and — when the chat has not taken it yet (not drawn, or not taking asks just now) — its waiting ask still in the
+ * mailbox, so the chat does not open a tab for it later that nobody answers. That ask's caller is told it was superseded
+ * (the link layer does not wait on it). A tab or an ask for another file is left.
+ */
+export const closeUnresolved = action(function closeUnresolved(chatId: string, itemId: string): void {
+  const pending = asks.get(chatId);
+  if (pending && 'unresolved' in pending && pending.itemId === itemId) {
+    asks.delete(chatId);
+    pending.receipt?.reject(new OpenSuperseded());
+  }
+  const tab = unresolvedTabOf(chatId);
+  if (tab && tab.item.itemId === itemId) closeChatTab(chatId, tab.tabId);
+});

@@ -325,8 +325,14 @@ function InnerLayout({
       openSettingsSection('apps')
     },
     openFile: async (chatId, target, source, opener) => {
+      // The waiting tab's ask is in the chat's mailbox from the click on, before the chat is brought up (an agent's task
+      // page may take a while): the chat takes it once it is up, and the open that ends without a page finds it there
+      // to take back (closeUnresolved).
+      const waiting = opener ? null : askFileOpen(chatId, target, source, null)
+      // Taken back when the open ends without a page (rejected then): told here, should bringing the chat up fail first.
+      void waiting?.catch(() => undefined)
       if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
-      await askFileOpen(chatId, target, source, opener)
+      await (waiting ?? askFileOpen(chatId, target, source, opener))
     },
     currentChat: () => chatInView(readSidebarChatView().focusedChatId),
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
