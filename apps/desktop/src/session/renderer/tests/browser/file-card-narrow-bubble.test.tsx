@@ -10,6 +10,9 @@ import { i18n } from '@/i18n';
 import '@/i18n/registerMessagingCatalog';
 import '@/styles/tokens.css';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { FILE_ROW } from '@gugu/session-shared/file-row';
+import { FILE_MARKS } from '@gugu/session-shared/file-marks';
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }));
@@ -23,8 +26,10 @@ vi.mock('@/lib/attachmentBytes', async (original) => ({
 }));
 
 const { MessageBubble } = await import('@/components/chat/MessageBubble');
+const { ReadOnlyMessageBubble } = await import('@/components/chat/ReadOnlyMessageBubble');
 
 const lin: MemberProfileCardModel = { id: 'sender-1', displayName: '林知夏', avatar: null, email: null, type: 'human', role: 'member' } as MemberProfileCardModel;
+const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 const FILE_CONTENT = '[附件] 项目群并入项目页-原型.html (text/html)\n[URL] https://files.test.local/prototype.html\n[Size] 169267\n[Kind] file';
 const IMAGE_CONTENT = '[附件] screenshot.png (image/png)\n[URL] https://files.test.local/screenshot.png\n[Size] 169267\n[Kind] image';
 const IMAGE_LINK = { url: 'https://files.test.local/screenshot.png', width: 1000, height: 500 };
@@ -90,4 +95,26 @@ describe('attachments in a narrow message list', () => {
       });
     }
   }
+});
+
+describe('a file in a message is the task page file row', () => {
+  it('in a group bubble: one row, as tall as FILE_ROW, drawn with the glyph of its family from the shared table', async () => {
+    await renderAttachment(FILE_CONTENT, '.gg-hfile', 720, false);
+    const row = harness.container.querySelector<HTMLElement>('.gg-hfile .gg-file-row');
+    expect(row?.getBoundingClientRect().height).toBe(FILE_ROW.height);
+    expect(row!.querySelector('.gg-file-row-icon svg')?.innerHTML).toBe(drawn(FILE_MARKS.text.glyph)); // 原型.html → text 族
+  });
+
+  it('in a read-only bubble: the download sits in the row end, beside the open button and not inside it', async () => {
+    harness = createReactHarness();
+    const msg = message({ id: `msg-${++messageSeq}`, sender_user_id: 'sender-1', created_at: '2026-10-16T09:41:00.000Z', content_type: 'attachment', content: FILE_CONTENT, is_mine: false });
+    const file = parseAttachmentContent(FILE_CONTENT, msg)!;
+    await renderWithAppProviders(harness, createNode(ReadOnlyMessageBubble, {
+      message: msg, mobile: false, body: { text: '', files: [file], invalidAttachments: false }, sender: { display_name: lin.displayName }, fileCardsOnly: true,
+    }));
+    await until('the file row rendered', () => harness.container.querySelector('.gg-file-row') !== null);
+    const row = harness.container.querySelector<HTMLElement>('.gg-file-row')!;
+    expect(row.querySelector('.gg-file-row-main button')).toBeNull();
+    expect(row.querySelector(':scope > .gg-file-row-end')?.getAttribute('aria-label')).toBe(i18n.t('messaging:chatArea.filePreview.download'));
+  });
 });

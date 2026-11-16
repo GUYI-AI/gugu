@@ -1,5 +1,6 @@
 import { metadataSeparator } from '@/i18n/format'
-import { ChevronLeft, ExternalLink, FileText, X, MoreHorizontal } from '@/lib/icons'
+import { ChevronLeft, ExternalLink, X, MoreHorizontal } from '@/lib/icons'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import { formatAttachmentSize, type AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
@@ -124,7 +125,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       ) : (
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-            {onBack ? <IconButton size="md" aria-label={t('common.back')} onClick={onBack}><ChevronLeft size={18} /></IconButton> : <FileText size={18} color="var(--text-link)" />}
+            {onBack ? <IconButton size="md" aria-label={t('common.back')} onClick={onBack}><ChevronLeft size={18} /></IconButton> : <FileMark name={file.fileName} mime={file.mimeType} size={18} className="text-[var(--text-link)]" />}
             <span className="flex min-w-0 flex-col">
               <strong style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)', fontSize: 'var(--font-title)' }}>{file.fileName}</strong>
               {connection ? <span className="flex min-w-0 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-secondary)]">{connection}</span> : null}

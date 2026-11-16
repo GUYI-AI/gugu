@@ -18,18 +18,24 @@ async function flush() { await vi.advanceTimersByTimeAsync(0) }
 afterEach(() => { vi.useRealTimers() })
 
 describe('durable source dependencies in the chat outbox', () => {
-  it('uploads do not occupy a lane, and multiple forwards wait for the same source', async () => {
+  // Owner 11-15: a file is declared (hashed, planned) before its message commits and its bytes go up after it, so a
+  // file keeps its place: text sent after an image never reaches the conversation before it. Other chats do not wait.
+  it('a file being declared keeps its place in its lane, and multiple forwards wait for the same source', async () => {
     vi.useFakeTimers()
     const { outbox, send } = fixture()
     await outbox.stageUpload({ ...record('image'), operation: { kind: 'upload' } })
     await outbox.enqueue(record('forward-B', 'B', 'image'))
     await outbox.enqueue(record('forward-C', 'C', 'image'))
     await outbox.enqueue(record('text', 'A'))
+    await outbox.enqueue(record('elsewhere', 'D'))
     await flush()
-    expect(send.mock.calls.map(([r]) => r.clientMessageId)).toEqual(['text'])
+    expect(send.mock.calls.map(([r]) => r.clientMessageId)).toEqual(['elsewhere'])
     await outbox.commitUpload({ ...record('image'), operation: { kind: 'attachment', commit: { staging_key: 'staging/image', message_id: 'image', chat_id: 'A', sender_user_id: 'user', file_name: 'photo.png' } } })
     await flush()
-    expect(send.mock.calls.map(([r]) => r.clientMessageId)).toEqual(['text', 'image', 'forward-B', 'forward-C'])
+    const sent = send.mock.calls.map(([r]) => r.clientMessageId)
+    expect(sent.slice(0, 2)).toEqual(['elsewhere', 'image'])
+    expect(sent.indexOf('text')).toBeGreaterThan(sent.indexOf('image'))
+    expect(new Set(sent)).toEqual(new Set(['elsewhere', 'image', 'text', 'forward-B', 'forward-C']))
     outbox.dispose()
   })
   it('an uploading source and a dependent topic in the same lane cannot deadlock', async () => {

@@ -7,6 +7,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 
 const byMessage = new Map<string, { file: Blob; previewUrl: string | null }>()
 const bySource = new Map<string, Blob>()
+const fileOf = new Map<string, Blob>()
 
 const keyOf = (source: AttachmentSource): string | null =>
   source.kind === 'url' ? `url:${source.url}` : source.kind === 'item' ? `item:${source.itemId}@${source.version}` : source.kind === 'message' ? `msg:${source.messageId}` : null
@@ -14,6 +15,7 @@ const keyOf = (source: AttachmentSource): string | null =>
 /** A sending row's file and the preview URL its row draws. */
 export function holdSentFile(messageId: string, file: Blob, previewUrl: string): void {
   byMessage.set(messageId, { file, previewUrl })
+  fileOf.set(messageId, file)
   bySource.set(`url:${previewUrl}`, file)
 }
 
@@ -21,6 +23,11 @@ export function holdSentFile(messageId: string, file: Blob, previewUrl: string):
 export function sentFileCopy(source: AttachmentSource): Blob | null {
   const key = keyOf(source)
   return key ? bySource.get(key) ?? null : null
+}
+
+/** The file this run sent as message `messageId`, whatever address its committed row reads (the row can arrive before its send returns). */
+export function sentFileOf(messageId: string): Blob | null {
+  return fileOf.get(messageId) ?? null
 }
 
 function releasePreview(entry: { previewUrl: string | null }, forget: boolean): void {
@@ -47,6 +54,7 @@ export function adoptSentFile(messageId: string, committed: MessageItem): void {
 
 /** The row is gone (discarded): nothing reads its file any more. */
 export function dropSentFile(messageId: string): void {
+  fileOf.delete(messageId)
   const entry = byMessage.get(messageId)
   if (!entry) return
   byMessage.delete(messageId)
@@ -58,4 +66,5 @@ export function forgetSentFiles(): void {
   for (const entry of byMessage.values()) releasePreview(entry, true)
   byMessage.clear()
   bySource.clear()
+  fileOf.clear()
 }

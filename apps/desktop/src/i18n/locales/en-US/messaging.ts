@@ -377,6 +377,11 @@ export default {
     "besideUnavailable": "This file is not available right now.",
     "besideOutside": "Only files in this document's folder can be shown.",
     "imageUnavailable": "Image unavailable right now",
+    "senderUploading": "The sender is still uploading",
+    "senderUploadFailed": "The sender's upload did not complete",
+    "uploading": "Uploading",
+    "notUploaded": "Not uploaded yet",
+    "uploadFailed": "Upload failed, tap to retry",
     "newerInFolder": "Newer version in the folder",
     "retry": "Retry"
   },

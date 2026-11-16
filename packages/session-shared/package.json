@@ -27,6 +27,8 @@
     "./logger": "./src/logger/index.ts",
     ".": "./src/index.ts",
     "./format": "./src/format.ts",
+    "./file-glyphs": "./src/file-glyphs.ts",
+    "./file-marks": "./src/file-marks.ts",
     "./file-row": "./src/file-row.ts",
     "./file-row.css": "./src/file-row.css"
   },

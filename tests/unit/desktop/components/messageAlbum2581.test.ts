@@ -35,6 +35,15 @@ describe('collapseSendGroups', () => {
     expect(albums.size).toBe(0)
   })
 
+  it('draws a send whose other files are still arriving as its album already, never a lone image first', () => {
+    const declared = { file_metadata: { status: 'pending', sha256: null } } as Partial<MessageItem>
+    const first = collapseSendGroups(rows([inSend('a', 2, declared)]))
+    expect(first.rows.map((row) => row.message.id)).toEqual(['a'])
+    expect(first.albums.get('a')?.map((m) => m.id)).toEqual(['a'])
+    // Bytes already up, or a send whose other rows are gone: a row on its own is drawn as itself.
+    expect(collapseSendGroups(rows([inSend('a', 2)])).albums.size).toBe(0)
+  })
+
   it('marks a send read by the last of its files that reached the conversation', () => {
     expect(newestDelivered([inSend('a', 2), inSend('b', 5), inSend('c', -1)]).id).toBe('b')
   })

@@ -1,12 +1,12 @@
 // Multipart uploads from a host that can send signed part PUTs (S6): the client half of attachments upload /
 // upload-parts / upload-complete. The fake server keeps the state the way the backend does (the parts reported done).
 import { describe, expect, it } from 'vitest'
-import { contentRequestId, uploadAttachmentBytes, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { contentRequestId, declareAttachment, finishDeclaredAttachment, uploadAttachmentBytes, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
 
 const PART = 4
 const KEY = 'staging/u/22222222-2222-4222-8222-222222222222'
 type Answer = { status: number; body?: unknown }
-function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) => number | null; complete?: Array<Answer>; begin?: Array<Answer> } = {}) {
+function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) => number | null; complete?: Array<Answer>; begin?: Array<Answer>; parts?: Array<Answer> } = {}) {
   const done = new Set(opts.done ?? [])
   const stored = new Map<number, Uint8Array>()
   const calls: Array<{ route: string; body: Record<string, unknown> }> = []
@@ -37,7 +37,10 @@ function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) =
       if (!body.parts) return json({ status: 200, body: { staging_key: KEY, url: 'https://oss.example/form', fields: {}, max_bytes: size } })
       return json({ status: 200, body: { staging_key: KEY, max_bytes: size, expires_at: '2030-01-01T00:00:00Z', parts: { part_bytes: PART, count: Math.ceil(size / PART) } } })
     }
+    if (route === 'finish') return json({ status: 200, body: { message: { id: body.message_id } } })
     if (route === 'upload-parts') {
+      const scripted = opts.parts?.shift()
+      if (scripted) return json(scripted)
       for (const n of body.done as number[]) done.add(n)
       signedRound++
       const todo = Array.from({ length: count }, (_, i) => i + 1).filter(n => !done.has(n)).slice(0, 2)
@@ -120,5 +123,23 @@ describe('multipart uploads from a host that sends signed parts', () => {
     expect(a).toBe(await contentRequestId('chat', 'agent', 'c1', 'ab'.repeat(32), '10'))
     expect(a).not.toBe(await contentRequestId('chat', 'agent', 'c2', 'ab'.repeat(32), '10'))
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+  it('a message sent before its bytes: a failed attempt goes on with the same multipart upload, without sending stored parts again', async () => {
+    const s = server({ refuse: (n, attempt) => n === 3 && attempt === 1 ? 400 : null })
+    const bytes = file(10)
+    const declared = await declareAttachment(s.endpoint, bytes, { chat_id: 'chat', as: 'agent' })
+    expect(declared.plan?.parts).toEqual({ part_bytes: PART, count: 3 })
+    await finishDeclaredAttachment(s.endpoint, declared, bytes, { id: 'm1', chat_id: 'chat', as: 'agent' })
+    expect(s.calls.filter(c => c.route === 'upload')).toHaveLength(1)
+    expect(s.puts.map(p => p.n).sort()).toEqual([1, 2, 3, 3])
+    expect(s.calls.at(-1)?.route).toBe('finish')
+  })
+  it('a message sent before its bytes: a multipart upload whose permit lapsed is replaced by a new plan', async () => {
+    const s = server({ parts: [{ status: 410, body: { error: 'expired', message: 'Upload permit expired' } }] })
+    const bytes = file(10)
+    const declared = await declareAttachment(s.endpoint, bytes, { chat_id: 'chat', as: 'agent' })
+    await finishDeclaredAttachment(s.endpoint, declared, bytes, { id: 'm1', chat_id: 'chat', as: 'agent' })
+    expect(s.calls.filter(c => c.route === 'upload')).toHaveLength(2)
+    expect(s.calls.at(-1)?.route).toBe('finish')
   })
 })

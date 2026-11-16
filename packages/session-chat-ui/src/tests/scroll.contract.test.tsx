@@ -199,7 +199,14 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     expect(reopened.scrollHeight).toBe(reopened.clientHeight);
   });
 
-  it('keeps the reader at the same part of a long reply when the width changes', async () => {
+  // `scrollFirst`: a scroll is pending when the width changes (a wheel, or the idle prefetch keeping the read phase busy, as
+  // under CI load). The read phase then reads scrollTop before the column's ResizeObserver: the browser lays out the
+  // rewrapped reply on that read, and its own scroll anchoring would move scrollTop there, which reads as the reader
+  // scrolling and re-anchors them in the old geometry (a round trip landed 14 sections off).
+  it.each([
+    ['', false],
+    [', also when a scroll is pending as it changes', true],
+  ])('keeps the reader at the same part of a long reply when the width changes%s', async (_when, scrollFirst) => {
     const paragraphs = Array.from({ length: 60 }, (_, i) => `Section ${i}. ${'A line of reading that wraps as the column narrows. '.repeat(6)}`);
     const turns: TranscriptTurn[] = [{ id: 'long', seq: 0, initiator: 'agent', items: [
       { kind: 'message', id: 'long-reply', seq: 0, role: 'assistant', text: paragraphs.join('\n\n') },
@@ -215,10 +222,14 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     expect(m.state.scroll.get().kind).toBe('anchor');
     const start = section();
     expect(start).toBeGreaterThan(20);
-    m.host.style.width = '500px';
+    const resize = (width: string) => {
+      m.host.style.width = width;
+      if (scrollFirst) m.scrollEl.dispatchEvent(new Event('scroll'));
+    };
+    resize('500px');
     await settled(m.scrollEl);
     expect(Math.abs(section() - start)).toBeLessThanOrEqual(1);
-    m.host.style.width = '800px';
+    resize('800px');
     await settled(m.scrollEl);
     expect(section()).toBe(start);
     expect(m.state.scroll.get().kind).toBe('anchor');

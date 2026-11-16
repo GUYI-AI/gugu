@@ -47,7 +47,12 @@ export interface FileRevision {
   /** Actual workspace metadata kept at publication in the existing local revision index. */
   workspace?: { path: string; parent_id: string | null; created_at: string | null; updated_at: string | null; created_by: string | null; source_message_ids: string[] }
 }
-export type FileMetadata = { status: 'ready'; revision: FileRevision } | { status: 'gone' | 'expired' | 'missing'; sha256: string | null }
+/**
+ * `pending`: the message declared this file and its bytes are still on their way from the sender (`failed`: they did not
+ * come, or were not the declared file). Its state is the file's alone; the message was delivered with its index.
+ */
+export type FileMetadata = { status: 'ready'; revision: FileRevision } | { status: 'gone' | 'expired' | 'missing' | 'failed'; sha256: string | null }
+  | { status: 'pending'; sha256: null; width?: number; height?: number }
 /** The authenticated server explicitly identified a physically missing object. */
 export class MissingFileObjectError extends Error {
   constructor() { super('missing') }
@@ -55,6 +60,13 @@ export class MissingFileObjectError extends Error {
 /** The read acknowledgement found access withdrawn, the file gone or expired, or the version moved on: bytes already shown must be taken down. */
 export class FileReadRevokedError extends Error {
   constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
+}
+/** How long an agent's read waits for bytes their sender is still uploading before saying so. */
+export const ATTACHMENT_PENDING_WAIT_MS = 8_000
+/** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
+export class AttachmentUploadPendingError extends Error {
+  readonly code = 'upload_pending'
+  constructor(fileName: string) { super(`${fileName}：发送方仍在上传，稍后用 message_download_file 再读`) }
 }
 export interface FileBytes {
   /** An authorized immutable snapshot with exact length; stored digests are verified when present. */
@@ -120,7 +132,10 @@ export function requireFileRevision(revision: FileRevision): void {
 /** The resolver response and an authorized message projection carry the same display metadata. */
 export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
   if (!value || typeof value !== 'object') throw new Error('Invalid file metadata')
-  const row = value as FileRevision & { status: string; code?: string; bucket_id?: string; object_name?: string; message_id?: string }
+  const row = value as FileRevision & { status: string; code?: string; bucket_id?: string; object_name?: string; message_id?: string; upload?: string }
+  // A declared file whose bytes have not arrived reads, for released clients, as an object not found; `upload` says which.
+  if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'pending') return { status: 'pending', sha256: null, ...(row.width! > 0 && row.height! > 0 ? { width: row.width!, height: row.height! } : {}) }
+  if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'failed') return { status: 'failed', sha256: null }
   if (row.status === 'missing' && row.code === 'object_not_found') return { status: 'missing', sha256: row.sha256 ?? null }
   if (row.status === 'gone' || row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null }
   if (row.status !== 'ready') throw new Error('Invalid file metadata')

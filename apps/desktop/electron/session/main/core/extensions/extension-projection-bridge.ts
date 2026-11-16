@@ -40,6 +40,9 @@ export class ExtensionProjectionBridge {
     this.mediaAccess = new ProjectionMediaAccess(this.resources, pageId => this.epochs.get(pageId) ?? 0);
   }
 
+  /** Trusted presentation metadata only. The usual resource access check still runs on watch and every input. */
+  describeSession(sessionId: string) { return this.resources.describeSession(sessionId); }
+
   /** Internal host adapter; deliberately absent from the App verb dispatcher. */
   mediaResource(caller: BridgeCaller, sourceId: string) { return this.mediaAccess.open(caller, sourceId); }
 

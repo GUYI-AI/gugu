@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { useTranslation } from 'react-i18next'
 import { sessionSend } from '@/session/renderer/features/sessions/session-send'
 import { selectionSendBody, type SelectionSendResult } from '@/session/shared/extensions/selection-send'
@@ -36,10 +37,12 @@ export function SelectionSendLayer() {
     return () => clearTimeout(timer)
   }, [open, finish])
   // On body, as DispatchSheet's Sheet portals: inside the phone's viewport shell it would sit under the file preview's sheet.
-  return open ? createPortal(<SelectionSendBox key={open.key} {...open.asked} done={result => finish(open.asked, result)} />, document.body) : null
+  // A page in a window of its own gets it in that window's layer, its @ list too.
+  const container = open?.asked.container ?? null
+  return open ? createPortal(<UiPortalContainerProvider value={container}><SelectionSendBox key={open.key} {...open.asked} done={result => finish(open.asked, result)} /></UiPortalContainerProvider>, container ?? document.body) : null
 }
 
-function SelectionSendBox({ cite, sessionId, anchor, cover, done }: SelectionSendOptions & { done(result: SelectionSendResult): void }) {
+function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: SelectionSendOptions & { done(result: SelectionSendResult): void }) {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const box = useRef<HTMLDivElement>(null)
@@ -53,23 +56,24 @@ function SelectionSendBox({ cite, sessionId, anchor, cover, done }: SelectionSen
     const element = box.current
     if (!element) return
     if (anchor === 'dock') return setPlace({})
-    const gap = 8, { innerWidth, innerHeight } = window, height = element.offsetHeight, width = element.offsetWidth
+    const gap = 8, { innerWidth, innerHeight } = element.ownerDocument.defaultView ?? window, height = element.offsetHeight, width = element.offsetWidth
     const top = anchor.bottom + gap + height <= innerHeight ? anchor.bottom + gap : Math.max(gap, anchor.top - gap - height)
     setPlace({ top, left: Math.max(gap, Math.min(anchor.left, innerWidth - width - gap)) })
   }, [anchor, failed])
 
   useLayoutEffect(() => {
     // The @ list is the editor's own popup, portaled out of the box: a pick there, or Esc closing it, is still writing.
-    const menu = () => document.querySelector('[data-slot="composer-menu"]')
+    const at = container?.ownerDocument ?? document
+    const menu = () => at.querySelector('[data-slot="composer-menu"]')
     const outside = (event: PointerEvent) => {
       const target = event.target as Element
       if (!sending && !box.current?.contains(target) && !target.closest?.('[data-slot="composer-menu"]')) done('cancelled')
     }
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !sending && !menu()) { event.preventDefault(); event.stopPropagation(); done('cancelled') } }
-    document.addEventListener('pointerdown', outside, true)
-    document.addEventListener('keydown', key, true)
-    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true) }
-  }, [sending, done])
+    at.addEventListener('pointerdown', outside, true)
+    at.addEventListener('keydown', key, true)
+    return () => { at.removeEventListener('pointerdown', outside, true); at.removeEventListener('keydown', key, true) }
+  }, [sending, done, container])
 
   const send = async (said = words) => {
     if (sending) return

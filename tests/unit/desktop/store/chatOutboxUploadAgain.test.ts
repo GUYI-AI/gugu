@@ -45,7 +45,7 @@ async function failedCommit(h: ReturnType<typeof harness>, uploadAgain?: () => v
   vi.spyOn(attachmentEndpoint, 'attachmentsEndpoint').mockResolvedValue({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' })
   commit.mockRejectedValue(workerLimit())
   await h.wiring.stageAttachment(row)
-  await h.wiring.commitAttachment(row, { staging_key: 'staging/owner-1/k' }, args, undefined, undefined, uploadAgain)
+  await h.wiring.commitAttachment(row, { staging_key: 'staging/owner-1/k', sha256: 'a'.repeat(64), size_bytes: 5 }, args, undefined, undefined, uploadAgain)
   await vi.runAllTimersAsync()
   expect(h.shown()).toMatchObject({ local_send_state: 'failed', local_send_retryable: true })
 }
@@ -97,7 +97,7 @@ it('uploads again on its own at most once per send: lapsed again, the row stops,
   vi.useFakeTimers()
   const h = harness()
   // Like the composer's closure: the bytes go up again, then the row is committed again (and finds the permit lapsed again).
-  const uploadAgain = vi.fn(() => { void h.wiring.commitAttachment(row, { staging_key: `staging/owner-1/k${uploadAgain.mock.calls.length}` }, args, undefined, undefined, uploadAgain) })
+  const uploadAgain = vi.fn(() => { void h.wiring.commitAttachment(row, { staging_key: `staging/owner-1/k${uploadAgain.mock.calls.length}`, sha256: 'a'.repeat(64), size_bytes: 5 }, args, undefined, undefined, uploadAgain) })
   await failedCommit(h, uploadAgain)
   commit.mockRejectedValue(lapsed())
   h.wiring.retrySend(ID)

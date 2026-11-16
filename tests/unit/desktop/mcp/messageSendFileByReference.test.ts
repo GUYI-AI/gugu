@@ -32,6 +32,7 @@ function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response) {
   const fetch = (async (url: string, init?: RequestInit) => {
     if (url.endsWith('/attachments/upload')) return new Response(JSON.stringify({ staging_key: 'staging/o/1', url: 'https://oss.test/', fields: {}, max_bytes: 25 * 1024 * 1024 }))
     if (url === 'https://oss.test/') { uploads.push(((init?.body as FormData).get('file') as File).name); return new Response(null, { status: 204 }) }
+    if (url.endsWith('/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     const args = JSON.parse(String(init?.body)) as Record<string, unknown>
     if (url.endsWith('/attachments/share')) {
       shares.push(args)

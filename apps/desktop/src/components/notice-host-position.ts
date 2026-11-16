@@ -18,6 +18,12 @@ export function readNoticeComposerBottom(): number | undefined {
   return visible ? window.innerHeight - top + COMPOSER_GAP : undefined
 }
 
+// Inline style only matters here when it hides or shows a box in place (a retained surface: content-visibility,
+// lib/retainedSurface.ts); no ResizeObserver entry reports that. Size, position and transform writes (a sidebar fold, every
+// frame) are not compared: the observers above read them after layout.
+const hidingStyle = (style: string | null) => style?.match(/(?:content-)?visibility\s*:[^;]*/g)?.join(';') ?? ''
+const showsOrHides = (record: MutationRecord) => hidingStyle(record.oldValue) !== hidingStyle((record.target as Element).getAttribute('style'))
+
 /** The single outlet follows actual composer geometry, including retained/split surfaces. */
 export function useNoticeComposerBottom(active: boolean): number | undefined {
   const [bottom, setBottom] = useState<number>()
@@ -42,10 +48,10 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
     const mutations = new MutationObserver((records) => {
       // Streaming transcript rows and Sonner's own style updates do not change the anchor.
       if (records.some((record) => record.type === 'attributes'
-        ? containsComposer(record.target)
+        ? (record.attributeName !== 'style' || showsOrHides(record)) && containsComposer(record.target)
         : [...record.addedNodes, ...record.removedNodes].some(containsComposer))) schedule()
     })
-    mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'data-state'] })
+    mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'data-state'] })
     window.addEventListener('resize', schedule)
     document.addEventListener('scroll', schedule, true)
     measure()
