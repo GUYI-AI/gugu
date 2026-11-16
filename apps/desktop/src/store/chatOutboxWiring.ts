@@ -224,7 +224,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     if (record.state === 'failed' && uploadAgain.delete(record.clientMessageId)) { resend(record.clientMessageId); return }
     const state = record.state === 'failed' ? 'failed' : 'sending'
     const patchRow = (m: MessageItem) =>
-      m.id === record.clientMessageId ? { ...m, local_send_state: state as MessageItem['local_send_state'], local_send_error: record.lastError, local_send_retryable: retryable(record) } : m
+      m.id === record.clientMessageId ? { ...m, local_timeline: record.preview?.local_timeline ?? m.local_timeline, local_send_state: state as MessageItem['local_send_state'], local_send_error: record.lastError, local_send_retryable: retryable(record) } : m
     if (record.payload.threadRootId) {
       io.setThreadMessages((prev) => prev.map(patchRow), record.chatId)
     } else {
@@ -340,8 +340,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       }
       const persisted = delivered as MessageItem
       if (!active || !isActive()) throw new Error('outbox scope disposed before durable ack')
-      await ackOutboxRecord(repository, record.clientMessageId, persisted)
-      return persisted
+      return ackOutboxRecord(repository, record.clientMessageId, persisted)
     },
     prepare: async (record) => {
       await beforeDeliverHooks.get(record.clientMessageId)?.()
