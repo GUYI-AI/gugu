@@ -51,6 +51,7 @@ NO_DOWNLOAD_ENV=(-e npm_config_cache=/npm-cache -e npm_config_nodedir=/usr/local
 RULES_SEED=$("$DOCKER" exec "$GUGU_LINUX_CONTAINER" sh -c '[ -d /work/assistant-rules-seed ] && echo assistant-rules-seed || true')
 "$DOCKER" exec "$GUGU_LINUX_CONTAINER" tar -C /work -cf - \
   package.json .node-version pnpm-workspace.yaml scripts apps/desktop/dist-electron apps/desktop/preinstalled-apps \
+  apps/desktop/session-tooling/node-deps/package.json apps/desktop/session-tooling/node-deps/package-lock.json \
   apps/desktop/src/session/shared/core/agents/mise-release.json release/server/externals.json $RULES_SEED \
   | "$DOCKER" run -i --rm --platform linux/arm64 -w /work \
       -v "$GUGU_MISE_CACHE_DIR:/mise-cache:ro" -e GUGU_MISE_CACHE_DIR=/mise-cache \

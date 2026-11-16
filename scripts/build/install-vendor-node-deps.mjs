@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { assertSqlitePayload, sqlitePayloadSnapshot } from './sqlite-payload-integrity.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const sqliteVersion = JSON.parse(readFileSync(resolve(here, 'vendor-build-pins.json'), 'utf8')).sqliteVersion
@@ -22,18 +23,39 @@ export function verifySqliteNodeDependency(directory) {
   } finally { database.close() }
 }
 
+function runNpm(directory, args) {
+  const result = spawnSync('npm', args, { cwd: directory, stdio: 'inherit', shell: process.platform === 'win32' })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(`npm dependency phase failed (${result.status ?? 'unknown'})`)
+}
+
 export function installVendorNodeDependencies(directory, args = []) {
-  const run = commandArgs => {
-    const result = spawnSync('npm', commandArgs, { cwd: directory, stdio: 'inherit', shell: process.platform === 'win32' })
-    if (result.error) throw result.error
-    if (result.status !== 0) throw new Error(`npm dependency phase failed (${result.status ?? 'unknown'})`)
-  }
-  // npm verifies package-lock integrity. No remote prebuild installer or lifecycle is needed for SQLite 13.
-  run(['install', ...args, '--ignore-scripts'])
+  // This caller has the committed isolated-Node lock; refuse drift instead of generating a new lock.
+  runNpm(directory, ['ci', ...args, '--ignore-scripts'])
+  verifySqliteNodeDependency(directory)
+}
+
+export function installServerNodeDependencies(directory, args = [], { run = runNpm } = {}) {
+  const locked = resolve(directory, '.sqlite-node-deps')
+  const reviewed = resolve(here, '../../apps/desktop/session-tooling/node-deps')
+  mkdirSync(locked, { recursive: true })
+  for (const file of ['package.json', 'package-lock.json']) copyFileSync(resolve(reviewed, file), resolve(locked, file))
+  run(locked, ['ci', '--ignore-scripts', '--workspaces=false', '--no-audit', '--no-fund'])
+  // The expected JS/native bytes come from npm ci's SRI-verified extraction of the committed lock,
+  // never from the unreviewed server installation or a newly generated lock.
+  const expected = sqlitePayloadSnapshot(resolve(locked, 'node_modules/better-sqlite3'))
+  const manifestPath = resolve(directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  if (manifest.dependencies?.['better-sqlite3'] !== sqliteVersion) throw new Error('Server SQLite version differs from the reviewed pin')
+  manifest.dependencies['better-sqlite3'] = 'file:./.sqlite-node-deps/node_modules/better-sqlite3'
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  run(directory, ['install', ...args, '--ignore-scripts'])
+  assertSqlitePayload(directory, expected)
   verifySqliteNodeDependency(directory)
   // SQLite has no lifecycle (including npm's implicit binding.gyp hook). Other packages still need
   // theirs: notably node-pty's install/postinstall produce its native module and spawn helper.
-  run(['rebuild', '--ignore-scripts=false', '--workspaces=false', '--no-audit', '--no-fund'])
+  run(directory, ['rebuild', '--ignore-scripts=false', '--workspaces=false', '--no-audit', '--no-fund'])
+  assertSqlitePayload(directory, expected)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
