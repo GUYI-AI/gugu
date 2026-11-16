@@ -6,6 +6,7 @@ export interface CommandDef {
   label: string;
   labelKey?: string;
   description: string;
+  descriptionKey?: string;
   iconKey?: string;
   category: string;
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
@@ -19,8 +20,8 @@ export interface CommandDef {
 }
 
 function defineCommands<const T extends Record<string, Omit<CommandDef, 'id'>>>(defs: T) {
-  return Object.fromEntries(Object.entries(defs).map(([id, def]) => [id, { ...def, id }])) as {
-    [K in keyof T]: CommandDef & { id: K };
+  return Object.fromEntries(Object.entries(defs).map(([id, def]) => [id, { ...def, id, labelKey: def.labelKey ?? `commands.${id}.label`, descriptionKey: `commands.${id}.description` }])) as {
+    [K in keyof T]: CommandDef & { id: K; labelKey: string; descriptionKey: string };
   };
 }
 
@@ -50,16 +51,16 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newSession': {
-    label: 'New Task',
-    labelKey: 'sidebar.newTask',
-    description: 'Create a new task in this project',
+    label: 'New Agent',
+    labelKey: 'sidebar.createAgent',
+    description: 'Create a new agent in this project',
     iconKey: 'bolt',
     defaultHotkey: 'Mod+N',
     category: 'Navigation',
   },
   'app.sessionHistory': {
-    label: 'Task history',
-    labelKey: 'sidebar.sessionHistory',
+    label: 'Agent history',
+    labelKey: 'commands.app.sessionHistory.label',
     description: '咕咕会话与本机 Claude Code / Codex 会话同处一表:打开、恢复已归档的、导入还没导入的',
     iconKey: 'history',
     category: 'Navigation',
@@ -81,7 +82,7 @@ export const COMMANDS = defineCommands({
   'app.scheduled': {
     label: 'Scheduled',
     labelKey: 'sidebar.scheduled',
-    description: 'Open the scheduled tasks',
+    description: 'Open the scheduled agents',
     iconKey: 'clock',
     category: 'Navigation',
   },
@@ -121,7 +122,7 @@ export const COMMANDS = defineCommands({
   },
   'session.sideSession': {
     label: 'Side Chat',
-    description: 'Fork the current task into a temporary side chat',
+    description: 'Fork the current agent into a temporary side chat',
     iconKey: 'message-square-plus',
     category: 'Task View',
   },
@@ -154,7 +155,7 @@ export const COMMANDS = defineCommands({
   },
   'session.openBrowser': {
     label: 'Open Browser',
-    description: 'Open an in-app browser for this task',
+    description: 'Open an in-app browser for this agent',
     iconKey: 'globe',
     defaultHotkey: 'Mod+Shift+B',
     category: 'Task View',
@@ -215,22 +216,22 @@ export const COMMANDS = defineCommands({
     category: 'Task View',
   },
   'task.pin': {
-    label: 'Pin Task',
-    description: 'Pin this task to keep it at the top',
+    label: 'Pin Agent',
+    description: 'Pin this agent to keep it at the top',
     iconKey: 'pin',
     category: 'Task View',
   },
   'task.archive': {
-    label: 'Archive Task',
-    description: 'Archive the current task',
+    label: 'Archive Agent',
+    description: 'Archive the current agent',
     iconKey: 'archive',
     defaultHotkey: 'Mod+Shift+E',
     category: 'Task View',
     ignoreWhenCodeEditorFocused: true,
   },
   'session.convertAutomation': {
-    label: 'Convert to Regular Task',
-    description: 'Detach this task from its automation run',
+    label: 'Convert to Regular Agent',
+    description: 'Detach this agent from its automation run',
     iconKey: 'message-square',
     category: 'Task View',
   },
@@ -251,7 +252,7 @@ export const COMMANDS = defineCommands({
   },
   'session.addContext': {
     label: 'Add Context',
-    description: 'Open the context picker for the active task',
+    description: 'Open the context picker for the active agent',
     iconKey: 'list-plus',
     defaultHotkey: 'Mod+Shift+A',
     category: 'Task View',
@@ -294,14 +295,14 @@ export const COMMANDS = defineCommands({
     capture: true,
     defaultHotkey: 'Mod+O',
     label: 'Quick Switcher',
-    description: 'Switch between tasks, groups, projects, and contacts',
+    description: 'Switch between agents, groups, projects, and contacts',
     category: 'Navigation',
   },
   'app.globalSearch': {
     capture: true,
     defaultHotkey: 'Mod+Shift+F',
     label: 'Search Messages',
-    description: 'Search what was said in every chat and task',
+    description: 'Search what was said in every chat and agent',
     category: 'Navigation',
   },
   'app.toggleLeftSidebar': {
@@ -387,8 +388,8 @@ export const COMMANDS = defineCommands({
   },
   'session.next': {
     defaultHotkey: 'Mod+ArrowDown',
-    label: 'Next Task',
-    description: 'Move to the next task in the sidebar and show it',
+    label: 'Next Agent',
+    description: 'Move to the next agent in the sidebar and show it',
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
@@ -396,8 +397,8 @@ export const COMMANDS = defineCommands({
   },
   'session.previous': {
     defaultHotkey: 'Mod+ArrowUp',
-    label: 'Previous Task',
-    description: 'Move to the previous task in the sidebar and show it',
+    label: 'Previous Agent',
+    description: 'Move to the previous agent in the sidebar and show it',
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
@@ -415,7 +416,7 @@ export const COMMANDS = defineCommands({
   'session.projectHome': {
     defaultHotkey: 'ArrowLeft',
     label: 'Project Home',
-    description: "Jump to the parent project's home, where a new task is started",
+    description: "Jump to the parent project's home, where a new agent is started",
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
@@ -423,7 +424,7 @@ export const COMMANDS = defineCommands({
   },
   'session.backToList': {
     defaultHotkey: 'ArrowLeft',
-    label: 'Back To Task List',
+    label: 'Back To Agent List',
     description: 'Leave the composer for the sidebar when the caret is at the start',
     category: 'Navigation',
     conflictBehavior: 'allow',
@@ -432,8 +433,8 @@ export const COMMANDS = defineCommands({
   },
   'session.leaveTerminal': {
     defaultHotkey: 'Alt+ArrowLeft',
-    label: 'Leave Terminal For Task List',
-    description: 'Hand the keyboard from a terminal task back to the sidebar',
+    label: 'Leave Terminal For Agent List',
+    description: 'Hand the keyboard from a terminal agent back to the sidebar',
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
@@ -450,8 +451,8 @@ export const COMMANDS = defineCommands({
   },
   'session.rename': {
     defaultHotkey: (platform) => sessionActionDefault('R', platform),
-    label: 'Rename Task',
-    description: 'Rename the highlighted task in place',
+    label: 'Rename Agent',
+    description: 'Rename the highlighted agent in place',
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
@@ -459,8 +460,8 @@ export const COMMANDS = defineCommands({
   },
   'session.pinHighlighted': {
     defaultHotkey: (platform) => sessionActionDefault('P', platform),
-    label: 'Pin Task',
-    description: 'Pin or unpin the highlighted task',
+    label: 'Pin Agent',
+    description: 'Pin or unpin the highlighted agent',
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
@@ -468,8 +469,8 @@ export const COMMANDS = defineCommands({
   },
   'session.archiveHighlighted': {
     defaultHotkey: (platform) => sessionActionDefault('X', platform),
-    label: 'Archive Highlighted Task',
-    description: 'Archive the highlighted task (press twice to confirm)',
+    label: 'Archive Highlighted Agent',
+    description: 'Archive the highlighted agent (press twice to confirm)',
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,

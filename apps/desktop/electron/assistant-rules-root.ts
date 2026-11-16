@@ -147,6 +147,7 @@ export function ensureAssistantApp(reason: AssistantAppEnsureReason): Promise<As
 
 const stateListeners = new Set<(state: AssistantRulesState) => void>()
 let published: AssistantRulesState = { pending: false, stuck: false }
+let publication = 0
 
 /** Waiting for rules: this machine needs the assistant (it lives here, or its setup started) and has none of its rules. */
 export async function assistantRulesState(): Promise<AssistantRulesState> {
@@ -158,7 +159,10 @@ export async function assistantRulesState(): Promise<AssistantRulesState> {
 }
 
 function publishState(): void {
+  const requested = ++publication
   void assistantRulesState().then((next) => {
+    // A newer read supersedes this result even when its state was deduplicated.
+    if (requested !== publication) return
     if (next.pending === published.pending && next.stuck === published.stuck) return
     published = next
     for (const listener of stateListeners) listener(next)

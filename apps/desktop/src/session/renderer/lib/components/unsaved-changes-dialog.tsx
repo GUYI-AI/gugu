@@ -1,3 +1,6 @@
+import { Trans } from 'react-i18next';
+import { i18n } from '@/i18n';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
@@ -16,21 +19,27 @@ export type UnsavedChangesDialogArgs = {
 type Props = BaseModalProps<UnsavedChangesDialogResult> & UnsavedChangesDialogArgs;
 
 export function UnsavedChangesDialog({ fileName, onSuccess }: Props) {
+  const { translate } = useSessionMessages();
   return (
     <>
       <DialogHeader showCloseButton={false}>
-        <DialogTitle>Unsaved Changes</DialogTitle>
+        <DialogTitle>{translate('file.unsavedChangesTitle')}</DialogTitle>
       </DialogHeader>
       <DialogContentArea className="pt-0">
         <p>
-          Do you want to save the changes to <strong>{fileName}</strong>?
+          <Trans
+            i18n={i18n}
+            ns="session"
+            i18nKey="file.unsavedChangesDescription"
+            components={{ file: <strong>{fileName}</strong> }}
+          />
         </p>
       </DialogContentArea>
-      <DialogFooter>
+      <DialogFooter className="gg-confirm-action-footer">
         <Button variant="outline" onClick={() => onSuccess('discard')}>
-          Discard
+          {translate('file.discardChanges')}
         </Button>
-        <Button onClick={() => onSuccess('save')}>Save</Button>
+        <Button data-autofocus onClick={() => onSuccess('save')}>{translate('common.save')}</Button>
       </DialogFooter>
     </>
   );

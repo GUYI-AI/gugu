@@ -12,7 +12,7 @@ import { signTestRelease } from './test-support/signed-release';
 // #1931 R7 With no rules here, what the windows are told: the assistant waits for its rules (its entry shows it preparing)
 // while this machine needs it and has none; that is stuck once getting them truly failed. And the copy a release carries
 // starts the last good copy, so an upgrade made offline still has rules.
-const state = vi.hoisted(() => ({ service: null as unknown, userData: '', appPath: '', signedIn: null as string | null, assistants: {} as Record<string, string | null> }));
+const state = vi.hoisted(() => ({ service: null as unknown, userData: '', appPath: '', signedIn: null as string | null, assistants: {} as Record<string, string | null>, bindingRead: null as null | { entered: () => void; wait: Promise<void> }, accountRead: null as null | { entered: () => void; wait: Promise<string> } }));
 vi.mock('electron', () => ({ app: { getPath: () => state.userData, isPackaged: false, getAppPath: () => state.appPath } }));
 vi.mock('./extensions-root', () => ({ extensionsService: () => state.service }));
 // The account signed in and its assistant's provision (wherever the assistant lives); no one signed in: denied.
@@ -20,8 +20,22 @@ const signedIn = () => {
   if (!state.signedIn) throw Object.assign(new Error('Not signed in'), { code: 'denied' });
   return state.signedIn;
 };
-vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () => ({ ownerId: signedIn(), assistantId: state.assistants[signedIn()] ?? null }) }));
-vi.mock('./app-unread-bindings', () => ({ account: async () => ({ token: 't', ownerId: signedIn() }) }));
+vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () => {
+  const ownerId = signedIn();
+  const bindingRead = state.bindingRead;
+  bindingRead?.entered();
+  if (bindingRead) await bindingRead.wait;
+  return { ownerId, assistantId: state.assistants[ownerId] ?? null };
+} }));
+async function fixtureAccount() {
+  const read = state.accountRead;
+  if (read) {
+    state.accountRead = null; // only the selected old read is held
+    read.entered();
+    return { token: 't', ownerId: await read.wait };
+  }
+  return { token: 't', ownerId: signedIn() };
+}
 // A market install never finishes here (no network in tests): the App stays not in while it goes. What it was asked is kept.
 const marketInstalls = vi.hoisted(() => [] as unknown[]);
 vi.mock('./extension-market-install', () => ({ installExtensionFromMarket: (install: unknown) => { marketInstalls.push(install); return new Promise(() => undefined); } }));
@@ -52,6 +66,8 @@ beforeEach(() => {
   delete process.env.GUGU_ASSISTANT_RULES_SEED_DIR;
   state.signedIn = null;
   state.assistants = {};
+  state.bindingRead = null;
+  state.accountRead = null;
   marketInstalls.length = 0;
 });
 afterEach(() => {
@@ -60,6 +76,9 @@ afterEach(() => {
 });
 
 async function root() {
+  // Manual module mocks can fall through during concurrent dynamic imports in Vitest 4.1.10.
+  const unread = await import('./app-unread-bindings');
+  vi.spyOn(unread, 'account').mockImplementation(fixtureAccount);
   const module = await import('../../../../assistant-rules-root');
   const resolver = await import('../../../../assistant-rules-resolver');
   module.installProcessAssistantRules();
@@ -95,13 +114,45 @@ describe('whether the assistant here waits for its rules', () => {
     const { assistantRulesState, ensureAssistantApp, told } = await root();
     // Not known before main asked: a window found the assistant, the App is not in.
     const going = ensureAssistantApp('assistant');
-    await settle();
-    expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
-    expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+    // The account fact is read asynchronously; a fixed pause is not its completion signal.
+    await vi.waitFor(async () => {
+      expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+    });
     // Another account signed in now: what was read about the first one is not about it.
     state.signedIn = 'owner-2';
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
     void going.catch(() => undefined);
+  });
+
+  it('does not announce pending or install before the account assistant lookup resolves', async () => {
+    state.signedIn = 'owner-1';
+    state.assistants = { 'owner-1': 'assistant-1' };
+    const entered = Promise.withResolvers<void>();
+    const lookup = Promise.withResolvers<void>();
+    state.bindingRead = { entered: () => entered.resolve(), wait: lookup.promise };
+    const { assistantRulesState, ensureAssistantApp, told } = await root();
+    const going = ensureAssistantApp('assistant');
+    try {
+      // Hold the real root's account lookup, independently of import speed or wall-clock time.
+      await entered.promise;
+      expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+      expect(told).not.toContainEqual({ pending: true, stuck: false });
+      expect(marketInstalls).toEqual([]);
+
+      lookup.resolve();
+      await vi.waitFor(async () => {
+        expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
+        expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+        expect(marketInstalls).toHaveLength(1);
+      });
+      state.signedIn = 'owner-2';
+      expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+    } finally {
+      lookup.resolve();
+      state.bindingRead = null;
+      void going.catch(() => undefined);
+    }
   });
 
   it('leaves a person with no assistant anywhere alone: nothing to wait for, nothing put in', async () => {
@@ -185,5 +236,140 @@ describe('the copy of the rules a release carries', () => {
     const broken = path.join(work, 'broken');
     seed(broken, { ...assistantRulesFiles(NEUTRAL_ASSISTANT_RULES), 'recovery.md': 'a\r\nb\n' });
     await expect(readAssistantRulesSeed(broken)).rejects.toMatchObject({ name: 'AssistantRulesError', file: 'recovery.md' });
+  });
+});
+
+
+// Diagnostic candidates for #2922's notification mismatch. No larger wait or weaker original assertion.
+// These cases exercise the real root, resolver and publisher. Only the account response is a controlled gate.
+// A check-phase boundary drains the already-released read's Promise continuations: that read has no I/O left.
+const releasedAccountReadDrained = () => new Promise<void>(resolve => setImmediate(resolve));
+
+async function publishedAccountRoot(ownerId: string) {
+  state.signedIn = ownerId;
+  state.assistants[ownerId] = `assistant-${ownerId}`;
+  const api = await root();
+  const going = api.ensureAssistantApp('assistant');
+  await vi.waitFor(async () => {
+    expect(await api.assistantRulesState()).toEqual({ pending: true, stuck: false });
+    expect(api.told.at(-1)).toEqual({ pending: true, stuck: false });
+  });
+  return { ...api, going };
+}
+
+function holdNextAccountRead() {
+  const entered = Promise.withResolvers<void>();
+  const reply = Promise.withResolvers<string>();
+  state.accountRead = { entered: () => entered.resolve(), wait: reply.promise };
+  return { entered: entered.promise, reply };
+}
+
+describe('controlled ownership and ordering of assistant state publications', () => {
+  it.each(['owner-1', 'owner-2'])('keeps the latest pending notification after an older account response for %s', async oldOwner => {
+    const api = await publishedAccountRoot('owner-1');
+    state.signedIn = oldOwner;
+    const oldRead = holdNextAccountRead();
+    api.ensureAssistantApp('assistant');
+    try {
+      await oldRead.entered;
+      state.signedIn = 'owner-1';
+      api.ensureAssistantApp('assistant'); // newer read is pending=true, including the deduplicated case
+      await releasedAccountReadDrained(); // cached account module; only Promise continuations remain
+      expect(await api.assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(api.told.at(-1)).toEqual({ pending: true, stuck: false });
+      oldRead.reply.resolve(oldOwner);
+      await releasedAccountReadDrained();
+      expect(await api.assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(api.told.at(-1)).toEqual({ pending: true, stuck: false });
+    } finally {
+      oldRead.reply.resolve(oldOwner);
+      await releasedAccountReadDrained();
+      state.accountRead = null;
+      void api.going.catch(() => undefined);
+    }
+  });
+
+  it('keeps the newer ready notification when an older no-rules account read finishes last', async () => {
+    const api = await publishedAccountRoot('owner-1');
+    const oldRead = holdNextAccountRead();
+    api.ensureAssistantApp('assistant'); // same running ensure; a fresh real publishState read
+    try {
+      await oldRead.entered; // old getter already captured NO_ASSISTANT_RULES
+      installBundle(service, ...await signedBundle('1.0.0'));
+      await vi.waitFor(async () => {
+        expect((await api.assistantRules().current()).source).toBe('app');
+        expect(await api.assistantRulesState()).toEqual({ pending: false, stuck: false });
+        expect(api.told.at(-1)).toEqual({ pending: false, stuck: false });
+      });
+      oldRead.reply.resolve('owner-1');
+      await releasedAccountReadDrained();
+      expect(await api.assistantRulesState()).toEqual({ pending: false, stuck: false });
+      expect(api.told.at(-1)).toEqual({ pending: false, stuck: false });
+    } finally {
+      oldRead.reply.resolve('owner-1');
+      await releasedAccountReadDrained();
+      state.accountRead = null;
+      void api.going.catch(() => undefined);
+    }
+  });
+
+  it('does not send an old module instance publication to a fresh instance listener', async () => {
+    const first = await publishedAccountRoot('owner-1');
+    const oldRead = holdNextAccountRead();
+    first.ensureAssistantApp('assistant');
+    try {
+      await oldRead.entered;
+      vi.resetModules();
+      const next = await publishedAccountRoot('owner-1');
+      expect(next.assistantRulesState).not.toBe(first.assistantRulesState);
+      expect(next.assistantRules).not.toBe(first.assistantRules);
+      const notifications = [...next.told];
+      oldRead.reply.resolve('owner-2'); // old instance's account check now refuses its cached owner
+      await releasedAccountReadDrained();
+      expect(first.told.at(-1)).toEqual({ pending: false, stuck: false });
+      expect(next.told).toEqual(notifications);
+      expect(await next.assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(next.told.at(-1)).toEqual({ pending: true, stuck: false });
+      void next.going.catch(() => undefined);
+    } finally {
+      oldRead.reply.resolve('owner-2');
+      await releasedAccountReadDrained();
+      state.accountRead = null;
+      void first.going.catch(() => undefined);
+    }
+  });
+
+  it('keeps a next fixture separate when the previous fixture still owns a late account read', async () => {
+    const first = await publishedAccountRoot('owner-1');
+    const oldRead = holdNextAccountRead();
+    first.ensureAssistantApp('assistant');
+    const nextWork = mkdtempSync(path.join(tmpdir(), 'gugu-assistant-next-fixture-'));
+    try {
+      await oldRead.entered;
+      // Mimic the existing afterEach/beforeEach mutable boundary without hiding the old task.
+      state.userData = path.join(nextWork, 'userData');
+      state.appPath = path.join(nextWork, 'app');
+      service = new ExtensionsService(path.join(state.userData, 'task-extensions'));
+      state.service = service;
+      process.env.GUGU_HOME = path.join(nextWork, 'gugu-home');
+      state.assistants = {};
+      vi.resetModules();
+      const next = await publishedAccountRoot('owner-2');
+      expect(next.assistantRulesState).not.toBe(first.assistantRulesState);
+      const notifications = [...next.told];
+      oldRead.reply.resolve('owner-2');
+      await releasedAccountReadDrained();
+      expect(first.told.at(-1)).toEqual({ pending: false, stuck: false });
+      expect(next.told).toEqual(notifications);
+      expect(await next.assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(next.told.at(-1)).toEqual({ pending: true, stuck: false });
+      void next.going.catch(() => undefined);
+    } finally {
+      oldRead.reply.resolve('owner-2');
+      await releasedAccountReadDrained();
+      state.accountRead = null;
+      void first.going.catch(() => undefined);
+      rmSync(nextWork, { recursive: true, force: true });
+    }
   });
 });
