@@ -6,6 +6,8 @@ import { showModal } from '@renderer/lib/modal/modal-provider';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import {
   normalizeBrowserUrl,
+  BROWSER_ISOLATED_PROFILE_ID,
+  DEFAULT_BROWSER_PROFILE_ID,
   type BrowserDataClearKind,
   type BrowserSessionSnapshot,
 } from '@shared/browser';
@@ -73,7 +75,8 @@ export function confirmClearBrowserStorage(
 ): void {
   showModal('confirmActionModal', {
     title: translate('browser.clearStorageTitle'),
-    description: translate('browser.clearStorageDescription', { profileLabel }),
+    description: translate(session.profileId === BROWSER_ISOLATED_PROFILE_ID ? 'browser.clearStorageDescriptionIsolated'
+      : session.profileId === DEFAULT_BROWSER_PROFILE_ID ? 'browser.clearStorageDescriptionDefault' : 'browser.clearStorageDescription', { profileLabel }),
     confirmLabel: translate('browser.clearStorageConfirm'),
     variant: 'destructive',
     onSuccess: () => {
