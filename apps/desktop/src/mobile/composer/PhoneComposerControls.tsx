@@ -19,7 +19,8 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
     const update = () => {
       const editor = scope.querySelector('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea')
       const text = editor instanceof HTMLTextAreaElement ? editor.value : editor?.textContent ?? ''
-      setEditing(!!text.trim() || keyboardVisible !== false && document.activeElement instanceof Element
+      const hasAttachments = !!scope.querySelector('[data-slot="composer-attachments"]')
+      setEditing(!!text.trim() || hasAttachments || keyboardVisible !== false && document.activeElement instanceof Element
         && scope.contains(document.activeElement)
         && !!document.activeElement.closest('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea'))
     }
