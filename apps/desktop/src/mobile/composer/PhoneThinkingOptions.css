@@ -1,0 +1,2 @@
+.gg-phone-thinking-levels { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
+.gg-phone-thinking-levels .gg-phone-thinking-choice { min-height: var(--control-h-touch); max-width: 100%; white-space: normal; overflow-wrap: anywhere; }

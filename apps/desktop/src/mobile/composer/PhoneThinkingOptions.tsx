@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { ComposerFastMode, type ChatComposerProps } from '@gugu/session-ui/react/components'
 import { Button } from '@/components/ui/Button'
+import './PhoneThinkingOptions.css'
 
 type Props = Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'defaultEffort' | 'onEffortChange' | 'fastMode' | 'onFastModeChange'> & { disabled?: boolean }
 
@@ -14,9 +15,9 @@ export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEff
   if (!items.length && fastMode === undefined) return null
   return <div data-testid="phone-thinking-options">
     {items.length > 0 && <div className="gg-phone-composer-section-label">{t('effort')}</div>}
-    {items.length > 0 && <div role="radiogroup" aria-label={t('effort')} style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-xs)' }}>
+    {items.length > 0 && <div role="radiogroup" aria-label={t('effort')} className="gg-phone-thinking-levels">
       {items.map(([id, option]) => <Button key={id} variant="option" size="sm" role="radio" aria-checked={id === effective}
-        style={{ minHeight: 'var(--control-h-touch)', maxWidth: '100%', whiteSpace: 'normal', overflowWrap: 'anywhere' }}
+        className="gg-phone-thinking-choice"
         disabled={disabled || option.disabled || !onEffortChange} title={option.disabledReason ?? option.description}
         data-option-id={id} onClick={() => { if (id !== effective) onEffortChange?.(id) }}>{option.name}</Button>)}
     </div>}
