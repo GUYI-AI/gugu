@@ -111,6 +111,7 @@ export function CreateSessionPage({
   const editingMachine = machine ?? previousMachine.current
   const target = (busy: boolean, configuration?: CreationConfiguration) => (
     <CreateTarget projects={projects} project={project} onProject={setProjectKey} machines={rows} machine={machine} onMachine={pick} machineLabel={machineLabel}
+      conversationKey={`create:${ownerId ?? 'signed-out'}:${taskGroup?.chatId ?? ''}`}
       busy={busy} configuration={configuration} scopeChatId={taskGroup?.chatId ?? project?.chatId ?? null} />
   )
 

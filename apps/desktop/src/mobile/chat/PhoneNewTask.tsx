@@ -206,7 +206,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   const creationMachine = runDevice && home && chosen
     ? { device: runDevice, localProjectId: home.localProjectId, path: chosen.path, available: online } : undefined
   const band = stage.kind === 'on' ? <div data-testid="phone-task-tag"><div className="gg-phone-task-controls">
-    <CreateTarget projects={[]} project={null} onProject={() => undefined}
+    <CreateTarget scopeChatId={chatId} projects={[]} project={null} onProject={() => undefined}
       machines={creationMachine ? [creationMachine] : []} machine={creationMachine}
       onMachine={() => undefined} machineLabel={machineLabel} busy={sending}
       projectTask={{ open: folderPickerOpen, onFolder: () => setStage({ kind: 'on', folder: chosen, picking: true }) }}

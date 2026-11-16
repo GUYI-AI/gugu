@@ -49,7 +49,7 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
     if ((topic?.chat_id ?? null) !== (current?.chatId ?? null)) onPick(topic)
   }
   return <div className="gg-phone-room-controls" data-testid="phone-room-composer-controls">
-    <PhoneComposerControlRow>
+    <PhoneComposerControlRow conversationKey={current?.chatId ?? chatId}>
       {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} active={!!current} dot={choices.hasUnread}
         testId="phone-room-topics" onClick={() => setView('topics')} />}
       {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" onClick={() => setView('agents')} />}

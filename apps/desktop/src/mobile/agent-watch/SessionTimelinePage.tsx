@@ -315,7 +315,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       {(
         <SessionConversation
           permissionsInWork={mobile && !appPanel}
-          composerControls={mobile && !appPanel ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} nativeSkills={phoneHost ? <PhoneTaskSkills menuBar deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : undefined} /> : undefined}
+          composerControls={mobile && !appPanel ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls key={`${device.device_id}:${session.conversationId}`} sidebar={sidebar} conversationKey={`${device.device_id}:${session.conversationId}`} modelControl={modelControl} model={model} skillDraft={skillDraft} nativeSkills={phoneHost ? <PhoneTaskSkills menuBar deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : undefined} /> : undefined}
           agentName={shownName}
           agentUserId={agentUserId}
           harness={session.harness}

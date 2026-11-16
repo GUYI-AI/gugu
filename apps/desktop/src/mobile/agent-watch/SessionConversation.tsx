@@ -398,7 +398,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         onEffortChange: options.props.onEffortChange, fastMode: options.props.fastMode, onFastModeChange: options.props.onFastModeChange,
         ...(workOwnsPermissions ? { permissionModeOptions: options.props.permissionModeOptions,
           selectedPermissionMode: options.props.selectedPermissionMode, onPermissionModeChange: options.props.onPermissionModeChange } : {}),
-      }, skillDraft) : mobile && appPanel ? () => <PhoneAttachmentMenuBar disabled={sending} onOpen={() => input.current?.click()} /> : undefined}
+      }, skillDraft) : mobile && appPanel ? () => <PhoneAttachmentMenuBar conversationKey={`${deviceId}:${sessionId}`} disabled={sending} onOpen={() => input.current?.click()} /> : undefined}
       inputHeader={composerControls ? <SelectedCreationSkills skills={skillDraft.skills} onChange={skillDraft.update} /> : undefined}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
       ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}
