@@ -186,11 +186,11 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     sessionPeers: (...args) => identity.sessionPeers(...args),
     ensureAgentAddress: (input) => identity.ensureAgentAddress(input),
     birthGroupJoin: async (sessionId) => {
-      const current = auth.get()
+      const current = await auth.get()
       return current ? sessionpageBirthGroupJoin(sessionId, process.env, current.userId) : null
     },
     retryBirthGroupJoin: async (sessionId) => {
-      const current = auth.get()
+      const current = await auth.get()
       if (!current) throw new Error('Sign in to retry joining the group')
       return retrySessionpageBirthGroupJoin(sessionId, process.env, current, createLogger('sessionpage/provision'))
     },

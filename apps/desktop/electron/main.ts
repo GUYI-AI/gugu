@@ -4231,8 +4231,8 @@ function sendUiEvent<T>(event: EventDefinition<T>, ...payload: T extends void ? 
 // 身份是会话启动后**才**到位的(云端 provision + roster 落盘),任务一创建就已渲染 → 分享入口第一次查必然是 null,
 // 所以一落地就播一次(❌ 轮询)。播给本机窗口,也播给经设备连接看着这台机器的别的电脑(#6264:server 上只有后者)。
 // 载荷形状由事件定义钉住(会话页按 conversationId 认领),❌ 原样转主进程自己那份事件(那边叫 sessionId)。
-function sendSessionpageIdentityEvent<T>(event: EventDefinition<T>, payload: T): void {
-  sendUiEvent(event, payload)
+function sendSessionpageIdentityEvent<T extends object>(event: EventDefinition<T>, payload: T): void {
+  mainWindow?.webContents.send(event.name, payload)
   emdashBridge?.broadcastDeviceSessionHostEvent(event.name, payload)
 }
 // #7337 咕咕给新会话起名:建会话时记下,这条会话拿到 agent 身份(签票要挂在它名下)时以它的名义找设置里的模型要一个短名。
