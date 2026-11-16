@@ -22,7 +22,6 @@ const {
   useWorkspaceLayoutService,
   SIDEBAR_DEFAULT_WIDTH_PX,
   SIDEBAR_MIN_WIDTH_PX,
-  SIDEBAR_RAIL_LAYOUT_BELOW,
 } = await import('./layout-provider');
 const { sidebarFolds } = await import('@renderer/features/sidebar/sidebar-folds');
 const { readInterface, writeInterface } = await import('@/lib/viewStateTable');
@@ -123,13 +122,12 @@ describe('collapsing', () => {
 });
 
 describe('the rail layout switches where the names cannot be seen', () => {
-  it('the count changes place (row end ↔ avatar corner) where the text is invisible', () => {
+  it('the count changes place (row end ↔ avatar corner) only at rest on the rail, outside the motion', () => {
     expect(sidebarRailLayout(1)).toBe(false);
     expect(sidebarRailLayout(0.5)).toBe(false);
+    expect(sidebarRailLayout(0.01)).toBe(false);
     expect(sidebarRailLayout(0)).toBe(true);
-    for (const p of [SIDEBAR_RAIL_LAYOUT_BELOW - 0.04, SIDEBAR_RAIL_LAYOUT_BELOW, SIDEBAR_RAIL_LAYOUT_BELOW + 0.04]) {
-      expect(sidebarRailTextOpacity(p)).toBe(0);
-    }
+    expect(sidebarRailTextOpacity(0.01)).toBe(0);
   });
 });
 

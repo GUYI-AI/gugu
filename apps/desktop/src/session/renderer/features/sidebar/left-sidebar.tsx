@@ -147,14 +147,15 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // #2548 a row's text (name, preview, time, its unread count) follows the open/close progress through the scroll
         // box's mask (followNamesMask: text only in the second half). On the rail the unread count sits on the avatar's
         // top-right corner instead (the muted bell stays out) and fades in as it takes that place. The count changes place
-        // at SIDEBAR_RAIL_LAYOUT_BELOW, where the names are invisible. The rows narrow with the sidebar, so the selected
-        // background ends the size of the avatar's cell.
-        railLayout && [
-          '[&_.gg-list-row-body]:pointer-events-none',
-          '[&_.gg-list-row-trailing]:absolute [&_.gg-list-row-trailing]:top-1 [&_.gg-list-row-trailing]:left-7',
-          '[&_.gg-list-row-trailing>.gg-chip]:animate-in [&_.gg-list-row-trailing>.gg-chip]:fade-in [&_.gg-list-row-trailing>.gg-chip]:duration-150',
-          '[&_.gg-list-row-trailing>:not(.gg-chip)]:hidden',
-        ]
+        // only at rest on the rail (sidebarRailLayout: the last frame of a collapse, the first of an expand). The rows narrow
+        // with the sidebar, so the selected background ends the size of the avatar's cell.
+        // The rail is one attribute (data-sidebar-rail) under fixed rules, each ending in the count's own elements (the muted
+        // bell by its class): turning it on restyles those only. ❌ a rule ending in a tag (`span:not(.gg-chip)` restyled every
+        // span in the rows, 11.6k elements against 2.4k), ❌ a rule ending in `*`, ❌ an inherited property there (the old
+        // pointer-events on every row body restyled all 600 rows and everything in them, ~17k elements).
+        'data-[sidebar-rail]:[&_.gg-list-row-trailing]:absolute data-[sidebar-rail]:[&_.gg-list-row-trailing]:top-1 data-[sidebar-rail]:[&_.gg-list-row-trailing]:left-7',
+        'data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:animate-in data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:fade-in data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:duration-150',
+        'data-[sidebar-rail]:[&_.gg-chat-row-muted]:hidden'
       )}
       data-sidebar-rail={railLayout || undefined}
       onDragOver={onDragOver}

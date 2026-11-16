@@ -97,14 +97,13 @@ export function sidebarRailTextOpacity(progress: number): number {
 }
 
 /**
- * Below this progress the rows are laid out as the rail (the count on the avatar's corner, row bodies inert). The text
- * (sidebarRailTextOpacity) is invisible around it, so the names never jump. The corner count fades in when it takes its
- * place (left-sidebar) and leaves with the rail layout when expanding.
+ * The rows are laid out as the rail (the count on the avatar's corner) only at rest on it: a collapse switches in its last
+ * frame, an expand in its first. The flip is one restyle of the counts; ❌ mid-motion (it was at 0.45), where it landed as
+ * a long frame inside the spring. The text (sidebarRailTextOpacity) is invisible there, so the names never jump; the
+ * corner count fades in when it takes its place (left-sidebar).
  */
-export const SIDEBAR_RAIL_LAYOUT_BELOW = 0.45;
-
 export function sidebarRailLayout(progress: number): boolean {
-  return progress < SIDEBAR_RAIL_LAYOUT_BELOW;
+  return progress <= 0;
 }
 
 /**
