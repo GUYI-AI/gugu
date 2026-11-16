@@ -100,7 +100,8 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
 import { useToast } from '../components/toastContext'
-import { askChat, askFileOpen, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen } from '../session/renderer/features/chats/chat-tabs/file-opens'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
 import { draftWithPills } from '@gugu/session-shared/markdown'
@@ -327,14 +328,11 @@ function InnerLayout({
       openSettingsSection('apps')
     },
     openFile: async (chatId, target, source, opener) => {
-      // The waiting tab's ask is in the chat's mailbox from the click on, before the chat is brought up (an agent's task
-      // page may take a while): the chat takes it once it is up, and the open that ends without a page finds it there
-      // to take back (closeUnresolved).
-      const waiting = opener ? null : askFileOpen(chatId, target, source, null)
-      // Taken back when the open ends without a page (rejected then): told here, should bringing the chat up fail first.
-      void waiting?.catch(() => undefined)
+      // An open's waiting page is asked of the chat at the click, before the chat is brought up (an agent's task page may
+      // take a while): the chat takes it once it is up, and an open that ends without a page takes it back by its id.
+      if (!opener) void askFileOpen(chatId, target, source, null)
       if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
-      await (waiting ?? askFileOpen(chatId, target, source, opener))
+      if (opener) await askFileOpen(chatId, target, source, opener)
     },
     // The chat holding the focus: the desktop's one list says which (several can be on screen); without it (the phone, one
     // chat at a time) the chat this shell shows.

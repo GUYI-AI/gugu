@@ -16,7 +16,7 @@ import { TabViewPersistor } from '@renderer/features/tabs/tab-view-persistor';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { groupParticipantPanes } from '../group-participant-panes';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
-import { groupPageSlot, isUnresolvedItem, type PanelItem } from './chat-panel-item';
+import { groupPageSlot, type PanelItem } from './chat-panel-item';
 import { keepRestore, takeRestore } from './chat-tab-restores';
 import {
   CHAT_INFO_TAB_KIND,
@@ -187,11 +187,6 @@ export const closeChatTab = action(function closeChatTab(chatId: string, tabId: 
   restore?.();
 });
 
-/** The chat's one tab still waiting on its host (`unresolvedItem`), if any. */
-export function unresolvedTabOf(chatId: string): ChatPanelTab | null {
-  return panelTabsOf(chatId).find((tab) => isUnresolvedItem(tab.item)) ?? null;
-}
-
 /** A tab clicked or asked for: it is the one shown (beside the chat when the two are a pair). */
 export const showChatTab = action(function showChatTab(chatId: string, tabId: string): void {
   const layout = chatLayoutOf(chatId);
@@ -344,8 +339,8 @@ export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): voi
 export type ChatOpenAsk =
   | { app: string; tab?: string }
   | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt }
-  /** A file asked for before its host answered: its tab up now, waiting (`unresolvedItem`); `fileName` titles it when known. */
-  | { itemId: string; unresolved: { fileName?: string }; message?: MessageItem; from?: string; intent?: TabOpenIntent; receipt?: ChatFileOpenReceipt };
+  /** A file asked for before its host answered: its waiting page, for that open (file-opens.ts); `fileName` titles it when known. */
+  | { itemId: string; unresolved: { openId: string; fileName?: string }; message?: MessageItem; from?: string; intent?: TabOpenIntent };
 type FileAsk = Extract<ChatOpenAsk, { itemId: string }>;
 type WithoutReceipt<A> = A extends unknown ? Omit<A, 'receipt'> : never;
 
@@ -367,7 +362,7 @@ export const askedSince = (chatId: string, mark: number): boolean => (lastAsked.
  */
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
-  if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
+  if (previous && 'receipt' in previous) previous.receipt?.reject(new OpenSuperseded());
   // A link's own waiting tab is no new ask of the person's: links order among themselves (the shell's generation).
   if (!('unresolved' in what)) noteAsk(chatId);
   asks.set(chatId, what);
@@ -379,21 +374,12 @@ export function askChatFile(chatId: string, what: WithoutReceipt<FileAsk>): Prom
     window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }));
   });
 }
-/**
- * A link's file, asked of its chat as the shell hands it (MainLayout): with the host's answer (`opener`), or before it
- * (null: the tab now, waiting). What closing hands back goes with the answer only.
- */
-export function askFileOpen(
-  chatId: string,
-  target: { itemId: string; at?: Record<string, string> },
-  source: { message?: MessageItem; restore?: () => void; fileName?: string; from?: string; intent?: TabOpenIntent },
-  opener: AppOpenWithDetail | null,
-): Promise<void> {
-  // `from`: the page that asked (an App's list in a tab): what opens is its next page there, as a click inside it goes.
-  const placed = { ...(source.message ? { message: source.message } : {}), ...(source.from ? { from: source.from } : {}) };
-  if (!opener) return askChatFile(chatId, { itemId: target.itemId, unresolved: source.fileName ? { fileName: source.fileName } : {}, ...placed, ...(source.intent ? { intent: source.intent } : {}) });
-  // The answer carries its own intent (`opener.intent`).
-  return askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...placed, ...(source.restore ? { restore: source.restore } : {}) });
+/** What was asked of this chat and is no longer wanted (an open's waiting ask, file-opens.ts): taken back, its caller told. */
+export function dropAsk(chatId: string, matches: (ask: ChatOpenAsk) => boolean): void {
+  const pending = asks.get(chatId);
+  if (!pending || !matches(pending)) return;
+  asks.delete(chatId);
+  if ('receipt' in pending) pending.receipt?.reject(new OpenSuperseded());
 }
 
 /** What was asked of this chat, once: taken by the chat that answers it. */
@@ -402,61 +388,4 @@ export function takeChatAsk(chatId: string | null | undefined): ChatOpenAsk | nu
   const what = asks.get(chatId) ?? null;
   asks.delete(chatId);
   return what;
-}
-
-/**
- * What an open that did not come to a page (failed, replaced, another chat's file) left in this chat, gone: its waiting
- * tab, and — when the chat has not taken it yet (not drawn, or not taking asks just now) — its waiting ask still in the
- * mailbox, so the chat does not open a tab for it later that nobody answers. That ask's caller is told it was superseded
- * (the link layer does not wait on it). A tab or an ask for another file is left.
- */
-export const closeUnresolved = action(function closeUnresolved(chatId: string, itemId: string): void {
-  const pending = waitingAsk(chatId, itemId);
-  if (pending) {
-    asks.delete(chatId);
-    pending.receipt?.reject(new OpenSuperseded());
-  }
-  const tab = unresolvedTabOf(chatId);
-  if (!tab || tab.item.itemId !== itemId) return;
-  // Opened in place from a page of that tab (a folder's list): back to that page, the waiting page gone from its history.
-  // Alone in its tab: the tab goes.
-  if (!paneHolding(chatLayoutOf(chatId), tab.tabId)?.discardCurrentPage(tab.tabId)) closeChatTab(chatId, tab.tabId);
-});
-
-const waitingAsk = (chatId: string, itemId: string): Extract<ChatOpenAsk, { unresolved: object }> | null => {
-  const pending = asks.get(chatId);
-  return pending && 'unresolved' in pending && pending.itemId === itemId ? pending : null;
-};
-
-/**
- * Whether this chat still waits for this file — its waiting tab, or its waiting ask not taken yet (what closeUnresolved
- * takes back). An answer for an open that was announced counts only while it does: otherwise the person has moved on
- * (another file in its place, the waiting page closed) and the answer opens nothing.
- */
-export function awaitingOpen(chatId: string, itemId: string): boolean {
-  return !!waitingAsk(chatId, itemId) || unresolvedTabOf(chatId)?.item.itemId === itemId;
-}
-
-/**
- * A page's 「打开」 on one of its chat's files, before the host has resolved it (main's `openingChatFile`): the file's
- * waiting page, as its next page in the tab of the page that asked (`slot`). The chat it waits in (the one that page is
- * in), or null: that page is in no chat's panel here — nothing waits, and the answer is not held to a wait.
- */
-export function announceFileOpen(slot: string, file: { itemId: string; fileName?: string; intent?: TabOpenIntent }): string | null {
-  const origin = chatPageOrigin(slot);
-  if (!origin) return null;
-  void askFileOpen(origin.chatId, { itemId: file.itemId }, { ...(file.fileName ? { fileName: file.fileName } : {}), from: origin.tabId, ...(file.intent ? { intent: file.intent } : {}) }, null).catch(() => undefined);
-  return origin.chatId;
-}
-
-/** That page's announced open came to no page of this chat (failed, not a page, another chat's file): its wait goes. */
-export function withdrawFileOpen(slot: string, itemId: string): void {
-  const origin = chatPageOrigin(slot);
-  if (origin) closeUnresolved(origin.chatId, itemId);
-}
-
-/** Whether the chat of the page in `slot` still waits for this file (`awaitingOpen`). */
-export function pageAwaitsOpen(slot: string, itemId: string): boolean {
-  const origin = chatPageOrigin(slot);
-  return !!origin && awaitingOpen(origin.chatId, itemId);
 }

@@ -218,7 +218,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       adoptEntry: action,
       navigate: action,
       replaceCurrentPage: action,
-      discardCurrentPage: action,
+      discardPage: action,
       go: action,
       goTo: action,
       setPageViewState: action,
@@ -569,22 +569,27 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     entry.state = state;
     if (!entry.history) return;
     const pages = [...entry.history.pages];
-    pages[entry.history.index] = { ...pages[entry.history.index], kind: entry.kind, state: toJS(state) };
+    // A new page in that place: what the replaced one kept (its view state) is not this one's.
+    pages[entry.history.index] = { kind: entry.kind, state: toJS(state) };
     entry.history = { pages, index: entry.history.index };
   }
 
   /**
-   * The page on screen in this tab is dropped from its history and the one before it is shown again: neither Back nor
-   * Forward reaches it any more. False (nothing done) when it is the tab's only page: closing the tab is the caller's.
-   * Its resources go as leaving a page does (`navigate`); the tab and its slot stay.
+   * The page of this tab's history that `matches` is dropped from it, so neither Back nor Forward reaches it: on screen,
+   * the page before it is shown again (its resources go as leaving a page does); behind or ahead, the page on screen
+   * stays. `alone`: it is the tab's only page — closing the tab is the caller's. `none`: no page of this tab matches.
    */
-  discardCurrentPage(tabId: string): boolean {
+  discardPage(tabId: string, matches: (state: unknown) => boolean): 'dropped' | 'alone' | 'none' {
     const entry = this.entries.get(tabId);
-    const history = entry?.history;
-    if (!entry || !history || history.index === 0) return false;
-    const pages = history.pages.filter((_page, index) => index !== history.index);
-    this._showPage(entry, { pages, index: history.index - 1 });
-    return true;
+    if (!entry) return 'none';
+    const history = this.navigationOf(tabId)!;
+    const at = history.pages.findIndex((page, index) => matches(index === history.index ? entry.state : page.state));
+    if (at < 0) return 'none';
+    if (history.pages.length === 1) return 'alone';
+    const pages = history.pages.filter((_page, index) => index !== at);
+    if (at === history.index) this._showPage(entry, { pages, index: Math.max(0, at - 1) });
+    else entry.history = { pages, index: at < history.index ? history.index - 1 : history.index };
+    return 'dropped';
   }
 
   go(tabId: string, delta: -1 | 1): Promise<boolean> {

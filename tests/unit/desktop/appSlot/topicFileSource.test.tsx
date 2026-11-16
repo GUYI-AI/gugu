@@ -8,7 +8,8 @@ import { useMessageFilePreview } from '../../../../apps/desktop/src/components/c
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
-import { chatLayoutOf, openTopicTab, panelTabsOf, topicTabOf, askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, openTopicTab, panelTabsOf, topicTabOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/file-opens'
 
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron', capabilities: {} } }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ localFileRevision: async () => ({ chat_id: 'topic-file-entry' }) }))

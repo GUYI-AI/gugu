@@ -15,14 +15,17 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProj
 vi.mock('@renderer/features/sessions/acp/acp-chat-tab-resource', () => ({ AcpChatTabResource: class {} }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron', capabilities: {} } }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ localFileRevision: async () => null }))
-vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: async () => ({ error: null }) } }))
+/** Each answer that comes to a page is kept as opened (最近打开): how an answer not dropped shows. */
+const noted = vi.hoisted(() => vi.fn(async () => ({ error: null })))
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: noted } }))
 const shell = vi.hoisted(() => ({ mobile: false }))
 vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', async (original) => ({ ...await original<object>(), useMobileShell: () => shell.mobile }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({ appsHere: { groupFileOpener: vi.fn(), runs: () => true } }))
 
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers')
-const { askChat, askFileOpen, closeUnresolved, chatLayoutOf, closeChatTab, focusedChatTab, openPanelItem, panelTabsOf, takeChatAsk, chatPaneOf } = await import('@renderer/features/chats/chat-tabs/chat-layouts')
+const { askChat, chatLayoutOf, closeChatTab, focusedChatTab, openPanelItem, panelTabsOf, takeChatAsk, chatPaneOf } = await import('@renderer/features/chats/chat-tabs/chat-layouts')
 const { folderItem, groupPageSlot, isFolderItem, isUnresolvedItem } = await import('@renderer/features/chats/chat-tabs/chat-panel-item')
+const { beginTabFileOpen, failFileOpen } = await import('@renderer/features/chats/chat-tabs/file-opens')
 const { useChatOpener } = await import('../../../../apps/desktop/src/components/appSlot/useChatOpener')
 const { displayNameOf } = await import('../../../../apps/desktop/src/session/shared/extensions/file-openers')
 const { translateSessionMessage } = await import('../../../../apps/desktop/src/session/renderer/localization/locale-store')
@@ -44,11 +47,21 @@ function shellOpenWith(event: Event) {
 }
 /** What main sends for the page in the folder tab: through the window's handler, as the bridge's relay delivers it. */
 const send = (action: unknown) => act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'workspace', sessionId: null, tabId: groupPageSlot(chat, folder) }, action: action as never }); await new Promise<void>((done) => setTimeout(done, 0)) })
-const opening = (itemId: string, extra: Record<string, unknown> = {}) => send({ kind: 'openingChatFile', itemId, intent: 'navigate', ...extra })
-const answer = (itemId: string, extra: Partial<Detail> = {}, announced = true) => send({ kind: 'openWith', detail: {
+/** Main's opens, by file: each `opening` is a new open (its id), each answer or withdrawal settles the oldest one. */
+const pending = new Map<string, string[]>()
+let opened = 0
+const opening = (itemId: string, extra: Record<string, unknown> = {}) => {
+  const openId = `open-${itemId}-${++opened}`
+  pending.set(itemId, [...(pending.get(itemId) ?? []), openId])
+  return send({ kind: 'openingChatFile', openId, itemId, intent: 'navigate', ...extra })
+}
+const oldest = (itemId: string) => { const [openId, ...rest] = pending.get(itemId) ?? []; pending.set(itemId, rest); return openId }
+const withdraw = (itemId: string) => send({ kind: 'openingChatFile', openId: oldest(itemId), withdrawn: true })
+/** The answer for the oldest open of this file (`held: false`: an answer main announced nothing for). */
+const answer = (itemId: string, extra: Partial<Detail> = {}, held = true) => send({ kind: 'openWith', detail: {
   chatId: chat, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, file: { document: false, contentType: 'text/markdown', version: 1, size: 3 },
   choice: { kind: 'one', candidate: { extensionId: 'workspace', tabKind: 'workspace.file', tabTitle: 'Files', app: { name: 'Files' }, onlyTab: false, suffix: '.md' } }, intent: 'navigate',
-  ...(announced ? { announced: true } : {}), ...extra,
+  ...(held ? { openId: oldest(itemId) } : {}), ...extra,
 } })
 let folder = ''
 const page = () => panelTabsOf(chat).find((tab) => tab.tabId === folder)?.item
@@ -57,6 +70,7 @@ const history = () => chatPaneOf(chat, folder)!.navigationOf(folder)!
 beforeEach(async () => {
   harness = createReactHarness()
   chat = `app-opening-${++serial}`; other = `app-opening-other-${serial}`
+  pending.clear()
   window.addEventListener(APP_OPEN_WITH_EVENT, shellOpenWith)
   folder = openPanelItem(chat, folderItem())!
   await harness.render(createElement(Panel, { chatId: chat }))
@@ -85,7 +99,7 @@ describe('a file clicked in the chat\'s folder', () => {
   it('refused: back to the folder page, the tab where it was, no waiting page left in Back or Forward', async () => {
     await opening('A')
     expect(history().pages).toHaveLength(2)
-    await send({ kind: 'openingChatFile', itemId: 'A', intent: 'navigate', withdrawn: true })
+    await withdraw('A')
     expect(panelTabsOf(chat).map((tab) => tab.tabId)).toEqual([folder])
     expect(isFolderItem(page())).toBe(true)
     expect(history().pages).toHaveLength(1)
@@ -103,8 +117,8 @@ describe('a file clicked in the chat\'s folder', () => {
 
   it('another chat\'s file: nothing waits here, that chat is handed the file', async () => {
     await opening('A')
-    await send({ kind: 'openingChatFile', itemId: 'A', intent: 'navigate', withdrawn: true })
-    await answer('A', { chatId: other }, false)
+    // The answer names another chat: the window takes its wait here back and hands that chat the file.
+    await answer('A', { chatId: other })
     expect(isFolderItem(page())).toBe(true)
     expect(takeChatAsk(other)).toMatchObject({ itemId: 'A', opener: { chatId: other } })
   })
@@ -159,30 +173,141 @@ describe('a file clicked in the chat\'s folder', () => {
   })
 })
 
+// The independent review of 80a6b15d37: each finding as it shows on screen. An open is known by its id; its waiting page
+// by that id; nothing is matched by (chat, file) any more.
+describe('review findings: an open is known by its id', () => {
+  it('1. opening a file already open here: that tab in front, and the answer still goes to it (its state refreshed)', async () => {
+    await answer('A', {}, false)
+    const tab = panelTabsOf(chat).find((each) => each.item.itemId === 'A')!.tabId
+    await opening('A')
+    expect(panelTabsOf(chat).some((each) => isUnresolvedItem(each.item)), 'no waiting page: it is open already').toBe(false)
+    noted.mockClear()
+    await answer('A')
+    await vi.waitFor(() => expect(noted).toHaveBeenCalledWith('workspace_note_open', { p_item_id: 'A' }))
+    expect(panelTabsOf(chat).find((each) => each.tabId === tab)?.item).toMatchObject({ kind: 'workspace.file', itemId: 'A' })
+  })
+
+  it('3. Back from the waiting page: its answer opens nothing, and Forward does not reach a page that waits forever', async () => {
+    await opening('A')
+    await act(async () => { await chatPaneOf(chat, folder)!.go(folder, -1) })
+    expect(isFolderItem(page())).toBe(true)
+    await answer('A')
+    expect(isFolderItem(page())).toBe(true)
+    expect(chatPaneOf(chat, folder)!.canGo(folder, 1)).toBe(false)
+    expect(history().pages).toHaveLength(1)
+  })
+
+  it('4. opened in a tab of its own, the asking App tab closed meanwhile: taken back all the same', async () => {
+    await opening('A', { intent: 'newTab' })
+    const waiting = panelTabsOf(chat).find((each) => isUnresolvedItem(each.item))!.tabId
+    expect(waiting).not.toBe(folder)
+    act(() => closeChatTab(chat, folder))
+    await withdraw('A')
+    expect(panelTabsOf(chat).map((each) => each.tabId)).not.toContain(waiting)
+    expect(panelTabsOf(chat).some((each) => isUnresolvedItem(each.item))).toBe(false)
+  })
+
+  it('5. an earlier open of the same file failing late takes back its own wait only, never a newer one', async () => {
+    await opening('A')
+    act(() => closeChatTab(chat, folder))
+    folder = openPanelItem(chat, folderItem())!
+    await opening('A')
+    expect(isUnresolvedItem(page())).toBe(true)
+    await withdraw('A')
+    expect(isUnresolvedItem(page()), 'the newer open\'s waiting page stays').toBe(true)
+    await answer('A')
+    expect(page()).toMatchObject({ kind: 'workspace.file', itemId: 'A' })
+  })
+
+  it('6. a waiting page that could not be put up is said, and the answer still opens the file', async () => {
+    await harness.render(null)
+    await opening('A')
+    act(() => closeChatTab(chat, folder))
+    await harness.render(createElement(Panel, { chatId: chat }))
+    await answer('A')
+    expect(panelTabsOf(chat).find((each) => each.item.itemId === 'A')?.item).toMatchObject({ kind: 'workspace.file' })
+  })
+
+  it('the same file asked twice, the later answer first: one tab, both answers kept, nothing left waiting', async () => {
+    await opening('A')
+    const first = oldest('A')
+    await opening('A')
+    await answer('A')
+    expect(page()).toMatchObject({ kind: 'workspace.file', itemId: 'A' })
+    pending.set('A', [first!])
+    noted.mockClear()
+    await answer('A')
+    await vi.waitFor(() => expect(noted).toHaveBeenCalledWith('workspace_note_open', { p_item_id: 'A' }))
+    expect(panelTabsOf(chat)).toHaveLength(1)
+    expect(panelTabsOf(chat).some((each) => isUnresolvedItem(each.item))).toBe(false)
+  })
+
+  it('the same file asked twice, the first open failing: its page goes, the second answer opens the file', async () => {
+    await opening('A')
+    await opening('A')
+    await withdraw('A')
+    expect(isFolderItem(page())).toBe(true)
+    await answer('A')
+    expect(panelTabsOf(chat).find((each) => each.item.itemId === 'A')?.item).toMatchObject({ kind: 'workspace.file' })
+  })
+})
+
+// The small findings.
+describe('review findings: the small ones', () => {
+  it('the asking page\'s own state is kept on that page, not on the waiting page or the file that replaces it', async () => {
+    await opening('A', { viewState: { scroll: 5 } })
+    expect(history().pages[0]?.viewState).toEqual({ scroll: 5 })
+    await answer('A', { viewState: { scroll: 5 } })
+    expect(history().pages[1]?.viewState).toBeUndefined()
+  })
+
+  it('opened as a new tab (intent): it waits in a tab of its own and is the file there, the folder untouched', async () => {
+    await opening('A', { intent: 'newTab' })
+    expect(isFolderItem(page())).toBe(true)
+    await answer('A', { intent: 'newTab' })
+    expect(isFolderItem(page())).toBe(true)
+    expect(panelTabsOf(chat).find((each) => each.tabId !== folder)?.item).toMatchObject({ kind: 'workspace.file', itemId: 'A' })
+  })
+
+  it('a waiting page behind or ahead in a tab\'s history is never kept', async () => {
+    await opening('A')
+    await act(async () => { await chatPaneOf(chat, folder)!.go(folder, -1) })
+    expect(JSON.stringify(chatLayoutOf(chat).snapshot)).not.toContain('"waitId"')
+  })
+})
+
 // The phone's host resolves in the page's own host and tells the slot (GroupTabContent `onOpening`): the same waiting
 // page, in the same tab; its answer comes through the chat's opener as the frame hands it.
 describe('on the phone', () => {
   beforeEach(async () => { shell.mobile = true; await harness.render(createElement(Panel, { chatId: chat })) })
   afterEach(() => { shell.mobile = false })
-  const phoneOpening = (itemId: string) => act(async () => { void askFileOpen(chat, { itemId }, { from: folder, intent: 'navigate' }, null).catch(() => undefined); await new Promise<void>((done) => setTimeout(done, 0)) })
-  const phoneAnswer = (itemId: string) => act(async () => { panel.openWith!({ chatId: chat, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, file: { document: false, contentType: 'text/markdown', version: 1, size: 3 }, choice: { kind: 'one', candidate: { extensionId: 'workspace', tabKind: 'workspace.file', tabTitle: 'Files', app: { name: 'Files' }, onlyTab: false, suffix: '.md' } }, intent: 'navigate', announced: true } as Detail, folder); await new Promise<void>((done) => setTimeout(done, 0)) })
+  // As GroupTabContent wires the phone frame's `opening` and `openWith`: the open begins in this tab, its answer settles it.
+  const phoneOpening = (itemId: string, openId: string) => act(async () => { beginTabFileOpen(chat, folder, openId, { itemId, intent: 'navigate' }); await new Promise<void>((done) => setTimeout(done, 0)) })
+  const phoneAnswer = (itemId: string, openId: string) => act(async () => { panel.openWith!({ chatId: chat, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, file: { document: false, contentType: 'text/markdown', version: 1, size: 3 }, choice: { kind: 'one', candidate: { extensionId: 'workspace', tabKind: 'workspace.file', tabTitle: 'Files', app: { name: 'Files' }, onlyTab: false, suffix: '.md' } }, intent: 'navigate', openId } as unknown as Detail, folder); await new Promise<void>((done) => setTimeout(done, 0)) })
 
   it('the waiting page fills the screen in the folder\'s place, then is the file there', async () => {
-    await phoneOpening('A')
+    await phoneOpening('A', 'phone-1')
     expect(chatLayoutOf(chat).narrow).toBe(true)
     expect(focusedChatTab(chat)).toMatchObject({ kind: 'panel', tabId: folder })
     expect(isUnresolvedItem(page())).toBe(true)
-    await phoneAnswer('A')
+    await phoneAnswer('A', 'phone-1')
     expect(page()).toMatchObject({ kind: 'workspace.file', itemId: 'A' })
     expect(history().pages).toHaveLength(2)
   })
 
-  it('refused: back to the folder', async () => {
-    await phoneOpening('A')
-    act(() => closeUnresolved(chat, 'A'))
+  it('2. the file is another chat\'s than the page\'s slot (its ref named that chat): the wait here is taken back', async () => {
+    await phoneOpening('A', 'phone-3')
+    expect(isUnresolvedItem(page())).toBe(true)
+    await act(async () => { panel.openWith!({ chatId: other, itemId: 'A', name: 'A.md', typedName: 'A.md', file: { document: false, contentType: 'text/markdown', version: 1, size: 3 }, choice: { kind: 'none' }, intent: 'navigate', openId: 'phone-3' } as unknown as Detail, folder); await new Promise<void>((done) => setTimeout(done, 0)) })
     expect(isFolderItem(page())).toBe(true)
     expect(history().pages).toHaveLength(1)
-    await phoneAnswer('A')
-    expect(isFolderItem(page()), 'a late answer to the taken-back wait opens nothing').toBe(true)
+    expect(takeChatAsk(other)).toMatchObject({ itemId: 'A', opener: { chatId: other } })
+  })
+
+  it('refused: back to the folder', async () => {
+    await phoneOpening('A', 'phone-2')
+    act(() => failFileOpen('phone-2'))
+    expect(isFolderItem(page())).toBe(true)
+    expect(history().pages).toHaveLength(1)
   })
 })

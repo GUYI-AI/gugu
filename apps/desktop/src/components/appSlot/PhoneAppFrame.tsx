@@ -1,4 +1,3 @@
-import type { TabOpenIntent } from '@shared/view-state'
 import { followLink, openLinkTarget } from '../../lib/guguLinks'
 import { reaction } from 'mobx'
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
@@ -20,7 +19,7 @@ import { useChatStore } from '../../store/chatContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { useTheme } from '../../store/theme'
 import { useAuth } from '../../store/auth'
-import { hostAppFrame, type PhoneAppBinding } from './phoneAppHost'
+import { hostAppFrame, type PhoneAppBinding, type PhoneFileOpening } from './phoneAppHost'
 import { phoneApps } from './phoneApps'
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
@@ -78,8 +77,8 @@ export function PhoneAppFrame({
   /** Under a file opened over it: kept running, as it was, for the way back. */
   hidden?: boolean
   onOpenWith: (detail: AppOpenWithDetail) => void
-  /** 「用 X 打开」 on a chat file before it is resolved (`hooks.opening`): the slot's waiting page — true when it shows one. */
-  onOpening?: (file: { itemId: string; fileName?: string; intent?: TabOpenIntent; withdrawn?: true }) => boolean
+  /** 「用 X 打开」 on a chat file before it is resolved (`hooks.opening`): the slot's waiting page for that open, or taken back. */
+  onOpening?: (open: PhoneFileOpening) => void
   /** Set while this frame is the one on screen: the slot's toolbar / menu reach it through this. */
   commandRef?: { current: ((commandId: string) => void) | null }
   testId: string
@@ -179,7 +178,7 @@ export function PhoneAppFrame({
       navigate: (delta) => navigateRef.current?.(delta) ?? Promise.resolve(false),
       claimBack: setBackClaimed,
       openWith: (detail) => onOpenWithRef.current(detail),
-      opening: (file) => onOpeningRef.current?.(file) ?? false,
+      opening: (open) => onOpeningRef.current?.(open),
       openWorkingCopy: (path, read) => setWorkingCopy({ path, readFileChunk: ({ offset, length }) => read(offset, length) }),
       // The slot this frame is in draws it (AppPeekSlot), as main's peek on the desktop.
       peek: (target) => peekStore.open(null, bindingRef.current.tabId, target),

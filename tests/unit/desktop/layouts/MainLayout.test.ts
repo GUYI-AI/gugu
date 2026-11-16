@@ -67,7 +67,7 @@ function acceptMockFilePanel(event: Event) {
   if (!chatId) return
   const ask = takeChatAsk(chatId)
   if (!ask) return
-  if ('itemId' in ask && ask.receipt) {
+  if ('receipt' in ask && ask.receipt) {
     const { receipt, ...shown } = ask
     askChat(chatId, shown)
     receipt.resolve()

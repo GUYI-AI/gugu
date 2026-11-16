@@ -70,11 +70,12 @@ export type ExtensionHostAction =
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }
   /**
-   * `files.openWith` on a chat file, before main resolves it: the file's waiting page, as the asking page's next page in
-   * its tab (the shell's waiting tab); `withdrawn`: that open came to no page here — its wait goes. The answer that follows
-   * carries `announced`. `fileName`: what the page named it, when it did.
+   * `files.openWith` on a chat file, before main resolves it: the file's waiting page for this open (`openId`), as the
+   * asking page's next page in its tab; `withdrawn`: no page came of that open — its wait goes. Its answer carries the
+   * same `openId`. `fileName`: what the page named it, when it did.
    */
-  | { kind: 'openingChatFile'; itemId: string; fileName?: string; intent?: TabOpenIntent; withdrawn?: true }
+  | { kind: 'openingChatFile'; openId: string; itemId: string; fileName?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
+  | { kind: 'openingChatFile'; openId: string; withdrawn: true }
   /** A session's working-copy file (`files.openWith`): opened in that session's pane as a click there opens it. */
   | { kind: 'openSessionFolder'; folder: string }
   | { kind: 'openSessionFile'; sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean; intent?: TabOpenIntent; viewState?: Record<string, unknown> }

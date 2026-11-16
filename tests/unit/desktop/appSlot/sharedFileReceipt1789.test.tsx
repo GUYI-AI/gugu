@@ -7,7 +7,8 @@ import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNav
 import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
-import { askChat, askChatFile, panelTabsOf, askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/file-opens'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import type { AppOpenWithDetail } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 

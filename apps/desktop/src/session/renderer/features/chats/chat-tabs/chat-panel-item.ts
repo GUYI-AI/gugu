@@ -28,16 +28,18 @@ export interface PanelItem {
   message?: MessageItem;
   /** The topic it was opened from when no message says so: a group file's link clicked in that topic. */
   topicChatId?: string;
+  /** A file's page waiting on its host (`unresolvedItem`): the open it waits for (file-opens.ts). Never kept. */
+  waitId?: string;
 }
 
 export const folderItem = (): PanelItem => ({ kind: WORKSPACE_APP_KIND, title: '' });
 /**
- * A file asked for whose host has not answered yet: the host's preview with nothing to read (no `file`) — its tab is
- * up at once, the page waiting; the answer turns the same tab into the real page (`replacePanelItem`). Never kept
- * (`isPersistent`: kind null).
+ * A file asked for whose host has not answered yet, waiting for one open (`waitId`, file-opens.ts): its tab is up at
+ * once, the page waiting; the answer for that open turns the same page into the real one (`replacePanelItem`). Never
+ * kept (`isPersistent`: kind null).
  */
-export const unresolvedItem = (itemId: string, title: string, message?: MessageItem): PanelItem => ({ kind: null, itemId, title, ...(message ? { message } : {}) });
-export const isUnresolvedItem = (item: PanelItem | null | undefined): boolean => !!item && item.kind === null && !!item.itemId && !item.file;
+export const unresolvedItem = (itemId: string, title: string, waitId: string, message?: MessageItem): PanelItem => ({ kind: null, itemId, title, waitId, ...(message ? { message } : {}) });
+export const isUnresolvedItem = (item: PanelItem | null | undefined): boolean => !!item?.waitId;
 export const isFolderItem = (item: PanelItem | null | undefined): boolean => item?.kind === WORKSPACE_APP_KIND && !item.itemId;
 
 const appOf = (kind: string | null) => (kind === null ? null : (parseExtensionTabKind(kind)?.extensionId ?? kind));

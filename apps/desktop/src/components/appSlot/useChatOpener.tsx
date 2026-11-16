@@ -16,7 +16,8 @@ import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, isUnresolvedItem, unresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { keepRestore } from '../../session/renderer/features/chats/chat-tabs/chat-tab-restores'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
-import { openPanelItem, replacePanelItem, showChatTab, panelTabsOf, unresolvedTabOf, awaitingOpen, closeUnresolved, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, replacePanelItem, showChatTab, panelTabsOf, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { settleFileOpen, takeBackWait, waitShown } from '../../session/renderer/features/chats/chat-tabs/file-opens'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
@@ -27,7 +28,7 @@ const log = rendererLogger('app-slot/group')
 
 /** How an open came: the tab whose page asked (its 上一页), and what closing it hands back (a link's message). `at`: the
  *  place a link named, for the host's preview (an App that opens the file is told by main, `groupFileOpener`). */
-type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; at?: FilePlace }
+type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; at?: FilePlace; wait?: string }
 
 /**
  * A file the person opened beside a chat (every way in ends here: the folder's list, a link, a card, 「用 X 打开」), kept
@@ -71,10 +72,18 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     // A pending message is not tab state: neither JSON nor structured-clone snapshots carry it.
     if (item.takeOpening) Object.defineProperty(shown, 'takeOpening', { get: () => item.takeOpening, enumerable: false })
     if (mobile) chatLayoutOf(target).setNarrow(true)
-    // A tab waiting on its host becomes what was asked, in place — the same tab, not a second one: its own answer, or
-    // another file asked for while it waited (one waiting tab per chat).
-    const waiting = unresolvedTabOf(target)
-    const inPlace = waiting && (isUnresolvedItem(shown) || waiting.item.itemId === shown.itemId) ? waiting.tabId : undefined
+    // A waiting page becomes what was asked, in place — the same tab, not a second one: the one its open's answer names
+    // (`wait`), another file's waiting page (one waiting page per chat: the later file takes it over), or — no wait
+    // named — a waiting page of this same file.
+    const waitingPage = (matches: (item: PanelItem) => boolean) => panelTabsOf(target).find((tab) => isUnresolvedItem(tab.item) && matches(tab.item))?.tabId
+    const inPlace = isUnresolvedItem(shown) ? waitingPage(() => true)
+      : from.wait ? waitingPage((waiting) => waiting.waitId === from.wait) : waitingPage((waiting) => waiting.itemId === shown.itemId)
+    // Anything else asked of this chat meanwhile (another file from an App's list, an App's page) is the later ask: a file
+    // still waiting here gives way, and its answer then finds no page of its own (#7257).
+    if (!inPlace && !isUnresolvedItem(shown)) {
+      const superseded = panelTabsOf(target).find((tab) => isUnresolvedItem(tab.item))?.item.waitId
+      if (superseded) takeBackWait(target, superseded)
+    }
     if (inPlace) {
       replacePanelItem(target, inPlace, shown)
       showChatTab(target, inPlace)
@@ -92,12 +101,13 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   const openResolved = useCallback(
     async (detail: AppOpenWithDetail, from: OpenFrom = {}) => {
       if (detail.chatId !== chatId) throw new Error('The file belongs to a different conversation')
-      from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent }
-      if (from.from && detail.viewState) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
+      from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent, ...(detail.wait ? { wait: detail.wait } : {}) }
+      // The asking page's own state for the way back; with a wait, given before its waiting page went over it.
+      if (from.from && detail.viewState && !from.wait) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
       if (detail.choice.kind === 'none') {
         if (!from.from && isRenderableImage(detail.name, detail.file.contentType)) {
-          // The viewer, not a page: a wait for it here goes.
-          closeUnresolved(detail.chatId, detail.itemId)
+          // The viewer, not a page: its wait here goes.
+          if (from.wait) takeBackWait(detail.chatId, from.wait)
           await openAttachmentImage({ kind: 'item', itemId: detail.itemId, version: detail.file.version }, detail.name, from.message ? { chatId: from.message.chat_id, messageId: from.message.id } : { chatId: detail.chatId })
           noteOpened(detail.itemId)
           return
@@ -113,7 +123,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         return show(detail.chatId, { kind: candidate.tabKind, itemId: detail.itemId, title: displayNameOf(detail.name, candidate.suffix), fileName: detail.name, typedName: detail.typedName, takeOpening }, from)
       }
       // The person picks who opens it: no page yet, so nothing waits for it here.
-      closeUnresolved(detail.chatId, detail.itemId)
+      if (from.wait) takeBackWait(detail.chatId, from.wait)
       setPrompt({ ...detail, ...from })
     },
     [chatId, show],
@@ -123,13 +133,17 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
    * the chat shell, which brings that chat up and hands it to that chat (MainLayout).
    */
   const openWith = useCallback(
-    (detail: AppOpenWithDetail, from?: string) => {
+    (asked: AppOpenWithDetail, from?: string) => {
+      // Its open's waiting page (the phone's page host asked first): the answer turns it into the file, or — the person
+      // moved on — opens nothing; another chat's file takes its wait here back and goes to that chat.
+      const { openId, ...answer } = asked
+      const settled = settleFileOpen(openId, answer)
+      if (!settled) return
+      const detail: AppOpenWithDetail = { ...answer, ...settled }
       if (detail.chatId !== chatId) {
         window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail }))
         return
       }
-      // Announced before it was resolved (its waiting page went up): it counts only while that wait is still here.
-      if (detail.announced && !awaitingOpen(chatId, detail.itemId)) return
       // The person asked this chat for it (an App's page beside it): a link still waiting on its host gives way (`noteAsk`).
       noteAsk(detail.chatId)
       asking.current += 1
@@ -171,14 +185,19 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       const source = 'from' in ask ? ask.from : undefined
       // Asked before its host answered: the file's tab now, waiting — or, already open here, that tab in front at once.
       if ('unresolved' in ask) {
-        if (ask.receipt) receipts.current.add(ask.receipt)
         asking.current += 1
         setUnopened(null)
-        const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === ask.itemId && !isUnresolvedItem(tab.item))
-        const shown = open
-          ? (showChatTab(chatId, open.tabId), Promise.resolve(onShow?.(chatId, open.tabId)))
-          : show(chatId, unresolvedItem(ask.itemId, ask.unresolved.fileName || translateSessionMessage('task.loading'), ask.message), { ...(ask.message ? { message: ask.message } : {}), ...(ask.from ? { from: ask.from } : {}), ...(ask.intent ? { intent: ask.intent } : {}) })
-        void shown.then(() => ask.receipt?.resolve(), error => ask.receipt?.reject(error)).finally(() => { if (ask.receipt) receipts.current.delete(ask.receipt) })
+        const { openId, fileName } = ask.unresolved
+        // Open already (or already waiting, the same file asked again): that tab in front; this open has no page of its
+        // own, and its answer goes to it as any answer does.
+        const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === ask.itemId)
+        if (open) {
+          showChatTab(chatId, open.tabId)
+          void Promise.resolve(onShow?.(chatId, open.tabId)).catch((error: unknown) => log.warn({ error: String(error) }, 'the open file could not be shown'))
+          return
+        }
+        void show(chatId, unresolvedItem(ask.itemId, fileName || translateSessionMessage('task.loading'), openId, ask.message), { ...(ask.message ? { message: ask.message } : {}), ...(ask.from ? { from: ask.from } : {}), ...(ask.intent ? { intent: ask.intent } : {}) })
+          .then(() => waitShown(openId), (error: unknown) => waitShown(openId, error))
         return
       }
       if ('itemId' in ask) {

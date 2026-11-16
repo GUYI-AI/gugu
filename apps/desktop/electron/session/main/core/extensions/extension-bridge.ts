@@ -6,6 +6,8 @@ import { appStateOf } from '@shared/extensions/app-state';
 import { sameWidgetIdentity, widgetContext } from '@shared/extensions/widget-context';
 import { groupFileLink } from '@gugu/core/shared/ui/guguLink';
 import * as fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { mayOpenEarly, openThroughWait } from '@shared/extensions/file-open-wait';
 import * as path from 'node:path';
 import { clipboard, ipcMain, shell, webContents, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { extensionIdForSession } from '@main/core/extensions/extension-session';
@@ -61,7 +63,7 @@ import {
 } from '@shared/extensions/host-actions';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, openingNameOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { fileRefOf, folderOf, openingNameOf, type AppOpenWithDetail, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -2532,22 +2534,17 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           onlyIfOpen: `${current[1].extensionId}.${current[1].tabName}`, intent,
         }) : undefined;
         let resumed = tab === undefined ? await present() : undefined;
-        // The file's waiting page before it is resolved, as a click on a file card shows it: a person's page opening one
-        // of its own chat's files by id, to open in that chat's panel — not asked to pick, not beside the page, not its own
-        // named tab, nothing brought forward already. Unsure is not said: then nothing waits, as before.
-        const mayWait = !resumed && tab === undefined && !ask && !peek && !isWorkspace(ref) && 'id' in ref && shown.operator.kind === 'person'
-          && (ref.chat ?? shown.conversation) !== null;
+        // The file's waiting page first, as a file card's click shows it, when this call may (`mayOpenEarly`); the window
+        // keeps it for this open's id and settles or takes it back by that id — never waited on here: a message on this
+        // channel arrives after the one before it.
+        const openId = mayOpenEarly({ person: shown.operator.kind === 'person', ask, peek, tab, resumed: !!resumed, ref, chat: ('chat' in ref ? ref.chat : undefined) ?? shown.conversation }) ? randomUUID() : null;
         const named = openingNameOf(args);
-        const opening = (withdrawn?: true) => deliver(shown, {
-          kind: 'openingChatFile', itemId: (ref as { id: string }).id, ...(named ? { fileName: named } : {}),
-          ...(intent ? { intent } : {}), ...(withdrawn ? { withdrawn } : {}),
-        });
-        // The window says which chat the page's wait is in (none: the page is in no chat's panel there — nothing waits, and
-        // the answer goes as before). Said or not, the open goes on: the wait is the window's, not the answer.
-        const placed = mayWait ? await opening().catch((error: unknown) => { log.warn('The waiting page could not be shown:', error); return undefined; }) : undefined;
-        const waitIn = placed && typeof placed === 'object' && 'chat' in placed ? placed.chat : null;
-        let waiting = waitIn !== null;
-        try {
+        const tell = (action: ExtensionHostAction) => void deliver(shown, action).catch((error: unknown) => log.warn('The waiting page could not be told:', error));
+        await openThroughWait({
+          begin: () => { if (openId) tell({ kind: 'openingChatFile', openId, itemId: (ref as { id: string }).id, ...(named ? { fileName: named } : {}), ...(intent ? { intent } : {}), ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}) }); },
+          settle: (detail: AppOpenWithDetail) => deliver(shown, { kind: 'openWith', detail: openId ? { ...detail, openId } : detail }),
+          fail: () => { if (openId) tell({ kind: 'openingChatFile', openId, withdrawn: true }); },
+        }, async () => {
           let target: Awaited<ReturnType<typeof files.openWithTarget>>;
           try {
             target = await files.openWithTarget(page, { ref, ask, peek });
@@ -2569,21 +2566,11 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           const { chatId, itemId } = target.target;
           const place = placeFor(choice, (args as { at?: unknown }).at);
           if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), chatId, itemId);
-          // Another chat's file (a forwarded one): nothing waits for it here; that chat comes up with it.
-          if (waiting && chatId !== waitIn) {
-            waiting = false;
-            await opening(true);
-          }
-          const detail = { ...target.target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}), ...(resumed ? { background: true } : {}), ...(waiting ? { announced: true as const } : {}) };
+          const detail: AppOpenWithDetail = { ...target.target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}), ...(resumed ? { background: true } : {}) };
           if (peek) return void (await deliver(shown, { kind: 'peek', target: { kind: 'chat', detail } }));
-          await deliver(shown, { kind: 'openWith', detail });
-          // Handed over: the window turns its wait into the page (or, not a page, takes the wait back itself).
-          waiting = false;
-          return undefined;
-        } finally {
-          // Every other way out — refused, a session's file, beside the page, failed to hand over — takes the wait back.
-          if (waiting) void opening(true).catch((error: unknown) => log.warn('The waiting page could not be taken back:', error));
-        }
+          return detail;
+        });
+        return undefined;
       }
       await deliver(shown, { kind: 'showMessage', detail: await files.messageToShow(args as never) });
       return undefined;

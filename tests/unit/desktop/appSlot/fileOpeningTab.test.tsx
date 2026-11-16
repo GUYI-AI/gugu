@@ -9,9 +9,11 @@ import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/u
 import { useMessageFilePreview } from '../../../../apps/desktop/src/components/chat/useMessageFilePreview'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
 import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
-import { askFileOpen, chatLayoutOf, closeChatTab, focusedChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, closeChatTab, focusedChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/file-opens'
 import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
+import { beginFileOpen, settleFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/file-opens'
 import { translateSessionMessage } from '../../../../apps/desktop/src/session/renderer/localization/locale-store'
 import type { AppOpenWithDetail } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 
@@ -278,3 +280,21 @@ describe('a waiting ask the chat has not taken yet', () => {
     expect(isUnresolvedItem(tabs()[0]!.item)).toBe(false)
   })
 })
+
+// One rule for the later ask, whoever asks: a link's waiting page taken over by an App page's open (or the reverse) is
+// that later open's; the earlier answer opens nothing.
+describe('a link and an App page asking the same chat', () => {
+  it('a card\'s file waiting, then an App page opens another file: the App\'s takes the page over; the card\'s answer is superseded', async () => {
+    await harness.render(createElement(Shell))
+    const card = openLinkTarget({ kind: 'file', itemId: 'A' }, { message: { id: 'm', chat_id: group } as MessageItem, fileName: 'A.md' })
+    const outcome = card.then(() => 'opened', (error: unknown) => error instanceof OpenSuperseded ? 'superseded' : `failed: ${String(error)}`)
+    await settle()
+    const waiting = tabs()[0]!.tabId
+    act(() => beginFileOpen('app-B', group, { itemId: 'B', fileName: 'B.md' }))
+    expect(tabs().map((tab) => [tab.tabId, tab.item.itemId])).toEqual([[waiting, 'B']])
+    await answer('A', preview('A'))
+    expect(await outcome).toBe('superseded')
+    expect(settleFileOpen('app-B', { chatId: group, itemId: 'B' })).toEqual({ wait: 'app-B' })
+  })
+})
+

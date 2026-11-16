@@ -225,34 +225,30 @@ describe('a page\'s 「打开」 on its chat\'s file: the waiting page first', (
   beforeEach(() => {
     stub.refuse = false
     host?.dispose()
-    opening = vi.fn((file: { withdrawn?: true }) => !file.withdrawn)
+    opening = vi.fn()
     host = hostAppFrame(frame,
       { extensionId: 'data-lens', tabId: 'card-1', tabName: 'card', chatId: CHAT, capabilities: ['files:read'], locale: 'en-US', themeMode: 'light' },
       { showMessage: vi.fn(), showSession: vi.fn(), openWith: opened, opening, peek: peeked, chrome: vi.fn() } as never)
   })
+  const begun = () => opening.mock.calls[0]![0] as { openId: string }
 
-  it('said to the slot before it is resolved; the answer is held to that wait', async () => {
+  it('said to the slot before it is resolved, with an id for this open; the answer carries the same id', async () => {
     expect(await call('filesOpenWith', { ref, fileName: 'sales.xlsx' })).toMatchObject({ ok: true })
-    expect(opening.mock.calls).toEqual([[{ itemId: SALES, fileName: 'sales.xlsx', intent: 'navigate' }]])
-    expect(opened.mock.calls[0]![0]).toMatchObject({ itemId: SALES, announced: true })
+    expect(opening.mock.calls).toEqual([[{ openId: expect.any(String), itemId: SALES, fileName: 'sales.xlsx', intent: 'navigate' }]])
+    expect(opened.mock.calls[0]![0]).toMatchObject({ itemId: SALES, openId: begun().openId })
     expect(opening.mock.invocationCallOrder[0]).toBeLessThan(opened.mock.invocationCallOrder[0]!)
   })
 
-  it('refused: the wait is taken back, nothing opens', async () => {
+  it('refused: the wait is taken back by its id, nothing opens', async () => {
     stub.refuse = true
     expect(await call('filesOpenWith', { ref })).toMatchObject({ ok: false })
-    expect(opening.mock.calls).toEqual([[{ itemId: SALES, intent: 'navigate' }], [{ itemId: SALES, intent: 'navigate', withdrawn: true }]])
+    expect(opening.mock.calls).toEqual([[{ openId: expect.any(String), itemId: SALES, intent: 'navigate' }], [{ openId: begun().openId, withdrawn: true }]])
     expect(opened).not.toHaveBeenCalled()
   })
 
-  it.each([['ask', { ask: true }], ['peek', { peek: true }]])('%s: no waiting page', async (_name, extra) => {
+  it.each([['ask', { ask: true }], ['peek', { peek: true }]])('%s: no waiting page, its answer carries no open', async (_name, extra) => {
     await call('filesOpenWith', { ref, ...extra })
     expect(opening).not.toHaveBeenCalled()
-  })
-
-  it('a slot that shows no waiting page (a frame outside a chat\'s panel): the answer goes as before, not held to a wait', async () => {
-    opening.mockReturnValue(false)
-    expect(await call('filesOpenWith', { ref })).toMatchObject({ ok: true })
-    expect(opened.mock.calls[0]![0]).not.toHaveProperty('announced')
+    for (const [detail] of opened.mock.calls) expect(detail).not.toHaveProperty('openId')
   })
 })

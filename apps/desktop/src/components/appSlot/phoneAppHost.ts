@@ -1,4 +1,5 @@
 import type { TabOpenIntent } from '@shared/view-state'
+import { mayOpenEarly, openThroughWait } from '../../session/shared/extensions/file-open-wait'
 import { composeChatDraft } from '@/lib/composeDraft'
 import { widgetContext } from '../../session/shared/extensions/widget-context'
 import { showRendererContentMenu } from '../../lib/contentContextMenu'
@@ -107,6 +108,11 @@ const log = rendererLogger('app-slot/phone-host')
 export function phoneRuns(manifest: ExtensionManifest): boolean {
   return opensInChats(manifest)
 }
+
+/** A page's 「打开」 on a chat file before it is resolved (`hooks.opening`): its open begins, or no page came of it. */
+export type PhoneFileOpening =
+  | { openId: string; itemId: string; fileName?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
+  | { openId: string; withdrawn: true }
 
 export interface PhoneAppBinding {
   widget?: import('../../session/shared/extensions/app-runtime-protocol').AppWidget
@@ -390,10 +396,10 @@ export function hostAppFrame(
     /** 「用 X 打开」 resolved: the slot opens that App on the file, or asks when several claim it. */
     openWith(detail: AppOpenWithDetail): void
     /**
-     * 「用 X 打开」 on one of this chat's files, before it is resolved: its waiting page in the slot, as main's
-     * `openingChatFile` on the desktop — true when the slot shows one; `withdrawn`: it came to no page here.
+     * 「用 X 打开」 on one of this chat's files, before it is resolved: its waiting page in the slot for that open, as main's
+     * `openingChatFile` on the desktop; `withdrawn`: no page came of it. The answer (`openWith`) carries the same `openId`.
      */
-    opening?(file: { itemId: string; fileName?: string; intent?: TabOpenIntent; withdrawn?: true }): boolean
+    opening?(open: PhoneFileOpening): void
     navigate?(delta: -1 | 1): Promise<boolean>
     /** `navigation.onBack`: the page holds a Back step of its own (a folder), or lets go of it. A host without it has no Back to give. */
     claimBack?(claimed: boolean): void
@@ -788,14 +794,15 @@ export function hostAppFrame(
             ref, hooks.openWorkingCopy,
           )
         }
-        // The file's waiting page before it is resolved, as main says it on the desktop: one of this chat's files by id, to
-        // open in its panel — not asked to pick, not beside the page, not the page's own named tab.
-        const waitIn = 'id' in ref && args.ask !== true && args.peek !== true && tab === undefined ? (ref.chat ?? hosted.binding.chatId) : null
+        // The file's waiting page first, as main says it on the desktop, when this call may (the one rule, `mayOpenEarly`).
+        const openId = mayOpenEarly({ person: true, ask: args.ask === true, peek: args.peek === true, tab, resumed: false, ref, chat: ('chat' in ref ? ref.chat : undefined) ?? hosted.binding.chatId }) ? crypto.randomUUID() : null
         const named = openingNameOf(args)
-        const opening = (withdrawn?: true) => hooks.opening?.({ itemId: (ref as { id: string }).id, ...(named ? { fileName: named } : {}), ...(intent ? { intent } : {}), ...(withdrawn ? { withdrawn } : {}) })
-        // Held to a wait only when the slot shows one (a frame outside a chat's panel shows none: the answer goes as before).
-        let waiting = waitIn !== null && opening() === true
-        return files.openTarget(surface(), { ref: chatRef(args.ref) }).then((target) => {
+        const viewState = args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}
+        return openThroughWait({
+          begin: () => { if (openId) hooks.opening?.({ openId, itemId: (ref as { id: string }).id, ...(named ? { fileName: named } : {}), ...(intent ? { intent } : {}), ...viewState }) },
+          settle: (detail: AppOpenWithDetail) => hooks.openWith(openId ? { ...detail, openId } : detail),
+          fail: () => { if (openId) hooks.opening?.({ openId, withdrawn: true }) },
+        }, () => files.openTarget(surface(), { ref: chatRef(args.ref) }).then(async (target): Promise<AppOpenWithDetail | null> => {
           const choice = tab === undefined
             ? openerChoice(target.typedName, appsHereNow(), 'chat', phoneApps.remembered, args.ask === true)
             : requireOwnTabChoice(target.typedName, appsHereNow(), 'chat', hosted.binding.extensionId, tab)
@@ -803,15 +810,9 @@ export function hostAppFrame(
           const place = placeFor(choice, args.at)
           if (place) holdPlaceForOpeningPage(target.chatId, target.itemId, place.candidate, place.at)
           // Beside the page: a file nobody here opens shows in the host's preview there.
-          if (args.peek === true) return peek({ kind: 'chat', detail: { ...target, choice, intent } })
-          // Another chat's file: nothing waits for it here; that chat comes up with it.
-          if (waiting && target.chatId !== waitIn) { waiting = false; opening(true) }
-          hooks.openWith({ ...target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}), ...(waiting ? { announced: true as const } : {}) })
-          waiting = false
-        }).finally(() => {
-          // Every other way out (refused, failed) takes the wait back.
-          if (waiting) opening(true)
-        })
+          if (args.peek === true) { await peek({ kind: 'chat', detail: { ...target, choice, intent } }); return null }
+          return { ...target, choice, intent, ...viewState }
+        })).then(() => undefined)
       }
       case 'filesOpen':
         return files.open(surface(), { ref: chatRef(args.ref), ...(args.readOnly === true ? { readOnly: true } : {}), deferDetails: args.deferDetails === true })

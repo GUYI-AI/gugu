@@ -73,6 +73,8 @@ describe('an already-open live file is shown before metadata validation', () => 
     expect(await pending).toMatchObject({ ok: true });
     expect(openWithTarget).toHaveBeenCalledTimes(1);
     expect(actions().at(-1)).toMatchObject({ kind: 'openWith', detail: { background: true } });
+    // Brought forward already: no waiting page was put up for it.
+    expect(actions().some((action) => (action as { kind: string }).kind === 'openingChatFile')).toBe(false);
   });
 
   it('uses the ordinary opener when the tab was closed but its native page is still idle', async () => {
@@ -119,7 +121,11 @@ describe('files.openWith(file, { peek: true }): beside the page that asked (G1)'
   it('still refuses an unreadable file before opening a tab', async () => {
     vi.mocked(openWithTarget).mockRejectedValueOnce(Object.assign(new Error('No such file in a chat you are in'), { code: 'not-found' }));
     expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toMatchObject({ ok: false, code: 'not-found' });
-    expect(actions()).toEqual([{ kind: 'openingChatFile', itemId: 'item-1', intent: 'navigate' }]);
+    // Its waiting page was asked for (this open's id), and is taken back by the same id: nothing is opened.
+    const [begun, withdrawn] = actions() as { kind: string; openId: string }[];
+    expect(begun).toEqual({ kind: 'openingChatFile', openId: expect.any(String), itemId: 'item-1', intent: 'navigate' });
+    expect(withdrawn).toEqual({ kind: 'openingChatFile', openId: begun!.openId, withdrawn: true });
+    expect(actions()).toHaveLength(2);
     expect(resourceChatOf).not.toHaveBeenCalled();
   });
 
@@ -148,47 +154,59 @@ describe('files.openWith(file, { peek: true }): beside the page that asked (G1)'
   });
 });
 
-// A page's 「打开」 on its chat's file shows the file's waiting page before main resolves it (`openingChatFile`), as a
-// file card's click does; the answer is held to that wait (`announced`), and every way that is not that page takes it back.
+// A page's 「打开」 on its chat's file shows the file's waiting page before main resolves it (`openingChatFile`, an id for
+// this open), as a file card's click does — never waited on: the window answers nothing. The answer carries the same id;
+// every way that is not a page takes it back by that id. Where the page goes (this chat or another) is the window's to say.
 describe('files.openWith on a chat file: the waiting page first', () => {
   const OTHER = '0b000000-0000-4000-8000-0000000000b2';
   beforeEach(async () => {
     await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'kanban', tabId: 'folder', tabKind: 'kanban.board', conversation: CHAT });
-    // The window places the wait in the page's chat.
-    deliver.mockImplementation(async (_origin, action) => ((action as { kind: string; withdrawn?: true }).kind === 'openingChatFile' && !(action as { withdrawn?: true }).withdrawn ? { chat: CHAT } : undefined));
     vi.mocked(openWithTarget).mockClear();
   });
-  afterEach(() => deliver.mockImplementation(() => Promise.resolve()));
-  const opening = (extra: Record<string, unknown> = {}) => ({ kind: 'openingChatFile', itemId: 'item-1', intent: 'navigate', ...extra });
+  const begun = () => actions()[0] as { kind: string; openId: string; fileName?: string };
+  const opening = (extra: Record<string, unknown> = {}) => ({ kind: 'openingChatFile', openId: begun().openId, itemId: 'item-1', intent: 'navigate', ...extra });
+  const withdrawn = () => ({ kind: 'openingChatFile', openId: begun().openId, withdrawn: true });
 
-  it('said before it is resolved, with the name the page gave (its last segment); the answer goes to that wait', async () => {
-    expect(await openWith({ ref: { id: 'item-1' }, fileName: 'slides/deck.pdf' })).toMatchObject({ ok: true });
-    expect(actions()).toEqual([opening({ fileName: 'deck.pdf' }), expect.objectContaining({ kind: 'openWith', detail: expect.objectContaining({ itemId: 'item-1', announced: true }) })]);
-    expect(deliver.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(openWithTarget).mock.invocationCallOrder[0]!)
+  it('said before it is resolved, with the name the page gave (its last segment); the answer carries the same open', async () => {
+    let resolveTarget!: (value: unknown) => void;
+    vi.mocked(openWithTarget).mockImplementationOnce(() => new Promise((resolve) => { resolveTarget = resolve; }) as never);
+    const pending = openWith({ ref: { id: 'item-1' }, fileName: 'slides/deck.pdf' });
+    // Said while the file is still being resolved: nothing waits for the window.
+    await vi.waitFor(() => expect(actions()).toEqual([opening({ fileName: 'deck.pdf' })]));
+    resolveTarget({ kind: 'chat', target: { chatId: CHAT, itemId: 'item-1', name: 'deck.pdf', typedName: 'deck.pdf', file } });
+    expect(await pending).toMatchObject({ ok: true });
+    expect(actions()).toEqual([opening({ fileName: 'deck.pdf' }), expect.objectContaining({ kind: 'openWith', detail: expect.objectContaining({ itemId: 'item-1', openId: begun().openId }) })]);
   });
 
   it('no name given (a bare ref): none said — the window titles it with its own wording', async () => {
     expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
-    expect(actions()[0]).toEqual(opening());
-    expect(actions()[0]).not.toHaveProperty('fileName');
+    expect(begun()).not.toHaveProperty('fileName');
   });
 
-  it('refused: the wait is taken back, nothing opens', async () => {
+  it('refused: the wait is taken back by its id, nothing opens', async () => {
     vi.mocked(openWithTarget).mockRejectedValueOnce(Object.assign(new Error('No such file in a chat you are in'), { code: 'not-found' }));
     expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: false, code: 'not-found' });
-    await vi.waitFor(() => expect(actions()).toEqual([opening(), opening({ withdrawn: true })]));
+    expect(actions()).toEqual([opening(), withdrawn()]);
   });
 
-  it('another chat\'s file: the wait here is taken back first, then that chat is handed the file, not held to a wait', async () => {
+  it('another chat\'s file: the answer goes with its id — the window takes the wait here back and hands that chat the file', async () => {
     vi.mocked(openWithTarget).mockResolvedValueOnce({ kind: 'chat', target: { chatId: OTHER, itemId: 'item-1', name: 'deck.pdf', typedName: 'deck.pdf', file } } as never);
     expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
-    expect(actions()).toEqual([opening(), opening({ withdrawn: true }), expect.objectContaining({ kind: 'openWith', detail: expect.not.objectContaining({ announced: true }) })]);
+    expect(actions()).toEqual([opening(), expect.objectContaining({ kind: 'openWith', detail: expect.objectContaining({ chatId: OTHER, openId: begun().openId }) })]);
   });
 
   it('a session\'s working-copy file: not a page of this chat — the wait is taken back', async () => {
     vi.mocked(openWithTarget).mockResolvedValueOnce({ kind: 'session', target: { sessionId: 's', projectId: null, deviceId: null, path: 'a.md', ask: false } } as never);
     expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
-    await vi.waitFor(() => expect(actions()).toEqual([opening(), expect.objectContaining({ kind: 'openSessionFile' }), opening({ withdrawn: true })]));
+    expect(actions()).toEqual([opening(), expect.objectContaining({ kind: 'openSessionFile' }), withdrawn()]);
+  });
+
+  it('handing the answer over fails: the wait is taken back', async () => {
+    deliver.mockImplementation(async (_origin, action) => { if ((action as { kind: string }).kind === 'openWith') throw new Error('the window is gone'); });
+    try {
+      expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: false });
+      expect(actions().at(-1)).toEqual(withdrawn());
+    } finally { deliver.mockImplementation(() => Promise.resolve()); }
   });
 
   it.each([
@@ -196,20 +214,21 @@ describe('files.openWith on a chat file: the waiting page first', () => {
     ['beside the page (peek)', { ref: { id: 'item-1' }, peek: true }],
     ['the page\'s own named tab', { ref: { id: 'item-1' }, tab: 'board' }],
     ['a working copy\'s file', { ref: { workspace: 'project:p-1', name: 'docs/plan.html' } }],
-  ])('%s: no waiting page', async (_name, args) => {
-    await openWith(args)
+  ])('%s: no waiting page, and its answer carries no open', async (_name, args) => {
+    await openWith(args);
+    expect(actions().some((action) => (action as { kind: string }).kind === 'openingChatFile')).toBe(false);
+    expect(actions().some((action) => !!(action as { detail?: { openId?: string } }).detail?.openId)).toBe(false);
+  });
+
+  it('a page worked by an agent, not the person: no waiting page', async () => {
+    await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'kanban', tabId: 'folder', tabKind: 'kanban.board', conversation: CHAT, operator: { kind: 'agent', id: 'user:0a000000-0000-4000-8000-000000000009' } });
+    await openWith({ ref: { id: 'item-1' } });
     expect(actions().some((action) => (action as { kind: string }).kind === 'openingChatFile')).toBe(false);
   });
 
   it('a page in no chat, naming none: no waiting page', async () => {
     await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'kanban', tabId: 'dock', tabKind: 'kanban.board' });
-    await openWith({ ref: { id: 'item-1' } })
+    await openWith({ ref: { id: 'item-1' } });
     expect(actions().some((action) => (action as { kind: string }).kind === 'openingChatFile')).toBe(false);
-  });
-
-  it('the window places no wait (the page is in no chat panel there): the answer goes as before, not held to a wait', async () => {
-    deliver.mockImplementation(() => Promise.resolve());
-    expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
-    expect(actions()).toEqual([opening(), expect.objectContaining({ kind: 'openWith', detail: expect.not.objectContaining({ announced: true }) })]);
   });
 });

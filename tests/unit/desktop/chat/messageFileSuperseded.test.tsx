@@ -8,7 +8,8 @@ import { useMessageFilePreview } from '../../../../apps/desktop/src/components/c
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
-import { closeChatTab, panelTabsOf, askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/file-opens'
 
 // A file card clicked, then another before the first is up: the first was replaced, nothing failed — no notice for it.
 // A real failure still says so.

@@ -19,7 +19,8 @@ import { groupUpdateFor } from '../../session/shared/extensions/app-card-state'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { groupPageSlot, isFolderItem, isUnresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { PageLoading } from '../../lib/loading/PageLoading'
-import { askFileOpen, closeChatTab, closeUnresolved, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeChatTab, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { beginTabFileOpen, failFileOpen } from '../../session/renderer/features/chats/chat-tabs/file-opens'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
@@ -466,11 +467,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
                 // Its document not painted yet: the same loading mark as the waiting page, over the blank frame.
                 placeholder={<PageLoading overlay />}
                 // Its file's waiting page as this tab's next page, the shell's waiting tab — or taken back (main's on the desktop).
-                onOpening={(file) => {
-                  if (file.withdrawn) { closeUnresolved(chatId, file.itemId); return false }
-                  void askFileOpen(chatId, { itemId: file.itemId }, { ...(file.fileName ? { fileName: file.fileName } : {}), from: tabId, ...(file.intent ? { intent: file.intent } : {}) }, null).catch(() => undefined)
-                  return true
-                }}
+                onOpening={(open) => 'withdrawn' in open ? failFileOpen(open.openId) : beginTabFileOpen(chatId, tabId, open.openId, open)}
                 tabId={groupPageSlot(chatId, entry.pageKey)}
                 commandRef={entry.current ? frameCommand : undefined}
                 testId="group-app-frame"
