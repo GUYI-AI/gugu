@@ -6,7 +6,7 @@ import {
   resolveAttachmentMimeType,
 } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { inferAttachmentKind, isMpegTsVideo, resolveFileMimeType, sniffFileMimeType } from '../../../../packages/core/src/shared/ui/attachmentModels'
-import { attachmentTypeKey } from '../../../../apps/desktop/src/components/chat/attachmentType'
+import { attachmentTypeKey } from '@gugu/core/shared/ui/attachmentType'
 
 // 「PNG 有时渲染有时不渲染」:agent 发文件时 mime_type 可选、大小写随意,判据必须是 mime ∪ 扩展名。
 describe('image mime resolution', () => {

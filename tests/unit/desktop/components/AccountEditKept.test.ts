@@ -5,13 +5,13 @@
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { AccountSection } from '../../../../apps/desktop/src/components/settings/AccountSection'
 
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({ readOccupation: async () => null, writeOccupation: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/ownSettings', async () => {
-  const { readModel } = await import('../../../../apps/desktop/src/lib/readModel')
-  return { ownSettings: readModel({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) }
+  const { replica } = await import('../../../../apps/desktop/src/lib/replica')
+  return { ownSettings: replica({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) }
 })
 
 beforeEach(() => { queryClient.clear() })

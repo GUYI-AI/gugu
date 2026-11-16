@@ -203,7 +203,7 @@ export class AcpRuntime {
 
   setModelOption(
     sessionId: string,
-    dimension: 'model' | 'effort',
+    dimension: 'model' | 'effort' | 'fast',
     value: string
   ): Promise<Result<LiveSettingApplyResult, AcpSetModelOptionError>> {
     return this.manager.setConfigOption(sessionId, dimension, value);

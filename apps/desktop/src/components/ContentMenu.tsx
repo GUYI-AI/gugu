@@ -81,7 +81,7 @@ function PhoneLevel({ items, onAction, onOpen, back }: RowsProps & { onOpen: (ro
 }
 
 /**
- * A program of this computer as 「在…中打开」 draws it everywhere: its icon from the same read model (useOpenInApps);
+ * A program of this computer as 「在…中打开」 draws it everywhere: its icon from the same replica (useOpenInApps);
  * until that is read, and for an id that is no program, the slot stays empty.
  */
 function ProgramIcon({ id }: { id: string }) {

@@ -45,6 +45,8 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
   })
   return { useChatStore: store, useChatStoreReader: () => store, useStoreValueBy: <T>(read: (value: ReturnType<typeof store>) => T) => read(store()) }
 })
+// The contacts replicas publish identities through the account's IM library.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({ ...(await original<object>()), openedImRepository: () => getImRepositoryMock() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 
 const { renameLocal, notify } = vi.hoisted(() => ({ renameLocal: vi.fn(), notify: vi.fn() }))
@@ -55,6 +57,7 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readReq
 // The private identity_removed channel is not under test here; keep it off the real realtime socket.
 vi.mock('../../../../apps/desktop/src/hooks/useIdentityLifecycle', () => ({ useIdentityLifecycle: vi.fn() }))
 
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { ContactsProvider } from '../../../../apps/desktop/src/store/contacts'
 import { readPerfCounters } from '../../../../apps/desktop/src/lib/perfCounters'
 import { useContactsStore, type ContactsContextValue } from '../../../../apps/desktop/src/store/contactsContext'
@@ -92,6 +95,8 @@ const sharedGroupRow = {
 }
 
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', authUser.id)
   renameLocal.mockReset().mockResolvedValue(undefined)
   notify.mockReset()
   store = null

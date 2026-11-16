@@ -228,7 +228,7 @@ export function useAgentInstallationStatuses() {
       predicate: (q) =>
         matchQuery({ queryKey: AGENT_DERIVED_QUERY_PREFIX }, q) && (!opts?.keepStatus || q.queryKey[1] !== 'status'),
     });
-    // Auth/connection readings are the subscription read models: re-read them on the host that completed the
+    // Auth/connection readings are the subscription replicas: re-read them on the host that completed the
     // operation, including when the library has since switched hosts.
     if (!opts?.keepStatus) void refreshSubscriptionReadings(host.remote?.deviceId ?? null, opts?.providerId);
   };

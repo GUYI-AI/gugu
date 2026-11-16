@@ -12,13 +12,15 @@ vi.mock('../../../../apps/desktop/src/lib/topics', () => ({
   topicService: { listTopicsOfChat: vi.fn(() => new Promise((resolve) => { pending.resolvers.push(resolve) })) },
 }))
 const { useTopicsOfChat } = await import('../../../../apps/desktop/src/hooks/useTopics')
+// The topics are an account replica: it follows the published session, which the product signs in with the same user.
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 
 const topic = (chatId: string) => ({ chat_id: chatId, name: chatId, source_message_id: 'm1', participant_count: 1, message_count: 1, last_message_at: null, is_participant: true }) as unknown as TopicSummary
 const firstRenderCounts: Record<string, number[]> = {}
 function Probe({ chatId }: { chatId: string }) {
   const { topics } = useTopicsOfChat(chatId)
   const seen = firstRenderCounts[chatId] ?? (firstRenderCounts[chatId] = [])
-  seen.push(topics.length)
+  seen.push(topics?.length ?? 0)
   return null
 }
 const auth = (user: AuthUser | null) => ({ user, loading: false, status: user ? 'authenticated' : 'unauthenticated', updateUser: () => {}, logout: async () => ({ success: true }) }) as never
@@ -31,6 +33,7 @@ afterEach(() => harness.cleanup())
 
 async function visit(user: AuthUser | null, chatId: string, resolveWith?: unknown[]) {
   firstRenderCounts[chatId] = []
+  followRendererSession(user ? 'SIGNED_IN' : 'SIGNED_OUT', user?.id ?? null)
   await harness.render(createElement(AuthContext.Provider, { value: auth(user) }, createElement(Probe, { chatId })))
   const seenBeforeFetch = firstRenderCounts[chatId]?.[0]
   if (resolveWith) await act(async () => { pending.resolvers.shift()?.(resolveWith) })

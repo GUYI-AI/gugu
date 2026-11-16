@@ -106,6 +106,8 @@ const ptyConfigV1 = z.object({
   model: z.string().optional(),
   /** Reasoning-effort level for the model above. Absent = the CLI's own default for it. */
   effort: z.string().optional(),
+  /** Per-session Fast intent; absent means off. */
+  fastMode: z.boolean().optional(),
   /**
    * The task's name until it is bound to an agent identity (its pending-bind record, task-name.ts):
    * written at creation, consumed by provisioning, and the permanent name of a session that never
@@ -179,6 +181,8 @@ const acpConfigV1 = z.object({
   model: z.string().optional(),
   /** Reasoning-effort level for the model above. Absent = the CLI's own default for it. */
   effort: z.string().optional(),
+  /** Per-session Fast intent; absent means off. */
+  fastMode: z.boolean().optional(),
   /**
    * The task's name until it is bound to an agent identity (its pending-bind record, task-name.ts):
    * written at creation, consumed by provisioning, and the permanent name of a session that never

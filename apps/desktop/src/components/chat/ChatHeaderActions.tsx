@@ -20,6 +20,7 @@ import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
 import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 import { useInnerSidebarChat } from '../../lib/innerSidebarBridge'
+import { Unknown } from '../ui/Unknown'
 
 interface ChatHeaderActionsProps {
   isGroupChat: boolean
@@ -30,7 +31,8 @@ interface ChatHeaderActionsProps {
   showHeaderMenu: boolean
   mobile?: boolean
   room?: {
-    snapshot: GroupCollabSnapshot
+    /** null until the roster is read: the count is a placeholder, ❌ 0. */
+    snapshot: GroupCollabSnapshot | null
     settings: GroupChatSettings | null
     statusIndicatorProps?: ReturnType<typeof groupAgentStatusIndicatorProps>
     onReload: () => Promise<void>
@@ -59,7 +61,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   if (popup.chatId !== activeChatId) setPopup({ chatId: activeChatId, kind: null })
   const openPopup = (kind: 'apps') => { onCloseHeaderMenu(); setPopup({ chatId: activeChatId, kind }) }
   const closePopup = () => setPopup({ chatId: activeChatId, kind: null })
-  const memberCount = memberTopic ? memberTopicCount : room ? room.snapshot.humans.length + room.snapshot.agents.length : 0
+  const memberCount = memberTopic ? memberTopicCount : room?.snapshot ? room.snapshot.humans.length + room.snapshot.agents.length : null
   const wideGroup = isGroupChat && !narrow
   // #2548 桌面内层侧栏挂着这个对话时,话题那一枚与那一列重复(话题就列在那里),收起来。成员那一枚每种宽度、每个端都在;
   // 邀请是成员页的第一行(GroupMemberPanelControls),页头 ❌ 再放一枚。
@@ -69,7 +71,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
     {isRoomChat || memberTopic ? <>
       <Button variant="ghost" size="md" className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} data-testid={AUTOMATION_TEST_IDS.chatHeaderMembersButton} aria-label={t('header.memberList')} title={t('header.memberList')} aria-pressed={infoShown}
         onClick={() => infoShown ? onCloseInfo() : onOpenInfo('members')}>
-        <Users className="text-[var(--faint-fg)]" />{memberCount}
+        <Users className="text-[var(--faint-fg)]" />{memberCount ?? <Unknown className="w-[1.5ch]" />}
       </Button>
       {wideGroup && <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />}
     </> : null}

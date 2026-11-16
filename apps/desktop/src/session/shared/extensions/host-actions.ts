@@ -35,6 +35,8 @@ export interface ExtensionHostActionOrigin {
   /** null: a slot in no session (a group's side panel) — only what a page says about itself comes from one. */
   sessionId: string | null;
   tabId: string;
+  /** The asking page (its webContents id): what the host draws for it goes in the window that page is drawn in. */
+  pageId: number | null;
 }
 
 export type ExtensionHostAction =

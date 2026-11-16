@@ -286,6 +286,14 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     waitForFirstDelivery = null
     provisionCalls = 0
   })
+  it.each(['priority', 'default'] as const)('passes validated speed %s into the inference app-server', async (serviceTier) => {
+    const sessionId = `fast-tier-${serviceTier}`
+    try {
+      await provisionAndOverride({ sessionId, providerId: 'codex', permissionMode: 'edit', cwd: '/tmp/w', baseCommand: '/x/codex', serviceTier }, deps)
+      expect(started[0]?.extraArgs).toEqual(expect.arrayContaining([`service_tier="${serviceTier}"`]))
+    } finally { await teardown(sessionId) }
+  })
+
   it('起 app-server 时带上模型与推理强度', async () => {
     const out = await provisionAndOverride(
       {

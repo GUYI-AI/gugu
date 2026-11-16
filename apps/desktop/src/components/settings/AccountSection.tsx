@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
 import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
-import { useReadModel } from '../../lib/readModel'
+import { useReplica } from '../../lib/replica'
 import { clearViewState, useViewState } from '../../lib/viewStateTable'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
@@ -61,7 +61,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   // 身份(product spec:新账号在「认识你」里填,这里能改)。存在账号设置里、只有本人读得到,不进名片。
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
   // 身份是自己那一行设置里的一个键:和首次引导、文件存储等读同一份(lib/ownSettings)。
-  const settingsRow = useReadModel(ownSettings, user?.id ? ['user'] : null)
+  const settingsRow = useReplica(ownSettings, user?.id ? ['user'] : null)
   useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
   const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
   // 改了但还没存的那一份;没有 = 没动过,显示存着的。

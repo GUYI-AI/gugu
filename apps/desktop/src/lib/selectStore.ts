@@ -5,6 +5,7 @@ import { useRef, useSyncExternalStore } from 'react'
  * slices count as the same (`equals`, shallow by default); it re-renders only when its own slice changes, whatever else
  * in the value moved. The owner publishes during render, so readers rendered in the same pass already see the new
  * value; readers that did not render are told in the owner's layout effect (`notify`).
+ * @@@client-state-model — the one subscription primitive (docs/design/client-state-model.md §6).
  */
 export type SelectStore<T> = {
   get: () => T

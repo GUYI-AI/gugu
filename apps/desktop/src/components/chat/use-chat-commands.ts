@@ -8,7 +8,7 @@ export const GroupRenameContext = createContext<{ request: number } | null>(null
 /** Commands reveal the chat's info and its name's editor there; all validation and saving stay there. */
 export function useChatCommands({ chatId, isGroup, visible, surface, openSettings, snapshot }: {
   chatId: string | null; isGroup: boolean; visible: boolean; surface: RefObject<HTMLElement | null>
-  snapshot: GroupCollabSnapshot
+  snapshot: GroupCollabSnapshot | null
   openSettings: () => void
 }) {
   const { settings } = useGroupChatSettings(isGroup ? chatId : null, groupRoleRevision(snapshot))

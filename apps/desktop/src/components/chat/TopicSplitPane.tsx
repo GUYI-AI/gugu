@@ -103,6 +103,7 @@ export type TopicSplitPaneProps = {
   runningTokens?: RunningToken[]
   /** 运行条详情卡读哪条会话(来源群)。 */
   runningPreviewChatId?: string | null
+  composerControls?: React.ReactNode
   onClose: () => void
   /** 发言人的 id —— ChatMessageComposer 的 @ 候选与自指要用它。 */
   currentUserId: string | null
@@ -207,6 +208,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   agentStatuses,
   runningTokens,
   runningPreviewChatId = null,
+  composerControls,
   history,
   onClose,
   currentUserId,
@@ -333,7 +335,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     flashMessageId,
   }), [showMessage, rows, messages, mobile, memberReadSeqs, deliveryWaits, recipientFacts, memberProfiles, memberProfileOpener, onOpenAttachment, readReceiptHandle, onReaction, onForward, onDelete, onQuote, flashMessageId, history, visible])
 
-  // 手机上话题是来源页的一枚页签:在前面时,返回先回到来源那一枚。
+  // Phone topic navigation stays in its source room; Back first returns to the main conversation.
   useBackLayer(onClose, mobile && visible !== false)
   const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
   const page = (
@@ -431,6 +433,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </RunningBarSlot>
         }>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
+        {composerControls}
         <ChatMessageComposer
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}

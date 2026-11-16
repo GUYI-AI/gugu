@@ -563,6 +563,7 @@ export class LocalSessionProvider implements SessionProvider {
         isResuming: commandResuming,
         model: session.model ?? '',
         effort: launchEffort ?? '',
+        fastMode: platformModelForSpawn === null && session.fastMode === true,
       });
       agentCommand = applySessionRuntimeCommand(agentCommand, {
         harnessExecutable: compatibleRuntime.executable,
@@ -662,6 +663,8 @@ export class LocalSessionProvider implements SessionProvider {
         // otherwise the composer's model / effort controls silently do nothing on that path.
         model: session.model ?? undefined,
         effort: launchEffort ?? undefined,
+        fastMode: platformModelForSpawn === null && session.fastMode === true,
+        userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),
         permissionMode,
         // @@@2503 composer 选的模型来源(平台 / harness),按会话记的那条。存量会话没有记录 →
         // undefined,宿主照旧回退 agent 级配置。

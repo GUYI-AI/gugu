@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, cdp } from 'vitest/browser';
 import type { ProjectionHost } from '../../../app-runtime/projection-source';
 import type { ProjectionHostPacket, ProjectionViewerPacket } from '@shared/extensions/projection-protocol';
 import { mountProjection } from '../../../app-runtime/projection-view';
 
 let close: (() => Promise<void>) | undefined;
 afterEach(async () => { await close?.(); close = undefined; vi.restoreAllMocks(); document.body.replaceChildren(); });
-async function setup() {
+async function setup(interactive = true, localTouchViewing = false) {
   let hear: (watchId: string, packet: ProjectionHostPacket) => void = () => {};
   let watchId = '';
   const packets: ProjectionViewerPacket[] = [];
@@ -32,7 +32,7 @@ async function setup() {
   document.body.append(root);
   const states: string[] = [];
   const painted: Array<{ sequence: number; width: number; height: number } | null> = [];
-  const view = await mountProjection(host, root, 'source', { state: state => states.push(state), painted: frame => painted.push(frame) });
+  const view = await mountProjection(host, root, 'source', { interactive, localTouchViewing, state: state => states.push(state), painted: frame => painted.push(frame) });
   close = view.close;
   const canvas = document.createElement('canvas');
   canvas.width = 640; canvas.height = 480;
@@ -52,6 +52,54 @@ async function setup() {
 }
 
 describe('shared projection surface in Chromium', () => {
+  it('keeps real two-finger viewing and moved touches local, and sends a stationary touch only after release', async () => {
+    await page.viewport(600, 700);
+    const s = await setup(true, true); await s.paint();
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: Array<{ x: number; y: number; id: number }>) => cdp().send('Input.dispatchTouchEvent', { type, touchPoints });
+    await touch('touchStart', [{ x: 100, y: 150, id: 1 }]);
+    expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    await touch('touchStart', [{ x: 100, y: 150, id: 1 }, { x: 260, y: 250, id: 2 }]);
+    await touch('touchMove', [{ x: 80, y: 130, id: 1 }, { x: 290, y: 280, id: 2 }]);
+    await touch('touchEnd', []);
+    expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    // A second finger in the letterbox still belongs to the same local gesture, in either order.
+    for (const outsideFirst of [false, true]) {
+      const first = { x: 130, y: outsideFirst ? 20 : 150, id: 1 };
+      const second = { x: 260, y: outsideFirst ? 150 : 20, id: 2 };
+      await touch('touchStart', [first]); await touch('touchStart', [first, second]); await touch('touchEnd', []);
+      expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    }
+    await touch('touchStart', [{ x: 130, y: 150, id: 1 }]);
+    await touch('touchMove', [{ x: 160, y: 190, id: 1 }]); await touch('touchEnd', []);
+    expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    await touch('touchStart', [{ x: 150, y: 150, id: 1 }]);
+    expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    await touch('touchEnd', []);
+    await vi.waitFor(() => expect(s.packets.filter(packet => packet.type === 'input')).toHaveLength(2));
+    expect(s.packets.filter(packet => packet.type === 'input').map(packet => packet.input)).toEqual([
+      expect.objectContaining({ kind: 'pointer', action: 'down' }), expect.objectContaining({ kind: 'pointer', action: 'up' }),
+    ]);
+  });
+  it('keeps a thumbnail read-only, admits enlarged input, then freezes the last picture without receiving new frames', async () => {
+    const s = await setup(false); await s.paint();
+    const image = s.root.querySelector('img')!;
+    const before = image.src;
+    expect(s.input.disabled).toBe(true);
+    image.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 100 }));
+    expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    s.view.setInteractive(true); expect(s.input.disabled).toBe(false);
+    await page.elementLocator(image).click();
+    expect(s.packets.some(packet => packet.type === 'input')).toBe(true);
+    await s.view.freeze();
+    expect(s.input.disabled).toBe(true);
+    expect(image.isConnected).toBe(true); expect(image.src).toBe(before);
+    const count = s.packets.length;
+    s.emit({ type: 'frame', generation: 'a', frame: { sequence: 2, width: 1, height: 1, mime: 'image/png', data: 'YQ==' } });
+    s.view.setInteractive(true);
+    s.input.dispatchEvent(new InputEvent('input', { data: 'late' }));
+    expect(s.packets).toHaveLength(count); expect(image.src).toBe(before);
+    await s.view.close(); expect(image.isConnected).toBe(false);
+  });
   it('stops automatic recapture after a bounded number of consecutive decoding failures', async () => {
     vi.spyOn(HTMLImageElement.prototype, 'decode').mockRejectedValue(new Error('Corrupt captured image'));
     let hear: (watch: string, packet: ProjectionHostPacket) => void = () => {};

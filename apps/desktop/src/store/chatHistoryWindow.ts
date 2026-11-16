@@ -43,7 +43,8 @@ function boundRows(rows: MessageItem[], limit: number, edge: 'head' | 'tail' = '
   const pending = rows.filter((row) => row.seq < 1)
   const settled = rows.filter((row) => row.seq > 0)
   const capacity = Math.max(0, limit - pending.length)
-  return [...(capacity === 0 ? [] : edge === 'head' ? settled.slice(0, capacity) : settled.slice(-capacity)), ...pending]
+  const kept = new Set((capacity === 0 ? [] : edge === 'head' ? settled.slice(0, capacity) : settled.slice(-capacity)).map(row => row.id))
+  return rows.filter(row => row.seq < 1 || kept.has(row.id))
 }
 
 // @@@tail-window A window at the tail stays small: mounted rows are what every style pass pays for, so a chat left open must not

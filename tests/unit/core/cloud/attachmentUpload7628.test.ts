@@ -73,4 +73,24 @@ describe('attachment upload transports', () => {
     }, { chat_id: 'project-chat', as: 'member' })
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ content_type: 'image/png', chat_id: 'project-chat' })
   })
+  it('a given id whose permit was used or lapsed uploads once more under a fresh id; without one, or on another refusal, it is said', async () => {
+    const plan = { staging_key: 'staging/u/fresh', url: 'https://storage.example/scoped', method: 'PUT', fields: {}, max_bytes: 1024 }
+    const ids: string[] = []
+    const fetcher = vi.fn(async (url: string, init: RequestInit) => {
+      if (!url.endsWith('/upload')) return new Response(null, { status: init.method === 'PUT' && ids.length ? 409 : 204 })
+      ids.push(JSON.parse(init.body as string).request_id)
+      return ids.length === 1 ? new Response(JSON.stringify({ error: 'expired', message: 'Upload permit expired' }), { status: 410 }) : new Response(JSON.stringify(plan))
+    })
+    const endpoint = { supabaseUrl: 'https://project.example', anonKey: 'public', token: 'user', fetch: fetcher as typeof fetch }
+    const bytes = { bytes: new Uint8Array([1]), name: 'f.bin', contentType: 'application/octet-stream' }
+    // A fresh id is a new upload: a storage conflict is not taken for "already stored", even on a retry.
+    await expect(uploadAttachmentBytes(endpoint, bytes, { chat_id: 'c', as: 'a', request_id: 'row-id' }, { retry: true })).rejects.toThrow('409')
+    expect(ids[0]).toBe('row-id')
+    expect(ids[1]).toMatch(/^[0-9a-f-]{36}$/)
+    for (const [answer, scope] of [[{ status: 410, error: 'expired' }, { chat_id: 'c', as: 'a' }], [{ status: 403, error: 'denied' }, { chat_id: 'c', as: 'a', request_id: 'row-id' }]] as const) {
+      const once = vi.fn(async () => new Response(JSON.stringify({ error: answer.error, message: 'no' }), { status: answer.status }))
+      await expect(uploadAttachmentBytes({ ...endpoint, fetch: once as typeof fetch }, bytes, scope)).rejects.toMatchObject({ code: answer.error })
+      expect(once).toHaveBeenCalledOnce()
+    }
+  })
 })

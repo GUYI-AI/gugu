@@ -185,6 +185,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { sessionFastMode } from '../session-config/fast-mode';
+import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
@@ -1473,6 +1475,9 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
+        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
+        renderFastModeHint={renderFastModeHint}
         permissionModeOptions={localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,

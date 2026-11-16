@@ -23,7 +23,7 @@ import { paintHighlight } from '@session-chat/core/highlight/highlighter';
 import type { Measured, MeasureCtx } from '@session-chat/core/define';
 import type { HtmlLeafLayout } from '@session-chat/core/layout/layout-types';
 import type { HtmlBlock } from '@session-chat/core/markdown/document';
-import { onCleanup, onMount } from 'solid-js';
+import { createEffect, createMemo, on, onCleanup, untrack } from 'solid-js';
 import { render } from 'solid-js/web';
 import { applyBodyType, htmlBlockClass, measureHtml } from './layout';
 
@@ -92,14 +92,23 @@ function HtmlBlockView(props: { node: Measured<HtmlLeafLayout> }) {
   const theme = useTheme();
   let root!: HTMLDivElement;
 
-  onMount(() => {
-    const layout = props.node.layout;
-    applyBodyType(root, theme());
-    root.innerHTML = layout.html;
-    onCleanup(hydrateMentionIcons(root));
-    highlightNestedCode(root, caches);
-    if (stream) stream.frontier.set(layout.id, fadeFreshText(root, stream.frontier.get(layout.id) ?? 0));
-  });
+  // The block stays mounted across re-measures of the same source block (domFromContentOnly): a width change only
+  // moves and resizes its frame. What is painted follows the html (a collapsed block's is empty) and the theme's type.
+  createEffect(() => applyBodyType(root, theme()));
+  // A memo, so a re-measure that hands over the same html notifies nothing.
+  const html = createMemo(() => props.node.layout.html);
+  createEffect(
+    on(
+      html,
+      (html) => {
+        const id = untrack(() => props.node.layout.id);
+        root.innerHTML = html;
+        onCleanup(hydrateMentionIcons(root));
+        highlightNestedCode(root, caches);
+        if (stream) stream.frontier.set(id, fadeFreshText(root, stream.frontier.get(id) ?? 0));
+      },
+    ),
+  );
 
   const onClick = (event: MouseEvent) => {
     const target = event.target as Element;
@@ -157,5 +166,6 @@ export const htmlBlockDef = defineBlock<HtmlBlock, HtmlLeafLayout>({
     return { height: metrics.height, width: metrics.width, layout };
   },
 
+  domFromContentOnly: true,
   Render: HtmlBlockView,
 });

@@ -160,15 +160,17 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
       calls.uploads.push(['oss', String(form.get('key')), file.type, Buffer.from(bytes)])
       return new Response(null, { status: 204 })
     }
+    // A declared send: the bytes go up after the commit and are finished (checked against the declaration) behind it.
+    if (url.endsWith('/functions/v1/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     if (url.endsWith('/functions/v1/attachments/commit')) {
       const args = JSON.parse(String(init?.body)) as Record<string, unknown>
       commitBodies.push(args)
       if (commitError) return new Response(JSON.stringify({ error: 'denied', message: commitError.message }), { status: 403 })
-      const bytes = stagedBytes.get(String(args.staging_key)) ?? new Uint8Array()
+      const size = typeof args.size_bytes === 'number' ? args.size_bytes : (stagedBytes.get(String(args.staging_key)) ?? new Uint8Array()).length
       const type = String(args.content_type)
       const row = {
         id: args.message_id, chat_id: args.chat_id, sender_user_id: args.sender_user_id, to_user_ids: args.to_user_ids, thread_root_id: args.thread_root_id ?? null,
-        content: `[附件] ${String(args.file_name)} (${type})\n[Size] ${bytes.length}\n[Kind] ${type.startsWith('image/') ? 'image' : 'file'}`,
+        content: `[附件] ${String(args.file_name)} (${type})\n[Size] ${size}\n[Kind] ${type.startsWith('image/') ? 'image' : 'file'}`,
         content_type: 'attachment', file_item_id: `item:${String(args.staging_key)}`, file_version: 1, file_blob_id: null,
       }
       // 服务端按消息 id 幂等:同一条重放,回同一行,不再多一条。
@@ -2099,7 +2101,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(row.file_item_id).toBe(`item:${String(h.calls.uploads[0][1])}`)
     await client.close()
   })
-  test('message_send_file → commit 被拒:报错原话,没有消息(没提交的上传在服务端过期回收,这里不清)', async () => {
+  test('message_send_file → commit 被拒:报错原话,没有消息,也没有字节上去(字节只跟在提交了的消息后面)', async () => {
     const h = harness()
     h.failCommit(new Error('the group only lets admins send files'))
     const client = await connect(h.deps)
@@ -2109,7 +2111,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('the group only lets admins send files')
-    expect(h.calls.uploads).toHaveLength(1)
+    expect(h.calls.uploads, 'a refused declaration sends no bytes: they go up only behind a committed message').toHaveLength(0)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
@@ -2134,7 +2136,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(refused.commitBodies).toHaveLength(1)
   })
 
-  test('file tools reject payloads above their backend object limits before upload', async () => {
+  // No client-side cap: the server's upload permit is the limit, and its refusal names the exact number.
+  test('file tools refuse a file above the server permit, with its exact limit, before any byte is stored', async () => {
     const h = harness()
     const chatResult = await callTool('message_send_file', {
       chat_id: '00000000-0000-4000-8000-000000000001',
@@ -2142,7 +2145,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       file_path: sparseFixture('too-large.bin', (25 * 1024 * 1024) + 1),
     }, h.deps)
       .then(() => null, (error: unknown) => error)
-    expect(chatResult).toEqual(expect.objectContaining({ message: expect.stringContaining('26214400 bytes') }))
+    expect(chatResult).toEqual(expect.objectContaining({ message: expect.stringContaining('a file is at most 26214400') }))
     expect(h.calls.uploads).toHaveLength(0)
   })
   // #1244 thread 归属由会话决定:message_send 没有 thread_root_id 这个参数。写类不认识的键直接拒、点名报回去,

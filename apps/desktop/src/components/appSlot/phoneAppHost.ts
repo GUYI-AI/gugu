@@ -340,7 +340,7 @@ function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
  * a tap in an App decides it (`openerChoice`; `none`: the panel offers an App that would) — main's `groupFileOpener` on
  * the desktop, this page's on the phone.
  */
-export async function groupFileOpener(args: { chatId: string; itemId: string; at?: Record<string, string> }): Promise<Result<AppOpenWithDetail>> {
+export async function groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string> }): Promise<Result<AppOpenWithDetail>> {
   try {
     const target = await files.groupFile(args.chatId, args.itemId)
     const choice = openerChoice(target.typedName, appsHereNow(), 'chat', phoneApps.remembered)

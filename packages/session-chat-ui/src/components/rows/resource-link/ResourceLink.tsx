@@ -20,7 +20,8 @@
 import type { MeasureCtx } from '@session-chat/core/define';
 import { readableLabel, wrappedRowHeight } from '../readable-label';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { GenericFileIcon, IconError } from '@session-chat/components/primitives/icons';
+import { FileMark, IconError } from '@session-chat/components/primitives/icons';
+import { genericFileIcon } from '@session-chat/components/primitives/icons.css';
 import { resolveFileIconClass } from '@session-chat/lib/file-icons';
 import { Show } from 'solid-js';
 import type { ChatResourceLink, ResourceTarget } from '@session-chat/model';
@@ -109,7 +110,7 @@ export function ResourceLink(props: ResourceLinkProps) {
       role={isClickable() ? 'button' : undefined}
     >
       <div class={iconWrap}>
-        <Show when={iconName()} fallback={<GenericFileIcon />}>
+        <Show when={iconName()} fallback={<FileMark name={props.item.name} size={12} class={genericFileIcon} />}>
           <span class={iconName()!} />
         </Show>
       </div>

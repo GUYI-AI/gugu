@@ -13,9 +13,15 @@ function sendKey(message: MessageItem): string | null {
 export type MessageAlbums = ReadonlyMap<string, readonly MessageItem[]>
 const NO_ALBUMS: MessageAlbums = new Map()
 
+/** A send whose files are still arriving: its sender declared them and is uploading their bytes (the rows come within a moment). */
+export function sendStillArriving(members: readonly MessageItem[]): boolean {
+  return members.length < (members[0]?.send_group_size ?? 0) && members.some(member => member.file_metadata?.status === 'pending')
+}
+
 /**
  * Collapses the rows of each send into its first one. That row is replaced by the send as a whole: its send state is the
- * worst of the files' (one failed ⇒ failed). A send of which only one row is here is drawn as that row.
+ * worst of the files' (one failed ⇒ failed). A send of which only one row is here is drawn as that row, unless the rest
+ * are still arriving: then it is already the album, which keeps their places (its height does not change as they land).
  */
 export function collapseSendGroups<Row extends { type: string; message: MessageItem }>(rows: readonly Row[]): { rows: readonly Row[]; albums: MessageAlbums } {
   const byKey = new Map<string, MessageItem[]>()
@@ -26,13 +32,13 @@ export function collapseSendGroups<Row extends { type: string; message: MessageI
     const members = byKey.get(key)
     if (members) { members.push(row.message); grouped = true } else byKey.set(key, [row.message])
   }
-  if (!grouped) return { rows, albums: NO_ALBUMS }
+  if (!grouped && ![...byKey.values()].some(sendStillArriving)) return { rows, albums: NO_ALBUMS }
   const albums = new Map<string, readonly MessageItem[]>()
   const drawn: Row[] = []
   for (const row of rows) {
     const key = row.type === 'message' ? sendKey(row.message) : null
     const members = key ? byKey.get(key)! : null
-    if (!members || members.length < 2) { drawn.push(row); continue }
+    if (!members || (members.length < 2 && !sendStillArriving(members))) { drawn.push(row); continue }
     if (members[0] !== row.message) continue
     albums.set(row.message.id, members)
     drawn.push({ ...row, message: sendAsOneMessage(members) })

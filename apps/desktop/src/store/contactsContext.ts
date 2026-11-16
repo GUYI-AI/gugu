@@ -54,7 +54,6 @@ export interface ContactsContextValue {
   setAgentLook: (agentId: string, look: AgentLook) => Promise<void>
   removeOwnedAgent: (agentId: string, options?: { removeSocialIdentity?: boolean }) => Promise<void>
   removeContact: (contactId: string) => Promise<void>
-  getCommonGroupChats: (contactId: string) => Promise<ContactGroupChat[]>
 }
 
 const EMPTY_CONTACTS: ContactsContextValue = {
@@ -97,7 +96,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   setAgentLook: async () => {},
   removeOwnedAgent: async () => {},
   removeContact: async () => {},
-  getCommonGroupChats: async () => [],
 }
 export const ContactsContext = createContext<ContactsContextValue>(EMPTY_CONTACTS)
 

@@ -24,7 +24,7 @@ vi.mock('@renderer/lib/ipc', () => ({
 
 const { createMachineSettingsHost, SettingsHostProvider } = await import('./settings-host');
 const { useAppSettingsKey } = await import('./use-app-settings-key');
-const { queryClient } = await import('@/lib/readModel');
+const { queryClient } = await import('@/lib/replica');
 
 type Api = ReturnType<typeof useAppSettingsKey<'project'>>;
 

@@ -27,6 +27,7 @@ import { phoneCalendarEventView } from '../../desktop/src/mobile/phone-device/ph
 import { phoneChatReadTools } from './phone-agent-chat.mjs'
 import { phoneFileTools, phoneTurnFiles } from './phone-agent-files.mjs'
 import { phoneWebTool } from './phone-agent-web.mjs'
+import { cleanupStaleRemoteFileDirectories } from '../../desktop/electron/remoteFileOpen.ts'
 import { phoneMemoryTools } from './phone-agent-memory.mjs'
 import { createPhoneSessionTools } from './phone-agent-sessions.mjs'
 import { createPhoneActionRuntime } from './phone-actions.mjs'
@@ -95,6 +96,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
+  // A download interrupted and never asked for again leaves its chunks in the file cache: drop the stale ones, as the
+  // desktop does at start (same function, same lifetime). A failure is reported, never a reason not to start.
+  void cleanupStaleRemoteFileDirectories(join(store.directory, 'file-cache'))
+    .catch((error) => warn(`stale file cache cleanup failed: ${error instanceof Error ? error.message : String(error)}`))
   const updateReadiness = () => {
     const wasReady = ready
     ready = startupComplete && authenticated && rpcConnected && heartbeatHealthy && !stopped && !signingOut

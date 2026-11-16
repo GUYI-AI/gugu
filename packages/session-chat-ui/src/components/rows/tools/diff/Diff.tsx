@@ -4,7 +4,8 @@ import { useChatTranslator } from '@session-chat/localization';
 import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
 import { useCaches } from '@session-chat/components/contexts/CachesContext';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { GenericFileIcon, IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
+import { FileMark, IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
+import { genericFileIcon } from '@session-chat/components/primitives/icons.css';
 import { applyTokensToElement } from '@session-chat/core/highlight/apply-tokens';
 import { basename } from '@session-chat/lib/path';
 import { For, Show, createEffect, onCleanup } from 'solid-js';
@@ -21,7 +22,7 @@ export function DiffHeader(props: DiffHeaderProps) {
   const running = () => props.item.status === 'running' && !props.item.awaitingPermission;
   const stats = () => props.hasBody && !props.item.awaitingPermission && props.section?.adds !== null && props.section?.dels !== null && ((props.section?.adds ?? 0) > 0 || (props.section?.dels ?? 0) > 0);
   return <div class={css.diffHeader({ hasBody: props.hasBody })} style={{ height: `${props.headerH}px` }} data-patch-scope={props.section?.patch.scope}>
-    <GenericFileIcon />
+    <FileMark name="" size={12} class={genericFileIcon} />
     <For each={props.section?.patch.changes ?? []}>{change => {
       const path = () => changedFilePath(change);
       const label = () => ('oldPath' in change && typeof change.oldPath === 'string' ? `${basename(change.oldPath)} → ` : '') + (path() ? basename(path()!) : change.operation);

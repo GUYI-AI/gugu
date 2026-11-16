@@ -44,12 +44,15 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
   })
   return { useChatStore: store, useChatStoreReader: () => store, useStoreValueBy: <T>(read: (value: ReturnType<typeof store>) => T) => read(store()) }
 })
+// The contacts replicas publish identities through the account's IM library.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({ ...(await original<object>()), openedImRepository: () => getImRepositoryMock() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 const { readRequiredDisplayIdentitiesMock } = vi.hoisted(() => ({ readRequiredDisplayIdentitiesMock: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readRequiredDisplayIdentities: readRequiredDisplayIdentitiesMock }))
 // The private identity_removed channel is not under test here; keep it off the real realtime socket.
 vi.mock('../../../../apps/desktop/src/hooks/useIdentityLifecycle', () => ({ useIdentityLifecycle: vi.fn() }))
 
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { ContactsProvider } from '../../../../apps/desktop/src/store/contacts'
 import { useContactsStore, type ContactsContextValue } from '../../../../apps/desktop/src/store/contactsContext'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
@@ -74,6 +77,8 @@ async function renderProvider() {
 const alice: ContactUser = { id: 'c-1', display_name: 'Alice', avatar: '', email: null, bio: null, type: 'human' }
 
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', authUser.id)
   store = null
   for (const id of Object.keys(identitiesById)) delete identitiesById[id]
   putIdentitiesMock.mockClear()

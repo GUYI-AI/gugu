@@ -1,4 +1,4 @@
-import { followLink, openLinkTarget } from './guguLinks'
+import { followLink, openLinkTarget, OpenSuperseded } from './guguLinks'
 import { chatService } from './chat'
 import { getCurrentAuthUserId } from './supabase'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
@@ -10,7 +10,7 @@ import { parseSentAttachmentLink } from '@gugu/session-core/session-record/send-
 export function followConversationLink(href: string): boolean {
   const target = parseSentAttachmentLink(href)
   if (!target) return followLink(href)
-  void openMessageAttachment(target.messageId, target.chatId).catch(error => notify({ tier: 'error', title: messageForUser(error) }))
+  void openMessageAttachment(target.messageId, target.chatId).catch(error => { if (!(error instanceof OpenSuperseded)) notify({ tier: 'error', title: messageForUser(error) }) })
   return true
 }
 

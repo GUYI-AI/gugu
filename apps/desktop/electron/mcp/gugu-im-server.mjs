@@ -6,6 +6,7 @@ import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
+import { openAsBlob } from 'node:fs'
 import { basename, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -16,14 +17,14 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { fileRefKey } from '@gugu/core/shared/fileResolver'
+import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
-import { workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
+import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { AttachmentsError, commitAttachment, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
@@ -653,7 +654,6 @@ function normToList(v) {
 function clampLimit(v, def, lo, hi) {
   return Math.min(Math.max(lo, Number(v) || def), hi)
 }
-const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 // 附件叫什么：默认就是磁盘上那个文件名，要改名才传 file_name。
 // 传了路径还要求再手打一遍文件名是多余的，而多余的那一遍正是打错字的地方。
 export function resolveUploadName(args) {
@@ -666,7 +666,7 @@ export function resolveUploadName(args) {
 // 这里原先收的是 content_base64，而 MCP 工具的调用方就是模型：它得把整串编码逐 token
 // 复制一遍，漂一次后面全部错位，base64 解码又不报错，于是坏文件静默发出去（#5828 实测
 // 16 KB 的文件毁掉 60%）。该参数已整个去掉，不留这条路。
-export async function readUploadBytes(label, args, maxBytes) {
+async function uploadTarget(label, args) {
   const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
   if (!filePath) throw new Error(`${label}: file_path is required`)
   if (!isAbsolute(filePath)) throw new Error(`${label}: file_path must be absolute, got ${filePath}`)
@@ -678,11 +678,22 @@ export async function readUploadBytes(label, args, maxBytes) {
     throw new Error(`${label}: cannot read ${target} (${err?.code || err?.message || 'unknown'})`)
   }
   if (!info.isFile()) throw new Error(`${label}: ${target} is not a file`)
-  if (info.size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
+  return { target, size: info.size }
+}
+export async function readUploadBytes(label, args, maxBytes) {
+  const { target, size } = await uploadTarget(label, args)
+  if (size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
   const buf = await readFile(target)
   // 读盘期间被换掉就不传——宁可响亮失败，也别传一份说不清是什么的东西出去。
-  if (buf.length !== info.size) throw new Error(`${label}: ${target} changed while reading`)
+  if (buf.length !== size) throw new Error(`${label}: ${target} changed while reading`)
   return buf
+}
+// An attachment goes up as a file-backed Blob: this code never reads the whole file, and the server's upload permit is the
+// one size limit. fetch still reads the body ahead of the socket, so the upload's memory peak is about the file's size
+// (a chunked upload bounds it to a chunk). A file-backed Blob also refuses to be read once the file changes on disk.
+async function uploadBlob(label, args, contentType) {
+  const { target } = await uploadTarget(label, args)
+  return openAsBlob(target, { type: contentType })
 }
 function parseJwtPayload(token) {
   const part = String(token || '').split('.')[1]
@@ -2206,17 +2217,20 @@ async function handleProfile(args, deps) {
 
 /** The bytes of a file on this computer that the shared classifier makes a text document; `null` for stored bytes. */
 async function documentUploadBytes(args) {
-  const bytes = await readUploadBytes('message_send_file', args, ATTACHMENT_MAX_BYTES)
+  // Only a file within the live text size can be a document: anything larger is never read here.
+  const { size } = await uploadTarget('message_send_file', args)
+  if (size > WORKSPACE_TEXT_MAX_BYTES) return null
+  const bytes = await readUploadBytes('message_send_file', args, WORKSPACE_TEXT_MAX_BYTES)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   return workspaceUploadKind(resolveUploadName(args), contentType, new Uint8Array(bytes)).kind === 'document' ? bytes : null
 }
 
-// gugu_file:send-file = 字节经 attachments/upload 直传 OSS,attachments/commit 放进会话的「附件」、发一条附件消息(#7290 gugu-3,
-// 和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, label, chatId, read) {
-  const bytes = read ?? await readUploadBytes(label, args, ATTACHMENT_MAX_BYTES)
+// gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
+// (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
+async function uploadForSend(args, deps, label, chatId) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+  const bytes = await uploadBlob(label, args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType }, { chat_id: chatId, as: deps.context.agentId }) }
 }
@@ -2343,7 +2357,15 @@ async function downloadFile(args, deps) {
   let saving = downloading.get(key)
   if (!saving) {
     saving = (async () => {
-      const file = await deps.resolveFile(source.ref, source.reader)
+      // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
+      const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
+      let file = await deps.resolveFile(source.ref, source.reader)
+      while (file.status === 'pending' && Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
+        file = await deps.resolveFile(source.ref, source.reader)
+      }
+      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
+      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
       if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
@@ -2436,11 +2458,16 @@ async function handleFile(args, deps) {
     }))) {
       fileName = resolveUploadName(args)
     } else {
-      const upload = await uploadForSend(args, deps, 'message_send_file', chatId, documentBytes ?? undefined)
-      const { endpoint, contentType, stagingKey } = upload
-      fileName = upload.fileName
+      // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
+      const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+      const bytes = documentBytes ?? await uploadBlob('message_send_file', args, contentType)
+      const endpoint = await deps.attachmentsEndpoint()
+      const declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: chatId, as: deps.context.agentId })
+      fileName = resolveUploadName(args)
       const commit = {
-        staging_key: stagingKey,
+        staging_key: declared.staging_key,
+        sha256: declared.sha256,
+        size_bytes: declared.size_bytes,
         message_id: messageId,
         chat_id: chatId,
         sender_user_id: deps.context.agentId,
@@ -2456,6 +2483,10 @@ async function handleFile(args, deps) {
       message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
         if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
+      })
+      if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
+        { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}).catch((error) => {
+        throw new Error(`message_send_file: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
       })
     }
     if (!message?.id) throw new Error('message_send_file: the server did not confirm the send')

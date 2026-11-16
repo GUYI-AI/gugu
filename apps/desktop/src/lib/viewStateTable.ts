@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react'
 import { viewStateCache } from '../session/renderer/lib/stores/view-state-cache'
 import { useSelect } from './selectStore'
 import { rendererLogger } from './log'
-import { readModelAccount } from './readModel'
+import { replicaAccount } from './replica'
 import { getRendererSession, observeRendererSession } from './sessionPublication'
 
 /**
@@ -16,7 +16,7 @@ import { getRendererSession, observeRendererSession } from './sessionPublication
  * written yet is the panel's initial value. The account's in-memory entries leave when it signs out; a conversation left
  * or deleted takes its entries with it (forgetConversation).
  *
- * `account` defaults to the account the replica follows (readModelAccount: the last one signed in from the first frame,
+ * `account` defaults to the account the replica follows (replicaAccount: the last one signed in from the first frame,
  * then the published session, held through a session that is merely absent). A store that already holds its account
  * (the drafts, per render) names it, so it never reads another account's entry in the render where the account changes.
  */
@@ -26,7 +26,7 @@ export type ViewPanel = { conversation: string; panel: string; persist?: boolean
 export const DEVICE = '@device'
 
 // In-memory entries leave with their account, under the replica's rule: a real sign-out or another person signing in.
-let memoryOwner = getRendererSession()?.user?.id ?? readModelAccount().id
+let memoryOwner = getRendererSession()?.user?.id ?? replicaAccount().id
 observeRendererSession(({ event, session }) => {
   const next = session?.user?.id ?? null
   if (next ? next === memoryOwner : event !== 'SIGNED_OUT') return
@@ -37,9 +37,9 @@ observeRendererSession(({ event, session }) => {
 // The account the table keys by changes (another person signs in, or the first account of a start that had none known):
 // what is kept per account is read again by its owner.
 const accountListeners = new Set<(account: string | null) => void>()
-let keyedAccount = readModelAccount().id
+let keyedAccount = replicaAccount().id
 observeRendererSession(() => {
-  const next = readModelAccount().id
+  const next = replicaAccount().id
   if (next === keyedAccount) return
   keyedAccount = next
   for (const listener of [...accountListeners]) listener(next)
@@ -53,7 +53,7 @@ export function onViewStateAccount(listener: (account: string | null) => void): 
 
 const log = rendererLogger('view-state')
 const prefixOf = (owner: string) => `view:${owner}/`
-const keyOf = ({ conversation, panel, account: owner }: ViewPanel) => `${prefixOf(owner ?? readModelAccount().id ?? '')}${conversation}/${panel}`
+const keyOf = ({ conversation, panel, account: owner }: ViewPanel) => `${prefixOf(owner ?? replicaAccount().id ?? '')}${conversation}/${panel}`
 
 /** Read the entry of a panel (outside React: tests, actions). */
 export function readViewState<T extends object>(panel: ViewPanel): Partial<T> {
@@ -107,7 +107,7 @@ export function showConversation(conversation: string): void {
 /** A conversation left or deleted: its panels' entries and its tab strip go, and it takes no writes until shown again. */
 export function forgetConversation(conversation: string): void {
   left.add(conversation)
-  const account = readModelAccount().id
+  const account = replicaAccount().id
   if (account) viewStateCache.forget(`${prefixOf(account)}${conversation}/`)
   viewStateCache.forget(`chat:${conversation}:`)
 }
@@ -159,7 +159,7 @@ export function useInterface<T>(name: string, initial: T, account: string = DEVI
  */
 export function takeLegacyLocalStorageForAccount(match: (key: string) => boolean, move: (key: string, raw: string, account: string) => void): void {
   const run = (account: string) => takeLegacyLocalStorage(match, (key, raw) => move(key, raw, account))
-  const account = readModelAccount().id
+  const account = replicaAccount().id
   if (account) return run(account)
   const stop = onViewStateAccount((next) => {
     if (!next) return

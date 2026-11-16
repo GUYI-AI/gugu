@@ -15,6 +15,7 @@ import { resolveMessagingValue } from '@/lib/localizedStoredValue'
 import { useAgentContactStatusLabel } from './contactAgentTone'
 import { useAgentDisplayStatus } from '../hooks/useAgentDisplayStatus'
 import { Button } from './ui/Button'
+import { Unknown } from './ui/Unknown'
 import { FieldList } from './contactsDetailControls'
 import { cn } from '@/lib/cn'
 import { Search } from '@/lib/icons'
@@ -111,8 +112,11 @@ export interface MemberProfileCardModel {
   ownerDisplayName?: string | null
   role: GroupMemberRole
   profileScope?: 'group' | 'direct'
-  /** 'former' = 不在当前名册、只因发过消息而有资料(退群 / 被移出);成员列表不列他,消息气泡与资料卡照常。 */
-  membership?: 'current' | 'former'
+  /**
+   * 'former' = 不在当前名册、只因发过消息而有资料(退群 / 被移出);成员列表不列他,消息气泡与资料卡照常。
+   * 'unknown' = 名册还没读到:角色、档位画占位,不出管理控件 —— ❌ 当成已退群的「成员」。
+   */
+  membership?: 'current' | 'former' | 'unknown'
   agentStatus?: AgentDisplayStatus
   /** listen_mode from GroupAgentItem (agent-only, group scope). */
   listenMode?: ListenMode
@@ -251,8 +255,9 @@ export function MemberProfileCard({
   // itself stays reachable where the product offers it; only this entry is closed.
   const canOpenChat = !!onOpenChat && (!isAgent || (member.ownerUserId === user?.id && !!session))
   const editBusy = !!editControls?.busy
-  const showEdits = isGroupProfile && (editControls?.canChangeRole || editControls?.canRemove)
-  const roleLabel = member.role === 'owner' ? t('profile.roles.owner') : member.role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')
+  const rosterUnknown = member.membership === 'unknown'
+  const showEdits = isGroupProfile && !rosterUnknown && (editControls?.canChangeRole || editControls?.canRemove)
+  const roleLabel = rosterUnknown ? <Unknown /> : member.role === 'owner' ? t('profile.roles.owner') : member.role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')
 
   // Listen-mode (倾听模式): agent-only, group scope.
   // member.listenMode comes from GroupAgentItem.listen_mode via toAgentProfile.
@@ -410,7 +415,7 @@ export function MemberProfileCard({
         <div className={profileListenClass}>
           <div className={profileListenLabelClass}>{t('profile.listenModeDescription')}</div>
           <div className={profileListenSegmentClass}>
-            {LISTEN_MODES.map((mode) => (
+            {rosterUnknown ? <Unknown /> : LISTEN_MODES.map((mode) => (
               <button
                 key={mode}
                 type="button"

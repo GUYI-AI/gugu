@@ -9,7 +9,7 @@ import { useCreditData } from '../../../../apps/desktop/src/components/usage/use
 import { fetchCreditDays } from '../../../../apps/desktop/src/lib/usage/cloud'
 import type { CreditUsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { readCreditV2Account } from '../../../../apps/desktop/src/lib/billing/v2/runtime'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 vi.mock('../../../../apps/desktop/src/lib/billing/v2/runtime', () => ({ readCreditV2Account: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/usage/cloud', async original => ({ ...(await original<typeof import('../../../../apps/desktop/src/lib/usage/cloud')>()), fetchCreditDays: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({ subscribePrivateUserEventBus: vi.fn(() => ({})), unsubscribePrivateUserEventBus: vi.fn() }))
@@ -31,7 +31,7 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done })
   return { promise, resolve }
 }
-/** The account is the published session's (the read model follows it), as in the product. */
+/** The account is the published session's (the replica follows it), as in the product. */
 function Probe({ userId }: { userId: string | null }) {
   const state = useSpendingPower(userId ? { id: userId } : null)
   return createElement('pre', null, JSON.stringify(state))
@@ -40,7 +40,7 @@ let harness: ReturnType<typeof createReactHarness>
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve() })
 const state = () => JSON.parse(harness.container.querySelector('pre')!.textContent!)
 beforeEach(() => {
-  // The read model publishes through react-query: deliver its notifications in the act() that caused them.
+  // The replica publishes through react-query: deliver its notifications in the act() that caused them.
   notifyManager.setScheduler((callback) => { callback() })
   vi.clearAllMocks(); queryClient.clear(); followRendererSession('SIGNED_OUT', null)
   harness = createReactHarness(); vi.mocked(readCreditV2Account).mockResolvedValue(account())
