@@ -48,6 +48,14 @@ describe('rewinding a failed turn (#7304)', () => {
     expect(onEditMessage).not.toHaveBeenCalled()
   })
 
+  it('treats a refused turn like a failed one', async () => {
+    const onEditMessage = vi.fn()
+    const read = await render({ onEditMessage, canRevertMessage: () => true },
+      { ...failed, id: 'turn-refused:refused', outcome: { kind: 'done', reason: 'refusal' } })
+    expect(read).toEqual({ rewind: 1, restore: 0 })
+    expect(onEditMessage).toHaveBeenCalledExactlyOnceWith({ itemId: 'user-1' })
+  })
+
   it('offers no rewind on a stopped turn', async () => {
     const read = await render({ onEditMessage: vi.fn(), canRevertMessage: () => true },
       { ...failed, id: 'turn-refused:cancelled', outcome: { kind: 'cancelled', reason: 'cancelled' } })

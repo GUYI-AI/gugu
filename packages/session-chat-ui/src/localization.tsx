@@ -128,6 +128,7 @@ const fallbackMessages = {
   'transcript.turnCancelled': 'Cancelled{reason}',
   'transcript.turnFailed': 'Failed{reason}',
   'transcript.turnCompleted': 'Completed{reason}',
+  'transcript.turnRefused': 'Refused',
   'transcript.turnProcess': 'Process',
   'transcript.thinkingAndExecution': 'Thinking and execution',
   'transcript.thinkingLive': 'Thinking and working',

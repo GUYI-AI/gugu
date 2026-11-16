@@ -197,7 +197,7 @@ function outcomeLabel(outcome: TranscriptTurnOutcome, translate: ChatTranslator)
     case 'error':
       return translate('transcript.turnFailed', { reason: '' });
     case 'done':
-      return translate('transcript.turnCompleted', { reason: '' });
+      return outcome.reason === 'refusal' ? translate('transcript.turnRefused') : translate('transcript.turnCompleted', { reason: '' });
     default:
       return translate('transcript.turnFinished', { reason: '' });
   }
@@ -248,10 +248,15 @@ function badgeParts(
   return { label: outcomeLabel(outcome, translate), reason };
 }
 
+/** A failed or refused turn: the ones that leave a person stuck, and the only ones this row offers to step back from. */
+function isStuckOutcome(outcome: TranscriptTurnOutcome): boolean {
+  return outcome.kind === 'error' || (outcome.kind === 'done' && outcome.reason === 'refusal');
+}
+
 /** The failed turn's own message, when the agent can step back to before it. Shared by DOM and measurement. */
 function rewindItemId(data: TurnOutcomeItem, commands: ChatCommands | undefined): string | null {
   const itemId = data.promptItemId;
-  return data.outcome.kind === 'error' && itemId && commands?.onEditMessage && commands.canRevertMessage?.(itemId) ? itemId : null;
+  return isStuckOutcome(data.outcome) && itemId && commands?.onEditMessage && commands.canRevertMessage?.(itemId) ? itemId : null;
 }
 
 /** The host still owns an unsent input: restoring it would create a second send. Shared by DOM and measurement. */
@@ -310,7 +315,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
     const translate = useChatTranslator();
     const lane = () => outcomeLaneLayout(props.data, props.ctx.measureCtx!());
     const commands = useCommands();
-    const isError = () => props.data.outcome.kind === 'error';
+    const isError = () => isStuckOutcome(props.data.outcome);
     const isCancelled = () => props.data.outcome.kind === 'cancelled';
     // 为插话停下的一轮:下一轮就是接着干(那条消息),所以❌ 没有「继续 / 丢弃」可言。
     const isUserStopped = () =>

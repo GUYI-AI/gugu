@@ -71,6 +71,7 @@ import { conversationCanCollapse, conversationTailLane } from '@session-chat/com
 import { stampGroupRoles } from '@session-chat/core/units';
 import { localDayKey } from '@session-chat/lib/day-boundary';
 import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, ToolRunItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import type { TranscriptSessionNotice } from '@gugu/session-core/acp';
 import { fileChangeSummary, isListedInSummary, successfulFileDiff } from '@session-chat/state/file-change-summary';
 import { collectOpenedOutputs, openedFilePath, openedOutputKey, outputsOfRun } from '@session-chat/state/opened-outputs';
 import { hasToolPictures, tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@session-chat/state/tool-run';
@@ -119,6 +120,10 @@ export function isViewerInput(item: ChatItem, viewerId?: string): boolean {
  * 条目（工具回灌的合成消息），把那种东西塞回输入框会让用户看到一条自己没写过的指令。
  * 取**第一条**而不是最后一条：一个 turn 的开场白才是它在跑的那条指令。
  */
+function isRewoundMark(item: ChatItem): boolean {
+  return item.kind === 'session-notice' && (item as TranscriptSessionNotice).code === 'history-reverted';
+}
+
 function turnPrompt(turn: TranscriptTurn): { text: string; itemId: string } | undefined {
   if (turn.initiator !== 'user') return undefined;
   for (const item of turn.items as readonly ChatItem[]) {
@@ -406,7 +411,7 @@ export function flattenTier(
   const latestTurnId = ctx.latestTurnId ?? turns.at(-1)?.id;
   const hidden = turns.map(turn => !ctx.active && turn.id !== latestTurnId && isEmptyAgentTurn(turn));
   const turnItems: ChatItem[][] = turns.map((turn, index) => hidden[index]
-    ? (turn.items as readonly ChatItem[]).filter(itemIsUser) : [...(turn.items as readonly ChatItem[])]);
+    ? (turn.items as readonly ChatItem[]).filter(itemIsUser) : (turn.items as readonly ChatItem[]).filter(item => !isRewoundMark(item)));
 
   // 连续折叠回合合并成一条(#4981),判据在 `planTurnFoldRuns`。
   const { folds: foldPlans, runs: foldRuns, absorbed } = planTurnFoldRuns(
@@ -645,7 +650,8 @@ export function flattenTier(
       processItem({ kind: 'turn-completion', id: `${turn.id}:completion`, turnId: turn.id, text: completionResult });
     }
 
-    if (!ctx.active && turn.outcome && turn.outcome.kind !== 'done') {
+    // A refused turn ends like a done one, but it is the turn a person most needs to step back from (#7304).
+    if (!ctx.active && turn.outcome && (turn.outcome.kind !== 'done' || turn.outcome.reason === 'refusal')) {
       const prompt = turnPrompt(turn);
       processItem({
         kind: 'turn-outcome',
@@ -655,6 +661,10 @@ export function flattenTier(
         ...(prompt ? { prompt: prompt.text, promptItemId: prompt.itemId } : {}),
       });
     }
+
+    // #7304 Where the conversation was rewound: after everything the kept turn drew (its cards and outcome too).
+    const rewound = (turn.items as readonly ChatItem[]).find(isRewoundMark);
+    if (rewound) processItem(rewound);
   }
 
   // 还在跑的后台任务 —— 同样只在 active 档发,贴在列表末尾(在「此刻的状态」那一行之上:
