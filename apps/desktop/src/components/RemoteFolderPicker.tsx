@@ -3,7 +3,7 @@ import { ChevronRight, Folder, FolderPlus, FileText, Home, Link as LinkIcon, Ref
 import { deviceFsMakeDirectory } from '../lib/deviceFs'
 import type { DeviceFsEntry } from '@gugu/core/cloud/deviceFsProtocol'
 import { remoteDirectory, RemoteDirectoryError, UNREACHABLE_PATH_CODES, type RemoteDirectory } from '../lib/remoteDirectory'
-import { useReplica } from '../lib/replica'
+import { useReplica, useReplicaFetching } from '../lib/replica'
 import type { DeviceRpcError } from '../lib/deviceRpc'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
@@ -117,8 +117,11 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
 
   /** The folder shown: the one asked for once it is read, until then the one stood on. */
   const listing: RemoteDirectory | null = reading.state === 'value' ? reading.value : standing.state === 'value' ? standing.value : null
-  const loading = reading.state === 'unknown'
-  const navError = reading.state === 'error' ? navErrorOf(current.path, reading.error) : null
+  // A folder read again (refresh) is loading too: dimmed, its seconds counted; a refresh that failed is said beside the
+  // listing still shown (❌ the old listing as if it were current).
+  const refreshing = useReplicaFetching(remoteDirectory, [deviceId, current.path, current.hidden])
+  const loading = reading.state === 'unknown' || refreshing
+  const navError = reading.state !== 'unknown' && reading.error ? navErrorOf(current.path, reading.error) : null
   const home = listing?.home ?? (tilde.state === 'value' ? tilde.value.home : null)
   const truncatedCount = listing?.truncated ?? null
 
