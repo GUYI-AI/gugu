@@ -58,10 +58,8 @@ export class AssistantCloseError extends Error {
   }
 }
 
-/** 确认框要先知道的:它自己的会话、它开过的会话(数一下给那个勾)。 */
-export async function planLocalClose(assistantId: string, deps: Pick<LocalCloseDeps, 'check' | 'listSessions'>): Promise<LocalClosePlan> {
-  await deps.check?.()
-  const listed = await deps.listSessions()
+/** 确认框要先知道的:它自己的会话、它开过的会话(数一下给那个勾),从它那台机器上列出的会话里分出来。 */
+export function planLocalClose(assistantId: string, listed: readonly CloseSession[]): LocalClosePlan {
   return {
     own: listed.filter((summary) => isAssistantSession(summary, assistantId)),
     started: assistantDescendants(listed.map((summary) => ({ summary })), assistantId).map((item) => item.summary),

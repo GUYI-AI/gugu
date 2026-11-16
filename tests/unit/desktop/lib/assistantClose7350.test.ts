@@ -57,31 +57,26 @@ afterEach(() => vi.clearAllMocks())
 
 describe('close the assistant that lives on this computer (#7350)', () => {
   it('cloud cleanup unavailable or the target changed: refuse before deleting any schedule, session or identity', async () => {
-    const plan = await planLocalClose(GUGU, rig().deps)
+    const plan = planLocalClose(GUGU, sessions)
     const { calls, deps } = rig({ check: async () => { throw new Error('cloud cleanup is not available') } })
     await expect(closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, plan, deps)).rejects.toMatchObject({ step: 'check' })
     expect(calls).toEqual([])
   })
-  it('checks the cloud home before reading a plan; a rejected check never lists tasks', async () => {
-    const { deps } = rig({ check: async () => { throw new Error('cloud home changed') } })
-    await expect(planLocalClose(GUGU, deps)).rejects.toThrow('cloud home changed')
-    expect(deps.listSessions).not.toHaveBeenCalled()
-  })
   it('knows its own session and every session it started (child, grandchild), nothing else', async () => {
-    const plan = await planLocalClose(GUGU, rig().deps)
+    const plan = planLocalClose(GUGU, sessions)
     expect(plan.own.map((s) => s.conversationId)).toEqual(['s-gugu'])
     expect(plan.started.map((s) => s.conversationId).sort()).toEqual(['s-child', 's-grandchild'])
   })
 
   it('box unticked: only its own schedules go; started tasks keep their schedules and identities', async () => {
     const { calls, deps } = rig()
-    await closeLocalAssistant({ assistantId: GUGU, deleteStarted: false }, await planLocalClose(GUGU, deps), deps)
+    await closeLocalAssistant({ assistantId: GUGU, deleteStarted: false }, planLocalClose(GUGU, await deps.listSessions()), deps)
     expect(calls).toEqual(['schedule:a-gugu', 'archive:s-child', 'archive:s-grandchild', `agent:${GUGU}`, 'wipe', 'reset'])
   })
 
   it('box ticked: only permanently deleted tasks lose schedules; unbound tasks and their schedules stay recoverable', async () => {
     const { calls, deps } = rig()
-    await closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, await planLocalClose(GUGU, deps), deps)
+    await closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, planLocalClose(GUGU, await deps.listSessions()), deps)
     expect(calls.slice(0, 2).sort()).toEqual(['schedule:a-child', 'schedule:a-gugu'])
     expect(calls).not.toContain('schedule:a-other')
     expect(calls).not.toContain('schedule:a-grandchild')
@@ -97,14 +92,14 @@ describe('close the assistant that lives on this computer (#7350)', () => {
     const { calls, deps } = rig({
       listSessions: vi.fn().mockResolvedValueOnce([...sessions, unbound]).mockResolvedValueOnce([unbound, sessions[3]]),
     })
-    await closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, await planLocalClose(GUGU, deps), deps)
+    await closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, planLocalClose(GUGU, await deps.listSessions()), deps)
     expect(calls).not.toContain('archive:s-gugu')
     expect(calls.slice(-4)).toEqual([`agent:${GUGU}`, 'archive:s-own-unbound', 'wipe', 'reset'])
   })
 
   it('a schedule that is just starting stops everything before anything is deleted (say "wait a moment")', async () => {
     const { calls, deps } = rig({ deleteAutomation: vi.fn(async () => { throw new Error('automation_runs_active') }) })
-    const error = await closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, await planLocalClose(GUGU, deps), deps).catch((e: unknown) => e)
+    const error = await closeLocalAssistant({ assistantId: GUGU, deleteStarted: true }, planLocalClose(GUGU, await deps.listSessions()), deps).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(AssistantCloseError)
     expect(error).toMatchObject({ step: 'schedules', kind: 'schedule-starting' })
     expect(calls).toEqual([])
@@ -112,14 +107,14 @@ describe('close the assistant that lives on this computer (#7350)', () => {
 
   it('deleting it fails: it is still here, so its session keeps running, its home stays and nothing is reset', async () => {
     const { calls, deps } = rig({ removeAgent: vi.fn(async () => { throw new Error('rpc down') }) })
-    const error = await closeLocalAssistant({ assistantId: GUGU, deleteStarted: false }, await planLocalClose(GUGU, deps), deps).catch((e: unknown) => e)
+    const error = await closeLocalAssistant({ assistantId: GUGU, deleteStarted: false }, planLocalClose(GUGU, await deps.listSessions()), deps).catch((e: unknown) => e)
     expect(error).toMatchObject({ step: 'identity', kind: 'failed' })
     expect(calls).toEqual(['schedule:a-gugu', 'archive:s-child', 'archive:s-grandchild'])
   })
 
   it('it is deleted but its home could not be cleared: say so, and still reset this computer back to "meet Gugu"', async () => {
     const { calls, deps } = rig({ wipeHome: vi.fn(async () => { throw new Error('EBUSY') }) })
-    const error = await closeLocalAssistant({ assistantId: GUGU, deleteStarted: false }, await planLocalClose(GUGU, deps), deps).catch((e: unknown) => e)
+    const error = await closeLocalAssistant({ assistantId: GUGU, deleteStarted: false }, planLocalClose(GUGU, await deps.listSessions()), deps).catch((e: unknown) => e)
     expect(error).toMatchObject({ step: 'home', kind: 'failed' })
     expect(calls).toEqual(['schedule:a-gugu', 'archive:s-child', 'archive:s-grandchild', `agent:${GUGU}`, 'reset'])
   })
