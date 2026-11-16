@@ -47,7 +47,7 @@ function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps 
       : ready?.source === 'local' && ready.host_online === false ? t('attachmentView.holderOffline', { machine: ready.host_label ?? t('attachmentView.holderMachine') }) : null
   // Named the way the file list names it (GroupFileName, 摩擦单 F39): the file's own name once read, the link's words before.
   const name = ready?.file_name ?? (typeof children === 'string' ? children : null)
-  return <MentionPill href={href} file title={reason ?? ready?.file_name ?? ''} unavailable={reason !== null} onClick={onClick} rest={rest}>
+  return <MentionPill href={href} file={name ?? ''} title={reason ?? ready?.file_name ?? ''} unavailable={reason !== null} onClick={onClick} rest={rest}>
     {name !== null ? <GroupFileName name={name} /> : children}
   </MentionPill>
 }
