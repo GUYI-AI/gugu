@@ -10,7 +10,7 @@ import type { AssistantMachine } from '../../session/renderer/features/assistant
 import { rendererLogger } from '../../lib/log';
 import { cachedDevicesAccount } from '../../store/devicesCache';
 import { assistantPanelAccountId, requireAssistantPanelBridge } from '../../lib/assistantPanelBridge';
-import { assistantPanel } from './assistant-panel-replica';
+import { onAssistantPanelChanged } from './assistant-panel-replica';
 
 type ProgramNotification = { server: string; method: string; params?: unknown };
 export type AssistantAppMachine = Pick<AssistantMachine, 'rpc' | 'panel'>;
@@ -39,7 +39,7 @@ export function assistantAppClient(machine: AssistantAppMachine | null | undefin
       onProgramNotification(listener: (event: ProgramNotification) => void) {
         const changed = () => listener({ server: 'assistant',method: 'notifications/resources/updated',params: { ownerId: panel.ownerId,resource: 'pending-work' } });
         // The pending-work file lives in the panel: a changed snapshot is the resource update.
-        return assistantPanel.subscribe([panel.assistantId],changed);
+        return onAssistantPanelChanged(panel.assistantId,changed);
       },
       deliver: (_event: ExtensionHostEvent) => {},
     };

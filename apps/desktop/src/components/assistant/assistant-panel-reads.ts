@@ -9,7 +9,7 @@ import type { IntegrationMetadata } from '@/session/renderer/features/integratio
 import { connectionMetadataKey, type ConnectionMetadataStore } from '../connections/connection-metadata'
 import { CONNECTIONS_CHANGED, peekOwnerConnectionMetadata, readOwnerConnectionMetadata } from '../connections/owner-connection-metadata'
 import { peekAssistantPanelIntegration, peekAssistantPanelIntegrations, readAssistantPanelIntegration, readAssistantPanelIntegrations } from './assistant-panel-integrations'
-import { assistantPanel, useAssistantPanel } from './assistant-panel-replica'
+import { assistantPanel, onAssistantPanelChanged, useAssistantPanel } from './assistant-panel-replica'
 
 /**
  * Reads through a connection store or a panel machine. Those are live objects (a cloud client, an account guard), so the
@@ -79,7 +79,7 @@ function watchConnectionList(store: ConnectionMetadataStore): () => void {
   let entry = listWatches.get(key)
   if (!entry) {
     const refresh = () => { void connectionList.refresh(key) }
-    const stopPanel = store.assistantId ? assistantPanel.subscribe([store.assistantId], refresh) : () => undefined
+    const stopPanel = store.assistantId ? onAssistantPanelChanged(store.assistantId, refresh) : () => undefined
     window.addEventListener(CONNECTIONS_CHANGED, refresh)
     entry = { users: 0, stop: () => { stopPanel(); window.removeEventListener(CONNECTIONS_CHANGED, refresh) } }
     listWatches.set(key, entry)

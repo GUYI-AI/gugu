@@ -105,3 +105,28 @@ it('a change on the bus reads the panel again — at once when ready, after the 
     expect(cloud.snapshot).toHaveBeenCalledTimes(1)
   } finally { vi.useRealTimers(); stop() }
 })
+
+it('a connection list shown through the legacy panel does not feed itself: reading it does not read it again (review DE-1)', async () => {
+  const { requireAssistantPanelBridge } = await import('@/lib/assistantPanelBridge')
+  const { useConnectionList } = await import('@/components/assistant/assistant-panel-reads')
+  const { createReactHarness } = await import('../../../support/testHarness')
+  const { createElement } = await import('react')
+  await vi.waitFor(() => expect(assistantPanel.peek('assistant').state).toBe('value'))
+  const collection = { ...item('__collection__:home'), domain: 'integrations' as const, data: { state: 'ready' } }
+  cloud.snapshot.mockReset().mockResolvedValue(snap('2', [collection]))
+  const panel = requireAssistantPanelBridge().files({ ownerId: 'owner', assistantId: 'assistant', chatId: 'chat', deviceId: 'home' })
+  // Every change of the panel entry; a loop is cut after 200 (signing out fails the next read) so the case ends either way.
+  let changes = 0
+  const stop = assistantPanel.subscribe(['assistant'], () => { if (++changes === 200) publishRendererSession('SIGNED_OUT', null) })
+  const harness = createReactHarness()
+  let reading: unknown
+  function Probe() { reading = useConnectionList(panel as never, false, 'en-US'); return null }
+  try {
+    await harness.render(createElement(Probe))
+    for (let i = 0; i < 50; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(changes).toBeLessThan(20)
+    expect(cloud.snapshot.mock.calls.length).toBeLessThanOrEqual(2)
+    // And the list it reads lands (❌ cancelled by its own refresh, unknown for good).
+    expect(reading).toMatchObject({ state: 'value' })
+  } finally { stop(); harness.cleanup({ keepReads: true }) }
+})

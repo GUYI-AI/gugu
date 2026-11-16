@@ -4,7 +4,7 @@ import { ConnectionError } from '@gugu/core/cloud/connections'
 import { rendererChatChannelsClient } from '@/lib/chatChannels'
 import { connectionBridge, connectionRoute } from '@/lib/connectionBridge'
 import { replica, useReplica, type Reading } from '@/lib/replica'
-import { subscribeAssistantPanels } from '@/components/assistant/assistant-panel-replica'
+import { onAssistantPanelChanged } from '@/components/assistant/assistant-panel-replica'
 import { isTooOld, libraryHostOf, peekLibraryHost } from '@/session/renderer/features/library/library-host'
 import { peekAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations'
 import type { rpc } from '@/session/renderer/lib/ipc'
@@ -178,7 +178,7 @@ let stopPanels: (() => void) | null = null
 export function watchConnections(): () => void {
   if (watchers++ === 0) {
     window.addEventListener(CONNECTIONS_CHANGED, refreshConnections)
-    stopPanels = subscribeAssistantPanels(refreshConnections)
+    stopPanels = onAssistantPanelChanged(undefined, refreshConnections)
     if (chatChannels.peek().state === 'value') refreshConnections()
   }
   let stopped = false

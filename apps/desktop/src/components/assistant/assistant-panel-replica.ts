@@ -39,9 +39,23 @@ export function useAssistantPanel(ownerId: string | null, assistantId: string | 
   return useReplica(assistantPanel, ownerId && assistantId ? [assistantId] : null)
 }
 
-/** Any entry of the panel changed (a read, a write, an account switch): for listeners outside a known assistant. */
-export function subscribeAssistantPanels(listener: () => void): () => void {
-  return assistantPanel.subscribe([], () => listener())
+/**
+ * A panel changed: its revision moved (a newer snapshot read or written) or it left (an account switch). ❌ every cache
+ * event: a read starting or landing with the same revision is no change, and readers that read the panel again on a
+ * change would otherwise feed themselves (review DE-1). `assistantId` undefined = any assistant's panel.
+ */
+export function onAssistantPanelChanged(assistantId: string | undefined, listener: () => void): () => void {
+  const seen = new Map<string, string | null>()
+  for (const entry of assistantPanel.entries(...(assistantId ? [assistantId] as [string] : []))) {
+    if (entry.reading.state === 'value') seen.set(entry.args[0], entry.reading.value.revision)
+  }
+  return assistantPanel.subscribe(assistantId ? [assistantId] : [], (entry) => {
+    const revision = entry.reading.state === 'value' ? entry.reading.value.revision : null
+    if (entry.reading.state === 'unknown' && !seen.has(entry.args[0])) return
+    if (seen.get(entry.args[0]) === revision && seen.has(entry.args[0])) return
+    seen.set(entry.args[0], revision)
+    listener()
+  })
 }
 
 /** A collection the home has not prepared yet is announced as a burst of changes while it fills: read once it settles. */
@@ -87,6 +101,9 @@ export function assistantPanelReadCache(ownerId: string, assistantId: string): A
     },
     saveSnapshot: (snapshot) => {
       if (!mine()) return
+      // Only a newer revision is a write (the panel files save what every read returned, the shown one included).
+      const shown = assistantPanel.peek(assistantId)
+      if (shown.state === 'value' && BigInt(shown.value.revision) >= BigInt(snapshot.revision)) return
       entry().set((shown) => (shown ? newer(shown, snapshot) : snapshot))
       assistantPanelBodies.forgetUnlisted(ownerId, assistantId, snapshot)
     },
