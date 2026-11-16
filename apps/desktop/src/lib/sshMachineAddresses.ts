@@ -31,6 +31,9 @@ export const sshMachineAddresses = replica({
       .map((item) => [item.deviceId, item.display])
   },
   fresh: Infinity,
+  // A failed read is not for ever (until then every SSH machine is drawn by its cloud heartbeat): read again when the
+  // window comes back (a value is kept; only a reading without one is stale). ❌ retried: its callers fail loud at once.
+  refreshOnFocus: true,
   persist: { maxBytes: 8192, maxEntries: 1 },
 })
 let watching = false

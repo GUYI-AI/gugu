@@ -27,7 +27,7 @@ import { SERVER_SSH_MACHINES_CHANNELS } from '../lib/serverSshMachines'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { useMyAssistant } from '../lib/myAssistant'
 import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
-import { cloudComputer, cloudSnapshotOf, knownCloudDeviceId, useCloudComputer, useWakeRefusal, withCloudComputerPresence } from '../lib/cloudComputer'
+import { cloudComputer, cloudComputerPollMs, cloudSnapshotOf, knownCloudDeviceId, useCloudComputer, useWakeRefusal, withCloudComputerPresence } from '../lib/cloudComputer'
 
 // #1749 设备 store：list(chatService.listDevices，含本机 self-merge) + 排序 + durable revision 刷新
 // (注册/心跳状态翻转/改名/删除都重拉) + rename/remove 动作。面板与 selector 共用这一份状态。
@@ -70,6 +70,18 @@ export function DevicesProvider({ children, active = true }: { children: React.R
 
   // #7199 云电脑此刻怎样:管家的 /state 是事实源(replica `cloudComputer`,随账号走、按值定间隔再问、回到前台再问)。
   const cloud = useCloudComputer()
+  // 开通、唤醒途中(管家每 3 秒问一次)每问到一次也重读设备列表:新机器第一次出现得快一点(❌ 只等 device_changed)。
+  useEffect(() => {
+    if (!userId) return
+    let asking = false
+    return cloudComputer.subscribe([], ({ reading, fetching }) => {
+      // Once per answer of the manager (a read landing), ❌ for every change of the entry (a refresh marking it, a write).
+      const answered = asking && !fetching
+      asking = fetching
+      if (!answered || reading.state !== 'value' || !reading.value.available) return
+      if (cloudComputerPollMs(reading.value.snapshot, readCachedDevices()) !== null) void devicesModel.refresh()
+    })
+  }, [userId])
   const cloudSnapshot = cloudSnapshotOf(cloud)
   const refused = useWakeRefusal(cloudSnapshot)
 
