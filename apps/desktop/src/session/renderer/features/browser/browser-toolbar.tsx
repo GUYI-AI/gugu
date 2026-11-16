@@ -2,7 +2,6 @@ import { ArrowLeft, ArrowRight, Ellipsis, Globe, Plus, Reload, RotateCcw, Square
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Minus } from '@/lib/icons'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { useMobileShell } from '@/hooks/useMobileShell';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -56,6 +55,7 @@ import { panelHeaderBarClass } from '@renderer/lib/ui/panel-header-bar';
 const PROFILE_RADIO_ITEM_CLASS = 'text-foreground data-checked:bg-transparent';
 
 export function BrowserToolbar({
+  className,
   session,
   adapter,
   autoFocusUrl,
@@ -70,6 +70,7 @@ export function BrowserToolbar({
   remote = false,
   annotationAction,
 }: {
+  className?: string;
   session: BrowserSessionSnapshot;
   adapter: BrowserWebviewAdapter | null;
   autoFocusUrl?: boolean;
@@ -94,7 +95,6 @@ export function BrowserToolbar({
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const urlErrorId = useId();
-  const mobile = useMobileShell();
   const { translate } = useSessionMessages();
   const { settings: browserSettingsReading } = useAppSettingsKey('browser');
   const browserSettings = browserSettingsReading.state === 'value' ? browserSettingsReading.value.value : undefined;
@@ -168,10 +168,9 @@ export function BrowserToolbar({
   const zoomFactor = session.zoomFactor;
 
   return (
-    <div className="shrink-0">
-    <div className={cn(panelHeaderBarClass, 'gap-1', mobile && 'h-[49px]')}>
+    <div className={cn('shrink-0', className)}>
+    <div className={cn(panelHeaderBarClass, 'gap-1')}>
       <ToolbarIconButton
-        mobile={mobile}
         label={translate('browser.back')}
         disabled={(!adapter && !remote) || !session.canGoBack}
         onClick={() => onGoBack?.()}
@@ -179,7 +178,6 @@ export function BrowserToolbar({
         <ArrowLeft className="size-4" />
       </ToolbarIconButton>
       <ToolbarIconButton
-        mobile={mobile}
         label={translate('browser.forward')}
         disabled={(!adapter && !remote) || !session.canGoForward}
         onClick={() => onGoForward?.()}
@@ -187,7 +185,6 @@ export function BrowserToolbar({
         <ArrowRight className="size-4" />
       </ToolbarIconButton>
       <ToolbarIconButton
-        mobile={mobile}
         label={translate(session.isLoading ? 'browser.stop' : 'browser.reload')}
         onClick={() => onReload?.()}
       >
@@ -221,7 +218,7 @@ export function BrowserToolbar({
               if (urlError) setUrlError(null);
             }}
             onFocus={(event) => event.currentTarget.select()}
-            className={cn('h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0', mobile && 'h-11')}
+            className="h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0"
             aria-label={translate('browser.urlLabel')}
             aria-invalid={urlError ? true : undefined}
             aria-describedby={urlError ? urlErrorId : undefined}
@@ -244,7 +241,7 @@ export function BrowserToolbar({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className={cn('size-7 shrink-0', mobile && 'size-11')}
+                className="size-7 shrink-0"
                 aria-label={translate('browser.actions')}
               />
             }
@@ -378,13 +375,11 @@ export function BrowserToolbar({
 }
 
 function ToolbarIconButton({
-  mobile,
   label,
   disabled,
   onClick,
   children,
 }: {
-  mobile: boolean;
   label: string;
   disabled?: boolean;
   onClick: () => void;
@@ -398,7 +393,7 @@ function ToolbarIconButton({
             type="button"
             variant="ghost"
             size="icon"
-            className={cn('size-7 shrink-0', mobile && 'size-11')}
+            className="size-7 shrink-0"
             disabled={disabled}
             aria-label={label}
             onClick={onClick}
