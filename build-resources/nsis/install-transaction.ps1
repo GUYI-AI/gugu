@@ -39,6 +39,90 @@ function Retry-Files([scriptblock]$operation) {
     }
   }
 }
+# @@@commit-holders — the two directory renames of commit are the one step any open handle under the tree refuses,
+# and every kind of holder fails it the same way ("being used by another process": a file open even with delete
+# sharing, or a process whose working directory is inside). Holders seen in the field are transient (antivirus or the
+# search indexer reading freshly extracted files, processes still exiting), so the renames get a longer, bounded
+# retry window than other file operations. If they still fail, the holders at that moment are recorded for the log.
+$script:moveFailure = $null
+function Move-Tree([string]$from, [string]$to) {
+  $delays = @(100,200,400,800,1000,1500,2000,2000,3000,3000,4000,4000,4000,4000)  # ~30 s in total
+  for ($attempt=0; ; $attempt++) {
+    try { [IO.Directory]::Move($from, $to); return } catch {
+      $cause = $_.Exception.GetBaseException()
+      if ($cause -isnot [IO.IOException] -and $cause -isnot [UnauthorizedAccessException]) { throw }
+      if ($attempt -ge $delays.Count) {
+        $script:moveFailure = [ordered]@{ step="$from -> $to"; attempts=$attempt+1; holders=@(Get-TreeHolders $from) }
+        throw
+      }
+      Start-Sleep -Milliseconds $delays[$attempt]
+    }
+  }
+}
+function Get-TreeHolders([string]$dir) {
+  try {
+    if (-not ('GuguTreeHolders' -as [type])) {
+      Add-Type -TypeDefinition @"
+using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
+public static class GuguTreeHolders {
+  [StructLayout(LayoutKind.Sequential)] struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct RM_PROCESS_INFO { public RM_UNIQUE_PROCESS Process;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=256)] public string strAppName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=64)] public string strServiceShortName;
+    public int ApplicationType; public uint AppStatus; public uint TSSessionId; [MarshalAs(UnmanagedType.Bool)] public bool bRestartable; }
+  [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmStartSession(out uint h, int f, StringBuilder key);
+  [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint h);
+  [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmRegisterResources(uint h, uint n, string[] files, uint a, IntPtr b, uint c, string[] d);
+  [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint h, out uint needed, ref uint n, [In, Out] RM_PROCESS_INFO[] info, ref uint reasons);
+  // Processes holding any of the files open (Restart Manager), in batches.
+  public static List<string> FileHolders(string[] files) {
+    var found = new Dictionary<int,string>();
+    for (int i = 0; i < files.Length; i += 1000) {
+      var batch = new string[Math.Min(1000, files.Length - i)]; Array.Copy(files, i, batch, 0, batch.Length);
+      uint h; if (RmStartSession(out h, 0, new StringBuilder(64)) != 0) continue;
+      try {
+        if (RmRegisterResources(h, (uint)batch.Length, batch, 0, IntPtr.Zero, 0, null) != 0) continue;
+        uint needed = 0, n = 0, reasons = 0; RmGetList(h, out needed, ref n, null, ref reasons);
+        if (needed == 0) continue;
+        var info = new RM_PROCESS_INFO[needed]; n = needed;
+        if (RmGetList(h, out needed, ref n, info, ref reasons) != 0) continue;
+        for (int j = 0; j < n; j++) found[info[j].Process.dwProcessId] = info[j].strAppName + (string.IsNullOrEmpty(info[j].strServiceShortName) ? "" : " (service " + info[j].strServiceShortName + ")");
+      } finally { RmEndSession(h); }
+    }
+    var list = new List<string>(); foreach (var kv in found) list.Add(kv.Key + " " + kv.Value); return list;
+  }
+  [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr h, int c, ref PBI p, int l, out int r);
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int a, bool i, int pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out IntPtr r);
+  [StructLayout(LayoutKind.Sequential)] struct PBI { public IntPtr R1; public IntPtr Peb; public IntPtr R2a; public IntPtr R2b; public IntPtr Pid; public IntPtr R3; }
+  // A process's working directory (read from its PEB; 64-bit processes). Restart Manager does not report directory handles.
+  public static string WorkingDirectory(int pid) {
+    IntPtr h = OpenProcess(0x0410, false, pid); if (h == IntPtr.Zero) return null;
+    try {
+      var p = new PBI(); int rl; if (NtQueryInformationProcess(h, 0, ref p, Marshal.SizeOf(p), out rl) != 0 || p.Peb == IntPtr.Zero) return null;
+      var b = new byte[8]; IntPtr r; if (!ReadProcessMemory(h, p.Peb + 0x20, b, 8, out r)) return null;
+      var pp = (IntPtr)BitConverter.ToInt64(b, 0); var us = new byte[16];
+      if (pp == IntPtr.Zero || !ReadProcessMemory(h, pp + 0x38, us, 16, out r)) return null;
+      int len = BitConverter.ToUInt16(us, 0); var s = new byte[len];
+      if (!ReadProcessMemory(h, (IntPtr)BitConverter.ToInt64(us, 8), s, len, out r)) return null;
+      return Encoding.Unicode.GetString(s);
+    } finally { CloseHandle(h); }
+  }
+}
+"@
+    }
+    $prefix = $dir.TrimEnd('\') + '\'
+    $processes = @{}; Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { $processes[[int]$_.ProcessId] = $_ }
+    $describe = { param($id, $why) $p = $processes[[int]$id]; "$id $(if ($p) { $p.Name } else { '?' }) [$why] $(if ($p) { $p.CommandLine })" }
+    $files = @(Get-ChildItem -LiteralPath $dir -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    $out = @([GuguTreeHolders]::FileHolders([string[]]$files) | ForEach-Object { $id, $name = $_ -split ' ', 2; & $describe $id "open file: $name" })
+    foreach ($id in $processes.Keys) {
+      $cwd = [GuguTreeHolders]::WorkingDirectory($id)
+      if ($cwd -and ($cwd.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or $cwd.TrimEnd('\') -eq $dir.TrimEnd('\'))) { $out += & $describe $id "working directory $cwd" }
+    }
+    return $out
+  } catch { return @("holder scan failed: $($_.Exception.Message)") }
+}
 function Save-State($s) {
   $temp = "$statePath.tmp"
   [IO.File]::WriteAllText($temp, ($s | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
@@ -201,8 +285,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $stage '.gugu-install-transaction'), $s.token)
     # Persist intent before the first rename. Recovery inspects actual paths, so a
     # crash between any two renames cannot lose the untouched old installation.
-    foreach ($entry in $s.roots) { Retry-Files { [IO.Directory]::Move($entry.root, $entry.backup) } }
-    Retry-Files { [IO.Directory]::Move($stage, $Target) }
+    foreach ($entry in $s.roots) { Move-Tree $entry.root $entry.backup }
+    Move-Tree $stage $Target
     $s.registryMayHaveChanged = $true
     Save-State $s
   } else {
@@ -247,6 +331,8 @@ try {
   try {
     $roots = @($Target) + @(if ($s) { $s.roots | ForEach-Object { $_.root } })
     $entry = [ordered]@{ time=[DateTime]::UtcNow.ToString('o'); phase=$Phase; version=$Version; mode=$Mode; target=$Target; error=$failure.Message; cause=$failure.GetBaseException().Message
+      # Which rename was refused and who held that tree when the retries ran out (see @@@commit-holders).
+      step=$(if ($script:moveFailure) { $script:moveFailure.step }); holders=$(if ($script:moveFailure) { $script:moveFailure.holders } else { @() })
       # What still runs from the trees being replaced: the usual reason a directory rename is refused.
       running=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $path = $_.ExecutablePath; $path -and @($roots | Where-Object { $path.StartsWith("$_\", [StringComparison]::OrdinalIgnoreCase) }).Count } | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }) }
     New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($FailureLog)) -Force | Out-Null
