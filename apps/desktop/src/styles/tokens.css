@@ -643,7 +643,7 @@
   /* ══════════════════════════════════════════════════════════════════════════
      ❌ 组件里别再写 #fff / #000 / bg-white / text-black / 裸 gray-* zinc-* 类:中性一律取下面这几个名字。
      @@@neutral-gray-7333 — #7333 起默认中性表面是**纯灰**(用户 2026-10-17 批准,F-01 的 --tint 冷色相旋钮退役);
-     前景用 #1a1c1f(亮,略带色)/ #fafafa(暗) ⇒ 亮色由它派生的次级文字也带一点,❌ 说成「全部 C=0」。 */
+     前景用 #0a0a0a(亮)/ #fafafa(暗);亮色的次级文字 #68696b 略带色,❌ 说成「全部 C=0」。 */
 
   /* @@@live-accent (Refs #6104) — design.md「One accent at a time, and the accent is blue」。
      --live 是全 app **唯一**表示 streaming / running / connected / currently selected 的色。
@@ -918,7 +918,7 @@
 
   --border-spinner-on-dark: color-mix(in oklab, var(--fg) 40%, transparent);
 
-  /* @@@canonical-tokens 浅色覆盖 —— #7333 亮色:#fff 内容 / #f9f9f9 底层 / #1a1c1f 前景。 */
+  /* @@@canonical-tokens 浅色覆盖 —— #7333 亮色:#fff 内容 / #f9f9f9 底层;前景、填充取 assistant-ui 亮色 --foreground .145、--muted .97(@@@aui-ladder)。 */
   --live: var(--live-light);
   /* 浅色 live(blue-500)对白底只有 3.67、对 --muted 3.14,写字不够 4.5。掺 20% 黑:#295fb7,对所有面 ≥5.2;式子跟着 live 走,主题包也照样适用。掺黑而不掺 --fg,是因为 .emlight 作用域没有自己的 --fg。 */
   --live-fg: color-mix(in oklab, var(--live) 80%, black);
@@ -965,11 +965,11 @@
   --popover:  #ffffff;
   --menu-bg: var(--popover);
   --sidebar:  var(--page);
-  --fg:       #1a1c1f; /* 亮色前景 */
-  --muted:    #ededed; /* 填充面(gray-fixed-100) */
-  /* 次级文字 = 前景 66% 混白:对 --bg 5.5、对 --page 5.22、对 --muted 4.69(都过 AA 4.5)。 */
+  --fg:       #0a0a0a; /* 亮色前景 */
+  --muted:    #f5f5f5; /* 填充面 */
+  /* 次级文字:对 --bg 5.5、对 --page 5.22、对 --muted 5.04(都过 AA 4.5)。 */
   --muted-fg: #68696b;
-  /* 装饰色:对 --muted 3.03(≥3,WCAG 1.4.11),其余面更高。 */
+  /* 装饰色:对 --muted 3.26(≥3,WCAG 1.4.11),其余面更高。 */
   --faint-fg: #878889;
   --primary:    var(--fg);
   --primary-fg: var(--bg);
