@@ -1,5 +1,4 @@
 import { useMutation } from '@tanstack/react-query';
-import { useEffect } from 'react';
 import { queryClient, useReplica, type Reading, type Replica } from '@/lib/replica';
 import type {
   CreateAutomationParams,
@@ -13,7 +12,6 @@ import {
   automationRunPage,
   automations as automationsModel,
   refreshAutomationRuns,
-  watchAutomations,
   type AutomationMachine,
   type RunStatusFilter,
 } from './automation-replicas';
@@ -32,9 +30,6 @@ function useMachineReplica<A extends [AutomationMachine, ...unknown[]], V>(
   host: AutomationsHost,
   args: A | null
 ): Reading<V> {
-  const machine = machineOf(host);
-  // Declared before the read: a watcher starting here reads again only what was already here, ❌ a first read twice.
-  useEffect(() => watchAutomations(machine), [machine]);
   return useReplica(model, args, { read: host.remote?.online !== false });
 }
 
