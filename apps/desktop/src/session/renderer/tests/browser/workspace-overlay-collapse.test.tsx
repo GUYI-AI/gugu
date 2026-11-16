@@ -3,7 +3,6 @@
  * of a collapse, where an expand lands), not in every frame, its left edge stays on the list's edge all the way, and the
  * re-layout of an expand comes with the frame the edge lands in (SIDEBAR_LANDED_PX), ❌ after the spring's sub-pixel tail.
  */
-import { useEffect } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -20,12 +19,6 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<obj
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', async (original) => ({ ...(await original<object>()), ShellSidebarToggle: () => null }));
 
 let harness: ReturnType<typeof createReactHarness>;
-/** The one list: it collapses to a rail, as the desktop's does. */
-function RailList() {
-  const { setLeftRail } = useWorkspaceLayoutContext();
-  useEffect(() => setLeftRail(72), [setLeftRail]);
-  return <div>project list</div>;
-}
 function Body() {
   const { toggleLeft } = useWorkspaceLayoutContext();
   return <><button onClick={toggleLeft}>toggle list</button>{Array.from({ length: 300 }, (_, i) => <p key={i}>line {i} of a page that wraps differently at every width it is given</p>)}</>;
@@ -58,7 +51,7 @@ it('a fold lays the page out at most twice and keeps it on the list\'s edge, bot
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
       <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
-        <WorkspaceLayout leftSidebar={<RailList />} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
+        <WorkspaceLayout leftSidebar={<div>project list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
       </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
     </div>
   );
@@ -88,7 +81,7 @@ it('dragging the rail\'s edge out moves the list over a page laid out at the rai
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
       <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
-        <WorkspaceLayout leftSidebar={<RailList />} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
+        <WorkspaceLayout leftSidebar={<div>project list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
       </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
     </div>
   );

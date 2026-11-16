@@ -8,10 +8,10 @@ import {
   innerSidebarShownWidth,
   SIDEBAR_LANDED_PX,
   SIDEBAR_MIN_WIDTH_PX,
+  SIDEBAR_RAIL_PX,
   sidebarOccupiedWidth,
   sidebarRailLayout,
 } from '@renderer/lib/layout/layout-provider';
-import { panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -20,16 +20,6 @@ import './workspace-surface.css';
 
 /** 侧栏最宽不超过会话页宽度的这个比例 —— 窗口小的时候 520px 会把主区挤没。 */
 const SIDEBAR_MAX_SHARE = 0.4;
-
-/**
- * 侧栏**内容**还排得下的最窄宽度 —— 收起动画里内容跟着容器缩,缩到这里就停住。
- *
- * ⚠️ 这不是 `SIDEBAR_MIN_WIDTH_PX`(200)。那个是「用户拖分隔条最窄能拖到哪」,是产品定的手感;
- * 这个是「行还画得出来吗」的物理下限:一行 = list body 留白 24 + 折叠箭头车道 20 +
- * 身份图标 16 + 行尾状态位 24 ≈ 84,再给标题留两个字。比它还窄,行里那些 shrink-0 的零件
- * 自己就会溢出行盒 —— 那时候再缩只是把裁切从面板挪进行里,没有意义。
- */
-const SIDEBAR_CONTENT_MIN_PX = 120;
 
 interface WorkspaceLayoutProps {
   leftSidebar: ReactNode;
@@ -58,25 +48,18 @@ interface WorkspaceLayoutProps {
  * 弹簧驱动的 motion value 给,主区吃剩下的(flex-1),所以两者由同一个数推出、不会脱节。
  * 细节见 panel-motion.ts。
  *
- * **内容层是固定宽的**:外层 `<aside>` 宽度在动,里面那层始终是用户选定的整宽、被外层裁掉。
- * 这就是收起时文字不会一路折行抖动的原因 —— 也是"丝滑"的实际来源,❌ 别为了少一层 DOM 把它
- * 摊平成"内容跟着容器缩"。它同时**跟着窗口整块左移**(见下面 contentX),否则固定宽会变成
- * 「原地被右边削平」—— 那是遮罩不是收起。
+ * #2548 the list collapses to a rail of its avatars (SIDEBAR_RAIL_PX) and is always there. Its content layer keeps the
+ * list's width through a fold and is clipped at the drawn edge (@@@overlay-collapse below).
  */
 export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, innerSidebarRestore = null, sidebarHidden = false }: WorkspaceLayoutProps) {
   const { translate } = useSessionMessages();
   const {
-    isLeftOpen,
-    isLeftPeeking,
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
     leftLayoutWidth,
-    leftRail,
-    leftRailWidth,
     workspaceRootRef,
     setLeftWidth,
-    setCollapsed,
     dragLeftEdge,
     releaseLeftEdge,
     workspaceWidth,
@@ -121,46 +104,14 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   }, [pageShift]);
   const showInnerHandle = innerSidebarShown && !sidebarHidden;
 
-  // 浮出预览用自己的一条进度:它从左缘滑入,而不是把主区推开。
-  const peekProgress = usePanelProgress(isLeftPeeking);
-  const isPeekVisible = usePanelMounted(isLeftPeeking, peekProgress);
-
-  // 停靠态与浮出态互斥(浮出只在 leftProgress 落到 0 之后才允许),所以同一层内容按当前那一态取值。
-  //
-  // @@@sidebar-content-fits — 停靠态的宽 / 位移 / 透明度全由 panelContentLayout 一次定义:
-  // 内容宽度跟着占位宽走,到最小宽度为止;窄过之后才整块贴右缘滑走并淡出。三个量同源,
-  // 所以它们不会各跑各的。
-  // ❌ 别回到「内容恒为整宽、由外层裁掉」—— 那是 owner 2026-09-13 圈的「折叠产生遮罩」:
-  // 内容原地不动、右边一刀切平,标题切成半个字、行尾状态点整个没了。
-  // ❌ 也别只把它整块平移 —— 那只是把被啃的那一边换到左边,owner 当场回
-  // 「右边有了,但是左边又丢失了,正常应该两边都有」。
-  //
-  // 浮出态不吃这套:它是浮在主区之上的一整块预览,本来就该是整宽从左缘滑入。
-  //
-  // GUYI-AI/gugu#2548 收起成一列头像(收起宽 > 0)也不吃这套:那一列就是展开态本身,只是窄 —— 内容宽就是占位宽
-  // (收起宽 → 整宽),不滑、不淡;行跟着缩到头像那么宽(选中底色也是),头像左缘不动,所以每个头像、每颗按钮都在原坐标。
-  // 文字跟着同一条进度淡入淡出(sidebarRailTextOpacity,left-sidebar 的列表遮罩 + 顶上几颗按钮各自写)。收起宽是这几个量的一员
-  // (motion value),❌ 读 React 状态:变换只在挂上那一刻拿一次闭包,动画中途读到的是旧值。
-  const dockedContent = (progress: number, width: number) =>
-    panelContentLayout(progress, width, SIDEBAR_CONTENT_MIN_PX);
-  const contentWidth = useTransform([leftProgress, leftWidth, leftRailWidth], (latest: number[]) =>
-    // On a rail the layer keeps the list's width through the fold (clipped at the drawn edge); the rail width where the edge
-    // lands on it, with the rows' rail layout (sidebarRailLayout).
-    latest[2] > 0
-      ? (sidebarRailLayout(sidebarOccupiedWidth(latest[0], latest[1], latest[2]), latest[2]) ? latest[2] : latest[1])
-      : latest[0] <= 0 ? latest[1] : dockedContent(latest[0], latest[1]).width
+  // GUYI-AI/gugu#2548 the rail is the expanded list itself, only narrow: the avatars' left edges stay put and the text fades
+  // with the progress (sidebarRailTextOpacity, left-sidebar). The layer keeps the list's width through the fold, clipped at
+  // the drawn edge, and takes the rail's width where the edge lands on it, with the rows' rail layout (sidebarRailLayout).
+  const contentWidth = useTransform([leftProgress, leftWidth], ([progress, width]: number[]) =>
+    sidebarRailLayout(sidebarOccupiedWidth(progress, width, SIDEBAR_RAIL_PX)) ? SIDEBAR_RAIL_PX : width
   );
-  // On a rail the list is clipped at its drawn edge, ❌ resized: a width there re-laid out the aside in every frame of a fold.
-  const asideWidth = useTransform([contentWidth, leftAnimatedWidth, leftRailWidth], ([layer, drawn, rail]: number[]) => (rail > 0 ? layer : drawn));
-  const asideClip = useTransform([asideWidth, leftAnimatedWidth], ([width, drawn]: number[]) => `inset(0 ${Math.max(0, width - drawn)}px 0 0)`);
-  const contentOpacity = useTransform(
-    [leftProgress, peekProgress, leftWidth, leftRailWidth],
-    (latest: number[]) =>
-      latest[3] > 0 ? 1 : latest[0] > 0 ? dockedContent(latest[0], latest[2]).opacity : latest[1]
-  );
-  const contentX = useTransform([leftProgress, peekProgress, leftWidth, leftRailWidth], (latest: number[]) =>
-    latest[3] > 0 ? 0 : latest[0] > 0 ? dockedContent(latest[0], latest[2]).offset : (latest[1] - 1) * latest[2]
-  );
+  // Clipped at its drawn edge, ❌ resized: a width there re-laid out the aside in every frame of a fold.
+  const asideClip = useTransform([contentWidth, leftAnimatedWidth], ([width, drawn]: number[]) => `inset(0 ${Math.max(0, width - drawn)}px 0 0)`);
 
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
@@ -190,66 +141,40 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       <motion.div aria-hidden className="h-full shrink-0" style={{ width: sidebarHidden ? 0 : leftLayoutWidth }} />
       <motion.aside
         data-workspace-left-panel=""
-        className={cn(
-          'absolute inset-y-0 left-0',
-          // 停靠时 z-40 与顶栏那层同档(它们不重叠);浮出时必须抬到 z-50 压过顶栏 —— 预览是盖在
-          // 主区**之上**的一层,主区左上角那块面包屑/项目名不抬就会透出来压在侧栏内容上
-          // (顶栏也是 z-40,而且排在 DOM 后面,同档就赢)。开关钮同样 z-50 但更靠后,仍在最上面。
-          isPeekVisible ? 'z-50' : 'z-40',
-          // 停靠时靠外层裁切做出"滑出视野"的效果;浮出时内容要盖到主区上面,所以不裁。
-          isPeekVisible ? 'overflow-visible' : 'overflow-hidden'
-        )}
+        className="absolute inset-y-0 left-0 z-40 overflow-hidden"
         // A place without the task list (资源库, App) hides it as a retained surface, ❌ display:none: that drops every
         // row's layout box and the way back restyles the whole list (@@@retained-places, lib/retainedSurface.ts).
-        style={{ width: asideWidth, clipPath: isPeekVisible ? 'none' : asideClip, ...(sidebarHidden ? RETAINED_SURFACE_HIDDEN_STYLE : {}) }}
+        style={{ width: contentWidth, clipPath: asideClip, ...(sidebarHidden ? RETAINED_SURFACE_HIDDEN_STYLE : {}) }}
       >
         <motion.div
-          // #7333 停靠 / 浮出两态的材质不同:停靠时这一层在 mac 原生材质下让出底色,浮出预览盖在正文上仍是不透明面
-          // (tokens.css @@@window-material-css 按这个属性分)。
-          data-peek={isPeekVisible ? '' : undefined}
           className={cn(
             'absolute inset-y-0 left-0 bg-background-tertiary',
             // 拖分隔条时别让指针顺手把侧栏里的文字选中 —— 与工作区面板同一处方。
-            isResizing && 'select-none',
-            // 浮出态是浮在主区之上的一层,靠**一档 lift 影**和"停靠"区分开。
-            // 原配方是「右缘线 + 一档阴影」,并注明「阴影不得超过 shadow-sm、不得有色」——
-            // ⚠️ 2026-09-22 owner 裁决(Refs #6104):承认它就是浮层。design.md
-            // 「Do not stack a border, a ring, and a shadow on one edge.」⇒ 去掉 border-r,
-            // 只留那一层影;而唯一的那一档影是 --shadow-lift(shadow-sm 那一档已经不存在了)。
-            isPeekVisible && 'shadow-lift'
+            isResizing && 'select-none'
           )}
-          style={{
-            // ❌ 别再配一条 minWidth:内容层是 absolute,width 已经是硬的;而 framer-motion 只把
-            // 同一个 MotionValue 绑到它认识的那条属性上 —— minWidth 会停在首帧那个值,
-            // 于是宽度收到 200 时盒子仍被 208 的 min-width 撑着,又变回「内容比容器宽」。
-            width: contentWidth,
-            opacity: contentOpacity,
-            x: contentX,
-            pointerEvents: isLeftOpen || isPeekVisible || leftRail > 0 ? 'auto' : 'none',
-          }}
+          style={{ width: contentWidth }}
         >
           {leftSidebar}
         </motion.div>
       </motion.aside>
       {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. */}
-      {(isLeftOpen || leftRail > 0) && !sidebarHidden ? (
+      {!sidebarHidden ? (
         <PanelResizeHandle
           edge="end"
           offset={leftAnimatedWidth}
           ariaLabel={translate('task.resizeSidebar')}
           // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
-          className={leftRail > 0 ? 'hover:bg-transparent' : undefined}
-          // On the rail a drag starts from where the edge is now (the rail, or mid-animation); otherwise from the width.
-          getSize={() => (leftRail > 0 ? leftAnimatedWidth.get() : leftWidth.get())}
+          className="hover:bg-transparent"
+          // A drag starts from where the edge is now (the rail, or mid-animation).
+          getSize={() => leftAnimatedWidth.get()}
           minSize={SIDEBAR_MIN_WIDTH_PX}
           maxSize={maxSidebarWidth}
           onSize={(size) => setLeftWidth(size)}
-          onCollapse={() => setCollapsed('left', true, { suppressPeek: false })}
           onSizeCommit={(size) => setLeftWidth(size, { persist: true })}
           onDraggingChange={setIsResizing}
           // #2548 the whole sidebar follows the pointer (text fading with it) and snaps to the nearer state on release
           // (mock v18 拖边缘), ❌ the half-the-minimum threshold that collapsed it mid-drag.
-          follow={leftRail > 0 ? { onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge } : undefined}
+          follow={{ onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge }}
         />
       ) : null}
       {/* #2642 内层栏右边缘的分隔条,规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
@@ -282,7 +207,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         {mainContent}
         {sidebarHidden ? null : innerSidebarRestore}
       </div>
-      {(isLeftOpen || leftRail > 0) && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
+      {!sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
       {/* #2642 正文的页签条压在内层栏分隔条的右半截上:守卫排在正文后面,那半截才是拖宽度而 ❌ 拖窗口。 */}
       {showInnerHandle ? <PanelResizeDragGuard edge="end" offset={innerEdge} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}

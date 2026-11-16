@@ -15,15 +15,15 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   const { translate } = useSessionMessages()
   const keyboard = useShortcutOverrides()
-  const { isLeftOpen, isLeftPeeking, toggleLeft, setTriggerHovered } = useWorkspaceLayoutContext()
+  const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext()
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard)
   const shortcut = hotkey ? formatHotkeyText(hotkey) : undefined
   const label = translate(isLeftOpen ? 'task.collapseSidebar' : 'task.expandSidebar')
 
   useEffect(
     () =>
-      publishPanelToggle('list:sessions', { open: isLeftOpen, label, peeking: isLeftPeeking, toggle: toggleLeft, setTriggerHovered, shortcut }),
-    [isLeftOpen, isLeftPeeking, label, setTriggerHovered, shortcut, toggleLeft]
+      publishPanelToggle('list:sessions', { open: isLeftOpen, label, toggle: toggleLeft, shortcut }),
+    [isLeftOpen, label, shortcut, toggleLeft]
   )
   // 对话页的列表栏用同一个键(useListColumnCollapse)。
   useEffect(() => publishListHotkey(hotkey), [hotkey])

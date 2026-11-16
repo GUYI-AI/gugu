@@ -26,16 +26,10 @@ import { SidebarSpace } from './sidebar-space';
 /**
  * GUYI-AI/gugu#2548 the head and the top of the sidebar as one list.
  * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint, the bell's slot, the
- * search box) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (ONE_LIST_RAIL_PX wide,
+ * search box) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (SIDEBAR_RAIL_PX wide,
  * every avatar where it was): what has text fades, and so do the bell, the search box and 会话历史; the collapse button and
  * the 「+」 sit on the avatars' axis.
  */
-
-/**
- * The rail's width: the list's gutter (12) + row padding (8) + avatar (32) + the same 8 + 12 on the other side, so every
- * avatar of the list sits on its middle (x = 36) without moving.
- */
-export const ONE_LIST_RAIL_PX = 72;
 
 /** The 「+」 menu, in order. Each runs the action of the same name that exists today. */
 export const ONE_LIST_CREATE_MENU = ['create-group', 'new-project', 'add-contact'] as const;

@@ -23,7 +23,7 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
-import { ONE_LIST_RAIL_PX, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
+import { SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
 
 // #2548 the desktop left sidebar, one list: the head (collapse, bell, search, 会话历史), 创建智能体 + 「+」, then ONE list
 // (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome); 已安排 in the bell's panel. 资源库 and 设置
@@ -70,7 +70,7 @@ function RailHint({ list }: { list: React.RefObject<HTMLElement | null> }) {
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
-  const { isLeftOpen, setLeftRail } = useWorkspaceLayoutContext();
+  const { isLeftOpen } = useWorkspaceLayoutContext();
   const notificationsOpen = useSidebarNotificationsOpen();
   const { translate } = useSessionMessages();
 
@@ -104,9 +104,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   React.useEffect(() => {
     sidebarStore.setAgentNameOnHoverEnabled(agentNameOnHoverEnabled);
   }, [agentNameOnHoverEnabled]);
-  // #2548 collapsing leaves the rail of avatars (the layout keeps that width), so the bell's panel cannot stay open in it;
-  // the rail hides the bell (SidebarOneListHead).
-  React.useEffect(() => setLeftRail(ONE_LIST_RAIL_PX), [setLeftRail]);
+  // #2548 collapsing leaves the rail of avatars, so the bell's panel cannot stay open in it; the rail hides the bell
+  // (SidebarOneListHead).
   const railed = !isLeftOpen;
   React.useEffect(() => {
     if (railed && notificationsOpen) setSidebarNotificationsOpen(false);
