@@ -155,8 +155,9 @@ vi.mock('../../../../apps/desktop/electron/sessionpage/codex-app-server-delivery
       injectedItems.push(items)
       scratchEvents.push(`inject:${this.agentUserId}`)
     }
-    async inheritRouteSwitchHistory(source: string): Promise<void> {
+    async inheritRouteSwitchHistory(source: string): Promise<{ sealedSummaryDropped: boolean }> {
       scratchEvents.push(`inherit:${this.agentUserId}:${source}:into:${this.threadId}`)
+      return { sealedSummaryDropped: false }
     }
     dispose(): void {
       disposedAgents.push(this.agentUserId)

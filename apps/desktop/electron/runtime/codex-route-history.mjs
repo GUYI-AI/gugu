@@ -13,12 +13,19 @@
 //
 // 源线程可能本身就是分叉出来的:历史跟着 `session_meta.forked_from_id` 往上找,父线程只取分叉那一刻之前的
 // (`forked_from_ordinal_exclusive`,父文件的行序号)。
+//
+// 压缩过的线程(rollout 里的 `compacted` 行):从那一刻起,codex 发给模型的对话就是它的 `replacement_history`,
+// 照这个来 —— ❌ 退回压缩前的原文(那正是被压缩掉的长度,换路后第一轮就可能撑爆窗口)。替换历史里:人说过的话
+// 保留(按条目 id 认:它们就是之前那几条);摘要两种形态,实测(0.169):
+//  · 平台路(本地压缩)—— 明文摘要,在 `compacted.message`(替换历史里同样一条)⇒ 带过去;
+//  · 用户自己的 OpenAI(远端压缩)—— 只有一个加密的 `compaction` 条目,别的账号解不开 ⇒ 带不过去。
+// 带不过去时 ❌ 静默丢:返回 `sealedSummaryDropped`,调用方告诉 agent 也告诉人。
 import { readFileSync } from 'node:fs'
 
 /**
  * @param {(method: string, params: unknown) => Promise<any>} rpc 这台 app-server 的请求(失败即抛)
  * @param {string} threadId 源线程
- * @returns {Promise<object[]>} 可直接交给 `thread/inject_items` 的条目
+ * @returns {Promise<{ items: object[], sealedSummaryDropped: boolean }>} `items` 可直接交给 `thread/inject_items`
  */
 export async function routeSwitchHistory(rpc, threadId) {
   let read
@@ -30,9 +37,30 @@ export async function routeSwitchHistory(rpc, threadId) {
     await rpc('thread/fork', { threadId, ephemeral: true })
     throw error
   }
-  return historyFromRollout(rpc, read.thread.path, Infinity)
+  const history = await historyFromRollout(rpc, read.thread.path, Infinity)
+  const items = history.entries.map(({ item }) => item)
+  // 带不过去的那份摘要,先告诉 agent(放在最前:它读到的第一句就是「往前的不全」),人那边由调用方说。
+  if (history.sealedSummaryDropped) items.unshift(ROUTE_SWITCH_SUMMARY_NOTE)
+  return { items, sealedSummaryDropped: history.sealedSummaryDropped }
 }
 
+const ROUTE_SWITCH_SUMMARY_NOTE = {
+  type: 'message',
+  role: 'developer',
+  content: [{
+    type: 'input_text',
+    text: 'This conversation has moved to a different model billing route. Earlier turns had been compacted into a '
+      + 'summary that only the previous route can read, so that summary was not carried over: the person\'s own '
+      + 'messages from before that point are kept, your replies and tool results from then are not. If you need '
+      + 'something from before that point, ask the person instead of guessing.',
+  }],
+}
+
+/** 摘要没带过去时给人看的那一行(调用方在会话里报出来)。 */
+export const ROUTE_SWITCH_SUMMARY_NOTICE = 'Switched billing route. Earlier context had been compacted into a summary '
+  + 'that only the previous route can read, so it was not carried over; your messages from before that point were.'
+
+/** 一份对话:每条带着它在 rollout 里的条目 id(压缩时按它认「之前那几条」),交出去之前才去掉。 */
 async function historyFromRollout(rpc, path, limit) {
   const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean).slice(0, limit).map((line) => JSON.parse(line))
   const meta = lines[0]?.type === 'session_meta' ? lines[0].payload : {}
@@ -42,15 +70,30 @@ async function historyFromRollout(rpc, path, limit) {
       (await rpc('thread/read', { threadId: meta.forked_from_id })).thread.path,
       meta.forked_from_ordinal_exclusive ?? Infinity,
     )
-    : []
-  const own = []
+    : { entries: [], sealedSummaryDropped: false }
+  let entries = inherited.entries
+  let sealedSummaryDropped = inherited.sealedSummaryDropped
   let inTurns = false
   for (const line of lines) {
     if (line.type === 'turn_context') inTurns = true
+    if (line.type === 'compacted') {
+      const said = new Set(entries.map((entry) => entry.id).filter(Boolean))
+      const replacement = line.payload?.replacement_history ?? []
+      entries = replacement.filter((item) => item.id && said.has(item.id)).map(conversationEntry).filter(Boolean)
+      if (replacement.some((item) => item.encrypted_content)) sealedSummaryDropped = true
+      const summary = typeof line.payload?.message === 'string' ? line.payload.message : ''
+      if (summary) entries.push({ id: null, item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: summary }] } })
+      continue
+    }
     if (line.type !== 'response_item' || !inTurns) continue
-    const { id: _serverId, ...item } = line.payload
-    if (item.encrypted_content || item.role === 'developer' || item.type === 'additional_tools') continue
-    own.push(item)
+    const entry = conversationEntry(line.payload)
+    if (entry) entries.push(entry)
   }
-  return [...inherited, ...own]
+  return { entries, sealedSummaryDropped }
+}
+
+function conversationEntry(payload) {
+  const { id, ...item } = payload
+  if (item.encrypted_content || item.role === 'developer' || item.type === 'additional_tools') return null
+  return { id: id ?? null, item }
 }

@@ -370,7 +370,16 @@ async function provisionAndOverrideOnce(
         // 去掉封存内容的历史,与 ACP 桥同一个 helper。新线程注入后即落盘,TUI 照常 resume 它。
         const forked = await scratch.start(info.cwd, routeSwitch ? { ...engineOptions } : { ...engineOptions, forkFromThreadId: source })
         if (!forked) throw new Error('codex scratch app-server fork returned no thread id')
-        if (routeSwitch) await scratch.inheritRouteSwitchHistory(source)
+        if (routeSwitch) {
+          const { sealedSummaryDropped } = await scratch.inheritRouteSwitchHistory(source)
+          // 终端腿没有会话内的提示行可写:agent 那边已在历史最前收到说明(它会在被问到时如实说),这里留一条日志。
+          if (sealedSummaryDropped) {
+            createLogger('sessionpage/pty-start').warn(
+              { sessionId: info.sessionId, sourceThreadId: source },
+              'codex route switch: the compacted summary is sealed to the previous route and was not carried over',
+            )
+          }
+        }
         // @@@fork-identity 新 agent 的身份指令 codex 不认(openai/codex#19045)⇒ 趁还在临时 app-server 上,
         // 往历史末尾补一条只含身份差异与交接说明的开发者消息;它随 thread 落盘,TUI 载入后照样生效。
         else await scratch.injectItems(codexForkHandoffItems(engineOptions.developerInstructions))

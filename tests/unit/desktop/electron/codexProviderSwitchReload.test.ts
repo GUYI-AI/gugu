@@ -99,6 +99,22 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
       append(m.params.threadId, { type: 'response_item', payload: { type: 'reasoning', id: 'rs_' + provider + '_' + m.id, summary: [], encrypted_content: 'sealed-to-' + provider } });
       append(m.params.threadId, { type: 'response_item', payload: { type: 'message', role: 'assistant', id: 'msg_' + provider + '_' + m.id, content: [{ type: 'output_text', text: 'reply to ' + text }] } });
     }
+    if (process.env.FAKE_COMPACT === '1') {
+      // A compaction: from here codex sends replacement_history. The person's messages keep their ids; the summary is
+      // sealed to the account on OpenAI (remote compaction), plaintext elsewhere (local compaction, also in 'message').
+      const summary = 'SUMMARY: the reply to "' + text + '" was given.';
+      append(m.params.threadId, { type: 'compacted', payload: {
+        message: provider === 'openai' ? '' : summary,
+        replacement_history: [
+          { type: 'message', role: 'developer', id: 'dev-again', content: [{ type: 'input_text', text: 'instructions of again' }] },
+          { type: 'message', role: 'user', id: 'ctx-again', content: [{ type: 'input_text', text: '<environment_context/>' }] },
+          { type: 'message', role: 'user', id: 'msg_user_' + m.id, content: [{ type: 'input_text', text }] },
+          provider === 'openai'
+            ? { type: 'compaction', id: 'cmp_' + m.id, encrypted_content: 'sealed-to-openai' }
+            : { type: 'message', role: 'user', id: 'summary-' + m.id, content: [{ type: 'input_text', text: summary }] },
+        ],
+      } });
+    }
     const turn = failed
       ? { id: 'turn-' + m.id, status: 'failed', error: { message: 'unexpected status 401 Unauthorized', codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 401 } } } }
       : { id: 'turn-' + m.id, status: 'completed' };
@@ -146,9 +162,11 @@ async function adapterOn(provider: string, env: Record<string, string> = {}) {
   });
   children.push(child);
   const replies = new Map<number, Reply>();
+  const notices: string[] = [];
   createInterface({ input: child.stdout }).on('line', (line) => {
     const message = JSON.parse(line);
     if (message.id !== undefined && !message.method) replies.set(message.id, message);
+    if (message.method === 'session/update' && message.params?.update?.sessionUpdate === 'notice') notices.push(message.params.update.title);
   });
   let id = 0;
   const call = async (method: string, params: unknown): Promise<Reply> => {
@@ -157,7 +175,7 @@ async function adapterOn(provider: string, env: Record<string, string> = {}) {
     return awaitFact(method, () => replies.get(requestId), { producer: child });
   };
   await call('initialize', { protocolVersion: 2, capabilities: {} });
-  return call;
+  return Object.assign(call, { notices });
 }
 
 const prompt = (text: string) => [{ type: 'text', text }];
@@ -194,7 +212,7 @@ async function switchRoute(from: string, to: string, firstTurn: Record<string, s
   const current = String(reopened.result?.sessionId);
   expect(await after('session/prompt', { sessionId: current, prompt: prompt('after the switch') }))
     .toMatchObject({ result: { messageId: expect.any(String) } });
-  return { original, current, threads: threads() };
+  return { original, current, threads: threads(), notices: after.notices };
 }
 
 const userText = 'before the switch';
@@ -216,13 +234,14 @@ describe('Codex task switching between the own route and a platform model', () =
     ['own (openai) -> platform (gugu_platform)', 'openai', 'gugu_platform'],
     ['platform (gugu_platform) -> own (openai)', 'gugu_platform', 'openai'],
   ])('%s: the next turn runs on a new thread of the new route with the conversation so far', async (_label, from, to) => {
-    const { original, current, threads } = await switchRoute(from, to);
+    const { original, current, threads, notices } = await switchRoute(from, to);
     expect(current).not.toBe(original);
     // A new thread on the new route (not a codex fork, which would carry the old route's encrypted reasoning), given
     // the earlier turn without anything sealed to the old route's account; the same agent, so no fork handoff.
     expect(threads[current]).toMatchObject({ provider: to, inputs: ['after the switch'] });
     expect(threads[current].forkedFrom).toBeUndefined();
     expectInheritedHistory(threads[current], from, true);
+    expect(notices).toEqual([]);
     // The old thread is left as it was on its own route.
     expect(threads[original]).toMatchObject({ provider: from, inputs: ['before the switch'] });
   });
@@ -238,6 +257,28 @@ describe('Codex task switching between the own route and a platform model', () =
     const { current, threads } = await switchRoute('gugu_platform', 'openai', { FAKE_REFUSE_TURNS: '1' });
     expect(threads[current]).toMatchObject({ provider: 'openai', inputs: ['after the switch'] });
     expectInheritedHistory(threads[current], 'gugu_platform', false);
+  });
+
+  // A compacted thread: codex sends replacement_history from the compaction on, and that is what is carried, not the
+  // raw items before it. A plaintext summary (local compaction) goes along; a summary sealed to the account (OpenAI's
+  // remote compaction) cannot, and that is said to the agent and to the person, never dropped silently.
+  it('a compacted thread with a sealed summary carries the person\'s messages and says the summary was not carried', async () => {
+    const { current, threads, notices } = await switchRoute('openai', 'gugu_platform', { FAKE_COMPACT: '1' });
+    const [note, ...rest] = threads[current].injected;
+    expect(note).toMatchObject({ type: 'message', role: 'developer' });
+    expect(JSON.stringify(note)).toContain('was not carried over');
+    expect(rest).toEqual([{ type: 'message', role: 'user', content: [{ type: 'input_text', text: userText }] }]);
+    expect(JSON.stringify(threads[current].injected)).not.toContain('sealed-to-openai');
+    expect(notices).toEqual([expect.stringContaining('was not carried over')]);
+  });
+
+  it('a compacted thread with a plaintext summary carries it along', async () => {
+    const { current, threads, notices } = await switchRoute('gugu_platform', 'openai', { FAKE_COMPACT: '1' });
+    expect(threads[current].injected).toEqual([
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: userText }] },
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: `SUMMARY: the reply to "${userText}" was given.` }] },
+    ]);
+    expect(notices).toEqual([]);
   });
 
   it('a route switch of a thread that never took a turn reports the missing rollout the host classifies', async () => {

@@ -3,4 +3,6 @@
 export declare function routeSwitchHistory(
   rpc: (method: string, params: unknown) => Promise<any>,
   threadId: string,
-): Promise<Array<Record<string, unknown>>>
+): Promise<{ items: Array<Record<string, unknown>>; sealedSummaryDropped: boolean }>
+
+export declare const ROUTE_SWITCH_SUMMARY_NOTICE: string

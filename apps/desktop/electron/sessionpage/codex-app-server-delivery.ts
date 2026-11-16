@@ -2299,11 +2299,12 @@ export class CodexAppServerSession {
    * 换计费路:把源线程的对话(去掉旧路账号封存的推理与服务端 id,见 @@@route-switch-history)注入本会话这条新线程。
    * 与 ACP 桥换路时同一个 helper。
    */
-  async inheritRouteSwitchHistory(sourceThreadId: string): Promise<void> {
+  async inheritRouteSwitchHistory(sourceThreadId: string): Promise<{ sealedSummaryDropped: boolean }> {
     const client = this.client
     if (!client || !this.threadId) throw new Error('codex app-server 会话未建立(fail-loud)')
     const history = await routeSwitchHistory((method, params) => client.rpc(method, params), sourceThreadId)
-    if (history.length) await client.rpc('thread/inject_items', { threadId: this.threadId, items: history })
+    if (history.items.length) await client.rpc('thread/inject_items', { threadId: this.threadId, items: history.items })
+    return { sealedSummaryDropped: history.sealedSummaryDropped }
   }
 
   /** 往**正在跑的** turn 中途插入(owner #85 的 steer);expectedTurnId 不匹配活跃 turn 则 codex 报错。 */

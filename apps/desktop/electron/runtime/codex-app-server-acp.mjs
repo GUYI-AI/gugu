@@ -12,7 +12,7 @@ import { GUGU_MCP_CONFIG_KEY, normalizeGuguToolName } from '../mcp/gugu-mcp-name
 import { joinPromptText, promptInputItems } from './codex-app-server-prompt.mjs'
 import { historyUnknownError, replayHistoryWithinBudget, resumeReplayRequest } from './codex-app-server-history.mjs'
 import { codexForkHandoffItems } from './codex-fork-handoff.mjs'
-import { routeSwitchHistory } from './codex-route-history.mjs'
+import { ROUTE_SWITCH_SUMMARY_NOTICE, routeSwitchHistory } from './codex-route-history.mjs'
 import { memoizeSuccess, writeCodexModelCatalog } from './codex-model-catalog.mjs'
 // esbuild 把它打进 dist-electron/runtime;单测里 node 直接跑这份源码,所以写 `.ts` 全路径。
 import { spawnOwnedChild } from '../../../../packages/session-core/src/exec/owned-child.ts'
@@ -85,6 +85,9 @@ function configuredContextWindow(argv = process.argv) {
 }
 
 const declaredContextWindow = configuredContextWindow()
+
+/** 换计费路时压缩摘要没能带过去的那条新线程:接回它之后要在会话里报一行(见 @@@route-switch-history)。 */
+let routeSwitchNoticeFor = null
 
 async function modelCatalogOnce() {
   if (modelCatalog) return modelCatalog
@@ -2237,7 +2240,9 @@ async function handleAcpRequest(message) {
       })
       sessionId = String(forked?.thread?.id ?? '')
       if (!sessionId) throw new Error('local Codex thread/start returned no thread id')
-      if (history.length) await appRequest('thread/inject_items', { threadId: sessionId, items: history })
+      if (history.items.length) await appRequest('thread/inject_items', { threadId: sessionId, items: history.items })
+      // 压缩摘要带不过去时,人也要知道:等宿主接回这条新线程(session/resume)之后在会话里报一行。
+      routeSwitchNoticeFor = history.sealedSummaryDropped ? sessionId : null
     } else {
       forked = await appRequest('thread/fork', {
         serviceTier: 'default',
@@ -2456,6 +2461,10 @@ async function handleAcpRequest(message) {
       notify('session/update', { sessionId, update: { sessionUpdate: 'config_option_update', configOptions: setup.configOptions } })
     }
     respond(id, setup, historyStatus.status === 'unknown' ? historyUnknownError(sessionId, historyStatus.reason) : undefined)
+    if (routeSwitchNoticeFor === sessionId) {
+      routeSwitchNoticeFor = null
+      sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: ROUTE_SWITCH_SUMMARY_NOTICE })
+    }
     // 重开的会话同样要报 —— 只在 new 里推的话,回到旧会话面板就是空的
     // (opencode 的 anomalyco#18819 正是这个形状,❌ 别自己再造一个)。
     void publishAvailableCommands(params.cwd, params.additionalDirectories)
