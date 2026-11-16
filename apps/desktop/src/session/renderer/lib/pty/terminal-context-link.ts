@@ -125,7 +125,8 @@ function trimLinkText(text: string): string {
   for (;;) {
     const trimmed = result.replace(/[,. ;:!?]+$/, '');
     if (trimmed !== result) { result = trimmed; continue; }
-    if (result.endsWith(')') && result.split(')').length > result.split('(').length) {
+    const opening = ({ ')': '(', ']': '[', '}': '{' } as Record<string, string>)[result.at(-1) ?? ''];
+    if (opening && result.split(result.at(-1)!).length > result.split(opening).length) {
       result = result.slice(0, -1);
       continue;
     }

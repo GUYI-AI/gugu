@@ -14,3 +14,5 @@ it('recognizes Windows workspace path casing',()=>{const args={workspacePath:'C:
 it('preserves unquoted CSV literal quotes',()=>{expect(parseCsv('name,note\na,a"b\nc,next').rows).toEqual([['name','note'],['a','a"b'],['c','next']]);expect(parseCsv('a""b,c').rows).toEqual([['a""b','c']]);expect(parseCsv('"a,b","c""d"').rows).toEqual([['a,b','c"d']]);});
 
 it('keeps balanced terminal URL parentheses',()=>{const url='https://example.test/wiki/Function_(math)';expect(getTerminalLinkAtBufferCell(buffer(['see ('+url+').']),1,10)).toBe(url);expect(getTerminalLinkAtBufferCell(buffer([url]),1,url.length)).toBe(url);});
+
+it('excludes unmatched terminal URL brackets',()=>{const url='https://example.test/docs';expect(getTerminalLinkAtBufferCell(buffer(['['+url+']']),1,4)).toBe(url);expect(getTerminalLinkAtBufferCell(buffer(['['+url+']']),1,url.length+2)).toBeNull();const ipv6='https://[::1]';expect(getTerminalLinkAtBufferCell(buffer([ipv6]),1,10)).toBe(ipv6);});
