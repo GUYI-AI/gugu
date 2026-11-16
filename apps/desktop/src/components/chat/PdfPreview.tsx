@@ -59,7 +59,12 @@ export function PdfPreview({ data, at }: { data: ArrayBuffer; at?: FilePlace }) 
       // The viewer module reads pdf.js from `globalThis.pdfjsLib`, which pdf.mjs sets: load it first.
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
       pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-      loadingTask = pdfjs.getDocument({ data: new Uint8Array(data.slice(0)), isEvalSupported: false })
+      loadingTask = pdfjs.getDocument({
+        data: new Uint8Array(data.slice(0)),
+        isEvalSupported: false,
+        cMapUrl: new URL(`${import.meta.env.BASE_URL}pdfjs/cmaps/`, window.document.baseURI).href,
+        cMapPacked: true,
+      })
       const document = await loadingTask.promise
       const { EventBus, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } = await import('pdfjs-dist/legacy/web/pdf_viewer.mjs')
       if (!active) return
