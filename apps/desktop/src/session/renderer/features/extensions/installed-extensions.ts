@@ -319,7 +319,10 @@ export function useInstalledApps(hostKey: string | null, options: { read?: boole
   const { resolvedLocale } = useLocale();
   return useMemo((): Reading<InstalledApps> => {
     if (reading.state === 'error') return reading;
-    if (reading.state === 'unknown' || !reading.value.list) return { state: 'unknown' };
+    if (reading.state === 'unknown') return reading;
+    // A value restored from the snapshot (the dock only): not known yet — unless this run's read failed, which is said
+    // (❌ an endless unknown that no retry branch reaches).
+    if (!reading.value.list) return reading.error ? { state: 'error', error: reading.error } : { state: 'unknown' };
     return { state: 'value', value: appsOf(reading.value.list, resolvedLocale), stale: reading.stale, error: reading.error };
   }, [reading, resolvedLocale]);
 }
