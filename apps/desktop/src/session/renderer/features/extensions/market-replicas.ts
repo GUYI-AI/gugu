@@ -10,6 +10,8 @@ import type { MarketListing } from '@shared/extensions/market-entries';
 import { marketHome, type MarketHome } from '@shared/extensions/market-home';
 import { extensionsInventoryChangedChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
+import { marketUpdates, peekInstalledApps, type InstalledApps } from './installed-extensions';
+import { appLifecycle } from './panel/app-lifecycle';
 import { decodeShot } from './panel/decoded-shots';
 
 // @@@market-replicas — the App market and an installed App's pages, keyed by host (@@@client-state-model).
@@ -62,9 +64,14 @@ export type MarketCard = {
   category: MarketCategory;
   deprecated: boolean;
   defaultLocale: string;
+  /** Its button here when the first screen was kept (the shelf's own rule); absent = not known then, the button waits. */
+  button?: KeptButton;
 };
 
-/** Kept across restarts (C2/D1/D5); a card outside `CARD_LIMITS` is left out whole (null). */
+/** An `AppLifecycle` without its words: 'installed' is the 「installed」 mark. A compat word is not kept (the card waits). */
+export type KeptButton = { kind: 'get' } | { kind: 'enable' } | { kind: 'open' } | { kind: 'installed' } | { kind: 'update'; version: string };
+
+/** Kept across restarts so a cold open draws the first screen at once; a card outside `CARD_LIMITS` is left out whole (null). */
 export type MarketFirstScreen = {
   featured: (MarketCard | null)[];
   featuredCount: number;
@@ -76,12 +83,40 @@ export type MarketFirstScreen = {
 /** `full` absent: restored, only the first screen is known. */
 export type MarketShelf = { full?: MarketShelfFull; first?: MarketFirstScreen };
 
+function hereNow(hostKey: string): HereNow | null {
+  const apps = hostKey === PHONE_HOST ? null : peekInstalledApps(hostKey);
+  const updates = marketUpdates.peek(hostKey);
+  return apps && { apps, updates: updates.state === 'value' ? updates.value.offered : null };
+}
+
 const FIRST_SCREEN_FEATURED = 2;
 const FIRST_SCREEN_GRID = 9;
-// Bound: per card ≤ 640 chars with keys (icon URL `market/media/<sha256>.<ext>` ≈ 120); 11 × 640 + ≈ 300 = 7,340 ≤ 7,680.
+// Bound: per card ≤ 640 chars with keys (icon URL `market/media/<sha256>.<ext>` ≈ 120) + ≤ 80 for `button`:
+// 11 × 720 + ≈ 300 = 8,220 ≤ 8,448.
 export const CARD_LIMITS = { id: 64, version: 32, name: 64, subtitle: 160, iconUrl: 160, defaultLocale: 35 } as const;
 
-function cardOf(item: MarketListItem, locale: string): MarketCard | null {
+/** What the shelf would draw on this card now (the settings page's `lifecycleOf`), ❌ a second copy of the rule. */
+function buttonOf(item: MarketListItem, apps: InstalledApps, updates: Record<string, string> | null): KeptButton | undefined {
+  const id = item.manifest.id;
+  const installed = apps.manifests.find((entry) => entry.id === id);
+  const fork = apps.origins[id] === 'fork';
+  // Installed with what the market offers not read yet: its button is not known.
+  if (installed && !fork && !updates) return undefined;
+  const state = appLifecycle({
+    installed,
+    enabled: installed ? apps.isEnabled(id) : false,
+    updateVersion: fork ? undefined : updates?.[id],
+    offered: fork ? undefined : item,
+    preinstalled: apps.isPreinstalled(id),
+    canOpen: Boolean(installed) && apps.isEnabled(id) && !apps.isPreinstalled(id) && Boolean(apps.mainTabOf(id)),
+  }, (key) => key);
+  if (!state || (state.kind === 'word' && state.text !== 'extensions.installedMark')) return undefined;
+  return state.kind === 'word' ? { kind: 'installed' } : state;
+}
+
+type HereNow = { apps: InstalledApps; updates: Record<string, string> | null };
+
+function cardOf(item: MarketListItem, locale: string, here: HereNow | null): MarketCard | null {
   const text = localizedManifestText(item.manifest, locale);
   const card: MarketCard = {
     id: item.manifest.id,
@@ -92,23 +127,24 @@ function cardOf(item: MarketListItem, locale: string): MarketCard | null {
     category: marketCategoryOf(item.manifest),
     deprecated: Boolean(item.cloud.deprecated),
     defaultLocale: item.manifest.defaultLocale,
+    ...(here ? { button: buttonOf(item, here.apps, here.updates) } : {}),
   };
-  const fits = card.id.length <= CARD_LIMITS.id && card.version.length <= CARD_LIMITS.version && card.name.length <= CARD_LIMITS.name
+  const fits = card.id.length <= CARD_LIMITS.id && (card.button?.kind === 'update' ? card.button.version.length : 0) <= CARD_LIMITS.version && card.version.length <= CARD_LIMITS.version && card.name.length <= CARD_LIMITS.name
     && card.subtitle.length <= CARD_LIMITS.subtitle && (card.iconUrl ?? '').length <= CARD_LIMITS.iconUrl
     && card.defaultLocale.length <= CARD_LIMITS.defaultLocale;
   return fits ? card : null;
 }
 
-export function firstScreenOf(full: MarketShelfFull, locale: string): MarketFirstScreen {
+export function firstScreenOf(full: MarketShelfFull, locale: string, here: HereNow | null = null): MarketFirstScreen {
   const categories: MarketCategory[] = [];
   for (const item of full.items) {
     const category = marketCategoryOf(item.manifest);
     if (!categories.includes(category)) categories.push(category);
   }
   return {
-    featured: full.featured.slice(0, FIRST_SCREEN_FEATURED).map((item) => cardOf(item, locale)),
+    featured: full.featured.slice(0, FIRST_SCREEN_FEATURED).map((item) => cardOf(item, locale, here)),
     featuredCount: full.featured.length,
-    grid: full.home.remaining.slice(0, FIRST_SCREEN_GRID).map((item) => cardOf(item, locale)),
+    grid: full.home.remaining.slice(0, FIRST_SCREEN_GRID).map((item) => cardOf(item, locale, here)),
     remainingCount: full.home.remaining.length,
     categories,
   };
@@ -183,10 +219,12 @@ export const marketShelf = replica({
   // The host's own index is cheap: opening the page reads it again.
   fresh: 0,
   persist: {
-    maxBytes: 7680,
+    maxBytes: 8448,
     maxEntries: 1,
+    // What is installed when the first screen is kept gives each card its button (read again with the shelf).
     carry: (value: MarketShelf, hostKey: string, locale: string) =>
-      hostKey.startsWith('remote:') ? undefined : !value.full ? value : value.full.errorKind ? undefined : { first: firstScreenOf(value.full, locale) },
+      hostKey.startsWith('remote:') ? undefined : !value.full ? value : value.full.errorKind ? undefined
+        : { first: firstScreenOf(value.full, locale, hereNow(hostKey)) },
   },
   watch: marketFeed,
 });

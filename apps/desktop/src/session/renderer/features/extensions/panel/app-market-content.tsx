@@ -4,7 +4,7 @@ import { AppFeaturedCard } from './app-featured';
 import { AppShelfRow } from './app-shelf';
 import { MarketAppRow } from './app-rows';
 import { Unknown } from '@/components/ui/Unknown';
-import type { MarketFirstScreen } from '../market-replicas';
+import type { KeptButton, MarketFirstScreen } from '../market-replicas';
 import type { AppLifecycle } from './app-lifecycle-button';
 import { screenshotsLanguage } from './app-product-page';
 import type { ExtensionPendingAction } from './extension-pending';
@@ -239,7 +239,7 @@ export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, 
   );
 }
 
-/** The first screen kept across restarts (C2/D5), card for card where the shelf will draw them, until it is read. */
+/** The first screen kept across restarts, card for card where the shelf will draw them, until it is read. */
 export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setChip }: {
   first: MarketFirstScreen;
   hostKey: string;
@@ -250,6 +250,9 @@ export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setCh
   const chipKeys: ('all' | MarketCategory)[] = ['all', ...first.categories];
   const chipLabel = (key: 'all' | MarketCategory) => translate(key === 'all' ? 'extensions.chipAll' : `extensions.category.${key}`);
   const nothing = () => undefined;
+  // The button kept with the card (the shelf's rule when kept); not kept: it waits for the shelf.
+  const keptLifecycle = (button: KeptButton): AppLifecycle =>
+    button.kind === 'installed' ? { kind: 'word', text: translate('extensions.installedMark') } : button;
   const slot = (index: number) => (
     <div key={`slot-${index}`} role="listitem" className="mk-lockup" aria-busy="true"><Unknown className="h-16 w-full" /></div>
   );
@@ -257,7 +260,7 @@ export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setCh
     const card = first.grid[index];
     return card ? (
       <MarketAppRow key={card.id} id={card.id} name={card.name} subtitle={card.subtitle} iconUrl={card.iconUrl} deprecated={card.deprecated}
-        lifecycle={null} actionUnknown translate={translate} onOpen={nothing} onAction={nothing} />
+        lifecycle={card.button ? keptLifecycle(card.button) : null} actionUnknown={!card.button} translate={translate} onOpen={nothing} onAction={nothing} />
     ) : slot(index);
   });
   return (
@@ -281,7 +284,8 @@ export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setCh
               <AppFeaturedCard key={card.id} variant="hero" hostKey={hostKey} id={card.id} version={card.version} name={card.name} subtitle={card.subtitle}
                 meta={[translate(`extensions.category.${card.category}`), translate('extensions.official'),
                   ...(language ? [translate('extensions.screenshotsIn', { language })] : [])].join(metadataSeparator())}
-                iconUrl={card.iconUrl} lifecycle={null} actionUnknown translate={translate} onOpen={nothing} onAction={nothing} />
+                iconUrl={card.iconUrl} lifecycle={card.button ? keptLifecycle(card.button) : null} actionUnknown={!card.button}
+                translate={translate} onOpen={nothing} onAction={nothing} />
             );
           })}
         </AppShelfRow>

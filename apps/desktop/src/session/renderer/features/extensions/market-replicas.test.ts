@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn() } }));
 const { CARD_LIMITS, firstScreenOf, marketShelf, phoneShelfOf } = await import('./market-replicas');
 type MarketShelfFull = import('./market-replicas').MarketShelfFull;
 const { queryClient } = await import('@/lib/replica');
+const { installedExtensions, marketUpdates } = await import('./installed-extensions');
 
 const DEVICE_BLOCK = 'gugu.readModel.v1:device';
 
@@ -41,15 +42,27 @@ function keptEntry(): { key: unknown[]; value: unknown } | undefined {
 beforeEach(() => {
   localStorage.clear();
   queryClient.removeQueries({ queryKey: [marketShelf.name] });
+  queryClient.removeQueries({ queryKey: [installedExtensions.name] });
+  queryClient.removeQueries({ queryKey: [marketUpdates.name] });
 });
 
-describe('the market shelf kept across restarts (C2/D1/D5)', () => {
-  it('100 Apps: the snapshot write succeeds and holds the first screen within 7,680, whatever the market lists', async () => {
-    const full: MarketShelfFull = await phoneShelfOf(Array.from({ length: 100 }, (_, index) => item(index)));
+/** This computer with the given market Apps installed (on, with a main page); `updates` names a newer version for each. */
+function installHere(items: MarketListItem[], updates: Record<string, string> = {}): void {
+  const extensions = items.map((entry) => ({ ...entry.manifest, version: '0.0.1' }));
+  installedExtensions.set(['local'], { list: { extensions, invalid: [], disabled: [] } as never });
+  marketUpdates.set(['local'], { offered: updates, gone: [] });
+}
+
+describe('the market shelf kept across restarts', () => {
+  it('100 Apps, all installed: the snapshot write succeeds and holds the first screen within 8,448, whatever the market lists', async () => {
+    const items = Array.from({ length: 100 }, (_, index) => item(index));
+    // The longest a kept button gets: an update to a version at the card's limit.
+    installHere(items, Object.fromEntries(items.map((entry) => [entry.manifest.id, '9'.repeat(CARD_LIMITS.version)])));
+    const full: MarketShelfFull = await phoneShelfOf(items);
     marketShelf.set(['local', 'en'], { full });
     const kept = keptEntry();
     expect(kept).toBeDefined();
-    expect(JSON.stringify(kept).length).toBeLessThanOrEqual(7680);
+    expect(JSON.stringify(kept).length).toBeLessThanOrEqual(8448);
     const first = (kept!.value as { first: ReturnType<typeof firstScreenOf> }).first;
     expect(first.featured).toHaveLength(2);
     expect(first.grid).toHaveLength(9);
@@ -60,6 +73,31 @@ describe('the market shelf kept across restarts (C2/D1/D5)', () => {
     // Only the locale of the key: the English name, not the others.
     expect(first.grid[0]!.name.startsWith('E')).toBe(true);
     expect(JSON.stringify(kept)).not.toContain('releaseNotes');
+  });
+
+  it('each kept card keeps the button the shelf draws for it now, so it draws on the next start before the shelf is read', async () => {
+    const items = Array.from({ length: 20 }, (_, index) => item(index));
+    const full = await phoneShelfOf(items);
+    const [open, update] = [full.featured[0]!.manifest.id, full.featured[1]!.manifest.id];
+    installHere(items.filter((entry) => entry.manifest.id === open || entry.manifest.id === update), { [update]: '2.0.0' });
+    marketShelf.set(['local', 'en'], { full });
+    let first = (keptEntry()!.value as { first: ReturnType<typeof firstScreenOf> }).first;
+    // Installed 0.0.1 under the market's newer 1.0.0 is an update too (the shelf's rule), the offered one wins.
+    expect(first.featured[1]!.button).toEqual({ kind: 'update', version: '2.0.0' });
+    expect(first.grid[0]!.button).toEqual({ kind: 'get' });
+    // Installed, what the market offers not read: not known, the button waits (❌ a guessed 「Open」).
+    queryClient.removeQueries({ queryKey: [marketUpdates.name] });
+    localStorage.clear();
+    marketShelf.set(['local', 'en'], { full });
+    first = (keptEntry()!.value as { first: ReturnType<typeof firstScreenOf> }).first;
+    expect(first.featured[0]).not.toHaveProperty('button', expect.anything());
+    expect(first.grid[0]!.button).toEqual({ kind: 'get' });
+    // Nothing known of what is installed: no card keeps a button.
+    queryClient.removeQueries({ queryKey: [installedExtensions.name] });
+    localStorage.clear();
+    marketShelf.set(['local', 'en'], { full });
+    first = (keptEntry()!.value as { first: ReturnType<typeof firstScreenOf> }).first;
+    expect(first.grid[0]).not.toHaveProperty('button');
   });
 
   it('a card whose name does not fit is left out whole (its slot a placeholder), never cut short', async () => {
