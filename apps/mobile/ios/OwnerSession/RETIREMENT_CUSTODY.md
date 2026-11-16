@@ -41,6 +41,43 @@ local persistence. Pending or failed cleanup still requires online verification;
 a different original token or installation cannot consume the completed proof.
 The ordinary commit target, generation and exact readback checks still apply.
 
+An explicit `cancelSignOut` may abandon completed sign-out preparation while the
+saved login remains unchanged. Under the same custody lock used by auth commits,
+it compares the captured owner, installation, Auth session, access digest and
+preparation transaction ID to the current custody and main credential scope.
+Only a completed, captured, non-publication intent with an empty write target
+can be removed. Another owner/token/install,
+a retargeted write or unfinished cleanup is stale and leaves custody intact.
+The main credential scope is read again inside the transaction before removal.
+
+Cancellation invalidates outstanding write permits and leaves native credentials
+unpublished. It neither restarts an Agent nor authenticates remotely; a later
+publication must explicitly verify the saved login again. Repeating cancellation
+when the matching login has no remaining intent is an idempotent no-op, including
+reconciling a cancellation completed by another process. A cold process can cancel
+the durable preparation using the same checks. Normal completed logout cleanup
+remains reusable until an explicit cancellation or exact auth commit consumes it.
+
+The bridge accepts the closure owner and local operation ID. At native receipt
+capture, the protected record stores the matching completed preparation's durable
+transaction ID and captured original credential scope when one exists; receipt
+removal preserves both in the tombstone. The scope contains only binding/session
+metadata and an access digest, never token bytes. This also keeps a duplicate
+cancellation stale after the saved same-owner login changes, even when the old
+retirement intent has already been removed.
+Capture without preparation remains allowed for the current local owner, but
+stores no round binding. Duplicate put cannot upgrade that record later.
+Cancellation reads that native binding rather than trusting a transaction ID
+from JavaScript. An
+older scope, including a removed tombstone, cannot cancel a later same-owner round,
+even across process restarts. Existing records without this binding are rejected
+for cancellation rather than retroactively bound to a new round.
+
+Closure composition must remove its own opaque receipt successfully before
+requesting cancellation, and may do so only after a failed or expired result.
+Deleted and pending results retain the barrier; native cancellation never
+substitutes for account-closure authorization or restarts a stopped Agent.
+
 Ordinary WebView/publication stop still does not permanently close the current
 push session. The App currently assembles this persisted write barrier with the
 push close and existing local lifecycle stop. The additional dedicated Host

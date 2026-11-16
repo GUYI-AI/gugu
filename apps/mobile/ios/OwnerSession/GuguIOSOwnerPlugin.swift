@@ -10,10 +10,14 @@ final class GuguIOSOwnerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "publishSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBinding", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "prepareSignOut", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelSignOut", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "retireSession", returnType: CAPPluginReturnPromise),
     ]
     private let ownerSession: GuguIOSOwnerSession
-    init(ownerSession: GuguIOSOwnerSession) { self.ownerSession = ownerSession; super.init() }
+    private let cancelPreparation: (GuguIOSClosureScope) throws -> Void
+    init(ownerSession: GuguIOSOwnerSession, cancelPreparation: @escaping (GuguIOSClosureScope) throws -> Void) {
+        self.ownerSession = ownerSession; self.cancelPreparation = cancelPreparation; super.init()
+    }
 
     private func owner(_ call: CAPPluginCall) throws -> String {
         guard let owner = call.getString("ownerId"), UUID(uuidString: owner)?.uuidString.lowercased() == owner else {
@@ -55,6 +59,19 @@ final class GuguIOSOwnerPlugin: CAPPlugin, CAPBridgedPlugin {
                 do { try result.get(); call.resolve(["prepared": true]) }
                 catch { self.reject(call, error) }
             }
+        } catch { reject(call, error) }
+    }
+
+    @objc func cancelSignOut(_ call: CAPPluginCall) {
+        do {
+            guard Set(call.options.keys).isSubset(of: ["ownerId", "localOperationId"]),
+                  let operation = call.getString("localOperationId") else {
+                throw GuguHostFailure(code: "invalid_args", message: "Captured closure scope is required")
+            }
+            let scope = GuguIOSClosureScope(ownerId: try owner(call), localOperationId: operation)
+            try scope.validate()
+            try cancelPreparation(scope)
+            call.resolve(["cancelled": true])
         } catch { reject(call, error) }
     }
 
