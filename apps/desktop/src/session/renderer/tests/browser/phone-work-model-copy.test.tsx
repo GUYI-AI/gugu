@@ -23,6 +23,7 @@ import '@gugu/session-ui/theme/semantic.css'
 import '@gugu/session-ui/styles/base.css'
 import '@renderer/index.css'
 import '@/styles/tokens.css'
+import '@/i18n/registerMainCatalog'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 

@@ -9,6 +9,7 @@ import { followRendererSession } from '@/lib/replica'
 import { CreateSessionPage } from '@/mobile/agent-watch/CreateSessionPage'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
+import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -50,6 +51,9 @@ it.each(['light', 'dark'] as const)('%s: real New task Work panel separates mode
   root = createRoot(host)
   root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><CreateSessionPage onCreated={vi.fn()} /></MessageProvider></SessionUiTheme></LocalizationProvider>)
   await until('real thread editor', () => !!host?.querySelector('[contenteditable]'))
+  expect(host!.textContent).toContain('新建任务')
+  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('第一句话…')
+  expect(host!.textContent).not.toContain('agentWatch.')
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.elementLocator(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
   const row = () => document.querySelector<HTMLElement>('[data-dimension="model"][data-option-id="native:sol"]')!
@@ -61,6 +65,7 @@ it.each(['light', 'dark'] as const)('%s: real New task Work panel separates mode
   expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth)
   const alias = document.querySelector<HTMLElement>('[data-dimension="model"][data-option-id="sonnet"]')!
   expect(alias.scrollWidth).toBeLessThanOrEqual(alias.clientWidth)
+  expect(document.querySelector('[data-testid="agent-watch-create-controls-sheet"]')!.textContent).not.toContain('agentWatch.')
   await page.screenshot({ path: `__screenshots__/owner-phone-regression/B-new-task-model-${theme}-320.png` })
   await page.elementLocator(alias).click()
   await until('original alias reaches catalog request', () => fixture.models.mock.calls.some(call => call[3] === 'sonnet'))
