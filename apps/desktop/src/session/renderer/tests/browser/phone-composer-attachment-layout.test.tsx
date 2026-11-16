@@ -40,7 +40,7 @@ async function clearComposer(editor: HTMLElement) {
     await until('empty editor transaction committed', () => committed && engine.isEmpty && !editor.textContent?.trim())
   } finally { engine.off('update', updated) }
 }
-it('keeps empty attachments left, hides them on one text line, and returns without a layout flash', async () => {
+it('keeps empty attachments left, hides them at exactly two lines, and shows them from exactly three lines', async () => {
   const { editor, composer, attach, input, blur } = await mount()
   const emptyLeft = editor.getBoundingClientRect().left
   expect(getComputedStyle(attach).display).not.toBe('none')
@@ -49,12 +49,30 @@ it('keeps empty attachments left, hides them on one text line, and returns witho
   await until('one-line attachment hidden', () => composer.hasAttribute('data-phone-has-text') && getComputedStyle(attach).display === 'none')
   expect(editor.getBoundingClientRect().left).toBeLessThan(emptyLeft)
   await page.getByTestId('chat-composer').fill('第一行\n第二行')
-  await until('attachment moved right', () => composer.hasAttribute('data-phone-multiline'))
+  await until('two-line capsule without attachment', () => composer.hasAttribute('data-phone-multiline') && getComputedStyle(attach).display === 'none')
+  const lines = () => [...editor.children].reduce((total, child) => total + child.getBoundingClientRect().height / parseFloat(getComputedStyle(editor).lineHeight), 0)
+  expect(lines()).toBe(2)
+  expect(composer.hasAttribute('data-phone-attachment-row')).toBe(false)
+  const twoLineHeight = input.getBoundingClientRect().height
+  expect(twoLineHeight).toBe(128)
+  const twoLineExpand = composer.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
+  expect(twoLineExpand.getBoundingClientRect().height).toBe(32)
+  await page.getByTestId('chat-composer').fill('第一行\n第二行\n第三行')
+  await until('third line reveals the right attachment', () => composer.hasAttribute('data-phone-attachment-row') && getComputedStyle(attach).display !== 'none')
+  expect(lines()).toBe(3)
+  expect(composer.hasAttribute('data-phone-multiline')).toBe(true)
+  expect(input.getBoundingClientRect().height).toBe(twoLineHeight)
   const send = composer.querySelector<HTMLElement>('[data-phone-send]')!, expand = composer.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
   const a = attach.getBoundingClientRect(), s = send.getBoundingClientRect(), x = expand.getBoundingClientRect()
   expect(Math.abs(a.x + a.width / 2 - s.x - s.width / 2)).toBeLessThan(1)
   expect(x.bottom).toBeLessThanOrEqual(a.top); expect(a.bottom).toBeLessThanOrEqual(s.top)
   expect(editor.getBoundingClientRect().left - input.getBoundingClientRect().left).toBe(16)
+  await page.getByTestId('chat-composer').fill('第一行\n第二行')
+  await until('deleting the third line hides only the attachment', () => !composer.hasAttribute('data-phone-attachment-row') && getComputedStyle(attach).display === 'none')
+  expect(lines()).toBe(2)
+  expect(composer.hasAttribute('data-phone-multiline')).toBe(true)
+  expect(input.getBoundingClientRect().height).toBe(twoLineHeight)
+  expect(expand.getBoundingClientRect().height).toBe(32)
   await page.getByTestId('chat-composer').fill('删回一行')
   await until('single line restored', () => !composer.hasAttribute('data-phone-multiline') && getComputedStyle(attach).display === 'none')
   const height = input.getBoundingClientRect().height
@@ -63,6 +81,25 @@ it('keeps empty attachments left, hides them on one text line, and returns witho
   await until('empty attachment restored', () => !composer.hasAttribute('data-phone-has-text') && getComputedStyle(attach).display !== 'none')
   expect(editor.getBoundingClientRect().left).toBe(emptyLeft)
   expect(host!.querySelector('[contenteditable]')).toBe(editor); expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled()
+})
+it('defers the third-line attachment change until compositionend without replacing the input or losing the caret', async () => {
+  const { editor, composer, attach, blur, end } = await mount()
+  await page.getByTestId('chat-composer').fill('第一行\n第二行')
+  await until('two committed lines', () => composer.hasAttribute('data-phone-multiline') && getComputedStyle(attach).display === 'none')
+  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  const engine = (editor as HTMLElement & { editor: { commands: { setContent: (text: string) => void } } }).editor
+  engine.commands.setContent('<p>第一行</p><p>第二行</p><p>正在输入中文</p>')
+  await frames()
+  expect(composer.hasAttribute('data-phone-attachment-row')).toBe(false)
+  expect(getComputedStyle(attach).display).toBe('none')
+  expect(end).not.toHaveBeenCalled()
+  const selection = getSelection()!, node = editor.lastElementChild!.firstChild!, range = document.createRange()
+  range.setStart(node, 2); range.collapse(true); selection.removeAllRanges(); selection.addRange(range)
+  editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中文' }))
+  await until('third-line attachment committed', () => composer.hasAttribute('data-phone-attachment-row') && getComputedStyle(attach).display !== 'none')
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
+  expect(selection.anchorNode).toBe(node); expect(selection.anchorOffset).toBe(2)
+  expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).toHaveBeenCalledTimes(1)
 })
 it('freezes the empty-to-one-line layout throughout composition and applies it only after compositionend', async () => {
   const { editor, composer, attach, blur, end } = await mount(); editor.focus()
