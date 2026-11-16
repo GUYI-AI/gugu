@@ -1,3 +1,4 @@
+import { PhoneNavigationPicker } from './PhoneNavigationPicker'
 import { useRef, useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
@@ -38,7 +39,8 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
       {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
       </>} />
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
-      {view === 'agents' ? listed.map(agent => {
+      {view === 'agents' ? <PhoneNavigationPicker key={`agents:${sessionId}`} kind="agents" items={listed} nameOf={agent => identitiesById[agent.agentUserId ?? '']?.display_name ?? directory.find(row => row.session.conversationId === agent.id)?.session.title ?? ''}>
+        {shown => shown.map(agent => {
         const row = directory.find(row => row.session.conversationId === agent.id)
         const identity = identitiesById[agent.agentUserId ?? '']
         const name = identity?.display_name ?? row?.session.title ?? ''
@@ -48,13 +50,15 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
           <Avatar name={name} seed={agent.agentUserId ?? agent.id} avatarUrl={identity?.avatar} isAgent size={36} />
           <span className="gg-phone-room-choice-name">{name}</span><ChevronRight aria-hidden />
         </Button>
-      }) : view === 'topics' ? <>
-        <Button variant="ghost" className="gg-phone-room-choice" onClick={() => { setView(null); if (source) followLink({ kind: 'chat', chatId: source }) }}>{t('main')}</Button>
+      })}</PhoneNavigationPicker> : view === 'topics' ? <PhoneNavigationPicker key={`topics:${source}`} kind="topics" items={[null, ...(topics.topics ?? [])]} nameOf={topic => topic?.name ?? t('main')} ready={topics.topics !== null}>
+        {shown => <>
+        {shown.includes(null) && <Button variant="ghost" className="gg-phone-room-choice" data-chat-id={source ?? undefined} onClick={() => { setView(null); if (source) followLink({ kind: 'chat', chatId: source }) }}>{t('main')}</Button>}
         {topics.topics === null && !topics.error && <p role="status" className="gg-phone-composer-sheet-status">{t('loadingTopics')}</p>}
-        {topics.topics?.map(topic => <Button key={topic.chat_id} variant="ghost" className="gg-phone-room-choice"
+        {shown.filter((topic): topic is NonNullable<typeof topic> => topic !== null).map(topic => <Button key={topic.chat_id} variant="ghost" className="gg-phone-room-choice" data-topic-id={topic.chat_id}
           onClick={() => { setView(null); followLink({ kind: 'chat', chatId: topic.chat_id }) }}><Hash /><span className="gg-phone-room-choice-name gg-phone-room-topic-name">{topic.name}</span></Button>)}
         {topics.error && <div role="alert">{topics.error}<Button variant="ghost" onClick={topics.reload}>{t('retry')}</Button></div>}
-      </> : null}
+      </>}
+      </PhoneNavigationPicker> : null}
     </PhoneComposerSheet>
   </div>
 })

@@ -28,8 +28,10 @@ export function AgentWatchScreen({
   bodyFill,
   bodyRef,
   panelLayer = false,
+  context,
 }: {
   title: ReactNode
+  context?: { sessionId: string; agentId: string | null }
   onBack?: () => void
   testId: string
   children: ReactNode
@@ -66,6 +68,7 @@ export function AgentWatchScreen({
         titleLeading={titleLeading}
         titleLevel={onBack ? 'panel' : 'page'}
         data-testid={headerTestId}
+        data-session-id={context?.sessionId} data-agent-id={context?.agentId ?? undefined}
         actions={actions}
         leading={onBack && panelLayer ? (
           <IconButton className="ta-circle gg-aw-panel-back" aria-label={t('settings.back')} title={t('settings.back')} onClick={onBack}>

@@ -1,3 +1,4 @@
+import { phoneTopicHeader } from '../mobile/chat/phone-navigation-context'
 import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
@@ -557,6 +558,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
+  const phoneHeader = phoneTopicHeader({ id: activeChat.id, name: shownActiveChatName }, mobile ? topicSurface.splitTopic : null, topicSurface.topics)
   const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
@@ -609,7 +611,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider data-chat-area-header="" mobile={mobile}
+        divider data-chat-area-header="" data-chat-context-id={phoneHeader.id} data-chat-context-kind={phoneHeader.kind} mobile={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
@@ -621,14 +623,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             size="lg"
             aria-label={topicSurface.splitTopic ? t('common.back') : t('chatArea.backToList')}
             title={t('common.back')}
-            onClick={onBack}
+            onClick={topicSurface.splitTopic ? topicSurface.closeSplit : onBack}
           >
             <ChevronLeft />
           </IconButton>
         ) : null}
-        /* @@@5856 这里曾有一支「话题全宽打开时顶栏画面包屑」。owner 2026-09-19 把全宽形态整个拿掉之后,
-           主区永远不会是一条话题(chats_topic_source_chk 保证话题必有来源,收口会把它换成来源线 + 分栏),
-           那一支就永远走不到了 ⇒ 删。面包屑本身搬进了分栏的标题块。 */
+        /* The phone keeps its source-room route; the visible heading follows the actual selected topic ID. */
         title={(
           <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {/* @@@1146 对话头按设计稿(.top 仅 标题+状态行,无头像;单聊点
@@ -643,13 +643,13 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
                 role="button"
                 tabIndex={0}
                 className="window-no-drag-region"
-                onClick={openConversationOrAgentSettings}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openConversationOrAgentSettings() } }}
+                onClick={() => phoneHeader.kind === 'topic' ? openInfoTab(activeChatId, 'main', { topicChatId: phoneHeader.id, name: phoneHeader.name }) : openConversationOrAgentSettings()}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (phoneHeader.kind === 'topic') openInfoTab(activeChatId, 'main', { topicChatId: phoneHeader.id, name: phoneHeader.name }); else openConversationOrAgentSettings() } }}
                 title={t('chatArea.conversationProfile')}
                 aria-label={t('chatArea.conversationProfile')}
                 style={{ color: 'var(--fg)', fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, cursor: 'pointer' }}
               >
-                {shownActiveChatName}
+                {phoneHeader.name}
               </span>
             </span>
           </div>
