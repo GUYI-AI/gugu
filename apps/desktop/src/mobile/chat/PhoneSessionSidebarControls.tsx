@@ -16,7 +16,7 @@ import './room-composer-catalog'
 import './phone-room-composer.css'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
 
-export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof useCreationSkillDraft>; nativeSkills?: ReactNode }) {
+export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, conversationKey, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; conversationKey: string; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof useCreationSkillDraft>; nativeSkills?: ReactNode }) {
   const { t } = useTranslation('mobileRoomControls')
   const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
   const agentsButton = useRef<HTMLButtonElement>(null)
@@ -30,7 +30,7 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
   const nextEntry = !anchor ? null : anchor.kind === 'agent' ? `session:${families.topLevelOf.get(anchor.agentUserId)?.[0]?.id ?? sessionId}` : `chat:${anchor.chatId}`
   return <div className="gg-phone-room-controls" data-testid="phone-session-sidebar-controls" data-anchor-kind={anchor?.kind} data-anchor-chat={anchor?.chatId}>
     <CreateTarget projects={[]} project={null} onProject={() => {}} machines={machine ? [machine] : []} machine={machine} onMachine={() => {}} machineLabel={one => one.label ?? one.hostname ?? ''} busy={false}
-      existingSession={{ agentName: harness ? engineLabel(harness) : '', model }}
+      conversationKey={conversationKey} existingSession={{ agentName: harness ? engineLabel(harness) : '', model }}
       configuration={{ options: null, selection: { harness, model: null, effort: null, permissionMode: null }, onChange: () => {}, models: null, modelsState: 'ready', skills: skillDraft?.skills ?? [], onSkills: next => skillDraft?.update(next) }}
       controlsExtra={<>
       {nativeSkills}

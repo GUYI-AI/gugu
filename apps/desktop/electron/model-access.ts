@@ -1,3 +1,4 @@
+import { isUserFacingModelId } from '@gugu/session-core/acp/client'
 import { execFile } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -253,6 +254,7 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
     if (!value || typeof value !== 'object') return []
     const row = value as Record<string, unknown>
     const id = typeof row.id === 'string' ? row.id.trim() : ''
+    if (!isUserFacingModelId(id)) return [];
     const displayName = typeof row.display_name === 'string' ? row.display_name.trim() : ''
     const protocols = Array.isArray(row.protocols)
       ? row.protocols.filter(isModelAccessProtocol)
@@ -412,6 +414,7 @@ function switchableModels(
     const alias = typeof row.alias === 'string' ? row.alias.trim() : ''
     if (!alias) continue
     const id = typeof row.id === 'string' && row.id.trim() ? row.id.trim() : alias
+    if (!isUserFacingModelId(id)) continue;
     const displayName = typeof row.display_name === 'string' && row.display_name.trim()
       ? row.display_name.trim()
       : id

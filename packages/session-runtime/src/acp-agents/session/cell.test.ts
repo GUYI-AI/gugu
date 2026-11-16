@@ -3129,3 +3129,31 @@ describe('task file context stays separate from the person words', () => {
     } finally { cell.dispose(); }
   });
 });
+
+it.each(['platform', 'unknown', undefined] as const)('hides and refuses an own-only reviewer on route %s', async billingRoute => {
+  const { cell, agent } = makeCell(new FakeAcpAgent(), {
+    billingRoute,
+    permissionModeMap: { edit: { id: ':workspace' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } },
+  });
+  cell.applySessionMeta({ modes: { currentModeId: ':workspace', availableModes: [
+    { id: ':workspace', name: 'Edit' }, { id: 'auto-review', name: 'AI review' },
+  ] } });
+  expect(cell.config.modeOptions?.available.map(mode => mode.id)).toEqual([':workspace']);
+  expect(isOk(await cell.setMode('auto-review'))).toBe(false);
+  expect(agent.setSessionMode).not.toHaveBeenCalled();
+  expect(agent.setSessionConfigOption).not.toHaveBeenCalled();
+});
+
+it('keeps the own-account reviewer selectable through the native authority', async () => {
+  const { cell, agent } = makeCell(new FakeAcpAgent(), {
+    billingRoute: 'own',
+    permissionModeMap: { edit: { id: ':workspace' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } },
+  });
+  cell.applySessionMeta({ modes: { currentModeId: ':workspace', availableModes: [
+    { id: ':workspace', name: 'Edit' }, { id: 'auto-review', name: 'AI review' },
+  ] } });
+  agent.setSessionMode = vi.fn().mockResolvedValue({});
+  expect(cell.config.modeOptions?.available.map(mode => mode.id)).toContain('auto-review');
+  expect(isOk(await cell.setMode('auto-review'))).toBe(true);
+  expect(agent.setSessionMode).toHaveBeenCalledWith({ sessionId: 'session-1', modeId: 'auto-review' });
+});

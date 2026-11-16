@@ -1,3 +1,4 @@
+import { meetsReviewModeRequirements, permissionModeSupportsBillingRoute } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { diskWindowsShimReader } from '@gugu/session-core/exec';
@@ -550,6 +551,16 @@ export class LocalSessionProvider implements SessionProvider {
       const launchEffort = session.effort;
 
       const permissionMode = resolveSessionPermissionMode(session);
+      if (permissionMode === 'ai-review') {
+        const { probeHarnessModelCatalog } = await import('@main/core/agents/harness-model-catalog');
+        const catalog = await probeHarnessModelCatalog(session.providerId, 'tui', session.model ?? undefined);
+        const reviewEntry = plugin.capabilities.autoApprove.modes?.['ai-review'];
+        const available = (catalog.kind === 'ready' || catalog.kind === 'auth-required') && !!reviewEntry
+          && permissionModeSupportsBillingRoute('ai-review', plugin.capabilities.autoApprove.modes, platformModelForSpawn === null ? 'own' : platformModelForSpawn ? 'platform' : 'unknown') && (platformModelForSpawn
+          ? catalog.reviewerAvailable === true && meetsReviewModeRequirements(reviewEntry.reviewRequirements, { cliVersion: runContext.cliVersion, model: platformModelForSpawn.modelId })
+          : catalog.kind === 'ready' && catalog.autoReview === true);
+        if (!available) throw new Error('AI review is unavailable for this session executable and model');
+      }
       let agentCommand = plugin.behavior.prompt!.buildCommand({
         cli: executableCli,
         extraArgs: runContext.extraArgs,

@@ -304,6 +304,7 @@ export default {
         "plan": { "name": "Plan only", "desc": "Think it through without running tools" },
         "read-only": { "name": "Read-only", "desc": "Can look but not change; asks before acting, except for tools you have allowed in the harness's own settings" },
         "edit": { "name": "Can edit files", "desc": "File edits go through; other risky actions still ask" },
+        "ai-review": { "name": "AI reviews for me", "desc": "Send approval requests to an AI reviewer. Repeated denials can require your help." },
         "full-access": { "name": "Full access", "desc": "Skips all permission checks" }
       },
       "permissionDefaultHint": "Not set: uses Can edit files",

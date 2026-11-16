@@ -1,3 +1,4 @@
+import { CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
 import { harnessPlatform } from './platform';
 import {
   createHash,
@@ -643,7 +644,7 @@ export function materializeClaudeSessionBundle(
   assertPackageDeclaresMcpServers(bundle);
   const plugin = packageEntry ? { entry: packageEntry, root: packageRoot(bundle) } : null;
   const library = libraryPlugin(bundle);
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL };
   materializeMcpEnv(bundle, env);
   materializeModel(bundle, env);
   const promptValue = renderPromptBlocks(bundle.promptBlocks);
@@ -693,9 +694,19 @@ export function materializeClaudeSessionBundle(
     };
   }
 
+  const settingsHome = bundle.env.GUGU_HOME?.trim();
+  if (!settingsHome && bundle.autonomy?.permissionMode === 'ai-review') {
+    throw new Error('Claude AI review requires a host-owned settings directory');
+  }
+  const reviewerSettings = settingsHome ? {
+    path: join(settingsHome, 'capability-packages', 'claude', 'reviewer-settings', `${CLAUDE_REVIEWER_MODEL}.json`),
+    content: `${JSON.stringify(claudeReviewSettings({}))}\n`,
+    mode: 0o600 as const,
+  } : null;
   const options = {
-    // ❌ No inline `settings` here: on the ACP wire `options.settings` is a settings-file path
-    // (acpSessionMetaSchema), and only the host that owns such a file sets it (platform sessions).
+    ...(reviewerSettings ? { settings: reviewerSettings.path } : {}),
+    // ACP `options.settings` names a host-owned file, never an inline object. The apply layer
+    // writes the reviewer artifact; a protected platform document can replace its path.
     // A native session's Fast reaches Claude through the ACP `fast` config option at startup
     // (SessionManager.applyInitialFastMode), so an inline copy would be a second path that the
     // wire rejects before the adapter is ever spawned.
@@ -741,6 +752,7 @@ export function materializeClaudeSessionBundle(
     const allowed = guguMcpAllowRules(bundle);
     return {
       ...common,
+      artifacts: [...artifacts, ...(reviewerSettings ? [reviewerSettings] : [])],
       // 桥接自己的状态目录只进**适配器进程**的 env(物化结果的 env 叠在它的 spawn env 最上面);
       // 下面 `claudeCode.options.env` 那一份是给 claude 的,仍是原来的 `env`。
       env: { ...env, ...claudeAcpBridgeStateEnv(bundle) },
@@ -766,6 +778,7 @@ export function materializeClaudeSessionBundle(
 
   return {
     ...common,
+    artifacts: [...artifacts, ...(reviewerSettings ? [reviewerSettings] : [])],
     argsAppend: [],
     acp: {
       mcpServers: [],

@@ -1,3 +1,4 @@
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -119,10 +120,10 @@ function offeredSessionViews(agent: AgentPayload): SessionpageSessionView[] {
  */
 function declaredPermissionModes(agent: AgentPayload): GuguPermissionMode[] {
   const legs = offeredSessionViews(agent).map(sessionpageLegOfView);
-  return GUGU_PERMISSION_MODES.filter((mode) =>
+  return GUGU_PERMISSION_MODES.filter((mode) => mode !== 'ai-review' && (
     legs.length === 0
       ? agentSupportsPermissionMode(agent.capabilities, mode)
-      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg)));
+      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg))));
 }
 
 /**
@@ -287,7 +288,7 @@ export async function createModels(
     const { listLocalModels, probeHarnessCatalogState } = await import('@main/core/agents/session-discovery');
     const [catalog, state] = await Promise.all([
       listLocalModels(request.harness, { transport: sessionRuntimeOfView(view.view) }),
-      probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view)),
+      probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view), request.model?.trim() && !request.model.startsWith('platform:') ? request.model : undefined),
     ]);
     // 默认模型在这台机器上有没有凭据(#6264):远端创建框据此决定默认挪不挪到平台模型,与桌面同一个读数。
     const [selectedCredential, harnessAuth] = await Promise.all([
@@ -324,6 +325,9 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
+        ...(catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : 'own', requestedModel ?? (state.kind === 'ready' ? state.selected : null))
+          ? { autoReview: { model: platformModel ? requestedModel! : state.kind === 'ready' ? state.selected! : '' } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,

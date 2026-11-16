@@ -55,7 +55,7 @@ const Conversation = observer(() => {
     timeline={emptyAgentWatchTimeline()} deviceId="qa-fast-device" sessionId="room-task" agentName="Codex" harness="codex" nativeRecord sessionRuntime="acp"
     respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()}
-    composerControls={sidebar.anchor ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} /> : undefined}
+    composerControls={sidebar.anchor ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} conversationKey="qa-fast-device:room-task" modelControl={modelControl} model={model} skillDraft={skillDraft} /> : undefined}
   /></AgentWatchScreen>
 })
 async function mount() {

@@ -1,17 +1,27 @@
-import { useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { ChevronDown, X } from '@/lib/icons'
+import { ChevronDown, ChevronUp, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import { PhoneViewportContext } from '../usePhoneViewport'
+import './phone-menu-bar-catalog'
 import './phone-composer-controls.css'
 
-export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
+export function PhoneComposerControlRow({ children, conversationKey }: { children: ReactNode; conversationKey?: string }) {
+  return <ComposerControlRow key={conversationKey}>{children}</ComposerControlRow>
+}
+
+function ComposerControlRow({ children }: { children: ReactNode }) {
+  const { t } = useTranslation('phoneComposerMenuBar')
+  const itemsId = useId()
   const row = useRef<HTMLDivElement>(null)
   const [editing, setEditing] = useState(false)
+  const [hasDraft, setHasDraft] = useState(false)
+  const [manualCollapsed, setManualCollapsed] = useState<boolean | null>(null)
+  const collapsed = manualCollapsed ?? hasDraft
   const keyboardVisible = useContext(PhoneViewportContext)?.keyboardVisible
   useLayoutEffect(() => {
     const scope = row.current?.closest('[data-slot="composer"], [data-chat-composer], [data-chat-composer-host], [data-chat-bottom-dock], .gg-aw-create-host')
@@ -20,7 +30,8 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
       const editor = scope.querySelector('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea')
       const text = editor instanceof HTMLTextAreaElement ? editor.value : editor?.textContent ?? ''
       const hasAttachments = !!scope.querySelector('[data-slot="composer-attachments"]')
-      setEditing(!!text.trim() || hasAttachments || keyboardVisible !== false && document.activeElement instanceof Element
+      setHasDraft(!!text.trim() || hasAttachments)
+      setEditing(keyboardVisible !== false && document.activeElement instanceof Element
         && scope.contains(document.activeElement)
         && !!document.activeElement.closest('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea'))
     }
@@ -33,7 +44,15 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
     observer.observe(scope, { childList: true, characterData: true, subtree: true })
     return () => { observer.disconnect(); scope.removeEventListener('input', update); scope.removeEventListener('focusin', update); scope.removeEventListener('focusout', afterBlur) }
   }, [keyboardVisible])
-  return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined} inert={editing || undefined} aria-hidden={editing || undefined}>{children}</div>
+  return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined}
+    data-collapsed={collapsed || undefined} inert={editing || undefined} aria-hidden={editing || undefined}>
+    <div id={itemsId} className="gg-phone-composer-controls-items" hidden={collapsed} inert={collapsed || undefined}>{children}</div>
+    <IconButton size="sm" aria-label={t(collapsed ? 'expand' : 'collapse')} aria-expanded={!collapsed} aria-controls={itemsId}
+      data-testid="phone-composer-menu-toggle" className="gg-phone-composer-menu-toggle"
+      onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={() => setManualCollapsed(!collapsed)}>
+      {collapsed ? <ChevronUp /> : <ChevronDown />}
+    </IconButton>
+  </div>
 }
 
 export function PhoneComposerControl({ label, icon, active, dot, disabled, onClick, testId, buttonRef, menuExpanded }: {

@@ -11,7 +11,7 @@ import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
 import { ComposerThinking, type ChatComposerProps, type ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
-import { harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
+import { createPermissionModes, harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
@@ -29,11 +29,12 @@ export type CreationConfiguration = {
 }
 
 /** The mobile creation row reads the same device, project and model catalogs as before. */
-export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, projectTask, existingSession, controlsExtra }: {
+export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, projectTask, existingSession, controlsExtra, scopeChatId, conversationKey }: {
   projects: readonly CreateProject[]; project: CreateProject | null; onProject: (key: string | null) => void
   machines: readonly CreateMachine[]; machine: CreateMachine | undefined; onMachine: (deviceId: string) => void
   machineLabel: (device: CreateMachine['device']) => string; busy: boolean
   configuration?: CreationConfiguration; scopeChatId?: string | null
+  conversationKey?: string
   existingSession?: { agentName: string; model?: ExistingSessionModel }
   controlsExtra?: ReactNode
   /** An in-place project task already owns its project; its folder determines the run device. */
@@ -46,7 +47,8 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const [search, setSearch] = useState('')
   const modelButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
-  const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const baseSelectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const selectedHarness = baseSelectedHarness && configuration ? { ...baseSelectedHarness, permissionModes: createPermissionModes(baseSelectedHarness, configuration.models, configuration.modelsState, configuration.selection) } : baseSelectedHarness
   const existingEfforts = Object.entries(existingSession?.model?.effortOptions ?? {}).map(([id, option]) => ({ id, ...option }))
   const existingPermissions = existingSession?.model?.onPermissionModeChange
     ? Object.entries(existingSession.model.permissionModeOptions ?? {}) : []
@@ -66,7 +68,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
   const compact = !!existingSession || view !== 'project'
   return <>
-    <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
+    <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow conversationKey={conversationKey ?? scopeChatId ?? undefined}>
       {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />}
       {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
