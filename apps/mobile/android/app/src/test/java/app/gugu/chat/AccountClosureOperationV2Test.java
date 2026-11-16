@@ -32,6 +32,7 @@ public class AccountClosureOperationV2Test {
         Attempt beforeDispatch;
         Attempt admissionSnapshot;
         Attempt duringDispatch;
+        Attempt onBusyRead;
         CompletableFuture<Void> drain = new CompletableFuture<>();
         public byte[] read(String key) { byte[] value = records.get(key); return value == null ? null : value.clone(); }
         public void write(String key, byte[] value) throws Exception {
@@ -48,7 +49,11 @@ public class AccountClosureOperationV2Test {
             });
             return drain;
         }
-        public boolean busy(String owner) { assertFalse(Thread.holdsLock(lock)); return busy; }
+        public boolean busy(String owner) throws Exception {
+            assertFalse(Thread.holdsLock(lock));
+            if (onBusyRead != null) onBusyRead.run();
+            return busy;
+        }
         AccountClosureOperationV2 open() {
             return new AccountClosureOperationV2(lock, this,
                 () -> {
@@ -247,5 +252,31 @@ public class AccountClosureOperationV2Test {
         AccountClosurePreparation.completeCaptured(AccountClosurePreparation.STOPPING, SID, state[0], SID,
             () -> {}, () -> commits[0]++);
         assertEquals(1, commits[0]);
+    }
+    @Test public void completedPreparationRepeatsReadOnlyAndStillRequiresNativeIdle() throws Exception {
+        Fixture f = new Fixture(); AccountClosureOperationV2 store = f.open();
+        CompletableFuture<AccountClosureOperationV2.Metadata> first = store.prepare(f.scope()); f.drain.complete(null);
+        AccountClosureOperationV2.Metadata completed = first.join(); byte[] protectedBytes = f.persisted();
+        AccountClosureOperationV2.Metadata repeated = store.prepare(f.scope()).join();
+        assertEquals("local_prepared", repeated.checkpoint); assertEquals(completed.nativeGeneration, repeated.nativeGeneration);
+        assertEquals(completed.localRevision, repeated.localRevision); assertArrayEquals(protectedBytes, f.persisted());
+        assertEquals(1, f.stops); assertEquals(1, f.entropyCalls);
+        assertFalse(AccountClosureOperationV2.hasSideEffectAdmission(f.lock));
+        f.busy = true; reject("closure_not_prepared", () -> store.prepare(f.scope()));
+        assertArrayEquals(protectedBytes, f.persisted()); assertEquals(1, f.stops);
+    }
+    @Test public void restartedPreparedScopeRestoresWithoutDispatchAndRechecksIdentityAfterIdleRead() throws Exception {
+        Fixture f = new Fixture(); CompletableFuture<AccountClosureOperationV2.Metadata> first = f.open().prepare(f.scope());
+        f.drain.complete(null); AccountClosureOperationV2.Metadata completed = first.join(); byte[] protectedBytes = f.persisted();
+        AccountClosureOperationV2 restarted = f.open();
+        AccountClosureOperationV2.Metadata restored = restarted.prepare(f.scope()).join();
+        assertEquals(completed.nativeGeneration, restored.nativeGeneration); assertEquals(completed.localRevision, restored.localRevision);
+        assertEquals(1, f.stops); assertEquals(1, f.entropyCalls); assertArrayEquals(protectedBytes, f.persisted());
+        // Idle is not authority: if native Auth changes before the final protected
+        // record read, the old prepared operation still cannot be adopted by SID2.
+        f.onBusyRead = () -> f.sid = B;
+        reject("scope_conflict", () -> restarted.prepare(f.scope()));
+        assertFalse(AccountClosureOperationV2.hasSideEffectAdmission(f.lock));
+        assertArrayEquals(protectedBytes, f.persisted()); assertEquals(1, f.stops);
     }
 }

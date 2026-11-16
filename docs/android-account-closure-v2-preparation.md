@@ -59,6 +59,11 @@ accepts `request_local_preparation`. It cannot accept cloud terminal words or ma
 local preparation complete. Only `prepare(scope)` can advance to `local_prepared`,
 after both native runtime drains finish, neither owner runtime remains busy, and
 the original full scope/revision/generation is rechecked.
+For a persisted `local_prepared` operation, repeated or restarted `prepare` only
+rechecks native idle plus the real full scope/generation/revision and returns
+the existing metadata. It does not dispatch another stop, open side-effect
+admission, rewrite the receipt or advance a revision. Busy or mismatched scope
+still rejects and preserves the record.
 
 No runtime wait holds the Auth monitor. Existing native runtime admission also
 checks the persisted V2 seal, even if the capability is later disabled. The final
@@ -99,7 +104,7 @@ leave a deliberately unreleased native seal and is outside this change.
 
 ## Validation boundary
 
-`AccountClosureOperationV2Test` contains 22 deterministic source cases covering
+`AccountClosureOperationV2Test` contains 24 deterministic source cases covering
 default closure, atomic persistence ordering, restart, scope replacement, owner /
 SID / device / installation isolation, secret-free metadata, storage failure,
 CAS, renderer terminal rejection, drain completion, failed checkpoints, corrupt
@@ -110,6 +115,9 @@ the valid V1 G1 put/remove/cancel -> V2 seal -> late V1 callback interleaving, a
 cancelled/replaced V1 completion without a V2 record. They use actual core and
 completion-boundary functions with injected native ports; they do not exercise
 Android service locks or KeyStore.
+Two further cases cover completed-operation repeat and restart recovery, checking
+unchanged protected bytes/revision/generation, no extra stop/entropy/admission,
+native busy rejection and identity replacement after the idle read.
 
 For this initial source delivery, those Java cases have **not been compiled or
 executed**. Neither Android compilation, native startup, AndroidKeyStore / fsync

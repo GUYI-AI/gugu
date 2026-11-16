@@ -148,6 +148,17 @@ final class AccountClosureOperationV2 {
     }
     CompletableFuture<Metadata> prepare(AccountClosureReceiptStore.Scope scope) throws Exception {
         final Metadata captured = beginOrRestoreOperation(scope);
+        if (LOCAL_PREPARED.equals(captured.checkpoint)) {
+            // A persisted local completion is read-only on reentry. Never mint a
+            // new side-effect admission or rewrite its receipt/generation/revision.
+            if (runtime.busy(scope.ownerId)) throw failure("closure_not_prepared");
+            synchronized (authLock) {
+                requireEnabled(); Record record = require(scope);
+                if (!LOCAL_PREPARED.equals(record.checkpoint) || !record.generation.equals(captured.nativeGeneration)
+                    || record.revision != captured.localRevision) throw failure("scope_conflict");
+                return CompletableFuture.completedFuture(new Metadata(record));
+            }
+        }
         final Metadata preparing = checkpointOperation(scope, captured.localRevision, captured.nativeGeneration, "request_local_preparation");
         final SideEffects admission;
         synchronized (authLock) {
