@@ -28,7 +28,7 @@ const ipc = vi.hoisted(() => {
   }
 })
 vi.mock('@renderer/lib/ipc', () => ({
-  rpc: { appSettings: { getWithMeta: ipc.getWithMeta, getAll: ipc.getAll, update: ipc.update }, themePacks: { imported: async () => [], stylesheet: async () => '' } },
+  rpc: { appSettings: { getWithMeta: ipc.getWithMeta, getAll: ipc.getAll, update: ipc.update }, themePacks: { imported: async () => [] } },
   rpcOn: () => ({ appSettings: { getWithMeta: ipc.getWithMeta } }),
   events: { on: (_channel: unknown, cb: (data: { key: string }) => void) => { ipc.listeners.add(cb); return () => ipc.listeners.delete(cb) } },
 }))

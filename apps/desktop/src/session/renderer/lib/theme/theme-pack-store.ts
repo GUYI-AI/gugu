@@ -7,8 +7,8 @@
  *
  * 落地是一段样式表(`<style id="gugu-theme-pack">`),由槽位 + 主题清单推出来(shared/theme/theme-packs.ts 的 slotsStylesheet),
  * 只算不存。一个壳一份存储(lib/devicePreferences.ts 同一个选择):
- *   - 桌面:槽位 = app 设置 `themePackSlots`;导入的主题 = 主进程 userData 下的文件;样式表由主进程算好,首帧前经 preload
- *     交给 index.html 的引导脚本,之后跟着槽位 / 导入清单的变化再问主进程(下面两个 replica)。
+ *   - 桌面:槽位 = app 设置 `themePackSlots`;导入的主题 = 主进程 userData 下的文件;首帧的样式表由主进程算好,经 preload
+ *     交给 index.html 的引导脚本;之后在页里按槽位 + 清单现算(同一个纯函数)。
  *   - web / 手机:槽位与导入的主题在 localStorage;样式表在页里算,顺手缓存一份给引导脚本首帧前插(它没有主进程可问)。
  * 只作用于这台电脑上的咕咕 —— 资源库别的格是分机器的,这一格不是。
  */
@@ -18,7 +18,7 @@ import { createSelectStore, useSelect } from '@/lib/selectStore';
 import { devicePreferences, documentStorage, useDevicePreference } from '@/lib/devicePreferences';
 import { rendererLogger } from '@/lib/log';
 import { events, rpc } from '@renderer/lib/ipc';
-import { appSettingsChangedChannel, importedThemePacksChangedChannel } from '@shared/events/appEvents';
+import { importedThemePacksChangedChannel } from '@shared/events/appEvents';
 import {
   BUILTIN_THEME_PACKS,
   isThemePack,
@@ -60,38 +60,33 @@ export const importedThemePacksModel = replica({
   fresh: Infinity,
 });
 
+/** What the boot script inserted before the first frame (preload's handover; main derives it once, from the stored slots). */
 const handedOverCss = typeof window === 'undefined' ? undefined : window.guguDeviceSettings?.handover?.themePackCss;
-
-/** The stylesheet main derives from the stored slots; its first value is preload's handover (what the boot script inserted). */
-export const themePackStylesheetModel = replica({
-  name: 'themePackStylesheet',
-  scope: 'device',
-  read: async () => (await rpc.themePacks.stylesheet()) as string,
-  fresh: Infinity,
-  local: () => handedOverCss,
-});
 
 function mainPackStore(): PackStore {
   const changes = createSelectStore(0);
   const changed = () => { changes.publish(changes.get() + 1); changes.notify(); };
-  // A slot or the imported list changed anywhere (this window's write comes back the same way): ask main again.
-  events.on(appSettingsChangedChannel, ({ key }) => { if (key === 'themePackSlots') void themePackStylesheetModel.refresh(); });
-  events.on(importedThemePacksChangedChannel, () => {
-    void importedThemePacksModel.refresh();
-    void themePackStylesheetModel.refresh();
-  });
-  // The stylesheet is applied whenever its value moves (DOM, a flow of a value in hand).
-  let applied: string | undefined;
-  const follow = () => {
-    const reading = themePackStylesheetModel.peek();
-    if (reading.state !== 'value' || reading.value === applied) return;
-    applied = reading.value;
-    applyStylesheet(reading.value);
+  // After the first frame the stylesheet is derived here, from the slots and the packs in hand — the same pure derivation
+  // main ran for the handover (derived, never stored): a choice lands in the frame of its light / dark switch. While the
+  // slots name an imported pack not read yet, what is shown stays until it is.
+  let applied = handedOverCss;
+  const derive = () => {
+    const slots = devicePreferences.read('themePackSlots');
+    const imported = importedThemePacksModel.peek();
+    if (slots.state !== 'value') return;
+    const named = [slots.value.light, slots.value.dark].filter((id): id is string => !!id);
+    const builtinOnly = named.every((id) => BUILTIN_THEME_PACKS.some((pack) => pack.id === id));
+    if (!builtinOnly && imported.state !== 'value') { void importedThemePacksModel.prefetch(); return; }
+    const packs = imported.state === 'value' ? [...BUILTIN_THEME_PACKS, ...imported.value] : BUILTIN_THEME_PACKS;
+    const css = slotsStylesheet(validThemePackSlots(slots.value, packs), packs);
+    if (css === applied) return;
+    applied = css;
+    applyStylesheet(css);
     changed();
   };
-  themePackStylesheetModel.subscribe([], follow);
-  // Seeds from the handover at once (`local`) and asks main once more in the background.
-  void themePackStylesheetModel.prefetch();
+  devicePreferences.subscribe(derive);
+  importedThemePacksModel.subscribe([], derive);
+  events.on(importedThemePacksChangedChannel, () => { void importedThemePacksModel.refresh(); });
   return {
     imported: () => importedThemePacksModel.peek(),
     useImported: () => useReplica(importedThemePacksModel, []),
@@ -103,21 +98,7 @@ function mainPackStore(): PackStore {
       importedThemePacksModel.at().set(await rpc.themePacks.removeImported(id) as ThemePack[]);
       changed();
     },
-    // A choice in this window: the stylesheet is derived here at once (the same pure derivation main runs) and laid over
-    // the stored one (I4), so it lands in the same frame as the light / dark switch — ❌ "new mode, old colours" until main
-    // answers. Main's answer (asked again on its broadcast, above) confirms it. Only when the slots name an imported pack
-    // this window has not read yet does it wait for main.
-    slotsChanged: () => {
-      const slots = devicePreferences.read('themePackSlots');
-      const imported = importedThemePacksModel.peek();
-      if (slots.state !== 'value') return;
-      const named = [slots.value.light, slots.value.dark].filter((id): id is string => !!id);
-      const builtinOnly = named.every((id) => BUILTIN_THEME_PACKS.some((pack) => pack.id === id));
-      if (!builtinOnly && imported.state !== 'value') return;
-      // Imported packs not read yet: the choice names built-in packs only (checked above), which is all it needs.
-      const packs = imported.state === 'value' ? [...BUILTIN_THEME_PACKS, ...imported.value] : BUILTIN_THEME_PACKS;
-      themePackStylesheetModel.set([], slotsStylesheet(validThemePackSlots(slots.value, packs), packs));
-    },
+    slotsChanged: derive,
     subscribe: changes.subscribe,
   };
 }

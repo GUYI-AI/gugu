@@ -3,7 +3,7 @@ import { importedThemePacksChangedChannel } from '@shared/events/appEvents';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { isThemePack, type ThemePack } from '@shared/theme/theme-packs';
 import { reconcileSettingsRuntimeState } from './controller';
-import { readImportedThemePacks, themePackStylesheetNow, writeImportedThemePacks } from './device-settings';
+import { readImportedThemePacks, writeImportedThemePacks } from './device-settings';
 import { appSettingsService } from './settings-service';
 
 /**
@@ -37,6 +37,4 @@ export const themePacksController = createRPCController({
     events.emit(importedThemePacksChangedChannel, undefined);
     return next;
   },
-
-  stylesheet: async (): Promise<string> => themePackStylesheetNow(),
 });
