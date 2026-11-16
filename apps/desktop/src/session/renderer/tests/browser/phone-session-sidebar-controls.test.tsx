@@ -197,27 +197,34 @@ it.each([320,360].flatMap(width=>[14,21].map(fontSize=>({width,fontSize}))))('$w
  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
 })
 
-it.each(['session','device'] as const)('%s identity changes reset collapse while directory empty/full/empty does not',async change=>{
+it.each((['session','device'] as const).flatMap(change=>(['collapsed','expanded'] as const).map(choice=>({change,choice}))))('$change/$choice: directory empty/full/empty preserves the manual choice until the actual identity changes',async({change,choice})=>{
  await mount('room-task','chat:room',true)
  await act(async()=>{removeDeviceSessions('qa-device')})
  const row=()=>harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
  await vi.waitFor(()=>expect(row().querySelector('[data-testid="agent-watch-create-model-device"]')).not.toBeNull())
  const original=row()
+ const collapsed=choice==='collapsed'
+ if(!collapsed){
+  const editor=harness!.container.querySelector<HTMLElement & {editor:{commands:{setContent:(html:string)=>void}}}>('[contenteditable]')!
+  editor.editor.commands.setContent('<p>Keep this draft</p>')
+  await vi.waitFor(()=>expect(original.hasAttribute('data-collapsed')).toBe(true))
+ }
  await page.getByTestId('phone-composer-menu-toggle').click()
- await vi.waitFor(()=>expect(original.hasAttribute('data-collapsed')).toBe(true))
+ await vi.waitFor(()=>expect(original.hasAttribute('data-collapsed')).toBe(collapsed))
  await act(async()=>{updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})})
  await vi.waitFor(()=>{
   expect(harness!.container.querySelector('[data-testid="agent-watch-create-skills"]')).not.toBeNull()
   expect(row()).toBe(original)
-  expect(row().hasAttribute('data-collapsed')).toBe(true)
-  expect(row().querySelector('[data-testid="phone-composer-menu-toggle"]')?.getAttribute('aria-expanded')).toBe('false')
+  expect(row().hasAttribute('data-collapsed')).toBe(collapsed)
+  expect(row().querySelector('[data-testid="phone-composer-menu-toggle"]')?.getAttribute('aria-expanded')).toBe(String(!collapsed))
  })
  await act(async()=>{removeDeviceSessions('qa-device')})
  await vi.waitFor(()=>{
   expect(harness!.container.querySelector('[data-testid="agent-watch-create-skills"]')).toBeNull()
   expect(row()).toBe(original)
-  expect(row().hasAttribute('data-collapsed')).toBe(true)
-  expect(row().querySelector<HTMLElement>('.gg-phone-composer-controls-items')!.getBoundingClientRect().height).toBe(0)
+  expect(row().hasAttribute('data-collapsed')).toBe(collapsed)
+  expect(row().querySelector('[data-testid="phone-composer-menu-toggle"]')?.getAttribute('aria-expanded')).toBe(String(!collapsed))
+  expect(row().querySelector<HTMLElement>('.gg-phone-composer-controls-items')!.getBoundingClientRect().height).toBe(collapsed?0:44)
  })
  await renderWithAppProviders(harness!,<LocalizationProvider><SessionUiTheme theme="dark"><><Conversation sessionId={change==='session'?'other':'room-task'} deviceId={change==='device'?'qa-other-device':'qa-device'} entry={null}/></></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},contacts:{contacts:[]}})
  await vi.waitFor(()=>{
