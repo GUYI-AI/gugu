@@ -475,6 +475,25 @@ describe('core batch: device reads and change feeds', () => {
     harness.cleanup({ keepReads: true })
   })
 
+  it('a surface joining an entry another surface shows does not read it again; the first reader of an entry not fresh does', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const reads = vi.fn(async () => 'v')
+    const model = rm.replica({ name: 'test-join', scope: 'account', read: reads })
+    function Probe() { rm.useReplica(model, []); return null }
+    function Quiet() { rm.useReplica(model, [], { read: false }); return null }
+    const harness = createReactHarness()
+    const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
+    await harness.render(createElement('div', null, createElement(Probe, { key: 'a' }))); await settle()
+    expect(reads).toHaveBeenCalledTimes(1)
+    await harness.render(createElement('div', null, createElement(Probe, { key: 'a' }), createElement(Probe, { key: 'b' }))); await settle()
+    expect(reads).toHaveBeenCalledTimes(1)
+    // Shown only by a surface that does not read: the next reader reads.
+    await harness.render(createElement('div', null, createElement(Quiet, { key: 'q' }))); await settle()
+    await harness.render(createElement('div', null, createElement(Quiet, { key: 'q' }), createElement(Probe, { key: 'c' }))); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
+    harness.cleanup({ keepReads: true })
+  })
+
   it('a feed starting over entries that already hold a value reads them again (what changed while nobody listened)', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     let version = 1

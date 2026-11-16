@@ -539,6 +539,10 @@ function ownerOf(scope: Scope): string | null {
   return scope === DEVICE ? DEVICE : account.id
 }
 
+function joinsOrReads(query: Query): boolean {
+  return query.observers.filter((observer) => observer.options.enabled !== false).length <= 1
+}
+
 export function replica<A extends unknown[], V>(definition: Definition<A, V>): Replica<A, V> {
   // A module evaluated again (hot reload, a test's module reset) defines its model again: the latest reader serves.
   const first = !definitions.has(definition.name)
@@ -557,6 +561,9 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery, key) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
+    // A surface joining an entry another surface shows and reads does not read it again: that one keeps it current (its
+    // feed, its poll, its own open). Only the first reader of an entry not fresh reads on mount.
+    refetchOnMount: joinsOrReads,
     networkMode: typeof definition.networkMode === 'function' ? definition.networkMode(...(key.slice(2) as Later<A>))
       : definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
     ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
