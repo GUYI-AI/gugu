@@ -30,7 +30,10 @@
   box-shadow: none;
 }
 [data-slot='composer'][data-phone-capsule][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; }
-[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 128px; border-radius: 20px; }
+/* Two 24px text lines plus the existing 16px vertical padding stay compact.
+   The taller minimum belongs to the third-line attachment/control stack. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 80px; border-radius: 20px; }
+[data-slot='composer'][data-phone-capsule][data-phone-attachment-row] [data-slot='composer-input'] { min-height: 128px; }
 [data-slot='composer'][data-phone-capsule][data-phone-has-text]:not([data-phone-attachment-row]) [data-phone-attachment] { display: none; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
 /* Compact height follows content, not the extra room reserved for the two buttons.
@@ -133,6 +136,9 @@
 [data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-editor-toggle] {
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-right: 8px; margin-top: 8px;
 }
+/* A compact two-line box fits the existing 32px expand and 44px send targets
+   without intersecting their hit areas; expanded editing keeps its own inset. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-editor-toggle] { margin-top: 0; }
 [data-slot='composer'][data-phone-capsule][data-phone-attachment-row] button[data-phone-attachment] {
   grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 52px;
