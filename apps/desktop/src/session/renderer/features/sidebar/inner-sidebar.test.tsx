@@ -400,7 +400,7 @@ describe('inner sidebar', () => {
     await act(async () => restoreRoot.render(<InnerSidebarRestore />));
     openChat('group');
     await render();
-    expect(shellRestoreLaneTaken(true, 72)).toBe(false);
+    expect(shellRestoreLaneTaken()).toBe(false);
     expect(restore.querySelector('button')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
     expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
@@ -417,7 +417,7 @@ describe('inner sidebar', () => {
     // Still attached: the list keeps the group lit.
     expect(innerSidebarChat.get()).toEqual({ kind: 'group', chatId: 'group' });
     // The leftmost strip leaves the expand button its lane even with the list open beside it.
-    expect(shellRestoreLaneTaken(true, 72)).toBe(true);
+    expect(shellRestoreLaneTaken()).toBe(true);
     const expand = restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!;
     expect(expand, 'the list column toggle, in the restore lane').not.toBeNull();
     expect(expand.closest('[data-shell-restore-lane]')).not.toBeNull();
@@ -433,7 +433,7 @@ describe('inner sidebar', () => {
     await render();
     expect(innerSidebarFoldedAway.get()).toBe(false);
     expect(restore.querySelector('button')).toBeNull();
-    expect(shellRestoreLaneTaken(true, 72)).toBe(false);
+    expect(shellRestoreLaneTaken()).toBe(false);
 
     openChat('group');
     await render();

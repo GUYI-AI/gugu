@@ -31,7 +31,7 @@ vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShe
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, toggleLeft: vi.fn() }), useLeftRailLayout: () => false, useSidebarProgressFollow: () => ({ current: null }), sidebarRailTextOpacity: () => 1 }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },

@@ -418,7 +418,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <>
             {/* owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。 */}
             {chat.is_muted && (
-              <span aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
+              <span className="gg-chat-row-muted" aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
                 <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
               </span>
             )}
