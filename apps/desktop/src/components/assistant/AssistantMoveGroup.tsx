@@ -42,7 +42,8 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
   // 会员档(账号额度那一份 replica):没读到 = null(不当成非会员),读不到如实说并给重试。管家那扇门没开 = 不问。
   const spending = useSpendingPower(cloudAvailable ? { id: ownerUserId } : null)
   const member = spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
-  const membershipFailed = spending.state === 'error' ? spending.balanceError : null
+  // The plan unread (its read failed while the balance's did not: a value without membership) is unreadable too.
+  const membershipFailed = spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
   // 一次搬的状态是模块级的:搬着时这一组被换位置重挂,照样读得到;每次状态变都重渲染、重读日志
   // (搬完 / 搬断了「接着搬」那一行才跟着变;读日志只是一次 localStorage)。
   const move = useSyncExternalStore(subscribeMove, getMoveState)

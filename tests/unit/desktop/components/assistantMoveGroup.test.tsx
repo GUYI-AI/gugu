@@ -7,7 +7,7 @@ import { createNode, createReactHarness } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 const mocks = vi.hoisted(() => ({
-  tier: 'plus' as 'free' | 'plus',
+  tier: 'plus' as 'free' | 'plus' | null,
   pending: null as unknown,
   nativePending: null as unknown,
   recoveryError: null as Error | null,
@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../apps/desktop/src/lib/billing/useSpendingPower', () => ({
   refreshSpendingPower: () => undefined,
-  useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: { tier: mocks.tier } } : { state: 'unknown', membership: null }),
+  // tier null: the plan's read failed while the balance's did not (a value without membership, its failure said).
+  useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: mocks.tier ? { tier: mocks.tier } : null, balanceError: mocks.tier ? null : 'plan read failed' } : { state: 'unknown', membership: null }),
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire', async () => ({
   // The real replica's shape: the local journal copy first, main's journal as the read.
@@ -105,6 +106,13 @@ describe('搬家入口', () => {
     expect(q('assistant-move-current-home')?.textContent).toContain('当前住处')
     expect(body()).toContain('暂时读不到搬家恢复记录，请重试。')
     expect((q('assistant-move-to-cloud') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('DE-3: the plan unreadable (the balance read) says so with a retry, and moving to the cloud waits (❌ disabled without a word)', async () => {
+    mocks.tier = null
+    await render(computer)
+    expect(body()).toContain('plan read failed')
+    expect((q('assistant-move-to-cloud') as HTMLButtonElement | null)?.disabled ?? true).toBe(true)
   })
 
   it('recovers the resume entry from native storage after localStorage is lost', async () => {

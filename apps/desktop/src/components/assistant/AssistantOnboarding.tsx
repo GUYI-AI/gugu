@@ -104,7 +104,8 @@ export function AssistantOnboarding({
   // 安家页读取会员权益(账号额度那一份 replica):读取失败如实显示,不能当成免费会员;没读到 = null(那一页画「在读」)。
   const spending = useSpendingPower(cloudEnabled && step === 'home' ? { id: ownerUserId } : null)
   const member = spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
-  const memberError = spending.state === 'error' ? spending.balanceError : null
+  // The plan unread (its read failed while the balance's did not: a value without membership) is unreadable too.
+  const memberError = spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
   const hue = BODY_COLORS[draft.color]?.hue ?? 268
   const displayName = draft.name.trim() || t('setup.namePlaceholder')
 
