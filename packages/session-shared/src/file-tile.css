@@ -1,5 +1,5 @@
 /*
- * 文件图块(≥ 24px:文件 App 的列表 / 宫格 / 详情、产物卡、「已编辑」卡):`fileTile()` 给的族字形和后缀字放在一格里,
+ * 文件图块(≥ 24px:文件 App 的列表 / 宫格 / 详情、产物卡、「已编辑」卡):`fileTile()` 给的族字形放在族色浅底上,
  * 族色读 `--gg-file-tile`(宿主给 `var(--file-*)`,App 页面给 `var(--em-file-*)`)。大小由外面给,里面按比例,
  * 宫格那种大格子封顶。宿主 import 这一份;App 页面的 `<gugu-file-mark tile>` 把同一份文字放进它的 shadow DOM。
  */
@@ -16,8 +16,6 @@
   line-height: 1;
 }
 .gg-file-tile-glyph { display: block; width: min(50cqmin, 48px); height: min(50cqmin, 48px); }
-.gg-file-tile-label { font-size: min(30cqmin, 14px); font-weight: 700; letter-spacing: .02em; }
 
-/* @@@tile-version - owner 选两种之一,这一段就是全部差别。版本一:族色字形 + 同色浅底。 */
+/* 族色字形 + 同色浅底(owner 11-16 选定);暗色的族色在 tokens.css 里抬过亮度,字形对底 ≥ 3.5:1。 */
 .gg-file-tile { background: color-mix(in srgb, var(--gg-file-tile) 14%, transparent); color: var(--gg-file-tile); }
-.gg-file-tile-label { display: none; }

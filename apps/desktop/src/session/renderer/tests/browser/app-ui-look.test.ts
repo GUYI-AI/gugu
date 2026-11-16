@@ -196,7 +196,6 @@ describe('an App page with gugu\'s look', () => {
     expect(document.getElementById('mark-pdf')!.shadowRoot!.querySelector('[part="tile"]')).toBeNull();
     const sheet = part('tile-sheet', 'tile');
     expect(part('tile-sheet', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.sheet.glyph));
-    expect(part('tile-sheet', 'label').textContent).toBe('XLSX');
     expect(css(sheet, '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-sheet'));
     expect(css(part('tile-pdf', 'tile'), '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-pdf'));
     expect([sheet.getBoundingClientRect().width, part('tile-pdf', 'tile').getBoundingClientRect().width]).toEqual([40, 24]);

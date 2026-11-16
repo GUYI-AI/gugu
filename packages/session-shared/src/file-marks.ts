@@ -5,7 +5,6 @@
  * App 页面的 `<gugu-file-mark>`(app-runtime/ui)都只是这张表的薄壳。
  */
 import { fileFamily, type FileFamily } from '@gugu/core/shared/fileFamily.mjs';
-import { extensionOf } from '@gugu/core/shared/imageMime.mjs';
 import { FILE_GLYPHS } from './file-glyphs';
 
 export const FILE_MARKS: Record<FileFamily, { glyph: string; color: string }> = {
@@ -25,14 +24,8 @@ export const FILE_MARKS: Record<FileFamily, { glyph: string; color: string }> = 
 /** 一张图读不回来时的字形:这是状态不是族,❌ 别画成 image 族 —— 那会把「没读到」说成「是张图」。 */
 export const IMAGE_OFF_GLYPH = FILE_GLYPHS.ImageOff;
 
-/**
- * A file's tile (`file-tile.css`): its family's glyph and colour, and the words the solid version writes on it — the
- * suffix, at most four letters (`XLSX`; a claimed `.vote.json` by its last part), else the family's (`PDF` for a pdf
- * named without one); `other` has none.
- */
-export function fileTile(name: string, mime?: string): { family: FileFamily; glyph: string; color: string; label: string } {
+/** A file's tile (`file-tile.css`): its family's glyph and colour. */
+export function fileTile(name: string, mime?: string): { family: FileFamily; glyph: string; color: string } {
   const family = fileFamily(name, mime);
-  const suffix = extensionOf(name);
-  const label = (suffix || (family === 'other' ? '' : family)).slice(0, 4).toUpperCase();
-  return { family, ...FILE_MARKS[family], label };
+  return { family, ...FILE_MARKS[family] };
 }

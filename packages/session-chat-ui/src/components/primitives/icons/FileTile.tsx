@@ -8,7 +8,6 @@ export function FileTile(props: { name: string; mime?: string; class?: string })
   return (
     <span class={`gg-file-tile ${props.class ?? ''}`} style={{ '--gg-file-tile': tile().color }} aria-hidden="true">
       <svg class="gg-file-tile-glyph" viewBox="0 0 24 24" innerHTML={tile().glyph} />
-      <span class="gg-file-tile-label">{tile().label}</span>
     </span>
   );
 }

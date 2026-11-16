@@ -1831,7 +1831,7 @@ function fileMark(entry) {
     mark.title = entry.claimedBy.name
     return mark
   }
-  // The full name (not displayName): its last suffix says the family and the tile's word.
+  // The full name (not displayName): its last suffix says the family.
   const mark = Object.assign(document.createElement('gugu-file-mark'), { className: 'file-mark' })
   mark.setAttribute('name', entry.name ?? '')
   if (entry.contentType) mark.setAttribute('mime', entry.contentType)

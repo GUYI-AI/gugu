@@ -20,7 +20,7 @@ import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
  *
  * Insides are drawn in shadow DOM: an App's `render()` (the template's patching redraw) sees only the empty element
  * and never strips the icon or the face as a child it did not write. ui.css sizes and places the elements (the App can
- * change that); `::part(svg | face | img | name | icon | tile | glyph | label)` reach inside.
+ * change that); `::part(svg | face | img | name | icon | tile | glyph)` reach inside.
  */
 
 type Context = Partial<Pick<ExtensionHostContext, 'locale' | 'themeMode' | 'themeColors' | 'chat'>>;
@@ -251,7 +251,7 @@ export class GuguFileMark extends HTMLElement {
     const mark = fileTile(this.getAttribute('name') ?? '', this.getAttribute('mime') ?? undefined);
     const glyph = (cls: string) => `<svg part="glyph" class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${mark.glyph}</svg>`;
     root.innerHTML = this.hasAttribute('tile')
-      ? `<span part="tile" class="gg-file-tile" style="--gg-file-tile: ${mark.color.replace('--file-', '--em-file-')}">${glyph('gg-file-tile-glyph')}<span part="label" class="gg-file-tile-label">${esc(mark.label)}</span></span>`
+      ? `<span part="tile" class="gg-file-tile" style="--gg-file-tile: ${mark.color.replace('--file-', '--em-file-')}">${glyph('gg-file-tile-glyph')}</span>`
       : glyph('');
     this.setAttribute('aria-hidden', 'true');
   }
