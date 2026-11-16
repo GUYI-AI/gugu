@@ -372,7 +372,7 @@ export function BrowserToolbar({
         </DropdownMenu>
       )}
     </div>
-    {urlError && <div id={urlErrorId} role="alert" className="border-b border-border bg-background-secondary-1 px-2 py-1.5 text-sm text-foreground-destructive break-words">{urlError}</div>}
+    {urlError && <div id={urlErrorId} role="alert" className="border-b border-border bg-background-secondary-1 px-2 py-2 text-sm text-foreground-destructive break-words">{urlError}</div>}
     </div>
   );
 }
