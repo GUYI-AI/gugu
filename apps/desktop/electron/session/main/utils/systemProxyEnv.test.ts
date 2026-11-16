@@ -29,7 +29,7 @@ describe('system proxy for agent processes', () => {
     expect(proxyFromPac('SOCKS5 127.0.0.1:7891; DIRECT')).toMatchObject({ proxy: null, reason: 'unsupported' });
   });
 
-  it('fills HTTPS/HTTP_PROXY, and NO_PROXY for loopback only when it fills a proxy', async () => {
+  it('fills HTTPS/HTTP_PROXY from the system proxy reading (loopback NO_PROXY is the spawn exit\'s job)', async () => {
     const { resolveSystemProxy, systemProxyFill } = await import('./systemProxyEnv');
     expect(systemProxyFill({})).toEqual({}); // not resolved yet
     await resolveSystemProxy(async () => 'DIRECT');
@@ -38,9 +38,7 @@ describe('system proxy for agent processes', () => {
     expect(systemProxyFill({})).toEqual({
       HTTPS_PROXY: 'http://127.0.0.1:7897',
       HTTP_PROXY: 'http://127.0.0.1:7897',
-      NO_PROXY: 'localhost,127.0.0.1,::1',
     });
-    expect(systemProxyFill({ no_proxy: '.corp' })).not.toHaveProperty('NO_PROXY');
   });
 
   it('never overrides a proxy the user configured — in that env or in the login shell, any case', async () => {

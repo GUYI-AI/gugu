@@ -24,9 +24,6 @@ const PROXY_VARS = new Set(['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY']);
  */
 const PROBE_URL = 'https://dl.google.com/';
 
-/** 本机回环永远直连:咕咕的 MCP、hook 都在 127.0.0.1 上,走了代理就断。 */
-const LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
-
 export type SystemProxyReading =
   | { proxy: string }
   | { proxy: null; reason: 'direct' | 'unsupported'; detail: string };
@@ -61,7 +58,8 @@ function hasProxyVar(env: Record<string, string | undefined> | null | undefined)
 }
 
 /**
- * 要补进这份环境的那几格;不该补时是空对象。`alsoConfigured` 是这份环境之外、用户也可能配过代理的地方
+ * 要补进这份环境的那几格;不该补时是空对象。回环免代理不在这里补:不论代理从哪来,
+ * 子进程环境的出口(`withLoopbackNoProxy`,session-core agent-env)都会并上。`alsoConfigured` 是这份环境之外、用户也可能配过代理的地方
  * (worker 继承的是主进程环境,而用户写在 ~/.zshrc 里的代理只在登录 shell 快照里)。
  */
 export function systemProxyFill(
@@ -72,6 +70,5 @@ export function systemProxyFill(
   return {
     HTTPS_PROXY: reading.proxy,
     HTTP_PROXY: reading.proxy,
-    ...(env.NO_PROXY?.trim() || env.no_proxy?.trim() ? {} : { NO_PROXY: LOOPBACK_NO_PROXY }),
   };
 }

@@ -24,6 +24,7 @@ import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context
 import { getPlugin, listPlugins } from '@main/core/agents/plugin-registry';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { systemProxyFill } from '@main/utils/systemProxyEnv';
+import { withLoopbackNoProxy } from '@gugu/session-core/agents/agent-env';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
@@ -45,7 +46,9 @@ const agentConfigWorker = lazyWorker(
     // #6264「登录已失效」标记按「这台机器 × 这家的配置家」记(见 session-runtime auth-expiry-file.ts):
     // 咕咕 server 上放在几个账号共用的数据根(同机账号共用 claude 那份登录,A 发现过期 B 也看得到);
     // 桌面上一台机器一份数据目录,仍放那里。
-    env: {
+    // 回环免代理:登录、认证、额度探针都经 composeAgentSpawnEnv;只有 `which` / `--version` 这类宿主依赖探针
+    // 直接继承这个 worker 的环境,同一条规矩也在这里用上。
+    env: withLoopbackNoProxy({
       ...process.env,
       // #6892 harness 的登录态 / 模型目录探针在这个 worker 里起(agy models 要连外网);它在另一个进程,
       // 用不了 buildAgentEnv(那份依赖主进程里的登录 shell 快照),所以在给它环境的这一处补。
@@ -54,7 +57,7 @@ const agentConfigWorker = lazyWorker(
         process.env.GUGU_SERVER_MODE === '1' && process.env.GUGU_SERVER_HOME ? process.env.GUGU_SERVER_HOME : app.getPath('userData'),
         'agent-auth-expiry.json'
       ),
-    },
+    }),
   }),
   {
     onSpawned: (handle) => {

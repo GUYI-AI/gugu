@@ -37,7 +37,6 @@ import {
   ANTIGRAVITY_SESSION_TUI_ENABLED,
   antigravitySessionBundleDescriptor,
   materializeAntigravitySessionBundle,
-  withLoopbackNoProxy,
 } from './session-bundle';
 
 const sessionBundle = antigravitySessionBundleDescriptor satisfies SessionBundleDescriptor;
@@ -389,12 +388,11 @@ export const plugin = definePlugin(
 
 /**
  * 托管装好的 `agy_acp_server` 就是 `ctx.cli`,不带参数。
- * 回环免代理必须在**这里**加而不是在物化器里:模型目录探针也走这条 `buildSpawn`,
- * 不经物化 —— 只在物化器里加,探针那一趟就会在代理机器上起不来(理由见 `withLoopbackNoProxy`)。
+ * 回环免代理(它起会话要连自己的本地 harness)由子进程环境的出口统一并上(session-core `withLoopbackNoProxy`)。
  */
 const antigravityAcp = createNativeAcpBehavior((ctx) => ({
   args: [],
-  env: withLoopbackNoProxy(ctx.env),
+  env: ctx.env,
 }), { interruptAtToolBoundary: true });
 
 export const provider = registerPluginBehavior(plugin, {

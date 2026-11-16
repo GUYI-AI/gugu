@@ -111,9 +111,6 @@ export async function startServe(opts: {
     HERMES_DASHBOARD_SESSION_TOKEN: token,
     HERMES_PARENT_PID: String(process.pid),
   };
-  const loopback = '127.0.0.1,localhost,::1';
-  env.NO_PROXY = [env.NO_PROXY, loopback].filter(Boolean).join(',');
-  env.no_proxy = env.NO_PROXY;
   let child: OwnedChild | null = null;
   const cleanup = () => rmSync(managedDir, { recursive: true, force: true });
   try {

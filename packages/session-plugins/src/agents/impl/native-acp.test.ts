@@ -19,13 +19,9 @@ const nativeAcpProviders: Array<{
     args: ['--acp'],
     env: { AUGMENT_DISABLE_AUTO_UPDATE: '1' },
   },
-  // #6335:托管装好的 `agy_acp_server` 就是 ctx.cli,不带参数;回环免代理无条件带上
-  // (它起会话要连自己的本地 harness,被系统代理截走时 session/new -32603)。
-  {
-    id: 'antigravity',
-    args: [],
-    env: { NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' },
-  },
+  // #6335:托管装好的 `agy_acp_server` 就是 ctx.cli,不带参数。回环免代理由子进程环境的出口
+  // (composeAgentSpawnEnv → withLoopbackNoProxy)统一并上,不在这一家里补。
+  { id: 'antigravity', args: [] },
   { id: 'cline', args: ['--acp'] },
   { id: 'copilot', args: ['--acp'] },
   { id: 'cursor', args: ['acp'] },
