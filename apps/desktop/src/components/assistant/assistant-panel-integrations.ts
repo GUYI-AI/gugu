@@ -86,19 +86,3 @@ export async function readAssistantPanelIntegration(panel: ConnectionMetadataSto
   return parseIntegrationBody(row,id,locale,await panel.body(row))
 }
 
-/** Missing names and descriptions are optional enrichment. Four workers avoid queuing
- * a whole catalog ahead of the entry the person explicitly opens. */
-export async function enrichAssistantPanelIntegrations(read: (item: IntegrationMetadata) => Promise<IntegrationMetadata>,items: readonly IntegrationMetadata[],locale: string,
-  updated: (id: string,summary: Pick<IntegrationMetadata,'name' | 'description'>) => void,active: () => boolean = () => true): Promise<void> {
-  const missing = items.filter(item => item.metadataOnly && !builtinIntegrationSummary(item.id,locale) && (!item.description || item.name === item.id || item.summaryNameMissing))
-  let next = 0
-  await Promise.all(Array.from({ length: Math.min(4,missing.length) },async () => {
-    while (active() && next < missing.length) {
-      const item = missing[next++]!
-      try {
-        const detail = await read(item)
-        if (active()) updated(item.id,{ name: detail.name,description: detail.description || item.description || '' })
-      } catch { /* A missing description never hides its row or asks for a retry. */ }
-    }
-  }))
-}

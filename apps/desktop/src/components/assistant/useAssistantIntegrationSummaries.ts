@@ -1,45 +1,32 @@
-import { useCallback,useEffect,useSyncExternalStore } from 'react'
-import { connectionMetadataKey, type ConnectionMetadataStore } from '../connections/connection-metadata'
+import type { ConnectionMetadataStore } from '../connections/connection-metadata'
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import { builtinIntegrationSummary } from '@gugu/session-plugins/integration-summaries'
-import { enrichAssistantPanelIntegrations,integrationListCopy } from './assistant-panel-integrations'
+import { useReplicas } from '@/lib/replica'
+import { integrationListCopy } from './assistant-panel-integrations'
 import { assistantIntegrationDetail,registerConnectionStore } from './assistant-panel-reads'
 
 export const EMPTY_INTEGRATION_SUMMARIES: IntegrationMetadata[] = []
-type Summary = Pick<IntegrationMetadata,'name' | 'description'>
-const summaryKey = (item: IntegrationMetadata) => `${item.id}|${item.catalogVersion ?? ''}`
-type SummaryCache = { summaries: Map<string,Summary>; pending: Set<string>; revision: number; listeners: Set<() => void> }
-const caches = new Map<string,SummaryCache>()
-function summaryCache(panel: ConnectionMetadataStore | undefined,locale: string): SummaryCache {
-  const key = JSON.stringify([panel?.ownerId,panel ? connectionMetadataKey(panel) : null,locale])
-  let cache = caches.get(key)
-  if (!cache) { cache = { summaries: new Map(),pending: new Set(),revision: 0,listeners: new Set() }; caches.set(key,cache) }
-  return cache
-}
+
+/** A metadata-only row whose list text is missing: its name and description are read from its full entry. */
+const lacksSummary = (item: IntegrationMetadata,locale: string) =>
+  item.metadataOnly && !builtinIntegrationSummary(item.id,locale) && (!item.description || item.name === item.id || item.summaryNameMissing)
+
+/**
+ * The list's missing names and descriptions, from the same entry the detail page reads (replica
+ * `assistantIntegrationDetail`: one body read per catalog version, ❌ a second holder of it). Optional enrichment: a row
+ * whose entry is not read yet, or cannot be, keeps the text it has.
+ */
 export function useAssistantIntegrationSummaries(panel: ConnectionMetadataStore | undefined,items: IntegrationMetadata[],locale: string): IntegrationMetadata[] {
-  const cache = summaryCache(panel,locale)
-  const subscribe = useCallback((listener: () => void) => { cache.listeners.add(listener); return () => { cache.listeners.delete(listener) } },[cache])
-  const snapshot = useCallback(() => cache.revision,[cache])
-  useSyncExternalStore(subscribe,snapshot,snapshot)
-  useEffect(() => {
-    if (!panel) return
-    const missing = items.filter(item => item.metadataOnly && !builtinIntegrationSummary(item.id,locale) && (!item.description || item.name === item.id || item.summaryNameMissing) && !cache.summaries.has(summaryKey(item)) && !cache.pending.has(summaryKey(item)))
-    if (!missing.length) return
-    for (const item of missing) cache.pending.add(summaryKey(item))
-    // List refreshes and remounts share this bounded enrichment, rather than
-    // clearing useful text or starting another body download.
-    // The same entry the detail page reads (replica `assistantIntegrationDetail`): one body read per catalog version.
-    const storeKey = registerConnectionStore(panel)
-    const read = (item: IntegrationMetadata) => assistantIntegrationDetail.fetch(storeKey,item.id,item.catalogVersion ?? null,locale)
-    void enrichAssistantPanelIntegrations(read,missing,locale,(id,summary) => {
-      const item = missing.find(item => item.id === id)!
-      cache.summaries.set(summaryKey(item),summary); cache.revision++
-      for (const listener of cache.listeners) listener()
-    }).finally(() => { for (const item of missing) cache.pending.delete(summaryKey(item)) })
-  },[panel,items,locale,cache])
+  const storeKey = panel ? registerConnectionStore(panel) : null
+  const missing = storeKey ? items.filter(item => lacksSummary(item,locale)) : []
+  const readings = useReplicas(assistantIntegrationDetail,missing.map(item => [storeKey!,item.id,item.catalogVersion ?? null,locale] as [string,string,string | null,string]))
+  const read = new Map(missing.map((item,index) => {
+    const reading = readings[index]!
+    return [item.id,reading.state === 'value' ? reading.value : null] as const
+  }))
   return items.map(item => {
-    const summary = cache.summaries.get(summaryKey(item))
-    const name = summary && item.metadataOnly && (item.summaryNameMissing || item.name === item.id) ? summary.name : item.name
-    return { ...item,...integrationListCopy(item.id,name,item.description || summary?.description,locale) }
+    const detail = read.get(item.id) ?? null
+    const name = detail && (item.summaryNameMissing || item.name === item.id) ? detail.name : item.name
+    return { ...item,...integrationListCopy(item.id,name,item.description || detail?.description,locale) }
   })
 }
