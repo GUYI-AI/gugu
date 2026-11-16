@@ -11,3 +11,5 @@ it('decodes quoted memory metadata escapes',()=>{expect(readFrontmatter('---\nna
 it('ignores fenced headings in memory titles',()=>{expect(parseMemoryNote('note.md','~~~md\n# Example\n~~~\n# Actual title').title).toBe('Actual title');expect(parseMemoryNote('note.md','````md\n# Example\n```\n# Still example\n````\n## Actual').title).toBe('Actual');});
 
 it('reads memory index links with titles',()=>{expect(memoryIndexHints('# 项目\n- [Plan](./plan.md "Details")').get('plan.md')).toEqual({title:'Plan',kind:'project'});expect(memoryIndexHints("[Plan](plan.md 'Details')").has('plan.md')).toBe(true);});
+
+it('reads angle memory index destinations',()=>{expect(memoryIndexHints('[Plan](<./my plan.md> "Details")').get('my plan.md')).toEqual({title:'Plan'});expect(memoryIndexHints('[Other](<nested/note.md>)').size).toBe(0);});
