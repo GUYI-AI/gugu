@@ -8,7 +8,7 @@ import type { LiveWindowContext, LiveWindowSource } from '@renderer/features/liv
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))
 
 const cleanups: Array<() => void> = []
 afterEach(() => { cleanups.splice(0).reverse().forEach(cleanup => cleanup()) })
@@ -72,29 +72,25 @@ it('reveals the central action on a first tap and enlarges on its button without
   expect(host.querySelector('[data-testid="picture-web"]')).toBe(picture)
 })
 
-it('restores a docked window on the same side and keeps source labels out of the small picture', async () => {
+it('keeps both source tabs at the top of the small and enlarged picture', async () => {
   const { host, model } = await mount(true)
-  expect(host.querySelector('[data-phone-watch-switch]')).toBeNull()
-  await act(async () => model.dispatch({ type: 'dock', edge: 'left', ratio: .2 }))
-  expect(host.querySelector('[data-phone-watch-grip]')).not.toBeNull()
-  await page.getByRole('button', { name: 'controlWatch.restore', exact: true }).click()
-  expect(model.getSnapshot().presentation!.small.corner).toBe('top-left')
-  expect(model.getSnapshot().presentation!.mode).toBe('floating')
+  expect(host.querySelectorAll('[data-phone-watch-switch] [role=tab]')).toHaveLength(2)
+  expect(host.querySelector('[data-phone-watch-handle]')).toBeNull()
   await act(async () => model.dispatch({ type: 'enlarge' }))
   await page.getByRole('tab', { name: 'controlWatch.computer', exact: true }).click()
   expect(model.getSnapshot().source!.id).toBe('desktop')
   const enlarged = host.querySelector('[data-phone-watch-picture]')!.getBoundingClientRect()
   expect(enlarged.width / enlarged.height).toBeCloseTo(.8, 2)
   await act(async () => model.dispatch({ type: 'minimize' }))
-  expect(host.querySelector('[data-phone-watch-switch]')).toBeNull()
-  const frame = host.querySelector('[data-phone-watch-window]')!.getBoundingClientRect()
+  expect(host.querySelectorAll('[data-phone-watch-switch] [role=tab]')).toHaveLength(2)
+  const frame = host.querySelector('[data-phone-watch-picture]')!.getBoundingClientRect()
   expect(frame.width / frame.height).toBeCloseTo(.8, 2)
 })
 
 it('keeps the last picture when the source finishes and hides the window with its conversation', async () => {
-  const { host, model, context } = await mount()
+  const { host, model, context, source } = await mount()
   const picture = host.querySelector('[data-testid="picture-web"]')
-  await act(async () => model.observe(context, []))
+  await act(async () => model.observe(context, [{ ...source, status: 'finished' }]))
   expect(model.getSnapshot().operating).toBe(false)
   expect(host.querySelector('[data-testid="picture-web"]')).toBe(picture)
   await act(async () => model.activate({ ...context, shown: false }))

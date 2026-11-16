@@ -7,9 +7,9 @@ export default {
     "portrait": "转回竖屏",
     "dock": "收到边上",
     "restore": "展开画面，可拖动吸附两侧",
-    "close": "关闭最后画面",
+    "close": "收起画面",
     "sources": "画面来源",
-    "web": "网页",
+    "web": "浏览器",
     "computer": "电脑"
   },
   "referralPreview": {

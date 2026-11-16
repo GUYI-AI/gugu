@@ -33,6 +33,22 @@ function setup(descriptor: LiveWindowResourceDescriptor = source) {
 }
 
 describe('live conversation picture lifetime', () => {
+  it('retains the decoded frame offline and removes it only on a successful host close read', async () => {
+    const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    const picture = s.current.picture('page')!; document.body.append(picture); await s.paint(1);
+    const last = picture.querySelector('img')!.src;
+    s.current.setConnected(false);
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
+    expect(s.current.model.getSnapshot()).toMatchObject({ connected: false, operating: false, visible: true, headerSource: { id: 'page' } });
+    expect(picture.querySelector('img')!.src).toBe(last);
+    vi.mocked(s.transport.list).mockResolvedValue([]);
+    await s.current.refresh();
+    expect(s.current.picture('page')).toBe(picture);
+    s.current.setConnected(true); await s.current.refresh();
+    expect(s.current.model.getSnapshot()).toMatchObject({ headerSource: null, visible: false, sources: [] });
+    expect(s.current.picture('page')).toBeNull();
+  });
   it('ends picture watches on true close and uses a fresh watch when the tool row reopens it', async () => {
     const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
     await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
