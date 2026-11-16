@@ -175,6 +175,11 @@ export function publishSidebarChatView(next: SidebarChatView): void {
   write(VIEW_KEY, VIEW_EVENT, next)
 }
 
+/** 壳读一次(不订):会话页还没说过 = 没看着哪条对话。 */
+export function readSidebarChatView(): SidebarChatView {
+  return read<SidebarChatView>(VIEW_KEY) ?? NO_VIEW
+}
+
 /** 壳:会话页还没说过 = 没看着哪条对话。 */
 export function useSidebarChatView(): SidebarChatView {
   return useSyncExternalStore(subscribeView, () => read<SidebarChatView>(VIEW_KEY) ?? NO_VIEW, () => NO_VIEW)

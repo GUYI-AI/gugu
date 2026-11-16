@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
-import { askedSince, asksSoFar } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askedSince, asksSoFar, closeUnresolved } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
@@ -31,7 +31,10 @@ export function useLinkNavigation(input: {
   contacts: () => readonly ContactUser[]
   openChat: (chatId: string) => string | void
   openSender?: (sender: ContactUser, sourceChatId?: string) => Promise<void> | void
-  openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>, opener: AppOpenWithDetail) => void | Promise<void>
+  /** `opener` null: the host has not answered yet — the file's tab now, waiting (it turns real when the answer comes). */
+  openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore' | 'fileName'>, opener: AppOpenWithDetail | null) => void | Promise<void>
+  /** The chat the person is looking at, where a link with no message of its own opens its file's tab at once; null: none. */
+  currentChat: () => string | null
   openApp: (chatId: string, extensionId: string, tab: string) => void
   openProject: (projectId: string) => void
   openAppDetail?: (target: AppDetailLink) => void | Promise<void>
@@ -68,23 +71,38 @@ export function useLinkNavigation(input: {
         return 'own' as const
       }
       if (target.kind === 'file') {
-        // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
-        const { appsHere } = await import('../components/appSlot/appsHere')
-        if (!appsHere) throw new Error('The file opener is unavailable')
+        // The file's tab at once, in the chat it was clicked in (or the one on screen), before the host is asked: it waits
+        // there and becomes the real page with the answer. This open owns it: an answer that does not come to a page
+        // closes it.
+        const shellChat = (id: string | null | undefined) => {
+          const row = id ? state.chats().find((chat) => chat.id === id) : undefined
+          return row ? (row.kind === 'topic' ? row.source_chat_id ?? null : row.id) : null
+        }
+        const waiting = shellChat(request.message?.chat_id ?? state.currentChat())
+        if (waiting) void Promise.resolve(state.openFile(waiting, target, request, null)).catch(() => undefined)
         const mark = asksSoFar()
-        const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(target.at ? { at: target.at } : {}) })
-        if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
-        if (!found.success || !found.data) throw new Error(found.error || 'File reference is unavailable')
-        const groupId = found.data.chatId
-        const fileChat = state.chats().find((row) => row.id === groupId)
-        if (!fileChat) throw new Error('File reference is unavailable')
-        const chatId = fileChat.kind === 'topic' ? fileChat.source_chat_id! : fileChat.id
-        // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
-        // the one the chat opens.
-        if (askedSince(chatId, mark)) throw new OpenSuperseded()
-        await state.openFile(chatId, target, request, found.data)
-        window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
-        return
+        try {
+          // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
+          const { appsHere } = await import('../components/appSlot/appsHere')
+          if (!appsHere) throw new Error('The file opener is unavailable')
+          const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(target.at ? { at: target.at } : {}) })
+          if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
+          if (!found.success || !found.data) throw new Error(found.error || 'File reference is unavailable')
+          const chatId = shellChat(found.data.chatId)
+          if (!chatId) throw new Error('File reference is unavailable')
+          // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
+          // the one the chat opens.
+          if (askedSince(chatId, mark)) throw new OpenSuperseded()
+          // Another chat's file (a forwarded file message): nothing waits here; that chat comes up with it.
+          if (waiting && waiting !== chatId) closeUnresolved(waiting, target.itemId)
+          await state.openFile(chatId, target, request, found.data)
+          window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
+          return
+        } finally {
+          // Opened, the tab is the real page and this is a no-op; not a page (failed, replaced, a pick or an image viewer
+          // instead), the waiting tab goes. One already showing another file is left.
+          if (waiting) closeUnresolved(waiting, target.itemId)
+        }
       }
       if (target.kind === 'app' && !target.place) { state.openOwnApp(target.extensionId, target.tab); return 'own' as const }
       if (target.kind === 'app' && target.place && 'chat' in target.place) {

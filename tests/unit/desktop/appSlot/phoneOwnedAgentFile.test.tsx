@@ -42,7 +42,7 @@ import { followLink } from '../../../../apps/desktop/src/lib/guguLinks'
 import { openOwnedAgentResource } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { clearOwnedAgentResources } from '../../../../apps/desktop/src/lib/ownedAgentResources'
 import { OwnedAgentResourcesHost } from '../../../../apps/desktop/src/components/appSlot/OwnedAgentResourcesHost'
-import { askChatFile, closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askFileOpen, closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 
 const FILE = '9d3f8bca-be6e-4b34-8388-4ab2b0fdf3e1'
@@ -54,11 +54,11 @@ let harness: ReturnType<typeof createReactHarness>
 // The shell's file opening as MainLayout wires it: the agent's own chat opens beside its task, on the phone as on a computer.
 function PhoneShell() {
   useOwnedAgentConversationEntry({ ownerId: 'owner', chats: () => chats, contacts: () => contacts, mobile: true, onOpen() {} })
-  useLinkNavigation({ ownerId: 'owner', chats: () => chats, contacts: () => contacts,
+  useLinkNavigation({ ownerId: 'owner', chats: () => chats, contacts: () => contacts, currentChat: () => null,
     openChat() {}, openAssistant() {}, openApp() {}, openOwnApp() {}, openProject() {},
     openFile: async (chatId, target, source, opener) => {
       if (!await openOwnedAgentResource(chatId)) throw new Error('not the agent of this person')
-      await askChatFile(chatId, { itemId: target.itemId, opener, ...source })
+      await askFileOpen(chatId, target, source, opener)
     },
   })
   return <OwnedAgentResourcesHost ownerId="owner" mobile />

@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { installedExtensionsStore, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
@@ -123,7 +124,9 @@ describe('an App installed for a file, and another pill clicked while it install
     await clickG('offer-2')
     await letGo('install')
     await settled()
-    expect(on('offer-2'), 'F stays on screen until G answers; installing does not take over the later ask').toBe('item-f')
+    // G's tab has been up since its click, waiting; installing for F does not take it over.
+    expect(on('offer-2'), 'installing does not take over the later ask').toBe('item-g')
+    expect(isUnresolvedItem(shownItem('offer-2'))).toBe(true)
     await letGo('G')
     expect(on('offer-2'), '对照:524a00eb92 装完才取序号，停在 F,G 被丢').toBe('item-g')
   }, 60_000)

@@ -13,8 +13,10 @@ import { openAttachmentImage } from '../../lib/attachmentBytes'
 import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
-import { folderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { folderItem, isUnresolvedItem, unresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { keepRestore } from '../../session/renderer/features/chats/chat-tabs/chat-tab-restores'
+import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
+import { openPanelItem, replacePanelItem, showChatTab, panelTabsOf, unresolvedTabOf, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
@@ -69,10 +71,20 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     // A pending message is not tab state: neither JSON nor structured-clone snapshots carry it.
     if (item.takeOpening) Object.defineProperty(shown, 'takeOpening', { get: () => item.takeOpening, enumerable: false })
     if (mobile) chatLayoutOf(target).setNarrow(true)
-    const tabId = openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}) })
+    // A tab waiting on its host becomes what was asked, in place — the same tab, not a second one: its own answer, or
+    // another file asked for while it waited (one waiting tab per chat).
+    const waiting = unresolvedTabOf(target)
+    const inPlace = waiting && (isUnresolvedItem(shown) || waiting.item.itemId === shown.itemId) ? waiting.tabId : undefined
+    if (inPlace) {
+      replacePanelItem(target, inPlace, shown)
+      showChatTab(target, inPlace)
+      // What closing hands back is kept once it is the real page (its key is the resolved item's).
+      if (from.restore) keepRestore(target, shown, from.restore)
+    }
+    const tabId = inPlace ?? openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}) })
     if (!tabId) throw new Error('The file panel could not be opened')
     await onShow?.(target, tabId)
-    if (item.itemId) noteOpened(item.itemId)
+    if (item.itemId && !isUnresolvedItem(shown)) noteOpened(item.itemId)
   }, [onShow, mobile])
 
   // The file asked last is the one opened: a pill clicked, then another (or a file in an App's list), before the first's
@@ -151,6 +163,18 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       receipts.current.clear()
       // A page beside the chat asked: the tab on screen is the 上一页 of what it opens (owner 10-24).
       const source = 'from' in ask ? ask.from : undefined
+      // Asked before its host answered: the file's tab now, waiting — or, already open here, that tab in front at once.
+      if ('unresolved' in ask) {
+        if (ask.receipt) receipts.current.add(ask.receipt)
+        asking.current += 1
+        setUnopened(null)
+        const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === ask.itemId && !isUnresolvedItem(tab.item))
+        const shown = open
+          ? (showChatTab(chatId, open.tabId), Promise.resolve(onShow?.(chatId, open.tabId)))
+          : show(chatId, unresolvedItem(ask.itemId, ask.unresolved.fileName || translateSessionMessage('task.loading'), ask.message), ask.message ? { message: ask.message } : {})
+        void shown.then(() => ask.receipt?.resolve(), error => ask.receipt?.reject(error)).finally(() => { if (ask.receipt) receipts.current.delete(ask.receipt) })
+        return
+      }
       if ('itemId' in ask) {
         if (ask.receipt) receipts.current.add(ask.receipt)
         const from: OpenFrom = { ...(ask.message ? { message: ask.message } : {}), ...(ask.restore ? { restore: ask.restore } : {}), ...(source ? { from: source } : {}), ...(ask.at ? { at: ask.at } : {}) }
@@ -218,7 +242,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       pendingReceipts.clear()
       window.removeEventListener(UI_EVENTS.chatAsked, take)
     }
-  }, [chatId, openGroupFile, openResolved, show])
+  }, [chatId, onShow, openGroupFile, openResolved, show])
 
   const content = chatId && (prompt?.choice.kind === 'choose' || unopened || (appFiles && appFiles.chatId === chatId)) ? (
     <div className="flex flex-col gap-3 !p-4" data-testid="group-app-open-with-sheet">

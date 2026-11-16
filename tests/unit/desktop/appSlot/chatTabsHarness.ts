@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite'
 import { act, createElement, Fragment } from 'react'
 import { GroupTabContent } from '../../../../apps/desktop/src/components/appSlot/GroupTabContent'
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
-import { askChat, askChatFile, shownPanelTab, type ChatOpenAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askFileOpen, shownPanelTab, type ChatOpenAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
@@ -52,7 +52,9 @@ export const shownItem = (chatId: string) => shownPanelTab(chatId)?.item ?? null
 const LinkShell = observer(function LinkShell(props: ChatTabsProps) {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: props.chatId, kind: 'group' }] as never, contacts: () => [],
     openChat() {}, openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
-    openFile: (chatId, target, source, opener) => askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...source }),
+    // The chat drawn is the one on screen: a pill clicked in it opens its file's tab there at once.
+    currentChat: () => props.chatId,
+    openFile: (chatId, target, source, opener) => askFileOpen(chatId, target, source, opener),
   })
   return createElement(ChatTabs, props)
 })

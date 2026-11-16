@@ -42,6 +42,16 @@ export function isChatOnScreen(chatId: string): boolean {
   return appActive && [...shownByReporter.values()].includes(chatId)
 }
 
+/**
+ * 人正看着的那条会话(点下去的那一刻读):屏上摆着几块时是握着焦点的那块(`focused`,侧栏发布的),否则是最后报的那一块;
+ * 屏上没有会话(任务页)= null。
+ */
+export function chatInView(focused: string | null): string | null {
+  const shown = [...shownByReporter.values()]
+  if (focused && shown.includes(focused)) return focused
+  return shown.at(-1) ?? null
+}
+
 /** 这条会话此刻摆没摆在界面上,不论 App 在不在前台:人一回来就看得见它(比如那里一条发送失败的行)。 */
 export function isChatShown(chatId: string): boolean {
   return [...shownByReporter.values()].includes(chatId)

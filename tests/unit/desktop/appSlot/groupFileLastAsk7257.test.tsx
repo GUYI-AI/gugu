@@ -6,6 +6,7 @@ import { until } from '../../../support/awaitCondition'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
 import { APP_OPEN_WITH_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { OpenSuperseded } from '../../../../apps/desktop/src/lib/guguLinks'
+import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { askChat } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { ask, chatTabs, linkShell, pill, shownItem } from './chatTabsHarness'
 
@@ -91,7 +92,9 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await clickPill('race-2', 'A', gates)
     await clickPill('race-2', 'B', gates)
     await letGo(gates, 'A')
-    expect(on('race-2'), 'A is not the latest ask: its answer is not shown').toBe(null)
+    // B asked last: its tab is the one up, still waiting — A's answer is not shown in it.
+    expect(on('race-2'), 'A is not the latest ask: its answer is not shown').toBe('B')
+    expect(isUnresolvedItem(shownItem('race-2'))).toBe(true)
     await letGo(gates, 'B')
     expect(on('race-2')).toBe('B')
     expect(await outcomeOf('A')).toBe('superseded')
@@ -127,7 +130,9 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await act(async () => {
       window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: detailOf('another-chat', 'Z') }))
     })
-    expect(on('race-5'), 'another chat\'s file is not opened here').toBe(null)
+    // Only the pill's own tab, waiting: another chat's file is not opened here.
+    expect(on('race-5'), 'another chat\'s file is not opened here').toBe('P')
+    expect(isUnresolvedItem(shownItem('race-5'))).toBe(true)
     await letGo(gates, 'P')
     expect(on('race-5'), '对照:11bd96dbf5 先加序号再核群,P 被丢，面板什么都不开').toBe('P')
     expect(await outcomeOf('P')).toBe('opened')
@@ -170,5 +175,17 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await letGo(gates, 'A')
     expect(on('race-8')).toBe('A')
     expect(await outcomeOf('A')).toBe('opened')
+  }, 30_000)
+
+  // The pill's tab is up with the click: its page waits with the product's loading mark, then is the real page.
+  it('a pill\'s tab waits with the loading mark, then shows the file', async () => {
+    const gates = holdAnswers()
+    await clickPill('race-9', 'A', gates)
+    const loading = () => harness.container.querySelector('[data-testid="group-app-slot-opening"] [data-testid="loading-indicator"]')
+    expect(loading()).not.toBeNull()
+    await letGo(gates, 'A')
+    expect(loading()).toBeNull()
+    expect(on('race-9')).toBe('A')
+    expect(isUnresolvedItem(shownItem('race-9'))).toBe(false)
   }, 30_000)
 })

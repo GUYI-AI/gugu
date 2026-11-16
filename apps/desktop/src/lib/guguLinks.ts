@@ -13,6 +13,8 @@ export type LinkNavigation = {
   target: GuguLinkTarget | SenderChatTarget
   message?: MessageItem
   restore?: () => void
+  /** The file's name where the click knew it (a card): its tab is titled with it while the host answers. */
+  fileName?: string
   resolve(opened?: LinkPlace | 'own'): void
   reject(error: unknown): void
 }
@@ -20,7 +22,7 @@ export type LinkNavigation = {
 /** The person asked for something else before this open arrived: nothing failed, and no notice is owed for it. */
 export class OpenSuperseded extends Error { constructor() { super('The file opening was superseded') } }
 
-export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source: Pick<LinkNavigation, 'message' | 'restore'> = {}): Promise<LinkPlace | 'own' | void> {
+export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source: Pick<LinkNavigation, 'message' | 'restore' | 'fileName'> = {}): Promise<LinkPlace | 'own' | void> {
   return new Promise((resolve, reject) => {
     const detail: LinkNavigation = { target, ...source, resolve, reject }
     if (window.dispatchEvent(new CustomEvent(OPEN_LINK_TARGET, { detail, cancelable: true }))) reject(new Error('The chat shell is not ready to open this link'))

@@ -1278,7 +1278,8 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
     expect(openNativeConversation).toHaveBeenCalledWith({ kind: 'session', sessionId: 'task-session', projectId: 'project', deviceId: 'host' })
     expect(resourceHosts.host).toHaveBeenCalledWith('user-1', chatId, expect.objectContaining({ sessionId: 'task-session', projectId: 'project' }))
   } else {
-    expect(sessionPageViewRequests.openChat).toHaveBeenCalledExactlyOnceWith(chatId, false, 'resource')
+    // Brought up for the file's waiting tab with the click (the message's chat), and again with its answer: that chat only.
+    expect(sessionPageViewRequests.openChat.mock.calls).toEqual([[chatId, false, 'resource'], [chatId, false, 'resource']])
     expect(openNativeConversation).not.toHaveBeenCalled()
   }
   expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: fileAnswer('F1', chatId), message: source })

@@ -38,7 +38,7 @@ vi.mock('@/components/extensionBundle/sharedPackages', () => ({ sharedPackagesOf
 
 const { AppPeek } = await import('@/components/appSlot/AppPeek')
 const { ask, linkShell, pill, shownItem } = await import('./chatTabsHarness')
-const { folderItem, isFolderItem } = await import('@/session/renderer/features/chats/chat-tabs/chat-panel-item')
+const { folderItem, isFolderItem, isUnresolvedItem } = await import('@/session/renderer/features/chats/chat-tabs/chat-panel-item')
 const { chatAlone, chatPaneOf, closeChatTab, openPanelItem, panelFull, panelTabsOf, shownPanelTab } = await import('@/session/renderer/features/chats/chat-tabs/chat-layouts')
 import { tabFullscreen } from '@/session/renderer/features/tabs/tab-fullscreen'
 const { installedExtensionsStore } = await import('@/session/renderer/features/extensions/installed-extensions-store')
@@ -362,7 +362,9 @@ describe('unclaimed group files use the message preview from every entry', () =>
     if (answerFirst) await release()
     const app = { ...workspace, id: 'exe-reader', contributes: { tabs: [{ name: 'main', title: 'Reader', opensFiles: { chat: ['.exe'] } }] } }
     await act(async () => installedExtensionsStore.applyList({ extensions: [workspace, app], invalid: [] } as never))
-    expect(shownItem(file.chatId)?.itemId, 'the later ask is not answered by the App arriving').toBe(answerFirst ? later.itemId : file.itemId)
+    // The later ask's tab is up from the click (waiting until its answer): the App arriving for the earlier file does not take it.
+    expect(shownItem(file.chatId)?.itemId, 'the later ask is not answered by the App arriving').toBe(later.itemId)
+    expect(isUnresolvedItem(shownItem(file.chatId)), 'waiting until its own answer').toBe(!answerFirst)
     if (!answerFirst) await release()
     expect(shownItem(file.chatId)).toMatchObject({ kind: 'workspace.main', itemId: later.itemId })
   })

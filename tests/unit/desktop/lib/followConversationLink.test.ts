@@ -34,7 +34,7 @@ it('resolves an authorized message receipt to the existing file route with its p
   mocks.get.mockResolvedValue(row)
   await openMessageAttachment('receipt')
   expect(mocks.get).toHaveBeenCalledWith('receipt', 'owner')
-  expect(mocks.open).toHaveBeenCalledWith({ kind: 'file', itemId: 'file-item', version: 4 }, { message: row })
+  expect(mocks.open).toHaveBeenCalledWith({ kind: 'file', itemId: 'file-item', version: 4 }, { message: row, fileName: 'proof.txt' })
 })
 it('does not open a missing or retracted attachment', async () => {
   mocks.get.mockResolvedValue(null)
@@ -52,7 +52,7 @@ it('opens a scoped sent-file link through the authorized source message, preserv
   const row = message({ id, chat_id: chat, content_type: 'attachment', content: '[附件] proof.txt (text/plain)\n[Size] 9\n[Kind] file', file_item_id: 'file-item', file_version: 4 });
   mocks.get.mockResolvedValue(row);
   expect(followConversationLink(`gugu-message-file://${id}?chat=${chat}`)).toBe(true);
-  await vi.waitFor(() => expect(mocks.open).toHaveBeenCalledWith({ kind: 'file', itemId: 'file-item', version: 4 }, { message: row }));
+  await vi.waitFor(() => expect(mocks.open).toHaveBeenCalledWith({ kind: 'file', itemId: 'file-item', version: 4 }, { message: row, fileName: 'proof.txt' }));
   mocks.open.mockClear();
   await expect(openMessageAttachment(id, 'another-chat')).rejects.toThrow('unavailable');
   expect(mocks.open).not.toHaveBeenCalled();

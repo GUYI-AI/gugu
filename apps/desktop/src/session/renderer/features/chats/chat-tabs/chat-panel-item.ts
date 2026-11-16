@@ -31,6 +31,13 @@ export interface PanelItem {
 }
 
 export const folderItem = (): PanelItem => ({ kind: WORKSPACE_APP_KIND, title: '' });
+/**
+ * A file asked for whose host has not answered yet: the host's preview with nothing to read (no `file`) — its tab is
+ * up at once, the page waiting; the answer turns the same tab into the real page (`replacePanelItem`). Never kept
+ * (`isPersistent`: kind null).
+ */
+export const unresolvedItem = (itemId: string, title: string, message?: MessageItem): PanelItem => ({ kind: null, itemId, title, ...(message ? { message } : {}) });
+export const isUnresolvedItem = (item: PanelItem | null | undefined): boolean => !!item && item.kind === null && !!item.itemId && !item.file;
 export const isFolderItem = (item: PanelItem | null | undefined): boolean => item?.kind === WORKSPACE_APP_KIND && !item.itemId;
 
 const appOf = (kind: string | null) => (kind === null ? null : (parseExtensionTabKind(kind)?.extensionId ?? kind));

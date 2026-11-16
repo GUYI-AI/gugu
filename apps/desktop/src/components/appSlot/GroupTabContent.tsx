@@ -17,7 +17,9 @@ import type { ExtensionOrigin } from '../../session/shared/extensions/upgrade'
 import { availableInstallOffers, type AppInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
 import { groupUpdateFor } from '../../session/shared/extensions/app-card-state'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
-import { groupPageSlot, isFolderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { groupPageSlot, isFolderItem, isUnresolvedItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { LoadingIndicator } from '../../lib/loading/LoadingIndicator'
+import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { closeChatTab, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
@@ -432,6 +434,12 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       ) : null}
       {/* What the page on screen opens beside it (G1): over it here, the page kept for the way back. */}
       <AppPeekSlot sessionId={null} tabId={slot} narrow={mobile}>
+        {/* Asked for, its host not answered yet: the tab is up, the page waits (`unresolvedItem`), as a preview loading does. */}
+        {isUnresolvedItem(item) ? (
+          <div className="flex h-full items-center justify-center" data-testid="group-app-slot-opening">
+            <LoadingIndicator ariaLabel={translateSessionMessage('task.loading')} />
+          </div>
+        ) : null}
         {item.file && (!mobile || visible !== false) ? <MessageFilePreview fill tabbed={tabbed} mobile={mobile} message={item.message} onForward={onForward} file={{ kind: 'file', document: item.file.document, fileName: item.fileName ?? item.title, mimeType: item.file.contentType, sizeBytes: item.file.size, source: { kind: 'item', itemId: item.itemId!, version: item.file.version } }} onBack={mobile || backIsPanel ? back : undefined} onClose={close} /> : null}
         {desktop ? item.file || !kind ? null : (
           offerUnknown || offerFolds ? (

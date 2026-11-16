@@ -8,7 +8,7 @@ import { useMessageFilePreview } from '../../../../apps/desktop/src/components/c
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
-import { askChat, chatLayoutOf, openTopicTab, panelTabsOf, topicTabOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, openTopicTab, panelTabsOf, topicTabOf, askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron', capabilities: {} } }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ localFileRevision: async () => ({ chat_id: 'topic-file-entry' }) }))
@@ -19,7 +19,7 @@ const harness = createReactHarness()
 afterEach(() => harness.cleanup())
 function Entry({ topic }: { topic: string }) {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }] as never, contacts: () => [],
-    openChat() {}, openFile: (chatId, target, source, opener) => askChat(chatId, { itemId: target.itemId, opener, ...source }),
+    openChat() {}, currentChat: () => group, openFile: (chatId, target, source, opener) => askFileOpen(chatId, target, source, opener),
     openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
   })
   useChatOpener(group)

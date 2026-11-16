@@ -31,7 +31,8 @@ import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneLayer } from '@/mobile/PhoneLayer'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import { PhonePartnersPage } from '@/mobile/partners/PhonePartnersPage'
-import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
+import { chatInView, useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
+import { readSidebarChatView } from '@/lib/sidebarChatsBridge'
 import { useLinkNavigation } from '../hooks/useLinkNavigation'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
 import { ChatListPanel } from '../components/ChatListPanel'
@@ -99,7 +100,7 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
 import { useToast } from '../components/toastContext'
-import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askFileOpen, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
 import { draftWithPills } from '@gugu/session-shared/markdown'
@@ -325,8 +326,9 @@ function InnerLayout({
     },
     openFile: async (chatId, target, source, opener) => {
       if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
-      await askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
+      await askFileOpen(chatId, target, source, opener)
     },
+    currentChat: () => chatInView(readSidebarChatView().focusedChatId),
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
     openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
     openProject: (projectId) => { setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('project', { projectId }) },

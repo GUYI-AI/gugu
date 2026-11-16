@@ -16,7 +16,7 @@ import { TabViewPersistor } from '@renderer/features/tabs/tab-view-persistor';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { groupParticipantPanes } from '../group-participant-panes';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
-import { groupPageSlot, type PanelItem } from './chat-panel-item';
+import { groupPageSlot, isUnresolvedItem, type PanelItem } from './chat-panel-item';
 import { keepRestore, takeRestore } from './chat-tab-restores';
 import {
   CHAT_INFO_TAB_KIND,
@@ -187,6 +187,17 @@ export const closeChatTab = action(function closeChatTab(chatId: string, tabId: 
   restore?.();
 });
 
+/** The chat's one tab still waiting on its host (`unresolvedItem`), if any. */
+export function unresolvedTabOf(chatId: string): ChatPanelTab | null {
+  return panelTabsOf(chatId).find((tab) => isUnresolvedItem(tab.item)) ?? null;
+}
+
+/** A file's waiting tab, gone: the open did not come to a page (failed, replaced, another chat's). One showing another file is left. */
+export const closeUnresolved = action(function closeUnresolved(chatId: string, itemId: string): void {
+  const tab = unresolvedTabOf(chatId);
+  if (tab && tab.item.itemId === itemId) closeChatTab(chatId, tab.tabId);
+});
+
 /** A tab clicked or asked for: it is the one shown (beside the chat when the two are a pair). */
 export const showChatTab = action(function showChatTab(chatId: string, tabId: string): void {
   const layout = chatLayoutOf(chatId);
@@ -338,7 +349,11 @@ export const updateFileNames = action(function updateFileNames(
 export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): void };
 export type ChatOpenAsk =
   | { app: string; tab?: string }
-  | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
+  | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt }
+  /** A file asked for before its host answered: its tab up now, waiting (`unresolvedItem`); `fileName` titles it when known. */
+  | { itemId: string; unresolved: { fileName?: string }; message?: MessageItem; receipt?: ChatFileOpenReceipt };
+type FileAsk = Extract<ChatOpenAsk, { itemId: string }>;
+type WithoutReceipt<A> = A extends unknown ? Omit<A, 'receipt'> : never;
 
 const asks = new Map<string, ChatOpenAsk>();
 /**
@@ -359,16 +374,32 @@ export const askedSince = (chatId: string, mark: number): boolean => (lastAsked.
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
   if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
-  noteAsk(chatId);
+  // A link's own waiting tab is no new ask of the person's: links order among themselves (the shell's generation).
+  if (!('unresolved' in what)) noteAsk(chatId);
   asks.set(chatId, what);
 }
 /** Links acknowledge the consumer's result, rather than merely putting an item in its mailbox. */
-export function askChatFile(chatId: string, what: Omit<Extract<ChatOpenAsk, { itemId: string }>, 'receipt'>): Promise<void> {
+export function askChatFile(chatId: string, what: WithoutReceipt<FileAsk>): Promise<void> {
   return new Promise((resolve, reject) => {
-    askChat(chatId, { ...what, receipt: { resolve, reject } });
+    askChat(chatId, { ...what, receipt: { resolve, reject } } as FileAsk);
     window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }));
   });
 }
+/**
+ * A link's file, asked of its chat as the shell hands it (MainLayout): with the host's answer (`opener`), or before it
+ * (null: the tab now, waiting). What closing hands back goes with the answer only.
+ */
+export function askFileOpen(
+  chatId: string,
+  target: { itemId: string; at?: Record<string, string> },
+  source: { message?: MessageItem; restore?: () => void; fileName?: string },
+  opener: AppOpenWithDetail | null,
+): Promise<void> {
+  const message = source.message ? { message: source.message } : {};
+  if (!opener) return askChatFile(chatId, { itemId: target.itemId, unresolved: source.fileName ? { fileName: source.fileName } : {}, ...message });
+  return askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...message, ...(source.restore ? { restore: source.restore } : {}) });
+}
+
 /** What was asked of this chat, once: taken by the chat that answers it. */
 export function takeChatAsk(chatId: string | null | undefined): ChatOpenAsk | null {
   if (!chatId) return null;

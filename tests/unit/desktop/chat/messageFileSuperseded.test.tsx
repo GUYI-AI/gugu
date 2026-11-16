@@ -8,7 +8,7 @@ import { useMessageFilePreview } from '../../../../apps/desktop/src/components/c
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
-import { askChatFile, closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeChatTab, panelTabsOf, askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 
 // A file card clicked, then another before the first is up: the first was replaced, nothing failed — no notice for it.
 // A real failure still says so.
@@ -23,7 +23,7 @@ let harness: ReturnType<typeof createReactHarness>
 const answer = (itemId: string) => ({ chatId: group, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, choice: { kind: 'one', candidate: { tabKind: 'workspace.file', suffix: '.md' } } })
 function Entry() {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }] as never, contacts: () => [],
-    openChat() {}, openFile: (chatId, target, source, opener) => askChatFile(chatId, { itemId: target.itemId, opener, ...source }),
+    openChat() {}, currentChat: () => group, openFile: (chatId, target, source, opener) => askFileOpen(chatId, target, source, opener),
     openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
   })
   const opener = useChatOpener(group)

@@ -4,9 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
+import { isUnresolvedItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
-import { askChat, askChatFile, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile, panelTabsOf, askFileOpen } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import type { AppOpenWithDetail } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 
@@ -29,7 +30,7 @@ const onShow = vi.fn<(_chat: string, _tab: string) => void | Promise<void>>()
 function Entry() {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: state.chat, kind: 'group' }] as never, contacts: () => [],
     openChat() {}, openAssistant() {}, openApp() {}, openOwnApp() {}, openProject() {},
-    openFile: (chat, target, source, opener) => askChatFile(chat, { itemId: target.itemId, opener, ...source }),
+    currentChat: () => state.chat, openFile: (chat, target, source, opener) => askFileOpen(chat, target, source, opener),
   })
   return useChatOpener(state.chat, onShow).overlay
 }
@@ -58,13 +59,20 @@ it('keeps the real link pending until its file is resolved and its native panel 
   await harness.render(<Entry />)
   let outcome = 'pending'
   const opened = link().then(() => { outcome = 'opened' })
+  // The file's tab is up with the click, waiting on the host, and its native panel asked for — the link not yet answered.
+  const waiting = panelTabsOf(state.chat)
+  expect(waiting).toHaveLength(1)
+  expect(isUnresolvedItem(waiting[0]!.item)).toBe(true)
   await act(async () => { await until('file resolution started', () => state.resolve.mock.calls.length === 1) })
   expect(outcome).toBe('pending')
-  expect(panelTabsOf(state.chat)).toHaveLength(0)
-  await act(async () => { resolveFile({ success: true, data: detail() }); await until('native panel was requested', () => onShow.mock.calls.length === 1) })
+  expect(onShow.mock.calls.map(([, tab]) => tab)).toEqual([waiting[0]!.tabId])
+  await act(async () => { resolveFile({ success: true, data: detail() }); await until('native panel was requested for the real page', () => onShow.mock.calls.length === 2) })
   expect(outcome).toBe('pending')
   expect(state.note).not.toHaveBeenCalled()
-  expect(panelTabsOf(state.chat)[0]?.item.itemId).toBe('file')
+  // The same tab, now the real page.
+  expect(panelTabsOf(state.chat).map((tab) => tab.tabId)).toEqual([waiting[0]!.tabId])
+  expect(panelTabsOf(state.chat)[0]?.item).toMatchObject({ kind: 'workspace.file', itemId: 'file' })
+  expect(onShow.mock.calls.map(([, tab]) => tab)).toEqual([waiting[0]!.tabId, waiting[0]!.tabId])
   await act(async () => { showPanel(); await opened })
   expect(outcome).toBe('opened')
   await until('the accepted file is recorded as opened', () => state.note.mock.calls.length === 1)
@@ -80,8 +88,9 @@ it.each(['refused', 'transport rejection'])('returns a file %s to the original l
   await harness.render(<Entry />)
   await act(async () => { await expect(link()).rejects.toThrow() })
   expect(harness.container.querySelector('[data-testid="group-app-slot-unopened"]')).toBeNull()
+  // Its waiting tab was up (its native panel asked for once), and is gone with the failure.
   expect(panelTabsOf(state.chat)).toHaveLength(0)
-  expect(onShow).not.toHaveBeenCalled()
+  expect(onShow).toHaveBeenCalledOnce()
   expect(state.note).not.toHaveBeenCalled()
 })
 
@@ -132,8 +141,9 @@ it('rejects an unmounted consumer and ignores its late successful result', async
   // The answer arriving after the shell is gone opens nothing: the link is told it was superseded, not that it failed.
   await act(async () => { finish({ success: true, data: detail() }) })
   await expect(opened).rejects.toBeInstanceOf(OpenSuperseded)
+  // The waiting tab it had opened is gone too; nothing was opened for the late answer.
   expect(panelTabsOf(state.chat)).toHaveLength(0)
-  expect(onShow).not.toHaveBeenCalled()
+  expect(onShow).toHaveBeenCalledOnce()
 })
 
 it('does not replace the latest file with an older result or claim the older link succeeded', async () => {
@@ -148,7 +158,9 @@ it('does not replace the latest file with an older result or claim the older lin
   await act(async () => { finishFirst({ success: true, data: detail('first') }) })
   await expect(first).rejects.toBeInstanceOf(OpenSuperseded)
   expect(panelTabsOf(state.chat).map(tab => tab.item.itemId)).toEqual(['second'])
-  expect(onShow).toHaveBeenCalledOnce()
+  // One tab all along: the first's waiting tab, the second's in its place, then the second itself.
+  const tab = panelTabsOf(state.chat)[0]!.tabId
+  expect(onShow.mock.calls.map(([, shown]) => shown)).toEqual([tab, tab, tab])
 })
 
 it('refuses a resolver response for another conversation without opening its file', async () => {
@@ -156,8 +168,9 @@ it('refuses a resolver response for another conversation without opening its fil
   await harness.render(<Entry />)
   await act(async () => { await expect(link()).rejects.toThrow() })
   expect(state.resolve).toHaveBeenCalledExactlyOnceWith({ itemId: 'file' })
+  // The tab that waited here goes: the file is another chat's.
   expect(panelTabsOf(state.chat)).toHaveLength(0)
-  expect(onShow).not.toHaveBeenCalled()
+  expect(onShow).toHaveBeenCalledOnce()
 })
 
 it('joins a second ask for the same file while the first is opening: the host answers once, both links resolve, one tab', async () => {
@@ -172,7 +185,8 @@ it('joins a second ask for the same file while the first is opening: the host an
   expect(outcomes.sort()).toEqual(['again opened', 'first opened'])
   expect(state.resolve).toHaveBeenCalledOnce()
   expect(panelTabsOf(state.chat)).toHaveLength(1)
-  expect(onShow).toHaveBeenCalledOnce()
+  // The second click opened no second waiting tab: the one tab, waiting, then real.
+  expect(onShow).toHaveBeenCalledTimes(2)
 })
 
 // The panel took the ask (its receipt held, the native panel not yet up) and then went away: the caller is told at once.
@@ -182,7 +196,8 @@ it.each(['direct ask', 'link'])('rejects at once when the panel holding the %s u
   await harness.render(<Entry />)
   const opened = way === 'link' ? link() : askChatFile(state.chat, { itemId: 'file', opener: detail() })
   void opened.catch(() => undefined)
-  await act(async () => { await until('the panel took the ask', () => onShow.mock.calls.length === 1) })
+  // A link's file goes up waiting first (one native panel ask), then the answer (the second): the panel holds that one.
+  await act(async () => { await until('the panel took the ask', () => onShow.mock.calls.length === (way === 'link' ? 2 : 1)) })
   await harness.render(null)
   const error = await opened.then(() => null, (reason: unknown) => reason) as Error & { cause?: Error }
   const closed = way === 'link' ? error.cause : error
