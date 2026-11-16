@@ -27,7 +27,7 @@ vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () =
   if (bindingRead) await bindingRead.wait;
   return { ownerId, assistantId: state.assistants[ownerId] ?? null };
 } }));
-vi.mock('./app-unread-bindings', () => ({ account: async () => {
+async function fixtureAccount() {
   const read = state.accountRead;
   if (read) {
     state.accountRead = null; // only the selected old read is held
@@ -35,7 +35,7 @@ vi.mock('./app-unread-bindings', () => ({ account: async () => {
     return { token: 't', ownerId: await read.wait };
   }
   return { token: 't', ownerId: signedIn() };
-} }));
+}
 // A market install never finishes here (no network in tests): the App stays not in while it goes. What it was asked is kept.
 const marketInstalls = vi.hoisted(() => [] as unknown[]);
 vi.mock('./extension-market-install', () => ({ installExtensionFromMarket: (install: unknown) => { marketInstalls.push(install); return new Promise(() => undefined); } }));
@@ -76,6 +76,9 @@ afterEach(() => {
 });
 
 async function root() {
+  // Manual module mocks can fall through during concurrent dynamic imports in Vitest 4.1.10.
+  const unread = await import('./app-unread-bindings');
+  vi.spyOn(unread, 'account').mockImplementation(fixtureAccount);
   const module = await import('../../../../assistant-rules-root');
   const resolver = await import('../../../../assistant-rules-resolver');
   module.installProcessAssistantRules();
