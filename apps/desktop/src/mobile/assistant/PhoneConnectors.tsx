@@ -20,7 +20,8 @@ import {
 import { connectorDetail } from './phoneProfileModel'
 import { connectorOrder } from '@/session/renderer/features/assistant/assistant-connector-order'
 import { assistantConnectedApps } from '@/components/assistant/assistant-app-connections'
-import { useChatChannels } from '@/components/settings/channels/useChatChannels'
+import { chatChannels } from '@/components/connections/connection-replicas'
+import { useReplica } from '@/lib/replica'
 import { WechatAppConnection } from '@/components/settings/channels/WechatAppConnection'
 import { AppConnectionHero,AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon'
@@ -70,7 +71,7 @@ export function ConnectorIcon({ integration, size }: { integration: IntegrationM
 function ConnectorLists({ data, scope, open }: { data: PhoneIntegrations; scope: string; open: (id: string) => void }) {
   const { t, i18n } = useTranslation('assistant')
   const settings = useTranslation('settings').t
-  const chats = useChatChannels()
+  const chats = useReplica(chatChannels, [])
   const stateFor = (id: string) => connectorState(!!data.configured[id], data.statuses?.[id], data.statusError, true)
   const apps = assistantConnectedApps(connectorOrder(data.items, i18n.language), chats, id => settings(`channels.${id}`), t('connectors.wechatDescription'), stateFor, data.configured)
   return <ConnectedAppsCatalog apps={apps} scope={scope} open={open} mobile panelNavigation

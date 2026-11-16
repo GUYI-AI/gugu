@@ -15,7 +15,8 @@ vi.mock('@/lib/connectionBridge',() => ({ useConnectionAuthority: () => ({ route
   } }),
 }))
 
-vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => ({ client: null, list: null, status: 'absent', error: '', refresh: async () => {}, apply: () => {} }) }))
+// No chat channels client in this build: the `chatChannels` replica reads `absent`.
+vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => null }))
 vi.mock('@/lib/assistantPanelBridge',() => ({ useAssistantPanelAccountId: () => 'owner',requireAssistantPanelBridge: () => { throw new Error('Unexpected identity lookup') } }))
 vi.mock('@/components/assistant/assistant-panel-files',() => ({ useCloudAssistantFiles: () => ({ panel: { ownerId: 'owner',assistantId: 'a1' } }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell',() => ({ useAssistantShell: () => ({ assistant: { id: 'a1' },chatId: 'dm' }) }))

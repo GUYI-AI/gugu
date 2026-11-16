@@ -21,7 +21,7 @@ let h:ReturnType<typeof createReactHarness>,connect:()=>Promise<unknown>
 function Probe(){
  const v=useIntegrationsContext()
  connect=()=>v.connectIntegration('dingtalk',{})
- const count=v.integrations&&v.configuredConnections&&v.connectionStatus?assistantApplicationCounts(v.integrations,v.configuredConnections,v.connectionStatus,null).connected:'?'
+ const count=v.integrations&&v.configuredConnections&&v.connectionStatus?assistantApplicationCounts(v.integrations,v.configuredConnections,v.connectionStatus,{absent:true}).connected:'?'
  return <div data-testid="state" data-state={connectorState(v.configuredConnections?.dingtalk,v.connectionStatus?.dingtalk,v.connectionCheckError ?? v.configuredConnectionsError,true)} data-has-list={v.hasList}>{v.connectionStatus?.dingtalk?.connected?'connected':'off'}|{String(v.configuredConnections?.dingtalk===true)}|{count}</div>
 }
 beforeEach(()=>{

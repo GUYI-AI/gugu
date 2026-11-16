@@ -2,7 +2,8 @@ import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRe
 import { useAssistantPanelIntegration } from '@/components/assistant/useAssistantPanelIntegration';
 import { assistantPanelFailure } from '@/components/assistant/assistant-panel-errors';
 import { assistantAccountDisplayName, assistantConnectedApps, type AssistantConnectedApp } from '@/components/assistant/assistant-app-connections';
-import { useChatChannels } from '@/components/settings/channels/useChatChannels';
+import { chatChannels } from '@/components/connections/connection-replicas';
+import { useReplica } from '@/lib/replica';
 import { WechatAppConnection } from '@/components/settings/channels/WechatAppConnection';
 import { AppConnectionHero,AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero';
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon';
@@ -42,7 +43,7 @@ const HomeConnectorList = observer(function HomeConnectorList({ host, home, assi
   const { t, i18n } = useTranslation('assistant');
   const settings = useTranslation('settings').t;
   const { integrations, configuredConnections, connectionStatus, connectionCheckError, configuredConnectionsError, hasList, listError, reloadList, reloadConnections } = useIntegrationsContext();
-  const chats = useChatChannels();
+  const chats = useReplica(chatChannels, []);
   const stateFor = (id: string) => connectorState(configuredConnections ? !!configuredConnections[id] : undefined, connectionStatus?.[id], configuredConnectionsError ?? connectionCheckError, host.assistantPanelExpected);
   const [openId, setOpenId] = useState<string | null>(null);
   useAssistantPanelBack(panelNavigation && openId ? `connector:${openId}` : null, () => setOpenId(null));

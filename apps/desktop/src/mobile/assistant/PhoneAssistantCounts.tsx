@@ -3,7 +3,8 @@ import { observer } from 'mobx-react-lite'
 import { deviceMachines } from '@gugu/core/shared/deviceMachines'
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections'
 import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
-import { useChatChannels } from '@/components/settings/channels/useChatChannels'
+import { chatChannels } from '@/components/connections/connection-replicas'
+import { useReplica } from '@/lib/replica'
 import { withoutAssistantHome } from '@/lib/assistantHome'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { appAssistantCountsOf } from '@/session/shared/extensions/assistant-binding'
@@ -30,7 +31,7 @@ export const PhoneAssistantCountsSource = observer(function PhoneAssistantCounts
 }) {
   const devices = useDevicesStore()
   const integrations = usePhoneIntegrations(machine, true)
-  const chats = useChatChannels()
+  const chats = useReplica(chatChannels, [])
   // 项目数与「助理 → 工作区」同一份:accountProjectsStore + phoneProjectRows(❌ 这里自己再读、再轮询)。
   const { isHome } = useMachineLabel()
   const { status, projects: accountList } = accountProjectsStore
@@ -38,9 +39,9 @@ export const PhoneAssistantCountsSource = observer(function PhoneAssistantCounts
   const counts = appAssistantCountsOf({
     devices: devices.error ? UNREADABLE : devices.loading ? LOADING
       : ready(deviceMachines(withoutAssistantHome([...devices.devices, ...(devices.phones ?? [])], cloudDeviceId)).length),
-    connectedApps: integrations.error || chats.status === 'failed' ? UNREADABLE
-      : integrations.data && (chats.status === 'ready' || chats.status === 'absent')
-        ? ready(assistantApplicationCounts(integrations.data.items, integrations.data.configured, integrations.data.statuses, chats.list)) : LOADING,
+    connectedApps: integrations.error || chats.state === 'error' ? UNREADABLE
+      : integrations.data && chats.state === 'value'
+        ? ready(assistantApplicationCounts(integrations.data.items, integrations.data.configured, integrations.data.statuses, chats.value)) : LOADING,
     projects: projectCount !== null ? ready(projectCount) : status === 'error' ? UNREADABLE : LOADING,
   })
   const key = JSON.stringify(counts)

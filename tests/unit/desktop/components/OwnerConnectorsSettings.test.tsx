@@ -11,7 +11,8 @@ vi.mock('@/lib/notices',() => ({ notify: fixture.notify }))
 vi.mock('@/lib/useAssistantHome',() => ({ useAssistantHome() { throw new Error('Unexpected assistant initialization') } }))
 vi.mock('@/hooks/useMobileShell',() => ({ useMobileShell: () => true }))
 vi.mock('@/store/devicesContext',() => ({ useDevicesStore: () => ({ devices: [],loading: false,error: null }) }))
-vi.mock('@/components/settings/channels/useChatChannels',() => ({ useChatChannels: () => ({ list: null }) }))
+// No chat channels client in this build: the `chatChannels` replica reads `absent`.
+vi.mock('@/lib/chatChannels',() => ({ rendererChatChannelsClient: () => null }))
 // The owner snapshot the page derives from (the `ownerConnections` replica reads it through the bridge's store).
 const snapshotOf = () => ({ version: 1,revision: '1',items: fixture.rows,application: fixture.data.connectionOperations ?? [] })
 vi.mock('@/components/connections/useOwnerLibraryHost',() => ({ useOwnerLibraryHost: () => ({ key: 'owner:scope',remote: null,

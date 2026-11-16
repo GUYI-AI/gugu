@@ -28,7 +28,8 @@ const ui = vi.hoisted(() => ({ platformKind: 'capacitor' as 'capacitor' | 'web',
 // replica); here the panel's cloud read is played at its bridge (`panelSnapshot`): the page's `integrations` rows, as the
 // cloud snapshot would carry them, read again on each refresh. A failed read is the reading's error.
 const panel = vi.hoisted(() => ({ rows: async (): Promise<Array<{ resource_key: string; data: Record<string, unknown> }>> => [], revision: 0, reads: 0 }))
-vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => ({ client: null, list: null, status: 'absent', error: '', refresh: async () => {}, apply: () => {} }) }))
+// No chat channels client in this build: the `chatChannels` replica reads `absent`.
+vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return ui.platformKind }, writeClipboardText: ui.writeClipboardText } }))

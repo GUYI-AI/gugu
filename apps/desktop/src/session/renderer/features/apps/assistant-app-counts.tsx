@@ -12,7 +12,8 @@ import { useTranslation } from 'react-i18next';
 import { integrationIcons } from '@gugu/session-plugins/integration-icons';
 import { assistantReadWaiting } from '@/mobile/assistant/phoneRead';
 import { useConnectionList } from '@/components/assistant/assistant-panel-reads';
-import { useChatChannels } from '@/components/settings/channels/useChatChannels';
+import { chatChannels } from '@/components/connections/connection-replicas';
+import { useReplica } from '@/lib/replica';
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
@@ -99,14 +100,14 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
   const machineFailed = !machine.data && !!machine.error && !machine.isLoading;
   // As the profile page reads them (assistant-profile.tsx ProfileHome), under the same key.
   const apps = useConnectionList(assistantId ? panel : undefined, false, i18n.language);
-  const chat = useChatChannels();
+  const chat = useReplica(chatChannels, []);
   // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable.
   const appsFailed = apps.state === 'error' && !assistantReadWaiting(apps.error);
   const counts = appAssistantCountsOf({
     devices: shell?.deviceCount === undefined ? LOADING : ready(shell.deviceCount),
-    connectedApps: machineFailed || appsFailed || chat.status === 'failed' ? UNREADABLE
-      : apps.state === 'value' && (chat.status === 'ready' || chat.status === 'absent')
-        ? ready(assistantApplicationCounts(apps.value.items, apps.value.configured, apps.value.statuses, chat.list)) : LOADING,
+    connectedApps: machineFailed || appsFailed || chat.state === 'error' ? UNREADABLE
+      : apps.state === 'value' && chat.state === 'value'
+        ? ready(assistantApplicationCounts(apps.value.items, apps.value.configured, apps.value.statuses, chat.value)) : LOADING,
     // The desktop's sidebar holds them; a window without the agent runtime has no such list to count.
     projects: platform.capabilities.agentRuntime ? ready(appState.sidebar.orderedProjects.length) : UNREADABLE,
   });

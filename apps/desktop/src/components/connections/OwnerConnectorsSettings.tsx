@@ -1,3 +1,4 @@
+import '@/i18n/registerAssistantCatalog'
 import { useMemo,useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
@@ -6,7 +7,7 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { ConnectedAppsCatalog } from '@/components/assistant/ConnectedAppsCatalog'
 import { assistantConnectedApps } from '@/components/assistant/assistant-app-connections'
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon'
-import { useChatChannels } from '@/components/settings/channels/useChatChannels'
+import { useReplica } from '@/lib/replica'
 import { SettingsPage } from '@/components/settings/SettingsPrimitives'
 import { IntegrationIcon } from '@/session/renderer/features/integrations/integration-icon'
 import { IntegrationsProvider,useIntegrationsContext } from '@/session/renderer/features/integrations/integrations-provider'
@@ -21,7 +22,7 @@ import './connection-copy'
 import { connectionApplicationStatus } from './connection-application-status'
 import { useConnectionRecovery } from './useConnectionRecovery'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
-import { useOwnerConnectionsReading } from './connection-replicas'
+import { chatChannels,useOwnerConnectionsReading } from './connection-replicas'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 
 /** Both settings shells use the same controller without resolving an assistant. */
@@ -38,7 +39,7 @@ export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings
 
 function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string }) {
   const { t,i18n } = useTranslation('assistant'),copy = useTranslation('connections').t,settings = useTranslation('settings').t
-  const mobile = useMobileShell(),devices = useDevicesStore(),channels = useChatChannels()
+  const mobile = useMobileShell(),devices = useDevicesStore(),channels = useReplica(chatChannels,[])
   const data = useIntegrationsContext()
   const [openId,setOpenId] = useState<string | null>(initialConnectorId ?? null)
   useAssistantPanelBack(panelNavigation && openId ? `owner-connector:${openId}` : null,() => setOpenId(null))
@@ -47,12 +48,12 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
   // Owner mode: the list is the built-in catalog (always known); which are saved and how they are is the snapshot's.
   const configured = data.configuredConnections
   const snapshot = useOwnerConnectionsReading(host.connectionMetadata)
-  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations ?? [],i18n.language),{ list: channels.list,status: channels.status },
+  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations ?? [],i18n.language),channels,
     id => settings(`channels.${id}`),t('connectors.wechatDescription'),
     id => connectorState(configured ? !!configured[id] : undefined,data.connectionStatus?.[id],undefined,true),configured ?? undefined).map(app => {
       const status = snapshot.state === 'value' ? connectionApplicationStatus(snapshot.value,app.id,snapshot.value.application) : null
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
-    }),[data,configured,snapshot,i18n.language,channels.list,channels.status,settings,t,copy])
+    }),[data,configured,snapshot,i18n.language,channels,settings,t,copy])
   const selected = openId ? apps.find(app => app.id === openId) : null
   if (selected) return <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation} onBack={() => setOpenId(null)} />
   return <SettingsPage data-testid="owner-connectors">
