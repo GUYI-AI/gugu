@@ -1,4 +1,4 @@
-const INLINE_CODE = /(`[^`\n]+`)/
+const INLINE_CODE = /((`+)(?!`)[^\n]*?\2(?!`))/
 
 /**
  * Markdown as one line of plain text, for previews (chat list rows and the notifications built from them).
@@ -11,6 +11,7 @@ export function markdownPlainText(text: string): string {
     .replace(/`{3}[\s\S]*?`{3}/g, '')
     .replace(/^ {0,3}~{3,}[^\n]*\n[\s\S]*?^ {0,3}~{3,}[ \t]*(?:\n|$)/gm, '')
     .split(INLINE_CODE)
+    .filter((_, index) => index % 3 !== 2)
     .map((part, index) => (index % 2 === 1 ? part : plainSegment(part)))
     .join('')
     .replace(/\s*\n+\s*/g, ' ')
