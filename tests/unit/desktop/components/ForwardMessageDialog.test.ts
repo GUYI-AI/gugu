@@ -3,7 +3,8 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ForwardMessageDialog } from '../../../../apps/desktop/src/components/chat/ForwardMessageDialog'
-import { chatPickRows, forwardPreview, forwardableChats } from '../../../../apps/desktop/src/components/chat/forwardMessageUtils'
+import { forwardPreview, sendableConversations, sendablePeople, sendablePickRows } from '../../../../apps/desktop/src/components/chat/forwardMessageUtils'
+import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import messagingZhCN from '../../../../apps/desktop/src/i18n/locales/zh-CN/messaging'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 
@@ -14,6 +15,9 @@ vi.mock('../../../../apps/desktop/src/components/chat/ForwardNoteEditor', async 
     h('input', { 'data-testid': 'forward-note', 'data-mention-chat': chat?.id ?? '',
       onChange: (event: { target: { value: string } }) => onChange({ text: event.target.value, toUserIds: chat ? ['agent-1'] : [] }) }) }
 })
+// A person picked is their private chat once sending begins: here a fixed one, so the page's own steps are what is tested.
+const resolved = vi.hoisted(() => ({ ids: (ids: readonly string[]) => ids.map((id) => id.replace(/^person:/, 'dm-')) }))
+vi.mock('../../../../apps/desktop/src/components/chat/useResolveTargets', () => ({ useResolveTargets: () => async (ids: readonly string[]) => resolved.ids(ids) }))
 function chat(overrides: Partial<ChatItem> = {}): ChatItem {
   return {
     id: 'chat-x',
@@ -62,20 +66,37 @@ describe('forward helpers', () => {
     expect(forwardPreview({ content: '{}', content_type: 'card' }, labels)).toBe('[card]')
     expect(forwardPreview({ content: '   ', content_type: 'text' }, labels)).toBe('[empty message]')
   })
-  it('filters peers by current canonical identity and groups by canonical chat name', () => {
+  const ids = (chats: ChatItem[], query = '', sourceChatId = 'src', displayName = (item: ChatItem) => item.name ?? '') =>
+    sendableConversations(chats, { ownerId: 'me', sourceChatId, query, displayName, identitiesById: {} }).chats.map((c) => c.id)
+  it('searches by the current canonical name: a peer renamed is found by the new name only', () => {
     const identities: Record<string, string> = { 'user-a': 'Alpha' }
     const chats = [
-      chat({ id: 'src', name: '', peer_user_id: 'source-user' }),
-      chat({ id: 'a', name: '', peer_user_id: 'user-a' }),
+      chat({ id: 'src', name: '', peer_user_id: 'source-user', last_message_at: '2026-01-02T00:00:00Z' }),
+      chat({ id: 'a', name: '', peer_user_id: 'user-a', last_message_at: '2026-01-02T00:00:00Z' }),
       chat({ id: 'b', kind: 'group', name: 'Beta Group' }),
     ]
     const displayName = (item: ChatItem) => item.kind === 'group' ? item.name : (identities[item.peer_user_id ?? ''] ?? '')
-    expect(forwardableChats(chats, 'src', '', displayName).map((c) => c.id)).toEqual(['a', 'b'])
-    expect(forwardableChats(chats, 'src', 'alph', displayName).map((c) => c.id)).toEqual(['a'])
+    expect(ids(chats, '', 'src', displayName)).toEqual(['a', 'b'])
+    expect(ids(chats, 'alph', 'src', displayName)).toEqual(['a'])
     identities['user-a'] = 'Renamed Peer'
-    expect(forwardableChats(chats, 'src', 'alph', displayName)).toEqual([])
-    expect(forwardableChats(chats, 'src', 'renamed', displayName).map((c) => c.id)).toEqual(['a'])
-    expect(forwardableChats(chats, 'src', 'beta group', displayName).map((c) => c.id)).toEqual(['b'])
+    expect(ids(chats, 'alph', 'src', displayName)).toEqual([])
+    expect(ids(chats, 'renamed', 'src', displayName)).toEqual(['a'])
+    expect(ids(chats, 'beta group', 'src', displayName)).toEqual(['b'])
+  })
+  it('lists as the chat list does: pinned first, then the latest; an empty private chat only when searched; no archived own agent', () => {
+    const chats = [
+      chat({ id: 'old', kind: 'group', name: 'Old', last_message_at: '2026-09-02T00:00:00Z' }),
+      chat({ id: 'new', name: 'New', last_message_at: '2026-09-20T00:00:00Z' }),
+      chat({ id: 'empty', name: 'Never talked' }),
+      chat({ id: 'pinned', name: 'Pinned', last_message_at: '2026-08-01T00:00:00Z', is_pinned: true }),
+      chat({ id: 'gone', name: 'Archived agent', peer_user_id: 'bot', last_message_at: '2026-09-30T00:00:00Z' }),
+    ]
+    const q = { ownerId: 'me', sourceChatId: '', displayName: (item: ChatItem) => item.name ?? '',
+      identitiesById: { bot: { display_name: 'Bot', avatar: null, type: 'agent', owner_user_id: 'me', session_archived_at: '2026-10-01T00:00:00Z' } } }
+    expect(sendableConversations(chats, { ...q, query: '' }).chats.map((c) => c.id)).toEqual(['pinned', 'new', 'old'])
+    expect(sendableConversations(chats, { ...q, query: 'never' }).chats.map((c) => c.id)).toEqual(['empty'])
+    expect(sendableConversations(chats, { ...q, query: '', drafts: { empty: 'half' } }).chats.map((c) => c.id)).toContain('empty')
+    expect(sendableConversations(chats, { ...q, query: '', topics: false }).chats.map((c) => c.id)).not.toContain('gone')
   })
   it('nests topics under their group; a search for a topic brings its group; a topic of the source stands alone, its group named', () => {
     const chats = [
@@ -83,17 +104,48 @@ describe('forward helpers', () => {
       chat({ id: 'g', kind: 'group', name: 'Design' }),
       chat({ id: 'g-t', kind: 'topic', name: 'Icons', source_chat_id: 'g' }),
       chat({ id: 'src-t', kind: 'topic', name: 'Launch', source_chat_id: 'src' }),
-      chat({ id: 'd', kind: 'dm', name: '', peer_user_id: 'u-a' }),
+      chat({ id: 'd', kind: 'dm', name: '', peer_user_id: 'u-a', last_message_at: '2025-01-01T00:00:00Z' }),
     ]
     const name = (item: ChatItem) => item.kind === 'dm' ? 'Alpha' : item.name ?? ''
-    const shape = (query: string) => chatPickRows(chats, 'src', query, name, {}).map((row) => ({ id: row.id, hint: row.hint, topics: row.topics?.map((topic) => topic.id) }))
+    const rows = (query: string) => sendablePickRows(sendableConversations(chats, { ownerId: 'me', sourceChatId: 'src', query, displayName: name, identitiesById: {} }), name, {}, { searching: query !== '' })
+    const shape = (query: string) => rows(query).map((row) => ({ id: row.id, hint: row.hint, topics: row.topics?.map((topic) => topic.id) }))
     expect(shape('')).toEqual([
       { id: 'g', hint: undefined, topics: ['g-t'] },
       { id: 'src-t', hint: 'Source', topics: undefined },
       { id: 'd', hint: undefined, topics: undefined },
     ])
     expect(shape('icon')).toEqual([{ id: 'g', hint: undefined, topics: ['g-t'] }])
-    expect(chatPickRows(chats, 'src', '', name, {})[0].topics?.[0].avatar).toBeUndefined()
+    expect(rows('')[0].topics?.[0].avatar).toBeUndefined()
+  })
+  it('folds a group\'s topics past the latest few behind 「更多话题」, opened by the group; a search shows every topic it finds', () => {
+    const topics = Array.from({ length: 6 }, (_, i) => chat({ id: `t${i}`, kind: 'topic', name: `Topic ${i}`, source_chat_id: 'g', last_message_at: `2026-09-0${i + 1}T00:00:00Z` }))
+    const chats = [chat({ id: 'g', kind: 'group', name: 'Group' }), ...topics, chat({ id: 't-unread', kind: 'topic', name: 'Unread', source_chat_id: 'g', unread_count: 2 })]
+    const name = (item: ChatItem) => item.name ?? ''
+    const sendable = (query: string) => sendableConversations(chats, { ownerId: 'me', query, displayName: name, identitiesById: {} })
+    const [group] = sendablePickRows(sendable(''), name, {})
+    expect(group.topics?.map((t) => t.id)).toEqual(['t5', 't4', 't3', 't-unread'])
+    expect(group.moreTopics).toBe(3)
+    const [open] = sendablePickRows(sendable(''), name, {}, { expanded: new Set(['g']) })
+    expect(open.topics).toHaveLength(7)
+    expect(open.moreTopics).toBeUndefined()
+    const [found] = sendablePickRows(sendable('topic'), name, {}, { searching: true })
+    expect(found.topics).toHaveLength(6)
+    expect(found.moreTopics).toBeUndefined()
+  })
+  it('offers friends and own agents with no conversation listed; not someone else\'s agent, an archived or removed one, or oneself', () => {
+    const contact = (patch: Partial<ContactUser>): ContactUser => ({ id: 'x', display_name: 'X', avatar: null, bio: null, type: 'human', ...patch })
+    const contacts = [
+      contact({ id: 'me', display_name: 'Me' }),
+      contact({ id: 'talked', display_name: 'Talked' }),
+      contact({ id: 'quiet', display_name: 'Quiet', alias: 'Q' }),
+      contact({ id: 'mine', display_name: 'My bot', type: 'agent', owner_user_id: 'me' }),
+      contact({ id: 'theirs', display_name: 'Their bot', type: 'agent', owner_user_id: 'other' }),
+      contact({ id: 'shelved', display_name: 'Shelved', type: 'agent', owner_user_id: 'me', session_archived_at: '2026-10-01T00:00:00Z' }),
+      contact({ id: 'left', display_name: 'Left', removed_at: '2026-10-01T00:00:00Z' }),
+    ]
+    const shown = [chat({ id: 'c', peer_user_id: 'talked', last_message_at: '2026-01-01T00:00:00Z' })]
+    expect(sendablePeople(contacts, shown, { ownerId: 'me', query: '' }).map((c) => c.id)).toEqual(['quiet', 'mine'])
+    expect(sendablePeople(contacts, shown, { ownerId: 'me', query: 'q' }).map((c) => c.id)).toEqual(['quiet'])
   })
 })
 let container: HTMLDivElement
@@ -116,12 +168,12 @@ afterEach(() => {
 })
 const click = (el: Element | null) => act(async () => { el!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
 const $ = (selector: string) => document.body.querySelector(selector)
-async function open(props: { messages?: MessageItem[]; chats?: ChatItem[]; onForward: (...args: never[]) => Promise<void>; onClose?: () => void }) {
+async function open(props: { messages?: MessageItem[]; chats?: ChatItem[]; contacts?: ContactUser[]; onForward: (...args: never[]) => Promise<void>; onClose?: () => void }) {
   await act(async () => {
     root.render(createElement(ForwardMessageDialog, {
       messages: props.messages ?? [message({ chat_id: 'src' })],
-      chats: props.chats ?? [chat({ id: 'src', name: 'Source' }), chat({ id: 'a', name: 'Alpha' }), chat({ id: 'b', name: 'Beta' })],
-      sourceChatId: 'src', onForward: props.onForward as never, onClose: props.onClose ?? vi.fn(),
+      chats: props.chats ?? [chat({ id: 'src', name: 'Source' }), chat({ id: 'a', name: 'Alpha', last_message_at: '2026-06-02T00:00:00Z' }), chat({ id: 'b', name: 'Beta', last_message_at: '2026-06-01T00:00:00Z' })],
+      contacts: props.contacts, ownerId: 'me', sourceChatId: 'src', onForward: props.onForward as never, onClose: props.onClose ?? vi.fn(),
     }))
   })
   await flush()
@@ -149,6 +201,28 @@ describe('ForwardMessageDialog: whom, then the send', () => {
     await flush()
     expect(onForward).toHaveBeenCalledWith(['a'], { text: '', toUserIds: [] }, expect.any(Function))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers a friend with no conversation under 联系人; sending reaches the private chat it opens, and unticks the friend', async () => {
+    const onForward = vi.fn(async (_ids: string[], _note: unknown, sent: (chatId: string) => void) => { sent('dm-u9') })
+    await open({ onForward, contacts: [{ id: 'u9', display_name: 'Nine', avatar: null, bio: null, type: 'human' }] })
+    expect($('[data-pick-section="people"]')!.textContent).toContain('联系人')
+    await click($('[data-pick-row="person:u9"]'))
+    expect(sentTo()).toEqual(['person:u9'])
+    expect($('[data-testid="forward-confirm"]')!.textContent).toContain('Nine')
+    await click($('[data-testid="forward-send"]'))
+    await flush()
+    expect(onForward).toHaveBeenCalledWith(['dm-u9'], { text: '', toUserIds: [] }, expect.any(Function))
+  })
+
+  it('draws a group\'s latest topics and 「更多话题」 for the rest; pressing it draws them all', async () => {
+    const topics = Array.from({ length: 5 }, (_, i) => chat({ id: `t${i}`, kind: 'topic', name: `T${i}`, source_chat_id: 'g', last_message_at: `2026-06-0${i + 1}T00:00:00Z` }))
+    await open({ onForward: vi.fn(async () => {}), chats: [chat({ id: 'g', kind: 'group', name: 'G' }), ...topics] })
+    expect(['t4', 't3', 't2', 't1'].map((id) => !!$(`[data-pick-row="${id}"]`))).toEqual([true, true, true, false])
+    expect($('[data-pick-more-topics="g"]')!.textContent).toBe('更多话题（2）')
+    await click($('[data-pick-more-topics="g"]'))
+    expect($('[data-pick-row="t0"]')).not.toBeNull()
+    expect($('[data-pick-more-topics="g"]')).toBeNull()
   })
 
   it('goes back to the pick on 取消, nothing picked, nothing sent', async () => {
