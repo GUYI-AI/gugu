@@ -558,7 +558,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
-  const phoneHeader = phoneTopicHeader({ id: activeChat.id, name: shownActiveChatName }, mobile ? topicSurface.splitTopic : null, topicSurface.topics)
+  const phoneHeader = phoneTopicHeader({ id: activeChat.id, name: shownActiveChatName }, mobile ? topicSurface.splitTopic ?? (tabs.memberTopic ? { chatId: tabs.memberTopic.topicChatId, name: tabs.memberTopic.name } : null) : null, topicSurface.topics)
   const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
@@ -621,9 +621,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         leading={mobile && onBack ? (
           <IconButton
             size="lg"
-            aria-label={topicSurface.splitTopic ? t('common.back') : t('chatArea.backToList')}
+            aria-label={phoneHeader.kind === 'topic' ? t('common.back') : t('chatArea.backToList')}
             title={t('common.back')}
-            onClick={topicSurface.splitTopic ? topicSurface.closeSplit : onBack}
+            onClick={topicSurface.splitTopic ? topicSurface.closeSplit : tabs.memberTopic ? () => closeInfoTab(activeChatId) : onBack}
           >
             <ChevronLeft />
           </IconButton>
