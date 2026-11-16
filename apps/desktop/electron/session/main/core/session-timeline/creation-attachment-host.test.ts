@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAttachmentCreationHost, type AttachmentCreationHostDeps } from './creation-attachment-host';
 import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
+import { openCreationAttachmentJournal } from './creation-attachment-journal';
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
@@ -133,6 +134,28 @@ describe('attachment-first creation: real private journal and host coordinator',
     });
     await expect(f.host.admit(f.input(result.conversationId))).rejects.toThrow('owner/device changed');
     expect(f.deps.send).not.toHaveBeenCalled();
+  });
+  it('rechecks after prepared persistence returns, before calling send, and retains the original task', async () => {
+    const f = await fixture();
+    let entered!: () => void, release!: () => void;
+    const saving = new Promise<void>(resolve => { entered = resolve; });
+    const resume = new Promise<void>(resolve => { release = resolve; });
+    f.deps.journal = async (...args) => {
+      const actual = await openCreationAttachmentJournal(...args);
+      return { ...actual, append: async (stage, value) => {
+        const result = await actual.append(stage, value);
+        if (stage === 'prepared') { entered(); await resume; }
+        return result;
+      } };
+    };
+    const result = await f.host.create(request()), original = result.conversationId;
+    const sending = f.host.admit(f.input(original));
+    await saving; f.switchOwner(); release();
+    await expect(sending).rejects.toThrow('owner/device changed');
+    expect(f.deps.send).not.toHaveBeenCalled(); expect(f.tasks.size).toBe(1);
+    const journal = await openCreationAttachmentJournal(f.root, 'owner', 'device', 'creation-1');
+    expect((await journal.read('created'))?.conversationId).toBe(original);
+    expect(await journal.read('prepared')).not.toBeNull(); expect(await journal.read('admitted')).toBeNull();
   });
   it('rejects replacement of a prepared placement even after the input ACK was lost', async () => {
     const f = await fixture(), result = await f.host.create(request()), input = f.input(result.conversationId);

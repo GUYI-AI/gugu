@@ -10,6 +10,7 @@ import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session
 import { createAttachmentCreationHost } from './creation-attachment-host';
 import { attachmentCreationUnverified as unverified } from './creation-attachment-journal';
 import { priorInputAdmission } from './input-admission';
+import { handoffCreationAttachmentInput } from './creation-attachment-handoff';
 
 const host = createAttachmentCreationHost({
   root: privateCreationAttachmentDirectory,
@@ -54,11 +55,28 @@ const host = createAttachmentCreationHost({
     } finally { await resolved.dispose(); }
   },
   prior: (conversationId, text, clientMessageId, files) => priorInputAdmission({ conversationId, text, clientMessageId, files }),
-  send: async (conversationId, text, clientMessageId, files) => {
-    const { send } = await import('./service');
-    const result = await send(conversationId, text, clientMessageId, files);
-    if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code });
-    if (result.value.admission !== 'accepted') throw unverified('The original first input is not confirmed');
+  send: async (conversationId, text, clientMessageId, files, expected) => {
+    const identity = sessionIdentityHost();
+    await handoffCreationAttachmentInput(expected, async () => {
+      if (!identity.attachmentCreationContext) throw unverified('The original attachment owner context is unavailable');
+      return identity.attachmentCreationContext();
+    }, async () => {
+      const [{ send }, { sessionLife }] = await Promise.all([import('./service'), import('../sessions/session-life')]);
+      return {
+        capture: () => {
+          const assertOwner = sessionLife().inputOwnerFence(expected.ownerId);
+          return () => {
+            if (identity !== sessionIdentityHost()) throw unverified('The original attachment host changed');
+            assertOwner();
+          };
+        },
+        send: async (assertOwner) => {
+          const result = await send(conversationId, text, clientMessageId, files, undefined, undefined, assertOwner);
+          if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code });
+          if (result.value.admission !== 'accepted') throw unverified('The original first input is not confirmed');
+        },
+      };
+    });
   },
 });
 

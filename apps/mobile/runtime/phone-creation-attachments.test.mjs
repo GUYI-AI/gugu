@@ -178,3 +178,23 @@ test('a sign-out during the complete placement read cannot admit into the stoppe
   assert.equal(fx.calls.admissions, 0)
   assert.equal(Object.keys(fx.store.state.jobs).length, 0)
 }))
+
+test('sign-out while the prepared record is being saved stops before send and preserves its task', () => isolated(async root => {
+  const fx = await fixture(root)
+  let ready = true, entered, release
+  const saving = new Promise(resolve => { entered = resolve })
+  const resume = new Promise(resolve => { release = resolve })
+  const save = fx.store.save.bind(fx.store)
+  fx.store.save = async () => {
+    await save()
+    const entry = fx.store.state.attachmentCreations?.[fx.request.clientRequestId]
+    if (entry?.prepared && !entry.admitted) { entered(); await resume }
+  }
+  const invoke = createPhoneAttachmentCreation({ ...fx.dependencies, isReady: () => ready })
+  const created = await invoke(createChannel, [fx.request])
+  const sending = invoke(admitChannel, [fx.admission])
+  await saving; ready = false; release()
+  await assert.rejects(sending, /no longer ready/)
+  assert.equal(fx.calls.admissions, 0)
+  assert.equal(fx.store.state.attachmentCreations[fx.request.clientRequestId].created.conversationId, created.value.conversationId)
+}))

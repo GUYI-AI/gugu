@@ -90,6 +90,7 @@ export function createPhoneAttachmentCreation({ ownerId, deviceId, store, provis
       ready(signal)
       entry.prepared = files; entry.placementKey = key
       await store.save()
+      ready(signal)
       const result = await send(payload(files))
       if (result?.admission !== 'accepted') throw failure('The host has not acknowledged the first input')
       entry.admitted = true

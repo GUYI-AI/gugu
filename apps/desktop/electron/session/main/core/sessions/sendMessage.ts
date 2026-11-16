@@ -51,6 +51,8 @@ export interface SendSessionMessageParams {
   delivery?: SessionMessageDelivery;
   /** Local admission lifetime; never persisted or sent to the provider. */
   signal?: AbortSignal;
+  /** Trusted host check only; never serialized. Re-run at the actual router/custody boundary. */
+  beforeAdmission?: () => void;
 }
 
 export type SendSessionMessageResult = {
@@ -435,11 +437,12 @@ export function recordFailedSessionDirectMessage(
 
 /** Keep a gate-rejected session-direct message in the recipient's existing inbox projection. */
 async function enqueuePendingSessionDirectMessage(
-  params: { projectId: string; sessionId: string; clientMessageId: string; sourceInput?: SendSessionMessageParams['sourceInput'] },
+  params: { projectId: string; sessionId: string; clientMessageId: string; sourceInput?: SendSessionMessageParams['sourceInput']; beforeAdmission?: () => void },
   text: string,
 ): Promise<void> {
   await serialize(enqueueOperations, params.sessionId, async () => {
     const row = await readSession(params)
+    params.beforeAdmission?.()
     const pending = { id: params.clientMessageId, text, kind: 'session-direct' as const }
     const existing = readAcceptedMessage(params.clientMessageId)
     if (existing) {
@@ -572,6 +575,7 @@ function enqueueIntoLife(params: SendSessionMessageParams): SendSessionMessageRe
 }
 
 export async function sendMessage(params: SendSessionMessageParams): Promise<SendSessionMessageResult> {
+  params.beforeAdmission?.();
   params.signal?.throwIfAborted();
   if (runtimeOf(params.sessionId) === 'acp') return enqueueIntoLife(params);
   if (params.kind !== 'session-direct' || params.queuedStartupDelegation) return sendMessageOnce(params);
@@ -602,6 +606,7 @@ async function sendMessageOnce(
   // exact message in the existing outbox until the coordinator's retry kicks the common reader.
   if (params.kind === 'session-direct' && !params.queuedStartupDelegation) {
     const row = await readSession(params);
+    params.beforeAdmission?.();
     const integration = resolveSessionpageSessionIntegration(row.provider, 'tui');
     if (integration.messageTransport === 'none') {
       throw new Error(
@@ -632,6 +637,7 @@ async function sendMessageOnce(
       throw new SessionDirectDeliveryError(params.sessionId, 'no session message router is installed');
     }
     params.signal?.throwIfAborted();
+    params.beforeAdmission?.();
     const receipt = await router(params.sessionId, {
       id: clientMessageId,
       text,

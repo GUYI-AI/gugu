@@ -1461,22 +1461,24 @@ export async function send(
   clientMessageId?: string,
   files?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['files'],
   attachments?: import('@gugu/session-core/acp/client').PromptAttachment[],
-  steerIfBusy?: true
+  steerIfBusy?: true,
+  admissionFence?: () => void
 ): Promise<InputAdmissionResult> {
+  admissionFence?.();
   const input = { conversationId, text, clientMessageId, files, attachments, steerIfBusy };
-  if (!clientMessageId) return sendOnce(input);
+  if (!clientMessageId) return sendOnce(input, admissionFence);
   const key = JSON.stringify([conversationId, clientMessageId]);
   const pending = admittingInputs.get(key);
   if (pending) return sameInput(input, pending.input) ? pending.result : {
     ok: false, error: { code: 'invalid_request', message: '原消息尚在确认，不能更换内容', admission: 'uncertain' },
   };
-  const result = sendOnce(input);
+  const result = sendOnce(input, admissionFence);
   admittingInputs.set(key, { input, result });
   try { return await result; }
   finally { admittingInputs.delete(key); }
 }
 
-async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload): Promise<InputAdmissionResult> {
+async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload, admissionFence?: () => void): Promise<InputAdmissionResult> {
   const rejected = (code: string, message: string): InputAdmissionResult => {
     try {
       const prior = priorInputAdmission({ conversationId, text, clientMessageId, files, attachments, steerIfBusy });
@@ -1503,6 +1505,7 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // A side chat has no session row: its custody send lands in its fork entry's queue.
   if (runtimeFork(conversationId)) {
     try {
+      admissionFence?.();
       sessionLife().enqueue({ sessionId: conversationId, messageId: clientMessageId ?? crypto.randomUUID(), text: text.trim(), kind: 'ordinary',
         delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) } });
       return { ok: true, value: { accepted: 'queued', admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
@@ -1521,7 +1524,9 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // 再发这一句。❌ 直接唤醒:唤醒不带第一句,agent 会只看到后来这一句。
   // A never-started session is ACP only (neverStarted), and its delivery itself starts it (session-life row 1).
   try {
-    const accepted = await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
+    const accepted = admissionFence
+      ? await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy, admissionFence)
+      : await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
     return { ok: true, value: { ...accepted, admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
   } catch (error) {
     if (sessionInputAdmission(error) === 'rejected') return rejected(error instanceof SessionWriteError || error instanceof SessionInputAdmissionError ? error.code ?? 'send_failed' : 'send_failed', (error as Error)?.message ?? String(error));

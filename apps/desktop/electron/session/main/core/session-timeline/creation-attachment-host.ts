@@ -12,13 +12,14 @@ import { openCreationAttachmentJournal, attachmentCreationUnverified as unverifi
 type Context = { ownerId: string; deviceId: string };
 export type AttachmentCreationHostDeps = {
   root: () => string;
+  journal?: typeof openCreationAttachmentJournal;
   context: () => Promise<Context>;
   create: (request: SessionCreateAttachmentDraftRequest, sessionId: string, beforeCommit: () => Promise<void>) => Promise<void>;
   task: (sessionId: string, ownerId: string) => Promise<{ projectId: string; title: string } | null>;
   address: (sessionId: string, projectId: string) => Promise<CreationAttachmentTarget>;
   resolve: (file: TurnFileRef, target: CreationAttachmentTarget, ownerId: string) => Promise<ResolvedCreationAttachment>;
   prior: (conversationId: string, text: string, messageId: string, files: TurnFileRef[]) => 'accepted' | 'uncertain' | null;
-  send: (conversationId: string, text: string, messageId: string, files: TurnFileRef[]) => Promise<void>;
+  send: (conversationId: string, text: string, messageId: string, files: TurnFileRef[], owner: Context) => Promise<void>;
 };
 
 /** Host-only two-phase coordinator. It never accepts a caller's uploaded/admitted flag as evidence. */
@@ -44,7 +45,7 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
     const context = await deps.context();
     const fingerprint = creationAttachmentIntentIdentity(context.ownerId, context.deviceId, request);
     return serial(fingerprint, async () => {
-      const journal = await openCreationAttachmentJournal(deps.root(), context.ownerId, context.deviceId, request.clientRequestId);
+      const journal = await (deps.journal ?? openCreationAttachmentJournal)(deps.root(), context.ownerId, context.deviceId, request.clientRequestId);
       let intent = await journal.read('intent');
       if (!intent) {
         intent = { version: 1, ...context, fingerprint, conversationId: randomUUID(), request };
@@ -93,7 +94,7 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
   async function admit(original: SessionAdmitCreatedAttachmentsRequest) {
     const input = structuredClone(original), context = await deps.context();
     return serial(JSON.stringify([context, input?.clientRequestId]), async () => {
-      const journal = await openCreationAttachmentJournal(deps.root(), context.ownerId, context.deviceId, input.clientRequestId);
+      const journal = await (deps.journal ?? openCreationAttachmentJournal)(deps.root(), context.ownerId, context.deviceId, input.clientRequestId);
       const intent = await journal.read('intent'), result = await journal.read('created');
       if (!intent || !result || intent.ownerId !== context.ownerId || intent.deviceId !== context.deviceId
         || intent.request.clientRequestId !== input.clientRequestId || intent.request.initialMessageId !== input.initialMessageId
@@ -127,7 +128,8 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
       await current(context);
       prepared = { placementKey: key, files: strict };
       await journal.append('prepared', prepared);
-      await deps.send(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files);
+      await current(context);
+      await deps.send(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files, context);
       await current(context);
       await journal.append('admitted', { initialMessageId: input.initialMessageId });
       return receipt(result, true);
