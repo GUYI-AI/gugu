@@ -42,8 +42,8 @@ async function fixture(body: (owner: string, input: DeviceRegistrationInput) => 
         ON CONFLICT (id) DO NOTHING`, [owner])
       await body(owner, input)
     } finally {
-      await db.query('DELETE FROM identity.gugu_devices WHERE user_id=$1', [owner])
-      await db.query('DELETE FROM identity.users WHERE id=$1', [owner])
+      // The auth deletion trigger erases the identity and owned devices in FK order.
+      // Removing the human identity first violates that lifecycle precondition.
       await db.query('DELETE FROM auth.users WHERE id=$1', [owner])
     }
   })
