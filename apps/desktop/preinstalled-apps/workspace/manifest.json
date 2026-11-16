@@ -9,7 +9,7 @@
     }
   },
   "author": "咕咕",
-  "version": "0.2.81",
+  "version": "0.2.82",
   "apiVersion": 54,
   "platforms": ["desktop", "phone"],
   "entry": "index.html",
