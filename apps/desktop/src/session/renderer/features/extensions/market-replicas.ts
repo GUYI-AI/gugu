@@ -198,22 +198,24 @@ export const marketShelf = replica({
 
 export type MarketSearch = Pick<MarketShelfFull, 'errorKind' | 'items' | 'invalid' | 'total' | 'page' | 'hasMore'>;
 
-/** A search on a desktop's market, its first `pages` pages (loading more = one page more, a new key). */
+/**
+ * A search on a desktop's market, its first `pages` pages. Loading more is one page more (a new key): the pages the previous
+ * key holds are taken as read and only the next one is asked; a failure leaves the previous key as it is.
+ */
 export const marketSearch = replica({
   name: 'marketSearch',
   scope: 'device',
   read: async (_owner: string, hostKey: string, query: string, pages: number): Promise<MarketSearch> => {
     const api = extensionsApiOf(hostKey);
-    let items: MarketListItem[] = [];
-    let last: Awaited<ReturnType<typeof api.market>>['data'] | undefined;
-    for (let page = 0; page < pages; page += 1) {
+    const before = pages > 1 ? marketSearch.peek(hostKey, query, pages - 1) : null;
+    let found = before?.state === 'value' && before.value.hasMore && !before.value.errorKind ? before.value : null;
+    for (let page = found ? pages - 1 : 0; page < pages && (!found || (found.hasMore && !found.errorKind)); page += 1) {
       const next = await api.market({ page, query });
       if (!next.success || !next.data) throw new Error('market unreadable');
-      items = withNew(items, next.data.extensions);
-      last = next.data;
-      if (!next.data.hasMore || next.data.errorKind) break;
+      const { extensions, errorKind, invalid, total, hasMore } = next.data;
+      found = { errorKind, items: found ? withNew(found.items, extensions) : extensions, invalid, total, page: next.data.page, hasMore };
     }
-    return { errorKind: last!.errorKind, items, invalid: last!.invalid, total: last!.total, page: last!.page, hasMore: last!.hasMore };
+    return found!;
   },
   keep: 60_000,
   watch: marketFeed,

@@ -155,19 +155,19 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const hostKeyRef = useRef(host.key);
   hostKeyRef.current = host.key;
   // What is installed there (`installedExtensions(host.key)`): unknown until read, an error said in place, else the list.
-  // A machine that is offline is not asked (args null).
-  const installed = useInstalledApps(machineOffline ? null : host.key);
+  // A machine that is offline is not asked; what was read of it is drawn read-only (this and the three reads below).
+  const installed = useInstalledApps(host.key, { read: !machineOffline });
   const apps = installed.state === 'value' ? installed.value : null;
   // What the market says of them (`summary`; absent in a restored value = not known yet: no flag drawn until it is).
-  const updatesReading = useReplica(marketUpdates, machineOffline ? null : [host.key]);
+  const updatesReading = useReplica(marketUpdates, [host.key], { read: !machineOffline });
   const updates = updatesReading.state === 'value' ? updatesReading.value.summary ?? null : null;
   // 别的机器读清单没读到(离线 / server 太旧 / 问不通):页面上说一句人话,❌ 弹一条带原文的失败 toast。
   // Which declared permissions the owner has taken back, per extension (`revokedPermissions(host)`; this desktop's is kept
   // across restarts): unknown until read, then the switches draw it.
-  const revokedReading = useReplica(revokedPermissions, machineOffline ? null : [host.key]);
+  const revokedReading = useReplica(revokedPermissions, [host.key], { read: !machineOffline });
   const revoked = revokedReading.state === 'value' ? revokedReading.value : null;
   // #6387 各扩展给 agent 的程序:几个会话在用、最近一次没起来的原因(`extensionAgentStatus(host)`)。
-  const agentStatusReading = useReplica(extensionAgentStatus, machineOffline ? null : [host.key]);
+  const agentStatusReading = useReplica(extensionAgentStatus, [host.key], { read: !machineOffline });
   const agentStatus = agentStatusReading.state === 'value' ? agentStatusReading.value : null;
   // The inventory's reads, failed (the last read or the refresh after it): said in place, and in the header for another machine.
   const failureOf = (reading: Reading<unknown>): Error | null => (reading.state === 'unknown' ? null : reading.error);
@@ -206,7 +206,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const debouncedQuery = useDebounce(query.trim(), 250);
   // The shelf (`marketShelf(host, locale)`: every page, no search word; its first screen kept across restarts) and a search
   // (`marketSearch(host, word, pages)`: loading more is one page more, a new key; the pages already drawn stay drawn
-  // from the previous key's reading until it lands). A machine that is offline is not asked (args null).
+  // from the previous key's reading until it lands, and when it fails). A machine that is offline is not asked (args null).
   const [paging, setPaging] = useState({ query: '', pages: 1 });
   const pages = paging.query === debouncedQuery ? paging.pages : 1;
   const shelfReading = useReplica(marketShelf, machineOffline ? null : [host.key, locale]);
@@ -216,13 +216,17 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const fullShelf = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null;
   // Restored from the snapshot (a cold start): only the first screen is known until the shelf is read.
   const firstScreen = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null;
+  // The read of what is shown failed (nothing read, or its refresh): said above the market with a retry, what was read
+  // stays drawn (a cold start's first screen, the pages of a search before the one that failed).
+  const marketFailure = (reading: Reading<unknown>) => (reading.state === 'unknown' ? null : reading.error);
+  const shownFailure = debouncedQuery === '' ? marketFailure(shelfReading) : marketFailure(searchReading);
   const shelf: ShelfState = useMemo((): ShelfState => {
     if (debouncedQuery === '') {
       if (fullShelf) return { status: 'ready', query: '', errorKind: fullShelf.errorKind, items: fullShelf.items, invalid: fullShelf.invalid, total: fullShelf.total, page: fullShelf.page, hasMore: false, featured: fullShelf.featured, home: fullShelf.home, loadingMore: false };
       return shelfReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
     }
     const read = searchReading.state === 'value' ? { found: searchReading.value, loadingMore: false }
-      : searchReading.state === 'unknown' && searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: true } : null;
+      : searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: searchReading.state === 'unknown' } : null;
     if (!read) return searchReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
     const { found } = read;
     return { status: 'ready', query: debouncedQuery, errorKind: found.errorKind, items: found.items, invalid: found.invalid, total: found.total, page: found.page, hasMore: found.hasMore,
@@ -325,8 +329,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     }
   }, []);
 
+  // A page that failed is read again by its retry (❌ the next one asked past it).
+  const canLoadMore = shelf.status === 'ready' && shelf.hasMore && !shelf.loadingMore && shownFailure === null;
   const loadMore = () => {
-    if (shelf.status !== 'ready' || !shelf.hasMore || shelf.loadingMore || debouncedQuery === '') return;
+    if (!canLoadMore || debouncedQuery === '') return;
     setPaging({ query: debouncedQuery, pages: pages + 1 });
   };
 
@@ -336,7 +342,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef(loadMore);
   loadMoreRef.current = loadMore;
-  const canLoadMore = shelf.status === 'ready' && shelf.hasMore && !shelf.loadingMore;
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !canLoadMore || typeof IntersectionObserver === 'undefined') return;
@@ -1324,7 +1329,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               </div>
             ) : null}
 
-            {!machineOffline && shelf.status === 'error' && (
+            {!machineOffline && (shelf.status === 'error' || shownFailure) && (
               <div className="mk-status" role="alert">
                 <CircleAlert className="size-4 shrink-0" />
                 <span className="min-w-0">{translate('extensions.marketUnavailable')}</span>

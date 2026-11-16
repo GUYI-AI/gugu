@@ -313,8 +313,8 @@ export function appsOf(list: InstalledExtensionsList, locale: string): Installed
 }
 
 /** What a host has installed, in the interface language. `null` host: nothing to read (unknown). */
-export function useInstalledApps(hostKey: string | null): Reading<InstalledApps> {
-  const reading = useReplica(installedExtensions, hostKey ? [hostKey] : null);
+export function useInstalledApps(hostKey: string | null, options: { read?: boolean } = {}): Reading<InstalledApps> {
+  const reading = useReplica(installedExtensions, hostKey ? [hostKey] : null, options);
   const { resolvedLocale } = useLocale();
   return useMemo((): Reading<InstalledApps> => {
     if (reading.state === 'error') return reading;

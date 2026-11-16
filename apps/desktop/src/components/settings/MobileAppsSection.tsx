@@ -51,6 +51,7 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
   const shelfReading = useReplica(marketShelf, [PHONE_HOST, locale])
   const full = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null
   const first = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null
+  const shelfFailure = shelfReading.state === 'unknown' ? null : shelfReading.error
   const [tab, setTab] = useState<'market' | 'installed'>('market')
   const [view, setView] = useState<MarketBrowsePage>('market')
   const [manage, setManage] = useState<string | null>(null)
@@ -188,14 +189,18 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
               lifecycleOf={lifecycleOf} installedIds={store ? new Set(store.manifests.map((manifest) => manifest.id)) : null}
               pending={pending} downloadPercent={{}} onOpen={setDetail} onAction={act} sentinelRef={sentinel}
             />
-          ) : first && view === 'market' && chip === 'all' && query.trim() === '' ? (
-            <AppMarketFirstScreen first={first} hostKey={PHONE_HOST} chip={chip} onChipChange={setChip} />
-          ) : shelfReading.state === 'error' ? (
-            <div className="mk-status" role="alert">
-              {translate('extensions.marketUnavailable')}
-              <Button onClick={retryShelf}>{translate('extensions.retry')}</Button>
-            </div>
-          ) : <ShelfSkeleton label={translate('extensions.loading')} />}
+          ) : <>
+            {/* Not read (a cold start's first screen, or nothing): a failed read is said with a retry, ❌ the skeleton forever. */}
+            {first && view === 'market' && chip === 'all' && query.trim() === '' ? (
+              <AppMarketFirstScreen first={first} hostKey={PHONE_HOST} chip={chip} onChipChange={setChip} />
+            ) : shelfFailure ? null : <ShelfSkeleton label={translate('extensions.loading')} />}
+            {shelfFailure ? (
+              <div className="mk-status" role="alert">
+                {translate('extensions.marketUnavailable')}
+                <Button onClick={retryShelf}>{translate('extensions.retry')}</Button>
+              </div>
+            ) : null}
+          </>}
         </div>
       )}
       {detail ? (
