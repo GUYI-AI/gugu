@@ -3,7 +3,7 @@ import { page } from 'vitest/browser'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
-import { PhoneComposerControl, PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
+import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '@/mobile/composer/PhoneComposerControls'
 import { LocalizationProvider } from '@/i18n'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -70,4 +70,23 @@ it.each([false, true])('native keyboard dismissal restores an empty menu but ret
   engine.commands.clearContent(true)
   await until('clearing the text restores the menu with keyboard closed', () => !editor.textContent?.trim() && !row.hasAttribute('data-editing'))
   expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(ended).toHaveBeenCalledTimes(1)
+})
+
+it('a keyboard belonging to panel search does not hide the empty composer menu', async () => {
+  await page.viewport(390, 844)
+  document.documentElement.setAttribute('data-phone-shell', '')
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <LocalizationProvider><PhoneViewportShell mobile>
+    <ChatBottomDock reserve={false}><div data-chat-composer="">
+      <PhoneComposerControlRow><PhoneComposerControl label="技能" testId="panel-search-skills" onClick={() => {}} /></PhoneComposerControlRow>
+      <ChatMessageComposer chatId="panel-search" isGroupChat onSend={vi.fn(async () => {})} />
+      <PhoneComposerSheet open onClose={() => {}} title="技能" testId="keyboard-search-sheet"><input aria-label="技能搜索" /></PhoneComposerSheet>
+    </div></ChatBottomDock>
+  </PhoneViewportShell></LocalizationProvider>)
+  await page.getByRole('textbox', { name: '技能搜索' }).fill('检查')
+  keyboard(true)
+  const row = harness.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  await until('panel keyboard leaves the empty menu available', () => !row.hasAttribute('data-editing') && row.getBoundingClientRect().height > 40)
+  expect(document.activeElement?.getAttribute('aria-label')).toBe('技能搜索')
+  expect(harness.container.querySelector('[contenteditable]')?.textContent?.trim()).toBe('')
 })
