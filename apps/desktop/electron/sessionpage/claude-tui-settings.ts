@@ -1,6 +1,6 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { claudeSessionFlagSettings } from '@gugu/session-plugins/agents'
+import { claudeReviewSettings, claudeSessionFlagSettings } from '@gugu/session-plugins/agents'
 import { writeSessionSettingsFile } from './session-settings-file'
 import { registerSessionpageSessionRuntime } from './sessionpage-session-runtime-registry'
 
@@ -42,10 +42,10 @@ export async function claudeTuiSessionArgs(input: {
     ? JSON.parse(source.trim().startsWith('{') ? source : await readFile(resolve(input.cwd, source), 'utf8'))
     : { ...CLAUDE_TUI_BASE_SETTINGS }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Claude settings must be an object')
-  const document = {
+  const document = claudeReviewSettings({
     ...parsed,
     ...claudeSessionFlagSettings({ fastMode: input.platformSettingsPath ? false : input.fastMode, reasoningEffort: input.effort }),
-  }
+  })
   let path = input.platformSettingsPath
   if (path) {
     // This is the host's protected session document, never the user's file.

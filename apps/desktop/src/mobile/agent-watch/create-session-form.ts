@@ -244,7 +244,7 @@ export function createPermissionModes(
   state: string,
   selection: CreateSelection,
 ) {
-  const modes = harness.permissionModes.filter(mode => mode !== 'ai-review');
+  const modes: typeof harness.permissionModes = harness.permissionModes.filter(mode => mode !== 'ai-review');
   if (state === 'ready' && models?.harness === harness.id && models.autoReview
     && models.autoReview.model === (selection.model ?? models.selected)) {
     modes.splice(Math.max(0, modes.indexOf('full-access')), 0, 'ai-review');

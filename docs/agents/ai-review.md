@@ -5,7 +5,7 @@ The permission menu can route requests for additional authority to the harness's
 ## Harness requirements
 
 - **Codex:** native Auto-review, with `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, and `approvals_reviewer = "auto_review"`. Its internal reviewer model is `codex-auto-review`; that model is excluded from main-model selectors. The app-server permission channel is verified on CLI 0.156.1 and later. Switching to another permission tier explicitly restores the user reviewer. An unavailable or timed-out review does not authorize the requested action; native cancellation remains authoritative.
-- **Claude Code:** native `auto`, with `CLAUDE_CODE_AUTO_MODE_MODEL=claude-haiku-5-5`. The selected session executable must be at least 2.1.302. Root SDK and bridge package versions do not establish that requirement. Old or unknown executable versions hide the menu entry without adding a warning. Supported main models are Anthropic Opus, Sonnet 4.6 and later, Haiku 5.5, and Fable. Other vendors' models on the Claude Code harness do not expose this permission tier.
+- **Claude Code:** native `auto`, with `CLAUDE_CODE_AUTO_MODE_MODEL=claude-haiku-5-5`. The selected session executable must be at least 2.1.302. The reviewer is pinned in both the child environment and the final session settings, where Claude settings can override shell variables. User settings files remain unchanged. Root SDK and bridge package versions do not establish that requirement. Old or unknown executable versions hide the menu entry without adding a warning. Supported main models are Anthropic Opus, Sonnet 4.6 and later, Haiku 5.5, and Fable. Other vendors' models on the Claude Code harness do not expose this permission tier.
 
 The app preserves the chosen host executable. This feature does not install or upgrade a shared CLI or SDK. Reviewer requests use the existing connection and normal usage accounting; there is no separate approval surcharge in the client.
 
@@ -20,3 +20,5 @@ Ship the client that filters the internal reviewer from main-model selectors bef
 - [Codex Auto-review](https://learn.chatgpt.com/docs/sandboxing/auto-review)
 - [Codex sandbox and approval settings](https://learn.chatgpt.com/docs/sandboxing#configure-defaults)
 - [Claude permission modes and classifier selection](https://code.claude.com/docs/en/permission-modes#choose-the-classifier-model)
+
+- [Claude environment-variable precedence](https://code.claude.com/docs/en/env-vars#precedence)

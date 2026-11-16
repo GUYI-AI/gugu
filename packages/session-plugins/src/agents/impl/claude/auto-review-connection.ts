@@ -51,7 +51,7 @@ export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFac
       const mode = current?.find(option => option.category === 'mode' && option.type === 'select');
       const model = current?.find(option => option.category === 'model');
       if (params.configId === model?.id && mode?.type === 'select' && mode.currentValue === 'auto'
-        && !claudeAutoReviewAvailable(version, params.value)) {
+        && !claudeAutoReviewAvailable(version, typeof params.value === 'string' ? params.value : undefined)) {
         throw new Error('Change permissions before selecting a model without AI review support');
       }
       const result = await api.setSessionConfigOption!(params);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
-import { claudeAutoReviewAvailable, claudeReviewConfig, CLAUDE_REVIEWER_MODEL } from './auto-review';
+import { claudeAutoReviewAvailable, claudeReviewConfig, CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
 import { provider } from './index';
 import { materializeClaudeSessionBundle } from './session-bundle';
 
@@ -13,6 +13,11 @@ const modes = (version: string | undefined, model: string, description?: string)
   return mode.type === 'select' ? mode.options : [];
 };
 describe('Claude AI review prerequisites', () => {
+  it('pins the reviewer over a user settings env while preserving unrelated keys and source', () => {
+    const source = { fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: 'user-reviewer' } };
+    expect(claudeReviewSettings(source)).toEqual({ fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
+    expect(source.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('user-reviewer');
+  });
   it.each([undefined, '', '2.1.293', '2.1.301', 'unknown', '1.9.999', '2.1.302-beta'])('hides auto for unverified/old actual CLI %s', version => {
     expect(modes(version, 'claude-opus-5')).not.toContainEqual({ value: 'auto', name: 'auto' });
   });
@@ -35,9 +40,11 @@ describe('Claude AI review prerequisites', () => {
     expect(command.args).toContain('auto');
     expect(command.args).not.toContain('--dangerously-skip-permissions');
     expect(command.autoApproved).not.toBe(true);
+    expect(JSON.parse(command.args[command.args.indexOf('--settings') + 1])).toMatchObject({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
   });
   it.each(['acp', 'tui'] as const)('pins Haiku on the %s session materialization, without changing host CLI', surface => {
     const result = materializeClaudeSessionBundle({ surface, lifecycle: 'fresh', cwd: '/fixture' }, { mcpServers: [], env: {}, model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [] });
     expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(CLAUDE_REVIEWER_MODEL);
+    if (surface === 'acp') expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } } } } });
   });
 });

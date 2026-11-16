@@ -1,4 +1,4 @@
-import { CLAUDE_REVIEWER_MODEL } from './auto-review';
+import { CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
 import { harnessPlatform } from './platform';
 import { claudeSessionFlagSettings } from './platform-model';
 import {
@@ -699,7 +699,7 @@ export function materializeClaudeSessionBundle(
   const options = {
     // Native ACP sessions bypass platformModel.load. Only secret-free session flags go
     // inline here; a host-owned settings path replaces this value with its merged document.
-    ...(Object.keys(sessionFlags).length > 0 ? { settings: sessionFlags } : {}),
+    settings: claudeReviewSettings(sessionFlags),
     ...(plugin ? { plugins: [{ type: 'local', path: plugin.root }, ...(library ? [{ type: 'local', path: library.root }] : [])] } : {}),
     // #5117 咕咕在子智能体卡上有「停止」按钮(适配器 `_session/async_task/stop` → SDK `stop_task`)。
     // 向 SDK 声明这一点(0.3.257 起认):按「停止」中断这一轮时**放过**还在跑的后台子智能体,

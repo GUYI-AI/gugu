@@ -23,7 +23,7 @@ import {
   resolveNodeInterpreter,
 } from '../../helpers/node-interpreter';
 import { connectClaudeWithReview } from './auto-review-connection';
-import { CLAUDE_REVIEWER_MODEL, claudeReviewConfig } from './auto-review';
+import { CLAUDE_REVIEWER_MODEL, claudeReviewConfig, claudeReviewSettings } from './auto-review';
 import { claudeAuthStatus } from './auth';
 import { claudeSubscriptionBehavior } from './subscription';
 import { buildClaudeHookConfig } from './hooks';
@@ -435,7 +435,8 @@ export const provider = registerPluginBehavior(plugin, {
   prompt: {
     buildCommand: (ctx) => {
       const ultracode = ctx.effort === CLAUDE_ULTRACODE_EFFORT_ID;
-      const settings = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
+      const flags = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
+      const settings = ctx.permissionMode === 'ai-review' ? claudeReviewSettings(flags) : flags;
       // Claude uses only the last --settings value. A caller-owned document must be
       // composed by its lifetime owner; never overwrite it or copy its credentials to argv.
       const hasSettingsDocument = (ctx.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings='));

@@ -5,6 +5,12 @@ import { flattenSelectOptions, meetsReviewModeRequirements } from '@gugu/session
 export const CLAUDE_REVIEWER_MODEL = 'claude-haiku-5-5';
 export const CLAUDE_AUTO_REVIEW_MIN_VERSION = '2.1.302';
 
+/** settings.env overrides the shell environment; pin the reviewer in the final session document too. */
+export function claudeReviewSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const env = settings.env && typeof settings.env === 'object' && !Array.isArray(settings.env) ? settings.env : {};
+  return { ...settings, env: { ...env, CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } };
+}
+
 /** Only the selected host executable's version counts; the SDK/bridge version does not. */
 export function claudeAutoReviewAvailable(version: string | undefined, model: string | null | undefined): boolean {
   return meetsReviewModeRequirements(CLAUDE_PERMISSION_MODES['ai-review'].reviewRequirements, { cliVersion: version, model });
