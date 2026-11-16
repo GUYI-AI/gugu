@@ -6,7 +6,7 @@ import { pinsAutoUpdate } from '@shared/extensions/market-entries';
 import { marketCompatText, type MarketVersionHistoryEntry } from '@shared/extensions/market';
 import type { SessionTranslate } from '../extension-consent';
 
-export type Loadable<T> = { status: 'idle' } | { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error' };
+export type Loadable<T> = { status: 'idle' } | { status: 'loading' } | { status: 'ready'; data: T; error?: string } | { status: 'error'; error?: string };
 
 const HISTORY_FOLDED = 5;
 
@@ -27,6 +27,7 @@ export function VersionHistorySection({
   translate,
   onInstallVersion,
   onOpenExternal,
+  onReadAgain,
 }: {
   state: Loadable<MarketVersionHistoryEntry[]>;
   extensionId: string;
@@ -38,21 +39,23 @@ export function VersionHistorySection({
   /** Absent: the versions are only read here (the App is installed; versions are changed on its settings page). */
   onInstallVersion?: (version: string) => void;
   onOpenExternal: (url: string) => void;
+  onReadAgain?: () => void;
 }) {
   const [all, setAll] = useState(false);
   if (state.status === 'idle' || state.status === 'loading') {
     return <p className="text-foreground-passive">{translate('extensions.loading')}</p>;
   }
-  if (state.status === 'error') {
-    return <p className="text-foreground-muted">{translate('extensions.historyUnavailable')}</p>;
-  }
+  const failure = state.status === 'error' || state.status === 'ready' && state.error
+    ? <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-foreground-muted">{state.error || translate('extensions.historyUnavailable')}</p>{onReadAgain ? <button type="button" className="xp-link" onClick={onReadAgain}>{translate('settings.readAgain')}</button> : null}</div> : null;
+  if (state.status === 'error') return failure;
   if (state.data.length === 0) {
-    return <p className="text-foreground-muted">{translate('extensions.historyNone')}</p>;
+    return <>{failure}<p className="text-foreground-muted">{translate('extensions.historyNone')}</p></>;
   }
   // 默认最近五版,装着的那一版总在;其余点开。
   const shown = all ? state.data : state.data.filter((entry, index) => index < HISTORY_FOLDED || entry.version === installedVersion);
   return (
     <>
+    {failure}
     <ul className="xp-history">
       {shown.map((entry) => (
         <VersionHistoryRow
