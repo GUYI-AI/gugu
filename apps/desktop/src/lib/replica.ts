@@ -1,4 +1,4 @@
-import { QueryClient, hashKey, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
+import { QueryClient, focusManager, hashKey, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
 import { recordSnapshotRefusal } from './perfCounters'
@@ -62,7 +62,10 @@ type Definition<A extends unknown[], V> = {
      */
     carry?: (value: V, ...args: A) => V | undefined
   }
-  /** Read again when the window comes back to the foreground and the value is past `fresh`. */
+  /**
+   * Read again when the window comes back to the foreground: past `fresh`, or always for a model kept current by a push
+   * (`fresh: Infinity`), whose feed may have missed what changed while the window was in the background.
+   */
   refreshOnFocus?: boolean
   /** `refresh` shares a read already on its way instead of cancelling it (for reads that are retried and polled). */
   refreshJoinsRead?: boolean
@@ -101,6 +104,19 @@ const readFromKey = ({ queryKey }: QueryFunctionContext) => {
 }
 
 export const queryClient = new QueryClient({ defaultOptions: { queries: { queryFn: readFromKey } } })
+
+// Back to the foreground (`refreshOnFocus`) is the page becoming visible or its window being focused: a desktop window
+// switched to while visible is a return too (react-query alone hears only visibility).
+focusManager.setEventListener((handleFocus) => {
+  if (typeof window === 'undefined') return undefined
+  const back = () => handleFocus()
+  window.addEventListener('visibilitychange', back, false)
+  window.addEventListener('focus', back, false)
+  return () => {
+    window.removeEventListener('visibilitychange', back)
+    window.removeEventListener('focus', back)
+  }
+})
 queryClient.mount()
 /**
  * The failure of a read that has no value, kept while it is read again: react-query empties `error` when the next read
@@ -556,7 +572,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     retry: typeof definition.retry === 'function' ? retryOf(definition.retry, key) : definition.retry ?? false,
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery, key) } : {}),
-    refetchOnWindowFocus: definition.refreshOnFocus ?? false,
+    refetchOnWindowFocus: definition.refreshOnFocus ? (definition.fresh === Infinity ? 'always' as const : true) : false,
     networkMode: typeof definition.networkMode === 'function' ? definition.networkMode(...(key.slice(2) as Later<A>))
       : definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
     ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),

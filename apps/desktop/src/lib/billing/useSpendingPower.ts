@@ -73,6 +73,8 @@ const creditAccount = replica({
   watch: { start: (owner) => watchBilling(owner) },
   // Fed by that feed (and read again when it starts): ❌ read again by every surface that shows the credits.
   fresh: Infinity,
+  // Back to the foreground: a membership bought on the web meanwhile writes no credits, so no broadcast came (#5899).
+  refreshOnFocus: true,
 })
 
 // 计费版本:库的广播、回到前台各推进一次;用量页据此重取会员。
@@ -89,8 +91,6 @@ function refreshAll(): void {
 }
 
 function watchBilling(userId: string): () => void {
-  window.addEventListener('focus', refreshWhenVisible)
-  document.addEventListener('visibilitychange', refreshWhenVisible)
   const handle = subscribePrivateUserEventBus(userId, 'spending_power_changed', () => {
     bumpActivity()
     refreshAll()
@@ -99,18 +99,8 @@ function watchBilling(userId: string): () => void {
     onSubscribed: () => refreshAll(),
   })
   return () => {
-    window.removeEventListener('focus', refreshWhenVisible)
-    document.removeEventListener('visibilitychange', refreshWhenVisible)
     unsubscribePrivateUserEventBus(handle)
   }
-}
-
-function refreshWhenVisible(): void {
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-  // 回到前台:人可能刚在网页上开通或续费了会员。那只写会员表(bind_subscription → user_quota_periods)、
-  // 不碰 user_credits,库的广播不会响 —— 推进计费版本,让读会员的那一处(用量页)也跟着重取(#5899)。
-  bumpActivity()
-  refreshAll()
 }
 
 /** 手动催一次(充值回来、用户点刷新)。 */

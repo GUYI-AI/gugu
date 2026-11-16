@@ -52,6 +52,8 @@ const creditDays = replica({
   scope: 'account',
   // Totals are in the account's credit unit: another unit version is another reading (unknown until read), ❌ the old total.
   read: (_userId, from: string, to: string, timeZone: string, _creditVersion: string | null) => fetchCreditDays(from, to, timeZone),
+  // Back to the foreground: a membership bought on the web meanwhile moves no broadcast here (#5899).
+  refreshOnFocus: true,
 })
 
 /** A reading as this page's three states: unknown is still loading (a placeholder block), ❌ an empty year. */

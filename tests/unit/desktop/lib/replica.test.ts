@@ -505,6 +505,23 @@ describe('core batch: device reads and change feeds', () => {
     harness.cleanup({ keepReads: true })
   })
 
+  it('a model kept current by a push (fresh: Infinity) with refreshOnFocus reads again when the window comes back', async () => {
+    const { focusManager } = await import('@tanstack/react-query')
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const reads = vi.fn(async () => 'v')
+    const model = rm.replica({ name: 'test-focus-push', scope: 'account', fresh: Infinity, refreshOnFocus: true, read: reads })
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
+    await harness.render(createElement(Probe)); await settle()
+    expect(reads).toHaveBeenCalledTimes(1)
+    focusManager.setFocused(false)
+    focusManager.setFocused(true); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
+    focusManager.setFocused(undefined)
+    harness.cleanup({ keepReads: true })
+  })
+
   it("the previous account's feed stops when the account changes, ❌ kept until the surface goes", async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const log: string[] = []

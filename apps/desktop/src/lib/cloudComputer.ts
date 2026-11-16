@@ -105,8 +105,8 @@ export const cloudComputer = replica({
   refreshOnFocus: true,
   refreshEvery: cloudComputerRefreshMs,
   // Every change reaches it: its poll while it has one (3 s on the way, 30 s otherwise), the account's device revisions
-  // (DevicesProvider asks again when a machine row changes) and focus. A surface opening is no change: an account
-  // without a cloud computer is asked once, not on every chat it opens.
+  // (DevicesProvider asks again when a machine row changes) and the window coming back (`refreshOnFocus`, read again for a
+  // model fresh until pushed). A surface opening is no change: an account without a cloud computer is not asked per chat.
   fresh: Infinity,
   // `{available, snapshot}`: a fixed shape of a state, a device id, an error line and a time, ~300 B.
   persist: { maxBytes: 1024, maxEntries: 1 },
