@@ -752,6 +752,8 @@ export class SessionManager implements InboundRouter {
       // 重放失败、退回 `session/new` 时的原因。有值 = 这条会话在引擎那侧是**新**的,
       // 转录开头要画一条界告诉用户「往上的内容它没有」(#5381 ④)。
       let contextResetReason: string | null = null;
+      // The engine's "no such session" for a session the host declared never-ran (#7223): what the reset line says.
+      let neverRanMissing: unknown;
       // 启动期的降级通知(模型用不了 / 模型被换掉)。**不杀会话** —— 会话照常开,
       // 这些事实在 ready 之后画成转录里的一行(spec `session-always-openable`)。
       const startupNotices: StartupNotice[] = [];
@@ -798,7 +800,7 @@ export class SessionManager implements InboundRouter {
             'SessionManager: provider session missing and the session never ran; starting a new session',
             { sessionId: input.sessionId, cause: toSerializedError(e) }
           );
-          contextResetReason = e instanceof Error ? e.message : String(e);
+          neverRanMissing = e;
         }
         if (!loadProviderSessionId && !neverRan) {
           await acquired.release();
@@ -989,7 +991,7 @@ export class SessionManager implements InboundRouter {
             'SessionManager: provider session missing and the session never ran; starting a new session',
             { sessionId: input.sessionId, cause: toSerializedError(e) }
           );
-          contextResetReason = e instanceof Error ? e.message : String(e);
+          neverRanMissing = e;
           record.cell.abandonReplay(Date.now());
         } finally {
           this.removeLoading(connection.key, input.sessionId);
@@ -1000,6 +1002,9 @@ export class SessionManager implements InboundRouter {
         }
       }
 
+      if (neverRanMissing !== undefined) {
+        contextResetReason = neverRanMissing instanceof Error ? neverRanMissing.message : String(neverRanMissing);
+      }
       if (record.phase === 'starting') {
         // Own the startup queue in the runtime from the moment the adapter connection exists.
         // The provider session id is not known yet, but queued prompts do not need an ACP address
