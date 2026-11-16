@@ -81,3 +81,7 @@ beforeEach(async () => {
   await import('../../apps/desktop/src/i18n/registerAgentsCatalog')
   setLocalePreference('zh-CN')
 })
+
+// Host code under test reaches the network through the egress; in tests that is the runtime's (stubbable) globals.
+import { installEgress as installTestEgress, runtimeEgress as testRuntimeEgress } from '@gugu/core/shared/egress'
+installTestEgress(testRuntimeEgress())

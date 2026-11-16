@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import { opencodeApiKeyConnection } from './api-key-connection';
 import { platformModel } from './platform-model';
 import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
@@ -259,7 +260,7 @@ export const provider = registerPluginBehavior(plugin, {
       const endpoint = sourceSession.providerSessionEndpoint?.replace(/\/$/, '')
       if (endpoint) {
         const path = `/session/${encodeURIComponent(sourceProviderSessionId)}/fork`
-        const response = await fetch(`${endpoint}${path}`, { method: 'POST' })
+        const response = await egress.fetch(`${endpoint}${path}`, { method: 'POST' })
         const body = await response.text()
         if (!response.ok) {
           throw new Error(

@@ -7,6 +7,7 @@
 //   place  → only put in the chat's folder (a new file, or a new version of one) — no message;
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
+import { egress } from '../shared/egress'
 import { retryFileDownload } from './fileDownloadRetry'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
@@ -21,7 +22,7 @@ export interface AttachmentsEndpoint {
   supabaseUrl: string
   anonKey: string
   token: string
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   upload?: AttachmentUploadTransport
   /**
    * This host can send a server-signed PUT straight to the object store, so it asks for multipart uploads. A main process
@@ -48,7 +49,7 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
   signal?.throwIfAborted()
   const url = `${endpoint.supabaseUrl.replace(/\/+$/, '')}/functions/v1/attachments/${route}`
   const request = async () => {
-    const response = await (endpoint.fetch ?? fetch)(url, {
+    const response = await (endpoint.fetch ?? egress.fetch)(url, {
       method: 'POST',
       headers: { apikey: endpoint.anonKey, Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -181,7 +182,7 @@ async function putPart(endpoint: AttachmentsEndpoint, part: SignedPart, body: Bl
   const headers = Object.fromEntries(Object.entries(part.headers).filter(([name]) => name.toLowerCase() !== 'content-length'))
   const init = { method: 'PUT' as const, body, headers, signal }
   const sent = endpoint.upload ? await endpoint.upload(part.url, init, progress => onLoaded(progress.loaded))
-    : await (endpoint.fetch ?? fetch)(part.url, init).then(async response => { await response.body?.cancel(); return response })
+    : await (endpoint.fetch ?? egress.fetch)(part.url, init).then(async response => { await response.body?.cancel(); return response })
   if (sent.status === 200 || sent.status === 403) return sent.status
   throw new AttachmentsError('upload', sent.status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${sent.status}`)
 }
@@ -210,7 +211,7 @@ export async function uploadAttachmentPlan(endpoint: AttachmentsEndpoint, form: 
   }
   const init = { method, body, headers: method === 'PUT' ? { 'content-type': file.contentType, ...form.headers } : form.headers, signal }
   const posted = endpoint.upload ? await endpoint.upload(form.url, init, onProgress)
-    : await (endpoint.fetch ?? fetch)(form.url, init)
+    : await (endpoint.fetch ?? egress.fetch)(form.url, init)
   if (posted.status !== 200 && posted.status !== 204 && !(allowExisting && posted.status === 409)) {
     throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}`)
   }

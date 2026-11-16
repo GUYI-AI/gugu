@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import type { ReleaseSource } from '@gugu/session-core/deps';
 import { ACP_REGISTRY_URL, DEFAULT_NPM_REGISTRY_ID, npmRegistryUrl } from '@gugu/session-core/deps';
 import type { Logger } from '@gugu/session-core/lib';
@@ -35,7 +36,7 @@ function resolveAliasSpec(
 }
 
 async function fetchJson(url: string): Promise<unknown> {
-  const res = await fetch(url, {
+  const res = await egress.fetch(url, {
     headers: {
       'User-Agent': 'gugu-latest-version',
       Accept: 'application/json',

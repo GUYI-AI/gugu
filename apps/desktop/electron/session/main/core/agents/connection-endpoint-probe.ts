@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import type { ApiKeyConnectionProtocol } from '@gugu/session-core/agents/plugins';
 import type { ConnectionModelList } from '@gugu/session-core/workspace-server/agent-config';
 
@@ -8,7 +9,7 @@ import type { ConnectionModelList } from '@gugu/session-core/workspace-server/ag
 
 const PROBE_TIMEOUT_MS = 10_000;
 
-type Fetch = typeof fetch;
+type Fetch = typeof globalThis.fetch;
 
 function url(endpoint: string, path: string): string {
   return `${endpoint.replace(/\/+$/, '')}${path}`;
@@ -20,7 +21,7 @@ function url(endpoint: string, path: string): string {
  */
 export async function listEndpointModels(
   input: { endpoint: string; apiKey: string; protocol: ApiKeyConnectionProtocol | undefined },
-  fetchImpl: Fetch = fetch
+  fetchImpl: Fetch = egress.fetch
 ): Promise<ConnectionModelList> {
   if (input.protocol !== 'openai-responses' && input.protocol !== 'openai-chat-completions') {
     return { kind: 'unlisted', reason: 'no-list' };
@@ -95,7 +96,7 @@ export async function detectEndpointProtocol(
     candidates: readonly ApiKeyConnectionProtocol[];
     fallback: ApiKeyConnectionProtocol;
   },
-  fetchImpl: Fetch = fetch
+  fetchImpl: Fetch = egress.fetch
 ): Promise<ApiKeyConnectionProtocol> {
   for (const protocol of input.candidates) {
     const path = PROTOCOL_PATHS[protocol];

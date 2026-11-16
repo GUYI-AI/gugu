@@ -6,7 +6,7 @@ const issuePlatformModelAccess = vi.fn()
 const revokePlatformModelAccess = vi.fn(async (..._args: unknown[]) => undefined)
 const fetchMock = vi.fn()
 
-vi.mock('electron', () => ({ app: { isPackaged: true }, net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
+vi.mock('electron', () => ({ app: { isPackaged: true } }))
 vi.mock('../../../../apps/desktop/electron/model-access', () => ({
   issuePlatformModelAccess: (...args: unknown[]) => issuePlatformModelAccess(...args),
   revokePlatformModelAccess: (...args: unknown[]) => revokePlatformModelAccess(...args),
@@ -16,6 +16,8 @@ vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 
+const { installEgress, createEgress } = await import('@gugu/core/shared/egress')
+installEgress(createEgress({ name: 'test', fetch: (...args: unknown[]) => fetchMock(...args) as Promise<Response>, webSocket: () => { throw new Error('no socket in this test') }, classify: () => null }))
 const { release, transcribeVoiceNoteSegment, upcomingMeetings } = await import('../../../../apps/desktop/electron/voice-notes')
 
 const auth = {} as never

@@ -38,7 +38,7 @@ const SIGNATURES = [
   { key: 'schema' as const, marker: '参数不合法', reachedDispatch: false },
   { key: 'schema' as const, marker: 'Input validation error', reachedDispatch: false },
   { key: 'command-context' as const, marker: 'agent command context is missing', reachedDispatch: true },
-  { key: 'command-rpc' as const, marker: 'command RPC transport failed', reachedDispatch: true },
+  { key: 'command-rpc' as const, marker: '咕咕连不上服务器', reachedDispatch: true },
 ]
 
 const hosts: DesktopGuguMcpHost[] = []
@@ -225,7 +225,7 @@ describe('#3575 tool-call accounting measures tool calls, not transport traffic'
 
     const text = await call({ chat_id: chatId, text: 'reply', to_user_ids: [`user:${OWNER_ID}`] })
 
-    expect(text).toContain('command RPC transport failed') // schema 通过，dispatch 已进入 command-gated RPC
+    expect(text).toContain('咕咕连不上服务器') // schema 通过，dispatch 已进入 command-gated RPC
     expect(B()).toBe(1)
     expect(A()).toBe(1)
     expect(unclassified()).toEqual([])

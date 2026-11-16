@@ -13,6 +13,7 @@
  *
  * 不碰 node / electron:渲染层(设置 → 设备、「在哪跑」)和主进程(agent 的 session_* 跨机器)共用这一份。
  */
+import { egress } from '../shared/egress'
 import type { CloudComputerPresence } from '../shared/types/deviceHost'
 import { anySignal } from '../shared/anySignal'
 
@@ -158,10 +159,10 @@ export function createCloudComputerClient(options: {
   accessToken: () => Promise<string>
   /** anon key(公开值):经 Supabase 网关时要带,与 supabase-js 调云端函数一致。 */
   anonKey?: string | null
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   requestTimeoutMs?: number
 }): CloudComputerClient {
-  const doFetch = options.fetch ?? fetch
+  const doFetch = options.fetch ?? egress.fetch
   const timeoutMs = options.requestTimeoutMs ?? CLOUD_COMPUTER_REQUEST_TIMEOUT_MS
   const request = async (method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<string> => {
     const headers: Record<string, string> = { Authorization: `Bearer ${await options.accessToken()}` }

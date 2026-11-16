@@ -88,3 +88,7 @@ if (!process.env.GUGU_SESSION_DB_FILE?.trim()) {
   const unique = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   process.env.GUGU_SESSION_DB_FILE = join(dir, `${unique}.db`);
 }
+
+// Host code under test reaches the network through the egress; in tests that is the runtime's (stubbable) globals.
+import { installEgress as installTestEgress, runtimeEgress as testRuntimeEgress } from '@gugu/core/shared/egress'
+installTestEgress(testRuntimeEgress())

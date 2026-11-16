@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
@@ -66,7 +67,7 @@ async function fetchManifest(
   version: string,
   signal?: AbortSignal,
 ): Promise<Manifest> {
-  const response = await fetch(registry + '/' + encodeURIComponent(name) + '/' + encodeURIComponent(version), {
+  const response = await egress.fetch(registry + '/' + encodeURIComponent(name) + '/' + encodeURIComponent(version), {
     signal: anySignal([signal, AbortSignal.timeout(20_000)]),
   });
   if (!response.ok) throw new Error('Package metadata HTTP ' + response.status + ': ' + name + '@' + version);
@@ -95,7 +96,7 @@ type AcpRegistryAgent = { id?: unknown; version?: unknown; distribution?: { bina
 
 /** 取回官方 ACP 注册表的发布索引 —— 超时与 npm 元数据那条同一口径。 */
 export async function fetchAcpRegistry(signal?: AbortSignal): Promise<{ agents: AcpRegistryAgent[] }> {
-  const response = await fetch(ACP_REGISTRY_URL, {
+  const response = await egress.fetch(ACP_REGISTRY_URL, {
     signal: anySignal([signal, AbortSignal.timeout(20_000)]),
   });
   if (!response.ok) throw new Error('ACP registry HTTP ' + response.status);
@@ -222,7 +223,7 @@ export function parseVendorManifest(json: unknown): VendorManifestRelease {
 }
 
 export async function fetchVendorManifest(url: string, signal?: AbortSignal): Promise<VendorManifestRelease> {
-  const response = await fetch(url, {
+  const response = await egress.fetch(url, {
     signal: anySignal([signal, AbortSignal.timeout(20_000)]),
   });
   if (!response.ok) throw new Error('Vendor manifest HTTP ' + response.status + ': ' + url);

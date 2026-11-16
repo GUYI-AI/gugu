@@ -25,7 +25,7 @@ const storage = {
 }
 let isolated: ReturnType<typeof createGuguSupabaseClient> | null = null
 function accountAuth() {
-  return (isolated ??= createGuguSupabaseClient({ storage, storageKey, persistSession: true, autoRefreshToken: false, flowType: 'pkce', fetch: authBoundedFetch })).auth
+  return (isolated ??= createGuguSupabaseClient({ storage, storageKey, persistSession: true, autoRefreshToken: false, flowType: 'pkce', wrapFetch: () => authBoundedFetch })).auth
 }
 let active = false
 let cancelGoogle: (() => Promise<void>) | null = null

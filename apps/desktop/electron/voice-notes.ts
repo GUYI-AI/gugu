@@ -6,6 +6,7 @@
  * 一条笔记往往要转好几段:票按助理缓存,快过期才换;一条转写完由渲染层叫 release 结掉,忘了叫也会在闲置几分钟后自己结。
  * 应用退出时没结的票由平台票账本统一结清(model-access 的 ledger),这里 ❌ 另记一份。
  */
+import { egress } from '@gugu/core/shared/egress'
 import * as electron from 'electron'
 import type { RuntimeAuthProvider } from '@gugu/core'
 import {
@@ -41,11 +42,6 @@ type Held = { access: IssuedModelAccess; idle: ReturnType<typeof setTimeout> | n
 
 const held = new Map<string, Held>()
 const issuing = new Map<string, Promise<Held>>()
-
-function netFetch(url: string, init: RequestInit): Promise<Response> {
-  const fetcher = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
-  return fetcher ? fetcher(url, init) : fetch(url, init)
-}
 
 async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string): Promise<Held> {
   const current = held.get(agentUserId)
@@ -122,7 +118,7 @@ const RETRYABLE = (status: number) => status === 408 || status === 429 || status
 type ModelReply = VoiceNoteTranscribeResult | { ok: false; code: 'ticket-expired' | 'retry'; message: string }
 
 async function callModel(access: IssuedModelAccess, request: VoiceNoteTranscribeRequest): Promise<ModelReply> {
-  const response = await netFetch(`${access.relayUrl}/v1/chat/completions`, {
+  const response = await egress.fetch(`${access.relayUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access.token}` },
     body: JSON.stringify({

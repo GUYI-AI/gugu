@@ -26,6 +26,7 @@
  *
  * 不碰 node / electron。
  */
+import { egress } from '../shared/egress'
 import { CloudComputerError, cloudComputerErrorFromResponse, isCloudComputerNotOpen } from './cloudComputer'
 import { anySignal } from '../shared/anySignal'
 import { parsePlatformConnectionReceipt, type PlatformConnectionReceipt } from './connections'
@@ -80,7 +81,7 @@ export class PlatformProviderUnavailableError extends Error {
 }
 
 /** 会话里那台转发的 MCP 每次调用现取的地址、请求头,和认得转发口那两句「不成」的 fetch。 */
-export type PlatformMcpEndpoint = { url: string; headers: Record<string, string>; fetch: typeof fetch }
+export type PlatformMcpEndpoint = { url: string; headers: Record<string, string>; fetch: typeof globalThis.fetch }
 
 /** 转发口说这一家没存凭据(在哪台设备上断开过,或从没连过)。 */
 export class PlatformIntegrationNotConnectedError extends Error {
@@ -214,10 +215,10 @@ export function createPlatformIntegrationsClient(options: {
   baseUrl: string
   accessToken: () => Promise<string>
   anonKey?: string | null
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   requestTimeoutMs?: number
 }): PlatformIntegrationsClient {
-  const doFetch = options.fetch ?? fetch
+  const doFetch = options.fetch ?? egress.fetch
   const timeoutMs = options.requestTimeoutMs ?? PLATFORM_REQUEST_TIMEOUT_MS
   const headers = async (): Promise<Record<string, string>> => ({
     Authorization: `Bearer ${await options.accessToken()}`,

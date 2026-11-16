@@ -183,7 +183,7 @@ export async function defaultTaskAgentName(
 }
 
 const listAgentNameSerialsDefault = (auth: { accessToken: string; userId: string }): Promise<Map<string, number>> =>
-  listAgentNameSerialsViaSupabase({ accessToken: auth.accessToken, fetch: electronFetch })
+  listAgentNameSerialsViaSupabase({ accessToken: auth.accessToken })
 
 /**
  * 同一账号同一时刻只许一发在途。推送是成批来的(批量删 10 个 agent = 10 条 agent_changed),在途时再来的

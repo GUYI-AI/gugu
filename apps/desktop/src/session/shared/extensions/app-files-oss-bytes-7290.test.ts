@@ -72,14 +72,14 @@ const files = createAppFiles({
   warn: () => undefined,
 });
 /** The shared production provider owns signature reuse and the host's object fetch; Apps have no URL path. */
-function cloudBackedFiles(body = new Uint8Array([1, 2, 3]), hostFetch: typeof fetch = fetch) {
+function cloudBackedFiles(body = new Uint8Array([1, 2, 3]), egress.fetch: typeof fetch = fetch) {
   const chunks = new Map<string, Uint8Array>();
   const cache: FileChunkCache = { get: async (key, index) => chunks.get(`${key}:${index}`) ?? null,
     put: async (key, index, bytes) => { chunks.set(`${key}:${index}`, bytes.slice()); },
     clear: async key => { for (const entry of chunks.keys()) if (entry.startsWith(`${key}:`)) chunks.delete(entry); },
   };
   const sha256 = createHash('sha256').update(body).digest('hex');
-  const cloud = cloudFileProviders({ cache, sink: async size => createCachedFileSink(cache, size), fetch: hostFetch,
+  const cloud = cloudFileProviders({ cache, sink: async size => createCachedFileSink(cache, size), fetch: egress.fetch,
     metadata: async context => answer === 'gone' ? { status: 'gone' } : { status: 'ready', source: 'managed-object',
       item_id: row.id, version: 'version' in context.ref ? context.ref.version : row.version, chat_id: CHAT,
       file_name: row.filename, content_type: 'application/pdf', size_bytes: body.length, sha256 },

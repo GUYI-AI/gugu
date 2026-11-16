@@ -1,3 +1,4 @@
+import { egress } from '../shared/egress'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
 import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
@@ -24,7 +25,7 @@ const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; obj
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
-function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress']) {
+function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof globalThis.fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress']) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
   let last: { index: number; bytes: Uint8Array } | undefined, lease: Download | undefined, origin = false, renewed = false
   const target = () => ({ stage: origin || lease?.bucket_id === 'temporary' ? 'oss' as const : 'cdn' as const, url: lease!.url })
@@ -94,7 +95,7 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
 export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
-  cache: FileChunkCache; fetch?: typeof fetch
+  cache: FileChunkCache; fetch?: typeof globalThis.fetch
   downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   image?(file: FileBytes, revision: FileRevision): Promise<Blob>
@@ -122,7 +123,7 @@ export function cloudFileProviders(deps: {
   }
   const objectTransport = async (context: FileContext) => {
     context.signal?.throwIfAborted()
-    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch
+    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? egress.fetch
     context.signal?.throwIfAborted()
     return fetcher
   }

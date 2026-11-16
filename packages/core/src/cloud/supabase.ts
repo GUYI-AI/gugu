@@ -1,4 +1,5 @@
 import { createClient, processLock } from '@supabase/supabase-js'
+import { egress } from '../shared/egress'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 
 type SupabaseCreateOptions = NonNullable<Parameters<typeof createClient>[2]>
@@ -17,10 +18,12 @@ export interface GuguSupabaseClientOptions {
   anonKey?: string
   autoRefreshToken?: boolean
   flowType?: 'implicit' | 'pkce'
-  fetch?: typeof fetch
+  /** Wraps the egress fetch (e.g. to observe answers or bound a request's life); it cannot replace it. */
+  wrapFetch?: (next: typeof globalThis.fetch) => typeof globalThis.fetch
   headers?: Record<string, string>
   persistSession?: boolean
-  realtime?: SupabaseCreateOptions['realtime']
+  /** Realtime options except the transport: every client's socket comes from the egress. */
+  realtime?: Omit<NonNullable<SupabaseCreateOptions['realtime']>, 'transport'>
   schema?: string
   storage?: GuguSupabaseStorage
   storageKey?: string
@@ -36,13 +39,12 @@ export function createGuguSupabaseClient(options: GuguSupabaseClientOptions = {}
     )
   }
 
-  const global =
-    options.headers || options.fetch
-      ? {
-          headers: options.headers,
-          fetch: options.fetch
-        }
-      : undefined
+  // @@@egress-supabase - every client reaches the backend through the egress: HTTP via its fetch, Realtime via its
+  // WebSocket. Left to itself supabase-js would use the runtime's globals, which in a host process ignore the system
+  // proxy. Injected here, once, so no call site can forget it.
+  const egressFetch = ((input: RequestInfo | URL, init?: RequestInit) => egress.fetch(input as string | URL | Request, init)) as typeof globalThis.fetch
+  const global = { headers: options.headers, fetch: options.wrapFetch ? options.wrapFetch(egressFetch) : egressFetch }
+  const realtime = { ...options.realtime, transport: EgressRealtimeSocket as never }
 
   // @@@access-token-client — accessToken 与自有 auth 互斥(supabase-js 约束):令牌客户端
   // 不建 GoTrue 会话,auth 相关选项一概不传。
@@ -56,7 +58,7 @@ export function createGuguSupabaseClient(options: GuguSupabaseClientOptions = {}
       accessToken: options.accessToken,
       db: options.schema ? { schema: options.schema } : undefined,
       global,
-      realtime: options.realtime
+      realtime
     })
   }
 
@@ -90,7 +92,7 @@ export function createGuguSupabaseClient(options: GuguSupabaseClientOptions = {}
     },
     db: options.schema ? { schema: options.schema } : undefined,
     global,
-    realtime: options.realtime
+    realtime
   })
 }
 
@@ -98,4 +100,9 @@ export function dbPayload<T extends Record<string, unknown> | Record<string, unk
   value: T
 ): never {
   return value as never
+}
+
+/** realtime-js constructs its transport with `new transport(url, protocols)`; the egress gives the WHATWG socket. */
+function EgressRealtimeSocket(url: string | URL, protocols?: string | string[]): WebSocket {
+  return egress.webSocket(url, { protocols })
 }
