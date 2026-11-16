@@ -14,7 +14,8 @@ export interface ThemeContextType {
   toggleTheme: () => void;
   effectiveTheme: EffectiveTheme;
   /** @@@5293 用户在设置里选的那一项,含「跟随系统」。只有设置界面画选中态需要它。 */
-  preference: ThemePreference;
+  /** null = not known yet (desktop handover failed, settings not read). */
+  preference: ThemePreference | null;
   setPreference: (preference: ThemePreference) => void;
 }
 

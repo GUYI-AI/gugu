@@ -129,7 +129,7 @@ export function requestAssistantClose(): void {
 export function closeIfMyAssistant(ownerUserId: string | null | undefined, agentUserId: string): boolean {
   // 读这里已经读到的那一份,不发请求:一刻的分流,不画。
   const mine = myAssistant.peek()
-  // @@@reading-default - a one-moment routing decision outside rendering: not read yet = not known to be the assistant, the delete takes the general path (today's behaviour)
+  // @@@reading-default(route) - a one-moment routing decision outside rendering: not read yet = not known to be the assistant, the delete takes the general path (today's behaviour)
   const personal = mine.state === 'value' ? mine.value.agentId === agentUserId : false
   if (!ownerUserId || !personal) return false
   requestAssistantClose()

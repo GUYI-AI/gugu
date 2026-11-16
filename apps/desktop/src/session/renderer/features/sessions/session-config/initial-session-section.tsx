@@ -1378,11 +1378,7 @@ export function InitialSessionField({
   // The agent list or this box's choice not read yet: the agent trigger holds its place (❌ "Agent", then a name).
   // #6264 a machine not connected is not asked: nothing is held for it (why it is unreachable is the machine's notice).
   const agentOptionsLoading = !state.providerKnown && agentsReading.state !== 'error' && remoteHost?.online !== false;
-  const { tools: agentCreationTools, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
-  const agentCreationToolsByEngine = useMemo(
-    () => new Map<string, (typeof agentCreationTools)[number]>(agentCreationTools.map((tool) => [tool.engine, tool])),
-    [agentCreationTools],
-  );
+  const { byEngine: agentCreationToolsByEngine, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
   const selectedAgentName = composerOwnTierAgentName(agents, state.provider);
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。
   // 它们与用户自己那档并列在同一个下拉里(不是另开一个选择器),每条自带积分标注。

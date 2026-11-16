@@ -7,7 +7,7 @@ import { devicePreferences, useDevicePreference } from './devicePreferences'
 /** 提醒这一刻要不要弹(一次性的判断)。 */
 export function meetingReminderEnabled(): boolean {
   const reading = devicePreferences.read('meetingReminder')
-  // @@@reading-default - a reminder decided before the preference was read (only if the desktop handover failed): not shown; the next one asks again
+  // @@@reading-default(moment) - a reminder decided before the preference was read (only if the desktop handover failed): not shown; the next one asks again
   return reading.state === 'value' && reading.value
 }
 

@@ -62,7 +62,8 @@ const AgentGrid: React.FC<{
   agents: AgentPayload[];
   busy: ReadonlySet<string>;
   /** #6264 此刻「登录已失效」的那几家 —— 图标上挂警示角标。 */
-  expired: ReadonlySet<string>;
+  /** null = not known yet: no expiry mark is drawn. */
+  expired: ReadonlySet<string> | null;
   onSelectAgent: (agentId: string) => void;
 }> = ({ agents, busy, expired, onSelectAgent }) => (
   // auto-fill 而不是定死列数:弹层宽度随窗口变,格子跟着回流,❌ 不在某个宽度上留一条空带。
@@ -72,7 +73,7 @@ const AgentGrid: React.FC<{
         key={agent.id}
         agent={agent}
         busy={busy.has(agent.id)}
-        signInExpired={expired.has(agent.id)}
+        signInExpired={!!expired?.has(agent.id)}
         state={resolveHarnessState({
           reading: agent.reading,
           status: agent.status,

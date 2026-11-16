@@ -165,7 +165,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
     }, (holder) => { setBesideOffline(holder); setWaitingFor(holder) })
   }, [hostedHtml, itemId, t])
-  // @@@effect-flow - opening a preview: its bytes come from the attachment content cache; the server's acknowledgement (a
+  // @@@effect-flow(command) - opening a preview: its bytes come from the attachment content cache; the server's acknowledgement (a
   // refusal takes a shown preview down), the read's progress, object URLs / video links and the offline-machine
   // explanation are this opening's flow
   useEffect(() => {

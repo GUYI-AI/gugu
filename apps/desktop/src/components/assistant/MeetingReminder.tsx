@@ -81,7 +81,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
   // The clock the reminder window is judged by: a meeting enters its window as time passes, not only when the calendar changes.
   const [now, setNow] = useState(() => Date.now())
 
-  // @@@effect-flow - raises a one-time reminder (card + system notification) for a meeting that enters its window; the calendar is the deviceMeetings replica
+  // @@@effect-flow(event) - raises a one-time reminder (card + system notification) for a meeting that enters its window; the calendar is the deviceMeetings replica
   useEffect(() => {
     // No meetings in hand (not read yet, a restored status without them, a failed read): nothing to remind of.
     if (!meetings) return

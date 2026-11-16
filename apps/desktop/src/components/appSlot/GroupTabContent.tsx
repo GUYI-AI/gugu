@@ -52,7 +52,6 @@ import { useChatStore } from '../../store/chatContext'
 import { appNameOf, enabledApps, rememberedOpener } from './openerChoice'
 
 const log = rendererLogger('app-slot/group')
-const NO_MARKET: readonly MarketOffer[] = []
 
 /**
  * An App that opens a file more specifically than anything installed: one shared in this chat (摩擦单 F15), or one of the
@@ -68,7 +67,7 @@ interface Offer {
  * ranks (`openerAhead`), over this chat's shared packages and then the market's Apps (one shared in the chat is the
  * group's own: the market's copy of the same App is not offered beside it). An installed App is only offered if newer.
  */
-function offerFor(typedName: string, shared: readonly SharedPackage[], market: readonly MarketOffer[], installed: ExtensionManifest[], all: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>, locale: string): Offer | null {
+function offerFor(typedName: string, shared: readonly SharedPackage[], market: readonly MarketOffer[] | null, installed: ExtensionManifest[], all: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>, locale: string): Offer | null {
   const offers = availableInstallOffers(shared, market, all, origins)
   const best = openerAhead(typedName, installed, offers.map(offer => offer.manifest), 'chat')
   if (!best) return null
@@ -146,13 +145,14 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   // The market's Apps for this device, from the index in hand (161 10-15), never fetched for a file.
   const typedName = item.kind ? item.typedName ?? null : null
   const marketReading = useMarketOffers(!!appsHere && !!typedName)
-  // @@@reading-default - the market unreadable: an App is offered from what is shared in this chat only (as before the market was asked)
-  const market = marketReading.state === 'value' ? marketReading.value : marketReading.state === 'error' ? NO_MARKET : null
+  // The market unreadable (null): an App is offered from what is shared in this chat only (as before the market was asked).
+  const market = marketReading.state === 'value' ? marketReading.value : null
+  const marketKnown = marketReading.state !== 'unknown'
   // Offer an App ahead of anything installed (`openerAhead`): shared here first (F15), else the market's (161 10-15). Decided
   // once all three are known (the market's from the index in hand, a replica: usually there when the file opens).
-  const offer = useMemo(() => appsHere && typedName && shared && market && installed
+  const offer = useMemo(() => appsHere && typedName && shared && marketKnown && installed
     ? offerFor(typedName, shared, market, enabledApps(installed), installed.manifests, installed.origins, installed.locale) : null,
-  [typedName, shared, market, installed])
+  [typedName, shared, market, marketKnown, installed])
   useEffect(() => setOfferFailed(null), [typedName, chatId])
   useEffect(() => setRawShown(false), [item.itemId, chatId])
   /**
@@ -242,7 +242,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   /** What the update without a click came to, for which package (`installed` false: refused — the bar asks the person). */
   const [held, setHeld] = useState<{ key: string; installed: boolean } | null>(null)
   const updateKey = update ? packageKey(update.card) : null
-  // @@@effect-flow - asks main to update the App on screen from a newer package shared here; its outcome is whether to show the update bar
+  // @@@effect-flow(command) - asks main to update the App on screen from a newer package shared here; its outcome is whether to show the update bar
   useEffect(() => {
     if (!update || !updateKey) return undefined
     let live = true

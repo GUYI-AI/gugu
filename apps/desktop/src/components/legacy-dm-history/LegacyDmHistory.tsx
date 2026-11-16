@@ -110,7 +110,7 @@ function LegacyDmTranscript({ scope, chat, mobile }: { scope: LegacyDmScope; cha
   const error = reading.state === 'error' ? reading.error : pageError;
   const scroll = useRef<HTMLDivElement>(null);
   const position = useRef<{ top: number; height: number } | null>(null);
-  // @@@effect-flow - keeps the reading position when older messages are prepended (DOM measure of the rows in hand)
+  // @@@effect-flow(dom) - keeps the reading position when older messages are prepended (DOM measure of the rows in hand)
   useLayoutEffect(() => {
     if (!scroll.current) return;
     scroll.current.scrollTop = position.current ? position.current.top + scroll.current.scrollHeight - position.current.height : scroll.current.scrollHeight;

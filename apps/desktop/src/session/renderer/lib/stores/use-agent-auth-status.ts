@@ -115,12 +115,11 @@ export function useAgentAuthStatuses(
 
 /**
  * #6264 这台机器上此刻「登录已失效」的那几家 —— 只订阅那份 live state,❌ 探任何一家。
- * 资源库图标网格一次读完用。还没读到 / 读不到就是空集合:没有读数时不把谁说成失效(一个不画的标记,不是一份列表)。
+ * 资源库图标网格一次读完用。null = 还没读到 / 读不到:图标上不画失效标记(只在知道失效时画)。
  */
-export function useExpiredAgentIds(enabled = true): ReadonlySet<string> {
-  // @@@reading-default - an expiry mark is drawn only on a known expiry: a list not read yet (or unreadable) marks no agent expired, it draws no list
-  const key = useSelect(enabled ? agentConfigList(null) : NO_LIST, (state) => (state.state === 'value' ? [...expiredProviderIds(state.value)].sort().join('\u0000') : ''), Object.is);
-  return useMemo(() => new Set(key ? key.split('\u0000') : []), [key]);
+export function useExpiredAgentIds(enabled = true): ReadonlySet<string> | null {
+  const key = useSelect(enabled ? agentConfigList(null) : NO_LIST, (state) => (state.state === 'value' ? [...expiredProviderIds(state.value)].sort().join('\u0000') : null), Object.is);
+  return useMemo(() => (key === null ? null : new Set(key ? key.split('\u0000') : [])), [key]);
 }
 
 const NO_LIST: Readable<AgentConfigListState> = { get: () => ({ state: 'unknown' }), subscribe: () => () => undefined };

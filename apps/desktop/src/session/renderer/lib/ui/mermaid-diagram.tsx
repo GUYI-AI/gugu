@@ -35,7 +35,7 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, isDark, c
   const [state, setState] = useState<RenderState | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // @@@effect-flow - renders mermaid SVG for content already in hand
+  // @@@effect-flow(render) - renders mermaid SVG for content already in hand
   useEffect(() => {
     let cancelled = false;
 

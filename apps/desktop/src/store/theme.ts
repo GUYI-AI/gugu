@@ -23,7 +23,8 @@ interface ThemeContextValue {
   /** 当下的真值(解析过的)。要给 CSS/图标/编辑器挑明暗色阶的都读它。 */
   theme: Theme
   /** 用户在设置里选的那一项,含 `system`。 */
-  preference: ThemePreference
+  /** null = not known yet (desktop handover failed, settings not read): no option is shown as chosen. */
+  preference: ThemePreference | null
   setTheme: (preference: ThemePreference) => void
 }
 
@@ -48,7 +49,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const preference = useSyncExternalStore(
     subscribeToThemePreference,
     readThemePreference,
-    () => 'light' as ThemePreference,
+    () => null,
   )
 
   // index.html 的引导脚本已经按同一套规则落过一次属性;这里补一次,兜住属性被别处清掉的情况。

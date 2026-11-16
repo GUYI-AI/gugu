@@ -52,7 +52,7 @@ export function appIsRunning(apps: InstalledApps, extensionId: string): boolean 
  */
 export function openApp(extensionId: string, tab?: string): LinkPlace | 'own' {
   const apps = peekInstalledApps(LOCAL_HOST);
-  // @@@reading-default - a click, one moment: the list not read yet opens the App's own page, which waits for it (as an App not placed anywhere)
+  // @@@reading-default(moment) - a click, one moment: the list not read yet opens the App's own page, which waits for it (as an App not placed anywhere)
   const main = !apps ? null : tab ? apps.allTabContributions.find((entry) => entry.extensionId === extensionId && entry.kind === `${extensionId}.${tab}`) ?? null : apps.mainTabOf(extensionId);
   // 它正自己占着一块(spec session-page「一屏几块」):去会话页、看那一块。
   if (main && revealAppBlock(main.kind)) return 'own';

@@ -10,7 +10,7 @@ import '@/styles/tokens.css'
 
 let harness: ReturnType<typeof createReactHarness>
 let previousTheme: ReturnType<typeof readThemePreference> = 'light'
-afterEach(() => { dismissNotice('card-edge'); harness?.cleanup(); writeThemePreference(previousTheme) })
+afterEach(() => { dismissNotice('card-edge'); harness?.cleanup(); if (previousTheme) writeThemePreference(previousTheme) })
 
 it.each(['light', 'dark'] as const)('paints the real notice lower outline and safe-gap shadow in %s theme', async theme => {
   await page.viewport(1000, 700)

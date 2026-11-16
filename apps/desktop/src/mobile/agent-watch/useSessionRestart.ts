@@ -54,7 +54,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<{ key: string; message: string } | null>(null)
 
-  // @@@effect-flow - waits for the restart command to settle: its lifecycle (read through the one life mirror) passes the clicked version
+  // @@@effect-flow(command) - waits for the restart command to settle: its lifecycle (read through the one life mirror) passes the clicked version
   useEffect(() => {
     if (attempt?.key !== key || !online) return
     let active = true
@@ -93,7 +93,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
 
   const start = async (fresh: boolean) => {
     if (inFlight.current?.key === key || !online || (fresh && eligible !== key)) return
-    // @@@reading-default - the version a restart must pass (a one-moment decision at the click): none seen yet = 0
+    // @@@reading-default(moment) - the version a restart must pass (a one-moment decision at the click): none seen yet = 0
     const afterVersion = view?.key === key ? view.value.version : lifeNow ? lifeNow.version : 0
     const request = { key, afterVersion }
     inFlight.current = request

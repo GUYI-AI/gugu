@@ -302,7 +302,7 @@ export function EmdashSessionFrame() {
     if (mount) mount.className = sessionSkinClassName(theme)
   }, [theme])
 
-  // @@@effect-flow - mounts the session page into its host element once (a DOM mount); its load state is what that mount reports
+  // @@@effect-flow(lifecycle) - mounts the session page into its host element once (a DOM mount); its load state is what that mount reports
   useEffect(() => {
     const host = hostRef.current
     // StrictMode(dev)对同一实例 setup→cleanup→setup 双调用。这里的挂载是全局一次性副作用

@@ -102,7 +102,7 @@ interface RailItemProps extends Omit<React.ComponentPropsWithRef<'button'>, 'tit
   onClick?: () => void
   title: string
   testId?: AutomationTestId
-  badge?: number
+  badge?: number | null
   /** 点的颜色:默认红;`warn` = 琥珀(有人在等你,同列表里「需要你」那一色)。 */
   badgeTone?: 'warn'
   /** Which entry this is (`tasks` / `chats` / …): its own small move on hover hangs off this (Sidebar.css). */
@@ -149,7 +149,7 @@ function RailItem({
         onContextMenu={onContextMenu}
       >
         {icon}
-        {badge > 0 && (
+        {badge != null && badge > 0 && (
           <span className="gg-sidebar-badge" data-tone={badgeTone} aria-hidden="true" />
         )}
         {running && <i className="gg-sidebar-running" aria-hidden="true" />}
@@ -304,8 +304,8 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
   // Not read yet: no menu (nothing to list that would not be a guess).
   const openable = apps ? apps.openableApps : null
-  // @@@reading-default - the badge is an optional hint; nothing while not known
-  const updateCount = apps && updates.state === 'value' && updates.value.summary ? updateCountOf(updates.value.summary, apps) : 0
+  // Not known yet (or unreadable): null, and no badge is drawn.
+  const updateCount = apps && updates.state === 'value' && updates.value.summary ? updateCountOf(updates.value.summary, apps) : null
   const open = (appId?: string) => {
     showSessions()
     if (appId) openApp(appId)

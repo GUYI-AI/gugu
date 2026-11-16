@@ -21,7 +21,7 @@ export type NotificationSettings = ChatNotifications
  * nothing announces: the person may have turned it off.
  */
 function decision(reading: Reading<NotificationSettings>): NotificationSettings {
-  // @@@reading-default - whether to announce a message arriving before the preference was read: neither banner nor sound
+  // @@@reading-default(moment) - whether to announce a message arriving before the preference was read: neither banner nor sound
   return reading.state === 'value' ? reading.value : { chatMessages: false, sound: false }
 }
 

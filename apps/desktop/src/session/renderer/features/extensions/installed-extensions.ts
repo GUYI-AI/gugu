@@ -323,7 +323,7 @@ export function useInstalledApps(hostKey: string | null): Reading<InstalledApps>
   }, [reading, resolvedLocale]);
 }
 
-/** For a one-moment decision outside rendering: null while not known (a caller folding null says `@@@reading-default`). */
+/** For a one-moment decision outside rendering: null while not known (a caller folding null marks it as a reading default). */
 export function peekInstalledApps(hostKey: string = LOCAL_HOST): InstalledApps | null {
   const reading = installedExtensions.peek(hostKey);
   return reading.state === 'value' && reading.value.list ? appsOf(reading.value.list, getLocaleSnapshot().resolvedLocale) : null;

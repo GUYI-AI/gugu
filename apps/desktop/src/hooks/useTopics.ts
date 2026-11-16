@@ -20,8 +20,8 @@ const topicsLog = rendererLogger('chat/topics')
 export interface UseTopicsOfChatResult {
   /** null until read (`loading`). */
   topics: TopicSummary[] | null
-  /** 锚点卡按来源消息分组:一条来源消息可能长出多条话题,所以值是数组而非单条。 */
-  bySourceMessageId: Map<string, TopicSummary[]>
+  /** 锚点卡按来源消息分组:一条来源消息可能长出多条话题,所以值是数组而非单条。null = 还没读到(哪条消息下都不画锚点卡)。 */
+  bySourceMessageId: Map<string, TopicSummary[]> | null
   loading: boolean
   error: string | null
   /** 开完一条话题后调它,让来源消息底下的锚点卡当场长出来。 */
@@ -165,9 +165,9 @@ export function useTopicsOfChat(
   }, [sourceChatId, subscribeAccountRevision, reload, userId])
 
   const bySourceMessageId = useMemo(() => {
+    if (!topics) return null
     const index = new Map<string, TopicSummary[]>()
-    // @@@reading-default - topics not read: no anchor card for any message yet (the surface's decision, useTopicSurface)
-    for (const topic of topics ?? []) {
+    for (const topic of topics) {
       const bucket = index.get(topic.source_message_id)
       if (bucket) bucket.push(topic)
       else index.set(topic.source_message_id, [topic])

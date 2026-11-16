@@ -24,6 +24,6 @@ export function useHarnessModelCredential(
   const reading = useReplica(harnessModelCredential, asked ? [providerId, modelId, machine] : null, { read: host?.online !== false });
   if (!asked) return 'unknown';
   if (reading.state === 'unknown') return null;
-  // @@@reading-default - a failed read is "cannot tell" ('unknown', the domain's own value): the default preselection stays the harness's own, as before (a preselection has no room to say the failure)
+  // @@@reading-default(moment) - a failed read is "cannot tell" ('unknown', the domain's own value): the default preselection stays the harness's own, as before (a preselection has no room to say the failure)
   return reading.state === 'value' ? reading.value : 'unknown';
 }

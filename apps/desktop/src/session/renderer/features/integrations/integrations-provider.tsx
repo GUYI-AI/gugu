@@ -104,7 +104,7 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
 
   const listData: IntegrationMetadata[] | null = ownerMode ? ownerView?.items ?? builtinConnectionCatalog(locale)
     : listReading.state === 'value' ? listReading.value : null;
-  // @@@reading-default - the summaries hook is called on every render; while the list is not known its answer is not drawn (`integrations` is null)
+  // @@@reading-default(paired) - the summaries hook is called on every render; while the list is not known its answer is not drawn (`integrations` is null)
   const summaries = useAssistantIntegrationSummaries(metadata, listData ?? EMPTY_INTEGRATION_SUMMARIES, locale);
   // Includes cached/generated metadata and the first render. A saved row or
   // an older host publication must not restore an unsupported setup entry.

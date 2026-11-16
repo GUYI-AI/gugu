@@ -47,7 +47,7 @@ type UseTopicSurfaceArgs = {
 
 export type TopicSurface = {
   /** 这条线上长出来的话题,按来源消息分组 —— 锚点卡读它。 */
-  anchorsByMessageId: Map<string, TopicSummary[]>
+  anchorsByMessageId: Map<string, TopicSummary[]> | null
   topics: TopicSummary[]
   reloadTopics: () => void
   /** The open tab's conversation, retained while another tab is shown. */

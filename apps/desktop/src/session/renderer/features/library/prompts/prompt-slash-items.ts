@@ -14,7 +14,7 @@ import { withOverrides, type PromptLibrary, type PromptLibraryPrompt } from '@sh
 export function promptSlashItems(mine: readonly PromptLibraryPrompt[], overrides: PromptLibrary['overrides'], mineSection: string, query: string): CommandItem[] {
   const own = mine.map((prompt) => item(`prompt:${prompt.id}`, prompt.title, undefined, prompt.prompt, mineSection));
   const installed = peekInstalledApps();
-  // @@@reading-default - the `/` menu is queried as the person types (one moment): before what is installed is read only their own prompts are offered; the next keystroke asks again
+  // @@@reading-default(moment) - the `/` menu is queried as the person types (one moment): before what is installed is read only their own prompts are offered; the next keystroke asks again
   const apps = withOverrides(installed ? installed.appPrompts : [], overrides).filter((prompt) => prompt.state !== 'hidden').map((prompt) =>
     item(`app-prompt:${prompt.key}`, prompt.title, prompt.otherTitles.join(metadataSeparator()) || undefined, prompt.prompt, prompt.appName));
   return filterSlashCommands([...own, ...apps], query);

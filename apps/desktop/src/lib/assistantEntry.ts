@@ -119,7 +119,7 @@ function assistantAppEnabled(): boolean | null {
 }
 
 function appReadsWork(): boolean {
-  // @@@reading-default - a command, one moment: the list not read yet cannot say the App reads its work, so the task is refused (said by the caller)
+  // @@@reading-default(moment) - a command, one moment: the list not read yet cannot say the App reads its work, so the task is refused (said by the caller)
   const manifest = peekInstalledApps(LISTED_HOST)?.manifestFor(ASSISTANT_APP_ID)
   return !!manifest && readsWork(manifest)
 }

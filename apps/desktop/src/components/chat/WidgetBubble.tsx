@@ -28,9 +28,8 @@ import { useAuth } from '../../store/auth'
 import { messageForUser } from '../../lib/userFacingError'
 import { installPackageOf } from '../extensionBundle/sharedPackages'
 import { sharedAppPackages } from '../extensionBundle/packageReplicas'
-import { availableInstallOffers, widgetInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
+import { availableInstallOffers, widgetInstallOffer } from '../extensionBundle/installOffers'
 
-const NO_MARKET: readonly MarketOffer[] = []
 
 type Message = Pick<MessageItem, 'id' | 'chat_id' | 'sender_user_id' | 'content'>
 
@@ -125,10 +124,9 @@ function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; 
   const asked = shown && canOffer && !!appsHere && !!user?.id
   const shared = useReplica(sharedAppPackages, asked ? [chatId] : null)
   const marketReading = useMarketOffers(asked)
-  // @@@reading-default - the market unreadable: the offer is looked for among what is shared here only, and the failure is said below
-  const market = marketReading.state === 'value' ? marketReading.value : marketReading.state === 'error' ? NO_MARKET : null
-  const offer = asked && shared.state === 'value' && market && installed.state === 'value'
-    ? widgetInstallOffer(availableInstallOffers(shared.value, market, installed.value.manifests, installed.value.origins),
+  // The market unreadable: the offer is looked for among what is shared here only (null market), and the failure is said below.
+  const offer = asked && shared.state === 'value' && marketReading.state !== 'unknown' && installed.state === 'value'
+    ? widgetInstallOffer(availableInstallOffers(shared.value, marketReading.state === 'value' ? marketReading.value : null, installed.value.manifests, installed.value.origins),
       widget.app, widget.view, platform.kind === 'electron' ? 'desktop' : 'phone') : null
   /** Asked and not answered yet: the offer's place is held at its size. */
   const offerUnknown = asked && (shared.state === 'unknown' || marketReading.state === 'unknown' || installed.state === 'unknown')

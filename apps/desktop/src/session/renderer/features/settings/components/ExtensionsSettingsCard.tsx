@@ -648,7 +648,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (inFlight.current[manifest.id] === 'installing') return;
     beginPending(manifest.id, 'installing');
     // 「装好了」那句只给第一次装上的;更新、换版本不说(它本来就在)。
-    // @@@reading-default - one install's 「装好了」 line: the list not known yet counts as not installed before (a first install)
+    // @@@reading-default(moment) - one install's 「装好了」 line: the list not known yet counts as not installed before (a first install)
     const firstInstall = apps === null || !apps.manifests.some((entry) => entry.id === manifest.id);
     try {
       const result = await run();

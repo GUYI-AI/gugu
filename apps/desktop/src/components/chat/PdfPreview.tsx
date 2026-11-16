@@ -39,7 +39,7 @@ export function PdfPreview({ data, at }: { data: ArrayBuffer; at?: FilePlace }) 
   const { zoom, setZoom } = useFileZoom('pdf', rootRef)
   usePinchZoom(containerRef, (deltaY) => setZoom((value) => pinchZoom(value, deltaY, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM)))
 
-  // @@@effect-flow - renders the pdf bytes in hand with pdf.js
+  // @@@effect-flow(render) - renders the pdf bytes in hand with pdf.js
   useEffect(() => {
     const container = containerRef.current
     const pages = pagesRef.current

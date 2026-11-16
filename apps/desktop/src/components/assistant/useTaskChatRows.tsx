@@ -37,11 +37,11 @@ export function useTaskChatRows(messages: readonly MessageItem[], ownerId: strin
     if (!task || !workIds) return null
     if (works.some(reading => reading.state === 'unknown')) return null
     // Replace, rather than merge, so deleted original sources disappear after revalidation.
-    // @@@reading-default - a work whose read failed adds no exchanges; its failure is said by the collaboration-unavailable notice (`unavailable`)
+    // @@@reading-default(paired) - a work whose read failed adds no exchanges; its failure is said by the collaboration-unavailable notice (`unavailable`)
     return works.flatMap((reading, index) => reading.state === 'value' ? assistantWorkExchanges(reading.value.events, workIds[index]!) : [])
   }, [task, workIds, works])
   const unavailable = ledger.state === 'error' || works.some(reading => reading.state === 'error' || (reading.state === 'value' && reading.error))
-  // @@@reading-default - the chat's own messages are drawn while the exchanges are not read yet; the row-high placeholder in `notice` says more are coming
+  // @@@reading-default(paired) - the chat's own messages are drawn while the exchanges are not read yet; the row-high placeholder in `notice` says more are coming
   const allRows = useMemo(() => taskChatRows(messages, exchanges ?? [], task), [messages, exchanges, task])
   const count = history.key === key ? history.count : 80
   const { rows, earlier } = useMemo(() => taskChatWindow(allRows, count), [allRows, count])

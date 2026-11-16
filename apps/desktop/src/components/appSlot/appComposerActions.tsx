@@ -12,20 +12,21 @@ import type { ComposerActionIcon, ComposerActionView } from '@/session/shared/ex
 
 const log = rendererLogger('app-composer-actions')
 // One empty list, so a menu not yet read (or not readable) keeps one identity across renders.
-const NO_VIEWS: ComposerActionView[] = []
-
 /** The host's icons an App's entry may name (composer-actions.ts), the same glyphs as the built-in entries. */
 const ICONS: Record<ComposerActionIcon, ReactNode> = {
   sparkles: <Sparkles />, mic: <Mic />, upload: <ArrowUpToLine />, lightbulb: <Lightbulb />, pencil: <Pencil />, heart: <Heart />,
   checklist: <ListChecks />, document: <FileText />, book: <BookOpen />, image: <Image />, message: <MessageSquare />,
 }
 
-/** The entries as the 「+」 menu draws them: the App's words in the person's language, the voice note greyed while recording. */
+/**
+ * The entries as the 「+」 menu draws them: the App's words in the person's language, the voice note greyed while recording.
+ * `views` null = not read (or unreadable): no App entry yet, the built-in ones stay; they join when read.
+ */
 export function composerMenu(
-  views: readonly ComposerActionView[],
+  views: readonly ComposerActionView[] | null,
   { zh, recording, run }: { zh: boolean; recording: boolean; run: (id: string) => void },
 ): ComposerAttachAction[] | undefined {
-  if (views.length === 0) return undefined
+  if (!views || views.length === 0) return undefined
   return views.map((view) => ({
     id: `app-${view.id}`,
     label: zh ? view.label.zh : view.label.en,
@@ -37,8 +38,8 @@ export function composerMenu(
 
 /** The entry an App marks `chip`, as the capsule above the composer draws it: its shorter label, the entry's icon. */
 export type ComposerChip = { id: string; label: string; icon: ReactNode; onSelect: () => void }
-export function composerChip(views: readonly ComposerActionView[], { zh, run }: { zh: boolean; run: (id: string) => void }): ComposerChip | null {
-  const view = views.find((entry) => entry.chip)
+export function composerChip(views: readonly ComposerActionView[] | null, { zh, run }: { zh: boolean; run: (id: string) => void }): ComposerChip | null {
+  const view = views?.find((entry) => entry.chip)
   if (!view?.chip) return null
   return { id: `app-${view.id}`, label: zh ? view.chip.zh : view.chip.en, icon: ICONS[view.icon], onSelect: () => run(view.id) }
 }
@@ -75,8 +76,7 @@ export function useAppComposerEntries({ ownerId, extensionId, authority, chatId 
       if (result.data.kind === 'draft') writeDraft(chatId, { at: 'end', text: zhNow() ? result.data.text.zh : result.data.text.en })
     }, (error: unknown) => log.warn({ error }, 'App composer action failed'))
   }, [ownerId, extensionId, authority, chatId, writeDraft, zhNow])
-  // @@@reading-default - the 「+」 menu has no slot to hold: not read yet, or unreadable, it lists no App entry (the built-in ones stay); they join when read
-  const views = reading.state === 'value' ? reading.value : NO_VIEWS
+  const views = reading.state === 'value' ? reading.value : null
   const zh = i18n.language.startsWith('zh')
   const menu = useMemo(() => composerMenu(views, { zh, recording, run }), [views, zh, recording, run])
   const chip = useMemo(() => composerChip(views, { zh, run }), [views, zh, run])

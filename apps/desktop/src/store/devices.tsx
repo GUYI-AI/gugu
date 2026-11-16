@@ -170,7 +170,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     () =>
       sortDevices(
         withCloudComputerPresence(
-          // @@@reading-default - SSH list not read yet (first run only: it is kept across restarts): rows keep the cloud heartbeat they carry
+          // SSH list not read yet (first run only: it is kept across restarts): each row shows its own cloud heartbeat (its value, not a default).
           sshMachineIds ? withSshLinkOnline(devices, sshMachineIds, linkProblems) : devices,
           cloudSnapshot,
           Date.now(),

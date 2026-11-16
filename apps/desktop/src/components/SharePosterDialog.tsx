@@ -51,7 +51,7 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
   const memberKey = JSON.stringify(memberAvatarUrls ?? [])
 
   // Step 2: Composite poster once QR is ready
-  // @@@effect-flow - composites the poster canvas from the QR and avatars in hand (render of content in hand)
+  // @@@effect-flow(render) - composites the poster canvas from the QR and avatars in hand (render of content in hand)
   useEffect(() => {
     if (!qrDataUrl) return
     let cancelled = false

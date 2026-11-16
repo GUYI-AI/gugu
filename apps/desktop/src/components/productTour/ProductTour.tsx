@@ -87,12 +87,12 @@ export function ProductTour({ userId, steps, start, onDone }: {
   const next = () => (last ? exit('done') : goTo(index + 1))
   const previous = () => { if (index > 0) goTo(index - 1) }
 
-  // @@@effect-flow - records that the tour started (a write)
+  // @@@effect-flow(command) - records that the tour started (a write)
   useEffect(() => { persist({ step, status: 'active' }) }, []) // eslint-disable-line react-hooks/exhaustive-deps -- 开始那一刻记一次
 
   // Remove unavailable entries from the route/count instead of leaving an
   // invisible active step waiting for an impossible click.
-  // @@@effect-flow - prunes a step whose target is not on screen (DOM measured)
+  // @@@effect-flow(dom) - prunes a step whose target is not on screen (DOM measured)
   useEffect(() => {
     if (ended || !measured || target) return
     if (last) { exit('done'); return }
@@ -102,7 +102,7 @@ export function ProductTour({ userId, steps, start, onDone }: {
   }, [ended, measured, target, last, tourSteps, index]) // eslint-disable-line react-hooks/exhaustive-deps -- Progress callbacks use this render's route; their identity must not restart a settled measurement.
 
   // Opening the highlighted sample is an alternative to Next.
-  // @@@effect-flow - the highlighted target's click advances the tour (user input)
+  // @@@effect-flow(input) - the highlighted target's click advances the tour (user input)
   useEffect(() => {
     if (!target?.action) return
     const element = target.element
@@ -112,7 +112,7 @@ export function ProductTour({ userId, steps, start, onDone }: {
   })
 
   // 键盘(规范 2.2):Enter / → 下一步,← 上一步,Esc 跳过;Tab 只在卡片里转。
-  // @@@effect-flow - tour keyboard: Enter, arrows, Esc, Tab (user input)
+  // @@@effect-flow(input) - tour keyboard: Enter, arrows, Esc, Tab (user input)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       // 高亮的设置入口照常可用。设置盖在非模态导览上方时,键盘由设置自己处理,导览停在原步骤。

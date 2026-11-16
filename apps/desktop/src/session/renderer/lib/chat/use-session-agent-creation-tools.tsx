@@ -2,11 +2,11 @@ import type { ChatComposerProps, MentionItem } from '@gugu/session-ui/react/comp
 import { Avatar } from '@/components/Avatar';
 import { useAvatarIdentity } from '@/lib/avatarIdentity';
 import { loadLocalAgentCreationTools, type LocalAgentCreationTool } from '@/lib/agentCreationTools';
-import { replica, useReplica, type Reading } from '@/lib/replica';
+import { replica, useReplica } from '@/lib/replica';
 import { platform } from '@/platform';
 import { events } from '@renderer/lib/ipc';
 import { agentCapabilitiesChangedChannel } from '@shared/core/agents/agentEvents';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 type RenderMentionIcon = NonNullable<ChatComposerProps['renderMentionIcon']>;
 
@@ -27,41 +27,20 @@ export const agentCreationTools = replica({
   scope: 'device',
   read: () => loadLocalAgentCreationTools(platform),
   fresh: 5 * 60_000,
+  watch: { start: () => events.on(agentCapabilitiesChangedChannel, () => { void agentCreationTools.refresh(); }) },
 });
 
-let capabilitiesWatch: { users: number; off: () => void } | null = null;
-function watchCapabilities(): () => void {
-  if (!capabilitiesWatch) {
-    const off = events.on(agentCapabilitiesChangedChannel, () => { void agentCreationTools.refresh(); });
-    capabilitiesWatch = { users: 0, off };
-  }
-  const active = capabilitiesWatch;
-  active.users += 1;
-  return () => {
-    if (--active.users > 0) return;
-    active.off();
-    if (capabilitiesWatch === active) capabilitiesWatch = null;
-  };
-}
-
-const NO_TOOLS_YET: readonly LocalAgentCreationTool[] = [];
 
 /** The provider and initial task composer share the same Electron tool catalog. */
 export function useSessionAgentCreationTools(): {
-  /** The catalog as read: unknown until main answers. */
-  reading: Reading<readonly LocalAgentCreationTool[]>;
-  tools: readonly LocalAgentCreationTool[];
-  error: string | null;
-  byEngine: ReadonlyMap<string, LocalAgentCreationTool>;
+  /** The catalog by engine; null until main answers (or unreadable): no @-mention entry for creating an agent yet. */
+  byEngine: ReadonlyMap<string, LocalAgentCreationTool> | null;
   renderMentionIcon: RenderMentionIcon;
 } {
   const reading = useReplica(agentCreationTools, []);
-  useEffect(() => watchCapabilities(), []);
-  // @@@reading-default - not read yet (or failed, said in `error`): no @-mention entries for creating an agent until main answers; the mention menu is a list opened later, nothing drawn as a value
-  const tools = reading.state === 'value' ? reading.value : NO_TOOLS_YET;
-  const error = reading.state === 'error' ? reading.error.message : null;
-  const byEngine = useMemo(() => new Map<string, LocalAgentCreationTool>(tools.map((tool) => [tool.engine, tool])), [tools]);
+  const tools = reading.state === 'value' ? reading.value : null;
+  const byEngine = useMemo(() => (tools ? new Map<string, LocalAgentCreationTool>(tools.map((tool) => [tool.engine, tool])) : null), [tools]);
   const renderMentionIcon = useCallback<RenderMentionIcon>(({ id, label, name, kind, role }) =>
     kind === 'custom' ? <MentionAvatar id={id} name={name ?? label} role={role} /> : null, []);
-  return { reading, tools, error, byEngine, renderMentionIcon };
+  return { byEngine, renderMentionIcon };
 }

@@ -33,7 +33,6 @@ export type HostTheme = 'light' | 'dark';
 export type ThemePreference = HostTheme | 'system';
 
 /** @@@1424 首次启动仍是浅色 —— 三态只是把「跟随系统」重新给回用户,不改默认。 */
-const DEFAULT_PREFERENCE: ThemePreference = 'light';
 
 function prefersDarkQuery(): MediaQueryList | null {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
@@ -65,12 +64,14 @@ export function resolveThemePreference(preference: ThemePreference): HostTheme {
   return preference;
 }
 
-/** 读用户选的那一项(存的值不认识时,读出来就是出厂的浅色:规则在 shared/device-preferences.ts 与主进程的 schema)。 */
-export function readThemePreference(): ThemePreference {
+/**
+ * 读用户选的那一项(存的值不认识时,读出来就是出厂的浅色:规则在 shared/device-preferences.ts 与主进程的 schema)。
+ * null = 还不知道:只在桌面交接失败、设置也还没读到时(正常启动 preload 的交接在第一帧之前就答了,PR 3 D1–D3 实测)。
+ * 这时谁都不改主题:屏幕上留着 index.html 引导脚本画的那一份。
+ */
+export function readThemePreference(): ThemePreference | null {
   const reading = devicePreferences.read('theme');
-  // @@@reading-default - only when the desktop handover failed and settings are not read yet: what the inline boot script painted (the factory light).
-  // Not reached on a normal start: preload's handover answers before the first frame (measured on Electron, PR 3 D1–D3).
-  return reading.state === 'value' ? reading.value : DEFAULT_PREFERENCE;
+  return reading.state === 'value' ? reading.value : null;
 }
 
 /**
@@ -193,7 +194,7 @@ function followThemePreference(): void {
   devicePreferences.subscribe(() => {
     if (typeof document === 'undefined') return;
     const preference = readThemePreference();
-    if (document.documentElement.dataset.themePreference === preference) return;
+    if (preference === null || document.documentElement.dataset.themePreference === preference) return;
     try {
       applyEffectiveTheme(resolveThemePreference(preference), preference);
     } catch (error) {
@@ -209,6 +210,8 @@ function followThemePreference(): void {
 export function hydrateHostTheme(): HostTheme {
   followThemePreference();
   const preference = readThemePreference();
+  // Not known yet: the boot script's paint stays (❌ a guessed preference over it).
+  if (preference === null) return readEffectiveHostTheme();
   let resolved: HostTheme;
   try {
     resolved = resolveThemePreference(preference);

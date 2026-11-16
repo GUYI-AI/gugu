@@ -68,7 +68,7 @@ export function AppFeaturedCard({
   // 之前骨架留着(❌ 先画一帧空的)。画过之后换新一版不再藏:浏览器在新图到手前留着旧的。
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [painted, setPainted] = useState(() => Boolean(shot && isDecoded(shot.src)));
-  // @@@effect-flow - decodes the featured picture already read so it is drawn only when decoded
+  // @@@effect-flow(render) - decodes the featured picture already read so it is drawn only when decoded
   useEffect(() => {
     if (painted || !shot) return;
     let alive = true;

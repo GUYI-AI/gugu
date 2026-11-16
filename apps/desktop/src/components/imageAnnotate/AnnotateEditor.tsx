@@ -17,7 +17,7 @@ export default function AnnotateEditor({ item, imageBounds, mobile, onCancel, on
   const { t } = useTranslation('main', { keyPrefix: 'imageAnnotate' })
   const [ready, setReady] = useState<{ image: HTMLImageElement; item: ImageViewerItem } | null>(null), [error, setError] = useState<string | null>(null), [attempt, setAttempt] = useState(0)
   // The chat a folder file belongs to is asked only when a "Done" action needs it (useAnnotateActions).
-  // @@@effect-flow - opens the annotation editor: decodes the viewer item's original bytes into its canvas
+  // @@@effect-flow(render) - opens the annotation editor: decodes the viewer item's original bytes into its canvas
   useEffect(() => {
     let disposed = false
     setReady(null); setError(null)

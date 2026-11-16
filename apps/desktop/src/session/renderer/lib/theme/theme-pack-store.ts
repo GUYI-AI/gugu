@@ -230,7 +230,8 @@ function writeSlots(slots: ThemePackSlots): void {
   packStore.slotsChanged();
 }
 
-export type ThemePackChoice = { slots: ThemePackSlots; preference: ThemePreference };
+/** `preference` null = it was not known when chosen: undoing leaves the preference alone. */
+export type ThemePackChoice = { slots: ThemePackSlots; preference: ThemePreference | null };
 
 /** 选一族主题。返回选之前的槽位与明暗偏好,给「撤销」用。 */
 export function chooseThemePack(id: string): ThemePackChoice {
@@ -248,7 +249,7 @@ export function chooseThemePack(id: string): ThemePackChoice {
 
 export function restoreThemePackChoice(choice: ThemePackChoice): void {
   writeSlots(choice.slots);
-  if (readThemePreference() !== choice.preference) writeThemePreference(choice.preference);
+  if (choice.preference !== null && readThemePreference() !== choice.preference) writeThemePreference(choice.preference);
 }
 
 /** 两种明暗都回到咕咕默认。 */

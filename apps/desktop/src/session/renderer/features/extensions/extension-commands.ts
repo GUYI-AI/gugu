@@ -37,7 +37,7 @@ export function declaredToolbarCommands(kind: string): ExtensionDeclaredCommand[
   const tab = contributionFor(kind);
   const installed = peekInstalledAppsTracked();
   const manifest = installed?.manifestFor(kind.split('.')[0] ?? '');
-  // @@@reading-default - an App's tab is registered from the list it is in, so its toolbar is asked only once the list is known
+  // @@@reading-default(route) - an App's tab is registered from the list it is in, so its toolbar is asked only once the list is known
   if (!tab || !manifest || !installed) return [];
   const titles = new Map(localizedTabText(manifest, tab, installed.locale).toolbar.map((command) => [command.id, command.title]));
   return (tab.toolbar ?? []).map((command) => ({ ...command, title: titles.get(command.id) ?? command.title }));

@@ -129,7 +129,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       return openLinkTarget(action.target);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
-      // @@@reading-default - a toast now, one moment: an App the list does not name (not read yet, or gone) is said by its id
+      // @@@reading-default(moment) - a toast now, one moment: an App the list does not name (not read yet, or gone) is said by its id
       const app = peekInstalledApps()?.manifestFor(action.extensionId)?.name ?? action.extensionId;
       toast({
         title: translateSessionMessage('extensions.notGivenAt', { app, chat: action.chat.name }),

@@ -36,7 +36,7 @@ export function useChatPinSettings(chatId: string | null, enabled = true) {
     },
     onError: (error) => { rendererLogger('chat/pins').error({ error }, 'Saving chat pins failed'); toast(t('topic.pins.saveFailed'), 'error', messageForUser(error)) },
   }, queryClient)
-  // @@@reading-default - pins not read: no topic is drawn as pinned yet, and `ready` keeps the pin toggles off until they are
+  // @@@reading-default(paired) - pins not read: no topic is drawn as pinned yet, and `ready` keeps the pin toggles off until they are
   const topicIds = reading.state === 'value' ? reading.value.topicIds : NO_PINS
   return {
     topicIds,

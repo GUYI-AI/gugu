@@ -52,7 +52,7 @@ export function useCloudComputerWake(device: Pick<Device, 'device_id' | 'cloud_c
         if (mounted.current) setInFlight(false)
       })
   }, [])
-  // @@@effect-flow - opening a page on a sleeping cloud computer wakes it once (a command); its state is read from the cloudComputer replica
+  // @@@effect-flow(command) - opening a page on a sleeping cloud computer wakes it once (a command); its state is read from the cloudComputer replica
   useEffect(() => {
     if (!deviceId || seenFor.current === deviceId) return
     seenFor.current = deviceId

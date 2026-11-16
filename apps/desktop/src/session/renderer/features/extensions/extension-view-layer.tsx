@@ -232,7 +232,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [claimOf, guestBinding]);
   useEffect(() => () => { clearTimeout(captureTimerRef.current); pendingCaptureRef.current = false; }, [capture]);
 
-  // @@@effect-flow - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
+  // @@@effect-flow(lifecycle) - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
   useEffect(() => {
     if (managed) return;
     let disposed = false;

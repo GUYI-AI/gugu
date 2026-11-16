@@ -18,7 +18,7 @@ type MentionTool = Pick<LocalAgentCreationTool, 'icon'>;
 
 export type LocalSessionMentionOptions = {
   excludeSessionId?: string;
-  creationToolsByEngine?: ReadonlyMap<string, MentionTool>;
+  creationToolsByEngine?: ReadonlyMap<string, MentionTool> | null;
 };
 
 function candidatesFromRows(

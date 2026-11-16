@@ -21,7 +21,7 @@ export const CodeMirrorDiffEditor = observer(function CodeMirrorDiffEditor({ ori
   const modifiedStatus = useModelStatus(modifiedUri);
   const status = failed ? 'error' : originalStatus !== 'ready' ? originalStatus : modifiedStatus !== 'ready' ? modifiedStatus : loaded ? 'ready' : 'loading';
 
-  // @@@effect-flow - mounts the diff editor (lazy language load) for content already in hand
+  // @@@effect-flow(render) - mounts the diff editor (lazy language load) for content already in hand
   useLayoutEffect(() => {
     let disposed = false;
     let controller: ReturnType<typeof createDiffController> | undefined;

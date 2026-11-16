@@ -189,7 +189,7 @@ export function AddServerPanel({
 
   // 「重新登录」:展开就开始,一次。
   const reloginStarted = useRef(false)
-  // @@@effect-flow - a re-login starts the install run once when the panel opens
+  // @@@effect-flow(command) - a re-login starts the install run once when the panel opens
   useEffect(() => {
     if (!relogin || reloginStarted.current) return
     reloginStarted.current = true

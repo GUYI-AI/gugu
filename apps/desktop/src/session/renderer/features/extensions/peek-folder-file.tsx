@@ -26,7 +26,7 @@ export const PeekFolderFile = observer(function PeekFolderFile({ target, tabId }
 function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
   const held = useHeldWorkspace(target);
   const [opener, setOpener] = useState<SessionOpener | null>(null);
-  // @@@effect-flow - picks which App opens this file, asking the person in the chooser when several can
+  // @@@effect-flow(command) - picks which App opens this file, asking the person in the chooser when several can
   useEffect(() => {
     let live = true;
     void pickSessionOpener(target.path, target.ask).then((picked) => live && setOpener(picked));
@@ -71,7 +71,7 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
   const project = workspaceSession(target.place) ? null : target.projectId;
   const { workspaceId } = target;
   const [held, setHeld] = useState<'ready' | string | null>(project ? null : 'ready');
-  // @@@effect-flow - holds the project's workspace (acquire/release lease) while the file is shown
+  // @@@effect-flow(lifecycle) - holds the project's workspace (acquire/release lease) while the file is shown
   useEffect(() => {
     if (!project) return undefined;
     let disposed = false;
