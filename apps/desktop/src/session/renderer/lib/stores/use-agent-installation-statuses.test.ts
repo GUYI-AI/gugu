@@ -1,6 +1,7 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { followRendererSession, queryClient as readModelClient } from '@/lib/replica';
-import { wireAgentReadings, agentIcons, agentMetadata, agentSettings, agentsMetadata, harnessModelCatalog, harnessModelCredential, installSourceVersions, managementAgent, managementAgents } from './agent-replicas';
+import * as agentReplicas from './agent-replicas';
+import { wireAgentReadings, agentIcons, agentInstallationStatus, agentMetadata, agentSettings, agentsMetadata, harnessModelCatalog, harnessModelCredential, installSourceVersions, managementAgent, managementAgents } from './agent-replicas';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -340,10 +341,12 @@ describe('useAgentInstallationStatuses invalidate', () => {
 
   /**
    * 这条判的是**整族**:装完 / 重新检测之后,从安装状态派生的每一个读数都重读。成员只在一处列出
-   * (`refreshAgentReadings`,agent-replicas.ts);新加的派生读数必须登记在那里,这条判据随之列上。
+   * (`refreshAgentReadings`,agent-replicas.ts)。这里的键覆盖那个模块导出的**每一个** replica(下面先核覆盖):
+   * 那里新加一个读数,这条先红,直到它列在这里 —— 也就得在 refreshAgentReadings 里登记,否则后半条红。
    */
   it('这一族里每一个都被作废', async () => {
     const keys = [
+      agentInstallationStatus.key(null),
       agentsMetadata.key(null),
       managementAgents.key(null),
       managementAgent.key(null, 'claude'),
@@ -354,14 +357,25 @@ describe('useAgentInstallationStatuses invalidate', () => {
       installSourceVersions.key(null, 'claude'),
       agentSettings.key(null, 'claude'),
     ];
+    const exported = (Object.values(agentReplicas) as unknown[])
+      .filter((value): value is { name: string } => typeof value === 'object' && value !== null
+        && typeof (value as { key?: unknown }).key === 'function' && typeof (value as { refresh?: unknown }).refresh === 'function')
+      .map((model) => model.name);
+    expect(exported.length).toBeGreaterThan(0);
+    expect([...new Set(keys.map((key) => key![0]))].sort()).toEqual([...exported].sort());
     for (const key of keys) queryClient.setQueryData(key!, {});
+    const updates = keys.map((key) => queryClient.getQueryState(key!)!.dataUpdateCount);
 
     await act(async () => {
       api?.probeAll();
     });
     await settle();
 
-    const stale = keys.filter((key) => queryClient.getQueryState(key!)?.isInvalidated);
-    expect(stale).toHaveLength(keys.length);
+    // Invalidated, or (one a surface here shows) already read again.
+    const left = keys.filter((key, index) => {
+      const state = queryClient.getQueryState(key!)!;
+      return !state.isInvalidated && state.dataUpdateCount === updates[index];
+    }).map((key) => key![0]);
+    expect(left).toEqual([]);
   });
 });
