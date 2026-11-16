@@ -41,12 +41,27 @@ function noteSnapshotError(snapshot: CloudComputerSnapshot): void {
   loggedSnapshotError = failed
 }
 
+/**
+ * /state asked (`issued`) and the last answer put in outside a read (`applied`: the wake loop, `destroy`). A read asked
+ * before that answer is older and ❌ lands over it (review E-2: a stale `asleep` would also slow the polling to 30 s).
+ */
+let issued = 0
+let applied = 0
+
+function putAnswer(entry: { set(value: CloudComputerState): void }, value: CloudComputerState): void {
+  applied = ++issued
+  entry.set(value)
+}
+
 /** 问一次管家。没配地址 / 门说「未配置」= 不显示(一个真值);别的没问到 = 读数是错误(界面说读不到,`cloudFailureOf`)。 */
 async function readCloudComputer(): Promise<CloudComputerState> {
   const client = rendererCloudComputerClient()
   if (!client) return { available: false }
+  const mine = ++issued
   try {
     const snapshot = await client.state()
+    const shown = cloudComputer.peek()
+    if (mine < applied && shown.state === 'value') return shown.value
     noteSnapshotError(snapshot)
     return { available: true, snapshot }
   } catch (error) {
@@ -245,7 +260,7 @@ export async function destroyCloudComputer(): Promise<void> {
   const entry = cloudComputer.at()
   await requireClient().destroy()
   // 管家删干净才回成功:当场就是「没有」,「开一台云电脑」立刻回来(❌ 等下一次问到;那一次问不到时页面上什么都没有)。
-  entry.set({ available: true, snapshot: { state: 'none', deviceId: null, error: null, since: new Date().toISOString() } })
+  putAnswer(entry, { available: true, snapshot: { state: 'none', deviceId: null, error: null, since: new Date().toISOString() } })
   await cloudComputer.refresh()
 }
 
@@ -289,7 +304,7 @@ export function wakeAndWaitOnline(deviceId: string, deps: { isOnline: (deviceId:
       onSnapshot: snapshot => {
         if (signal.aborted) return
         noteSnapshotError(snapshot)
-        cache.set({ available: true, snapshot })
+        putAnswer(cache, { available: true, snapshot })
       },
     }).catch(error => { if (signal.aborted) throw error; return noteWakeFailure(error, deviceId) }).then(outcome => {
       if (outcome === 'not-cloud') throw new CloudComputerWakeError('failed', `device ${deviceId} is not this account's cloud computer`)

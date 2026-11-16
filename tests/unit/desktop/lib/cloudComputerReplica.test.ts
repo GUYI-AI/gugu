@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // #7199 渲染层那一份云电脑读数(replica `cloudComputer`):门说「没开放」= 不显示(一个真值),别的没问到 = 读数是错误;
 // 几路同时在问时只落最后发出的那一次(replica I2);关掉当场就是「没有」;间隔按值定。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,7 +20,9 @@ vi.mock('@/lib/cloudComputerClient', () => ({
 }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }))
 
-const { CLOUD_COMPUTER_FAST_POLL_MS, CLOUD_COMPUTER_WATCH_MS, canSetUpCloudAssistant, cloudComputer, cloudComputerRefreshMs, cloudFailureOf, destroyCloudComputer, readCloudSnapshotNow } = await import('@/lib/cloudComputer')
+const { CLOUD_COMPUTER_FAST_POLL_MS, CLOUD_COMPUTER_WATCH_MS, canSetUpCloudAssistant, cloudComputer, cloudComputerRefreshMs, cloudFailureOf, destroyCloudComputer, readCloudSnapshotNow, useCloudComputer, wakeAndWaitOnline } = await import('@/lib/cloudComputer')
+const { createReactHarness } = await import('../../../support/testHarness')
+const { createElement } = await import('react')
 const { writeCachedDevices } = await import('@/store/devicesCache')
 const { publishRendererSession } = await import('@/lib/sessionPublication')
 const { CloudComputerError } = await import('@gugu/core/cloud/cloudComputer')
@@ -77,18 +80,44 @@ describe('cloudComputer read', () => {
   })
 
   it('先发后到的旧应答 ❌ 盖掉新的(refresh 取消在途的那一次)', async () => {
+    // Shown (an observer): a refresh reads again, and a second refresh cancels the first one's read and asks once more.
+    const harness = createReactHarness()
+    function Probe() { useCloudComputer(); return null }
+    try {
+      await harness.render(createElement(Probe))
+      await settle()
+      expect(calls).toHaveLength(1)
+      calls[0]!(snap('awake'))
+      await vi.waitFor(() => expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { snapshot: { state: 'awake' } } }))
+      const first = cloudComputer.refresh()
+      await settle()
+      const second = cloudComputer.refresh()
+      await settle()
+      expect(calls).toHaveLength(3)
+      calls[2]!(snap('asleep'))
+      calls[1]!(snap('awake'))
+      await Promise.allSettled([first, second])
+      await settle()
+      expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { snapshot: { state: 'asleep' } } })
+    } finally { harness.cleanup() }
+  })
+
+  it('唤醒途中交出的新状态 ❌ 被它之前发出的那次 /state 盖回去 (review E-2)', async () => {
+    writeCachedDevices([])
     const older = readCloudSnapshotNow()
-    calls[0]!(snap('awake'))
+    await settle()
+    expect(calls).toHaveLength(1)
+    const waking = wakeAndWaitOnline('dev-cloud', { isOnline: async () => true })
+    await settle()
+    expect(calls).toHaveLength(2)
+    calls[1]!(snap('awake'))
+    await waking
+    expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { snapshot: { state: 'awake' } } })
+    // The read asked before the wake loop's answer lands now, older: it says asleep.
+    calls[0]!(snap('asleep'))
     await older
-    void cloudComputer.refresh() // nobody shows it: marks it stale
-    const asked = readCloudSnapshotNow()
-    const again = cloudComputer.refresh()
     await settle()
-    calls.at(-1)!(snap('asleep'))
-    calls.at(-2)!(snap('awake'))
-    await Promise.allSettled([asked, again])
-    await settle()
-    expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { snapshot: { state: 'asleep' } } })
+    expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { snapshot: { state: 'awake' } } })
   })
 
   it('换了账号:上一个账号还在路上的应答不落进新账号', async () => {
