@@ -115,7 +115,16 @@ const readFromKey = ({ queryKey }: QueryFunctionContext) => {
 
 export const queryClient = new QueryClient({ defaultOptions: { queries: { queryFn: readFromKey } } })
 queryClient.mount()
+/**
+ * The failure of a read that has no value, kept while it is read again: react-query empties `error` when the next read
+ * starts, which would turn a failed reading back into unknown for that while — a surface that hides what waits on an
+ * unknown reading, and remounts what reads it again, would loop. A read that answers (or a reset) clears it.
+ */
+const lastFailure = new Map<string, Error>()
+
 queryClient.getQueryCache().subscribe((event) => {
+  if (event.type === 'updated' && event.action.type === 'error' && event.query.state.data === undefined) lastFailure.set(event.query.queryHash, event.action.error)
+  if ((event.type === 'updated' && event.action.type === 'success') || event.type === 'removed') lastFailure.delete(event.query.queryHash)
   const name = String(event.query.queryKey[0])
   if (event.type === 'added' && definitions.has(name) && event.query.options.queryFn !== readFromKey) {
     throw new Error(`Replica query ${JSON.stringify(event.query.queryKey)} brings its own queryFn`)
@@ -584,7 +593,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   }
   const entryOf = (query: Query): Entry<A, V> => ({
     args: query.queryKey.slice(2) as A,
-    reading: readingOfState(query.state, query.isStaleByTime(definition.fresh ?? 0)) as Reading<V>,
+    reading: readingOfState(query.state, query.isStaleByTime(definition.fresh ?? 0), query.queryKey) as Reading<V>,
     fetching: query.state.fetchStatus === 'fetching',
   })
   const requireKey = (args: A): QueryKey => {
@@ -599,7 +608,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     peek: (...args) => {
       const k = key(...args)
       // Judged by `fresh`, not by react-query's observers: a value nobody shows is not fresh because nobody watches it.
-      return k ? readingOfState(queryClient.getQueryState(k), queryClient.getQueryCache().find({ queryKey: k, exact: true })?.isStaleByTime(definition.fresh ?? 0) ?? true) : UNKNOWN
+      return k ? readingOfState(queryClient.getQueryState(k), queryClient.getQueryCache().find({ queryKey: k, exact: true })?.isStaleByTime(definition.fresh ?? 0) ?? true, k) : UNKNOWN
     },
     prefetch: (...args) => {
       const k = key(...args)
@@ -639,6 +648,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       if (!k) return
       // The kept copy goes too: a reset whose read never lands must not come back at the next start.
       dropKept(k)
+      lastFailure.delete(hashKey(k))
       await queryClient.resetQueries({ queryKey: k, exact: true }).catch(() => undefined)
     },
     refresh: async (...args) => {
@@ -672,18 +682,18 @@ function refetchIntervalOf<V>(every: number | ((value: V | undefined) => number 
   return typeof every === 'number' ? every : (query: { state: { data: unknown } }) => every(query.state.data as V | undefined)
 }
 
-function readingOfState(state: { data: unknown; error: Error | null; fetchFailureReason: Error | null; status: string } | undefined, stale: boolean): Reading<never> {
+function readingOfState(state: { data: unknown; error: Error | null; fetchFailureReason: Error | null; status: string } | undefined, stale: boolean, key: QueryKey): Reading<never> {
   if (!state) return UNKNOWN
   // While a failed refresh is retried, the failure is said already (react-query keeps `error` empty until it gives up).
   if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, error: state.error ?? state.fetchFailureReason }
-  if (state.error) return { state: 'error', error: state.error }
-  return UNKNOWN
+  const error = state.error ?? lastFailure.get(hashKey(key))
+  return error ? { state: 'error', error } : UNKNOWN
 }
 
-function readingOf<V>(result: UseQueryResult<V>): Reading<V> {
+function readingOf<V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> {
   if (result.data !== undefined) return { state: 'value', value: result.data, stale: result.isStale, error: result.error ?? result.failureReason }
-  if (result.error) return { state: 'error', error: result.error }
-  return UNKNOWN
+  const error = result.error ?? lastFailure.get(hashKey(key))
+  return error ? { state: 'error', error } : UNKNOWN
 }
 
 const IDLE_KEY = ['read-model:idle'] as const
@@ -699,7 +709,7 @@ export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A
   // `read: false`: show what is there (a snapshot, another reader's value) without asking yet.
   const canRead = !!k && options.read !== false && (definition.scope === DEVICE || current.live)
   const result = useQuery({ ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: canRead }, queryClient) as UseQueryResult<V>
-  return k ? readingOf(result) : UNKNOWN
+  return k ? readingOf(result, k) : UNKNOWN
 }
 
 /** One reading per subject (rows of a list), in the order given. */
@@ -711,7 +721,7 @@ export function useReplicas<A extends unknown[], V>(model: Replica<A, V>, argsLi
   const results = useQueries({
     queries: keys.map((k) => ({ ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: !!k && canRead })),
   }, queryClient) as UseQueryResult<V>[]
-  return results.map((result, index) => (keys[index] ? readingOf(result) : UNKNOWN))
+  return results.map((result, index) => (keys[index] ? readingOf(result, keys[index]!) : UNKNOWN))
 }
 
 /** Test seam: the live session as the replica sees it. */

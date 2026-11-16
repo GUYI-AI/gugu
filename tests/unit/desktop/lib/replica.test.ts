@@ -547,3 +547,22 @@ describe('seeded and restored values are read again (independent review, core)',
     harness.cleanup({ keepReads: true })
   })
 })
+
+describe('a failed read being read again (independent test lane P1)', () => {
+  it('stays an error until a read answers (❌ unknown while the next read is on its way)', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let answer: ((value: string) => void) | null = null
+    let fail = true
+    const model = rm.replica({ name: 'test-failed-again', scope: 'account', read: () => fail ? Promise.reject(new Error('down')) : new Promise<string>((resolve) => { answer = resolve }) })
+    await model.prefetch()
+    expect(model.peek()).toMatchObject({ state: 'error' })
+    fail = false
+    void model.prefetch()
+    for (let i = 0; i < 5; i += 1) await Promise.resolve()
+    expect(model.isFetching()).toBe(true)
+    expect(model.peek()).toMatchObject({ state: 'error', error: { message: 'down' } })
+    answer!('up')
+    for (let i = 0; i < 5; i += 1) await Promise.resolve()
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'up' })
+  })
+})
