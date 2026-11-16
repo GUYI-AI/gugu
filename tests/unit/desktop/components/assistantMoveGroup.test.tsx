@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   pending: null as unknown,
   nativePending: null as unknown,
   recoveryError: null as Error | null,
+  recoveryReads: 0,
   previewMove: vi.fn(),
   navigate: vi.fn(),
   runAssistantMove: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
     name: 'moveRecovery',
     scope: 'account',
     read: async () => {
+      mocks.recoveryReads += 1
       if (mocks.recoveryError) throw mocks.recoveryError
       return mocks.nativePending ?? mocks.pending
     },
@@ -64,6 +66,7 @@ beforeEach(() => {
   mocks.pending = null
   mocks.nativePending = null
   mocks.recoveryError = null
+  mocks.recoveryReads = 0
   mocks.previewMove.mockReset()
   mocks.runAssistantMove.mockReset()
   resetMoveForTests()
@@ -282,9 +285,11 @@ describe('点了先列清带走什么,确认才搬', () => {
   it('搬着时「它住哪」翻面、搬家那一组换了位置重挂:弹窗与进度不丢(状态在模块里,不在组件里)', async () => {
     mocks.previewMove.mockResolvedValue({ bytes: 0, files: 0, skippedFiles: [], accounts: { moving: [], reconnect: [], unsupported: false } })
     let finish: (value: unknown) => void = () => undefined
+    let tick: (progress: unknown) => void = () => undefined
     mocks.runAssistantMove.mockImplementation(
       (_env: unknown, _direction: unknown, onProgress: (p: unknown) => void) =>
         new Promise((resolve) => {
+          tick = onProgress
           onProgress({ step: 'adopt' })
           finish = resolve
         })
@@ -299,6 +304,11 @@ describe('点了先列清带走什么,确认才搬', () => {
     })
     await act(async () => {})
     expect(document.body.querySelector('[data-phase="moving"]')).not.toBeNull()
+    // E-3: the journal is not read while the move runs (it writes it), however many progress ticks come.
+    const readsBefore = mocks.recoveryReads
+    await act(async () => { tick({ step: 'adopt' }); tick({ step: 'adopt' }); tick({ step: 'adopt' }) })
+    await act(async () => {})
+    expect(mocks.recoveryReads).toBe(readsBefore)
 
     // 翻面:这一组被换成云上的家(不同位置,等于卸载重挂)
     await harness.render(

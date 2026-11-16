@@ -47,9 +47,19 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
   // (搬完 / 搬断了「接着搬」那一行才跟着变;读日志只是一次 localStorage)。
   const move = useSyncExternalStore(subscribeMove, getMoveState)
   const busy = move.phase.kind === 'preparing' || move.phase.kind === 'moving'
-  // A move left half-done here (only a computer keeps one: web and phone have no journal). Read again on each move state change.
+  // A move left half-done here (only a computer keeps one: web and phone have no journal). Read again when a move ends (its
+  // phase changes to one not busy): ❌ on every progress tick, ❌ while the move itself writes the journal.
   const recovery = useReplica(moveRecovery, localDeviceId ? [assistantId] : null)
-  useEffect(() => (localDeviceId ? subscribeMove(() => { void moveRecovery.refresh(assistantId) }) : undefined), [localDeviceId, assistantId])
+  useEffect(() => {
+    if (!localDeviceId) return
+    let kind = getMoveState().phase.kind
+    return subscribeMove(() => {
+      const next = getMoveState().phase.kind
+      if (next === kind) return
+      kind = next
+      if (next !== 'preparing' && next !== 'moving') void moveRecovery.refresh(assistantId)
+    })
+  }, [localDeviceId, assistantId])
   const recoveryFailed = recovery.state === 'error'
   // Not read yet on a computer: the move actions wait for it (a half-done move must be resumed, ❌ a second one started).
   const recoveryUnknown = !!localDeviceId && recovery.state === 'unknown'
