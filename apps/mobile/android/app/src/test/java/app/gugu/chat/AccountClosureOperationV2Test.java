@@ -28,21 +28,34 @@ public class AccountClosureOperationV2Test {
         String owner = A, sid = SID, installation = "native-install", device = "native-device";
         boolean enabled = true, failWrite, busy;
         int entropyCalls, stops;
+        int snapshots;
+        Attempt beforeDispatch;
+        Attempt admissionSnapshot;
+        Attempt duringDispatch;
         CompletableFuture<Void> drain = new CompletableFuture<>();
         public byte[] read(String key) { byte[] value = records.get(key); return value == null ? null : value.clone(); }
         public void write(String key, byte[] value) throws Exception {
             if (failWrite) throw new IOException("injected atomic commit failure");
             records.put(key, value.clone());
         }
-        public CompletableFuture<Void> stopAndDrain(String owner) {
+        public CompletableFuture<Void> stopAndDrain(AccountClosureOperationV2.SideEffects admission) throws Exception {
             assertFalse(Thread.holdsLock(lock));
             assertEquals(1, records.size()); // Receipt and scope MUST already be durable.
-            stops++; return drain;
+            if (beforeDispatch != null) beforeDispatch.run();
+            admission.runLocal(() -> {
+                if (duringDispatch != null) duringDispatch.run();
+                stops++;
+            });
+            return drain;
         }
         public boolean busy(String owner) { assertFalse(Thread.holdsLock(lock)); return busy; }
         AccountClosureOperationV2 open() {
             return new AccountClosureOperationV2(lock, this,
-                () -> new AccountClosureOperationV2.Identity(owner, sid, installation, device), this, enabled,
+                () -> {
+                    snapshots++;
+                    if (snapshots == 3 && admissionSnapshot != null) admissionSnapshot.run();
+                    return new AccountClosureOperationV2.Identity(owner, sid, installation, device);
+                }, this, enabled,
                 bytes -> { entropyCalls++; Arrays.fill(bytes, (byte) entropyCalls); });
         }
         AccountClosureReceiptStore.Scope scope() throws Exception { return new AccountClosureReceiptStore.Scope(A, "operation/../one"); }
@@ -169,5 +182,70 @@ public class AccountClosureOperationV2Test {
         assertEquals(1, f.entropyCalls); f.owner = B;
         reject("closure_context_missing", () -> f.open().readCapturedOperationForCurrentOwner());
         assertEquals(1, f.records.size());
+    }
+    @Test public void sid2CommittedAfterPreparingIsRejectedBeforeAnySideEffect() throws Exception {
+        Fixture f = new Fixture();
+        // Native Auth port now observes SID2 at the admission snapshot: SID1's
+        // record is already durable/preparing. No runtime/grant mutation may run.
+        f.admissionSnapshot = () -> f.sid = B;
+        reject("scope_conflict", () -> f.open().prepare(f.scope()));
+        assertEquals(B, f.sid); assertEquals(0, f.stops); assertEquals(1, f.entropyCalls);
+        assertFalse(AccountClosureOperationV2.hasSideEffectAdmission(f.lock));
+        f.sid = SID; assertEquals("preparing", f.open().readCapturedOperation(f.scope()).checkpoint);
+    }
+    @Test public void nativeAuthWriterCannotCrossSameGenerationSideEffectAdmission() throws Exception {
+        Fixture f = new Fixture();
+        f.duringDispatch = () -> {
+            assertTrue(Thread.holdsLock(f.lock));
+            AccountClosureOperationV2.requireAuthMutation(f.lock, A, SID); // same SID refresh
+            reject("scope_conflict", () -> AccountClosureOperationV2.requireAuthMutation(f.lock, A, B));
+            reject("scope_conflict", () -> AccountClosureOperationV2.requireAuthMutation(f.lock, B, SID));
+            reject("scope_conflict", () -> AccountClosureOperationV2.requireAuthMutation(f.lock, null, null));
+        };
+        CompletableFuture<AccountClosureOperationV2.Metadata> pending = f.open().prepare(f.scope());
+        assertEquals(1, f.stops); assertFalse(pending.isDone());
+        assertFalse(AccountClosureOperationV2.hasSideEffectAdmission(f.lock));
+        // The dispatch fence is gone BEFORE drain completes; the ordinary
+        // post-drain scope check must still reject a later SID replacement.
+        synchronized (f.lock) { AccountClosureOperationV2.requireAuthMutation(f.lock, A, B); f.sid = B; }
+        f.drain.complete(null); reject("scope_conflict", pending::join);
+    }
+    @Test public void failedStopDispatchAlwaysReleasesAdmissionWithoutAdvancingPreparation() throws Exception {
+        Fixture f = new Fixture(); f.beforeDispatch = () -> { throw new IOException("stop dispatch refused"); };
+        try { f.open().prepare(f.scope()); fail("Expected dispatch failure"); } catch (IOException expected) { /* remains preparing */ }
+        assertFalse(AccountClosureOperationV2.hasSideEffectAdmission(f.lock)); assertEquals(0, f.stops);
+        assertEquals("preparing", f.open().readCapturedOperation(f.scope()).checkpoint);
+    }
+    @Test public void v1CancelThenV2SealRejectsTheLateV1CompletionWithoutRewritingStopped() throws Exception {
+        Fixture f = new Fixture(); final int[] v1State = {AccountClosurePreparation.STOPPING};
+        final String g1 = SID;
+        AccountClosureReceiptStore receipts = new AccountClosureReceiptStore(f.lock, f, () -> f.installation,
+            () -> f.owner, scope -> false, java.util.Collections.emptyList(), java.util.Collections::emptyList,
+            (scope, capturing) -> g1);
+        // V1 drain remains pending. A valid G1 receipt is put AFTER STOPPING,
+        // removed, then cancelled while state < ERASING, exactly as the bridge permits.
+        receipts.put(f.scope(), "V1-G1-receipt"); receipts.remove(f.scope());
+        assertEquals(g1, receipts.requireCancelledReceipt(f.scope())); v1State[0] = 0;
+        AccountClosureOperationV2.Metadata v2 = f.open().beginOrRestoreOperation(f.scope());
+        synchronized (f.lock) {
+            reject("closure_v2_pending", () -> AccountClosurePreparation.completeCaptured(
+                AccountClosurePreparation.STOPPING, g1, v1State[0], g1,
+                () -> AccountClosureOperationV2.requireNoCapturedOperation(f, f.installation, A),
+                () -> v1State[0] = AccountClosurePreparation.STOPPED));
+        }
+        assertEquals(0, v1State[0]);
+        assertEquals(v2.nativeGeneration, f.open().readCapturedOperation(f.scope()).nativeGeneration);
+    }
+    @Test public void cancelledOrReplacedV1GenerationCannotCompleteEvenWithoutV2() throws Exception {
+        final int[] state = {0}; final int[] commits = {0};
+        reject("scope_conflict", () -> AccountClosurePreparation.completeCaptured(
+            AccountClosurePreparation.STOPPING, SID, state[0], SID, () -> {}, () -> commits[0]++));
+        state[0] = AccountClosurePreparation.STOPPING;
+        reject("scope_conflict", () -> AccountClosurePreparation.completeCaptured(
+            AccountClosurePreparation.STOPPING, SID, state[0], B, () -> {}, () -> commits[0]++));
+        assertEquals(0, commits[0]);
+        AccountClosurePreparation.completeCaptured(AccountClosurePreparation.STOPPING, SID, state[0], SID,
+            () -> {}, () -> commits[0]++);
+        assertEquals(1, commits[0]);
     }
 }
