@@ -15,7 +15,7 @@ vi.mock('@/platform', () => ({ platform: host }))
 // Only the IPC boundary is replaced; settings reads and all UI remain real.
 vi.mock('@renderer/lib/ipc', () => {
   const pending = () => new Promise(() => {})
-  return { rpc: new Proxy({}, { get: () => new Proxy({}, { get: () => pending }) }) }
+  return { events: { on: () => () => {} }, rpc: new Proxy({}, { get: () => new Proxy({}, { get: () => pending }) }) }
 })
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { host.kind = 'web'; harness = createReactHarness() })
