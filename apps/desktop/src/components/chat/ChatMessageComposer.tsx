@@ -36,6 +36,8 @@ import { useGroupMentionHint } from './useGroupMentionHint'
 import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library'
 import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items'
 import './group-mention-hint.css'
+import { PhoneAttachmentMenuBar } from '@/mobile/composer/PhoneAttachmentMenuBar'
+import { phoneMenuBar } from '@/mobile/composer/phone-menu-bar'
 export type { ComposerAttachAction } from './ComposerAttachButton'
 export type { ChatMessageComposerProps } from './chatComposerModels'
 
@@ -166,6 +168,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const { value: prompts, overrides } = usePromptLibrary()
   const queryPrompts = useCallback(async (query: string) => promptSlashItems(prompts, overrides, translateSessionMessage('chat.prompts'), query.trim().toLowerCase()), [prompts, overrides])
   const Composer = props.conversation ? AgentConversationComposer : ChatComposer
+  const directMenu = mobile && !isGroupChat && !props.conversation && phoneMenuBar('direct', { attachments: !!props.onSendAttachments }).includes('attachments')
   return <SessionUiTheme theme={theme}>
     <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
       <div ref={hostRef} {...hintEvents} title={disabledReason} data-chat-composer-host="" data-mobile-group={mobile && isGroupChat || undefined} data-phone-task={phoneTask.active || undefined} data-sending={sending} hidden={hidden || takenOver}>
@@ -180,6 +183,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
         {phoneTask.overlay}
         {phoneTask.band}
         <Composer {...props.conversation} key={chatId} editorApiRef={editorApiRef} editorOptions={editorOptions} mobile={mobile}
+          renderPhoneHeader={directMenu ? () => <PhoneAttachmentMenuBar disabled={disabled} onOpen={() => setAttachOpen(open => !open)} /> : undefined}
           disabled={disabled} disabledPlaceholder={placeholder ?? disabledReason} canSubmit={!sending && (!!text.trim() || attachments.length > 0)}
           placeholder={props.conversation ? undefined : phoneTask.placeholder ?? (whisperTarget ? t('composer.whisperPlaceholder', { name: whisperTarget.displayName }) : placeholder ?? (mobile && isGroupChat ? t('composer.mobilePlaceholder') : projectName && !mobile ? t('composer.projectGroupPlaceholder', { name: projectName }) : t('composer.placeholder')))}
           inputHeader={phoneTask.inputHeader}
@@ -188,11 +192,11 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
           attachments={composerAttachments} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
-          toolbarExtra={<>{mobile
+          toolbarExtra={<>{mobile ? !directMenu
             ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"
           data-phone-attachment=""
                 onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}><Paperclip /></IconButton>
-            : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
+            : null : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
           className={inChatSlot ? sessionComposerDockedWidthClassName : undefined} />
         {mobile && attachOpen && <PhoneAttachPanel onClose={() => setAttachOpen(false)} entries={[
           { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },

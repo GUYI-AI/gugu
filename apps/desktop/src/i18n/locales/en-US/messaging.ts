@@ -438,6 +438,7 @@ export default {
     "attachmentSendTimedOut": "Attachment send timed out.",
     "attachmentPersistenceFailed": "Could not save {{fileName}}",
     "attach": "Add",
+    "attachmentsMenu": "Attachments",
     "cancelQuote": "Cancel reply",
     "disabled": "You cannot send messages in this chat",
     "exitWhisper": "Exit whisper mode",

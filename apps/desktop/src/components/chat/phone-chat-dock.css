@@ -1,0 +1,3 @@
+/* The phone footer owns a real row. Messages end above it, including the running pills. */
+.gg-phone-chat-dock { position: relative; flex: 0 0 auto; min-width: 0; width: 100%; z-index: 20; }
+.gg-phone-chat-dock [data-running-bar-slot]:has(> [data-running-bar-content]:empty) { display: none; }

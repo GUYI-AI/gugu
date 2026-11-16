@@ -1,0 +1,62 @@
+import { afterEach, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
+import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
+import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
+import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
+import { PhoneComposerControl, PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
+import { LocalizationProvider } from '@/i18n'
+import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
+import { until } from '../../../../../../../tests/support/awaitCondition'
+import '@gugu/session-ui/styles/global'
+import '@gugu/session-ui/theme/theme.css'
+import '@gugu/session-ui/theme/semantic.css'
+import '@gugu/session-ui/styles/base.css'
+import '@/styles/tokens.css'
+import '@renderer/index.css'
+import '@/mobile/phone-shell.css'
+import '@/mobile/phone-look.css'
+import '@/i18n/registerMessagingCatalog'
+
+let harness: ReturnType<typeof createReactHarness> | undefined
+afterEach(() => { harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell') })
+const keyboard = (visible: boolean) => window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible }))
+
+it.each([false, true])('native keyboard dismissal restores group=%s menu without blurring or committing composition', async group => {
+  await page.viewport(390, 844)
+  document.documentElement.setAttribute('data-phone-shell', '')
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <LocalizationProvider><PhoneViewportShell mobile style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ flex: 1, minHeight: 0 }}>Messages remain above the input</div>
+    <ChatBottomDock reserve={false}><div data-chat-composer="">
+      {group && <PhoneComposerControlRow><PhoneComposerControl label="话题" testId="keyboard-fixture-topics" onClick={() => {}} /></PhoneComposerControlRow>}
+      <ChatMessageComposer chatId="keyboard-test" isGroupChat={group} onSend={vi.fn(async () => {})} onSendAttachments={vi.fn(async () => {})} />
+    </div></ChatBottomDock>
+  </PhoneViewportShell></LocalizationProvider>)
+  await until('native fixture composer', () => !!harness!.container.querySelector('[contenteditable]'))
+  const input = harness.container.querySelector<HTMLElement>('[data-slot="composer-input"]')!
+  const editor = input.querySelector<HTMLElement>('[contenteditable]')!
+  const row = harness.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  const initialTop = input.getBoundingClientRect().top
+  const blur = vi.fn(), ended = vi.fn()
+  editor.addEventListener('blur', blur); editor.addEventListener('compositionend', ended)
+  editor.focus()
+  keyboard(true)
+  await page.viewport(390, 500)
+  await until('menu hidden during native input', () => row.hasAttribute('data-editing'))
+  expect(row.getBoundingClientRect().height).toBe(0)
+  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'zhong' }))
+  keyboard(false)
+  await page.viewport(390, 844)
+  await until('menu restored after native keyboard closes', () => !row.hasAttribute('data-editing') && row.getBoundingClientRect().height > 40)
+  expect(document.activeElement).toBe(editor)
+  expect(input.querySelector('[contenteditable]')).toBe(editor)
+  expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
+  expect(input.getBoundingClientRect().top).toBe(initialTop)
+  // Tapping an already-focused Android editor opens the IME without another focusin.
+  keyboard(true)
+  await until('native keyboard reopens without a focus change', () => row.hasAttribute('data-editing'))
+  keyboard(false)
+  await until('second dismissal restores the same menu', () => !row.hasAttribute('data-editing'))
+  expect(document.activeElement).toBe(editor)
+  expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
+})

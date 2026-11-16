@@ -1,5 +1,7 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui/composer-layout'
+import { useMobileShell } from '@/hooks/useMobileShell'
+import './phone-chat-dock.css'
 
 /** 底部那一摞的实测高度,挂在它所在的那一栏上;消息流末尾(MessageList)和空态占位都按它让位。 */
 const CHAT_DOCK_HEIGHT_VAR = '--chat-dock-h'
@@ -25,6 +27,7 @@ function dockRule(column: string): CSSStyleRule {
  * reserve:没有消息流可让(空态、骨架)时,在列底占一格同高的位置,空态的内容不被盖住。
  */
 export function ChatBottomDock({ reserve, above, children }: { reserve: boolean; above?: ReactNode; children: ReactNode }) {
+  const mobile = useMobileShell()
   const ref = useRef<HTMLDivElement | null>(null)
   const columnId = useId()
   const hasAbove = Boolean(above)
@@ -45,19 +48,19 @@ export function ChatBottomDock({ reserve, above, children }: { reserve: boolean;
         top = Math.min(top, offset)
       }
       const height = el.offsetHeight
-      rule.style.setProperty(CHAT_DOCK_HEIGHT_VAR, `${height}px`)
-      rule.style.setProperty(CHAT_DOCK_AVATAR_HEIGHT_VAR, `${height - top}px`)
+      rule.style.setProperty(CHAT_DOCK_HEIGHT_VAR, `${mobile ? 0 : height}px`)
+      rule.style.setProperty(CHAT_DOCK_AVATAR_HEIGHT_VAR, `${mobile ? 0 : height - top}px`)
     }
     report()
     const observer = new ResizeObserver(report)
     observer.observe(el)
     if (preview) observer.observe(preview)
     return () => { observer.disconnect(); dockSheet!.deleteRule([...dockSheet!.cssRules].indexOf(rule)); column.removeAttribute('data-chat-dock-column') }
-  }, [hasAbove, columnId])
+  }, [hasAbove, columnId, mobile])
   return (
     <>
-      {reserve && <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)] shrink-0" />}
-      <div ref={ref} data-chat-bottom-dock="" className={`${composerSlotClass} absolute!`}>
+      {reserve && !mobile && <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)] shrink-0" />}
+      <div ref={ref} data-chat-bottom-dock="" className={mobile ? 'gg-phone-chat-dock' : `${composerSlotClass} absolute!`}>
         <div className={`${composerSlotInnerClass} pb-0! pointer-events-none!`}>{above}</div>
         <div className={composerSlotInnerClass}>{children}</div>
       </div>

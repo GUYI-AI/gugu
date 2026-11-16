@@ -15,6 +15,7 @@ import { harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, s
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
+import { phoneMenuBar } from '../composer/phone-menu-bar'
 
 export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void }
   & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'>
@@ -50,6 +51,11 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
       ? tm('agentWatch.create.modelLoading') : tm('agentWatch.create.modelDefault')))
   const phone = !!machine && isPhoneDevice(machine.device)
+  const menu = phoneMenuBar(existingSession ? 'agent' : projectTask ? 'projectTask' : 'create', {
+    work: !existingSession || !!machine || !!existingSession.model?.options,
+    project: !existingSession && !projectTask, folder: !!projectTask,
+    skills: !!machine && !phone && (!existingSession || !!configuration?.selection.harness),
+  })
   const skillCatalog = useReplica(creationSkills, view === 'skills' && machine && !phone && configuration?.selection.harness
     ? [machine.device.device_id, configuration.selection.harness, machine.localProjectId] : null)
   const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
@@ -58,13 +64,13 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const compact = !!existingSession || view !== 'project'
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
-      <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
-        testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
-      {!existingSession && (projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
+      {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
+        testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />}
+      {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
           testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
-      : <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
-        testId="agent-watch-create-project" onClick={() => setView('project')} />)}
-      {(!phone || existingSession) && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
+      : menu.includes('project') && <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
+        testId="agent-watch-create-project" onClick={() => setView('project')} />}
+      {menu.includes('skills') && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
         testId="agent-watch-create-skills" buttonRef={skillsButton} onClick={() => { setSearch(''); setView('skills') }} />}
       {controlsExtra}
     </PhoneComposerControlRow></div>
