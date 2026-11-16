@@ -6,6 +6,7 @@ const projects = base.test?.projects
 if (!Array.isArray(projects)) throw new Error('Repository Vitest projects are unavailable')
 const browser = projects.find(project => typeof project === 'object' && 'test' in project && project.test?.name === 'session-browser')
 if (!browser || typeof browser !== 'object' || !('test' in browser)) throw new Error('session-browser project is unavailable')
+const inheritedSetup = browser.test?.globalSetup
 
 export default {
   ...base,
@@ -19,7 +20,7 @@ export default {
         maxWorkers: 1,
         fileParallelism: false,
         include: ['capture-tools/native-skills/phone-native-skills.capture.tsx'],
-        globalSetup: ['capture-tools/native-skills/native-files-server.ts'],
+        globalSetup: [...(Array.isArray(inheritedSetup) ? inheritedSetup : inheritedSetup ? [inheritedSetup] : []), 'capture-tools/native-skills/native-files-server.ts'],
       },
     }],
   },

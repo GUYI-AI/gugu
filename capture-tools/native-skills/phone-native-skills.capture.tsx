@@ -4,12 +4,21 @@ import { page } from 'vitest/browser'
 import { MessageProvider } from '@gugu/session-ui/react/components'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
+import { ThemeProvider, useTheme } from '@/store/theme'
+import { readThemePreference, writeThemePreference } from '@renderer/lib/theme/host-theme'
+import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { followRendererSession } from '@/lib/replica'
 import { CreateSessionPage } from '@/mobile/agent-watch/CreateSessionPage'
 import { until } from '../../tests/support/awaitCondition'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMessagingCatalog'
+import '@/i18n/registerMobileWorkspaceCatalog'
+import '@gugu/session-ui/theme/theme.css'
+import '@gugu/session-ui/theme/semantic.css'
+import '@gugu/session-ui/styles/base.css'
+import '@renderer/index.css'
+import '@/mobile/agent-watch/agent-watch.css'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -40,7 +49,17 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   createSession: fixture.create, createPhoneSession: fixture.create, fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(),
 }))
 let root: Root | null = null, host: HTMLDivElement | null = null
-afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; fixture.create.mockClear(); document.documentElement.removeAttribute('data-theme') })
+let previousTheme = readThemePreference()
+afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; fixture.create.mockClear(); writeThemePreference(previousTheme); document.documentElement.removeAttribute('data-theme') })
+function CapturePage() {
+  const { theme } = useTheme()
+  return <PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" data-capture-shell-theme={theme}
+    style={{ display: 'flex', width: '100vw', position: 'fixed', left: 0, overflow: 'hidden', background: 'var(--ta-panel-bg)', paddingTop: 'env(safe-area-inset-top)' }}>
+    <SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
+      <CreateSessionPage onCreated={fixture.create} />
+    </MessageProvider></SessionUiTheme>
+  </PhoneViewportShell>
+}
 async function scenario(mode: 'ready' | 'malformed') {
   fixture.base = inject('nativeSkillsBase')
   const response = await fetch(`${fixture.base}/scenario?mode=${mode}`)
@@ -48,13 +67,20 @@ async function scenario(mode: 'ready' | 'malformed') {
 }
 async function mount(theme: 'light' | 'dark') {
   await page.viewport(390, 844)
-  setLocalePreference('zh-CN'); document.documentElement.dataset.theme = theme
+  previousTheme = readThemePreference()
+  setLocalePreference('zh-CN'); writeThemePreference(theme)
   followRendererSession('SIGNED_IN', `native-skills-capture-owner-${theme}-${crypto.randomUUID()}`)
-  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''
+  host = document.body.appendChild(document.createElement('div'))
   host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column'
   root = createRoot(host)
-  root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><CreateSessionPage onCreated={fixture.create} /></MessageProvider></SessionUiTheme></LocalizationProvider>)
+  root.render(<ThemeProvider><LocalizationProvider><CapturePage /></LocalizationProvider></ThemeProvider>)
   await until('real creation editor', () => !!host?.querySelector('[contenteditable]'))
+  await until('shell theme context and document agree', () => document.documentElement.dataset.theme === theme && host?.querySelector<HTMLElement>('[data-capture-shell-theme]')?.dataset.captureShellTheme === theme)
+  const surface = host!.querySelector<HTMLElement>('[data-capture-shell-theme]')!
+  const background = getComputedStyle(surface).backgroundColor
+  expect(background).not.toBe('rgba(0, 0, 0, 0)')
+  if (theme === 'dark') expect(background).not.toBe('rgb(255, 255, 255)')
+  expect(host!.textContent).not.toMatch(/agentWatch\.|mobileTaskFlow\.|mobileCreateControls\.|shell\./)
   ;(host!.querySelector('[contenteditable]') as HTMLElement).blur()
   await page.getByTestId('agent-watch-create-skills').click()
 }
