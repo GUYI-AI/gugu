@@ -3,10 +3,13 @@ import { uuid } from './phone-agent-store.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { phoneRequestFailure, phoneRequestOperation } from './phone-agent-network.mjs'
 import { anySignal } from '../../../packages/core/src/shared/anySignal.ts'
+import { serverNow, withServerClock } from '../../../packages/core/src/shared/serverClock.ts'
 
 export function jwtClaims(token) {
   try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) } catch { throw new Error('owner access token is malformed') }
 }
+/** A session's `expires_at` is on this device's clock, like the WebView sessions it is handed to; a JWT's `exp` is on the backend's. */
+const localExpiry = (claims) => Math.floor(Number(claims.exp) - (serverNow() - Date.now()) / 1000)
 const permanentAuthCodes = new Set(['session_not_found', 'session_expired', 'refresh_token_not_found', 'refresh_token_already_used', 'user_not_found', 'user_banned'])
 async function authHttpError(response, operation) {
   const body = await response.json().catch(() => ({}))
@@ -16,7 +19,9 @@ async function authHttpError(response, operation) {
 }
 
 /** Node is the phone's sole refresh authority; data clients never own a GoTrue session. */
-export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRequestFailure = () => undefined } = {}) {
+export function createPhoneAgentCloud(config, onSession, fetcherImpl = fetch, { onRequestFailure = () => undefined } = {}) {
+  // Every answer from the backend tunes this runtime's `serverNow()` (`@@@server-clock`).
+  const fetcher = withServerClock(fetcherImpl)
   const url = new URL(config.supabaseUrl)
   if (url.protocol !== 'https:') throw new Error('Supabase URL must use HTTPS')
   const root = url.href.replace(/\/$/, '')
@@ -44,7 +49,8 @@ export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRe
         const failure = phoneRequestFailure(null, response.status)
         const retryAfter = response.headers.get('retry-after')
         if (retryAfter) {
-          const retryAt = /^\d+(?:\.\d+)?$/.test(retryAfter) ? Date.now() + Number(retryAfter) * 1_000 : Date.parse(retryAfter)
+          // An HTTP-date is on the backend's clock; `retryAt` is on this device's.
+          const retryAt = /^\d+(?:\.\d+)?$/.test(retryAfter) ? Date.now() + Number(retryAfter) * 1_000 : Date.parse(retryAfter) - serverNow() + Date.now()
           if (Number.isFinite(retryAt) && retryAt > Date.now()) failure.retryAt = retryAt
         }
         if (scope) scope.failure = failure
@@ -92,7 +98,8 @@ export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRe
       user = await response.json()
       if (user.id !== ownerId) throw new Error('authenticated owner mismatch')
     }
-    current = { ...session, user, token_type: session.token_type ?? 'bearer', expires_at: session.expires_at ?? claims.exp, expires_in: Math.max(0, Number(session.expires_at ?? claims.exp) - Math.floor(Date.now() / 1000)) }
+    const expiresAt = session.expires_at ?? localExpiry(claims)
+    current = { ...session, user, token_type: session.token_type ?? 'bearer', expires_at: expiresAt, expires_in: Math.max(0, Number(expiresAt) - Math.floor(Date.now() / 1000)) }
     terminalError = null
     await onSession(current)
     if (realtime) await realtime.setAuth(current.access_token)
@@ -112,7 +119,10 @@ export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRe
         if (error.permanent) { terminalError = error; clearTimeout(refreshTimer) }
         throw error
       }
-      const next = await response.json()
+      // @@@local-clock-expiry (as authBoundedFetch on desktop) — GoTrue's `expires_at` is the backend's clock; this
+      // session is compared with this device's clock here and in the WebView, so derive it from `expires_in` at receipt.
+      const { expires_at: _serverClock, ...next } = await response.json()
+      if (Number.isFinite(Number(next.expires_in))) next.expires_at = Math.floor(Date.now() / 1000) + Number(next.expires_in)
       await adopt(next, true)
       return current
     })().finally(() => { refreshing = null })
@@ -149,14 +159,14 @@ export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRe
     async start() {
       const claims = jwtClaims(config.accessToken)
       if (claims.sub !== ownerId) throw new Error('owner token does not belong to this phone host')
-      if (Number(claims.exp) * 1_000 <= Date.now()) {
-        current = { access_token: config.accessToken, refresh_token: config.refreshToken, expires_at: claims.exp }
+      if (Number(claims.exp) * 1_000 <= serverNow()) {
+        current = { access_token: config.accessToken, refresh_token: config.refreshToken, expires_at: localExpiry(claims) }
         await refresh()
       } else {
         try { await adopt({ access_token: config.accessToken, refresh_token: config.refreshToken, expires_at: config.expiresAt }) }
         catch (error) {
           if (error.code !== 'bad_jwt') throw error
-          current = { access_token: config.accessToken, refresh_token: config.refreshToken, expires_at: claims.exp }
+          current = { access_token: config.accessToken, refresh_token: config.refreshToken, expires_at: localExpiry(claims) }
           await refresh()
         }
       }

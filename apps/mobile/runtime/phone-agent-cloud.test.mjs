@@ -161,3 +161,26 @@ test('a temporary auth service failure retains the session and a later refresh c
     assert.equal((await cloud.session(config.refreshToken)).refresh_token, 'recovered-refresh')
   } finally { await cloud.close() }
 })
+
+test('a phone clock 4 h 17 min fast refreshes the owner token once, not on every request (GoTrue’s expires_at is the backend’s clock)', async (t) => {
+  const SERVER = Date.parse('2026-11-16T12:00:00.000Z')
+  t.mock.timers.enable({ apis: ['Date'], now: SERVER + (4 * 60 + 17) * 60_000 })
+  const issued = { sub: ownerId, iat: SERVER / 1000, exp: SERVER / 1000 + 3600 }
+  let refreshes = 0
+  const dated = (data) => new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', date: new Date(SERVER).toUTCString() } })
+  const cloud = createPhoneAgentCloud({ ...config, accessToken: jwt(issued) }, () => undefined, async (url) => {
+    if (String(url).endsWith('/auth/v1/user')) return dated({ id: ownerId })
+    if (String(url).includes('grant_type=refresh_token')) {
+      refreshes += 1
+      return dated({ access_token: jwt(issued, `r${refreshes}`), refresh_token: `rotated-${refreshes}`, expires_in: 3600, expires_at: issued.exp, user: { id: ownerId } })
+    }
+    throw new Error('unexpected network request')
+  })
+  try {
+    await cloud.start()
+    await cloud.token()
+    await cloud.token()
+    assert.ok(refreshes <= 1, `refreshed ${refreshes} times`)
+    assert.ok((await cloud.session()).expires_at * 1000 > Date.now() + 3_000_000, 'the session handed on is on this phone’s clock')
+  } finally { await cloud.close() }
+})

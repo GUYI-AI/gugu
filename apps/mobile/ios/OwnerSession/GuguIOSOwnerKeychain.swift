@@ -48,7 +48,9 @@ final class GuguIOSOwnerKeychain {
         guard let data = Data(base64Encoded: payload),
               let claims = try? JSONDecoder().decode(Claims.self, from: data),
               claims.sub == session.user.id, claims.exp.isFinite, claims.exp > 0 else { throw invalid() }
-        let expiry = min(session.expires_at ?? claims.exp, claims.exp)
+        // The WebView's `expires_at` is on this device's clock (it is derived from `expires_in` at receipt), which every
+        // reader here compares with; the JWT's `exp` is on the backend's. Clamping one to the other mixes the two clocks.
+        let expiry = session.expires_at ?? claims.exp
         guard expiry.isFinite, expiry > 0 else { throw invalid() }
         // Decoding claims is not verification. GuguIOSOwnerSession additionally
         // requires the real backend's auth.getUser before it publishes identity.

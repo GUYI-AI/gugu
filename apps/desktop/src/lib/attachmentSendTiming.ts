@@ -2,6 +2,7 @@ import { rendererLogger } from './log'
 import { i18n } from '../i18n'
 import type { AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { xhrAttachmentUpload } from './attachmentUploadTransport'
+import { serverNow } from '@gugu/core/shared/serverClock'
 
 export const ATTACHMENT_SEND_DEADLINES = { prepare: 120_000, upload: 120_000, commit: 20_000, readback: 5_000 }
 export const ATTACHMENT_UPLOAD_IDLE_MS = 15_000
@@ -71,7 +72,8 @@ export function attachmentSendTiming(clientId: string, chatId: string) {
       }
       const capDeadline = (expiresAt: string | undefined) => {
         if (!expiresAt) return
-        const expiry = Date.parse(expiresAt)
+        // The permit's expiry is on the backend's clock; `deadline` is on this device's (`@@@server-clock`).
+        const expiry = Date.parse(expiresAt) - serverNow() + Date.now()
         if (Number.isFinite(expiry)) { deadline = Math.min(deadline, expiry); arm() }
       }
       arm()

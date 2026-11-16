@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { useEffect, useCallback, useMemo, useRef, useSyncExternalStore, useLayoutEffect } from 'react'
 import { chatService } from '../lib/chat'
 import { recentMachineLimitRefusal } from '../lib/device-labels'
@@ -196,7 +197,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
         withCloudComputerPresence(
           withSshLinkOnline(devices, sshMachineIds, linkProblems),
           cloudComputer.snapshot,
-          Date.now(),
+          serverNow(),
           cloudComputer.wakeRefused?.deviceId ?? null,
         ),
       ),

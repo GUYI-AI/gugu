@@ -1,3 +1,4 @@
+import { serverNow } from '../../shared/serverClock'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 // #4280 —— 信封形状与那句回路提示只有一个属主。本层是设备命令 adapter,不拼壳;壳归 deliveryEnvelope,
@@ -693,7 +694,7 @@ export async function handleAgentDeliverDeviceCommand(
       ...(result.completion ? { completion: result.completion } : {}),
     }
   } catch (err) {
-    if (isTransientNetworkError(err) && withinAgentInitHeldWindow(options.commandCreatedAt, Date.now())) {
+    if (isTransientNetworkError(err) && withinAgentInitHeldWindow(options.commandCreatedAt, serverNow())) {
       log.warn(
         { agentUserId: guguUserId, chatId, errorCode: transientNetworkErrorCode(err) },
         'nudge pull hit transient transport failure; holding for bounded replay',
@@ -1049,7 +1050,8 @@ export function createDeviceCommandHoldingResolver(
   input: DeviceCommandHoldingResolverInput,
 ): (command: Pick<PendingDeviceCommand, 'type' | 'payload'>) => Promise<DeviceCommandHolding> {
   const env = input.env ?? process.env
-  const nowMs = input.nowMs ?? (() => Date.now())
+  // Compared with `last_heartbeat_at`, the database's clock (`@@@server-clock`).
+  const nowMs = input.nowMs ?? serverNow
   let roster: Promise<Set<string>> | null = null
   let rosterRefreshed = false
   const loadRoster = () => listAgents(env).then((rows) => new Set(agentsForOwner(rows, null).map((agent) => agent.gugu_user_id)))

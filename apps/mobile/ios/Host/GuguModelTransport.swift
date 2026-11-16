@@ -67,7 +67,7 @@ final class GuguModelTransport: NSObject, GuguModelCompleting {
         guard lease.completionsURL.scheme == "https", lease.completionsURL.host != nil,
               lease.completionsURL.user == nil, lease.completionsURL.password == nil,
               lease.completionsURL.query == nil, lease.completionsURL.fragment == nil,
-              !lease.bearerToken.isEmpty, lease.expiresAt > Date() else {
+              !lease.bearerToken.isEmpty, lease.expiresAt > GuguServerClock.shared.now() else {
             throw GuguHostFailure(code: "invalid_model_lease", message: "Native model lease is invalid or expired")
         }
         self.lease = lease
@@ -78,7 +78,7 @@ final class GuguModelTransport: NSObject, GuguModelCompleting {
         do {
             guard context.ownerId == lease.ownerId, context.agentUserId == lease.agentUserId,
                   context.sessionId == lease.sessionId, body["model"] as? String == lease.modelId,
-                  body["stream"] as? Bool == false, lease.expiresAt > Date() else {
+                  body["stream"] as? Bool == false, lease.expiresAt > GuguServerClock.shared.now() else {
                 throw GuguHostFailure(code: "model_lease_mismatch", message: "Model lease does not authorize this task or request")
             }
             var request = URLRequest(url: lease.completionsURL, timeoutInterval: 120)
