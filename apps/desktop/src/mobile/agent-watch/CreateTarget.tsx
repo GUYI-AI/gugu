@@ -9,13 +9,15 @@ import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
-import { ComposerThinking, type ChatComposerProps, type ComposerModelOption } from '@gugu/session-ui/react/components'
+import type { ChatComposerProps, ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
-import { harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
+import { harnessBlockReason, harnessUsable, selectHarness, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
+import { PhoneThinkingOptions } from '../composer/PhoneThinkingOptions'
+import { creationThinking } from './creation-thinking'
 
 export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void }
   & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'
@@ -47,7 +49,6 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const modelButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
   const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
-  const existingEfforts = Object.entries(existingSession?.model?.effortOptions ?? {}).map(([id, option]) => ({ id, ...option }))
   const existingPermissions = existingSession?.model?.onPermissionModeChange
     ? Object.entries(existingSession.model.permissionModeOptions ?? {}) : []
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
@@ -98,12 +99,13 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
           ? existingSession.model?.options?.[existingSession.model.selected ?? '']?.shortName ?? existingSession.model?.options?.[existingSession.model.selected ?? '']?.name ?? tm('agentWatch.create.modelDefault')
           : modelName || tm('agentWatch.create.modelDefault')}
           disabled={existingSession ? !Object.keys(existingSession.model?.options ?? {}).length : !configuration?.options} onClick={() => setView('model')} />
-        {existingSession?.model && existingEfforts.length > 0 && <ComposerThinking
-          effortItems={existingEfforts}
-          selectedEffort={existingSession.model.selectedEffort} defaultEffort={existingSession.model.defaultEffort}
-          onEffortChange={existingSession.model.onEffortChange} fastMode={existingSession.model.fastMode}
-          onFastModeChange={existingSession.model.onFastModeChange} disabled={busy} phoneActions />}
-        {!!configuration?.models?.efforts.length && <Summary dimension="effort" title={t('effort')} value={selectedEffortName(configuration.models, configuration.selection) ?? tm('agentWatch.create.modelDefault')} onClick={() => setView('effort')} />}
+        {existingSession?.model && <PhoneThinkingOptions
+          effortOptions={existingSession.model.effortOptions} selectedEffort={existingSession.model.selectedEffort}
+          defaultEffort={existingSession.model.defaultEffort} onEffortChange={existingSession.model.onEffortChange}
+          fastMode={existingSession.model.fastMode} onFastModeChange={existingSession.model.onFastModeChange} disabled={busy} />}
+        {!existingSession && configuration && <PhoneThinkingOptions {...creationThinking(configuration.models, configuration.selection)} disabled={busy}
+          onEffortChange={effort => configuration.onChange({ ...configuration.selection, effort })}
+          onFastModeChange={fastMode => configuration.onChange({ ...configuration.selection, fastMode })} />}
         {existingPermissions.length > 0 && <Summary dimension="permission" title={t('permission')}
           value={existingSession?.model?.permissionModeOptions?.[existingSession.model.selectedPermissionMode ?? '']?.name ?? t('permission')}
           disabled={busy} onClick={() => setView('permission')} />}

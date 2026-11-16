@@ -45,6 +45,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptions, createPhoneSession, fetchPhoneCreateModels, fetchPhoneCreateOptions } from './sessionpage-rpc'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
 import { createAttachmentDraftAdapter } from './create-attachment-adapter'
+import { creationThinking } from './creation-thinking'
 import './task-flow-catalog'
 import {
   createBlocker,
@@ -297,6 +298,7 @@ function CreateOnMachine({
           ...(selection.model ? { model: selection.model } : {}),
           ...(selection.permissionMode ? { permissionMode: selection.permissionMode } : {}),
           ...(selection.effort ? { effort: selection.effort } : {}),
+          ...(creationThinking(models, selection).fastMode !== undefined ? { fastMode: creationThinking(models, selection).fastMode } : {}),
           ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
         if (phone) {
@@ -484,7 +486,8 @@ function CreateOnMachine({
                     onChange: (next, modelPicked) => {
                       modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
                       setTouched(true)
-                      setSelection(next)
+                      setSelection(next.model !== selection.model || next.harness !== selection.harness
+                        ? { ...next, fastMode: false } : next)
                     },
                   })}
                 </div>

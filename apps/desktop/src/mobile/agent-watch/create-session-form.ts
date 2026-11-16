@@ -32,6 +32,7 @@ export type CreateSelection = {
   permissionMode: SessionpagePermissionMode | null
   /** 推理档 id(目录 efforts 里的);null = 引擎默认。换 harness 必清。 */
   effort: string | null
+  fastMode?: boolean
 }
 
 /**
@@ -133,7 +134,7 @@ export function selectHarness(
     selection.permissionMode && option?.permissionModes.includes(selection.permissionMode)
       ? selection.permissionMode
       : null
-  return { ...selection, harness, permissionMode, model: null, effort: null }
+  return { ...selection, harness, permissionMode, model: null, effort: null, ...(selection.fastMode !== undefined ? { fastMode: false } : {}) }
 }
 
 /**
