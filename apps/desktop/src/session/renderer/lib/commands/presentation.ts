@@ -1,9 +1,9 @@
 import { i18n } from '@/i18n';
 import { COMMANDS, type CommandId } from '@shared/commands';
-import type { SessionMessageLookupKey, SessionMessageKey } from '@renderer/localization/messages';
+import type { SessionMessageKey } from '@renderer/localization/messages';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 
-type Translate = (key: SessionMessageLookupKey) => string;
+type Translate = (key: SessionMessageKey) => string;
 export function commandPresentation(id: CommandId, translate: Translate = translateSessionMessage) {
   const def = COMMANDS[id];
   const key = def.labelKey;

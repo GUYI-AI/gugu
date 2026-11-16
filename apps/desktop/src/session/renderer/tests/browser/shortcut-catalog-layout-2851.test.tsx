@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
+import type { ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { i18n, setLocalePreference } from '@/i18n';
@@ -50,7 +51,7 @@ async function prepare(locale: 'zh-CN' | 'en-US', theme: 'light' | 'dark', width
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
 }
-function render(theme: 'light' | 'dark', children: React.ReactNode) {
+function render(theme: 'light' | 'dark', children: ReactNode) {
   root!.render(<QueryClientProvider client={new QueryClient()}><SessionLocalizationProvider><SessionUiTheme theme={theme}>{children}</SessionUiTheme></SessionLocalizationProvider></QueryClientProvider>);
 }
 async function settled() {
