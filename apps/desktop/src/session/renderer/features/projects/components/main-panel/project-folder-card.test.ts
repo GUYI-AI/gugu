@@ -782,7 +782,9 @@ describe('useProjectFolders', () => {
     expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root', 'ws-d15']);
   });
 
-  it('a remounted card has every folder it already read in its first frame', async () => {
+  // Independent review item 6: what changed while nobody listened is read again when the card is shown again, the kept
+  // folders drawn meanwhile (no blank frame, no reordering).
+  it('a remounted card has every folder it already read in its first frame, and reads them again', async () => {
     mocks.list.mockImplementation(listByProject({ 'p-again': { success: true, data: [{ ...ROOT, projectId: 'p-again' }] }, 'proj-on-d15': { success: true, data: [D15_ROOT] } }));
     await mount('p-again', ['p-again', 'proj-on-d15']);
     await act(async () => root.render(null));
@@ -794,7 +796,8 @@ describe('useProjectFolders', () => {
     }
     await act(async () => root.render(React.createElement(Watch)));
     expect(frames[0]).toEqual(['ws-root', 'ws-d15']);
-    expect(mocks.list).toHaveBeenCalledTimes(2);
+    expect(frames.every((frame) => JSON.stringify(frame) === JSON.stringify(['ws-root', 'ws-d15']))).toBe(true);
+    expect(mocks.list).toHaveBeenCalledTimes(4);
   });
 
   it('writes the count of each machine that answered, null for one that never does (a machine offline for good)', async () => {
