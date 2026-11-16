@@ -16,7 +16,7 @@ import type { Duplex } from 'node:stream'
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici'
 import WebSocket from 'ws'
 import type { EgressBackend, EgressErrorKind } from '@gugu/core/shared/egress'
-import type { ProxyRoute, RoutesFor } from './proxy-route'
+import type { ProxyRoute, ProxyServer, RoutesFor } from './proxy-route'
 
 export interface NodeBackendOptions {
   name: string
@@ -60,7 +60,7 @@ export function installSystemCertificates(): void {
 }
 
 /** CONNECT through an HTTP(S) proxy; resolves with the raw tunnel socket. The caller bounds it (`settle` on deadline). */
-function openTunnel(route: Extract<ProxyRoute, { kind: 'http' | 'https' }>, host: string, port: number, onSocket: (s: net.Socket) => void): Promise<net.Socket> {
+function openTunnel(route: ProxyServer & { kind: 'http' | 'https' }, host: string, port: number, onSocket: (s: net.Socket) => void): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     const socket: net.Socket = route.kind === 'https'
       ? tls.connect({ host: route.host, port: route.port, servername: net.isIP(route.host) ? undefined : route.host })
@@ -116,7 +116,7 @@ function routedConnection(routes: RoutesFor, secure: boolean) {
         if (settled) return
         if (route.kind === 'direct') return settle(null, finish())
         if (route.kind === 'socks4' || route.kind === 'socks5') { last = new ProxyStageError(null, `${route.kind} proxy is not supported`); continue }
-        try { return settle(null, finish(await openTunnel(route, host, port, (s) => { pending = s }))) } catch (error) { last = error }
+        try { return settle(null, finish(await openTunnel(route as ProxyServer & { kind: 'http' | 'https' }, host, port, (s) => { pending = s }))) } catch (error) { last = error }
       }
       settle(last instanceof Error ? last : new ProxyStageError(null, 'no usable proxy route'))
     })().catch((error: unknown) => settle(error instanceof Error ? error : new Error(String(error))))

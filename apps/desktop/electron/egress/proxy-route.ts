@@ -7,9 +7,9 @@
  * Loopback always goes direct: those are Gugu's own local endpoints and the user's local model servers.
  */
 
-export type ProxyRoute =
-  | { kind: 'direct' }
-  | { kind: 'http' | 'https' | 'socks5' | 'socks4'; host: string; port: number }
+export type ProxyServerKind = 'http' | 'https' | 'socks5' | 'socks4'
+export type ProxyServer = { kind: ProxyServerKind; host: string; port: number }
+export type ProxyRoute = { kind: 'direct' } | ProxyServer
 
 export type RoutesFor = (url: string) => Promise<ProxyRoute[]>
 
@@ -33,7 +33,7 @@ export function parseProxyAnswer(answer: string): ProxyRoute[] {
     const at = hostPort.lastIndexOf(':')
     const host = hostPort.slice(0, at).replace(/^\[|\]$/g, ''), port = Number(hostPort.slice(at + 1))
     if (!host || !Number.isInteger(port)) continue
-    const mapped = ({ PROXY: 'http', HTTPS: 'https', SOCKS5: 'socks5', SOCKS: 'socks4', SOCKS4: 'socks4' } as const)[kind as 'PROXY']
+    const mapped = ({ PROXY: 'http', HTTPS: 'https', SOCKS5: 'socks5', SOCKS: 'socks4', SOCKS4: 'socks4' } as Record<string, ProxyServerKind | undefined>)[kind]
     if (mapped) routes.push({ kind: mapped, host, port })
   }
   return routes.length ? routes : [DIRECT]
@@ -59,7 +59,7 @@ export function envRoutes(env: NodeJS.ProcessEnv = process.env): RoutesFor {
     const raw = (secure ? read('HTTPS_PROXY') : read('HTTP_PROXY')) || read('ALL_PROXY')
     if (!raw) return [DIRECT]
     const proxy = new URL(raw.includes('://') ? raw : `http://${raw}`)
-    const kind = ({ 'http:': 'http', 'https:': 'https', 'socks5:': 'socks5', 'socks5h:': 'socks5', 'socks4:': 'socks4', 'socks:': 'socks5' } as const)[proxy.protocol as 'http:']
+    const kind = ({ 'http:': 'http', 'https:': 'https', 'socks5:': 'socks5', 'socks5h:': 'socks5', 'socks4:': 'socks4', 'socks:': 'socks5' } as Record<string, ProxyServerKind | undefined>)[proxy.protocol]
     if (!kind) return [DIRECT]
     const port = Number(proxy.port) || (kind === 'https' ? 443 : kind === 'http' ? 80 : 1080)
     return [{ kind, host: proxy.hostname.replace(/^\[|\]$/g, ''), port }]

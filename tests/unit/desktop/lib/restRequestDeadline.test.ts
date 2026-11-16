@@ -141,7 +141,7 @@ describe('authBoundedFetch without AbortSignal.any (WebView <116)', () => {
 // 钉的是 postgrest-js executeWithRetry 对 code==='ABORT_ERR' 不重试:升级 postgrest-js 时这里红了,先看那条判断。
 describe('authBoundedFetch under the real PostgREST client', () => {
   function dataClient() {
-    return createGuguSupabaseClient({ url: 'https://db.example.test', anonKey: 'anon', accessToken: async () => null, fetch: authBoundedFetch })
+    return createGuguSupabaseClient({ url: 'https://db.example.test', anonKey: 'anon', accessToken: async () => null, wrapFetch: () => authBoundedFetch })
   }
 
   it('accepts a 204 PATCH whose fetch response exposes an empty body stream', async () => {
