@@ -2466,7 +2466,7 @@ async function handleFile(args, deps) {
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
       })
       if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
-        { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? 'temporary' : undefined).catch((error) => {
+        { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}).catch((error) => {
         throw new Error(`message_send_file: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
       })
     }

@@ -5,7 +5,6 @@ import { chatService } from './chat'
 import { i18n } from '../i18n'
 import { commitPreparedChatAttachment, type PreparedChatAttachment } from './attachmentsEndpoint'
 import { AttachmentStageTimeout, attachmentAttemptEndpoint, type AttachmentSendTiming } from './attachmentSendTiming'
-export { attachmentAttemptEndpoint }
 import { readMessageCreatedRevision, type AccountRevisionListener } from './accountRevisionCoordinator'
 
 export type ObserveAttachmentMessage = (id: string, receive: (row: MessageItem) => void) => () => void
