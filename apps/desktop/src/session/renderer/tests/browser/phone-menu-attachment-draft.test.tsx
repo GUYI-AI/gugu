@@ -32,15 +32,27 @@ const editor = () => harness!.container.querySelector<HTMLElement>('[contentedit
 const tiles = () => harness!.container.querySelectorAll('[data-slot="composer-attachment"]')
 const menu = <PhoneComposerControlRow><PhoneComposerControl label="工作" testId="attachment-draft-work" onClick={() => {}} /></PhoneComposerControlRow>
 
-async function checkMenu(hidden: boolean) {
+async function checkMenu(mode: 'expanded' | 'collapsed' | 'keyboard') {
   await vi.waitFor(() => {
     const current = row()
     expect(current, harness!.container.innerHTML).not.toBeNull()
-    expect(current.hasAttribute('data-editing'), current.outerHTML).toBe(hidden)
-    if (hidden) expect(current.getBoundingClientRect().height).toBe(0)
-    else expect(current.getBoundingClientRect().height).toBeGreaterThan(40)
-    expect(current.inert).toBe(hidden)
-    if (hidden) expect(getComputedStyle(current).marginBottom).toBe('0px')
+    expect(current.hasAttribute('data-editing'), current.outerHTML).toBe(mode === 'keyboard')
+    const items = current.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+    const toggle = current.querySelector<HTMLElement>('[data-testid="phone-composer-menu-toggle"]')!
+    expect(items).not.toBeNull(); expect(toggle).not.toBeNull()
+    if (mode === 'keyboard') {
+      expect(current.getBoundingClientRect().height).toBe(0)
+      expect(current.inert).toBe(true)
+      expect(getComputedStyle(current).marginBottom).toBe('0px')
+    } else {
+      expect(current.hasAttribute('data-collapsed')).toBe(mode === 'collapsed')
+      expect(current.inert).toBe(false)
+      expect(toggle.getAttribute('aria-expanded')).toBe(String(mode === 'expanded'))
+      if (mode === 'collapsed') {
+        expect(current.getBoundingClientRect().height).toBe(44)
+        expect(items.getBoundingClientRect().height).toBe(0)
+      } else expect(items.getBoundingClientRect().height).toBeGreaterThan(40)
+    }
   }, { timeout: 5000 })
 }
 
@@ -81,54 +93,54 @@ async function removeFirst() {
 
 // Owner 2026-11-16 16:25 supersedes #2881's attachment exclusion.
 // A mounted paperclip is not a draft; selected files and their previews are.
-it.each(['chat', 'creation-host'] as const)('%s: picked files hide the menu until the last attachment is removed', async scope => {
+it.each(['chat', 'creation-host'] as const)('%s: picked files collapse the menu to its row arrow until the final attachment is removed', async scope => {
   await mount(<div {...(scope === 'chat' ? { 'data-chat-composer': '' } : { className: 'gg-aw-create-host' })}>
     {menu}<ChatMessageComposer chatId={`attachment-draft-${scope}`} isGroupChat onSend={vi.fn(async () => {})} />
   </div>)
   expect(harness!.container.querySelector('[data-phone-attachment]')).not.toBeNull()
-  await checkMenu(false)
+  await checkMenu('expanded')
   const input = editor(), blur = vi.fn(), end = vi.fn()
   input.focus()
   input.addEventListener('blur', blur); input.addEventListener('compositionend', end)
-  await checkMenu(false)
+  await checkMenu('expanded')
   await pick('file', ['first.txt', 'second.txt'])
-  await checkMenu(true)
+  await checkMenu('collapsed')
   expect(input.textContent?.trim()).toBe('')
   expect(editor()).toBe(input); expect(document.activeElement).toBe(input)
   expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
   await removeFirst()
   await vi.waitFor(() => expect(tiles()).toHaveLength(1))
-  await checkMenu(true)
+  await checkMenu('collapsed')
   await removeFirst()
   await vi.waitFor(() => expect(tiles()).toHaveLength(0))
-  await checkMenu(false)
+  await checkMenu('expanded')
   expect(editor()).toBe(input)
 })
 
-it('a photo-only draft hides the menu through the existing photo picker path', async () => {
+it('a photo-only draft leaves the menu arrow through the existing photo picker path', async () => {
   await mount(<div data-chat-composer="">{menu}<ChatMessageComposer chatId="attachment-photo" isGroupChat onSend={vi.fn(async () => {})} /></div>)
-  await checkMenu(false)
+  await checkMenu('expanded')
   await page.getByTestId('chat-composer-attach-menu').click()
   await expect.element(page.getByTestId('chat-composer-attach-photos')).toBeVisible()
   await pick('photo', ['test.png'])
-  await checkMenu(true)
+  await checkMenu('collapsed')
   expect(editor().textContent?.trim()).toBe('')
 })
 
-it('removing the final attachment does not restore a menu while text or composer keyboard input remains', async () => {
+it('removing the final attachment retains the draft arrow or full keyboard hiding as appropriate', async () => {
   await mount(<div data-chat-composer="">{menu}<ChatMessageComposer chatId="attachment-and-text" isGroupChat onSend={vi.fn(async () => {})} /></div>)
   await pick('file', ['keep.txt'])
-  await checkMenu(true)
+  await checkMenu('collapsed')
   const input = editor() as HTMLElement & { editor: { commands: { setContent(html: string): void; clearContent(emit: boolean): void } } }
   await act(async () => input.editor.commands.setContent('<p>仍有文字</p>'))
   await removeFirst()
   await vi.waitFor(() => expect(tiles()).toHaveLength(0))
-  await checkMenu(true)
+  await checkMenu('collapsed')
   input.focus(); keyboard(true)
   await act(async () => input.editor.commands.clearContent(true))
-  await checkMenu(true)
+  await checkMenu('keyboard')
   keyboard(false)
-  await checkMenu(false)
+  await checkMenu('expanded')
   expect(document.activeElement).toBe(input)
 })
 
@@ -140,13 +152,31 @@ function PendingAttachment({ state }: { state: ComposerAttachment['state'] }) {
   </MessageProvider></SessionUiTheme>
 }
 
-it.each(['uploading', 'done', 'error'] as const)('%s attachment previews hide the nested shared menu; a skill label alone does not', async state => {
+it.each(['uploading', 'done', 'error'] as const)('%s attachment previews leave a usable nested menu arrow; a skill label alone does not', async state => {
   await mount(<PendingAttachment state={state} />)
   await vi.waitFor(() => expect(tiles()[0]?.getAttribute('data-state')).toBe(state))
-  await checkMenu(true)
+  await checkMenu('collapsed')
   expect(editor().textContent?.trim()).toBe('')
+  const input = editor()
+  input.focus()
+  await page.getByTestId('phone-composer-menu-toggle').click()
+  await checkMenu('expanded')
+  expect(tiles()[0]?.getAttribute('data-state')).toBe(state)
+  expect(editor()).toBe(input); expect(document.activeElement).toBe(input)
+  keyboard(true); await checkMenu('keyboard')
+  keyboard(false); await checkMenu('expanded')
   await removeFirst()
   await vi.waitFor(() => expect(tiles()).toHaveLength(0))
   expect(harness!.container.querySelector('[data-testid="selected-skill-label"]')).not.toBeNull()
-  await checkMenu(false)
+  await checkMenu('expanded')
+})
+
+
+it('desktop composers ignore the phone menu render slot even at phone viewport widths', async () => {
+  await mount(<SessionUiTheme theme="dark"><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
+    <ChatComposer mobile={false} renderPhoneHeader={() => menu} onSubmit={vi.fn()} />
+  </MessageProvider></SessionUiTheme>)
+  expect(harness!.container.querySelector('[data-phone-composer-controls]')).toBeNull()
+  expect(harness!.container.querySelector('[data-testid="phone-composer-menu-toggle"]')).toBeNull()
+  expect(editor()).not.toBeNull()
 })

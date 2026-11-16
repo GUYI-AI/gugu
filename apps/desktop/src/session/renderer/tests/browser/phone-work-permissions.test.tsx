@@ -55,7 +55,7 @@ const Conversation = observer(({ withWork = true }: { withWork?: boolean }) => {
     timeline={emptyAgentWatchTimeline()} deviceId="qa-permission-device" sessionId="room-task" agentName="Codex" harness="codex" nativeRecord sessionRuntime="acp"
     respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} permissionsInWork
-    composerControls={withWork && sidebar.anchor ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} /> : undefined}
+    composerControls={withWork && sidebar.anchor ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} conversationKey="qa-permission-device:room-task" modelControl={modelControl} model={model} skillDraft={skillDraft} /> : undefined}
   /></AgentWatchScreen>
 })
 async function mount({ withWork = true, width = 390 }: { withWork?: boolean; width?: number } = {}) {
