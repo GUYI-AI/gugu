@@ -1,6 +1,12 @@
 import { execFile } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { assertSameTeamFunding, assertTeamTaskActor, assertTeamTaskSession, teamAuthSessionId, parseTeamTaskFunding, teamIssueContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from './team-model-funding'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
+import { teamCreditStopReason, type TeamCreditStopReason } from '@gugu/session-core/session-record/team-credits'
+import { createTaskPayerStore } from './task-payer-store'
+import { createTeamIssueIntentStore, type TeamIssueBody, type TeamIssueSlot } from './team-issue-intents'
 import {
   agentModelSelectionForProtocol,
   atomicWriteText,
@@ -64,6 +70,7 @@ export interface PlatformModelCatalogItem {
 }
 
 export interface IssuedModelAccess {
+  teamTask?: TeamTaskIdentity
   accessSessionId: string
   relayUrl: string
   token: string
@@ -124,7 +131,7 @@ function modelAccessFetch(url: string, init: RequestInit): Promise<Response> {
  * `reason` 是服务端给的机读定性(目前只有 `membership_required`,#7056);没给 = null。
  */
 export class ModelAccessHttpError extends Error {
-  constructor(message: string, readonly status: number, readonly reason: string | null = null) {
+  constructor(message: string, readonly status: number, readonly reason: string | null = null, readonly code?: string, readonly reason_code?: TeamCreditStopReason) {
     super(message)
     this.name = 'ModelAccessHttpError'
   }
@@ -132,7 +139,7 @@ export class ModelAccessHttpError extends Error {
 
 export type ModelAccessFailureReason = Extract<
   GuguCatalogReason,
-  'signed-out' | 'membership-required' | 'model-unavailable' | 'unreachable' | 'service-unavailable'
+  'signed-out' | 'membership-required' | 'model-unavailable' | 'unreachable' | 'service-unavailable' | 'team-monthly-cap-reached' | 'team-credits-exhausted'
 >
 
 /** 服务端会让界面说话的那几个 `reason`(product spec「被拒时谁说话」);其余都不是说给人听的。 */
@@ -150,6 +157,8 @@ const SPOKEN_SERVER_REASONS: ReadonlyMap<string, ModelAccessFailureReason> = new
  * 本机这一侧:没登录、登录服务明说票不认 = 登录失效;登录服务连不上 / 5xx / 超时 = 咕咕这边出错了(规格:停库 ❌ 说成登录失效)。
  */
 export function modelAccessFailureReason(error: unknown): ModelAccessFailureReason {
+  const team = teamModelStopReason(error)
+  if (team) return team === 'team_credits_exhausted' ? 'team-credits-exhausted' : 'team-monthly-cap-reached'
   if (error instanceof RuntimeAuthUnavailableError) return 'service-unavailable'
   if (error instanceof RuntimeAuthError) return 'signed-out'
   if (error instanceof ModelAccessUnreachableError) return 'unreachable'
@@ -171,7 +180,12 @@ async function invokeModelAccess(
   body: Record<string, unknown>,
   operation: string,
 ): Promise<Record<string, unknown>> {
-  return invokeModelAccessAs(await requireRuntimeAuth(authProvider, operation), body)
+  const auth = await requireRuntimeAuth(authProvider, operation)
+  if (typeof body.session_id === 'string') {
+    const ledger = await readAccessLedgerEntry(accessLedgerPath(body.session_id))
+    assertTeamTaskActor(auth, ledger?.teamTask)
+  }
+  return invokeModelAccessAs(auth, body)
 }
 
 async function invokeModelAccessAs(
@@ -192,10 +206,13 @@ async function invokeModelAccessAs(
   }).catch((error: unknown) => { throw new ModelAccessUnreachableError(error) })
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>
   if (!response.ok) {
+    const refusal = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : null
     throw new ModelAccessHttpError(
-      typeof payload.error === 'string' ? payload.error : `model access HTTP ${response.status}`,
+      refusal ? 'Team model access was refused' : typeof payload.error === 'string' ? payload.error : `model access HTTP ${response.status}`,
       response.status,
       typeof payload.reason === 'string' && payload.reason ? payload.reason : null,
+      typeof refusal?.code === 'string' ? refusal.code : undefined,
+      teamCreditStopReason(refusal?.reason_code) ?? undefined,
     )
   }
   return payload
@@ -284,13 +301,32 @@ export async function issuePlatformModelAccess(input: {
   modelId: string
   protocol: ModelAccessProtocol
   providerSessionId?: string | null
-  /** 这张票属于哪条会话 —— 只进结清账本,便于从账本追回会话;不发给服务端。 */
+  /** The stable local task identity is also the team task_id. Personal requests retain their existing wire shape. */
   sessionId?: string
   /** 凭据轮换时被替换的那条平台会话:新票继承它启动时给过 harness 的可切清单(#6081)。 */
   keepFromAccessSessionId?: string
 }): Promise<IssuedModelAccess> {
   const auth = await requireRuntimeAuth(input.authProvider, 'platform model token')
-  const payload = await invokeModelAccessAs(auth, {
+  const prior = input.keepFromAccessSessionId ? await readAccessLedgerEntry(accessLedgerPath(input.keepFromAccessSessionId)) : null
+  assertTeamTaskSession(auth, prior?.teamTask)
+  if (input.keepFromAccessSessionId && teamAccountTokenHint(auth.accessToken) === 'team' && !prior?.teamTask) throw new TeamFundingError('team_identity_required')
+  const localTaskId = prior?.teamTask?.funding.task_id ?? input.sessionId ?? null
+  const issueSlot: TeamIssueSlot = { actorUserId: auth.userId, localTaskId, agentUserId: input.agentUserId,
+    engineId: input.engineId, modelId: input.modelId, protocol: input.protocol, providerSessionId: input.providerSessionId ?? null,
+    keepFromAccessSessionId: input.keepFromAccessSessionId ?? null }
+  const intents = createTeamIssueIntentStore(resolveGuguHome(process.env))
+  const pending = teamAccountTokenHint(auth.accessToken) === 'team' ? await intents.read(issueSlot) : null
+  const authSessionId = teamAccountTokenHint(auth.accessToken) === 'team' ? teamAuthSessionId(auth) : null
+  if (pending && pending.auth_session_id !== authSessionId) throw new TeamFundingError('team_task_auth_session_changed')
+  let taskId = pending?.body.task_id ?? localTaskId ?? randomUUID()
+  if (prior?.teamTask && input.sessionId && input.sessionId !== taskId) throw new Error('A replacement cannot change the team task')
+  const payers = createTaskPayerStore(resolveGuguHome(process.env)), existing = await payers.read(taskId)
+  if (existing && existing.actorUserId !== auth.userId) throw new Error('The task belongs to another account')
+  let expected = prior?.teamTask ?? existing?.teamTask
+  const team = await teamIssueContext(auth, taskId, modelAccessFetch, expected, pending ? {
+    teamId: pending.body.team_id, memberIdentityId: pending.body.member_identity_id,
+  } : undefined)
+  const body = {
     action: 'issue',
     agent_user_id: input.agentUserId,
     engine_id: input.engineId,
@@ -298,14 +334,47 @@ export async function issuePlatformModelAccess(input: {
     protocol: input.protocol,
     provider_session_id: input.providerSessionId ?? null,
     ...(input.keepFromAccessSessionId ? { keep_from_session_id: input.keepFromAccessSessionId } : {}),
-  })
+    ...(team ? { team_id: team.teamId, member_identity_id: team.memberIdentityId, task_id: taskId, expected_membership_revision: team.membershipRevision } : {}),
+  }
+  const intent = team ? await intents.prepare(issueSlot, body as TeamIssueBody, authSessionId!) : null
+  if (intent && intent.body.task_id !== taskId) {
+    // Concurrent utility callers adopt the first persisted intent, including its generated task ID.
+    taskId = intent.body.task_id
+    const bound = await payers.read(taskId)
+    if (bound && bound.actorUserId !== auth.userId) throw new TeamFundingError('team_identity_required')
+    expected = prior?.teamTask ?? bound?.teamTask
+  }
+  await payers.reserve({ version: 1, taskId, actorUserId: auth.userId, kind: team ? 'team' : 'personal',
+    ...(team ? { teamId: team.teamId, memberIdentityId: team.memberIdentityId } : {}) })
+  let payload: Record<string, unknown>
+  try { payload = await invokeModelAccessAs(auth, intent ? { ...intent.body, idempotency_key: intent.idempotency_key } : body) }
+  catch (cause) {
+    if (intent && cause instanceof ModelAccessHttpError && ['issue_intent_ended', 'issue_revision_conflict'].includes(cause.code ?? '')) await intents.finish(issueSlot, intent)
+    throw cause
+  }
   const protocol = payload.protocol
   if (!isModelAccessProtocol(protocol)) {
     throw new Error('model access response has an invalid protocol')
   }
   const accessSessionId = required(payload.session_id, 'session_id')
-  await recordIssuedAccess(auth, accessSessionId, input.sessionId)
-  return {
+  let teamTask: TeamTaskIdentity | undefined
+  try {
+    if (team) {
+      const funding = parseTeamTaskFunding(payload.funding)
+      if (funding.team_id !== team.teamId || funding.member_id !== team.memberId || funding.task_id !== taskId) throw new Error('Team funding does not match the authorized task')
+      if (expected) assertSameTeamFunding(funding, expected.funding)
+      teamTask = { actorUserId: auth.userId, memberIdentityId: team.memberIdentityId, authSessionId: authSessionId!, funding }
+      await payers.lockTeam(taskId, teamTask)
+    } else if (payload.funding && (payload.funding as { kind?: unknown }).kind === 'team') throw new Error('Unexpected team funding on personal access')
+  } catch (cause) {
+    // A minted but invalid ticket still needs settlement tracking if its immediate revocation fails.
+    await recordIssuedAccess(auth, accessSessionId, input.sessionId)
+    await revokePlatformModelAccess(input.authProvider, accessSessionId)
+    throw cause
+  }
+  await recordIssuedAccess(auth, accessSessionId, input.sessionId, teamTask)
+  const issued: IssuedModelAccess = {
+    ...(teamTask ? { teamTask } : {}),
     accessSessionId,
     relayUrl: required(payload.relay_url, 'relay_url').replace(/\/$/, ''),
     token: required(payload.token, 'token'),
@@ -323,6 +392,8 @@ export async function issuePlatformModelAccess(input: {
       ? { modelId: payload.model_id.trim() }
       : {}),
   }
+  if (intent) await intents.finish(issueSlot, intent)
+  return issued
 }
 
 /**
@@ -428,6 +499,7 @@ const ledgerLog = createLogger('platform-access-ledger')
  * 文件只含撤销需要的标识(id、属主、签发进程、签发时刻、会话),❌ 令牌、❌ 中转地址。0600,目录 0700。
  */
 type AccessLedgerEntry = {
+  teamTask?: TeamTaskIdentity
   accessSessionId: string
   /** 撤销以票的属主身份调用 ⇒ 结清只能在这个账号登录时进行。 */
   ownerUserId: string
@@ -459,7 +531,7 @@ function accessLedgerPath(accessSessionId: string): string {
   return join(accessLedgerDir(), `${accessSessionId}.json`)
 }
 
-async function recordIssuedAccess(auth: RuntimeAuth, accessSessionId: string, sessionId?: string): Promise<void> {
+async function recordIssuedAccess(auth: RuntimeAuth, accessSessionId: string, sessionId?: string, teamTask?: TeamTaskIdentity): Promise<void> {
   try {
     const entry: AccessLedgerEntry = {
       accessSessionId,
@@ -468,6 +540,7 @@ async function recordIssuedAccess(auth: RuntimeAuth, accessSessionId: string, se
       processStartedAt: new Date(await ownProcessStartedAt()).toISOString(),
       issuedAt: new Date().toISOString(),
       ...(sessionId ? { sessionId } : {}),
+      ...(teamTask ? { teamTask } : {}),
     }
     await mkdir(accessLedgerDir(), { recursive: true, mode: 0o700 })
     await atomicWriteText(accessLedgerPath(accessSessionId), `${JSON.stringify(entry)}\n`)
@@ -797,12 +870,14 @@ export async function renewPlatformModelAccess(
   authProvider: RuntimeAuthProvider,
   accessSessionId: string,
 ): Promise<{ expiresAt: string; membershipLocked: readonly string[] }> {
-  const payload = await invokeModelAccess(
-    authProvider,
-    { action: 'renew', session_id: accessSessionId },
-    'platform model renewal',
-  )
+  const ledger = await readAccessLedgerEntry(accessLedgerPath(accessSessionId))
+  const auth = await requireRuntimeAuth(authProvider, 'platform model renewal')
+  assertTeamTaskSession(auth, ledger?.teamTask)
+  const hint = teamAccountTokenHint(auth.accessToken)
+  if (hint === 'unknown' || (hint === 'team' && !ledger?.teamTask)) throw new TeamFundingError('team_identity_required')
+  const payload = await invokeModelAccessAs(auth, { action: 'renew', session_id: accessSessionId })
   const locked = membershipLockedAliases(payload.membership_locked)
+  if (ledger?.teamTask) assertSameTeamFunding(parseTeamTaskFunding(payload.funding), ledger.teamTask.funding)
   return { expiresAt: required(payload.expires_at, 'expires_at'), membershipLocked: locked }
 }
 

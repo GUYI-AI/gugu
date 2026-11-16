@@ -23,6 +23,7 @@
     "./acp/client": "./src/acp/client.ts",
     "./acp/native-prompt": "./src/acp/native-prompt.ts",
     "./session-record/contract": "./src/session-record/contract.ts",
+    "./session-record/team-credits": "./src/session-record/team-credits.ts",
     "./session-record/window-cache/*": "./src/session-record/window-cache/*.ts",
     "./session-record/personal-conversation": "./src/session-record/personal-conversation.ts",
     "./session-record/preview-activity": "./src/session-record/preview-activity.ts",

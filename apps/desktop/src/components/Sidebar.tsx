@@ -17,7 +17,8 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { HelpCircle, Library, MoreHorizontal, Settings } from '@/lib/icons'
+import { Buildings, HelpCircle, Library, MoreHorizontal, Settings } from '@/lib/icons'
+import { useTeamSession } from '@/features/team/context'
 import { SidebarAppDock } from './sidebar/SidebarAppDock'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest } from '../lib/productTour'
@@ -337,6 +338,8 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
 
 export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, settingsOpen = false, pendingContactsCount = 0, sessionAttention = null }: SidebarProps) {
   const { t } = useTranslation('main')
+  const { t: tTeam } = useTranslation('team')
+  const team = useTeamSession()
   const messagesActive = activeTab === 'chats' || (activeTab === 'tasks' && sessionPagePlace() === 'tasks')
   // #2548 the sidebar as one list: 「消息」 is that list, so clicking it again while it is the one shown folds / unfolds it
   // (the same toggle as the list's own collapse button and its shortcut, lib/panelToggles).
@@ -393,6 +396,8 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
               rail="library"
             />
           )}
+          {team.status === 'ready' && <RailItem icon={<Buildings size={22} />} active={activeTab === 'team'}
+            onClick={() => onTabChange('team')} title={tTeam('title')} rail="team" />}
           {platform.capabilities.agentRuntime && (
             <AppsOnRail sessionsShown={activeTab === 'tasks'} showSessions={() => onTabChange('tasks')} />
           )}
