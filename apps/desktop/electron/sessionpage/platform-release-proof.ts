@@ -18,6 +18,7 @@ const unconfirmed = () => new Error('Platform release is unconfirmed')
  * caller's original generation never becomes authority over a later lifetime. */
 export class PlatformClosureReleaseProofs {
   private readonly lifetimes = new Map<string, LeaseLifetime>()
+  clearForTest(): void { this.lifetimes.clear() }
   private key(sessionId: string, generation: string) { return JSON.stringify([sessionId, generation]) }
   open(sessionId: string, generation: string): void {
     const key = this.key(sessionId, generation)

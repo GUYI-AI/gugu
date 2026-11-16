@@ -87,6 +87,7 @@ const {
   reissueExpiredPlatformModelForSession,
   releasePlatformModelForSession,
   releasePlatformModelForClosure,
+  clearPlatformClosureProofsForTest,
   releasePlatformModelsAtExit,
   classifyCredentialIssueFailure,
   configurePlatformMembershipListener,
@@ -143,7 +144,7 @@ function platformLaunch(
   })
 }
 // 签发退避按会话 id 记、跨过结清(会话重建)活着;用例共用同一个会话 id,别把上一条的窗口带过去。
-beforeEach(() => { resetPlatformIssueBackoffsForTest(); legacyHelper.enabled = false })
+beforeEach(() => { resetPlatformIssueBackoffsForTest(); clearPlatformClosureProofsForTest(); legacyHelper.enabled = false })
 
 describe('#2503 session-page sessions carry the designated model', () => {
   beforeEach(() => {

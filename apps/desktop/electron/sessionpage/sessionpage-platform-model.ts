@@ -114,6 +114,8 @@ const activeAccessSessions = new Map<string, {
 }>()
 
 const platformClosureReleaseProofs = new PlatformClosureReleaseProofs()
+/** Unit fixtures reuse synthetic access ids; production tickets are unique. */
+export function clearPlatformClosureProofsForTest(): void { platformClosureReleaseProofs.clearForTest() }
 
 /**
  * #6264 由宿主供给凭据的终端会话(claude 的取票脚本、回环代理)活过宿主进程重启。
