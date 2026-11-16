@@ -6,10 +6,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 type MachineArg = string;
 const machineOf = (machine: MachineArg): string | null => (machine === 'local' ? null : machine);
 
-/**
- * A machine's home folder (where the folder tree starts, what `~/` stands for). It does not change while the machine
- * runs: read once per account, never pushed, not kept across restarts.
- */
+/** A machine's home folder: it does not change while the machine runs. */
 export const homeDirectory = replica({
   name: 'homeDirectory',
   scope: 'account',
@@ -22,7 +19,6 @@ export const homeDirectory = replica({
   fresh: Infinity,
 });
 
-/** What a folder on a machine is (a directory, a git repository): read each time it is chosen, held a minute. */
 export const projectPathInspection = replica({
   name: 'projectPathInspection',
   scope: 'account',

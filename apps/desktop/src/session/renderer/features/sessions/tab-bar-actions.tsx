@@ -150,7 +150,6 @@ function ChatAddItems({ chatId }: { chatId: string }) {
   );
 }
 
-/** A row whose entry is not known (what is installed): a placeholder of a row's height while read, the failure with a retry when it could not be; ❌ a missing row. */
 function NotReadMenuItem({ error }: { error: Error | null }) {
   const { translate } = useSessionMessages();
   if (!error) return <DropdownMenuItem disabled><Unknown className="w-24" /></DropdownMenuItem>;

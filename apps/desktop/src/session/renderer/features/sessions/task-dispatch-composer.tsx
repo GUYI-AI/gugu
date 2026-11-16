@@ -85,9 +85,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   // 这个对话记着的项目(哪台机器上的都算,认回账号上的项目):群和它的话题里 ❌ 沿用(#2599)。
   const remembers = !inGroup && picked === null;
   const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
-  // The project shown: the one picked; else the remembered one, unknown until read (❌ "no project", then it pops in);
-  // 在 observer 的渲染里认:账号上的项目列表变了,跟着重认。Unreadable memory blocks sending (❌ the task goes to the
-  // implicit directory instead of the project used last). A device with no row of its own has no memory to read.
+  // The remembered project is unknown until read (❌ "no project", then it pops in); unreadable memory blocks sending
+  // (❌ the task goes to the implicit directory instead of the project used last).
   const selection: { known: true; projectId: string | undefined } | { known: false; failed: Error | null } = picked
     ? { known: true, projectId: picked.projectId }
     : !remembers ? { known: true, projectId: undefined }

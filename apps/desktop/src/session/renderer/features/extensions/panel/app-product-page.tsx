@@ -154,8 +154,7 @@ export function AppProductPage({
   const [aboutClamped, setAboutClamped] = useState(false);
   const aboutRef = useRef<HTMLDivElement | null>(null);
 
-  // 只有市场上的版本有产品页内容(`store/` 不进安装包):`marketListing`(一版的不会变,这次运行里再进来首帧就有);读不到就照实说
-  // (那台机器的咕咕太旧 / 市场上这一版没有),❌ 改读别处。换了 App 整页重来(调用方按 id 给 key)。
+  // 只有市场上的版本有产品页内容(`store/` 不进安装包);读不到就照实说,❌ 改读别处。
   const listedVersion = cloud.version;
   const listingReading = useReplica(marketListing, [hostKey, manifest.id, listedVersion]);
   const listing: Loadable<MarketListing> | { status: 'outdated' } = listingReading.state === 'unknown' ? { status: 'loading' }

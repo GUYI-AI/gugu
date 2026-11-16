@@ -58,7 +58,6 @@ export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, 
   onAction: (item: ShelfItem) => void;
   sentinelRef?: Ref<HTMLDivElement>;
   marketStale?: string | null;
-  /** null: not known yet — a row draws nothing in its button's place. */
   installedIds: ReadonlySet<string> | null;
   chip: 'all' | MarketCategory;
   onChipChange: (chip: 'all' | MarketCategory) => void;
@@ -240,10 +239,7 @@ export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, 
   );
 }
 
-/**
- * The market's first screen as kept across restarts (C2/D5), drawn until the shelf is read, card for card where the shelf
- * will draw them; cards left out, rows past the kept ones and buttons draw placeholders. Only the home page with no chip.
- */
+/** The first screen kept across restarts (C2/D5), card for card where the shelf will draw them, until it is read. */
 export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setChip }: {
   first: MarketFirstScreen;
   hostKey: string;

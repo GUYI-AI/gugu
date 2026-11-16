@@ -7,7 +7,6 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { Unknown } from '@/components/ui/Unknown';
 
 interface ChangesViewModeToggleProps {
-  /** null: the setting is not read yet. */
   value: ChangesListViewMode | null;
   onChange: (mode: ChangesListViewMode) => void;
   label: string;

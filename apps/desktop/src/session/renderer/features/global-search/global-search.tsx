@@ -111,7 +111,6 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const chatName = (chatId: string) => summaries.get(chatId)?.alias || summaries.get(chatId)?.name || translate('globalSearch.unknownChat')
   const chipLabel = (chip: SearchChip) => chip.kind === 'in' ? chatName(chip.chatId) : chip.kind === 'in-task' ? chip.title : chip.kind === 'type' ? translate(`globalSearch.kind.${chip.type}`) : chip.name
   const groups: { key: string; label: string; task: boolean; scope: SearchChip; hits: SearchHit[] }[] = []
-  // Unknown results draw no rows (placeholders below), ❌ an empty list.
   if (view.hits) for (const hit of view.hits) {
     let group = groups.find((existing) => existing.key === hit.group)
     if (!group) {

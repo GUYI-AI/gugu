@@ -8,11 +8,7 @@ import { fetchInstalledApps, LOCAL_HOST, peekInstalledApps, putInstalled, writeI
 import { openInWindow, returnToScreen, revealAppBlock, takeAppOffScreen } from '@renderer/app/screen-layout-actions';
 import { appPlacementStore } from './app-placement-store';
 
-/**
- * The far-left rail's dock — this machine's Apps pinned there, in order. One write of the whole list, as main keeps it:
- * pinning, taking off and reordering are the same verb. Drawn on the click, the answer kept; a refusal reads the list
- * again (I4) and reaches the caller, which says it.
- */
+/** The rail's dock: pinning, taking off and reordering are one write of the whole list. */
 export async function setDock(ids: readonly string[]): Promise<void> {
   await writeInstalled(LOCAL_HOST, (list) => ({ ...list, dock: [...ids] }), async () => {
     const result = await rpc.extensions.setDock({ ids: [...ids] });
@@ -21,7 +17,7 @@ export async function setDock(ids: readonly string[]): Promise<void> {
   }, (dock) => (list) => ({ ...list, dock }));
 }
 
-/** The dock as it is now: a pin is a click on a drawn rail, so the list is known (unknown: nothing to pin against). */
+/** A pin is a click on a drawn rail, so the list is known. */
 function dockNow(): string[] {
   const apps = peekInstalledApps(LOCAL_HOST);
   if (!apps) throw new Error('what is installed is not known yet');

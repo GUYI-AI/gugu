@@ -291,19 +291,14 @@ export function machineLibraryHost(device: LibraryRemoteDevice | null): LibraryH
   return host;
 }
 
-/**
- * @@@library-host-of — the one resolver from a library host key to its host (a replica's `read` asks by key, as
- * `extensionsApiOf` does). Known once a surface keeps it or it is built here; a key nobody kept fails loud (❌ empty).
- */
+/** @@@library-host-of — library host key → its host; a key nobody kept fails loud (❌ empty). */
 const hostsByKey = new Map<string, LibraryHost>();
 
-/** A surface showing this host: its replicas read through it by key (the latest object for a key serves). */
 export function keepLibraryHost(host: LibraryHost): LibraryHost {
   hostsByKey.set(host.key, host);
   return host;
 }
 
-/** The host for a key if one is kept (a replica's `local` copy, which may have none yet). */
 export function peekLibraryHost(hostKey: string): LibraryHost | undefined {
   return hostKey === LOCAL_HOST_KEY ? hostsByKey.get(hostKey) ?? LOCAL_LIBRARY_HOST : hostsByKey.get(hostKey);
 }

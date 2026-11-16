@@ -95,9 +95,7 @@ export type ProjectFoldersState = {
 };
 
 /**
- * One local project's folders, as its machine answers (rpc routes by projectId). Drawn in member order, ❌ in the order
- * machines answer (new-agent cards went 3 → 6 and reordered). Push-fed by each member's machine (one subscription per
- * machine while its folders are shown); folders read while nobody listened (back on the home page) are read again then.
+* One local project's folders, drawn in member order, ❌ in the order machines answer (cards went 3 → 6 and reordered).
  */
 export const projectFolders = replica({
   name: 'projectFolders',
@@ -115,7 +113,6 @@ export const projectFolders = replica({
       const machine = machineRegistry.machineOf(projectId) ?? null;
       const offs = [
         onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId: changed }) => { void projectFolders.refresh(changed); }),
-        // Another machine's copy joined or left the project's group: its folders are read again with the rest.
         onMachineEvent(machine, projectGroupBindingChangedChannel, () => { void projectFolders.refresh(); }),
       ];
       return () => offs.forEach((off) => off());
@@ -124,8 +121,7 @@ export const projectFolders = replica({
 });
 
 /**
- * How many folders each member machine showed last (member order), kept across restarts so the first open draws every
- * paper at once. Keyed by row and a hash of its members. Written as the folders settle, never read.
+ * How many folders each member machine showed last, kept so the first open draws every paper at once.
  */
 export const projectFolderLayout = replica({
   name: 'projectFolderLayout',
@@ -155,14 +151,12 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   const layout = useReplica(projectFolderLayout, layoutArgs, { read: false });
   const [fresh, setFresh] = useState<string | undefined>(() => freshFolders.get(rowId));
   const [late, setLate] = useState(false);
-  // A read asked now (a reload, a machine reconnecting) restarts the wait for machines that do not answer.
   const [asked, setAsked] = useState(0);
   const askAgain = useCallback((ids: readonly string[]) => {
     setAsked((n) => n + 1);
     for (const id of ids) void projectFolders.refresh(id);
   }, []);
 
-  // A machine whose connection comes back, or whose account record changed while away, is asked again.
   // 读的是 mobx 里的设备行 —— 项目首页是 observer,那一份变了这里才重算。
   const connectionKey = JSON.stringify(members.map((projectId) => {
     const deviceId = machineRegistry.machineOf(projectId);
@@ -176,8 +170,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     askAgain(members);
   }, [connectionKey, members, askAgain]);
 
-  // A machine that has not answered after a while and has nothing else to show: draw without it. Counted from when a
-  // read starts (a reload, a push, a reconnect), ❌ from the mount: a push read later is not "late" the moment it starts.
+  // A machine silent past the deadline is drawn without; counted from when a read starts, ❌ from the mount.
   const inFlight = readings.map((entry) => entry.state === 'unknown' || (entry.state === 'value' && entry.stale)).join();
   useEffect(() => {
     setLate(false);
@@ -191,8 +184,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   const lists = members.map((projectId, index) => memberFolders(projectId, readings[index]!, layout, index, late));
   const waiting = lists.some((list) => list === 'waiting');
   const known = lists.filter((list): list is ShownFolder[] => Array.isArray(list));
-  // Machines still to answer this read: not answered yet, or asked again after an empty answer (an empty answer belongs
-  // to the connection that gave it: a waking machine's "none" is not the new connection's answer).
+  // An empty answer belongs to the connection that gave it: a waking machine's "none" is not the new connection's answer.
   const unanswered = late ? [] : members.filter((_id, index) => {
     const reading = readings[index]!;
     return reading.state === 'unknown' || (reading.state === 'value' && reading.stale && !reading.error && reading.value.length === 0);
@@ -201,8 +193,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   const folders = waiting || known.length === 0 || (merged.length === 0 && unanswered.length > 0) ? null : merged;
   const loadError = !waiting && known.length === 0 && lists.every((list) => list === 'nothing');
 
-  // What each machine answered: the count of each is what the next start draws first; a folder that appears in a
-  // member's answer it did not have before (attached in another window, by an agent, undone) is the fresh one.
+  // A folder new in a member's answer (attached elsewhere, by an agent, undone) is the fresh one.
   const answered = readings.map((reading) => (reading.state === 'value' ? reading.value : null));
   const seen = useRef<{ rowId: string; members: Map<string, ProjectFolder[] | null> } | null>(null);
   useEffect(() => {
@@ -228,7 +219,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     }
   });
 
-  // The choice lives in the module (it outlives a remount); a choice made redraws the card and the composer.
+  // The choice lives in the module: it outlives a remount.
   const [, setChoice] = useState(0);
   const choose = useCallback(
     (workspaceId: string) => {
@@ -291,11 +282,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   };
 }
 
-/**
- * One machine's part of the card. Its answer when there is one. When its last read failed or it has not answered yet:
- * the account's record of its folders (marked offline; the newer of the record and the last answer). With neither: the
- * last run's count as placeholder papers, or wait — until the deadline, then draw without it.
- */
+/** One machine's part: its answer, else the account's record (marked offline), else the last run's count as placeholders. */
 function memberFolders(
   projectId: string,
   reading: Reading<ProjectFolder[]>,
@@ -305,13 +292,11 @@ function memberFolders(
 ): ShownFolder[] | 'waiting' | 'nothing' {
   const deviceId = machineRegistry.machineOf(projectId) ?? null;
   const live = (list: ProjectFolder[]) => list.map((folder): ShownFolder => ({ ...folder, offline: false, deviceId }));
-  // The account's record of the machine's folders. Marked offline only once the machine is known not to answer (its
-  // read failed, or the deadline passed): before that, whether it is online is the machine's own state, ❌ "offline".
+  // Marked offline only once the machine is known not to answer, ❌ "offline" before.
   const recordedAs = (offline: boolean) => accountFolders(projectId)?.map((folder): ShownFolder => ({
     ...folder, offline, deviceId, ...(accountUnread(projectId) ? { stale: true as const } : {}),
   })) ?? null;
   const recorded = recordedAs(true);
-  // Asked again and not answered past the deadline: what it last answered, now marked offline.
   if (reading.state === 'value' && !reading.error && !(reading.stale && late)) return live(reading.value);
   if (reading.state === 'value') {
     const last = reading.value.map((folder): ShownFolder => ({ ...folder, offline: true, deviceId }));

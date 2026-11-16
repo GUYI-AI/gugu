@@ -291,7 +291,6 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
 function MultiAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
   const { accounts, checks, reachable, retry } = useIntegrationAccounts(integration.id, integration.isConfigured);
-  // Not read: being read, or that machine cannot be asked now (it says so above the page).
   if (accounts.state === 'unknown') return reachable ? <LoadingIndicator size="inline" className="text-foreground-muted" /> : null;
   // 读不到账号(或重读、逐个查没成):说出来、给重试。❌ 落回单账号的样子 —— 那里的「断开连接」会一次删掉所有邮箱。
   const failure = accounts.error ?? (checks.state === 'unknown' ? null : checks.error);

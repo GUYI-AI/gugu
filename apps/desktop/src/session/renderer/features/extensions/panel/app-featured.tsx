@@ -37,7 +37,6 @@ export function AppFeaturedCard({
   resource,
   actionUnknown = false,
 }: {
-  /** What its button says is not known yet (the first screen kept across restarts): a placeholder of its size. */
   actionUnknown?: boolean;
   variant?: 'hero' | 'card';
   /** 哪台机器的市场(截图由那台机器答)。 */
@@ -57,15 +56,13 @@ export function AppFeaturedCard({
   onAction: () => void;
   resource?: ResourceContext;
 }) {
-  // 这一版的底图(`featuredShot`,读时已解码):这次运行里一直在内存里,再进这一页、换上新一版(读架子时已取好),第一帧就是截图。
-  // ❌ 留到下次启动:重启后第一帧是同尺寸的骨架。
+  // 底图只留在这次运行里(❌ 留到下次启动:重启后第一帧是同尺寸的骨架)。
   const reading = useReplica(featuredShot, [hostKey, id, version]);
   const shot = reading.state === 'value' ? reading.value : null;
   const isPending = reading.state === 'unknown';
   const isError = reading.state === 'error';
   const retry = () => void featuredShot.refresh(hostKey, id, version);
-  // 这张卡上画过图没有:挂上时就有解码好的图(再进来)就算画过。从骨架第一次换成图时,新的这个 `<img>` 自己也解码好了才露出来,
-  // 之前骨架留着(❌ 先画一帧空的)。画过之后换新一版不再藏:浏览器在新图到手前留着旧的。
+  // 骨架第一次换成图时等 `<img>` 解码好才露出来(❌ 先画一帧空的);之后换新一版浏览器自己留着旧的。
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [painted, setPainted] = useState(() => Boolean(shot && isDecoded(shot.src)));
   // @@@effect-flow(render) - decodes the featured picture already read so it is drawn only when decoded

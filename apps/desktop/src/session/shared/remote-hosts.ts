@@ -63,10 +63,7 @@ export type RemoteHostDevice = {
    * 缺席 / null = 连着(或还没连过)。远程隧道的机器没有这一格。
    */
   sshLink?: 'signInRequired' | 'unreachable' | 'outdated' | 'updating' | null;
-  /**
-   * This desktop's SSH machine list is not read yet, so whether this machine is reached over SSH (and so whether its
-   * cloud heartbeat says anything about it) is not known: its link state is drawn as pending, ❌ offline or signed out.
-   */
+  /** Whether it is reached over SSH is not known yet: its link is drawn as pending, ❌ offline. */
   linkUnknown?: true;
   /**
    * The existing heartbeat update, including its target and scope. Ready is awaiting restart,

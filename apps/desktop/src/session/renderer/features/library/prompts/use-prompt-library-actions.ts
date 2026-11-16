@@ -30,7 +30,6 @@ export interface PromptLibraryActions {
   prompts: PromptLibraryPrompt[];
   /** Enabled Apps' prompts as seen (`withOverrides`), hidden ones included; null while what is installed is unknown. */
   appPrompts: AppPromptRow[] | null;
-  /** What is installed could not be read: the Apps' prompts are not known (the person's own still are). */
   appPromptsFailed: Error | null;
   /** 第一次读、还没读到。 */
   isLoading: boolean;

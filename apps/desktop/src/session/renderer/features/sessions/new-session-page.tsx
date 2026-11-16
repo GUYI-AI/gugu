@@ -44,8 +44,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 // the context tray controls are shared too (composer-context-tray.tsx). 新建页在这份共享 composer 上加标题。
 export const NewSessionComposer = observer(function NewSessionComposer(props: Omit<NewSessionComposerProps, 'sessionSettings'>) {
   const { settings, reload } = useSessionSettings();
-  // This device's new-task settings (default autonomy, issue context) seed the composer's state once: until they are
-  // read the composer's place is held, ❌ a composer seeded with factory defaults that a late value can no longer change.
+  // The composer seeds its state once: its place is held until these are read (❌ factory defaults a late value cannot change).
   if (settings.state === 'error') return <div className={sessionComposerFrameClassName}><ReadFailedLine message={messageForUser(settings.error)} onRetry={reload} /></div>;
   if (settings.state === 'unknown') return <div className={sessionComposerFrameClassName}><Unknown className="h-[7.5rem] w-full" /></div>;
   return <NewSessionComposerReady {...props} sessionSettings={settings.value} />;
@@ -231,9 +230,8 @@ export const NewSessionPage = observer(function NewSessionPage({
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  // An unselected project is a real first-class state, not an alias for projects[0]. The hidden app-owned execution
-  // context is prepared in the background (its replica) while the composer stays editable; until it is ready no project
-  // is passed, and a failure is said under the composer (mapped to copy at render time, so it follows the language).
+  // An unselected project is a real first-class state, not an alias for projects[0]. The hidden execution context is
+  // prepared in the background; a failure is said under the composer.
   const implicitProject = useReplica(implicitSessionHome, []);
   const implicitProjectId = implicitProject.state === 'value' ? implicitProject.value : undefined;
   const implicitProjectError = implicitProject.state === 'error'

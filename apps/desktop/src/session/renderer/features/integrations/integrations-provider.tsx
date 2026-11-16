@@ -37,7 +37,6 @@ type IntegrationsContextValue = {
   integrations: IntegrationMetadata[] | null;
   connectionOperations: ConnectionMetadataSnapshot['application'] | null;
   integrationById: Partial<Record<string, IntegrationMetadata>>;
-  /** What each connection's check said, as checked (an integration not checked has no entry). */
   connectionStatus: ConnectionStatusByIntegration | null;
   connectionCheckError: unknown;
   configuredConnectionsError: unknown;
@@ -76,7 +75,6 @@ const IntegrationsContext = createContext<IntegrationsContextValue | null>(null)
  * 缓存键带机器,两份互不覆盖。
  */
 export function IntegrationsProvider({ children }: { children: React.ReactNode }) {
-  // Its replicas read through this host by key (`libraryHostOf`): the host this surface shows is the one asked.
   const host = keepLibraryHost(useLibraryHost());
   const api = host.integrations;
   const metadata = host.connectionMetadata ?? host.assistantPanel;
@@ -92,12 +90,10 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   const enabled = metadataExpected ? !!metadata || !!host.connectionMetadataError || !!host.assistantPanelError : host.remote?.online !== false;
   // 插件的中英两份由那台机器的主进程按这台桌面的界面语言解析成字符串;换语言重取。
   const locale = useSyncExternalStore(subscribeSessionLocale, () => getSessionLocaleSnapshot().resolvedLocale);
-  // Owner mode: one snapshot (the owner's connections) is the whole answer — statuses, configured and the published
-  // catalog derive from it; the catalog itself is the built-in one. Other hosts: their catalog, statuses and configured.
+  // Owner mode: one snapshot (the owner's connections) is the whole answer.
   const ownerReading = useOwnerConnectionsReading(ownerMode ? host.connectionMetadata : undefined);
   useConnectionReadNotice(`snapshot:${host.key}`, ownerReading.state === 'value', ownerMode && ownerReading.state === 'error' ? Infinity : 0);
   const ownerView = useMemo(() => ownerReading.state === 'value' ? ownerConnectionMetadataView(ownerReading.value, locale) : null, [ownerReading, locale]);
-  // Not owner mode: this host's own reads; while it cannot be asked (offline) what was read of it stays drawn.
   const listReading = useReplica(integrationsCatalog, ownerMode ? null : [host.key, locale], { read: enabled });
   const statusReading = useReplica(integrationStatuses, ownerMode ? null : [host.key], { read: enabled });
   const configuredReading = useReplica(configuredConnections, ownerMode ? null : [host.key], { read: enabled });

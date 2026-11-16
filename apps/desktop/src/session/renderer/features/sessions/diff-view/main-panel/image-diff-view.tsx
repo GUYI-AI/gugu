@@ -61,10 +61,7 @@ function fromImageReadResult(result: ImageReadResult): SideState {
   }
 }
 
-/**
- * The modified side right after a write can briefly fail to read (the file mid-write, the index mid-update): such a
- * failure is thrown as this and retried; the git error that outlasts the retries is said as "Preview unavailable".
- */
+/** Right after a write a side can briefly fail to read (file mid-write, index mid-update): retried. */
 class TransientImageError extends Error {}
 
 type ImageRpcResult = Result<{ result: ImageReadResult }, unknown>;
@@ -108,7 +105,6 @@ async function loadFromDisk(
   };
 }
 
-/** The file a side shows, named by plain data (refs as strings). */
 type ImageFile = { path: string; group: ActiveFile['group']; originalRef: string; modifiedRef: string | null };
 
 function loadOriginal(
@@ -145,10 +141,7 @@ async function loadModified(
 /** Retries of a transient failure: soon, then less soon (the write that caused it settles within a moment). */
 export const IMAGE_RETRY_DELAYS_MS = [120, 300, 600];
 
-/**
- * One side of an image diff. Keyed by what names its bytes: the file (path, group, refs) and, for the working tree and
- * the index (bytes that change in place), the worktree's status revision.
- */
+/** Keyed by what names its bytes; bytes that change in place add the worktree's status revision. */
 export const imageDiffSide = replica({
   name: 'imageDiffSide',
   scope: 'device',
@@ -240,7 +233,7 @@ export const ImageDiffView = observer(function ImageDiffView({
   const workspace = useWorkspace();
   const git = workspace.gitWorktree;
 
-  // What names the bytes, as plain data (the pane's file may be observable): path, group and both refs.
+  // Plain data: the pane's file may be observable.
   const file: ImageFile = {
     path: activeFile.path,
     group: activeFile.group,

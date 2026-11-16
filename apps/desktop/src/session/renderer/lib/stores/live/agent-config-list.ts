@@ -6,7 +6,6 @@ import { replica } from '@/lib/replica';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { log } from '@renderer/utils/logger';
 
-/** Open a machine's live agent list; each value goes to `next`, a failure to open it to `fail`. Returns close. */
 function openList(machine: string | null, next: (value: AgentConfigList) => void, fail: (error: unknown) => void): () => void {
   let disposed = false;
   let stopReaction: (() => void) | null = null;
@@ -46,11 +45,7 @@ function followList(machine: string | null): () => void {
   return () => { waitForAnswer(); close(); };
 }
 
-/**
- * A machine's agent configuration list (`agents.list` live state of its agent-config worker; null = this computer): read
- * once, then fed by one live subscription per machine while a surface shows it (`watch`). A failure is the reading's,
- * so a surface opening later reads again. Owner: the signed-in account (the replica's lifecycle).
- */
+/** A machine's agent configuration list (null = this computer): read once, then fed live while shown. */
 export const agentConfigList = replica({
   name: 'agentConfigList',
   scope: 'account',

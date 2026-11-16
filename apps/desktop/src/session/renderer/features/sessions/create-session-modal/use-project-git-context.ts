@@ -7,7 +7,6 @@ export type ProjectGitContext = {
   repositoryWorkspaceId: string | null;
 };
 
-/** What a new task in this project starts from. */
 export function useProjectGitContext(projectId: string | undefined): ProjectGitContext {
   const project = projectId ? asMounted(getProjectStore(projectId)) : undefined;
   return {

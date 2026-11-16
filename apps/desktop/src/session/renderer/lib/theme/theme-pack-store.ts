@@ -37,22 +37,16 @@ export type { ThemePackSlots };
 
 const log = rendererLogger('theme/packs');
 
-/** Where imported packs live and where the stylesheet comes from: one per shell. */
+/** One per shell. */
 type PackStore = {
   imported(): Reading<ThemePack[]>;
   useImported(): Reading<ThemePack[]>;
-  /** Import (or replace, same id) one pack. */
   save(pack: ThemePack): Promise<void>;
-  /** Remove one; the store also empties a slot that named it. */
   remove(id: string): Promise<void>;
-  /** The slots changed (this window or another): bring the stylesheet up to date. */
   slotsChanged(): void;
   subscribe(listener: () => void): () => void;
 };
 
-// ── desktop: main keeps the packs and derives the stylesheet ─────────────────────────────────────────────────────
-
-/** This device's imported theme packs (main's file). Read when the library shows them or a choice needs them. */
 export const importedThemePacksModel = replica({
   name: 'importedThemePacks',
   scope: 'device',
@@ -60,15 +54,18 @@ export const importedThemePacksModel = replica({
   fresh: Infinity,
 });
 
-/** What the boot script inserted before the first frame (preload's handover; main derives it once, from the stored slots). */
+/** What the boot script inserted before the first frame (preload's handover). */
 const handedOverCss = typeof window === 'undefined' ? undefined : window.guguDeviceSettings?.handover?.themePackCss;
 
-function mainPackStore(): PackStore {
+function changeFeed() {
   const changes = createSelectStore(0);
-  const changed = () => { changes.publish(changes.get() + 1); changes.notify(); };
-  // After the first frame the stylesheet is derived here, from the slots and the packs in hand — the same pure derivation
-  // main ran for the handover (derived, never stored): a choice lands in the frame of its light / dark switch. While the
-  // slots name an imported pack not read yet, what is shown stays until it is.
+  return { changes, changed: () => { changes.publish(changes.get() + 1); changes.notify(); } };
+}
+
+function mainPackStore(): PackStore {
+  const { changes, changed } = changeFeed();
+  // Derived here like main did for the handover, so a choice lands in the frame of its light / dark switch. While the
+  // slots name an imported pack not read yet, what is shown stays.
   let applied = handedOverCss;
   const derive = () => {
     const slots = devicePreferences.read('themePackSlots');
@@ -103,17 +100,13 @@ function mainPackStore(): PackStore {
   };
 }
 
-// ── web / phone: localStorage ────────────────────────────────────────────────────────────────────────────────────
-
 function localPackStore(storage: Storage | null): PackStore {
-  const changes = createSelectStore(0);
-  const changed = () => { changes.publish(changes.get() + 1); changes.notify(); };
+  const { changes, changed } = changeFeed();
   // Kept while what is stored stays the same: readers compare by identity.
   let imported: { raw: string | null; packs: ThemePack[]; reading: Reading<ThemePack[]> } | null = null;
   const stored = (): ThemePack[] => {
     const raw = storage?.getItem(PREFERENCE_STORAGE_KEYS.importedThemePacks) ?? null;
     if (!imported || imported.raw !== raw) {
-      // Nothing stored (or not understood) = no imported packs on this device.
       const packs = parseImportedThemePacks(raw, isThemePack) ?? [];
       imported = { raw, packs, reading: { state: 'value', value: packs, stale: false, error: null } };
     }
@@ -126,7 +119,7 @@ function localPackStore(storage: Storage | null): PackStore {
   const write = (packs: ThemePack[]) => {
     storage?.setItem(PREFERENCE_STORAGE_KEYS.importedThemePacks, JSON.stringify(packs));
   };
-  /** Derive, apply, and keep the result for the boot script's first paint (it has no main process to ask). */
+  // Kept for the boot script's first paint (it has no main process to ask).
   const derive = () => {
     const slots = devicePreferences.read('themePackSlots');
     if (slots.state !== 'value') return;
@@ -165,8 +158,6 @@ function localPackStore(storage: Storage | null): PackStore {
   };
 }
 
-// ── this shell's store ───────────────────────────────────────────────────────────────────────────────────────────
-
 /** 把样式表插进(或更新)head 里那一个 style;空 = 咕咕默认。 */
 function applyStylesheet(css: string): void {
   if (typeof document === 'undefined') return;
@@ -189,7 +180,6 @@ const packStore: PackStore = devicePreferences.backend === 'appSettings'
   ? mainPackStore()
   : localPackStore(documentStorage());
 
-/** The pack a choice names (a one-moment decision; the page that offers it has the list read). */
 export function findThemePack(id: string | undefined): ThemePack | undefined {
   if (!id) return undefined;
   const builtin = BUILTIN_THEME_PACKS.find((pack) => pack.id === id);
@@ -199,7 +189,6 @@ export function findThemePack(id: string | undefined): ThemePack | undefined {
   return imported.value.find((pack) => pack.id === id);
 }
 
-/** The slots now (a one-moment decision: a choice, an undo). Throws when they were never read. */
 export function readThemePackSlots(): ThemePackSlots {
   const reading = devicePreferences.read('themePackSlots');
   if (reading.state !== 'value') throw new Error('theme pack slots: not read yet');
@@ -238,22 +227,16 @@ export function resetThemePacks(): void {
   writeSlots({});
 }
 
-export async function saveImportedThemePack(pack: ThemePack): Promise<void> {
-  await packStore.save(pack);
-}
+export const saveImportedThemePack = (pack: ThemePack): Promise<void> => packStore.save(pack);
+export const removeImportedThemePack = (id: string): Promise<void> => packStore.remove(id);
 
-export async function removeImportedThemePack(id: string): Promise<void> {
-  await packStore.remove(id);
-}
-
-/** The packs or the slots changed, or the stylesheet was applied anew (the terminal re-reads its colours then). */
+/** The terminal re-reads its colours then. */
 export function subscribeToThemePacks(onChange: () => void): () => void {
   const offPacks = packStore.subscribe(onChange);
   const offSlots = devicePreferences.subscribe(onChange);
   return () => { offPacks(); offSlots(); };
 }
 
-/** 主题清单(内置在前、导入在后)与两个槽位,as a surface draws them. */
 export function useThemePackReading(): Reading<{ packs: ThemePack[]; slots: ThemePackSlots }> {
   const imported = packStore.useImported();
   const slots = useDevicePreference('themePackSlots');

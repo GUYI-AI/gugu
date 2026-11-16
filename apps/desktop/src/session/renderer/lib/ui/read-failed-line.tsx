@@ -1,10 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { cn } from '@renderer/utils/utils';
 
-/**
- * A reading that failed (lib/replica: `error`) where its value would go: says what could not be read, with a retry —
- * ❌ an empty list or "none" drawn as if it had been read.
- */
+/** A failed reading where its value would go, with a retry (❌ an empty list drawn as if read). */
 export function ReadFailedLine({ message, onRetry, className }: { message: string; onRetry: () => void; className?: string }) {
   const { t } = useTranslation('common');
   return (

@@ -1762,8 +1762,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
-  // The condition is derived from what the panel already holds (load error, sign-in, membership, interruption); the
-  // restart's pending flag is the click's own state. Computed in render, ❌ an effect that works it out after paint.
+  // Computed in render from what the panel holds, ❌ an effect that works it out after paint.
   const condition = useMemo((): PanelCondition | null => {
     if (!store) return null;
     // 有没有可重来的首轮,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
@@ -1949,7 +1948,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     })();
     return condition;
   }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting]);
-  // The chat UI (its own renderer) shows the condition row from its own signal: hand it the derived condition.
   useEffect(() => {
     if (!store) return;
     conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];

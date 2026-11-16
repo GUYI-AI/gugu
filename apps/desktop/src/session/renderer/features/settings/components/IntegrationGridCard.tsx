@@ -62,10 +62,7 @@ export function IntegrationGridCard({
   );
 }
 
-/**
- * 列表行右侧的「N 个账号」:只给能连多个账号的那几家。读不到就不写(❌ 写成 0;详情页说读不到、给重试);那台机器此刻
- * 问不到、也没读过:不写(❌ 一直闪的占位)。
- */
+/** 「N 个账号」:读不到就不写(❌ 写成 0;详情页说读不到);问不到也没读过:不写(❌ 一直闪的占位)。 */
 function AccountCount({ integrationId }: { integrationId: string }) {
   const { translate } = useSessionMessages();
   const { accounts, reachable } = useIntegrationAccounts(integrationId, true, { check: false });

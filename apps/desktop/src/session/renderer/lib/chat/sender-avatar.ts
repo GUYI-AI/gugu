@@ -80,10 +80,7 @@ export function subscribeSenderAvatars(listener: () => void): () => void {
 }
 
 let avatarsSeen = 0;
-/**
- * The moments above as a `Readable` (lib/selectStore.ts): a count that moves whenever an avatar should be read again,
- * so a surface drawing `senderAvatarUrl` subscribes with `useSelect` (❌ a reducer tick bumped from an effect).
- */
+/** A count that moves whenever an avatar should be read again (❌ a reducer tick bumped from an effect). */
 export const senderAvatarChanges: Readable<number> = {
   get: () => avatarsSeen,
   subscribe: (listener) => subscribeSenderAvatars(() => { avatarsSeen += 1; listener(); }),

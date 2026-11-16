@@ -92,7 +92,6 @@ export const CliAgentsList: React.FC<CliAgentsListProps> = ({
   selectedAgentId,
   onSelectAgent,
 }) => {
-  // Drawn once the list is read: the page above holds its place or says why it is not (AgentsSettingsPage).
   const reading = useManagementAgents().reading;
   const agentPayloads = reading.state === 'value' ? reading.value : null;
   const busy = useBusyInstallAgents();

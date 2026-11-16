@@ -356,7 +356,6 @@ export const GUGU_DEFAULT_SWATCH: Record<ThemeMode, ThemeSwatch> = {
   light: { page: '#f9f9f9', bg: '#ffffff', card: '#ffffff', fg: '#1a1c1f', mutedFg: '#68696b', live: 'oklch(0.623 0.188 260)' },
 };
 
-// ── 主题清单与槽位 ──────────────────────────────────────────────────────────────────
 
 /** 内置七族的上游配色:数据文件,由 scripts/theme-packs/generate-builtin-theme-packs.ts 从上游 .vsix 生成,❌ 手改。 */
 export const BUILTIN_THEME_PACKS = builtinThemePacks as readonly ThemePack[];
@@ -377,7 +376,6 @@ export function validThemePackSlots(slots: Partial<Record<ThemeMode, string>>, p
   return out;
 }
 
-/** The stylesheet two slots stand for, given every pack there is (builtin and imported). */
 export function slotsStylesheet(slots: Partial<Record<ThemeMode, string>>, packs: readonly ThemePack[]): string {
   const find = (id: string | undefined) => (id ? packs.find((pack) => pack.id === id) : undefined);
   return themePackStylesheet({ dark: find(slots.dark), light: find(slots.light) });

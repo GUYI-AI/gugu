@@ -26,7 +26,6 @@ export function commitRangeForPullRequest(pr: PullRequest): CommitRange {
 
 type CommitPage = { commits: Commit[]; aheadCount: number };
 
-/** One page of the commits between two oids: immutable for its key, read once and kept a while. */
 const commitPage = replica({
   name: 'commitPage',
   scope: 'device',
@@ -49,15 +48,12 @@ const commitPage = replica({
 });
 
 export type CommitPages = {
-  /** The pages asked for so far, in order (the first one says how far ahead the range is). */
   pages: Reading<CommitPage>[];
-  /** Another page follows the last one read. */
   hasMore: boolean;
   loadMore: () => void;
   retry: (index: number) => void;
 };
 
-/** The commits of a range, a page at a time (how many pages are shown is this view's state). */
 export function useCommits(projectId: string, workspaceId: string, range: CommitRange | undefined): CommitPages {
   const identity = range ? `${range.baseRefOid}:${range.headRefOid}` : null;
   const [shown, setShown] = useState<{ identity: string | null; count: number }>({ identity, count: 1 });

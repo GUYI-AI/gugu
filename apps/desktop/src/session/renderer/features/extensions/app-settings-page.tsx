@@ -99,7 +99,6 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
   </main>;
 }
 
-/** Back to the App's own page, when it has one other than this (a host settings page is its page). */
 function AppSettingsBack({ installedMain, onBack, label }: { installedMain: { hostSettings?: boolean } | null; onBack: () => void; label: string }) {
   if (!installedMain || installedMain.hostSettings) return null;
   return <button type="button" className="mk-back" data-testid="app-settings-back" onClick={onBack}>

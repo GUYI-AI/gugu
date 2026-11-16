@@ -49,7 +49,6 @@ export interface SearchView {
   stale: boolean
 }
 
-/** Chat messages found in the cloud (message_search_as) for these words, in one conversation or every one. No push. */
 const messageSearch = replica({
   name: 'messageSearch',
   scope: 'account',
@@ -62,7 +61,7 @@ const messageSearch = replica({
   keep: 30_000,
 })
 
-/** Chat messages stored on this device (SQLite) in one conversation: answers offline, never waits for the network. */
+/** Answers offline, never waits for the network. */
 const storedMessageSearch = replica({
   name: 'storedMessageSearch',
   scope: 'account',
@@ -78,7 +77,6 @@ const storedMessageSearch = replica({
   keep: 30_000,
 })
 
-/** This device's task turns for these words, with the index state: read again every 2 s while it is still preparing. */
 const taskTurnSearch = replica({
   name: 'taskTurnSearch',
   scope: 'device',
@@ -141,7 +139,7 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const context: SearchContext = { summaries: useChatSummaries(), identities: useIdentities(), me: useSelfId(), online: useNetworkOnline() }
   const typed = useDebounce(text, 100)
   const current = useSearchView({ typed, chips }, facet, tasks, context, true)
-  // The last words whose results were all in: shown, marked stale, while the next words' are on their way (`read: false`).
+  // The last words whose results were all in: shown, marked stale, while the next words' are on their way.
   const [held, setHeld] = useState<SearchWords | null>(null)
   const settled = current.hits !== null
   // Only non-empty results are held; chips compared by content (a render may hand the same chips as a new array).
@@ -161,7 +159,7 @@ type SearchContext = {
   online: boolean
 }
 
-/** The view of one search (words and chips): every source's reading, merged. `read: false` shows what is there only. */
+/** `read: false` shows what is there only. */
 function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks: boolean, { summaries, identities, me, online }: SearchContext, read: boolean): SearchView {
 
   const scopes: SearchChip[] = [...chips]
@@ -210,7 +208,6 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
   // Messages that cannot be asked now are said (❌ placeholders for ever): no account to search for, or the cloud offline.
   const unasked = !messagesApply ? null : messageSearch.key(query, null) === null ? 'globalSearch.signedOut' as const
     : !localScope && !online && messages.state === 'unknown' ? 'globalSearch.offline' as const : null
-  // A source that applies and has not answered yet: the results are not known (❌ drawn as "nothing found" or a 0).
   const pending = (messagesApply && messages.state === 'unknown') || (turnsApply && turns.state === 'unknown')
   const messageRows = answered(messagesApply ? [messages] : [])
   const turnHits = answered(turnsApply ? [turns] : [])

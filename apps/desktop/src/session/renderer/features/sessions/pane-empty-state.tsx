@@ -98,7 +98,6 @@ export function useSessionWorkspaceActions(
   // extend the list instead of joining the union. Both surfaces read the same store, so what the menu offers and what the
   // empty state offers cannot drift (#2374). 与「+」菜单同一套语义(behavior tab-extensions):只列启用的,点一个 =
   // 把它放到这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。
-  // What is installed not known yet: one placeholder row where the Apps go (❌ 「no Apps」 before the list is read).
   const installed = useInstalledApps(LOCAL_HOST);
   const extensionActions: WorkspacePanelAction[] = installed.state === 'error'
     ? [{ id: 'extensions-failed', label: `${messageForUser(installed.error)} · ${translate('extensions.retry')}`, icon: null, section: 'extensions', onClick: () => void installedExtensions.refresh(LOCAL_HOST) }]
@@ -204,7 +203,6 @@ export interface WorkspacePanelAction {
   shortcutSettingsKey?: CommandId;
   disabled?: boolean;
   title?: string;
-  /** The row of an entry not known yet (the Apps, before what is installed is read): drawn as a placeholder row. */
   unknown?: true;
   onClick: () => void;
 }
@@ -308,7 +306,6 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
 });
 
 /** 空态清单的一行(别的机器上的会话的工作区空态也用这一行,#6264)。 */
-/** An action's box; its placeholder while not known takes the same one. */
 const ACTION_BOX = 'flex min-h-10 w-full items-center px-2.5 py-2';
 
 export function PaneEmptyStateAction({

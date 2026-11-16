@@ -34,7 +34,6 @@ import { replica, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import type { SearchItem } from '@shared/core/search';
 
-/** This device's index answer for the palette's words (tasks, projects; empty query = newest tasks). No push. */
 const commandPaletteSearch = replica({
   name: 'commandPaletteSearch',
   scope: 'device',

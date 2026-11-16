@@ -30,7 +30,6 @@ export function scheduleSlotShown(reading: Reading<readonly SessionSchedule[]>):
   return reading.state === 'error' || (reading.state === 'value' && reading.value.length > 0);
 }
 
-/** The schedule's place, where `scheduleSlotShown`: the chip, or the failure with a retry. */
 export function SessionScheduleSlot({ machine, reading }: { machine: string | null; reading: Reading<readonly SessionSchedule[]> }) {
   if (reading.state === 'error') {
     return <RefreshFailed error={reading.error} onRetry={() => void sessionSchedules.refresh(machine ?? 'local')} />;

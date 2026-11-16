@@ -62,10 +62,7 @@ export function useCreateSessionState(
   // Issue-derived name (Linear can derive directly from branchName; others need AI)
   const directIssueSessionName = getIssueSessionName(linkedIssue);
 
-  /**
-   * The name suggestion asked for now, or null (setting off / not read, or an issue names the task). An LLM command
-   * whose answer fills an editable input: asked once per request, never read again as data.
-   */
+  /** An LLM command whose answer fills an editable input: asked once per request, never read again as data. */
   const request = useMemo((): NameRequest | null => {
     if (autoGenerateName !== true) return null;
     if (linkedType === 'issue' && linkedIssue !== null) {
@@ -94,7 +91,6 @@ export function useCreateSessionState(
   const answeredThis = request !== null && generate.variables?.key === request.key;
   const suggestion = answeredThis && generate.isSuccess ? generate.data : undefined;
 
-  // Pick the effective generated name and pending state based on linked type + selection.
   const generatedName = linkedType === 'issue' && linkedIssue !== null && directIssueSessionName !== null
     ? directIssueSessionName
     : suggestion;

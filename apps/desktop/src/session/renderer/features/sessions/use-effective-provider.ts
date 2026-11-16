@@ -92,7 +92,6 @@ export function useEffectiveProvider(
   );
 
   if (!known || !knownProviderIds || !sessionpageProviderIds) {
-    // Not read yet, or the agent list could not be read (said, with the machine's agents unknown).
     const errorMessage = agentsReading.state === 'error' ? translate('composer.agentsLoadFailed') : null;
     return { providerId: null, setProviderOverride, createDisabled: true, error: errorMessage, chosenByUser: false, known: false };
   }

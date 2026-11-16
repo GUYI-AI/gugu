@@ -1,9 +1,6 @@
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 
-/**
- * @@@extensions-api-of — host key → the API answering for it: `local` = this desktop's main, `remote:<deviceId>` = another
- * desktop's through device RPC (#6264). `phone` is not an `rpc.extensions`: its models read the phone store themselves.
- */
+/** @@@extensions-api-of — host key → its API (#6264); `phone` models read the phone store themselves. */
 export const LOCAL_HOST = 'local';
 export const PHONE_HOST = 'phone';
 

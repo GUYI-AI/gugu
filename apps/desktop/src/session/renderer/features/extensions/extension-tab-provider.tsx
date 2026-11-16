@@ -90,10 +90,7 @@ export class ExtensionTabResource implements TabResource {
   }
 }
 
-/**
- * An App page on its own (a screen block, a window): its contribution and its tab's label — what the page says, else its
- * installed title (`unknown` while neither is known: ❌ the raw kind). `file` names it unless it is the App's `chatFile`.
- */
+/** An App page on its own (a screen block, a window): `unknown` while no title is known (❌ the raw kind). */
 export function useAppPageTab(said: ExtensionSharedPresentation, tabKind: string, file?: string, stored?: string): {
   /** null: what is installed is not known yet (undefined: known, and this App's tab is not in it); `failed`: it could not be read. */
   contribution: ExtensionTabContributionEntry | undefined | null; label: string; tooltip: string; unknown: boolean; failed: Error | null;
@@ -207,13 +204,7 @@ export function createExtensionTabProvider(
   const kind = extensionTabKind(extensionId, tabName);
   const TabContent = createExtensionTabContent(extensionId, kind);
 
-  /**
-   * Read from the replica at render time rather than captured here: a provider
-   * can only be registered once per kind, so a title captured now would be the
-   * title forever — an upgrade that renames its tab would keep showing the old
-   * name until the app restarted. Registered from a read list, so the tab name
-   * stands only for a tab its App no longer declares.
-   */
+  // Read at render time: a provider registers once per kind, so a captured title would outlive an upgrade's rename.
   const titleOf = (): string => peekInstalledAppsTracked()?.tabTitle(kind) ?? tabName;
 
   return createTabProvider({
@@ -223,18 +214,13 @@ export function createExtensionTabProvider(
     // change it); a file opened in it is the conversation's peer, half each.
     sideWidth: (state: ExtensionTabState) => (state?.filePath ? undefined : peekInstalledAppsTracked()?.sideWidth(kind)),
     onBeforeOpen: (args: ExtensionTabState): ExtensionTabState => args?.filePath ? { filePath: args.filePath, ...(args.byHost ? { byHost: true as const } : {}) } : (isPerSession(kind) ? { perSession: true } : {}),
-    // `entry.state` is the only path a per-tab fact travels on, and until now it
-    // was read by nobody — which is why a tab could not be told which file it was
-    // opened for. Reading it here is what makes the file claim mean anything.
     initialize: (entry, _handle, ctx) => new ExtensionTabResource(extensionId, entry.state?.filePath, () => {
       if (entry.state?.filePath) return fileBaseName(entry.state.filePath);
       const surface = extensionSurfaceStore.sharedState(residentPageKey(kind, residentPlace({ ...ctx.place, tabId: entry.tabId, perSession: isPerSession(kind) })));
       return extensionTabTitle(surface, titleOf()).label;
     }, () => extensionSurfaceStore.state(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, entry.tabId).dirtyIn !== null, entry.state?.byHost === true),
     dispose: (entry, resource: ExtensionTabResource, ctx) => {
-      // Drop what the extension said about this tab along with the tab. A
-      // reopened tab is a new one and starts at its manifest title, not at the
-      // last title some earlier session happened to leave behind.
+      // A reopened tab starts at its manifest title, not at what an earlier one was told.
       const sessionId = ctx.place?.kind === 'session' ? ctx.place.sessionId : null;
       extensionSurfaceStore.forget(sessionId, entry.tabId);
       resource.dispose();
@@ -242,8 +228,7 @@ export function createExtensionTabProvider(
     onBeforeClose: (entry, _resource, ctx) => confirmCloseOfUnsaved(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, entry.tabId, entry.state?.filePath),
     closed: (tabId, ctx) => extensionViewStore.closeSlot(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, tabId),
 
-    // Observers, because the title is read through the replica's MobX tick: reinstalling an
-    // extension that renamed its tab updates the tab bar in place.
+    // Observers: the title is read through the replica's MobX tick.
     TabBarItem: observer(function ExtensionTabBarItem({
       tab,
       host,

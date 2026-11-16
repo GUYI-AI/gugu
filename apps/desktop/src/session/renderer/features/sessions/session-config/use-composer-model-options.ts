@@ -45,8 +45,7 @@ export function useComposerModelOptions(
 ): Record<string, ComposerModelOption> | null | undefined {
   const { translate } = useSessionMessages();
   const agents = useAgents();
-  // The own tier's heading names the agent: until the list is read the options are unknown (`undefined`; the trigger
-  // holds the name's place), ❌ headed by the raw provider id or "agent" and renamed when the list lands.
+  // The heading names the agent: unknown until the list is read, ❌ the raw id renamed when it lands.
   const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agents.state === 'value' ? agents.value : null, providerId);
 
   return useMemo(

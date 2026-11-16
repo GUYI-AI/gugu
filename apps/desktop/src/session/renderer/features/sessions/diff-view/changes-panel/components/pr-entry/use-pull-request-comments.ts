@@ -20,7 +20,7 @@ export const pullRequestComments = replica({
   refreshOnFocus: true,
 });
 
-/** The comments of a pull request; `null` = it has no number on its host, so there are no comments to read. */
+/** `null`: it has no number on its host. */
 export function usePullRequestComments(projectId: string, pr: PullRequest): Reading<PullRequestComment[]> | null {
   const prNumber = getPrNumber(pr);
   const reading = useReplica(pullRequestComments, prNumber === null ? null : [projectId, pr.repositoryUrl, prNumber]);

@@ -35,7 +35,6 @@ export function MarketAppRow({
   subtitle: string;
   iconUrl?: string | null;
   deprecated?: boolean;
-  /** What its button says is not known yet (the first screen kept across restarts): a placeholder of its size. */
   actionUnknown?: boolean;
   lifecycle: AppLifecycle;
   pending?: ExtensionPendingAction;

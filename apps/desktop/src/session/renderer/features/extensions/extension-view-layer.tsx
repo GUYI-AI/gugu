@@ -51,7 +51,6 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
   useEffect(
     () =>
       reaction(
-        // Not known (yet, or dropped): nothing is said to be gone.
         () => peekInstalledAppsTracked()?.residentTabContributions.map((contribution) => contribution.kind) ?? null,
         (now, before) => {
           if (now && before) for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
@@ -222,7 +221,6 @@ export const ExtensionPage = observer(function ExtensionPage({
     void rpc.extensions.captureWidget({ webContentsId, widgetId }).then(async reply => {
       if (!reply.success || !reply.data) return;
       const blob = await widgetSnapshotWebP(reply.data, width);
-      // The one writer of the picture store puts what it stored into the replica the slots read.
       if (blob && await widgetSnapshots.put(account, widgetId, theme, width, blob)) shown?.set(await widgetSnapshotDataUrl(blob));
     }).catch(error => log.warn('Widget picture could not be saved:', error))
       .finally(() => {

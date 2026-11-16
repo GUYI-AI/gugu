@@ -96,7 +96,6 @@ function AppPromptBody({ prompt, actions, disabled, actionsShown }: { prompt: Ap
 /** One App's prompts, on its settings page. Same data and writes as the library page. */
 export function AppPromptsSection({ extensionId, store }: { extensionId: string; store: Pick<InstalledApps, 'appPrompts'> }) {
   const actions = usePromptLibraryActions(store);
-  // Given the list (`store`), the App's prompts are known.
   return <>{(actions.appPrompts ?? []).filter((prompt) => prompt.key.startsWith(`${extensionId}/`)).map((prompt) => <div className="mg-row" key={prompt.key}><AppPromptBody prompt={prompt} actions={actions} disabled={actions.isBusy} actionsShown /></div>)}</>;
 }
 

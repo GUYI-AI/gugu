@@ -16,28 +16,24 @@ import { agentInstallationStatusUpdatedChannel } from '@shared/events/appEvents'
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 
 /**
- * @@@agent-readings — what a machine says about its agents, one replica per kind, keyed by the machine (null = this
- * computer; another machine's answers ❌ under this computer's entry). All derive from the machine's install state, so an
- * install, update, uninstall or re-probe refreshes the whole family (`refreshAgentReadings`, the one list of members;
- * the old `['agents', …]` prefix invalidation leaked #2802, #5605, #5719 and the source versions).
+ * @@@agent-readings — what a machine (null = this computer) says about its agents. All derive from its install state, so
+ * an install change refreshes the whole family (`refreshAgentReadings`; a prefix invalidation leaked #2802, #5605, #5719).
  */
 type Machine = string | null;
 
 const backoff = (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000);
-/** A failing read is asked again this often (1 s, 2 s, 4 s), then the reading is an error (❌ unknown for ever). */
+/** Then the reading is an error (❌ unknown for ever). */
 const RETRIES = 3;
 
-/** The agents a machine offers for new tasks (name, icon, capabilities, sessionpage integration). */
 export const agentsMetadata = replica({
   name: 'agentsMetadata',
   scope: 'account',
   networkMode: 'always',
   read: (_owner, machine: Machine) => rpcOn(machine).agents.list() as Promise<AgentPayload[]>,
-  // This computer's list changes by a push (`wireAgentReadings`); another machine's by what someone did in its terminal.
+  // Another machine's list changes by what someone did in its terminal (no push).
   fresh: 30_000,
 });
 
-/** Library → Agents: every agent a machine knows, installed or not. */
 export const managementAgents = replica({
   name: 'managementAgents',
   scope: 'account',
@@ -46,7 +42,6 @@ export const managementAgents = replica({
   fresh: 30_000,
 });
 
-/** One agent's library detail; asked again whenever the detail opens (its probe may have moved on). */
 export const managementAgent = replica({
   name: 'managementAgent',
   scope: 'account',
@@ -56,7 +51,6 @@ export const managementAgent = replica({
   retryDelay: backoff,
 });
 
-/** One registered agent of this computer, offered for new tasks or not (sign-in, the assistant's engine). */
 export const agentMetadata = replica({
   name: 'agentMetadata',
   scope: 'device',
@@ -64,7 +58,6 @@ export const agentMetadata = replica({
   fresh: 5 * 60_000,
 });
 
-/** The icon of every registered agent (a lookup table, not the list offered for new tasks). */
 export const agentIcons = replica({
   name: 'agentIcons',
   scope: 'device',
@@ -72,10 +65,7 @@ export const agentIcons = replica({
   fresh: Infinity,
 });
 
-/**
- * Which models an agent's harness can run. The main process owns invalidation and answers from memory, so every mount
- * asks (`fresh: 0`, #7081), focus asks, and a `refreshing` answer is asked again every 700 ms until the probe settles.
- */
+/** Main owns invalidation and answers from memory, so every mount asks (#7081); `refreshing` is asked again until it settles. */
 export const harnessModelCatalog = replica({
   name: 'harnessModelCatalog',
   scope: 'account',
@@ -86,7 +76,7 @@ export const harnessModelCatalog = replica({
   refreshEvery: (lookup) => (lookup?.refreshing ? 700 : false),
 });
 
-/** Whether the provider of one of a harness's own models has a credential on its machine (#4956). */
+// #4956
 const credentialLog = rendererLogger('harness-model-credential');
 
 export const harnessModelCredential = replica({
@@ -100,16 +90,14 @@ export const harnessModelCredential = replica({
       if (!result.success) throw new Error(`modelCredential(${providerId}, ${modelId}) failed`, { cause: result.error });
       return result.data;
     } catch (error) {
-      // Said here, once per read: its reader turns a failure into the domain's "cannot tell" (use-harness-model-credential).
+      // Said here, once per read: its reader turns a failure into "cannot tell".
       credentialLog.warn({ providerId, modelId, machine, error: String(error) }, 'model credential could not be read');
       throw error;
     }
   },
-  // A credential changes by a sign-in, and that path refreshes it (`refreshAgentReadings`, the sign-in flows).
   fresh: 60_000,
 });
 
-/** Install state of every agent on a machine; this computer's is patched by its push (`wireAgentReadings`). */
 export const agentInstallationStatus = replica({
   name: 'agentInstallationStatus',
   scope: 'account',
@@ -120,7 +108,6 @@ export const agentInstallationStatus = replica({
   retryDelay: backoff,
 });
 
-/** The versions each install registry offers for an agent. */
 export const installSourceVersions = replica({
   name: 'installSourceVersions',
   scope: 'account',
@@ -132,7 +119,6 @@ export const installSourceVersions = replica({
   retryDelay: backoff,
 });
 
-/** An agent's extra arguments and environment on a machine. */
 export const agentSettings = replica({
   name: 'agentSettings',
   scope: 'account',
@@ -141,7 +127,7 @@ export const agentSettings = replica({
   fresh: 60_000,
 });
 
-/** Read the whole family again for a machine. `keepStatus`: the install state was just patched from the push. */
+/** `keepStatus`: the install state was just patched from the push. */
 export function refreshAgentReadings(machine: Machine, options: { keepStatus?: boolean } = {}): Promise<void> {
   return Promise.all([
     agentsMetadata.refresh(machine),
@@ -156,7 +142,7 @@ export function refreshAgentReadings(machine: Machine, options: { keepStatus?: b
   ]).then(() => undefined);
 }
 
-/** This computer's pushes about its agents, wired once per document (fork changes; an agent's full install status). */
+/** Wired once per document. */
 export function wireAgentReadings(): () => void {
   const offs = [
     events.on(agentCapabilitiesChangedChannel, () => {

@@ -155,19 +155,15 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   remoteRef.current = remote;
   const hostKeyRef = useRef(host.key);
   hostKeyRef.current = host.key;
-  // What is installed there (`installedExtensions(host.key)`): unknown until read, an error said in place, else the list.
   // A machine that is offline is not asked; what was read of it is drawn read-only (this and the three reads below).
   const installed = useInstalledApps(host.key, { read: !machineOffline });
   const apps = installed.state === 'value' ? installed.value : null;
-  // What the market says of them (`summary`; absent in a restored value = not known yet: no flag drawn until it is).
   const updatesReading = useReplica(marketUpdates, [host.key], { read: !machineOffline });
   const updates = updatesReading.state === 'value' ? updatesReading.value.summary ?? null : null;
   // 别的机器读清单没读到(离线 / server 太旧 / 问不通):页面上说一句人话,❌ 弹一条带原文的失败 toast。
-  // Which declared permissions the owner has taken back, per extension (`revokedPermissions(host)`; this desktop's is kept
-  // across restarts): unknown until read, then the switches draw it.
   const revokedReading = useReplica(revokedPermissions, [host.key], { read: !machineOffline });
   const revoked = revokedReading.state === 'value' ? revokedReading.value : null;
-  // #6387 各扩展给 agent 的程序:几个会话在用、最近一次没起来的原因(`extensionAgentStatus(host)`)。
+  // #6387
   const agentStatusReading = useReplica(extensionAgentStatus, [host.key], { read: !machineOffline });
   const agentStatus = agentStatusReading.state === 'value' ? agentStatusReading.value : null;
   // The inventory's reads, failed (the last read or the refresh after it): said in place, and in the header for another machine.
@@ -205,9 +201,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const [query, setQuery] = useState('');
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
   const debouncedQuery = useDebounce(query.trim(), 250);
-  // The shelf (`marketShelf(host, locale)`: every page, no search word; its first screen kept across restarts) and a search
-  // (`marketSearch(host, word, pages)`: loading more is one page more, a new key; the pages already drawn stay drawn
-  // from the previous key's reading until it lands, and when it fails). A machine that is offline is not asked (args null).
+  // Loading more is a new key: the pages already drawn stay drawn from the previous key until it lands, and when it fails.
   const [paging, setPaging] = useState({ query: '', pages: 1 });
   const pages = paging.query === debouncedQuery ? paging.pages : 1;
   const shelfReading = useReplica(marketShelf, machineOffline ? null : [host.key, locale]);
@@ -215,10 +209,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const searchReading = useReplica(marketSearch, searchArgs);
   const searchBefore = useReplica(marketSearch, searchArgs && pages > 1 ? [host.key, debouncedQuery, pages - 1] : null, { read: false });
   const fullShelf = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null;
-  // Restored from the snapshot (a cold start): only the first screen is known until the shelf is read.
   const firstScreen = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null;
-  // The read of what is shown failed (nothing read, or its refresh): said above the market with a retry, what was read
-  // stays drawn (a cold start's first screen, the pages of a search before the one that failed).
+  // A failed read is said above the market with a retry; what was read stays drawn.
   const marketFailure = (reading: Reading<unknown>) => (reading.state === 'unknown' ? null : reading.error);
   const shownFailure = debouncedQuery === '' ? marketFailure(shelfReading) : marketFailure(searchReading);
   const shelf: ShelfState = useMemo((): ShelfState => {
@@ -319,8 +311,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       log.error('extension inventory unreadable:', error);
       // 别的机器:那一句话在页头(deviceScopeNotice,从读数来),不弹 toast。
       if (remoteRef.current) return;
-      // The tab shows the failure in place with a way back (below, from the readings); the toast reaches whoever is on the
-      // other tab.
+      // The toast reaches whoever is on the other tab.
       toast({
         title: translateRef.current('extensions.loadFailed'),
         description: messageForUser(error),
@@ -661,8 +652,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       if (!result.success) {
         throw new Error(result.error ?? '');
       }
-      // The list read again: this window's tab providers follow it (register-extension-tabs.ts), no restart — per the
-      // product contract; another machine's tabs follow in its own window (it hears the inventory changed).
+      // This window's tab providers follow the list, no restart; another machine's follow in its own window.
       await refresh();
       // 装的这台机器上现在这一版,清出「有新版」的提示（或者换成刚装的这版还在跑的下一个）。
       void marketUpdates.refresh(host.key);
@@ -849,7 +839,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
 
   // ── derived views ───────────────────────────────────────────────────────
-  // null: what is installed is not known yet.
   const installedById = useMemo(() => (apps ? new Map(apps.manifests.map((manifest) => [manifest.id, manifest])) : null), [apps]);
 
   // 云端那口对这一个 id 要说的话,三选一(#5410);yanked/deprecated 比「有新版」急,
@@ -950,7 +939,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const toggleOf = (manifest: ExtensionManifest) =>
     apps!.isPreinstalled(manifest.id) ? undefined : (enabled: boolean) => void switchExtension(manifest, enabled);
 
-  // The installed tab's rows, once the list is known (the tab draws placeholders until then).
   const installedRows = (apps ? apps.manifests : [])
     .filter((manifest) => matchesExtensionQuery(manifest, query))
     .sort((a, b) => a.name.localeCompare(b.name));

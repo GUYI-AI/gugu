@@ -12,22 +12,18 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 
 /**
- * One mirror for every reader (desktop pages, the phone's session page), keyed by machine and session: the host's
- * versions only compare within one machine and one link epoch. A machine whose link comes back starts a new epoch (its
- * host may have restarted and counts from 1 again): its views are dropped and read again where wanted.
+ * One mirror for every reader, keyed by machine and session: versions only compare within one machine and one link epoch
+ * (a host that restarted counts from 1 again), so a link coming back drops that machine's views.
  */
 const views = observable.map<string, LifeView>();
-/** A read that failed (no view to show): said by the reader, cleared by the next view. */
 const failures = observable.map<string, string>();
 const requested = new Set<string>();
 
-/** How a machine is reached from here: the desktop's machine clients, or the phone's device RPC. */
 export type LifeRoute = {
-  /** The machine (`''` = this one). */
+  /** `''` = this machine. */
   key: string;
   read: (sessionId: string) => Promise<LifeView>;
   listen: (accept: (view: LifeView) => void) => () => void;
-  /** The link to that machine closed (false) or opened again (true): a new epoch either way. */
   onLink?: (change: (open: boolean) => void) => () => void;
 };
 type MachineEntry = { readers: number; stop: () => void; epoch: number; connected: boolean; wants: Map<string, Set<() => boolean>>; waiting: Set<string> };
@@ -46,10 +42,8 @@ function accept(machine: string, view: LifeView): void {
   }
 }
 
-/** Forget a machine's views: nothing in this epoch may be compared with what comes next. */
 function dropMachine(machine: string): void {
   const prefix = viewKey(machine, '');
-  // A desktop page asks again for what it shows (`sessionLifeView` reads a key it has not asked for in this epoch).
   for (const key of [...requested]) if (key.startsWith(prefix)) requested.delete(key);
   runInAction(() => {
     for (const key of [...views.keys()]) if (key.startsWith(prefix)) views.delete(key);
@@ -60,8 +54,7 @@ function dropMachine(machine: string): void {
 function newEpoch(route: LifeRoute, entry: MachineEntry, open: boolean): void {
   entry.epoch += 1;
   entry.connected = open;
-  // A session whose host had input waiting is read again when the link is back too (that input may have moved meanwhile),
-  // however many epochs the link was down for.
+  // A session whose host had input waiting is read again when the link is back (that input may have moved meanwhile).
   for (const sessionId of entry.wants.keys()) if (views.get(viewKey(route.key, sessionId))?.pending.items.length) entry.waiting.add(sessionId);
   dropMachine(route.key);
   if (!open) return;
@@ -69,10 +62,7 @@ function newEpoch(route: LifeRoute, entry: MachineEntry, open: boolean): void {
   entry.waiting.clear();
 }
 
-/**
- * Follow a machine's lifecycle events (and its link) while anyone reads it; `wanted` says whether a session must be
- * read again when the link comes back. Subscribed before any read (a push that beats the read is not lost).
- */
+/** `wanted`: whether a session must be read again when the link comes back. Subscribe before any read (a push may beat it). */
 export function watchLife(route: LifeRoute, sessionId: string, wanted: () => boolean): () => void {
   let entry = machines.get(route.key);
   if (!entry) {
@@ -90,12 +80,12 @@ export function watchLife(route: LifeRoute, sessionId: string, wanted: () => boo
   return () => {
     wants.delete(wanted);
     if (!wants.size) active.wants.delete(sessionId);
-    // Nobody follows that machine's pushes any more: what is kept could go stale unnoticed, so it goes too.
+    // Nobody follows that machine's pushes: what is kept could go stale unnoticed.
     if (--active.readers === 0) { active.stop(); machines.delete(route.key); dropMachine(route.key); }
   };
 }
 
-/** Read the host's current view through this route; a failure in this epoch is said next to the view mirrored so far (❌ dropped). */
+/** A failure in this epoch is said next to the view mirrored so far (❌ dropped). */
 export async function readLifeVia(route: LifeRoute, sessionId: string): Promise<LifeView> {
   const epoch = machines.get(route.key)?.epoch;
   const key = viewKey(route.key, sessionId);
@@ -109,18 +99,15 @@ export async function readLifeVia(route: LifeRoute, sessionId: string): Promise<
   }
 }
 
-/** The view this route's machine has given for a session (a one-moment look, outside rendering). */
 export function sessionLifeViewOf(route: LifeRoute, sessionId: string): LifeView | null {
   return views.get(viewKey(route.key, sessionId)) ?? null;
 }
 
-/** A session's view and read failure through this route, for `useSelect` (the MobX adapter). */
 export function lifeReadable(route: LifeRoute, sessionId: string): Readable<{ view: LifeView | null; error: string | null }> {
   const key = viewKey(route.key, sessionId);
   return mobxReadable(() => ({ view: views.get(key) ?? null, error: failures.get(key) ?? null }));
 }
 
-/** The desktop's route to the machine a session lives on (its reconnect is a new epoch). */
 function desktopRoute(machine: string | null): LifeRoute {
   return {
     key: machine ?? '',
@@ -134,7 +121,6 @@ function desktopRoute(machine: string | null): LifeRoute {
 function listenOn(machine: string | null): boolean {
   if (machines.has(machine ?? '')) return true;
   if (machine && !machineClient(machine)) return false;
-  // The desktop's pages follow a machine for the whole run (a held reader).
   watchLife(desktopRoute(machine), '', () => false);
   return true;
 }

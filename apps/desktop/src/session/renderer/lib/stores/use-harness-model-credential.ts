@@ -27,12 +27,7 @@ export function useHarnessModelCredential(
   return credentialStatus(reading);
 }
 
-/**
- * The domain's status for a reading. Not read yet: `null` (the caller draws a placeholder). Read: what the harness said.
- * The read failed: the domain's own "cannot tell" — `HarnessModelCredentialStatus` makes `'unknown'` the landing point of
- * every failure, and every consumer keeps the current choice for it (❌ treats it as `'uncredentialed'`); the error itself
- * is said where it happened (the replica's read logs it) and stays in the reading.
- */
+/** A failed read is the domain's own `'unknown'` (❌ `'uncredentialed'`); the replica's read logs the error. */
 function credentialStatus(reading: Reading<HarnessModelCredentialStatus>): HarnessModelCredentialStatus | null {
   switch (reading.state) {
     case 'unknown': return null;

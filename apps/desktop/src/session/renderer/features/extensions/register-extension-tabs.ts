@@ -4,16 +4,10 @@ import { createExtensionTabProvider } from './extension-tab-provider';
 import { installedExtensions, marketUpdates, peekInstalledApps, watchInstalled, LOCAL_HOST, type InstalledApps } from './installed-extensions';
 import { extensionTabKind, type ExtensionManifest } from '@shared/extensions/manifest';
 
-/**
- * The tab providers follow what is installed here (a flow over the `installedExtensions('local')` replica, diffing each
- * value with the one before): a newly installed or switched-on App's tabs register, a switched-off one's close and
- * withdraw, an uninstalled one's withdraw (its open tabs fall back to the 「未加载」 placeholder). Off the critical path: a
- * tab whose provider is missing is held as a placeholder and promoted in place when it registers (PaneStore). Refs #2374.
- */
+// The tab providers follow what is installed here (a flow diffing each value with the one before). Refs #2374.
 let followed: Map<string, { manifest: ExtensionManifest; enabled: boolean }> | null = null;
 
 function follow(apps: InstalledApps | null): void {
-  // A value restored from the snapshot (the dock only) or an entry dropped says nothing about what is installed.
   if (!apps) return;
   const before = followed;
   followed = new Map(apps.manifests.map((manifest) => [manifest.id, { manifest, enabled: apps.isEnabled(manifest.id) }]));
@@ -40,25 +34,20 @@ function ensureFollowing(): void {
   follow(peekInstalledApps(LOCAL_HOST));
 }
 
-/** Start following (once per window), then read the list: the snapshot kept only the dock. */
 export function wireInstalledExtensionTabs(): () => void {
   ensureFollowing();
   void registerInstalledExtensionTabs().catch((error: unknown) => log.warn('Installed extensions could not be read:', error));
   return () => stopFollowing?.();
 }
 
-/** Read what is installed here again (an install, an uninstall, a switch): the tabs follow the value it puts. */
 export async function registerInstalledExtensionTabs(): Promise<void> {
   ensureFollowing();
-  // Marked stale first, then read whether or not a surface shows it (a refresh alone reads only where shown).
+  // A refresh alone reads only where shown.
   await installedExtensions.refresh(LOCAL_HOST);
   await installedExtensions.fetch(LOCAL_HOST);
 }
 
-/**
- * #6264 这台机器上装着的扩展被**别的桌面**改了(资源库切到这台机器后装 / 卸 / 开关):重读清单,tab 跟着值走(`follow`);
- * 市场对装着的这些要说的话一起重读。
- */
+/** #6264 Another desktop changed what is installed here. */
 export async function resyncInstalledExtensionTabs(): Promise<void> {
   await registerInstalledExtensionTabs();
   void marketUpdates.refresh(LOCAL_HOST);
@@ -102,13 +91,7 @@ export function unregisterExtensionTabs(
   }
 }
 
-/**
- * Registers one contribution, tolerating a kind that is already registered.
- * Reinstalling an extension re-runs this while its providers are still live: the
- * existing provider stays and the tabs open against it keep working, and since
- * providers read their title from the replica rather than a captured manifest, a
- * renamed tab still updates.
- */
+/** Tolerates a kind already registered: a reinstall keeps the live provider and its open tabs. */
 function registerExtensionTabProvider(extensionId: string, tabName: string): void {
   const provider = createExtensionTabProvider(extensionId, tabName);
   if (sessionTabRegistry.has(provider.kind)) return;

@@ -2,14 +2,7 @@ import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { LOCAL_EXTENSIONS_HOST, type ExtensionsHost } from './extensions-host';
 import { writeInstalled } from './installed-extensions';
 
-/**
- * Switch an installed extension off or on — the rung between installed and uninstalled (owner, #5265: 可用/不可用). One
- * function for both places that offer the switch (the workspace panel and Settings → Extensions).
- *
- * Drawn on the click; the host's answer is what stays, and a refused write reads the list again (I4) and throws so the
- * caller can say so with a way to retry. The tab providers follow the list (register-extension-tabs.ts `follow`): off
- * closes its open tabs and withdraws the providers, on registers them again. Another desktop's tabs follow in its own window.
- */
+/** Switch an installed extension off or on (owner, #5265: 可用/不可用); a refusal throws for the caller to say. */
 export async function setExtensionEnabled(
   manifest: ExtensionManifest,
   enabled: boolean,

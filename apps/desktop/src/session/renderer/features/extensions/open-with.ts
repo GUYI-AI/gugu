@@ -19,7 +19,6 @@ export type SessionOpener = { tabKind: string; candidate?: FileOpenerCandidate }
  * (「用别的 App 打开」, an App's `files.openWith(file, { ask: true })`): every App that opens it, the person picks.
  */
 export async function pickSessionOpener(filePath: string, ask = false): Promise<SessionOpener> {
-  // Who opens it is decided on what is installed: read once if not yet (❌ "no App claims it" while not known).
   const installed = await fetchInstalledApps(LOCAL_HOST);
   const candidates = fileOpenersFor(filePath, installed.manifests, 'session').filter((candidate) =>
     installed.isEnabled(candidate.extensionId) && (candidate.suffix !== '*' || opensInEditor(filePath))

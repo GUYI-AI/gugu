@@ -14,12 +14,7 @@ import { log } from '@renderer/utils/logger';
 
 type SettingsReply = { success: boolean; data?: AppSettings; error?: string };
 
-/**
- * What an App's author declared (`settings`), drawn by the host: on the App's settings page, and on the page of an App with
- * no page of its own. The stored values are the `extensionSettings(hostKey, id)` replica, read when `active` turns on (and
- * on every open: no push); until they are, each control is a placeholder of its size (❌ a switch drawn off, an empty box).
- * Input typed before the page was moved or hidden stays until saved (the draft, this view's).
- */
+/** What an App's author declared (`settings`), drawn by the host; the draft stays until saved, even if the page is hidden. */
 export function AppSettingsForm({ manifest, active, hostKey, save: write, id, hidden, labelledBy, role }: {
   manifest: ExtensionManifest;
   active: boolean;
@@ -38,7 +33,6 @@ export function AppSettingsForm({ manifest, active, hostKey, save: write, id, hi
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const values = draft ?? stored;
   const [saveError, setSaveError] = useState<string | null>(null);
-  // Why a read failed goes to the log (the replica's read says it); the person reads that it failed, with what was kept.
   const error = saveError ?? (reading.state === 'error' || (reading.state === 'value' && reading.error) ? t('appSettings.readFailed') : null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);

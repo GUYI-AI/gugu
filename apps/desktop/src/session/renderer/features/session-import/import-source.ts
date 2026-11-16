@@ -58,7 +58,7 @@ export function resolveImportSource(deviceId: string, directTerminal = false): S
   return machineImportSource(deviceId, directTerminal);
 }
 
-/** The confirm view's read of one session file on a machine: read each time it is selected (the file may change). */
+/** Read each time it is selected (the file may change). */
 export const sessionImportPreview = replica({
   name: 'sessionImportPreview',
   scope: 'account',

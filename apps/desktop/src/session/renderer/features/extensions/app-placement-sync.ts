@@ -25,7 +25,7 @@ const isResident = (state: unknown): boolean => !(state as { filePath?: string }
 export function startAppPlacementSync(paneLayout: SessionPaneLayout, _sessionId: string): () => void {
   return autorun(() => {
     const installed = peekInstalledAppsTracked();
-    // Not known yet: nothing is taken (a tab is closed only on what is known of its App); this runs again when it is.
+    // Not known yet: nothing is taken; this runs again when it is.
     if (!installed) return;
     for (const { pane } of paneLayout.groups) {
       const doomed: string[] = [];

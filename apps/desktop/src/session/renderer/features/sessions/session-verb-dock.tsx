@@ -61,7 +61,6 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
   // 这条会话的 agent 和我的私聊(与对话页给它发首句同一个地址);有项目群就不要。
   const dm = useReplica(sessionAgentChat, chatId ? null : [projectId, sessionId]);
   if (!chatId) {
-    // Not resolved yet: the box's place is held; failed: said, with a retry (❌ no box and no word).
     if (dm.state === 'unknown') return <Unknown className="h-[132px] w-full" />;
     if (dm.state === 'error') {
       return (

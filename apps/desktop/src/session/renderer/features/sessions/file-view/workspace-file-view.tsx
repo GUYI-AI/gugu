@@ -137,7 +137,6 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
   return <MessageFilePreview fill tabbed readOnly={!sessionId} file={file} onClose={onClose} />;
 }
 
-/** The 「Open in」 entries of this computer, or null while its tools or the settings are not read yet. */
 function useOpenInMenu(): { id: OpenInAppId; label: string }[] | null {
   const apps = useOpenInApps();
   const openIn = useReplica(appSettingsModel, ['openIn', LOCAL_SETTINGS_HOST_KEY]) as Reading<SettingsMeta<'openIn'>>;

@@ -17,11 +17,7 @@ function MentionAvatar({ id, name, role }: { id: string; name: string; role?: Me
     isAgent={role ? role === 'agent' : undefined} size={14} harnessBadge={false} still />;
 }
 
-/**
- * The agent tools this computer can create agents with (main's plugin reachability; web and mobile have the static
- * catalog). Main says when an agent's capabilities change (`agentCapabilitiesChangedChannel`) and the catalog is read
- * again; otherwise it is current for five minutes. Not kept across restarts (not in the snapshot cap table).
- */
+/** The agent tools this computer can create agents with (web and mobile have the static catalog). */
 export const agentCreationTools = replica({
   name: 'agentCreationTools',
   scope: 'device',

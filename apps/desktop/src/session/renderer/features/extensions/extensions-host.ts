@@ -1,6 +1,4 @@
-// #6264 资源库 → 扩展看的是**哪一台咕咕**。本机:原样走 `rpc.extensions`;另一台咕咕桌面:经那台机器的会话页宿主调同一个
-// `extensionsController`,改动后由那台机器自己的窗口补上 / 撤下 tab(它收到 `extensionsInventoryChangedChannel`)。
-// 装着的清单是 `installedExtensions(host.key)`(installed-extensions.ts),按 key 找 API 的只有 `extensionsApiOf`。
+// #6264 资源库 → 扩展看的是**哪一台咕咕**;另一台的 tab 由它自己的窗口跟进。
 // 咕咕 server 没有窗口,扩展在它上面跑不起来 —— 那种机器不走这里(资源库那一格如实说一句)。
 import { onMachineEvent, rpc } from '@renderer/lib/ipc';
 import { extensionsApiOf, LOCAL_HOST, remoteHostKey } from './extensions-api';
@@ -39,7 +37,6 @@ export type ExtensionsApi = Pick<
 >;
 
 export type ExtensionsHost = {
-  /** The host key of its replicas (`installedExtensions(key)` …): `local` or `remote:<deviceId>`. */
   key: string;
   api: ExtensionsApi;
   /** 这台机器主进程推的事件(下载进度);别的机器只在那次调用进行中转过来。返回退订。 */

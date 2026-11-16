@@ -4,11 +4,7 @@ import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { remotePortsChangedChannel, type RemotePortsSnapshot } from '@shared/remote-ports';
 import type { SessionpageListeningPort } from '@gugu/session-core/session-record/contract';
 
-/**
- * The ports this computer forwards for a machine (main's table) and the ones found in its output. Pushed by main: one
- * subscription per machine while the ports tab or a browser pane (`hold`) shows it; a table kept from earlier is read
- * again when it opens (changes made while nobody watched).
- */
+/** The ports this computer forwards for a machine and the ones found in its output; push-fed by main. */
 export const remotePortForwards = replica({
   name: 'remotePortForwards',
   scope: 'account',
@@ -29,7 +25,6 @@ export const remotePortForwards = replica({
   },
 });
 
-/** What programs listen on that machine right now: asked each time the ports tab opens or the table changes. */
 export const machineListeningPorts = replica({
   name: 'machineListeningPorts',
   scope: 'account',
@@ -42,14 +37,13 @@ export const machineListeningPorts = replica({
   fresh: 0,
 });
 
-/** Follow a machine's forwards for the address bar (shows nothing itself): the table is read now and kept current; returns stop. */
+/** For the address bar (shows nothing itself); returns stop. */
 export function holdRemotePorts(deviceId: string): () => void {
   const release = remotePortForwards.hold(deviceId);
   void remotePortForwards.prefetch(deviceId);
   return release;
 }
 
-/** The machine's port a local forward stands for (one-moment, for the address bar); not read yet = none known. */
 export function remoteForLocalPort(deviceId: string, localPort: number): number | null {
   const reading = remotePortForwards.peek(deviceId);
   if (reading.state !== 'value') return null;

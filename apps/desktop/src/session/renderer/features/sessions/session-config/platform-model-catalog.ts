@@ -188,11 +188,7 @@ export async function fetchPlatformModelCatalog(
   return parsePlatformModelCatalog(response);
 }
 
-/**
- * A session's platform preselection, as the machine it runs on answers: the agent's default and the explicit composer
- * decision recorded for this conversation (#6182). Only these two of the host's answer are read: the models themselves
- * are the account's catalog (`platformModels`), derived per engine below — ❌ a second catalog per surface and machine.
- */
+/** A session's platform preselection (#6182); the models themselves are the account's catalog, ❌ a second one per machine. */
 export const sessionPlatformSelection = replica({
   name: 'sessionPlatformSelection',
   scope: 'account',
@@ -200,9 +196,7 @@ export const sessionPlatformSelection = replica({
     const { agentDefault, sessionSelection } = await fetchPlatformModelCatalog(providerId, surface, sessionId, machine);
     return { agentDefault, sessionSelection };
   },
-  // Changes by a hot switch on this composer (`refresh`), a models-changed signal, or its machine coming back.
   fresh: Infinity,
-  // Viewing sessions does not grow the cache forever: an entry nobody shows leaves after a while.
   keep: SESSION_CATALOG_GC_MS,
   watch: {
     group: (_sessionId, _providerId, _surface, machine) => machine,
@@ -228,10 +222,7 @@ function gateReason(providerId: string, surface: SessionpageSessionSurface, agen
   return null;
 }
 
-/**
- * The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. Only for a
- * catalog as read (`catalogDetailed`): one restored from the snapshot carries no multipliers or levels.
- */
+/** Only for a catalog as read: one restored from the snapshot carries no multipliers or levels. */
 function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
   if (!catalogDetailed(catalog)) throw new Error('platformModelsFor needs the catalog as read (with its menu details)');
   const protocol = platformWireProtocol(providerId) as PlatformModelProtocol | null;
@@ -253,8 +244,7 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
 
 /**
  * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)时什么都不读。
- * Derived, not read per surface: the account's catalog (`platformModels`) filtered to the engine's protocol and gated by
- * its sessionpage integration on the machine; a session adds its preselection. A disconnected machine is not asked.
+ * Derived, not read per surface. A disconnected machine is not asked.
  */
 export function usePlatformModelCatalog(
   providerId: string | null,
@@ -281,7 +271,6 @@ export function usePlatformModelCatalog(
     void platformModels.refresh();
     if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
   };
-  // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).
   const failed = catalog.state === 'error' || (catalog.state === 'value' && catalog.error !== null) || selection.state === 'error';
   const known = !providerId || (catalog.state !== 'unknown' && agents.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
   const catalogError = gate ?? (failed ? PLATFORM_CATALOG_RETRY_ERROR : null);

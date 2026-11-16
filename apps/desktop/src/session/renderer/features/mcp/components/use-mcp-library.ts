@@ -7,14 +7,7 @@ import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import type { GuguToolsOff } from '@shared/gugu-tool-groups';
 import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpProvided, LibraryMcpServer } from '@shared/mcp-library';
 
-/**
- * The MCP library of a library host (`libraryHostOf`, keyed like every library read; @@@client-state-model, PR 3):
- * - `mcpLibraryServers(hostKey)`: gugu's own list there; each write (add / update / remove / default / check) reads it again.
- * - `mcpProvided(hostKey)`: the built-in, integration and App groups (`provided`); the tool-group switch is drawn on the
- *   click and a refusal reads it again (I4: ❌ put back what was there when it began).
- * - `harnessMcpServers(hostKey, agentId)`: one harness's own servers, read when its section opens (its config file, ❌
- *   its CLI). No push: `reload` reads them again.
- */
+/** The MCP library of a library host (@@@client-state-model). No push: `reload` reads it again. */
 export const mcpLibraryServers = replica({
   name: 'mcpLibraryServers',
   scope: 'device',
@@ -50,7 +43,6 @@ export function useHarnessMcpServers(agentId: string, enabled: boolean): Reading
 export function useMcpLibrary() {
   const host = keepLibraryHost(useLibraryHost());
   const reachable = host.remote?.online !== false;
-  // That machine offline: not asked; what was read of it stays drawn (read-only).
   const list = useReplica(mcpLibraryServers, [host.key], { read: reachable });
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
   const provided = useReplica(mcpProvided, [host.key], { read: reachable });
@@ -93,9 +85,7 @@ export function useMcpLibrary() {
   };
 
   return {
-    /** gugu's own servers there; null while not read (❌ "none added"). */
     servers: list.state === 'value' ? list.value : null,
-    /** The built-in, integration and App groups there (a reading: unknown and failed are drawn as such). */
     provided,
     /** 装了的那几家,各一个折叠的段头;配置等展开才读。 */
     installed,

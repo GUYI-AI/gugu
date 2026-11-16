@@ -157,7 +157,6 @@ const IntegrationsCard: React.FC = () => {
 
   // 注册表里的每一家都列出来(#7210):飞书、腾讯文档这类只给 agent 用的服务不是 issue 系统,
   // ❌ 再按「是不是 issue 系统」筛 —— 那样它们连卡片都没有。
-  // Not read yet: no cards (the page draws its loading state below), ❌ every one drawn "not connected" first.
   const integrations: IntegrationItem[] = (integrationMetadata ?? []).map((integration) => {
     const provider = integration.id;
     // A saved connection not checked yet has no status: its error line waits for the check (❌ "not connected").

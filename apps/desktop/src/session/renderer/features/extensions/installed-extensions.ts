@@ -19,58 +19,40 @@ import type { ExtensionOrigin } from '@shared/extensions/upgrade';
 import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
 
-/**
- * @@@installed-extensions — what a host has installed (@@@client-state-model). Host keys: `local`, `remote:<deviceId>`
- * (#6264), `phone`. Push-fed: main's inventory channel refreshes it (register-extension-tabs.ts), writes and the quit
- * channel put main's answer, the phone's store `tell`s its list (phoneApps.ts). Drawn as a pure function of (list, locale).
- */
+// @@@installed-extensions — what a host (`local`, `remote:<deviceId>` #6264, `phone`) has installed (@@@client-state-model).
 
 export { LOCAL_HOST, PHONE_HOST } from './extensions-api';
 export { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 
 export interface ExtensionTabContributionEntry {
-  /** Tab kind under which this contribution registers: `<extensionId>.<tabName>`. */
   kind: ExtensionTabKind;
   extensionId: string;
   extensionName: string;
   title: string;
   hostSettings?: boolean;
-  /** Its width beside another page (manifest `sideWidth`; the host's settings page is a narrow form): none = half. */
+  /** Width beside another page: none = half. */
   sideWidth?: number;
-  /**
-   * Host-produced PNG for this tab, or null for the generic mark. A data URL rather than a path: the bytes are re-encoded
-   * in main precisely so the privileged renderer never fetches anything an extension shipped.
-   */
+  /** A data URL re-encoded in main, so the privileged renderer never fetches anything an extension shipped. */
   iconDataUrl: string | null;
-  /** False while the extension is switched off: listed, not offered. */
   enabled: boolean;
-  /** Shipped with gugu (origin `preinstalled`): drawn only from the host's own entries, never a session tab. */
   preinstalled: boolean;
-  /**
-   * The tab opens files (it claims some, in a task or a group): it is opened FOR a file, and a page of it with no file has
-   * nothing to show — so it is never a tab of its own in a session (摩擦单 F95, F3).
-   */
+  /** Opened FOR a file, so never a tab of its own in a session (摩擦单 F95, F3). */
   forFiles: boolean;
-  /** It stands alone as a page (`isOwnPage`): not a file opener, not the App's card in a message. */
   ownPage: boolean;
-  /** The person took this page out of the menus (`hiddenTabs`): nothing offers it, though a file or an agent can still open it. */
+  /** Out of the menus, though a file or an agent can still open it. */
   hidden: boolean;
-  /** One page in each task (`perSession`): each task keeps its own, so it is never moved from one task to another. */
   perSession: boolean;
 }
 
-/** 这份清单问的是哪台机器(本机 = `rpc.extensions`;另一台咕咕桌面 = 经设备 RPC,#6264)。 */
 export type InstalledExtensionsApi = Pick<typeof rpc.extensions, 'list' | 'marketUpdates' | 'setDisclosure' | 'setAutoUpdate'>;
 
-/** What installed is, as main lists it — and the phone's App store says it in the same shape (L9). */
 export type InstalledExtensionsList = NonNullable<Awaited<ReturnType<InstalledExtensionsApi['list']>>['data']> & {
-  /** The phone only: why its App store index could not be read this page load (absent: it could). */
+  /** The phone only: why its App store index could not be read. */
   unreadable?: string | null;
 };
 
 export type ExtensionDisclosureLevel = 'full' | 'progressive';
 
-/** An App as the far-left rail draws it: its icon (or, absent, its first letter) and the page it opens. */
 export interface RailApp {
   extensionId: string;
   name: string;
@@ -78,10 +60,7 @@ export interface RailApp {
   iconDataUrl: string | null;
 }
 
-/**
- * The rail's dock, kept across restarts for its first frame (PLAN v2 C4): the first `DOCK_KEPT_SLOTS` docked Apps, one whose
- * name exceeds `DOCK_KEPT_NAME_MAX` left out whole (null: a placeholder slot); `count` sizes the rest. Icons are not kept.
- */
+/** The rail's dock kept for its first frame (PLAN v2 C4); a name over `DOCK_KEPT_NAME_MAX` is left out whole (null). */
 export type KeptDock = { slots: ({ extensionId: string; name: string } | null)[]; count: number };
 
 /** `list` is absent only in a value restored from the snapshot: what is installed is not known yet, only the dock. */
@@ -100,7 +79,6 @@ function keptDockOf(list: InstalledExtensionsList): KeptDock {
 }
 
 let phoneList: (() => Promise<InstalledExtensionsList>) | null = null;
-/** phoneApps.ts registers how the phone's list is read (it imports this module, not the other way). */
 export function definePhoneInstalledList(read: () => Promise<InstalledExtensionsList>): void {
   phoneList = read;
 }
@@ -128,8 +106,6 @@ export const installedExtensions = replica({
       hostKey !== LOCAL_HOST ? undefined : value.list ? { dock: keptDockOf(value.list) } : value,
   },
 });
-
-// ── what is drawn: pure functions of (list, locale) ─────────────────────────────────────────────────────────────
 
 /** Everything a surface derives from one host's list in one language, built once per (list, locale) (`appsOf`). */
 export class InstalledApps {
@@ -172,18 +148,15 @@ export class InstalledApps {
     return this.manifests.find((manifest) => manifest.id === extensionId);
   }
 
-  /** An installed App's name as the person reads it: in the interface language, as its manifest's `localized` says it there. */
   appName(extensionId: string): string | undefined {
     const manifest = this.manifestFor(extensionId);
     return manifest && localizedManifestText(manifest, this.locale).name;
   }
 
-  /** Shipped with gugu (origin `preinstalled`): updated with gugu, never uninstalled or switched off here. */
   isPreinstalled(extensionId: string): boolean {
     return this.origins[extensionId] === 'preinstalled';
   }
 
-  /** The pages the person took out of an App's menus (none: it hides none). */
   hiddenTabsOf(extensionId: string): string[] {
     return this.hiddenTabs[extensionId] ?? [];
   }
@@ -192,7 +165,7 @@ export class InstalledApps {
     return !this.disabled.includes(extensionId);
   }
 
-  /** Whether this App is updated by itself: only a market App has the switch (null for the rest). */
+  /** Only a market App has the switch (null for the rest). */
   autoUpdates(extensionId: string): boolean | null {
     return this.origins[extensionId] === 'market' ? !this.autoUpdateOff.includes(extensionId) : null;
   }
@@ -212,12 +185,11 @@ export class InstalledApps {
     return tab && (this.mainTabOf(tab.extensionId)?.kind === kind ? tab.extensionName : tab.title);
   }
 
-  /** How wide this App page is beside another (`sideWidth`); undefined: half, a peer. */
   sideWidth(kind: string): number | undefined {
     return this.allTabContributions.find((entry) => entry.kind === kind)?.sideWidth;
   }
 
-  /** Enabled Apps' `/` prompts in the reader's language, grouped by App name, other languages' titles kept for search. */
+  /** Enabled Apps' `/` prompts; other languages' titles kept for search. */
   get appPrompts(): { key: string; appName: string; title: string; prompt: string; otherTitles: string[] }[] {
     return this.manifests.filter((manifest) => this.isEnabled(manifest.id)).flatMap((manifest) => {
       const appName = localizedManifestText(manifest, this.locale).name;
@@ -229,7 +201,6 @@ export class InstalledApps {
     });
   }
 
-  /** Every declared tab, preinstalled Apps' included — what a lookup by kind reads. */
   get allTabContributions(): ExtensionTabContributionEntry[] {
     this.tabs ??= this.manifests.flatMap((manifest) => {
       const name = localizedManifestText(manifest, this.locale).name;
@@ -257,12 +228,10 @@ export class InstalledApps {
     return this.allTabContributions.filter((entry) => entry.enabled && entry.ownPage && !entry.hidden);
   }
 
-  /** Every enabled App's resident page, preinstalled ones included: what the resident layer keeps alive. */
   get residentTabContributions(): ExtensionTabContributionEntry[] {
     return this.allTabContributions.filter((entry) => entry.enabled);
   }
 
-  /** An App's page of its own (first tab that opens no file and is not per task) or null: what the rail opens. */
   mainTabOf(extensionId: string): ExtensionTabContributionEntry | null {
     const pages = this.allTabContributions.filter((entry) => entry.extensionId === extensionId && !entry.forFiles && !entry.perSession);
     // A card is the main page only of an App with nothing else (Data Lens): hiding an App's page never makes its card the page.
@@ -270,22 +239,19 @@ export class InstalledApps {
     return (own.length > 0 ? own : pages).find((entry) => !entry.hidden) ?? null;
   }
 
-  /** What the rail shows: the pinned Apps that are installed, on, and have a page of their own, in the person's order. */
   get dockedApps(): RailApp[] {
     return this.dock.flatMap((extensionId) => this.railApp(extensionId) ?? []);
   }
 
-  /** Every App the rail can open, pinned or not, in the order they were installed: what a right click on 「App」 lists. */
   get openableApps(): RailApp[] {
     return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? []);
   }
 
-  /** What a group can open: Apps with a page of their own, and Apps whose tab opens a chat's files (5-minute game ①). */
+  /** Also Apps whose tab only opens a chat's files (5-minute game ①). */
   get chatOpenableApps(): RailApp[] {
     return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? this.chatFilesApp(manifest) ?? []);
   }
 
-  /** An App that only opens a chat's files, as the group's list draws it: on, and not one gugu ships (those it places itself). */
   private chatFilesApp(manifest: ExtensionManifest): RailApp | null {
     const tab = manifest.contributes.tabs.find((candidate) => declaredContexts(candidate).includes('chat'));
     if (!tab || !this.isEnabled(manifest.id) || this.isPreinstalled(manifest.id)) return null;
@@ -293,7 +259,6 @@ export class InstalledApps {
     return { extensionId: manifest.id, name, kind: extensionTabKind(manifest.id, tab.name), iconDataUrl: this.appIcons[manifest.id] ?? null };
   }
 
-  /** An App as the rail draws it, if the rail can open it: installed, on, with a page of its own. */
   private railApp(extensionId: string): RailApp | null {
     const main = this.mainTabOf(extensionId);
     // A preinstalled App is where the host puts it, not an App of the rail or a chat's App list besides (统筹 09-29, L3).
@@ -304,7 +269,6 @@ export class InstalledApps {
 
 const built = new WeakMap<InstalledExtensionsList, Map<string, InstalledApps>>();
 
-/** The derivations of one list in one language, built once (a surface re-rendering gets the same object). */
 export function appsOf(list: InstalledExtensionsList, locale: string): InstalledApps {
   let byLocale = built.get(list);
   if (!byLocale) built.set(list, (byLocale = new Map()));
@@ -313,42 +277,36 @@ export function appsOf(list: InstalledExtensionsList, locale: string): Installed
   return apps;
 }
 
-/** What a host has installed, in the interface language. `null` host: nothing to read (unknown). */
 export function useInstalledApps(hostKey: string | null, options: { read?: boolean } = {}): Reading<InstalledApps> {
   const reading = useReplica(installedExtensions, hostKey ? [hostKey] : null, options);
   const { resolvedLocale } = useLocale();
   return useMemo((): Reading<InstalledApps> => {
     if (reading.state === 'error') return reading;
     if (reading.state === 'unknown') return reading;
-    // A value restored from the snapshot (the dock only): not known yet — unless this run's read failed, which is said
-    // (❌ an endless unknown that no retry branch reaches).
+    // A restored value (dock only) is unknown — unless this run's read failed (❌ an endless unknown no retry reaches).
     if (!reading.value.list) return reading.error ? { state: 'error', error: reading.error } : { state: 'unknown' };
     return { state: 'value', value: appsOf(reading.value.list, resolvedLocale), stale: reading.stale, error: reading.error };
   }, [reading, resolvedLocale]);
 }
 
-/** For a one-moment decision outside rendering: null while not known (a caller folding null marks it as a reading default). */
 export function peekInstalledApps(hostKey: string = LOCAL_HOST): InstalledApps | null {
   const reading = installedExtensions.peek(hostKey);
   return reading.state === 'value' && reading.value.list ? appsOf(reading.value.list, getLocaleSnapshot().resolvedLocale) : null;
 }
 
-/** The list as it is now, or once it has been read (a command that must know). */
 export async function fetchInstalledApps(hostKey: string = LOCAL_HOST): Promise<InstalledApps> {
   const now = peekInstalledApps(hostKey);
   if (now) return now;
-  // A value restored from the snapshot (the dock only) is fresh by time but says nothing of what is installed: read it.
+  // A restored value (dock only) is fresh by time but says nothing of what is installed.
   if (installedExtensions.peek(hostKey).state === 'value') await installedExtensions.refresh(hostKey);
   const read = (await installedExtensions.fetch(hostKey)).list;
   if (!read) throw new Error('What is installed could not be read');
   return appsOf(read, getLocaleSnapshot().resolvedLocale);
 }
 
-// ── MobX readers (until PR 5 removes MobX): a tick that follows the local entry ───────────────────────────────────
-
 const ticks = new Map<string, IObservableValue<number>>();
 
-/** For a MobX computed/reaction: re-runs when the host's entry or the language changes (a tick per host, no data held). */
+/** For a MobX computed/reaction (until PR 5 removes MobX): a tick per host, no data held. */
 export function peekInstalledAppsTracked(hostKey: string = LOCAL_HOST): InstalledApps | null {
   let tick = ticks.get(hostKey);
   if (!tick) {
@@ -362,28 +320,22 @@ export function peekInstalledAppsTracked(hostKey: string = LOCAL_HOST): Installe
   return peekInstalledApps(hostKey);
 }
 
-/** Every change of a host's entry (a value read or put): for a flow that diffs successive lists (tab registration). */
 export function watchInstalled(hostKey: string, listener: (apps: InstalledApps | null) => void): () => void {
   return installedExtensions.subscribe([hostKey], () => listener(peekInstalledApps(hostKey)));
 }
-
-// ── writes: main's answer is put; a refusal reads the truth again (I4: ❌ put back what was there when it began) ──
 
 function patchList(patch: (list: InstalledExtensionsList) => InstalledExtensionsList) {
   return (old: InstalledReading | undefined): InstalledReading | undefined => (old?.list ? { ...old, list: patch(old.list) } : old);
 }
 
-/** Put a part of the list a write or a push said (bound to the entry when it began). */
 export function putInstalled(hostKey: string, patch: (list: InstalledExtensionsList) => InstalledExtensionsList): void {
   installedExtensions.at(hostKey).set(patchList(patch));
 }
 
-/** A whole list a host told (the phone's App store after each change). */
 export function tellInstalled(hostKey: string, list: InstalledExtensionsList): void {
   installedExtensions.at(hostKey).set({ list });
 }
 
-/** A write of the list (lib/replicaWrite `writeOver`): drawn on the click, the host's answer put, a refusal read again. */
 export function writeInstalled<R>(
   hostKey: string,
   optimistic: ((list: InstalledExtensionsList) => InstalledExtensionsList) | null,
@@ -393,7 +345,6 @@ export function writeInstalled<R>(
   return writeOver(installedExtensions, [hostKey], optimistic && patchList(optimistic), write, (answer) => patchList(settled(answer)));
 }
 
-/** An App's 「自动更新」, as the host keeps it. Back on, main updates it at once; the list says so when it lands. */
 export async function setAutoUpdate(hostKey: string, extensionId: string, on: boolean): Promise<void> {
   await writeInstalled(hostKey, null, async () => {
     const result = await extensionsApiOf(hostKey).setAutoUpdate({ extensionId, on });
@@ -402,7 +353,6 @@ export async function setAutoUpdate(hostKey: string, extensionId: string, on: bo
   }, (autoUpdateOff) => (list) => ({ ...list, autoUpdateOff }));
 }
 
-/** How an App's tools are offered to agents; drawn on the click, the host's answer kept. */
 export async function setDisclosure(hostKey: string, extensionId: string, level: ExtensionDisclosureLevel): Promise<void> {
   const apps = peekInstalledApps(hostKey);
   if (!apps?.disclosure[extensionId]) throw new Error(`${extensionId} gives agents no tools`);
@@ -413,15 +363,13 @@ export async function setDisclosure(hostKey: string, extensionId: string, level:
   }, (settledLevel) => (list) => ({ ...list, disclosure: { ...list.disclosure, [extensionId]: settledLevel } }));
 }
 
-/** A 「始终用它」 kept (or, `null`, let go — 摩擦单 F73) where the host keeps it too: this window reads it at once. */
+/** A 「始终用它」 kept (or, `null`, let go — 摩擦单 F73). */
 export function noteOpenWithDefault(hostKey: string, key: string, tabKind: string | null): void {
   putInstalled(hostKey, (list) => {
     const { [key]: _dropped, ...rest } = list.openWith ?? {};
     return { ...list, openWith: tabKind === null ? rest : { ...rest, [key]: tabKind } };
   });
 }
-
-// ── what the market says of the installed Apps ───────────────────────────────────────────────────────────────────
 
 /** `offered`: update version per App; `gone`: no longer in the market; `summary` absent = restored (only the first two kept). */
 export type MarketUpdates = { offered: Record<string, string>; gone: string[]; summary?: MarketUpdatesSummary };
@@ -441,7 +389,7 @@ async function readUpdates(hostKey: string): Promise<MarketUpdatesSummary> {
   return result.data;
 }
 
-/** What the market says of a host's installed Apps (#5410). Refreshed by pushes (wire-market-refresh.ts, phoneApps.ts); ❌ polled. */
+/** What the market says of a host's installed Apps (#5410). Push-fed; ❌ polled. */
 export const marketUpdates = replica({
   name: 'marketUpdates',
   scope: 'device',
@@ -450,7 +398,6 @@ export const marketUpdates = replica({
     return { offered: Object.fromEntries(Object.entries(summary.updates).map(([id, update]) => [id, update.version])), gone: summary.gone ?? [], summary };
   },
   fresh: Infinity,
-  // Grows with the Apps installed from the market here (C1-C3 table: kept at 1,024): ids and versions only.
   persist: {
     maxBytes: 1024,
     maxEntries: 1,

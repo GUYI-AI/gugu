@@ -65,7 +65,6 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
     update: updateMutation.mutate,
     updateAsync: updateMutation.mutateAsync,
     reset: resetMutation.mutate,
-    /** Read the key again (a failed read's retry). */
     reload: () => invalidateAppSettingsKey(key, host.key),
     resetField: (field: keyof AppSettings[K]) => resetFieldMutation.mutate(field),
   };

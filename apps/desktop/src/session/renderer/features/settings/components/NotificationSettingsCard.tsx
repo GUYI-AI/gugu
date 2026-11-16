@@ -13,10 +13,7 @@ import { replica, useReplica } from '@/lib/replica';
 import { SettingSwitch } from './SettingControls';
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives';
 
-/**
- * Per-App permissions a host's owner took back (the bridge reads the same grant on every call), by host key (`local`,
- * `remote:<deviceId>`). Host push: main's inventory channel refreshes this desktop's. Only this desktop's is kept.
- */
+/** Per-App permissions a host's owner took back; only this desktop's is kept. */
 export const revokedPermissions = replica({
   name: 'extensionRevokedPermissions',
   scope: 'device',
@@ -57,7 +54,6 @@ function AppNotificationPermissions() {
       <SettingsRow title={<Unknown className="w-24" />} control={<Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />} />
     </SettingsGroup>;
   }
-  // An error reading the list is said below (readError); no rows then.
   const listed = installed.state === 'value' ? installed.value : null;
   const apps = listed ? listed.manifests.filter((app) => app.permissions?.capabilities?.includes('notifications')) : null;
   if (apps !== null && apps.length === 0 && !error && !readError) return null;

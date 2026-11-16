@@ -7,10 +7,8 @@ export type IntegrationAccountSummary = Awaited<ReturnType<typeof rpc.integratio
 export type IntegrationAccountCheck = Awaited<ReturnType<typeof rpc.integrations.checkAccounts>>[number];
 
 /**
- * #7240 一家集成存着的每个账号,和逐个查出来的连接状态(资源库详情的「%s 连接」):`integrationAccounts` /
- * `integrationAccountChecks` 两个 replica(connection-replicas.ts)的读数,连上 / 断开 / 重新授权之后随连接状态一起重读。
- * 那台机器比这个功能老(`unknown_method`)⇒ `supported: false`,详情照旧按单账号画。没连这一家:没有账号可读(unknown)。
- * 那台机器此刻问不到(离线、它的面板还没来)`reachable` 为 false:不去问,上次读到的照画。
+ * #7240 一家集成存着的每个账号和连接状态。那台机器比这个功能老(`unknown_method`)⇒ `supported: false`,按单账号画;
+ * 此刻问不到 ⇒ `reachable` false:不去问,上次读到的照画。
  */
 export function useIntegrationAccounts(
   integrationId: string,

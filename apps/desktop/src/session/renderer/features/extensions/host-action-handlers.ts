@@ -108,7 +108,6 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       if (action.chatId) {
         const chatId = action.chatId;
         const open = (apps: InstalledApps) => openLinkTarget({ kind: 'app', extensionId: action.extensionId, tab: action.tab ?? apps.mainTabOf(action.extensionId)?.kind.slice(action.extensionId.length + 1) ?? '', path: '', query: {}, place: { chat: chatId } });
-        // Which page is the App's own is read off what is installed: at once when known, else once it is read.
         const known = peekInstalledApps();
         return known ? open(known) : fetchInstalledApps().then((apps) => runInAction(() => open(apps)));
       }

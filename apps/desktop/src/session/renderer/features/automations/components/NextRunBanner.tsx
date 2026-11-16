@@ -13,7 +13,6 @@ export function NextRunBanner({ automationId }: NextRunBannerProps) {
   const { translate } = useSessionMessages();
   const next = useScheduledAutomationRun(automationId);
   const retry = useRetryAutomationRuns(automationId);
-  // Not read yet: the banner's place, ❌ "nothing scheduled".
   if (next.state === 'unknown') return <Unknown className="h-8 w-full rounded-lg" />;
   if (next.state === 'error') return <RefreshFailed error={next.error} onRetry={retry} />;
   const scheduledAt = next.value?.scheduledAt;

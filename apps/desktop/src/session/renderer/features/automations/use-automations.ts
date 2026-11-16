@@ -16,15 +16,11 @@ import {
   type RunStatusFilter,
 } from './automation-replicas';
 
-/** 这一页看的那台机器('local' = 本机)。 */
 function machineOf(host: AutomationsHost): AutomationMachine {
   return host.remote?.deviceId ?? 'local';
 }
 
-/**
- * One machine's reading, with that machine's pushes listened to while shown. 别的机器离线就不问(问不到,只会挂满超时),
- * 照旧画上次读到的;变化靠那台机器推来的事件(#6264),❌ 轮询、❌ 切回窗口再问。
- */
+/** 别的机器离线就不问(问不到,只会挂满超时),照旧画上次读到的(#6264)。 */
 function useMachineReplica<A extends [AutomationMachine, ...unknown[]], V>(
   model: Replica<A, V>,
   host: AutomationsHost,
@@ -115,7 +111,6 @@ export function useAutomationRunCounts(automationId: string) {
   return useMachineReplica(automationRunCounts, host, [machineOf(host), automationId]);
 }
 
-/** Read the run models of one automation again (a retry after a failed read). */
 export function useRetryAutomationRuns(automationId: string) {
   const machine = machineOf(useAutomationsHost());
   return () => refreshAutomationRuns(machine, automationId);

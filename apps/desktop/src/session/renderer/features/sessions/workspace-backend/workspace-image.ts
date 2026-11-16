@@ -2,10 +2,7 @@ import { replica } from '@/lib/replica';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { workspaceEvents, workspaceRpc } from './workspace-backend';
 
-/**
- * An image a workspace file shows, as a `data:` URL (null: no such file). Push-fed: one file-feed subscription while any
- * image is shown reads a changed file again; an image shown again (kept for a minute) is read again then.
- */
+/** An image a workspace file shows, as a `data:` URL (null: no such file); push-fed by the file feed. */
 export const workspaceImage = replica({
   name: 'workspaceImage',
   scope: 'account',

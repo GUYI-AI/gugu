@@ -133,7 +133,6 @@ export const SessionsPanel = observer(function SessionsPanel() {
   // isActive 只管键盘焦点给谁。
   useMarkSeenWhenShown(activeSession, useContext(SurfaceShownContext));
 
-  // null = this device's setting is not read yet (a first run): the bar keeps its row with a placeholder.
   const hideContextBarTrigger = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value.hideContextBar : null;
 
   // Measure the rendered height of the ContextBar so the PTY controller can

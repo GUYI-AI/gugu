@@ -12,20 +12,15 @@ import { extensionsInventoryChangedChannel, marketRefreshedChannel } from '@shar
 import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
 import { decodeShot } from './panel/decoded-shots';
 
-/**
- * @@@market-replicas — the App market and an installed App's pages, keyed by host (`local`, `remote:<deviceId>`, `phone`;
- * @@@client-state-model). The host's `changed` push refreshes the market models (their `watch`, one per host while shown).
- */
+// @@@market-replicas — the App market and an installed App's pages, keyed by host (@@@client-state-model).
 
-// What the App page kept itself before the read model (panel/kept-shelf.ts, removed): a whole market catalog per machine
-// and a picture, in the localStorage quota the snapshot uses. Nothing reads them: dropped once this module loads.
+// The retired panel/kept-shelf.ts keys take the localStorage quota the snapshot uses: dropped once this module loads.
 if (typeof localStorage !== 'undefined') {
   const retired = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
     .filter((key): key is string => !!key && (key.startsWith('gugu.appsShelf.v1:') || key === 'gugu.appsShot.v1'));
   for (const key of retired) localStorage.removeItem(key);
 }
 
-/** What the phone's App store answers for the market (registered by phoneMarketPage.ts). */
 export type PhoneMarket = {
   shelf: () => Promise<MarketShelfFull>;
   marketListing: (args: { extensionId: string; version: string }) => Promise<{ success: true; data: MarketListing } | { success: false; error: string }>;
@@ -45,9 +40,6 @@ function marketApiOf(hostKey: string): Pick<PhoneMarket, 'marketListing' | 'mark
   return hostKey === PHONE_HOST ? phone() : extensionsApiOf(hostKey);
 }
 
-// ── the shelf ─────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** The whole shelf (every page, no search word) and how the home page arranges it. */
 export type MarketShelfFull = {
   errorKind: 'unreachable' | null;
   items: MarketListItem[];
@@ -56,13 +48,11 @@ export type MarketShelfFull = {
   page: number;
   hasMore: boolean;
   featured: MarketListItem[];
-  /** `popular` null: the ranking could not be read (`rankingError`); the page says so. */
   home: Omit<MarketHome<MarketListItem>, 'featured'>;
   rankingError: string | null;
   fetchedAt: string | null;
 };
 
-/** One card of the first screen as kept across restarts: whole fields of this locale only. */
 export type MarketCard = {
   id: string;
   version: string;
@@ -71,11 +61,10 @@ export type MarketCard = {
   iconUrl: string | null;
   category: MarketCategory;
   deprecated: boolean;
-  /** The language its screenshots are in (the featured card says so when it is not the reader's). */
   defaultLocale: string;
 };
 
-/** The market's first screen, kept across restarts (C2/D1/D5); a card outside `CARD_LIMITS` is left out whole (null). */
+/** Kept across restarts (C2/D1/D5); a card outside `CARD_LIMITS` is left out whole (null). */
 export type MarketFirstScreen = {
   featured: (MarketCard | null)[];
   featuredCount: number;
@@ -84,11 +73,11 @@ export type MarketFirstScreen = {
   categories: MarketCategory[];
 };
 
-/** `full` absent: a value restored from the snapshot, only the first screen is known. */
+/** `full` absent: restored, only the first screen is known. */
 export type MarketShelf = { full?: MarketShelfFull; first?: MarketFirstScreen };
 
-export const FIRST_SCREEN_FEATURED = 2;
-export const FIRST_SCREEN_GRID = 9;
+const FIRST_SCREEN_FEATURED = 2;
+const FIRST_SCREEN_GRID = 9;
 // Bound: per card ≤ 640 chars with keys (icon URL `market/media/<sha256>.<ext>` ≈ 120); 11 × 640 + ≈ 300 = 7,340 ≤ 7,680.
 export const CARD_LIMITS = { id: 64, version: 32, name: 64, subtitle: 160, iconUrl: 160, defaultLocale: 35 } as const;
 
@@ -125,7 +114,7 @@ export function firstScreenOf(full: MarketShelfFull, locale: string): MarketFirs
   };
 }
 
-/** The install ranking; unreadable is said by the page (`rankingError`), ❌ a silent empty. */
+/** Unreadable is said by the page (`rankingError`), ❌ a silent empty. */
 async function readRanking(): Promise<{ scores: Map<string, number> | null; error: string | null }> {
   try {
     // Imported lazily: node tests render pages importing this module; the account client is the browser's.
@@ -166,7 +155,6 @@ async function readDesktopShelf(hostKey: string): Promise<MarketShelfFull> {
   };
 }
 
-/** The host's `changed` push reads the market models again (one listener per host and model while shown). */
 const marketFeed = {
   group: (hostKey: string) => hostKey,
   start: (_owner: string, hostKey: string) => onRefreshedOf(hostKey, (refreshed) => {
@@ -174,7 +162,6 @@ const marketFeed = {
   }),
 };
 
-/** The phone's shelf from its App store's entries (phoneMarketPage.ts): same home rules, its own ranking read. */
 export async function phoneShelfOf(items: MarketListItem[]): Promise<MarketShelfFull> {
   const ranking = await readRanking();
   const { featured, ...home } = marketHome(items.map((item) => ({ ...item, ...item.cloud })), ranking.scores);
@@ -193,7 +180,7 @@ export const marketShelf = replica({
     }
     return { full };
   },
-  // Opening the page reads it again (the host's own index, cheap), drawing the shelf in hand meanwhile.
+  // The host's own index is cheap: opening the page reads it again.
   fresh: 0,
   persist: {
     maxBytes: 7680,
@@ -204,12 +191,9 @@ export const marketShelf = replica({
   watch: marketFeed,
 });
 
-export type MarketSearch = Pick<MarketShelfFull, 'errorKind' | 'items' | 'invalid' | 'total' | 'page' | 'hasMore'>;
+type MarketSearch = Pick<MarketShelfFull, 'errorKind' | 'items' | 'invalid' | 'total' | 'page' | 'hasMore'>;
 
-/**
- * A search on a desktop's market, its first `pages` pages. Loading more is one page more (a new key): the pages the previous
- * key holds are taken as read and only the next one is asked; a failure leaves the previous key as it is.
- */
+/** Loading more is a new key (`pages` + 1): only the next page is asked; a failure leaves the previous key as it is. */
 export const marketSearch = replica({
   name: 'marketSearch',
   scope: 'device',
@@ -229,7 +213,7 @@ export const marketSearch = replica({
   watch: marketFeed,
 });
 
-/** One App as the market lists it now (a page not loaded yet, a link to an App): null = not in the market. */
+/** null = not in the market. */
 export const marketEntry = replica({
   name: 'marketEntry',
   scope: 'device',
@@ -242,7 +226,7 @@ export const marketEntry = replica({
   watch: marketFeed,
 });
 
-/** A version's product page in the market (about, screenshots). `outdated`: that machine's gugu is too old to say. */
+/** `outdated`: that machine's gugu is too old to say. */
 export const marketListing = replica({
   name: 'marketListing',
   scope: 'device',
@@ -261,7 +245,6 @@ export const marketListing = replica({
   fresh: Infinity,
 });
 
-/** The featured card's picture: the first screenshot of that version's listing, decoded (null: it has none). Not kept across restarts. */
 export const featuredShot = replica({
   name: 'featuredShot',
   scope: 'device',
@@ -275,7 +258,6 @@ export const featuredShot = replica({
   fresh: Infinity,
 });
 
-/** An App's versions in the market (newest first). Host push: the catalog changed. */
 export const marketVersionHistory = replica({
   name: 'marketVersionHistory',
   scope: 'device',
@@ -288,14 +270,11 @@ export const marketVersionHistory = replica({
   watch: marketFeed,
 });
 
-// ── an installed App (desktop hosts) ─────────────────────────────────────────────────────────────────────────────
-
 const unwrap = <T,>(result: { success: boolean; data?: T; error?: string }, what: string): T => {
   if (!result.success || result.data === undefined) throw new Error(result.error ?? `${what} unreadable`);
   return result.data;
 };
 
-/** What an App's author declared it keeps (`settings`), as stored. Read again on every open (no push). */
 export const extensionSettings = replica({
   name: 'extensionSettings',
   scope: 'device',
@@ -309,10 +288,7 @@ export const extensionSettings = replica({
   },
 });
 
-/**
- * Which agents and groups an App is given to (D-30): the signed-in account's agents and groups, so account scope (an
- * account switch never shows the last account's). Read on open and after a change (no push).
- */
+/** Which agents and groups an App is given to (D-30): account scope, so an account switch never shows the last one's. */
 export const appPlaces = replica({
   name: 'appPlaces',
   scope: 'account',
@@ -320,7 +296,6 @@ export const appPlaces = replica({
   read: async (_owner: string, hostKey: string, extensionId: string): Promise<EnablePlace[]> => unwrap(await extensionsApiOf(hostKey).appPlaces({ extensionId }), 'App places'),
 });
 
-/** The tools an App's program gives agents, for its installed version (null: it says none). */
 export const extensionAgentTools = replica({
   name: 'extensionAgentTools',
   scope: 'device',
@@ -332,7 +307,6 @@ export const extensionAgentTools = replica({
   fresh: Infinity,
 });
 
-/** The skills an App gives agents, for its installed version. */
 export const extensionAgentSkills = replica({
   name: 'extensionAgentSkills',
   scope: 'device',
@@ -344,22 +318,19 @@ export const extensionAgentSkills = replica({
   fresh: Infinity,
 });
 
-/** How much this device keeps for an App. Read on open; clearing it refreshes. */
 export const extensionDataBytes = replica({
   name: 'extensionDataBytes',
   scope: 'device',
   read: async (_owner: string, hostKey: string, extensionId: string): Promise<number> => unwrap(await extensionsApiOf(hostKey).appData({ extensionId }), 'App data').bytes,
 });
 
-/** #6387 Each App's agent program: how many sessions use it, why it last failed to start. Inventory push refreshes it. */
+/** #6387 Each App's agent program: how many sessions use it, why it last failed to start. */
 export const extensionAgentStatus = replica({
   name: 'extensionAgentStatus',
   scope: 'device',
   read: async (_owner: string, hostKey: string): Promise<Record<string, ExtensionAgentStatus>> => unwrap(await extensionsApiOf(hostKey).agentStatus(), 'agent status'),
   fresh: 60_000,
 });
-
-// ── push ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function onRefreshedOf(hostKey: string, listener: (refreshed: { outcome: string }) => void): () => void {
   if (hostKey === PHONE_HOST) return phone().onRefreshed(listener);
@@ -369,7 +340,7 @@ function onRefreshedOf(hostKey: string, listener: (refreshed: { outcome: string 
 
 const changedAt = new Map<string, string | null>();
 
-/** The host's catalog changed (push or `marketRefresh` answer): read the market again, once per `fetchedAt`. */
+/** Once per `fetchedAt`. */
 export function marketChanged(hostKey: string, fetchedAt: string | null = null): boolean {
   if (fetchedAt !== null && changedAt.get(hostKey) === fetchedAt) return false;
   changedAt.set(hostKey, fetchedAt);
@@ -380,5 +351,4 @@ export function marketChanged(hostKey: string, fetchedAt: string | null = null):
   return true;
 }
 
-// This desktop's App programs changed with what is installed (main's inventory channel).
 events.on(extensionsInventoryChangedChannel, () => { void extensionAgentStatus.refresh(LOCAL_HOST); });

@@ -23,7 +23,6 @@ export function AppGivenSection({
   machineName,
   blocked,
 }: {
-  /** Whose App this is (`local`, `remote:<deviceId>`): its places are read by this key. */
   hostKey: string;
   extensionId: string;
   api: Pick<ExtensionsApi, 'changeAppPlaces'>;
@@ -36,7 +35,7 @@ export function AppGivenSection({
   blocked?: 'off' | 'revoked';
 }) {
   const { translate } = useSessionMessages();
-  // `appPlaces(hostKey, id)`: read on open (no push: the person may have changed it from another computer), again after a change.
+  // No push: the person may have changed it from another computer.
   const reading = useReplica(appPlaces, [hostKey, extensionId]);
   const places = reading.state === 'value' ? reading.value : null;
   const [busy, setBusy] = useState(false);

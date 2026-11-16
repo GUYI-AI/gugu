@@ -103,7 +103,6 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
   const installed = useInstalledApps(LOCAL_HOST);
   const said = extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId));
-  // Not read yet: the page's own title or a placeholder. Not readable: the name the tab was opened with (said where the list is drawn).
   if (!isFolderItem(item) && item.kind && installed.state === 'unknown') {
     return { ...extensionTabTitle(said, said.title ?? ''), unknown: said.title === null };
   }

@@ -8,20 +8,16 @@ import { cachedDevicesAccount } from '@/store/devicesCache';
 import { refreshConnections } from '@/components/connections/connection-replicas';
 import type { GitHubAccountSummary } from '@shared/github';
 
-/** An assistant panel's store may still be settling right after it opened: such a failure is asked again twice (1 s, 2 s). */
+/** An assistant panel's store may still be settling right after it opened. */
 const ASSISTANT_PANEL_READ_ATTEMPTS = 3;
 
 /**
- * GitHub 账号是**这台机器上**连的(#6264 整个资源库都分机器):资源库选了别的机器时,列 / 连 / 设默认 / 移除
- * 都是那台机器上的;其余地方(项目设置、PR 选择器)用本机的。按机器(`host.key`)各一条,两份互不覆盖。
- * Signal tier: the machine says when its accounts change (`githubAccountsChangedChannel`, github-context-provider),
- * writes here refresh it, and it is read again when the window returns.
+ * GitHub 账号是**这台机器上**连的(#6264 整个资源库都分机器);按机器(`host.key`)各一条。Signal tier.
  */
 export const githubAccounts = replica({
   name: 'githubAccounts',
   scope: 'device',
   read: async (_owner, hostKey: string): Promise<GitHubAccountSummary[]> => {
-    // The host showing it is kept under its key (library-host.ts): a host is an object of functions, the key names it.
     const host = libraryHostOf(hostKey);
     for (let attempt = 1; ; attempt++) {
       try {
@@ -44,15 +40,13 @@ function askable(host: LibraryHost): boolean {
 }
 
 /**
- * Something changed the GitHub accounts (connected, imported, defaulted, removed, or the machine said so): every host's
- * list is read again, and so are the connections' readings derived from them (the integrations' connection status).
+ * Every host's list is read again, and the connection readings derived from them.
  */
 export function refreshGitHubAccountState(): void {
   void githubAccounts.refresh();
   refreshConnections();
 }
 
-/** The GitHub accounts of the library's machine. */
 export function useGitHubAccounts(): Reading<GitHubAccountSummary[]> {
   const host = keepLibraryHost(useLibraryHost());
   return useReplica(githubAccounts, askable(host) ? [host.key] : null);

@@ -35,7 +35,6 @@ function opKey(op: 'install' | 'update' | 'uninstall', hostKey: string) {
   return ['agents', op, hostKey] as const;
 }
 
-/** The versions each install registry offers for an agent on the library's machine (`installSourceVersions`). */
 export function useInstallSourceVersions(id: string, enabled: boolean) {
   const remote = useLibraryHost().remote;
   const reading = useReplica(installSourceVersions, enabled ? [remote?.deviceId ?? null, id] : null, { read: remote?.online !== false });
@@ -187,12 +186,10 @@ export function useAgentInstallationStatuses() {
   const nameOf = (id: string) => agentNameMap.get(id) ?? id;
 
   // #6264 资源库 / 会话 / 新建框在别的机器上:问那台机器;它离线时不问,手上有上次的就照旧画。
-  // This computer's statuses are patched by its push (agent-replicas.ts `wireAgentReadings`).
   const reading = useReplica(agentInstallationStatus, [machine], { read: host.remote?.online !== false });
 
   /**
-   * 装完 / 卸完 / 重新检测之后,从安装状态派生的那一族读数一起重读(`refreshAgentReadings` 是唯一列出成员的地方),
-   * 连同那台机器上的订阅 / 连接读数。
+   * 装完 / 卸完 / 重新检测之后,从安装状态派生的那一族读数一起重读。
    */
   const invalidate = (providerId?: string) => {
     void refreshAgentReadings(machine);

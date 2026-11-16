@@ -16,7 +16,6 @@ export function useConnectedIssueProviders(
 ): UseConnectedIssueProvidersResult {
   const { connectionStatus, integrations, isCheckingConnections } = useIntegrationsContext();
 
-  // A provider is offered once it is known usable: none while the catalog or the checks are not read yet.
   const connectedProviders = useMemo(
     () =>
       !integrations || !connectionStatus ? [] : integrations

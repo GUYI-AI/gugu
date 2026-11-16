@@ -149,7 +149,7 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
 export type InitialSessionState = {
   /** The agent choice rests on what is read; while false `provider` means nothing and the agent trigger holds its place. */
   providerKnown: boolean;
-  /** The model choice rests on what is read (harness catalog, Gugu catalog, credential); while false its trigger holds its place. */
+  /** Same for the model (harness catalog, Gugu catalog, credential). */
   modelKnown: boolean;
   provider: AgentProviderId | null;
   setProvider: (provider: AgentProviderId | null) => void;
@@ -888,7 +888,6 @@ export function useInitialSessionState(
   // 选的是别的机器、此刻没连上:为什么连不上由右下角那台机器的提示说(重连中 / 离线 / 要先登录 / 版本太旧,
   // 见 remote-hosts/machine-notice.ts),❌ 这里再报一句「读取 X 的模型失败」—— 那不是 X 的问题,是机器的。
   const machineUnreachable = Boolean(remoteHost && !remoteHost.online);
-  /** Whether the model choice can be made now: see `InitialSessionState.modelKnown`. */
   const modelKnown = providerKnown && (!providerId || machineUnreachable || (
     harnessCatalogState.kind !== 'unknown' && platformCatalog.known && harnessDefaultCredential !== null
   ));
@@ -1376,7 +1375,6 @@ export function InitialSessionField({
   const agents = agentsReading.state === 'value' ? agentsReading.value : null;
   const remoteHost = useLibraryHost().remote;
   const remoteCreateForActions = remoteHost !== null;
-  // The agent list or this box's choice not read yet: the agent trigger holds its place (❌ "Agent", then a name).
   // #6264 a machine not connected is not asked: nothing is held for it (why it is unreachable is the machine's notice).
   const agentOptionsLoading = !state.providerKnown && agentsAnswerAwaited(agentsReading, remoteHost);
   const { byEngine: agentCreationToolsByEngine, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
@@ -1401,7 +1399,6 @@ export function InitialSessionField({
   // 扁平一列、全部可选,点中没装的 agent 只会在会话启动时炸(owner 实遇)。口径见
   // `agent-availability-groups`,两个 composer 入口共用一份,免得同一个选择器两处表现不同。
   // #6101:读的是四态 `reading`(去装 / 去修 / 重新选一份是三件不同的事),❌ 不再看 `status`。
-  // null = the list is not read (or could not be): no options; the trigger holds its place meanwhile.
   const agentOptions = useMemo<ComposerAgentOption[] | null>(
     () => agents &&
       sortAgentsByAvailability(

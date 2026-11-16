@@ -119,10 +119,8 @@ export function AppManagePage({
   hiddenTabs?: readonly string[];
   /** This App's prompts, as the library page draws them. */
   prompts?: ReactNode;
-  /** Where its declared settings are saved (they are read through `extensionSettings(hostKey, id)`). */
   settingsApi?: { save: (settings: AppSettings) => Promise<{ success: boolean; data?: AppSettings; error?: string }> };
   autoUpdate?: { on: boolean; onToggle: (on: boolean) => void };
-  /** Which host's App this is (`local`, `remote:<deviceId>`, `phone`): the key its reads go by. */
   hostKey: string;
   resource?: ResourceContext;
   /** Replaces the words above the permissions: the phone lists only what it can use. */
@@ -154,19 +152,16 @@ export function AppManagePage({
   const disclosureSwitchId = useId();
   const programs = (manifest.contributes.mcpServers ?? []).map((server) => ('name' in server ? server.name : server.tools));
 
-  // ── 版本历史:点开才读(`marketVersionHistory`,市场目录变了由推送重读)──
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyReading = useReplica(marketVersionHistory, historyOpen ? [hostKey, manifest.id] : null);
   const history: Loadable<MarketVersionHistoryEntry[]> = !historyOpen ? { status: 'idle' } : historyReading.state === 'unknown' ? { status: 'loading' }
     : historyReading.state === 'error' ? { status: 'error' } : { status: 'ready', data: historyReading.value };
 
-  // ── 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单(按装着的版本)──
   const toolsLive = enabled && givesAgentTools(manifest) && !revoked.includes('agents:tools');
   const tools = useReplica(extensionAgentTools, toolsLive && api.agentTools ? [hostKey, manifest.id, manifest.version] : null);
 
   const skills = useReplica(extensionAgentSkills, manifest.contributes.skills && api.agentSkills ? [hostKey, manifest.id, manifest.version] : null);
 
-  // ── 这台设备上的数据(清掉以后调用方 refresh)──
   const dataBytes = useReplica(extensionDataBytes, api.appData ? [hostKey, manifest.id] : null);
 
   // ── 页面:能关的一页一行;打开文件的和消息卡片关不了,各并成一行,不重复 App 的名字 ──

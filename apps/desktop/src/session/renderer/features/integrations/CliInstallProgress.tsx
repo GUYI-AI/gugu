@@ -9,14 +9,10 @@ const log = rendererLogger('integrations/install-progress')
 
 export type CliDownloadProgress = Awaited<ReturnType<typeof rpc.integrations.cliLoginProgress>>
 
-/** Where each shown progress is read from, by the caller's stable key (the host and the integration). */
 const readers = new Map<string, () => Promise<CliDownloadProgress>>()
 const reportedFailures = new Set<string>()
 
-/**
- * An install's progress, read again every 750 ms while shown (someone else's progress: a read, not a command). Not kept;
- * an entry nobody shows is dropped at once.
- */
+/** Someone else's progress: a read, not a command. */
 const cliInstallProgress = replica({
   name: 'cliInstallProgress',
   scope: 'device',

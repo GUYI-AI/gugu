@@ -55,11 +55,7 @@ export type MachineCreateTarget = {
   projectId?: string;
 };
 
-/**
- * That machine's task workspace (#609; its tasks are listed under Tasks), where a new task goes when no project is chosen
- * (a chosen one is the local project the project block settled). Ensured there, and again when the machine reconnects or
- * a composer opens again (it may have come back without it).
- */
+/** That machine's task workspace (#609), ensured again on reconnect or a new composer (it may have come back without it). */
 const machineTaskWorkspace = replica({
   name: 'machineTaskWorkspace',
   scope: 'account',
