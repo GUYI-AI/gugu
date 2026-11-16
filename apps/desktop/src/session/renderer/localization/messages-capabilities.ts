@@ -970,8 +970,7 @@ export const enUSCapabilityMessages = {
   'harnessCatalog.unlockModelsHint': 'Add a {name} connection to see your models here',
   'harnessCatalog.accessAccount': 'Account sign-in',
   'harnessCatalog.accessApiKey': 'API Key',
-  'harnessCatalog.accessEndpoint': 'Custom base URL',
-  'harnessCatalog.accessFixed': 'Account sign-in or API key',
+  'harnessCatalog.accessEndpoint': 'Custom API address',
   'harnessCatalog.signInAgain': '{name} sign-in expired; sign in again',
   'harnessCatalog.signInAgainHint': 'Sign in again to see your {name} models.',
 } as const;
@@ -1884,8 +1883,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'harnessCatalog.unlockModelsHint': '添加 {name} 连接后这里显示你的模型',
   'harnessCatalog.accessAccount': '账号登录',
   'harnessCatalog.accessApiKey': 'API Key',
-  'harnessCatalog.accessEndpoint': '自定义 Base URL',
-  'harnessCatalog.accessFixed': '账号登录或 API 密钥',
+  'harnessCatalog.accessEndpoint': '自定义 API 地址',
   'harnessCatalog.signInAgain': '{name} 登录已失效，重新登录',
   'harnessCatalog.signInAgainHint': '重新登录后显示你的 {name} 模型。',
 };

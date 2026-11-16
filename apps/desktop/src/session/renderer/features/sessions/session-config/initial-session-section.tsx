@@ -149,12 +149,6 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
 }
 
 
-/**
- * @@@unlock-detail-variant - the second line under "Add a personal {name} connection" (wording pending design):
- * `fixed` = one sentence for every agent; `declared` = the connection panel's own ways in (`agentAccessMethods`).
- */
-const UNLOCK_DETAIL = 'declared' as 'fixed' | 'declared';
-
 const ACCESS_METHOD_KEYS = {
   account: 'harnessCatalog.accessAccount',
   'api-key': 'harnessCatalog.accessApiKey',
@@ -1012,11 +1006,9 @@ export function useInitialSessionState(
   // 按这条腿的程序判(#6335,`resolveLegLoginGate`):主程序那一路仍是「目录 auth-required 且声明了登录」。
   const harnessSignIn = legLoginGate.signIn ? openAgentAccount : null;
   // 同一个判据算两次没有意义:能去登录才给入口,不能去就一个字都不画(控件要么真生效要么不渲染)。
-  const accessMethodsLine = UNLOCK_DETAIL === 'fixed'
-    ? translate('harnessCatalog.accessFixed')
-    : agentAccessMethods(agents?.find((agent) => agent.id === providerId))
-      .map((method) => translate(ACCESS_METHOD_KEYS[method]))
-      .join(' / ');
+  const accessMethodsLine = agentAccessMethods(agents?.find((agent) => agent.id === providerId))
+    .map((method) => translate(ACCESS_METHOD_KEYS[method]))
+    .join(' / ');
   const harnessModelUnlock = harnessSignIn
     ? {
         // 这三格构成模型清单**里**的一组(组头 + 一条可点的动作),用户点开清单挑模型时才看见。

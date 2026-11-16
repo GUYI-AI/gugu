@@ -883,7 +883,7 @@ function ModelUnlockDemo() {
           groupLabel: 'Qwen 自家模型',
           label: '添加个人 Qwen 连接',
           title: '添加 Qwen 连接后这里显示你的模型',
-          detail: '账号登录 / API Key / 自定义 Base URL',
+          detail: '账号登录 / API Key / 自定义 API 地址',
         }}
         onModelUnlock={() => {}}
         onSubmit={() => {}}

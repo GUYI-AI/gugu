@@ -156,7 +156,7 @@ export interface ComposerModelUnlock {
   groupLabel: string;
   /** 那一条的文案,如「添加个人 Kimi 连接」。 */
   label: string;
-  /** Smaller second line: the ways to connect it, such as "Account sign-in / API Key / Custom base URL". */
+  /** Smaller second line: the ways to connect it, such as "Account sign-in / API Key / Custom API address". */
   detail?: string;
   /** 悬停提示 —— 说清点下去会发生什么,别让一条菜单项自己去猜。 */
   title?: string;
