@@ -29,7 +29,7 @@ import {
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
-import { createAttachmentDraft, admitCreatedAttachments } from './creation-attachment-production';
+import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
 import { createSkills } from '../agents/create-skills';
 import * as service from './service';
 import { prefetchFiles } from './turn-files';
@@ -119,8 +119,11 @@ function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | un
 }
 
 export const sessionTimelineController = createRPCController({
-  sessionCreateAttachmentDraft: createAttachmentDraft,
-  sessionAdmitCreatedAttachments: admitCreatedAttachments,
+  // Attachment identity/resolver dependencies are needed only by these two verbs, not every timeline read.
+  sessionCreateAttachmentDraft: async (input: SessionCreateAttachmentDraftRequest) =>
+    (await import('./creation-attachment-production')).createAttachmentDraft(input),
+  sessionAdmitCreatedAttachments: async (input: SessionAdmitCreatedAttachmentsRequest) =>
+    (await import('./creation-attachment-production')).admitCreatedAttachments(input),
   prefetchFiles,
   taskExchanges: (input: TaskExchangeRequest) => readTaskExchanges(input),
   taskExchangesSubscribe: withSender(async (sender: number, input: TaskExchangeRequest & { subscriptionId: string }) => {
