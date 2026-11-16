@@ -57,6 +57,14 @@ describe('其他设备的额度通知由命令结果驱动', () => {
     await act(async () => bus.onSubscribed?.())
     expect(read).toHaveBeenCalledTimes(3)
   })
+  it('reopening a chat reads its failures once: the subscribed notice joins the open\'s own read', async () => {
+    await ui.render(createNode(Probe, {}))
+    expect(read).toHaveBeenCalledTimes(1)
+    ui.cleanup({ keepReads: true }); ui = createReactHarness()
+    await ui.render(createNode(Probe, {}))
+    await act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() })
+    expect(read).toHaveBeenCalledTimes(2)
+  })
   // A task page reads its agent over every chat: an event from any chat of that agent refreshes it.
   it('任务页按 Agent 读：任何聊天来的事件都刷新，别的 Agent 不刷', async () => {
     read.mockResolvedValue([failure()])

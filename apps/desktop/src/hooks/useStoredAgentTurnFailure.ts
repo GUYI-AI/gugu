@@ -74,12 +74,13 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
     if (!asks || !user?.id || scopeKey === null) return
     const where = JSON.parse(scopeKey) as StoredFailureScope
     const refresh = () => { void storedAgentTurnFailures.refresh(scopeKey, ids) }
-    // The first subscribed notice follows the mount's own read (❌ every open read twice); later ones (resubscribed) read.
+    // The first subscribed notice follows the mount's own read when one is unknown or on its way (❌ every open read twice);
+    // later ones (resubscribed) read.
     let opened = true
     const subscribed = () => {
       const first = opened
       opened = false
-      if (first && storedAgentTurnFailures.peek(scopeKey, ids).state === 'unknown') return
+      if (first && (storedAgentTurnFailures.peek(scopeKey, ids).state === 'unknown' || storedAgentTurnFailures.isFetching(scopeKey, ids))) return
       refresh()
     }
     const handle = subscribePrivateUserEventBus(user.id, AGENT_DELIVER_CHANGED, (raw) => {
