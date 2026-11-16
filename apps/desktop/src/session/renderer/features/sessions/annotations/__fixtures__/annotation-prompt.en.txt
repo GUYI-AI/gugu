@@ -27,16 +27,5 @@ Saved marker screenshot: browser-comment-3.png, attached as a labeled image for 
 Comment:
 Align this area
 
-# Selected text:
-
-## Selection 1 (file)
-{
-  "path": "/project/notes.md",
-  "startLine": 2,
-  "endLine": 4,
-  "text": "First line\n\nSecond line",
-  "annotation": "Revise this paragraph"
-}
-
 ## My request:
 Apply each comment

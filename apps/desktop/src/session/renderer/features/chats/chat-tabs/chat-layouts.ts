@@ -1,4 +1,5 @@
 import { UI_EVENTS } from '@/lib/uiEvents';
+import { OpenSuperseded } from '@/lib/guguLinks';
 import { action, reaction, runInAction } from 'mobx';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { AppOpenWithDetail } from '@shared/extensions/app-runtime-protocol';
@@ -12,7 +13,6 @@ import type { TabOpenIntent } from '@shared/view-state';
 import type { PaneStore } from '@renderer/features/tabs/pane-store';
 import { createTabView } from '@renderer/features/tabs/tab-view-factory';
 import { TabViewPersistor } from '@renderer/features/tabs/tab-view-persistor';
-import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { groupParticipantPanes } from '../group-participant-panes';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
@@ -54,13 +54,11 @@ export function chatLayoutOf(chatId: string): ChatLayout {
   const layout = chatTabView.createPaneLayoutStore({ viewId: `chat:${chatId}`, place: { kind: 'chat', chatId } }) as ChatLayout;
   layouts.set(chatId, layout);
   runInAction(() => {
-    // Saved state is only in the cache the session page loaded at boot; read before that (the phone has none), the
-    // strip starts empty and is not saved — saving it would write an empty strip over the one kept.
-    const persisted = viewStateCache.populated;
-    if (persisted) layout.hydrate();
+    // The saved strip is in the view state from the first frame, on every shell.
+    layout.hydrate();
     if (!chatTabOf(layout)) layout.open(CHAT_TAB_KIND, { chatId }, { from: null, intent: 'newTab' });
     layout.setViewActive(true);
-    if (persisted) layout.startPersistence();
+    layout.startPersistence();
   });
   // A page asked for (its tab, a topic's row) while the block has no room to draw it beside the chat: the participant
   // beside the group gives its width back. With room for all of them, nothing leaves.
@@ -340,16 +338,28 @@ export const updateFileNames = action(function updateFileNames(
 export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): void };
 export type ChatOpenAsk =
   | { app: string; tab?: string }
-  | { itemId: string; at?: Record<string, string>; opener?: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
+  | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
 
 const asks = new Map<string, ChatOpenAsk>();
+/**
+ * The order the person asked chats for things in (#7257), across every way in: it answers one question — while a link
+ * waited on its host, did the person ask this chat for something else (`askedSince`)? Marked only where a person asks:
+ * `askChat`, and a chat's opener opening a file directly (`openWith`, an App's list). Not a panel's own count: a chat's
+ * opener mounting or going away is no ask, and its own pending results it orders itself (`useChatOpener`'s `asking`).
+ */
+let asksMade = 0;
+const lastAsked = new Map<string, number>();
+export const asksSoFar = (): number => asksMade;
+export function noteAsk(chatId: string): number { lastAsked.set(chatId, ++asksMade); return asksMade; }
+export const askedSince = (chatId: string, mark: number): boolean => (lastAsked.get(chatId) ?? 0) > mark;
 /**
  * Something asked of a chat (a link, a card, an App, a page's `files.openWith`): the chat answers it when it is on
  * screen — what opens it is found by the shell (its Apps, its prompts), asked while the chat may not be drawn yet.
  */
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
-  if (previous && 'itemId' in previous) previous.receipt?.reject(new Error('The file opening was superseded'));
+  if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
+  noteAsk(chatId);
   asks.set(chatId, what);
 }
 /** Links acknowledge the consumer's result, rather than merely putting an item in its mailbox. */

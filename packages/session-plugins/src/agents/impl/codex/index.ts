@@ -111,6 +111,13 @@ export const plugin = definePlugin(
       // The native app-server bridge owns exactly one Codex thread per adapter process.
       maxSessionsPerProcess: 1,
       liveSettings: {
+        fast: {
+          channel: 'acp-config-option',
+          ack: 'ack-read-back',
+          busy: 'queue-next-turn',
+          reloadRequired: false,
+          recovery: 'none',
+        },
         model: {
           channel: 'provider-thread-settings',
           ack: 'ack-read-back',

@@ -23,12 +23,14 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_SELECTION_SEND_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
   EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
   type ResourceRemovalAsk,
+  type SelectionSendAsk,
   type VoiceNoteExportAsk,
   type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
@@ -56,7 +58,6 @@ import { askInShell, closeInShell, installConsentPrompt } from './install-consen
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
 import { closeAppModal, focusAppModalClose, showAppModal } from '@/components/appModal/appModal';
 import { groupPageSlot } from '@renderer/features/chats/chat-tabs/chat-panel-item';
-import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 
 /**
  * Performs the actions main has already decided an extension is allowed to take.
@@ -138,11 +139,6 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
 }
 
 function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
-  if (action.kind === 'annotateFile') {
-    if (!sessionId) throw new Error('File annotations require their source session');
-    sessionAnnotations.forSession(sessionId).add({ kind: 'file', ...action.selection });
-    return;
-  }
   // What a page says about itself: a task's tab or a group's slot (sessionId null), kept by page (extensionSurfaceStore.say).
   switch (action.kind) {
     case 'taskMessage': {
@@ -415,6 +411,23 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /**
+   * API 54 Send, over the page that asked, at its selection: the page's CSS px scaled to its guest's box here (its zoom
+   * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
+   */
+  [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
+    const { sessionId, webContentsId, open } = params as SelectionSendAsk;
+    const guest = [...document.querySelectorAll<BrowserWebviewElement>('webview')].find(element => {
+      try { return element.getWebContentsId() === webContentsId; } catch { return false; }
+    });
+    if (!guest) return 'cancelled';
+    const box = guest.getBoundingClientRect(), { rect, viewport } = open, scale = box.width / viewport.width;
+    const anchor = new DOMRect(box.x + rect.x * scale, box.y + rect.y * scale, rect.width * scale, rect.height * scale);
+    if (anchor.right < box.left || anchor.left > box.right || anchor.bottom < box.top || anchor.top > box.bottom) return 'cancelled';
+    const { openSelectionSend } = await import('@/components/chat/selectionSendAsk');
+    const { draft, quote, pills } = open;
+    return openSelectionSend({ cite: { draft, quote, pills }, sessionId, anchor, cover: box, closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
   },
   /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {

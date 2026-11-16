@@ -15,8 +15,7 @@ export function attachmentFolderLine(itemId: string, version: number): string {
  * Where an attachment's bytes are, for its agent: already on this computer (a path), to be fetched (the exact
  * message_download_file arguments that fetch it), or deleted.
  */
-/** `uploading`: the file (by name) its sender is still uploading (owner 11-15): said before the step that reads it later. */
-export type AttachmentWhere = { localPath: string; readOnly?: boolean } | { fetch: { source_message_id: string } | { file: string }; uploading?: string } | 'gone'
+export type AttachmentWhere = { localPath: string; readOnly?: boolean } | { fetch: { source_message_id: string } | { file: string } } | 'gone'
 
 /** What a shared read-only copy (this machine's file store) asks of whoever holds its path. */
 export const SHARED_READ_ONLY_COPY = 'shared read-only copy: to change it, copy it to a file of your own; do not change its permissions'
@@ -32,7 +31,6 @@ export function attachmentLocationLines(item: { itemId: string; version: number 
   if (where === 'gone') return `${folder}\n[Deleted: there are no bytes to fetch]`
   if ('localPath' in where) return `${folder}\n[File at local path: ${where.localPath}${where.readOnly ? ` (${SHARED_READ_ONLY_COPY})` : ''}]`
   const [[key, value]] = Object.entries(where.fetch)
-  if (where.uploading) return `${folder}\n[${where.uploading}：发送方仍在上传，稍后用 message_download_file {${key}: "${value}"} 再读]`
   return `${folder}\n[Not on this computer. To read or change it: message_download_file {${key}: "${value}"}]`
 }
 

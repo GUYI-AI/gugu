@@ -12,6 +12,7 @@ function signals(over: Partial<SignalExitDeps<{ id: string }>> = {}) {
     stopActivity: () => events.push('stop-activity'),
     singleRun: () => false, sessionFileExists: () => true, supervisedBy: () => undefined,
     markStopped: () => events.push('mark-stopped'), noteExitReason: () => events.push('note-exit'),
+    flushStorage: () => events.push('flush'),
     killEngines: (label) => reaped.push(label), exit: (code) => exits.push(code),
     host: () => null, stopHost: async () => {}, warn: vi.fn(),
     ...over,
@@ -29,7 +30,7 @@ describe('signal exit', () => {
   it('without a device runtime host: stop activity, note the reason, reap, exit with the signal code', () => {
     const t = signals()
     t.exit.exitOnSignal('SIGTERM', 143)
-    expect(t.events).toEqual(['stop-activity', 'note-exit'])
+    expect(t.events, 'what is held for the disk is written before the process leaves').toEqual(['stop-activity', 'note-exit', 'flush'])
     expect(t.reaped).toEqual(['SIGTERM'])
     expect(t.exits).toEqual([143])
   })
@@ -71,22 +72,25 @@ describe('signal exit', () => {
 describe('fatal exit', () => {
   function fatal(verdict: 'environment' | 'defect') {
     const exits: number[] = [], reaped: string[] = [], recorded: unknown[] = []
-    const handle = createFatalExit({ classify: () => verdict, record: (entry) => recorded.push(entry), logger: { error: () => {} }, reap: (label) => reaped.push(label), exit: (code) => exits.push(code) })
+    const flushed: string[] = []
+    const handle = createFatalExit({ classify: () => verdict, record: (entry) => recorded.push(entry), logger: { error: () => {} }, reap: (label) => reaped.push(label), flushStorage: () => flushed.push('flush'), exit: (code) => exits.push(code) })
     const err = new Error('boom')
     handle(err)
-    return { exits, reaped, recorded, err }
+    return { exits, reaped, recorded, err, flushed }
   }
   it('an environment failure (network / power) is recorded and the process keeps running', () => {
     const t = fatal('environment')
     expect(t.recorded).toEqual([{ verdict: 'environment', source: 'uncaughtException', err: t.err }])
     expect(t.reaped).toEqual([])
     expect(t.exits).toEqual([])
+    expect(t.flushed, 'the process keeps running').toEqual([])
   })
   it('a defect is recorded, the native legs are reaped, and the process exits 1', () => {
     const t = fatal('defect')
     expect(t.recorded).toHaveLength(1)
     expect(t.reaped).toEqual(['uncaughtException'])
     expect(t.exits).toEqual([1])
+    expect(t.flushed, 'what is held for the disk is written before the process leaves').toEqual(['flush'])
   })
 })
 

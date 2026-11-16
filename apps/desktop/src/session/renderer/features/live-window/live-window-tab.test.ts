@@ -1,0 +1,22 @@
+import { expect, it, vi } from 'vitest';
+import { LiveWindowModel } from './model';
+import type { LiveWindowConversation } from './conversation';
+vi.mock('../sessions/stores/session-selectors', () => ({ getSessionView: vi.fn() }));
+vi.mock('./use-live-window-conversation', () => ({ findLiveWindowConversation: vi.fn() }));
+vi.mock('../tabs/tab-bar/generic-tab-item', () => ({ GenericTabItem: () => null, GenericTabDragPreview: () => null }));
+import { LiveWindowTabResource, liveWindowTabProvider } from './live-window-tab';
+it('vetoes a close from the actual selected chat before the presentation effect catches up', () => {
+  const model = new LiveWindowModel('desktop');
+  const context = { conversationId: 's', sessionId: 's', deviceId: 'd', agentId: 'a', privateAgentChat: true, shown: true };
+  model.activate(context); model.observe(context, [{ ...context, id: 'page', kind: 'browser', title: 'Actual page', size: { width: 800, height: 600 }, status: 'operating' }]);
+  model.dispatch({ type: 'show-tab' });
+  let actualChatSelected = true;
+  const state = { conversationKey: 'key', sourceId: 'page', chatTabId: 'chat' };
+  const resource = new LiveWindowTabResource(state, { model } as LiveWindowConversation, () => actualChatSelected);
+  const entry = { tabId: 'screen', kind: 'live-window', state };
+  expect(liveWindowTabProvider.onBeforeClose!(entry, resource, { viewId: 's' }, { alone: true })).toBe(false);
+  expect(model.getSnapshot().source?.id).toBe('page');
+  actualChatSelected = false;
+  expect(liveWindowTabProvider.onBeforeClose!(entry, resource, { viewId: 's' }, { alone: true })).toBe(true);
+  expect(model.getSnapshot().presentation?.mode).toBe('closed');
+});

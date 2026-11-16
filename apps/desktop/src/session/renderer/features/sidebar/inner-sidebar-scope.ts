@@ -33,7 +33,7 @@ function projectIdsOfChat(chatId: string): readonly string[] {
 
 /** 这个群是不是侧栏列着的一个项目(账号上的项目,归档的不列):是 = 内层侧栏按项目画它。 */
 export function isProjectChat(chatId: string): boolean {
-  return sidebarStore.sidebarProjects.some((ref) => ref.chatId === chatId);
+  return accountProjectsStore.projects.some((project) => !project.archived && project.chatId === chatId);
 }
 
 /** 侧栏列着的项目(账号上的项目,归档的不列)在各台机器上的本地项目:住在这些里的 agent 住在那个项目,❌ 算在群里。 */

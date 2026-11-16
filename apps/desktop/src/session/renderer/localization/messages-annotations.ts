@@ -27,8 +27,6 @@ export const enUSAnnotationMessages = {
   'annotations.prompt.screenshot': 'Saved marker screenshot:',
   'annotations.prompt.screenshotAttachment': ', attached as a labeled image for Comment {number}',
   'annotations.prompt.comment': 'Comment:',
-  'annotations.prompt.selectedText': '# Selected text:',
-  'annotations.prompt.fileSelection': '## Selection {number} (file)',
   'annotations.prompt.request': '## My request:',
 } as const;
 
@@ -61,7 +59,5 @@ export const zhCNAnnotationMessages: Record<keyof typeof enUSAnnotationMessages,
   'annotations.prompt.screenshot': '标记截图：',
   'annotations.prompt.screenshotAttachment': '，已作为浏览器批注 {number} 的标记图片附件',
   'annotations.prompt.comment': '评论：',
-  'annotations.prompt.selectedText': '# 文件选区：',
-  'annotations.prompt.fileSelection': '## 文件选区 {number}：',
   'annotations.prompt.request': '## 我的要求：',
 };

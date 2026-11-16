@@ -215,8 +215,8 @@ afterEach(() => {
   terminalRegistryEntries().delete('conversation-1');
   workspaceRegistry.release('project-1', 'workspace-1');
   // Clear cache keys written by SessionTabViewPersistor so tests don't pollute each other.
-  viewStateCache.delete('session:conversation-1:tabs');
-  viewStateCache.delete('session:session-persistor:tabs');
+  viewStateCache.write('session:conversation-1:tabs', undefined);
+  viewStateCache.write('session:session-persistor:tabs', undefined);
 });
 
 describe('WorkspaceViewModel terminal drawer snapshot', () => {
@@ -427,7 +427,7 @@ describe('WorkspaceViewModel default conversation tab', () => {
     sessionRegistry.acquire('conversation-1', 'project-1', [
       makeSession({ id: 'conversation-1' }),
     ]);
-    viewStateCache.set('session:conversation-1:tabs', {
+    viewStateCache.write('session:conversation-1:tabs', {
       groups: [
         {
           groupId: 'chat',

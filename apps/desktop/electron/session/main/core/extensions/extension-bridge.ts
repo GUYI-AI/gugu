@@ -1,4 +1,4 @@
-import { requirePreinstalledFiles, workspaceFileAnnotation } from '@shared/extensions/file-annotation';
+import { requirePreinstalledFiles, selectionSendOf } from '@shared/extensions/selection-send';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
@@ -51,10 +51,12 @@ import {
   callRefusal,
   type CallRefusalCaller,
 } from '@shared/extensions/bridge-protocol';
-import type {
-  ExtensionHostAction,
-  ExtensionHostActionOrigin,
-  ExtensionHostActionResult,
+import {
+  EXTENSION_SELECTION_SEND_METHOD,
+  type ExtensionHostAction,
+  type ExtensionHostActionOrigin,
+  type ExtensionHostActionResult,
+  type SelectionSendAsk,
 } from '@shared/extensions/host-actions';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
@@ -1941,11 +1943,14 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
-    case 'filesAnnotateSelection': {
+    case 'filesSendSelection': {
       requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
-      const page = thePage(caller);
-      if (!sessionOfBinding(page)) throw Object.assign(new Error('File annotations require a session page'), { code: 'denied' });
-      return await deliver(page, { kind: 'annotateFile', selection: workspaceFileAnnotation(args, page.workspace) });
+      const page = thePage(caller), sessionId = sessionOfBinding(page);
+      if (!sessionId) throw Object.assign(new Error('Send needs a session page'), { code: 'denied' });
+      const ask: SelectionSendAsk = { sessionId, webContentsId: caller.pageId, open: selectionSendOf(args, page.workspace) };
+      const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
+      // Only the outcome goes back to the page: never the words, a member or a message id.
+      return await invokeInEmbedder(page.embedderId, EXTENSION_SELECTION_SEND_METHOD, ask) === 'sent' ? 'sent' : 'cancelled';
     }
     case 'taskMessage': {
       const service = extensionsService();

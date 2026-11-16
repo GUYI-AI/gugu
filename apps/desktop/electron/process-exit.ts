@@ -54,6 +54,8 @@ export function createFatalExit<Verdict extends string>(deps: {
   record: (entry: { verdict: Verdict; source: 'uncaughtException'; err: unknown }) => void
   logger: { error: (detail: Record<string, unknown>, message: string) => void }
   reap: (label: string) => void
+  /** Writes what is still held for the disk (view state is written behind): a crash skips the quit cleanup. */
+  flushStorage: () => void
   exit: (code: number) => void
 }): (err: unknown) => void {
   return (err) => {
@@ -64,12 +66,20 @@ export function createFatalExit<Verdict extends string>(deps: {
       return
     }
     deps.logger.error({ err }, '未捕获异常 — 收引擎进程组后退出')
+    try {
+      deps.flushStorage()
+    } catch (flushError) {
+      deps.logger.error({ err: flushError }, 'storage flush on crash failed')
+    }
     deps.reap('uncaughtException')
     deps.exit(1) // fail loud:非零退出,别把崩溃咽下装没事
   }
 }
 
-/** A single-run server that no longer owns its installation lock stops: another one owns this home now. */
+/**
+ * A single-run server that no longer owns its installation lock stops: another one owns this home now. Nothing held for
+ * the disk is written on the way out — the database belongs to the process that took the lock.
+ */
 export function stopOnLostLock(deps: {
   singleRun: () => boolean
   ownsHomeLock: () => boolean | undefined

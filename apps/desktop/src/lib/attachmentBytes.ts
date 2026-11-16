@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
-import { queryClient, readModel } from './readModel'
+import { queryClient, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, type ImageViewerItem } from './imageViewer'
@@ -144,8 +144,8 @@ function listenForLink(sourceKey: string, listener: (link: FileRevision) => void
 }
 const readThumb = (_accountId: string, sourceKey: string, _metadataKey: string | null, source: AttachmentSource, metadata: FileMetadata | null) =>
   attachmentBytes(source, 'thumb', (link) => linkListeners.get(sourceKey)?.forEach((listener) => listener(link)), metadata ?? undefined)
-const immutableThumb = readModel({ name: 'attachment-thumb', scope: 'account', read: readThumb, fresh: Infinity, keep: THUMB_GC_MS })
-const liveThumb = readModel({ name: 'attachment-thumb-live', scope: 'account', read: readThumb, keep: THUMB_GC_MS })
+const immutableThumb = replica({ name: 'attachment-thumb', scope: 'account', read: readThumb, fresh: Infinity, keep: THUMB_GC_MS })
+const liveThumb = replica({ name: 'attachment-thumb-live', scope: 'account', read: readThumb, keep: THUMB_GC_MS })
 
 /**
  * 气泡 / 预览用:给一个 object URL;failed 时 retry() 丢掉记着的链接重新签、重新下。

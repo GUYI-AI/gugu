@@ -16,15 +16,6 @@ import { stableId, uuid } from './phone-agent-store.mjs'
 const result = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data) }], details: data })
 const asResult = (data, id) => data?.ok === false ? { v: 1, call_id: id, ...data } : { v: 1, call_id: id, ok: true, data }
 
-/** The phone admits attachment messages without auto-downloading bytes into the model context. */
-export function phoneInboxAttachmentRow(row) {
-  if (row.contentType !== 'attachment') return row
-  const attachment = parseAttachmentContent(row.content, { id: row.id, file_item_id: row.fileItemId, file_version: row.fileVersion, file_blob_id: row.fileBlobId })
-  if (!attachment) return row
-  const metadata = { source_message_id: `msg:${uuid(row.id, 'attachment message id')}`, file_name: attachment.fileName, mime_type: attachment.mimeType, size: attachment.sizeBytes, kind: attachment.kind, available: attachment.source.kind !== 'gone', ...(attachment.caption ? { caption: attachment.caption } : {}) }
-  return { ...row, content: `聊天附件元数据（文件内容尚未读取）：\n${JSON.stringify(metadata)}\n${metadata.available ? '需要完整文件时，调用 message_download_file，并使用以上 source_message_id；它会按你的实际可见性解析附件。' : '这个附件已删除或不可见，没有文件内容可供读取。'}` }
-}
-
 export async function registerArtifact({ store, agent, file, groups }) {
   file = { ...file, file_path: await realpath(file.file_path) }
   const id = stableId('phone-artifact', store.state.ownerId, agent.agentUserId, file.file_path, file.sha256)

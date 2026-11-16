@@ -1,7 +1,7 @@
 // #987 定时任务 pane — data-pane="tasks"。设计稿只给空态；列表/建表单按 gg-as 设计系统补。
 // 给 agent 配周期 prompt（间隔 + 内容），到点经设备运行时 tick → ACP deliver 触发 agent 回合（owner↔agent 私聊里）。
 import { useCallback, useMemo, useState } from 'react'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -10,8 +10,8 @@ import { agentScheduledTaskService, type AgentScheduledTask } from '../../lib/ag
 import type { AgentSettingsPaneProps } from './types'
 import { agentSettingsPaneClass, asClass, profileInputClass } from './agentSettingsStyles'
 
-/** An agent's scheduled tasks (account read model, one reading per agent). */
-const agentScheduledTasks = readModel({
+/** An agent's scheduled tasks (account replica, one reading per agent). */
+const agentScheduledTasks = replica({
   name: 'agentScheduledTasks',
   scope: 'account',
   read: (_owner: string, agentId: string) => agentScheduledTaskService.list(agentId),
@@ -51,8 +51,8 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const { user } = useAuth()
   const ownerUserId = user?.id ?? null
   // One reading per agent: reopening the pane shows its tasks at once while they are read again.
-  const reading = useReadModel(agentScheduledTasks, [agent.id])
-  const tasks = reading.state === 'value' ? reading.value : []
+  const reading = useReplica(agentScheduledTasks, [agent.id])
+  const tasks = reading.state === 'value' ? reading.value : null
   const loading = reading.state === 'unknown'
   const [actionError, setError] = useState<string | null>(null)
   const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
@@ -111,7 +111,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
     <div className={agentSettingsPaneClass(true)} data-pane="tasks">
       <div className={asClass.tasksHead}>
         {/* Not read yet: the count's place is a placeholder, ❌「（0）」. */}
-        <div className={asClass.tasksHeading}>{reading.state === 'value' ? t('settings.tasks.title', { count: tasks.length }) : <>{t('settings.tasks.titleLabel')} <Unknown className="w-[2ch]" /></>}</div>
+        <div className={asClass.tasksHeading}>{reading.state === 'value' ? t('settings.tasks.title', { count: reading.value.length }) : <>{t('settings.tasks.titleLabel')} <Unknown className="w-[2ch]" /></>}</div>
         <button className={asClass.tasksAddButton} onClick={() => setShowForm((v) => !v)} data-testid="agent-task-add">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24">
             <g fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -169,8 +169,8 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
 
       {error && <div style={{ fontSize: 'var(--font-body)', color: 'var(--danger-fg)', marginBottom: 10 }}>{error}</div>}
 
-      {loading ? (
-        <div className={asClass.tasksLoading}>{t('settings.tasks.loading')}</div>
+      {tasks === null ? (
+        loading ? <div className={asClass.tasksLoading}>{t('settings.tasks.loading')}</div> : null
       ) : tasks.length === 0 ? (
         <div className={asClass.tasksEmpty}>
           <div className={asClass.tasksIconBox}>

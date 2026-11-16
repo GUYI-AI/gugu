@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { queryClient } from '@/lib/readModel';
+import { queryClient } from '@/lib/replica';
 import { createRoot, type Root } from 'react-dom/client';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -78,7 +78,7 @@ beforeEach(() => {
   setLocalePreference('en-US');
   f.states = { claude: 'authenticated', codex: 'authenticated' }; f.hold = null; f.missingProgram = false; f.saved = false; f.selected = '';
   f.continued.mockClear(); f.back.mockClear();
-  // The connection readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  // The connection readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient;
   host = document.createElement('div'); host.className = 'gugu-skin emlight'; host.style.cssText = 'height:100vh';
   document.body.append(host); root = createRoot(host);

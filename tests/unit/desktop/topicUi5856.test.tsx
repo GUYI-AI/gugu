@@ -12,7 +12,7 @@ import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui
 import { act, createElement, useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes'
-import { queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/readModel'
+import { queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/replica'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'
@@ -831,7 +831,7 @@ describe('useTopicsOfChat', () => {
     const state = useTopicsOfChat(sourceChatId)
     reload = state.reload
     useEffect(() => {
-      observed = { topics: state.topics, loading: state.loading, error: state.error, byMessage: state.bySourceMessageId }
+      observed = { topics: state.topics ?? [], loading: state.loading, error: state.error, byMessage: state.bySourceMessageId }
     })
     return null
   }

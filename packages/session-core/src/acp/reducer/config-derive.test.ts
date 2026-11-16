@@ -47,4 +47,18 @@ describe('deriveConfigGroups', () => {
     expect(deriveConfigGroups([flat]).modelOptions).toEqual(expected);
     expect(deriveConfigGroups([grouped]).modelOptions).toEqual(expected);
   });
+  it('derives Fast only from the exact native option and clears it when it disappears', () => {
+    const fast = {
+      id: 'fast', name: 'Fast', category: 'model_config', type: 'select', currentValue: 'off',
+      options: [{ value: 'off', name: 'Off' }, { value: 'on', name: 'On' }],
+    } satisfies SessionConfigOption;
+    expect(deriveConfigGroups([fast]).fastMode).toEqual({
+      configId: 'fast', selected: 'off',
+      available: [{ id: 'off', name: 'Off' }, { id: 'on', name: 'On' }],
+    });
+    expect(deriveConfigGroups([]).fastMode).toBeNull();
+    expect(deriveConfigGroups([{ ...fast, id: 'other' }]).fastMode).toBeNull();
+    expect(deriveConfigGroups([{ ...fast, options: [{ value: 'on', name: 'On' }] }]).fastMode).toBeNull();
+  });
+
 });

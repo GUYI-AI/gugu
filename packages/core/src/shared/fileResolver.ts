@@ -61,6 +61,8 @@ export class MissingFileObjectError extends Error {
 export class FileReadRevokedError extends Error {
   constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
 }
+/** How long an agent's read waits for bytes their sender is still uploading before saying so. */
+export const ATTACHMENT_PENDING_WAIT_MS = 8_000
 /** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
 export class AttachmentUploadPendingError extends Error {
   readonly code = 'upload_pending'

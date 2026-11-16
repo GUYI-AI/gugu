@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
   getTerminalsForSession: vi.fn(),
   terminalRelease: vi.fn(),
   viewModels: [] as MockViewModel[],
-  viewStateGet: vi.fn(),
+  viewStateRead: vi.fn(),
   workspaceActivate: vi.fn(),
   workspaceAcquire: vi.fn(),
   workspaceRelease: vi.fn(),
@@ -76,8 +76,7 @@ vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
 
 vi.mock('@renderer/lib/stores/view-state-cache', () => ({
   viewStateCache: {
-    get: mocks.viewStateGet,
-    set: vi.fn(),
+    read: mocks.viewStateRead,
   },
 }));
 
@@ -171,7 +170,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     mocks.createAndProvisionSession.mockResolvedValue({ stage: 'provision', result: {
       success: true, data: { path: '/tmp/workspace-1', workspaceId: 'workspace-1' },
     } });
-    mocks.viewStateGet.mockResolvedValue(undefined);
+    mocks.viewStateRead.mockReturnValue(undefined);
   });
 
   // @@@5173 引擎此刻起不来 ⇒ 这一轮**什么都没落库**(闸在事务之前就返回了)。于是这条失败
@@ -377,7 +376,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     const store = createUnprovisionedSession(session);
     manager.sessions.set(session.id, store);
     const snapshot = { sidebarTab: 'conversations' };
-    mocks.viewStateGet.mockResolvedValue(snapshot);
+    mocks.viewStateRead.mockReturnValue(snapshot);
 
     await manager.provisionSession(session.id);
 
@@ -399,13 +398,12 @@ describe('ProjectSessionsStore session lifecycle', () => {
     const session = makeSession();
     const store = createUnprovisionedSession(session);
     manager.sessions.set(session.id, store);
-    mocks.viewStateGet.mockResolvedValue(undefined);
+    mocks.viewStateRead.mockReturnValue(undefined);
 
     await manager.provisionSession(session.id);
 
     expect(store.state).toBe('provisioned');
-    // 页签布局的键也经主进程取:挂起时它已从渲染侧缓存清掉,hydrate 只同步读缓存。
-    expect(mocks.viewStateGet).toHaveBeenCalledWith('session:session-1:tabs');
+    // 页签布局 session:<id>:tabs 一直在渲染侧缓存里(首帧就有,挂起也不清),由 restoreTabs 同步读。
     const viewModel = mocks.viewModels[0];
     expect(viewModel.restoreTabs).toHaveBeenCalledOnce();
     expect(viewModel.restoreSnapshot).not.toHaveBeenCalled();

@@ -23,6 +23,7 @@ import {
   SidebarMinimalistic,
 } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
+import { platformModels } from '../../lib/agentModelReplicas'
 
 interface NavItem {
   key: ActiveSection
@@ -149,6 +150,11 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'browser', labelKey: 'settings.nav.browser', il: <Globe size={15} />, ib: <GlobeFilled size={15} /> },
 ]
 
+/** The pointer on a section's entry: read what its first frame needs, once (the model list is the slow one). */
+function warmSettingsSection(key: string): void {
+  if (key === 'model' && platformModels.peek().state === 'unknown') void platformModels.prefetch()
+}
+
 export function SettingsNav({ activeSection, sections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
   const { t } = useTranslation('main')
   if (!mobile && import.meta.env.DEV) {
@@ -238,6 +244,7 @@ export function SettingsNav({ activeSection, sections, mobile = false, user, onS
                       // 没有它,六行字看着像一段说明文字,而不是能按的东西。桌面是左右两栏,点了右边就换,不需要。
                       meta={mobile ? <ChevronRight size={16} aria-hidden="true" className="text-[var(--faint-fg)]" /> : undefined}
                       onClick={() => onSelect(key)}
+                      onPointerEnter={() => warmSettingsSection(key)}
                       onKeyDown={(event) => {
                         if (event.target !== event.currentTarget || event.defaultPrevented) return
                         if (event.key === 'Enter' || event.key === ' ') {

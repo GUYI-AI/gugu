@@ -1,13 +1,12 @@
 import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
 import { attachmentRequest, configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileChunkCache, createFileSink, createFileSaver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
-import { attachmentStage } from '@gugu/core/local/files/attachmentDiagnostics'
-import { AttachmentUploadPendingError, DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
+import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
@@ -43,7 +42,7 @@ export function createDesktopFileAccess(deps: {
   auth(): Promise<RuntimeAuth | null>; root(projectId: string): Promise<string | null>
   /** This device's project bound to a chat, as the account records it. */
   project(chatId: string): Promise<string | undefined>
-  links(): HeldFileSshLinks | null; tempRoot: string; downloads: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
+  links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
@@ -109,25 +108,5 @@ export function createDesktopFileAccess(deps: {
   })
   return { providers, resolve, resolveAccount, read, drain, publish,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
-    /** `pendingWaitMs`: how long to wait for bytes their sender is still uploading before saying so (none by default). */
-    async download(ref: FileRef, name: string, actorId: string, options: { pendingWaitMs?: number } = {}) {
-      const step = <T>(stage: string, action: () => Promise<T>) => attachmentStage({ actorId, ref }, stage, action)
-      const { accountId } = await step('identity', identity)
-      const file = await step('resolve', async () => {
-        const until = Date.now() + (options.pendingWaitMs ?? 0)
-        for (;;) {
-          const resolved = await resolve(ref, { accountId, actorId })
-          if (resolved.status === 'ready') return resolved
-          if (resolved.status === 'failed') throw new Error('Its sender\'s upload of this file did not complete')
-          if (resolved.status !== 'pending') throw new Error('File is no longer available')
-          if (Date.now() >= until) throw new AttachmentUploadPendingError(name)
-          await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(0, until - Date.now()))))
-        }
-      })
-      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name, true))
-      const bytes = saved.content_type.startsWith('image/')
-        ? await step('read-image', async () => new Uint8Array(await readFile(saved.file_path))) : new Uint8Array()
-      return { localPath: saved.file_path, bytes, readOnly: saved.read_only }
-    },
   }
 }

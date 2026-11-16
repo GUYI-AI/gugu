@@ -275,12 +275,18 @@ export interface ChatComposerProps {
    * unset state still says what will happen, rather than leaving the user to guess.
    */
   defaultEffort?: string;
+  /** Undefined hides Fast; supported hosts own the accepted per-session value. */
+  fastMode?: boolean;
+  onFastModeChange?: (enabled: boolean) => void;
+  renderFastModeHint?: import('./composer-fast-mode').RenderFastModeHint;
 
   permissionModeOptions?: Record<string, ComposerPermissionModeOption> | null;
   selectedPermissionMode?: string;
   onPermissionModeChange?: (modeId: string) => void;
   /** Extra control(s) appended to the toolbar-left row, after the permission selector. */
   toolbarExtra?: React.ReactNode;
+  /** Render the existing model control in a host-owned phone navigation row. */
+  renderPhoneHeader?: (modelControl: React.ReactNode) => React.ReactNode;
 
   onSubmit: (text: string) => void | Promise<void>;
   /** Called whenever the editor serialized plain text changes. */
@@ -408,6 +414,8 @@ export interface ChatComposerProps {
    */
   tone?: 'task';
   leading?: React.ReactNode;
+  /** Host-owned context chips inside the input, without replacing the mounted editor. */
+  inputHeader?: React.ReactNode;
   className?: string;
 }
 
@@ -447,10 +455,14 @@ export function ChatComposer({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  fastMode,
+  onFastModeChange,
+  renderFastModeHint,
   permissionModeOptions,
   selectedPermissionMode,
   onPermissionModeChange,
   toolbarExtra,
+  renderPhoneHeader,
   onSubmit,
   onInputChange,
   onMentionInsert,
@@ -494,6 +506,7 @@ export function ChatComposer({
   getPromptHistory,
   tone,
   leading,
+  inputHeader,
   className,
 }: ChatComposerProps) {
   const { translate } = useMessages();
@@ -762,6 +775,34 @@ export function ChatComposer({
       ? translate('composer.followUpPlaceholder')
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
+  const renderHeader = mobile ? renderPhoneHeader : undefined;
+  const modelControl = (
+              <ComposerModelMenu
+                panel={modelPanel}
+                disabled={disabled}
+                triggerTitle={selectedAgentTitle}
+                modelItems={modelItems}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                openRequest={modelMenuOpenRequest}
+                settingNotice={modelSettingNotice}
+                menuNotice={modelMenuNotice}
+                onOpen={onModelMenuOpen}
+                modelUnlock={modelUnlock}
+                onModelUnlock={onModelUnlock}
+                onManageModels={onManageModels}
+                modelUpgrade={modelUpgrade}
+                onModelUpgrade={onModelUpgrade}
+                effortItems={effortItems}
+                selectedEffort={selectedEffort}
+                onEffortChange={onEffortChange}
+                defaultEffort={defaultEffort}
+                fastMode={fastMode}
+                onFastModeChange={onFastModeChange}
+                renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
+                phoneActions={phoneActions}
+              />
+  );
   const promptEditor = (
     <PromptEditor
       {...editorOptions}
@@ -827,6 +868,7 @@ export function ChatComposer({
           </div>
         )}
 
+        {renderHeader?.(modelControl)}
         <div
           data-slot="composer-bar"
           data-drag-active={dragActive || undefined}
@@ -857,6 +899,7 @@ export function ChatComposer({
               editorRef.current?.focus();
             }}
           >
+            {inputHeader}
             {leading ? (
               <div className={styles.editorLeadRow}>
                 <span className={styles.editorLead}>{leading}</span>
@@ -1005,27 +1048,7 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
-              <ComposerModelMenu
-                panel={modelPanel}
-                disabled={disabled}
-                triggerTitle={selectedAgentTitle}
-                modelItems={modelItems}
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                openRequest={modelMenuOpenRequest}
-                settingNotice={modelSettingNotice}
-                menuNotice={modelMenuNotice}
-                onOpen={onModelMenuOpen}
-                modelUnlock={modelUnlock}
-                onModelUnlock={onModelUnlock}
-                onManageModels={onManageModels}
-                modelUpgrade={modelUpgrade}
-                onModelUpgrade={onModelUpgrade}
-                effortItems={effortItems}
-                selectedEffort={selectedEffort}
-                onEffortChange={onEffortChange}
-                defaultEffort={defaultEffort}
-              />
+              {!renderHeader && modelControl}
 
               {queueEdit ? (
                 <>

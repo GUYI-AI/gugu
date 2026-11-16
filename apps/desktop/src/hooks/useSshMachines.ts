@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react'
-import { readModel, useReadModel } from '../lib/readModel'
+import { replica, useReplica } from '../lib/replica'
 import { SERVER_SSH_MACHINES_CHANNELS, type SshMachineSummary } from '../lib/serverSshMachines'
 import { desktopIpc } from '../platform/desktopIpc'
 
@@ -7,7 +7,7 @@ import { desktopIpc } from '../platform/desktopIpc'
  * 这台桌面上用 SSH 装上的机器(设备 id → 给人看的地址),见 electron/server/ssh-machines.ts。主进程按登录账号筛,
  * 所以跟账号走;装上 / 忘掉一台时重读。没有桌面主进程(网页、手机)⇒ 空:那里没有 SSH 这条路。
  */
-const sshMachineAddresses = readModel({
+const sshMachineAddresses = replica({
   name: 'sshMachineAddresses',
   scope: 'account',
   read: async (): Promise<Array<[string, string]>> => {
@@ -19,7 +19,7 @@ const sshMachineAddresses = readModel({
       .filter((item) => item && typeof item.deviceId === 'string' && typeof item.display === 'string')
       .map((item) => [item.deviceId, item.display])
   },
-  persist: true,
+  persist: { maxBytes: 8192, maxEntries: 1 },
 })
 desktopIpc()?.eventOn(SERVER_SSH_MACHINES_CHANNELS.changed, () => { void sshMachineAddresses.refresh() })
 
@@ -28,7 +28,7 @@ export function useSshMachines(): {
   addresses: ReadonlyMap<string, string> | null
   forget: (deviceId: string) => Promise<void>
 } {
-  const reading = useReadModel(sshMachineAddresses, [])
+  const reading = useReplica(sshMachineAddresses, [])
   const addresses = useMemo(() => (reading.state === 'value' ? new Map(reading.value) : null), [reading])
 
   const forget = useCallback(async (deviceId: string) => {

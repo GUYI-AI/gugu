@@ -61,7 +61,7 @@ interface ChatRightPanelBodyProps {
   // @@@whisper (#820) — 悄悄话回调透传到内部 MemberProfilePopover。
   onWhisper?: (target: MemberProfileChatTarget) => void
   groupSettings?: GroupChatSettingsState
-  groupCollabSnapshot: GroupCollabSnapshot
+  groupCollabSnapshot: GroupCollabSnapshot | null
   /** Why the roster could not be read: its members' page says so. */
   groupCollabError?: MemberListPanelProps['error']
   groupAgentStatuses: Record<string, AgentDisplayStatus>

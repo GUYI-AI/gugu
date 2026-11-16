@@ -22,8 +22,8 @@ vi.mock('../../../../apps/desktop/src/lib/attachmentUploads', () => ({ resumingC
 import { useAttachmentObjectUrl } from '../../../../apps/desktop/src/lib/attachmentBytes'
 import { forgetAttachmentChanges, noteAttachmentChanged } from '../../../../apps/desktop/src/lib/attachmentChanges'
 import { forgetSentFiles, holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
-import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
-;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
 const revision = { sha256: 'a'.repeat(64), size_bytes: 3, content_type: 'image/png', source: 'managed-object', width: 4, height: 3 }
 const ready = { status: 'ready', purpose: 'preview', revision, dispose: async () => undefined, content: async () => new Blob(['png'], { type: 'image/png' }) }

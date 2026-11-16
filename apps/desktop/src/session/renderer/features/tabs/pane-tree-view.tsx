@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useGroupRef } from 'react-resizable-panels';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
-import { createPaneDimensionSink, PaneDimensionProvider } from './pane-dimension-provider';
+import { PaneDimensionProvider } from './pane-dimension-provider';
 import { RetainedTabContent } from './retained-tab-content';
 import { MIN_PANE_HEIGHT_PX, type PaneLayoutStore } from './pane-layout-store';
 import { cornerPane, minExtent, paneOrder, type PaneLayoutNode } from './pane-layout-tree';
@@ -24,9 +24,8 @@ const childId = (node: PaneLayoutNode) => node.type === 'pane' ? `pane-${node.pa
  * whatever the panes hold.
  */
 export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane }: { layout: PaneLayoutStore; renderPane: RenderPane }) {
-  const size = useMemo(createPaneDimensionSink, [layout]);
   const treeId = useId().replace(/[^\w-]/g, '');
-  const narrow = !!size.dimensions && size.dimensions.width < minExtent(layout.layout, 'width', layout.paneMinWidth);
+  const narrow = !!layout.dimensions && layout.dimensions.width < minExtent(layout.layout, 'width', layout.paneMinWidth);
   useEffect(() => { layout.setNarrow(narrow); return () => layout.setNarrow(false); }, [layout, narrow]);
   const visiblePaneId = layout.activePaneId;
   const first = cornerPane(layout.layout, 'top-left');
@@ -35,7 +34,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane 
   // 并排(spec session-page「并排」):一条会话只有一条页签条 —— 横跨两页画在上面,两页各自的内容在下面。
   const paired = layout.sidePaneId !== null;
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
-  return <PaneDimensionProvider sink={size}>
+  return <PaneDimensionProvider sink={layout}>
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
       {paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">

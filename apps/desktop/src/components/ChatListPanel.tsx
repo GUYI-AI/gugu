@@ -26,6 +26,7 @@ import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
 import { useAuth } from '../store/auth'
 import { ChatRowContextMenu } from './chat/ChatRowContextMenu'
+import { warmRowAuthority } from './chat/useGroupChatSettings'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { formatCalendarDay } from '@/i18n/format'
 import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal'
@@ -276,7 +277,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
       onClick={(event) => actions.openTopic(topic, event.metaKey || event.ctrlKey)}
       onFocus={() => actions.focus(topic.id)}
       onKeyDown={(event) => actions.keyDown(event, topic)}
-      onContextMenu={menu.onContextMenu}
+      onContextMenu={menu.onContextMenu} onPointerEnter={() => warmRowAuthority(topic.id)}
       {...(mobile ? longPress : {})}
       style={TOPIC_SUBROW_STYLE}
       leading={<MessageSquare size={13} style={TOPIC_SUBROW_ICON_STYLE} />}
@@ -360,7 +361,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
         onFocus={() => actions.focus(chat.id)}
         onKeyDown={(event) => actions.keyDown(event, chat)}
-        onContextMenu={menu.onContextMenu}
+        onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
         {...(mobile ? longPress : {})}
         leading={
           // Avatar — agent status lives in the corner badge (AvatarStatusBadge); the old

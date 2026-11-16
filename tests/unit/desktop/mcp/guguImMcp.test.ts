@@ -2136,7 +2136,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(refused.commitBodies).toHaveLength(1)
   })
 
-  test('file tools reject payloads above their backend object limits before upload', async () => {
+  // No client-side cap: the server's upload permit is the limit, and its refusal names the exact number.
+  test('file tools refuse a file above the server permit, with its exact limit, before any byte is stored', async () => {
     const h = harness()
     const chatResult = await callTool('message_send_file', {
       chat_id: '00000000-0000-4000-8000-000000000001',
@@ -2144,7 +2145,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       file_path: sparseFixture('too-large.bin', (25 * 1024 * 1024) + 1),
     }, h.deps)
       .then(() => null, (error: unknown) => error)
-    expect(chatResult).toEqual(expect.objectContaining({ message: expect.stringContaining('26214400 bytes') }))
+    expect(chatResult).toEqual(expect.objectContaining({ message: expect.stringContaining('a file is at most 26214400') }))
     expect(h.calls.uploads).toHaveLength(0)
   })
   // #1244 thread 归属由会话决定:message_send 没有 thread_root_id 这个参数。写类不认识的键直接拒、点名报回去,
