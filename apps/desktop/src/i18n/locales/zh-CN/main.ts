@@ -674,6 +674,7 @@ export default {
     "library": "资源库",
     "apps": "App",
     "appDockFailed": "左栏没能改动",
+    "moreApps": "更多 App",
     "appOpen": "打开",
     "appOpenInWindow": "在新窗口打开",
     "appSettings": "App 设置",

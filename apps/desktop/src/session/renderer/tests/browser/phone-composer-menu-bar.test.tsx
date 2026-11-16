@@ -19,7 +19,7 @@ import '@/mobile/phone-look.css'
 
 let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => { harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell') })
-it.each([false, true])('group=%s: the input composer menu bar collapses fully without moving or replacing the input', async group => {
+it.each([true])('group=%s: the input composer menu bar collapses fully without moving or replacing the input', async group => {
   await page.viewport(390, 844); setLocalePreference('zh-CN'); document.documentElement.dataset.theme = 'dark'; document.documentElement.setAttribute('data-phone-shell', '')
   harness = createReactHarness()
   Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
@@ -42,7 +42,7 @@ it.each([false, true])('group=%s: the input composer menu bar collapses fully wi
   const viewport = harness.container.querySelector<HTMLElement>('[data-testid="message-viewport"]')!
   const dock = harness.container.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
   expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().top)
-  if (!group) expect(input.querySelector('[data-phone-attachment]')).toBeNull()
+  expect(harness!.container.querySelector('[data-phone-attachment]')).not.toBeNull()
   const blur = vi.fn(), ended = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', ended)
   editor.focus(); editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'zhong' }))
   await until('hidden menu', () => row.hasAttribute('data-editing'))
@@ -58,9 +58,23 @@ it.each([false, true])('group=%s: the input composer menu bar collapses fully wi
   await until('restored menu', () => !row.hasAttribute('data-editing'))
   expect(row.getBoundingClientRect().height).toBeGreaterThan(40)
   expect(input.getBoundingClientRect().top).toBe(initialTop)
-  if (!group) {
-    await page.getByTestId('phone-menu-attachments').click()
-    await expect.element(page.getByTestId('chat-composer-attach-panel')).toBeVisible()
-    expect([...harness.container.querySelectorAll('[data-testid^="chat-composer-attach-"]')].map(e => e.getAttribute('data-testid'))).toContain('chat-composer-attach-file')
-  }
+})
+
+// Owner 2026-11-16 13:29 supersedes the earlier attachment-only DM menu.
+it('human direct messages keep the shared paperclip inside the input and open the existing panel', async () => {
+  await page.viewport(390, 844); setLocalePreference('zh-CN'); document.documentElement.setAttribute('data-phone-shell', '')
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <LocalizationProvider><ChatBottomDock reserve={false}>
+    <ChatMessageComposer chatId="human-direct" currentUserId="owner" onSend={vi.fn(async () => {})} onSendAttachments={vi.fn(async () => {})} />
+  </ChatBottomDock></LocalizationProvider>)
+  await until('actual direct composer', () => !!harness!.container.querySelector('[contenteditable]'))
+  expect(harness.container.querySelector('[data-phone-composer-controls]')).toBeNull()
+  const input = harness.container.querySelector<HTMLElement>('[data-slot="composer-input"]')!
+  const clip = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!.getBoundingClientRect()
+  const box = input.getBoundingClientRect()
+  expect(clip.left).toBeGreaterThanOrEqual(box.left); expect(clip.right).toBeLessThanOrEqual(box.right)
+  expect(clip.top).toBeGreaterThanOrEqual(box.top); expect(clip.bottom).toBeLessThanOrEqual(box.bottom)
+  await page.getByTestId('chat-composer-attach-menu').click()
+  await expect.element(page.getByTestId('chat-composer-attach-panel')).toBeVisible()
+  for (const name of ['photos', 'camera', 'file']) expect(harness.container.querySelector(`[data-testid="chat-composer-attach-${name}"]`)).not.toBeNull()
 })

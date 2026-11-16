@@ -680,6 +680,7 @@ export default {
     "library": "Library",
     "apps": "Apps",
     "appDockFailed": "The left rail could not be changed",
+    "moreApps": "More Apps",
     "appOpen": "Open",
     "appOpenInWindow": "Open in New Window",
     "appSettings": "App settings",
