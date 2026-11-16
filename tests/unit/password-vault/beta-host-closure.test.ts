@@ -25,8 +25,10 @@ vi.mock('../../../apps/desktop/electron/session/main/core/sessions/password-beta
 import { closePasswordVaultForAccountClosure, installPasswordBetaHost, PASSWORD_UI_CHANNEL } from '../../../apps/desktop/electron/password-vault/beta-host'
 
 const owners: string[] = [], releases: Array<() => void> = []
+const mainFrame = {}, webContents = { mainFrame, send() {} }
+let currentHost: { owner(): string; rpc(): Promise<unknown> }
 beforeEach(async () => {
-  h.root = await mkdtemp(join(await realpath(tmpdir()), 'beta-host-closure-')); h.handlers.clear()
+  h.root = await mkdtemp(join(await realpath(tmpdir()), 'beta-host-closure-'))
   vi.stubEnv('GUGU_HOME', h.root)
   const key = randomBytes(32)
   h.keys = { verifyPerson: async () => {}, wrap: async (bytes, binding) => JSON.stringify(seal(key, bytes, binding)),
@@ -40,15 +42,15 @@ afterEach(async () => {
 function host() {
   let owner = randomUUID(); owners.push(owner)
   const entered = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>(), held = new Map<string, ReturnType<typeof Promise.withResolvers<unknown>>>()
-  const mainFrame = {}, webContents = { mainFrame, send() {} }
+  currentHost = { owner: () => owner, rpc: async () => {
+    const actual = owner
+    entered.get(actual)?.resolve()
+    return held.get(actual)?.promise ?? { initialized: false }
+  } }
   installPasswordBetaHost({ window: () => ({ webContents, isDestroyed: () => false }) as never,
-    account: async () => owner, device: () => 'controlled-device', deliver: async () => {}, deliverSave: async () => {},
+    account: async () => currentHost.owner(), device: () => 'controlled-device', deliver: async () => {}, deliverSave: async () => {},
     readPolicy: async () => ({}) as never, verifyOwner: async () => {}, presence: () => 'active', notify() {},
-    rpc: async () => {
-      const actual = owner
-      entered.get(actual)?.resolve()
-      return held.get(actual)?.promise ?? { initialized: false }
-    } })
+    rpc: () => currentHost.rpc() })
   const block = (id: string) => {
     const start = Promise.withResolvers<void>(), pending = Promise.withResolvers<unknown>(); entered.set(id, start); held.set(id, pending)
     releases.push(() => pending.resolve({ initialized: false }))
