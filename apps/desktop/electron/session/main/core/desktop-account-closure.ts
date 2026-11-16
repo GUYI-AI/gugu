@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { app } from 'electron'
-import { listAgents, removeAgents } from '@gugu/core/local/state/agents'
+import { listAgents } from '@gugu/core/local/state/agents'
 import { agentOwnerUserId } from '@gugu/core/local/state/agentOwner'
 import { removeAgentRuntimeSession } from '@gugu/core/local/agent/agentRuntimeSession'
 import { clearHumanAuthSession, readHumanAuthSession } from '@gugu/core/local/identity/humanAuthSession'
@@ -12,6 +12,8 @@ import { ClosureFailure } from '../../../account-closure/receipts'
 import { removeClosureOwnerDirectory } from '../../../account-closure/owner-directory'
 import { assertNoLiveAccountEngines } from '../../../account-closure/foreign-runtimes'
 import { readDesktopClosureRetainedItems } from '../../../account-closure/retained-items'
+import { eraseClosedAccountRoster } from '../../../account-closure/roster'
+import { eraseClosedAccountPasswordData } from '../../../account-closure/password-data'
 import { closePasswordVaultForAccountClosure } from '../../../password-vault/beta-host'
 import { encryptedAppSecretsStore } from './secrets/encrypted-app-secrets-store'
 import { imMessagesController } from './im-messages/controller'
@@ -56,7 +58,7 @@ export function createDesktopAccountClosureHost(host: NativeHost) {
       } },
       { name: 'account-password-vault', async run(scope) {
         await closePasswordVaultForAccountClosure(scope.ownerId)
-        await removeClosureOwnerDirectory(privatePasswordVaultDirectory(), scope.ownerId)
+        await eraseClosedAccountPasswordData(privatePasswordVaultDirectory(), scope.ownerId)
         return true
       } },
       { name: 'account-diagnostic-logs', async run(scope) {
@@ -78,7 +80,7 @@ export function createDesktopAccountClosureHost(host: NativeHost) {
         return true
       } },
       { name: 'account-agent-roster', async run(scope) {
-        await removeAgents(agent => agentOwnerUserId(agent) === scope.ownerId)
+        await eraseClosedAccountRoster(scope)
         return true
       } },
     ],
