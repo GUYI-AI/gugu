@@ -707,6 +707,8 @@ async function applyContext(ctx) {
   state.t = stringsFor(ctx.locale)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
   renderChrome()
+  // The list (or what says there is none) is drawn from here; a handed file only once read or failed (`showDoc`, `showDocMessage`).
+  if (!ctx.file) reveal()
   const roots = rootsOf(ctx)
   const inGroup = roots.length > 0
   // A page the host opened for one file (F3: its own page, bound to that file for life) shows that file only.
@@ -764,7 +766,8 @@ function renderChrome() {
   const title = state.ctx?.file?.id && state.ctx.file.id === state.shown?.id ? state.shown.name : t.title
   document.title = title
   // The slot's header says this App's name in the person's language (it would show the manifest's 文件夹 otherwise).
-  if (state.titled !== title) {
+  // A handed file not shown yet: nothing said, so the host keeps the file's own name on the tab (not this App's).
+  if (state.titled !== title && (!state.ctx?.file || state.ctx.file.id === state.shown?.id)) {
     state.titled = title
     Promise.resolve(gugu.setTabTitle(title)).catch(() => {})
   }
@@ -2850,6 +2853,11 @@ async function openHanded(maxBytes) {
   }
 }
 
+/** The page drawn at last (index.html `reading`): what it shows is ready — a file, what failed, how far a long read has come. */
+function reveal() {
+  document.body.classList.remove('reading')
+}
+
 // A file that could not be opened (its machine out of reach, say): a way to try again, and again by itself when its machine is back.
 function offerRetry(handed, maxBytes) {
   const again = () => {
@@ -4025,6 +4033,7 @@ function watchPresence(current) {
 // ─── panes and messages ─────────────────────────────────────────────────────
 
 function showDoc(entry) {
+  reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
   $('doc-title').textContent = entry.name
@@ -4075,6 +4084,7 @@ async function showDocPath(entry) {
 }
 
 function showDocMessage(message) {
+  reveal()
   document.body.dataset.state = 'message'
   $('doc-path').hidden = true
   document.body.classList.remove('json-dirty')
