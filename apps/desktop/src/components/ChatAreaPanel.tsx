@@ -650,7 +650,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
                 {mobile && topicSurface.splitTopic ? topicSurface.splitTopic.name : shownActiveChatName}
               </span>
             </span>
-            {mobile && topicSurface.splitTopic && <span data-testid="phone-topic-source-name" style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shownActiveChatName}</span>}
+            {mobile && topicSurface.splitTopic && <span data-testid="phone-topic-source-name" className="gg-phone-topic-source-name">{shownActiveChatName}</span>}
           </div>
         )}
         actions={headerActions}

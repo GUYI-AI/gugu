@@ -94,9 +94,10 @@ it('a group session puts Create agent before its resident Agents and preserves t
 })
 
 it('a project session puts Create agent first in Work instead of duplicating it in Agents',async()=>{
- runInAction(()=>{accountProjectsStore.list=[{chatId:'room',name:'Project',archived:false,activeAt:'2026-01-01T00:00:00.000Z',bindings:[{deviceId:'qa-device',localProjectId:'workspace'}]}]})
  await mount('room-task','chat:room',true)
- expect(document.querySelector('[data-anchor-kind="project"]')).not.toBeNull()
+ // Signing into the fixture legitimately resets account-owned stores first.
+ runInAction(()=>{accountProjectsStore.list=[{chatId:'room',name:'Project',archived:false,activeAt:'2026-01-01T00:00:00.000Z',bindings:[{deviceId:'qa-device',localProjectId:'workspace'}]}]})
+ await until('project context loaded',()=>!!document.querySelector('[data-anchor-kind="project"]'))
  await page.getByTestId('agent-watch-create-model-device').click()
  const list=document.querySelector('[data-testid="agent-watch-create-controls-sheet"] .gg-phone-composer-sheet-list')!
  expect(list.firstElementChild?.getAttribute('data-testid')).toBe('phone-create-agent')
