@@ -62,7 +62,7 @@ function resolveInsideWorkspace(
 ): string | null {
   if (machineAbsolute) {
     const absolute = splitAbsolutePath(cleanSrc);
-    if (!absolute || absolute.prefix !== root.prefix) return null;
+    if (!absolute || !samePathPart(absolute.prefix, root.prefix, root)) return null;
     const flattened = normalizeSegments([], absolute.segments);
     return flattened && isUnderRoot({ prefix: absolute.prefix, segments: flattened }, root)
       ? absolute.prefix + flattened.join('/')
@@ -78,7 +78,7 @@ function resolveInsideWorkspace(
 
   if (normalized.length < root.segments.length) return null;
   for (let index = 0; index < root.segments.length; index += 1) {
-    if (normalized[index] !== root.segments[index]) return null;
+    if (!samePathPart(normalized[index], root.segments[index], root)) return null;
   }
   return root.prefix + normalized.join('/');
 }
@@ -113,9 +113,13 @@ function normalizeSegments(baseSegments: string[], relSegments: string[]): strin
 
 /** 承载文档是不是落在工作区根里面。 */
 function isUnderRoot(containing: AbsoluteParts, root: AbsoluteParts): boolean {
-  if (containing.prefix !== root.prefix) return false;
+  if (!samePathPart(containing.prefix, root.prefix, root)) return false;
   if (containing.segments.length < root.segments.length) return false;
-  return root.segments.every((segment, index) => containing.segments[index] === segment);
+  return root.segments.every((segment, index) => samePathPart(containing.segments[index], segment, root));
+}
+
+function samePathPart(left: string, right: string, root: AbsoluteParts): boolean {
+  return root.prefix === '/' ? left === right : left.toLowerCase() === right.toLowerCase();
 }
 
 /** 承载文档是否在工作区之外 —— 调用方据此决定走 readFile 还是 readExternalFile。 */
