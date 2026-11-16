@@ -166,3 +166,15 @@ test('changed intent, task, target, or owner cannot reuse the original creation'
   assert.throws(() => createPhoneAttachmentCreation({ ...fx.dependencies, ownerId: randomUUID() }), /another owner/)
   assert.equal(fx.calls.admissions, 0)
 }))
+
+test('a sign-out during the complete placement read cannot admit into the stopped owner host', () => isolated(async root => {
+  const fx = await fixture(root)
+  let ready = true
+  const invoke = createPhoneAttachmentCreation({ ...fx.dependencies, isReady: () => ready,
+    resolve: async (...args) => { const fact = await fx.dependencies.resolve(...args); ready = false; return fact },
+  })
+  await invoke(createChannel, [fx.request])
+  await assert.rejects(invoke(admitChannel, [fx.admission]), /no longer ready/)
+  assert.equal(fx.calls.admissions, 0)
+  assert.equal(Object.keys(fx.store.state.jobs).length, 0)
+}))

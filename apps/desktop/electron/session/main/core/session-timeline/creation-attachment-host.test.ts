@@ -125,6 +125,15 @@ describe('attachment-first creation: real private journal and host coordinator',
     await expect(createAttachmentCreationHost(f.deps).create(request())).rejects.toThrow('cannot be read');
     expect(f.deps.create).toHaveBeenCalledTimes(1);
   });
+  it('an account switch during the byte proof cannot enqueue the old owner first input', async () => {
+    const f = await fixture(), result = await f.host.create(request());
+    vi.mocked(f.deps.resolve).mockImplementationOnce(async file => {
+      f.switchOwner(); return { agentUserId: 'agent', chatId: 'dm', itemId: file.itemId, version: file.version,
+        sizeBytes: 3, sha256: 'a'.repeat(64) };
+    });
+    await expect(f.host.admit(f.input(result.conversationId))).rejects.toThrow('owner/device changed');
+    expect(f.deps.send).not.toHaveBeenCalled();
+  });
   it('rejects replacement of a prepared placement even after the input ACK was lost', async () => {
     const f = await fixture(), result = await f.host.create(request()), input = f.input(result.conversationId);
     vi.mocked(f.deps.send).mockRejectedValueOnce(new Error('unknown input receipt'));
