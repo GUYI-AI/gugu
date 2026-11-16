@@ -1,3 +1,4 @@
+import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { ChatAreaPanel } from '@/components/ChatAreaPanel'
@@ -21,13 +22,13 @@ const activity = vi.hoisted(() => ({ count: 12 }))
 vi.mock('@/platform', () => import('../../../../../../../tests/support/capacitorPlatformTestDouble'))
 vi.mock('@/lib/chat', async original => ({ ...await original<object>(), ...await import('../../../../../../../tests/support/contactsChatServiceTestDouble') }))
 vi.mock('@/lib/topics', async original => ({ ...await original<object>(), topicService: { listTopicsOfChat: vi.fn(async () => []) } }))
-vi.mock('@/hooks/useRoomCollab', () => ({ useRoomCollab: () => ({ snapshot: null, error: null, reload: vi.fn(), authorityRevision: 0 }) }))
+vi.mock('@/hooks/useRoomCollab', async original => ({ ...await original<object>(), useRoomCollab: () => ({ snapshot: null, error: null, reload: vi.fn(), authorityRevision: 0 }) }))
 vi.mock('@/lib/groupRunningTokenModels', async original => ({ ...await original<object>(), groupRunningTokens: () => Array.from({ length: activity.count }, (_, i) => ({ id: `gap-agent-${i}`, name: `检查图片的智能体 ${i}`, avatarUrl: null, avatarSeed: String(i), stateKey: 'running', toolCount: 0, lastActiveAt: null })) }))
 
 let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => { harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
 
-const phase = 'before'
+const phase = 'after'
 const rect = (element: Element) => {
   const { top, bottom, left, right, width, height } = element.getBoundingClientRect()
   return { top, bottom, left, right, width, height }
@@ -61,8 +62,10 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
     const root = harness.container
     const editor = root.querySelector<HTMLElement>('[contenteditable]')!
     const row = root.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-    if (keyboard) editor.focus(); else editor.blur()
-    window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible: keyboard }))
+    await act(async () => {
+      if (keyboard) editor.focus(); else editor.blur()
+      window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible: keyboard }))
+    })
     await until('menu reflects the composer keyboard', () => row.hasAttribute('data-editing') === keyboard)
     const dock = root.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
     const slot = dock.querySelector<HTMLElement>('[data-running-bar-slot]')!
@@ -81,6 +84,13 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
     }
     console.log('PHONE_RUNNING_GAP_2904 ' + JSON.stringify(data))
     expect(rect(button).height).toBe(44)
+    expect(parseFloat(getComputedStyle(composer).paddingBottom)).toBeGreaterThanOrEqual(8)
+    if (token) {
+      expect(rect(slot).height).toBe(rect(token.closest('.rtb-bar')!).height + parseFloat(getComputedStyle(slot).paddingTop))
+      if (!keyboard) {
+        expect(data.pillToMenu).toBe(parseFloat(getComputedStyle(dock).getPropertyValue('--spacing-sm')))
+      }
+    }
     if (keyboard) {
       expect(rect(row).height).toBe(0)
       expect(data.rowSpacing.marginBottom).toBe('0px')

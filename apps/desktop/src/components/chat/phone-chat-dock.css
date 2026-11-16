@@ -1,3 +1,9 @@
 /* The phone footer owns a real row. Messages end above it, including the running pills. */
 .gg-phone-chat-dock { position: relative; flex: 0 0 auto; min-width: 0; width: 100%; z-index: 20; }
 .gg-phone-chat-dock [data-running-bar-slot]:has(> [data-running-bar-content]:empty) { display: none; }
+/* The running strip already owns its spacing. Do not stack a desktop 42px
+   reservation and the composer's separate top inset between these phone rows. */
+.gg-phone-chat-dock [data-running-bar-slot] { height: auto; padding-top: var(--spacing-xs); }
+.gg-phone-chat-dock .rtb-bar { padding-block: 0; }
+.gg-phone-chat-dock:has(.rtb-bar) :is([data-chat-composer], [data-topic-split-composer]) { padding-top: var(--spacing-sm) !important; }
+.gg-phone-chat-dock:has(.rtb-bar) [data-phone-composer-controls]:not([data-editing]) { padding-top: 0; }
