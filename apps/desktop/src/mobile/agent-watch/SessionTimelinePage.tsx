@@ -263,7 +263,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           <RefreshCw />
         </IconButton>
       ) : null}
-      {phoneHost ? <PhoneTaskSkills deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : null}
       {!phoneHost && !appPanel ? <SessionAppMenu
         appKind={appKind}
         onConversation={() => setAppKind(null)}
@@ -302,7 +301,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
-          composerControls={mobile && !appPanel && sidebar.anchor ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} /> : undefined}
+          composerControls={mobile && !appPanel ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} nativeSkills={phoneHost ? <PhoneTaskSkills menuBar deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : undefined} /> : undefined}
           agentName={shownName}
           agentUserId={agentUserId}
           harness={session.harness}
