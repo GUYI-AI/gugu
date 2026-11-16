@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
@@ -6,15 +6,17 @@ import { IconButton } from '@/components/ui/IconButton'
 import { X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
+import { PhoneViewportContext } from '../usePhoneViewport'
 import './phone-composer-controls.css'
 
 export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
   const row = useRef<HTMLDivElement>(null)
   const [editing, setEditing] = useState(false)
+  const keyboardVisible = useContext(PhoneViewportContext)?.keyboardVisible
   useLayoutEffect(() => {
     const scope = row.current?.closest('[data-slot="composer"], [data-chat-composer], [data-chat-composer-host], [data-chat-bottom-dock], .gg-aw-create-host')
     if (!scope) return
-    const update = () => setEditing(document.activeElement instanceof Element
+    const update = () => setEditing(keyboardVisible !== false && document.activeElement instanceof Element
       && scope.contains(document.activeElement)
       && !!document.activeElement.closest('[data-slot="composer-input"] [contenteditable], [data-slot="composer-input"] textarea'))
     const afterBlur = () => queueMicrotask(update)
@@ -22,7 +24,7 @@ export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
     scope.addEventListener('focusin', update)
     scope.addEventListener('focusout', afterBlur)
     return () => { scope.removeEventListener('focusin', update); scope.removeEventListener('focusout', afterBlur) }
-  }, [])
+  }, [keyboardVisible])
   return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined} inert={editing || undefined} aria-hidden={editing || undefined}>{children}</div>
 }
 
