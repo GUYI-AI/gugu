@@ -343,7 +343,7 @@ function switchableModels(
     const alias = typeof row.alias === 'string' ? row.alias.trim() : ''
     if (!alias) continue
     const id = typeof row.id === 'string' && row.id.trim() ? row.id.trim() : alias
-    if (!isUserFacingModelId(id)) return [];
+    if (!isUserFacingModelId(id)) continue;
     const displayName = typeof row.display_name === 'string' && row.display_name.trim()
       ? row.display_name.trim()
       : id

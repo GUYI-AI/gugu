@@ -55,6 +55,41 @@ it('removes auto when a live model update loses support, rejecting a forged sele
   await expect(api.setSessionMode!({ sessionId: 'session', modeId: 'auto' })).rejects.toThrow('unavailable');
   expect(mock.mode).not.toHaveBeenCalled();
 });
+it.each([
+  ['sonnet', 'Claude Sonnet 4.6'], ['sonnet[1m]', 'Claude Sonnet 4.6'],
+  ['haiku', 'Claude Haiku 5.5'], ['default', 'Claude Opus 5'],
+])('forwards a native-qualified %s model alias while auto remains selected', async (target, description) => {
+  mock.current = configs('claude-opus-5').map(option => option.id === 'model' && option.type === 'select'
+    ? { ...option, options: [...option.options, { value: target, name: target, description }] }
+    : option.id === 'mode' && option.type === 'select' ? { ...option, currentValue: 'auto' } : option);
+  const api = connect('2.1.322');
+  await api.newSession(start);
+  mock.set.mockImplementation(async params => ({ configOptions: mock.current.map(option => option.id === 'model' && option.type === 'select'
+    ? { ...option, currentValue: params.value } : option) }));
+  const request = { sessionId: 'session', configId: 'model', value: target };
+  const result = await api.setSessionConfigOption!(request);
+  expect(mock.set).toHaveBeenCalledExactlyOnceWith(request);
+  expect(result.configOptions?.find(option => option.id === 'model')).toMatchObject({ currentValue: target });
+  expect(result.configOptions?.find(option => option.id === 'mode')).toMatchObject({ currentValue: 'auto' });
+  expect(mock.mode).not.toHaveBeenCalled();
+});
+it.each([
+  ['2.1.322', 'sonnet', 'Claude Sonnet 4.5'], ['2.1.322', 'sonnet', ''],
+  ['2.1.322', 'haiku', 'Claude Haiku 4.5'], ['2.1.322', 'default', 'DeepSeek V4'],
+  ['2.1.322', 'undeclared-alias', 'Claude Sonnet 4.6'], ['2.1.301', 'sonnet', 'Claude Sonnet 4.6'],
+])('rejects an unqualified target without changing native auto (%s / %s / %s)', async (version, target, description) => {
+  mock.current = configs('claude-opus-5').map(option => option.id === 'model' && option.type === 'select'
+    ? { ...option, options: [...option.options, { value: target, name: target, description }] }
+    : option.id === 'mode' && option.type === 'select' ? { ...option, currentValue: 'auto' } : option);
+  const original = mock.current;
+  const api = connect(version);
+  await api.newSession(start);
+  await expect(api.setSessionConfigOption!({ sessionId: 'session', configId: 'model', value: target })).rejects.toThrow('Change permissions');
+  expect(mock.set).not.toHaveBeenCalled();
+  expect(mock.mode).not.toHaveBeenCalled();
+  expect(mock.current).toBe(original);
+  expect(mock.current.find(option => option.id === 'mode')).toMatchObject({ currentValue: 'auto' });
+});
 // Shape emitted by the pinned @gugu-acp/claude-agent-acp 1.6.2 v2 renderer.
 // These are protocol fixtures, not evidence of a paid Claude request.
 const nativeDenial = (reason?: string) => ({ sessionUpdate: 'tool_call_update', toolCallId: 'call', status: 'failed',

@@ -16,17 +16,22 @@ export function claudeAutoReviewAvailable(version: string | undefined, model: st
   return meetsReviewModeRequirements(CLAUDE_PERMISSION_MODES['ai-review'].reviewRequirements, { cliVersion: version, model });
 }
 
-/** Preserve the producer's mode list, removing auto when either prerequisite is unknown. */
-export function claudeReviewConfig(options: readonly SessionConfigOption[], version?: string): SessionConfigOption[] {
+/** Resolve current or target aliases from the same native model choices. */
+export function claudeReviewModelAvailable(options: readonly SessionConfigOption[], version: string | undefined, selected: string | null | undefined): boolean {
   const model = options.find(option => option.category === 'model' && option.type === 'select');
-  const selected = model?.type === 'select' ? model.currentValue : null;
   const choice = model?.type === 'select' ? flattenSelectOptions(model.options).find(option => option.value === selected) : undefined;
   // A default/haiku alias needs the model the producer describes, rather than an SDK default.
   const alias = selected?.replace(/\[.*\]$/, '');
   const resolved = alias === 'default' || alias === 'haiku' || alias === 'sonnet'
     ? `${choice?.name ?? ''} ${choice?.description ?? ''}`.match(/(?:claude-)?(?:opus|fable|sonnet|haiku)[- ]\d+(?:[- .]\d+)?/i)?.[0]?.replace(/[ .]/g, '-')
     : selected;
-  const available = claudeAutoReviewAvailable(version, resolved);
+  return claudeAutoReviewAvailable(version, resolved);
+}
+
+/** Preserve the producer's mode list, removing auto when either prerequisite is unknown. */
+export function claudeReviewConfig(options: readonly SessionConfigOption[], version?: string): SessionConfigOption[] {
+  const model = options.find(option => option.category === 'model' && option.type === 'select');
+  const available = claudeReviewModelAvailable(options, version, model?.type === 'select' ? model.currentValue : null);
   return options.map(option => option.category === 'mode' && option.type === 'select'
     ? { ...option, options: flattenSelectOptions(option.options).filter(choice => choice.value !== 'auto' || available) }
     : option);

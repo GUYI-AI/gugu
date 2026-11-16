@@ -1,9 +1,10 @@
-import { acpSessionMetaSchema } from '@gugu/session-core/acp';
+import { acpSessionMetaSchema, catalogAllowsAutoReview, flattenSelectOptions } from '@gugu/session-core/acp';
 import { describe, expect, it } from 'vitest';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { claudeAutoReviewAvailable, claudeReviewConfig, CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
 import { provider } from './index';
 import { materializeClaudeSessionBundle } from './session-bundle';
+import { CLAUDE_PERMISSION_MODES } from './permission-modes';
 
 const options = (model: string, description?: string): SessionConfigOption[] => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: model, options: [{ value: model, name: model, description }] },
@@ -39,6 +40,31 @@ describe('Claude AI review prerequisites', () => {
     expect(modes('2.1.311', 'sonnet', 'Claude Sonnet 4.5')).toHaveLength(4);
     expect(modes('2.1.311', 'sonnet')).toHaveLength(4);
     expect(modes('2.1.311', 'sonnet[1m]', 'Claude Sonnet 4.6')).toHaveLength(5);
+  });
+  it.each([
+    ['default', 'Claude Opus 5'], ['sonnet', 'Claude Sonnet 4.6'],
+    ['sonnet[1m]', 'Claude Sonnet 4.6'], ['haiku', 'Claude Haiku 5.5'],
+  ])('keeps native-qualified %s available at the shared own-account creation gate', (model, description) => {
+    const native = claudeReviewConfig(options(model, description), '2.1.322');
+    const mode = native.find(option => option.category === 'mode');
+    const autoReview = mode?.type === 'select' && flattenSelectOptions(mode.options).some(choice => choice.value === 'auto');
+    expect(autoReview).toBe(true);
+    const catalog = { kind: 'ready', selected: model, autoReview, cliVersion: '2.1.322' };
+    expect(catalogAllowsAutoReview(CLAUDE_PERMISSION_MODES, catalog, 'own', model)).toBe(true);
+    expect(catalogAllowsAutoReview(CLAUDE_PERMISSION_MODES, catalog, 'own', 'stale-selection')).toBe(false);
+    expect(catalogAllowsAutoReview(CLAUDE_PERMISSION_MODES, { ...catalog, kind: 'auth-required' }, 'own', model)).toBe(false);
+  });
+  it.each([
+    ['2.1.301', 'sonnet', 'Claude Sonnet 4.6'], [undefined, 'sonnet', 'Claude Sonnet 4.6'],
+    ['2.1.322', 'sonnet', 'Claude Sonnet 4.5'], ['2.1.322', 'sonnet', ''],
+    ['2.1.322', 'haiku', 'Claude Haiku 4.5'], ['2.1.322', 'default', 'DeepSeek V4'],
+  ])('keeps unqualified native facts hidden at creation (%s / %s / %s)', (version, model, description) => {
+    const native = claudeReviewConfig(options(model!, description), version);
+    const mode = native.find(option => option.category === 'mode');
+    const autoReview = mode?.type === 'select' && flattenSelectOptions(mode.options).some(choice => choice.value === 'auto');
+    expect(autoReview).toBe(false);
+    expect(catalogAllowsAutoReview(CLAUDE_PERMISSION_MODES,
+      { kind: 'ready', selected: model, autoReview, cliVersion: version }, 'own', model)).toBe(false);
   });
   it('sends native auto rather than the bypass flag', () => {
     const command = provider.behavior.prompt!.buildCommand({ cli: '/fixture/claude', model: 'claude-opus-5', permissionMode: 'ai-review' });

@@ -3,7 +3,7 @@ import type { AcpAgentApi, AcpClientFactory, AcpProcessIo } from '@gugu/session-
 import { flattenSelectOptions } from '@gugu/session-core/acp';
 import { connectStdioAcpV2 } from '../../helpers/acp-v2';
 import { createClaudeSessionDecoder } from './acp-transform';
-import { claudeReviewConfig, claudeAutoReviewAvailable } from './auto-review';
+import { claudeReviewConfig, claudeReviewModelAvailable } from './auto-review';
 
 /** A connection is pinned to the actual executable selected at launch, including after reconnect. */
 export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string): AcpAgentApi {
@@ -63,7 +63,7 @@ export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFac
       const mode = current?.find(option => option.category === 'mode' && option.type === 'select');
       const model = current?.find(option => option.category === 'model');
       if (params.configId === model?.id && mode?.type === 'select' && mode.currentValue === 'auto'
-        && !claudeAutoReviewAvailable(version, typeof params.value === 'string' ? params.value : undefined)) {
+        && !claudeReviewModelAvailable(current ?? [], version, typeof params.value === 'string' ? params.value : undefined)) {
         throw new Error('Change permissions before selecting a model without AI review support');
       }
       const result = await api.setSessionConfigOption!(params);
