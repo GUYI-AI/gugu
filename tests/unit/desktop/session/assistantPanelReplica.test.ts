@@ -81,6 +81,15 @@ it('a detail read through a store nobody registered rejects (❌ hangs, ❌ empt
   expect(assistantIntegrationDetail.peek('["nobody"]', 'mail', 'a'.repeat(64), 'en-US').state).toBe('error')
 })
 
+/** Microtask turns (no clock) until `seen` holds; how many it took, so a negative check can wait at least as long. */
+async function turnsUntil(seen: () => boolean): Promise<number> {
+  let turn = 0
+  for (; turn < 500 && !seen(); turn += 1) await Promise.resolve()
+  expect(seen()).toBe(true)
+  return turn
+}
+async function turns(count: number): Promise<void> { for (let turn = 0; turn < count; turn += 1) await Promise.resolve() }
+
 it('a change on the bus reads the panel again — at once when ready, after the burst settles while a collection is prepared', async () => {
   await vi.waitFor(() => expect(assistantPanel.peek('assistant').state).toBe('value'))
   const ready = { ...item('__collection__'), data: { state: 'ready' } }
@@ -89,10 +98,15 @@ it('a change on the bus reads the panel again — at once when ready, after the 
   const stop = assistantPanel.hold('assistant')
   const changed = cloud.bus.filter((entry) => entry.event === 'assistant_panel_changed').at(-1)!
   cloud.snapshot.mockClear().mockResolvedValue(snap('3', [ready]))
-  changed.listener({ assistantId: 'another' })
-  expect(cloud.snapshot).not.toHaveBeenCalled()
+  // This assistant's change: read at once — and how many turns that takes bounds the checks below.
   changed.listener({ assistantId: 'assistant' })
-  await vi.waitFor(() => expect(cloud.snapshot).toHaveBeenCalledTimes(1))
+  const readStarts = await turnsUntil(() => cloud.snapshot.mock.calls.length > 0)
+  await vi.waitFor(() => expect(assistantPanel.peek('assistant')).toMatchObject({ value: { revision: '3' } }))
+  // Another assistant's change: no read, checked after the same path would have read twice over.
+  cloud.snapshot.mockClear()
+  changed.listener({ assistantId: 'another' })
+  await turns(readStarts * 2 + 10)
+  expect(cloud.snapshot).not.toHaveBeenCalled()
   // A collection still being prepared: the burst is read once it settles (1 s).
   vi.useFakeTimers()
   try {
@@ -100,8 +114,10 @@ it('a change on the bus reads the panel again — at once when ready, after the 
     await assistantPanel.refresh('assistant'); await assistantPanel.fetch('assistant')
     cloud.snapshot.mockClear()
     changed.listener(); changed.listener(); changed.listener()
+    await turns(readStarts * 2 + 10)
     expect(cloud.snapshot).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1_000)
+    await turns(readStarts * 2 + 10)
     expect(cloud.snapshot).toHaveBeenCalledTimes(1)
   } finally { vi.useRealTimers(); stop() }
 })
