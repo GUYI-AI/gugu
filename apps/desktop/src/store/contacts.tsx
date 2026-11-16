@@ -86,8 +86,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     sentRequests = requestsReading.state === 'value' ? requestsReading.value.sent : NO_REQUESTS,
     groupInvitations = requestsReading.state === 'value' ? requestsReading.value.invitations : NO_INVITATIONS,
     managedJoinRequests = joinRequestsReading.state === 'value' ? joinRequestsReading.value : NO_JOIN_REQUESTS
-  const [searchResults, setSearchResults] = useState<ContactRelation[]>([])
-  const [isSearching, setIsSearching] = useState(false)
 
   const loadContacts = useCallback(() => contactRelations.refresh(), [])
   const loadGroups = useCallback(() => contactGroups.refresh(), [])
@@ -143,29 +141,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]))
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  const searchUsers = useCallback(
-    async (query: string) => {
-      if (!userId) return
-      setIsSearching(true)
-      try {
-        const results = await contactsService.searchUsers(query, userId)
-        await (await getImRepository()).putIdentities(results)
-        setSearchResults(results.map(({ id, alias, agent_type, project_path }) => ({ id, alias, agent_type, project_path })))
-      } catch (err) {
-        console.error('[ContactsStore] searchUsers error', err)
-        setSearchResults([])
-        throw err
-      } finally {
-        setIsSearching(false)
-      }
-    },
-    [getImRepository, userId],
-  )
-
-  const clearSearch = useCallback(() => {
-    setSearchResults([])
-  }, [])
-
   const sendRequest = useCallback(
     async (targetUserId: string, message?: string | null) => {
       if (!userId) return
@@ -361,10 +336,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       loadingGroups,
       contactsStatus,
       groupChatsStatus,
-      searchResults: project(searchResults),
-      isSearching,
-      searchUsers,
-      clearSearch,
       sendRequest,
       acceptRequest,
       rejectRequest,
@@ -386,9 +357,9 @@ export function ContactsProvider({ children, active = true }: { children: React.
       removeContact,
     }
   }, [
-    contacts, searchResults, identitiesById, sharedGroupAgents, groups, groupChats, receivedRequests, sentRequests,
+    contacts, identitiesById, sharedGroupAgents, groups, groupChats, receivedRequests, sentRequests,
     groupInvitations, managedJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
-    loadingGroups, contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
+    loadingGroups, contactsStatus, groupChatsStatus, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
     deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact,

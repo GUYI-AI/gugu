@@ -2,7 +2,13 @@
 import { act } from 'react'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
+import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
+import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto, waitForCondition } from '../../../support/testHarness'
+
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(),
+  openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 
 let AddFriendSearch: typeof import('../../../../apps/desktop/src/components/AddFriendSearch')['AddFriendSearch']
 let harness: ReturnType<typeof createReactHarness>
@@ -12,15 +18,13 @@ beforeAll(async () => {
   ;({ AddFriendSearch } = await import('../../../../apps/desktop/src/components/AddFriendSearch'))
 })
 beforeEach(() => { harness = createReactHarness() })
-afterEach(() => { harness.cleanup() })
+afterEach(() => { harness.cleanup(); vi.restoreAllMocks() })
 afterAll(() => { vi.unstubAllEnvs() })
 
 describe('empty contact search referral suggestion', () => {
   it('shows the empty result before offering an invitation after a completed search', async () => {
-    const searchUsers = vi.fn(async () => {})
-    await renderWithAppProviders(harness, createNode(AddFriendSearch), {
-      contacts: { searchResults: [], searchUsers },
-    })
+    const searchUsers = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
     const input = harness.container.querySelector('input')!
     await typeInto(input, 'missing-person@example.test')
     expect(harness.container.querySelector('[data-testid="referral-preview-search"]')).toBeNull()
@@ -29,7 +33,8 @@ describe('empty contact search referral suggestion', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
 
-    expect(searchUsers).toHaveBeenCalledWith('missing-person@example.test')
+    expect(searchUsers).toHaveBeenCalledWith('missing-person@example.test', 'user-1')
+    await waitForCondition(() => harness.container.querySelector('[data-testid="referral-preview-search"]') !== null, 'no invitation')
     const emptyText = i18n.t('friendSearch.noResults', { ns: 'contacts' })
     const empty = [...harness.container.querySelectorAll('div')].find(element => element.textContent === emptyText)
     const invitation = harness.container.querySelector('[data-testid="referral-preview-search"]')
@@ -42,14 +47,14 @@ describe('empty contact search referral suggestion', () => {
   })
 
   it('opens the disconnected invitation from the empty-search suggestion', async () => {
-    await renderWithAppProviders(harness, createNode(AddFriendSearch), {
-      contacts: { searchResults: [] },
-    })
+    vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
     const input = harness.container.querySelector('input')!
     await typeInto(input, 'missing-person@example.test')
     await act(async () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
+    await waitForCondition(() => harness.container.querySelector('[data-testid="referral-preview-search"]') !== null, 'no invitation')
 
     await clickElement(harness.container.querySelector('[data-testid="referral-preview-search"]')!)
 

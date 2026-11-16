@@ -68,6 +68,22 @@ export const groupJoinRequests = replica({
 })
 
 /**
+ * The people a search in 「添加联系人」 found for one submitted query (user, 咕咕号 or email). Held only while the page
+ * shows it (`keep: 0`): the next opening starts from an empty box, ❌ the last search's hits. The rows are whole
+ * identities (a search finds people not in the IM library yet); they are published to it before the answer, as above.
+ */
+export const userSearch = replica({
+  name: 'userSearch',
+  scope: 'account',
+  keep: 0,
+  read: async (owner: string, query: string): Promise<ContactUser[]> => {
+    const found = await contactsService.searchUsers(query, owner)
+    await (await openedImRepository(owner)).putIdentities(found)
+    return found
+  },
+})
+
+/**
  * Read again for an event that must be consumed: rejects when the read fails, so the account revision coordinator keeps
  * the event and retries it (a plain `refresh` resolves either way).
  */
