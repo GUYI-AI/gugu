@@ -1,0 +1,29 @@
+{
+  "state": {
+    "deviceId": "b066b130-5053-4e27-9851-61b398c37c94",
+    "conversationId": "menu2858-session-2"
+  },
+  "text": "消息\n咕咕\n菜单栏无子会话\n12:47\n菜单栏子会话\n12:47\n菜单栏有子会话\n12:47\n输入\n输入框菜单栏验收群\n11:17\n[草稿] menu2858\nmenu2858-peer-81ec-11161112\n11:11\n[草稿] menu2858\n伙伴\n新的请求\n添加联系人\n菜单栏无子会话\n设备离线\n最后在线 5 分钟前\n对话\n工作\n技能\n\n\n\n\n随心输入",
+  "controls": [
+    "工作",
+    "技能"
+  ],
+  "row": {
+    "x": 15.996621131896973,
+    "y": 712.1227416992188,
+    "width": 358.2770080566406,
+    "height": 47.9954948425293,
+    "top": 712.1227416992188,
+    "right": 374.2736291885376,
+    "bottom": 760.118236541748,
+    "left": 15.996621131896973
+  },
+  "width": 390,
+  "theme": "dark",
+  "hasInput": true,
+  "source": "Physical OnePlus8T Android14",
+  "head": "0.3.6-menu2858-74cb58ba5b",
+  "syntheticData": true,
+  "offlineFixture": false,
+  "modelRequests": 0
+}

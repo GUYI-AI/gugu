@@ -1,0 +1,63 @@
+{
+  "source": "https://localhost/",
+  "empty": true,
+  "activeEditor": true,
+  "viewport": {
+    "width": 360,
+    "height": 766,
+    "visualHeight": 766,
+    "offset": 0
+  },
+  "shell": {
+    "x": 0,
+    "y": 0,
+    "width": 360,
+    "height": 766,
+    "top": 0,
+    "right": 360,
+    "bottom": 766,
+    "left": 0
+  },
+  "input": {
+    "x": 12,
+    "y": 694,
+    "width": 336,
+    "height": 56,
+    "top": 694,
+    "right": 348,
+    "bottom": 750,
+    "left": 12
+  },
+  "menu": {
+    "editing": true,
+    "height": 0,
+    "margin": "0px"
+  },
+  "events": [
+    {
+      "visible": true,
+      "at": 51785.299999952316,
+      "innerHeight": 455,
+      "visualHeight": 455
+    },
+    {
+      "visible": false,
+      "at": 52584.799999952316,
+      "innerHeight": 766,
+      "visualHeight": 766
+    }
+  ],
+  "ime": [
+    "mInputShown=false",
+    "mIsInputViewShown=true mStatusIcon=0"
+  ],
+  "package": {
+    "name": "Gugu Menu 2858",
+    "id": "app.gugu.test.menubar2858",
+    "build": "306",
+    "version": "0.3.6-menu2858-c95b6359b8"
+  },
+  "device": "OnePlus 8T 2838125b, physical Android 14",
+  "sourceSha": "c95b6359b8f737614ff719a3666909771d9b11b0",
+  "fixture": false
+}
