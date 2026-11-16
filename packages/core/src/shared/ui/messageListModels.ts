@@ -1,4 +1,5 @@
 import { mergeMessageState } from './messageState'
+import { orderMessages } from './messageTimeline'
 import type { MessageItem, ReactionGroup } from '../types/chat'
 import type { FileMetadata, FileRevision } from '../fileResolver'
 
@@ -115,18 +116,9 @@ export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
     a.delivery_status === b.delivery_status &&
     sameDeliveryBlocks(a.delivery_blocks, b.delivery_blocks) &&
     a.local_send_state === b.local_send_state &&
+    a.local_timeline?.afterSeq === b.local_timeline?.afterSeq && a.local_timeline?.createdAt === b.local_timeline?.createdAt &&
     sameReactions(a.reactions, b.reactions)
   )
-}
-
-// @@@message-order-invariant - a chat's canonical order is the server-assigned `seq` (monotonic per
-function compareMessageOrder(a: MessageItem, b: MessageItem): number {
-  const aPending = a.seq < 1
-  const bPending = b.seq < 1
-  if (aPending !== bPending) return aPending ? 1 : -1
-  if (!aPending) return a.seq - b.seq
-  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
 export function mergeMessagesById(prev: MessageItem[], fresh: MessageItem[], chatId: string): MessageItem[] {
@@ -147,8 +139,7 @@ export function mergeMessagesById(prev: MessageItem[], fresh: MessageItem[], cha
   for (const p of prev) {
     if (!seen.has(p.id) && p.chat_id === chatId) out.push(p)
   }
-  out.sort(compareMessageOrder)
-  return out
+  return orderMessages(out)
 }
 
 // @@@2015 — 乐观回复必须带全引用预览(user_id/content):只带 reply_to_message_id 时,
@@ -180,6 +171,5 @@ export function upsertMessageById(list: MessageItem[], msg: MessageItem): Messag
     return shallowEqualMessage(existing, merged) ? existing : merged
   })
   const result = replaced ? next : [...next, msg]
-  result.sort(compareMessageOrder)
-  return result
+  return orderMessages(result)
 }

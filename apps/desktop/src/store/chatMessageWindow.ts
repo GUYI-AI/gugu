@@ -18,7 +18,11 @@ export const INITIAL_PAGE = 30
 export const NEWER_PAGE = 200
 
 export function trimToMessageWindow(messages: MessageItem[]): MessageItem[] {
-  return messages.length > MESSAGE_WINDOW ? messages.slice(messages.length - MESSAGE_WINDOW) : messages
+  if (messages.length <= MESSAGE_WINDOW) return messages
+  const settled = messages.filter(row => row.seq > 0)
+  const capacity = Math.max(0, MESSAGE_WINDOW - (messages.length - settled.length))
+  const kept = new Set((capacity ? settled.slice(-capacity) : []).map(row => row.id))
+  return messages.filter(row => row.seq < 1 || kept.has(row.id))
 }
 
 // 窗口(缓存)已落定行的最大 seq。seq 从 1 起(004_chat_extensions.sql:next_message_seq DEFAULT 1、
