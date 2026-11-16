@@ -22,7 +22,8 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
 vi.mock('./use-agent-auth-status', () => ({ useAgentAuthStatus: () => ({ auth: null }) }));
 
 import { followRendererSession, queryClient as client } from '@/lib/replica';
-import { agentsAnswerAwaited, useAgents } from './use-agents';
+import { useAgents } from './use-agents';
+import { agentsAnswerAwaited } from './agents-answer';
 import { useHarnessModelCatalog } from './use-harness-model-catalog';
 import { useHarnessModelCredential } from './use-harness-model-credential';
 

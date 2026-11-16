@@ -10,7 +10,7 @@ const { ServerLoginApproveSheet } = await import('../../../apps/desktop/src/mobi
 const { followRendererSession } = await import('../../../apps/desktop/src/lib/replica')
 
 const request = { code: 'ABCD', state: 'pending', machine: { hostname: 'box', platform: 'linux', arch: 'x64', user: 'me' }, requesterIp: null }
-const state = (harness: ReturnType<typeof createReactHarness>) => document.querySelector('[data-approve-state]')?.getAttribute('data-approve-state')
+const state = () => document.querySelector('[data-approve-state]')?.getAttribute('data-approve-state')
 const settle = () => act(async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve() })
 
 beforeEach(() => { api.read.mockReset(); api.decide.mockReset(); followRendererSession('SIGNED_IN', 'owner') })
@@ -21,10 +21,10 @@ it('loading until the request is read, then the request; allowing shows the fina
   const harness = createReactHarness()
   await renderWithAppProviders(harness, createNode(ServerLoginApproveSheet, { code: 'ABCD', onDone: () => undefined }))
   await settle()
-  expect(state(harness)).toBe('request')
+  expect(state()).toBe('request')
   await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="server-login-approve-allow"]')!.click() })
   await settle()
-  expect(state(harness)).toBe('approved')
+  expect(state()).toBe('approved')
   expect(api.decide).toHaveBeenCalledWith('ABCD', true)
   harness.cleanup()
 })
@@ -34,6 +34,6 @@ it('a request that cannot be read says so (not found, or failed)', async () => {
   const harness = createReactHarness()
   await renderWithAppProviders(harness, createNode(ServerLoginApproveSheet, { code: 'GONE', onDone: () => undefined }))
   await settle()
-  expect(state(harness)).toBe('failed')
+  expect(state()).toBe('failed')
   harness.cleanup()
 })

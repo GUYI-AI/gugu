@@ -81,7 +81,8 @@ import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
-import { agentsAnswerAwaited, useAgents } from '@renderer/lib/stores/use-agents';
+import { useAgents } from '@renderer/lib/stores/use-agents';
+import { agentsAnswerAwaited } from '@renderer/lib/stores/agents-answer';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
 import {

@@ -211,11 +211,6 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/store/contacts.tsx",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
     "file": "packages/core/src/cloud/deviceCommands.ts",
     "count": 1
   },

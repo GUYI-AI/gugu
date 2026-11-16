@@ -223,7 +223,7 @@ export function DevicesSection({
       {sshMachines.state !== 'unknown' && sshMachines.error && (
         <SettingsNote tone="danger">
           {t('devices.sshListFailed')}
-          <Button variant="ghost" size="sm" onClick={() => void sshMachineAddresses.refresh()} style={{ marginLeft: 'var(--spacing-sm)' }}>{t('devices.retry')}</Button>
+          <Button variant="ghost" size="sm" onClick={() => void sshMachineAddresses.refresh()} className="ml-2">{t('devices.retry')}</Button>
         </SettingsNote>
       )}
 

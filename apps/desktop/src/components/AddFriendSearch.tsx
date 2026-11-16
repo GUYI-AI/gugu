@@ -240,7 +240,7 @@ export function AddFriendSearch({
           </div>
         )}
         {submitted && (found.state === 'error' || (found.state === 'value' && found.error)) && (
-          <div role="alert" data-testid="friend-search-failed" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }}>
+          <div role="alert" data-testid="friend-search-failed" className="flex items-center justify-center gap-3 p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">
             <span>{t('friendSearch.searchFailed', { detail: messageOf(found.error) })}</span>
             <Button variant="secondary" size="sm" onClick={() => void userSearch.refresh(submitted.query)}>{t('common.retry')}</Button>
           </div>
