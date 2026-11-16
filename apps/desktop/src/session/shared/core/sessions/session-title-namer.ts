@@ -65,7 +65,7 @@ const CONTRACT_RULES = [
 ];
 
 function systemPrompt(instructions: string): string {
-  const extra = collapse(instructions).slice(0, SESSION_TITLE_INSTRUCTIONS_MAX);
+  const extra = sliceWholeCharacters(collapse(instructions), 0, SESSION_TITLE_INSTRUCTIONS_MAX);
   return [
     ...STYLE_RULES,
     ...(extra ? [`The user's own naming preferences, which take priority over the style rules above: ${extra}`] : []),
@@ -97,11 +97,19 @@ export function shouldGenerateSessionTitle(firstUtterance: string | undefined): 
   return text !== null && text.length > SHORT_FIRST_UTTERANCE;
 }
 
+function sliceWholeCharacters(text: string, start: number, end: number): string {
+  if (start > 0 && /[\uDC00-\uDFFF]/.test(text[start]) && /[\uD800-\uDBFF]/.test(text[start - 1])) start += 1;
+  if (end < text.length && /[\uDC00-\uDFFF]/.test(text[end]) && /[\uD800-\uDBFF]/.test(text[end - 1])) end -= 1;
+  return text.slice(start, end);
+}
+
 function boundedInput(firstUtterance: string): string {
   const text = firstUtterance.trim();
   if (text.length <= INPUT_HEAD + INPUT_TAIL) return text;
-  const omitted = text.length - INPUT_HEAD - INPUT_TAIL;
-  return `${text.slice(0, INPUT_HEAD)}\n[… ${omitted} characters omitted …]\n${text.slice(-INPUT_TAIL)}`;
+  const head = sliceWholeCharacters(text, 0, INPUT_HEAD);
+  const tail = sliceWholeCharacters(text, text.length - INPUT_TAIL, text.length);
+  const omitted = text.length - head.length - tail.length;
+  return `${head}\n[… ${omitted} characters omitted …]\n${tail}`;
 }
 
 /**
