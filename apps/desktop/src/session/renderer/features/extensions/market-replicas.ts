@@ -292,10 +292,13 @@ export const extensionSettings = replica({
   read: async (_owner: string, hostKey: string, extensionId: string): Promise<AppSettings> => unwrap(await extensionsApiOf(hostKey).settings({ extensionId }), 'App settings'),
 });
 
-/** Which agents and groups an App is given to (D-30). Read on open and after a change (no push). */
+/**
+ * Which agents and groups an App is given to (D-30): the signed-in account's agents and groups, so account scope (an
+ * account switch never shows the last account's). Read on open and after a change (no push).
+ */
 export const appPlaces = replica({
   name: 'appPlaces',
-  scope: 'device',
+  scope: 'account',
   read: async (_owner: string, hostKey: string, extensionId: string): Promise<EnablePlace[]> => unwrap(await extensionsApiOf(hostKey).appPlaces({ extensionId }), 'App places'),
 });
 
