@@ -56,5 +56,4 @@ for (const theme of ['dark', 'light']) it(`${theme}: phone home exposes the dire
   await page.getByTestId('plus-menu-new-project').click()
   expect(project).toHaveBeenCalledOnce()
   expect(create).toHaveBeenCalledOnce()
-  console.log('PHONE_HOME_CREATE ' + JSON.stringify({ theme, order: ['notifications', 'createAgent', 'more'], penCallbackCalls: create.mock.calls.length, moreItems: ids }))
 })

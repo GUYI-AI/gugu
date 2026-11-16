@@ -82,7 +82,7 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
       pillToMenu: token && !keyboard ? rect(button).top - rect(token).bottom : null,
       rowToInput: rect(input).top - rect(row).bottom,
     }
-    console.log('PHONE_RUNNING_GAP_2904 ' + JSON.stringify(data))
+    expect(dock.hasAttribute('data-running-status')).toBe(count > 0)
     expect(rect(button).height).toBe(44)
     expect(parseFloat(getComputedStyle(composer).paddingBottom)).toBeGreaterThanOrEqual(8)
     if (token) {
@@ -100,3 +100,33 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
     await page.screenshot({ element: harness.container, path: `__screenshots__/2904-${phase}-${width}-${theme}-${count}-${keyboard}.png` })
   })
 }
+
+it('updates the running marker when activity ends, editing hides the menu, and the room changes', async () => {
+  await page.viewport(390, 844)
+  document.documentElement.setAttribute('data-phone-shell', '')
+  harness = createReactHarness()
+  Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
+  const draw = async (id: string, count: number) => {
+    activity.count = count
+    const group = chat({ id, kind: 'group', name: id })
+    await renderWithAppProviders(harness!, <LocalizationProvider><PhoneViewportShell mobile style={{ height: '100%', display: 'flex', flexDirection: 'column' }}><ChatAreaPanel mobile /></PhoneViewportShell></LocalizationProvider>, {
+      chat: { activeChat: group, activeChatId: id, messages: [message({ id: `${id}-${count}`, chat_id: id, content: 'Activity changes without a reserved blank strip.' })] },
+    })
+    await until('the current room publishes its own running marker', () => {
+      const dock = harness!.container.querySelector('[data-chat-bottom-dock]')
+      return !!dock && dock.hasAttribute('data-running-status') === (count > 0)
+    })
+  }
+  await draw('room-a', 12)
+  await draw('room-a', 0)
+  expect(harness.container.querySelector('[data-running-bar-slot]')!.getBoundingClientRect().height).toBe(0)
+  await draw('room-a', 12)
+  const editor = harness.container.querySelector<HTMLElement>('[contenteditable]')!
+  await act(async () => { editor.focus(); window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible: true })) })
+  await until('editing hides the menu while keeping actual running status', () => harness!.container.querySelector('[data-phone-composer-controls]')!.getBoundingClientRect().height === 0)
+  expect(harness.container.querySelector('[data-chat-bottom-dock]')!.hasAttribute('data-running-status')).toBe(true)
+  await act(async () => { window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible: false })); editor.blur() })
+  await draw('room-b', 0)
+  await until('the new empty room restores its menu without an old running slot', () => harness!.container.querySelector('[data-phone-composer-controls]')!.getBoundingClientRect().height > 40)
+  expect(harness.container.querySelector('[data-running-bar-slot]')!.getBoundingClientRect().height).toBe(0)
+})
