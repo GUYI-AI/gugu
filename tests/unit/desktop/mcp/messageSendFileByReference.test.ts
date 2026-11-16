@@ -101,7 +101,7 @@ describe('message_send with a file, by reference', () => {
   // through the same gates (members, rules, addressing) as a text message.
   test('file with text: one message, the text as its caption, the reply and its addressing carried by the file message', async () => {
     const { deps, shares, commits } = makeDeps()
-    deps.restRpc = (async (name: string, body: Record<string, unknown>) => {
+    deps.restRpc = (async (name: string) => {
       if (name === 'message_history_as') return [{ id: 'source-message', seq: 5, sender_user_id: 'peer-1', is_whisper: false }]
       if (name === 'chat_facts') return [{ id: CHAT, kind: 'group', source_chat_id: null, group_prompt: null }]
       if (name === 'list_member_ids') return [{ user_id: 'agent-1', role: 'member' }, { user_id: 'peer-1', role: 'member' }]
