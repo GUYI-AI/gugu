@@ -18,13 +18,14 @@ const settingsLog = rendererLogger('settings');
 export const LOCAL_SETTINGS_HOST_KEY = 'local';
 
 /**
- * The keys a surface draws from the first frame. Not kept: keys no surface draws (`keyboard`, `browserPreview`), and the
+ * The keys a surface draws from the first frame. Not kept: keys no surface draws (`keyboard`, `browserPreview`), the
  * device preferences preload hands over — their first value is that handover (`local` below), which a snapshot of the
- * last run could contradict.
+ * last run could contradict — and `browser`, whose profiles have no upper bound (it would outgrow the entry's limit and
+ * be refused at every write: review B1-3).
  */
 const CARRIED_KEYS: ReadonlySet<AppSettingsKey> = new Set<AppSettingsKey>([
   'terminal', 'sessions', 'defaultAgent', 'newSessionMemory', 'changesViewMode', 'localProject', 'project',
-  'notifications', 'browser', 'openIn', 'resourceMonitor',
+  'notifications', 'openIn', 'resourceMonitor',
 ]);
 
 /** Desktop: what preload handed over before the first frame (shared/device-preferences.ts); web / phone: nothing. */
@@ -51,7 +52,7 @@ export const appSettingsModel = replica({
   // Handed-over keys start from main's answer to preload (what the boot script painted with).
   local: (_device, key: AppSettingsKey, host: string) =>
     host === LOCAL_SETTINGS_HOST_KEY && handover && handedOver(key) ? handover.settings[key] as SettingsMeta<AppSettingsKey> : undefined,
-  // Largest carried keys: `sessions` 1,204 with every field used, `browser` 1,246 at 8 profiles. One entry per key.
+  // Largest carried key: `sessions` 1,204 with every field used. One entry per key.
   persist: {
     maxBytes: 1536,
     maxEntries: 12,

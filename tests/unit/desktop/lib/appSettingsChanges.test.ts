@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  */
 const ipc = vi.hoisted(() => {
   const listeners = new Set<(data: { key: string }) => void>()
-  const stored: Record<string, unknown> = { interface: { hideContextBar: false }, terminal: { enabled: true } }
+  const stored: Record<string, unknown> = { interface: { hideContextBar: false }, terminal: { enabled: true }, browser: { profiles: [{ id: 'profile-1', name: 'Work' }] } }
   return {
     listeners,
     stored,
@@ -64,5 +64,14 @@ describe('appSettings changes made elsewhere', () => {
     expect(kept.filter((entry) => entry.key[0] === 'remoteAppSettings')).toEqual([])
     // No preload handover here (web): `interface` keeps its first frame from the snapshot; on desktop it is handed over.
     expect(kept.filter((entry) => entry.key[0] === 'appSettings').map((entry) => entry.key[2])).toEqual(['interface', 'terminal'])
+  })
+})
+
+describe('what of the settings is kept across restarts (review B1-3)', () => {
+  it('the browser key (profiles without an upper bound) is not kept, even while small; a drawn key like terminal is', async () => {
+    const block = JSON.parse(localStorage.getItem('gugu.readModel.v1:device') ?? '{}') as Record<string, { key: unknown[] }>
+    const keys = Object.values(block).filter((entry) => entry.key[0] === 'appSettings').map((entry) => entry.key[2])
+    expect(keys).toContain('terminal')
+    expect(keys).not.toContain('browser')
   })
 })
