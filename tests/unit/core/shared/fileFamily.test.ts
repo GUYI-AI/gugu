@@ -1,8 +1,7 @@
 // fileFamily: the one judgement every file icon reads (packages/session-shared/src/file-marks.ts draws it).
 import { describe, expect, test } from 'vitest'
 import { fileFamily } from '@gugu/core/shared/fileFamily.mjs'
-// @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
-import { markOf } from '../../../../apps/desktop/preinstalled-apps/workspace/list.js'
+import { fileTile } from '@gugu/session-shared/file-marks'
 
 const CASES: [string, string, string][] = [
   ['report.pdf', '', 'pdf'], ['brief.DOCX', '', 'word'], ['budget.xlsx', '', 'sheet'], ['data.csv', '', 'sheet'],
@@ -16,9 +15,14 @@ const CASES: [string, string, string][] = [
 describe('fileFamily', () => {
   test.each(CASES)('%s (%s) → %s', (name, mime, family) => expect(fileFamily(name, mime)).toBe(family))
 
-  // The Files App cannot import core, so its list.js keeps a copy of the table until <gugu-file-mark> replaces it
-  // (next batch); delete this test together with that copy.
-  test('the Files App copy (list.js markOf) gives the same family', () => {
-    for (const [name, mime] of CASES) expect(markOf({ name, contentType: mime }).family, `${name} ${mime}`).toBe(fileFamily(name, mime))
+  // A tile's word (version 2 of the tile): the last suffix, else the family; a claim's long suffix by its last part.
+  test('a tile is the family with its suffix as its word', () => {
+    const tile = (name: string, mime?: string) => { const { family, label } = fileTile(name, mime); return [family, label] }
+    expect(tile('Q3 report.PDF', 'application/pdf')).toEqual(['pdf', 'PDF'])
+    expect(tile('model.tar.gz')).toEqual(['archive', 'GZ'])
+    expect(tile('a.vote.json', 'application/json')).toEqual(['text', 'JSON'])
+    expect(tile('README', 'image/png')).toEqual(['image', 'IMAG'])
+    expect(tile('blob', 'application/octet-stream')).toEqual(['other', ''])
+    expect(fileTile('budget.xlsx').color).toBe('var(--file-sheet)')
   })
 })

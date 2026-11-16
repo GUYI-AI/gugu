@@ -1,6 +1,5 @@
 // @@@file-family - 一个文件归哪一族:图标和族色都只查这一处(packages/session-shared/src/file-marks.ts 的表)。
-// 族就是文件 App `markOf` 的那 10 族 + other;后缀说了算,没有后缀或后缀不认识时看 mime。
-// 文件 App 拿不到 core,暂时还留着 list.js 那一份;两份同口径由 tests/unit/core/shared/fileFamily.test.ts 钉住。
+// 10 族 + other;后缀说了算,没有后缀或后缀不认识时看 mime。文件 App 拿不到 core,经 `<gugu-file-mark>`(ui.js)读同一份。
 import { extensionOf, normalizeMimeType } from './imageMime.mjs'
 
 const FAMILIES = [
