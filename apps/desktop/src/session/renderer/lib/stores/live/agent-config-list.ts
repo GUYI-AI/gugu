@@ -54,6 +54,7 @@ function followList(machine: string | null): () => void {
 export const agentConfigList = replica({
   name: 'agentConfigList',
   scope: 'account',
+  networkMode: 'always',
   read: (_owner, machine: string | null) => new Promise<AgentConfigList>((resolve, reject) => {
     const close = openList(machine, (value) => { queueMicrotask(close); resolve(value); }, reject);
   }),
