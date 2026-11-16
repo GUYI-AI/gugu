@@ -696,6 +696,9 @@ export function materializeClaudeSessionBundle(
   }
 
   const sessionFlags = claudeSessionFlagSettings(bundle.model);
+  // Older version-paired bridges must keep the legacy startup envelope when Fast is off.
+  // The live configuration channel still acknowledges an explicit off before the next turn.
+  if (sessionFlags.fastMode === false) delete sessionFlags.fastMode;
   const options = {
     // Native ACP sessions bypass platformModel.load. Only secret-free session flags go
     // inline here; a host-owned settings path replaces this value with its merged document.
