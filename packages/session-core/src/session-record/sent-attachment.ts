@@ -10,7 +10,7 @@ export type SentAttachment = { messageId: string; name: string; href: string; ca
 
 /** Only a successful root Gugu file send can become a visible attachment in the conversation. */
 export function sentAttachmentOf(item: TranscriptItem): SentAttachment | null {
-  // message_send with a file (message_send_file is the retired name, still in older transcripts).
+  // message_send with a file; message_send_file is the phone runtime's own file send (and the gugu MCP's before 11-16).
   if (item.kind !== 'mcp-tool-call' || item.status !== 'done' || item.parentToolCallId || !isGuguServer(item.server)
     || !/(?:^|__)message_send(?:_file)?$/.test(item.tool)) return null;
   const id = sentMessageId(item)?.replace(/^msg:/, '');

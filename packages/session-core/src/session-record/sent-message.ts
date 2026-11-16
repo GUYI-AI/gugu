@@ -31,7 +31,7 @@ export function sentMessageOf(item: TranscriptItem): MessageItem | null {
   if (item.kind !== 'mcp-tool-call' || item.status !== 'done' || item.parentToolCallId || !isGuguServer(item.server)) return null;
   // A tool not in the agent's native list is called through catalog_call: the same send, its arguments one level in.
   const viaCatalog = catalogCall(item.tool, item.rawInput);
-  // message_send_file is the retired file send: transcripts from before it went are still drawn.
+  // message_send_file: the phone runtime's own file send, and the gugu MCP's before 11-16 (older transcripts).
   const tool = /(?:^|__)(widget_send|message_send_file|message_send)$/.exec(viaCatalog?.tool ?? item.tool)?.[1];
   if (!tool) return null;
   const output = item.rawOutput || item.outputText;
