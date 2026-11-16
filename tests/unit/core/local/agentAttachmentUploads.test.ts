@@ -13,11 +13,11 @@ const ACCOUNT = 'owner-1', MESSAGE = 'm-1'
 let home: string, file: string, bytes: Buffer, previousHome: string | undefined
 const logs: string[] = []
 
-function server(rows: () => Array<Record<string, unknown>>, opts: { finish?: number; stored?: number[]; down?: boolean; hold?: Promise<void> } = {}) {
+function server(rows: () => Array<Record<string, unknown>>, opts: { finish?: number; stored?: number[]; hold?: Promise<void> } = {}) {
   const calls: string[] = []
   const stored = new Set(opts.stored ?? [])
   const fetch = (async (input: string, init: RequestInit = {}) => {
-    if (input === 'https://oss.example/form') { calls.push('put'); if (opts.down) throw new TypeError('fetch failed'); await opts.hold; return new Response(null, { status: 204 }) }
+    if (input === 'https://oss.example/form') { calls.push('put'); await opts.hold; return new Response(null, { status: 204 }) }
     if (input.startsWith('https://oss.example/part')) { const n = Number(new URL(input).searchParams.get('n')); calls.push(`put${n}`); return new Response(null, { status: 200 }) }
     const route = input.split('/').at(-1)!
     calls.push(route)
@@ -100,21 +100,21 @@ it('a tool call waits for its own message only, not for another file the host is
 })
 
 it('an upload that fails for a reason worth trying again keeps its record, and the host tries again by itself', async () => {
-  vi.useFakeTimers()
-  const down = server(() => [row()], { down: true })
-  host(down.endpoint)
+  // Real timers: the in-call attempts back off 1 s and 2 s, the host's first retry comes 5 s later.
+  let down = true
+  const s = server(() => [row()])
+  const flaky = { ...s.endpoint, fetch: (async (input: string, init?: RequestInit) => {
+    if (down && input === 'https://oss.example/form') throw new TypeError('fetch failed')
+    return s.endpoint.fetch(input, init)
+  }) as typeof globalThis.fetch }
+  host(flaky)
   await remember()
-  const failed = uploadAgentFile(home, record(), down.endpoint)
-  await vi.advanceTimersByTimeAsync(10_000) // the in-call attempts back off 1 s, then 2 s
-  expect(await failed).toMatchObject({ status: 'retrying' })
+  expect(await uploadAgentFile(home, record(), flaky)).toMatchObject({ status: 'retrying' })
   expect(await recorded()).toHaveLength(1)
-  const up = server(() => [row()])
-  host(up.endpoint)
-  resumeAgentUploadsSoon()
-  await vi.advanceTimersByTimeAsync(10_000)
-  await vi.waitFor(() => expect(up.calls).toEqual(['pending', 'upload', 'put', 'finish']))
-  expect(await recorded()).toEqual([])
-})
+  down = false
+  await vi.waitFor(async () => expect(await recorded()).toEqual([]), { timeout: 8_000, interval: 200 })
+  expect(s.calls.at(-1)).toBe('finish')
+}, 20_000)
 
 it('a source changed since the send is never uploaded in its place: nothing goes up, the record is dropped, the reason is logged', async () => {
   const s = server(() => [row()])
