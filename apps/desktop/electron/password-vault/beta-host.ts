@@ -54,7 +54,7 @@ const accounts = new PasswordAccountLifetime<Account>({
   create: owner => { if (!native) throw unavailable(); return createAccount(owner, native) },
   invalidate(value) {
     value.controller.abort(); value.login.invalidate(); value.saves.invalidate(); value.remote.invalidate()
-    value.sync.seal()
+    value.sync.sealAdmission()
   },
   async dispose(value) {
     await value.pull.stop()

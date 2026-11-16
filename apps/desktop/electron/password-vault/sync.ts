@@ -97,14 +97,14 @@ export class VaultSync {
       return String(await this.call('password_vault_revision', { p_device_id: file.deviceId })) !== this.#seen
     })
   }
-  seal(): void { this.#closed = true }
-  dispose() { this.seal(); this.#secret?.fill(0); this.#secret = undefined; this.#vaultKey?.key.fill(0); this.#vaultKey = undefined; this.#file = undefined; this.#challenges.clear(); this.#view = { state: 'off' } }
+  sealAdmission(): void { this.#closed = true }
+  dispose() { this.sealAdmission(); this.#secret?.fill(0); this.#secret = undefined; this.#vaultKey?.key.fill(0); this.#vaultKey = undefined; this.#file = undefined; this.#challenges.clear(); this.#view = { state: 'off' } }
 
   /** Seal admission before waiting for independent poll/publish operations,
    * serialized UI work and atomic device-file writes. Erasure waits for this. */
   close(): Promise<void> {
     if (this.#closing) return this.#closing
-    this.seal()
+    this.sealAdmission()
     return this.#closing = (async () => {
       for (;;) {
         const queue = this.#queue, writes = this.#writes
