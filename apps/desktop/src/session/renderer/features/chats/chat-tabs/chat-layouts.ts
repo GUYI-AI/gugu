@@ -162,8 +162,8 @@ export const openPanelItem = action(function openPanelItem(
 
 /** An App installed while its kind of file is open takes the file over in place: the same tab, now in that App. */
 export const replacePanelItem = action(function replacePanelItem(chatId: string, tabId: string, item: PanelItem): void {
-  const entry = paneHolding(chatLayoutOf(chatId), tabId)?.entries.get(tabId);
-  if (entry) entry.state = item;
+  // The page on screen in that tab, kept as it now is (a restart brings back the App's page, not what it replaced).
+  paneHolding(chatLayoutOf(chatId), tabId)?.replaceCurrentPage(tabId, item);
 });
 
 /**

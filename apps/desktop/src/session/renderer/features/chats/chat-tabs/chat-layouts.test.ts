@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { folderItem, type PanelItem } from './chat-panel-item';
-import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
+import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, replacePanelItem, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
 import { CHAT_INFO_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
 import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
@@ -196,5 +196,20 @@ describe('pages beside the chat start at one declared width (side-width.ts, owne
     expect(infoTabOf(id)).toBeNull();
     openInfoTab(id, 'members');
     expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
+  });
+});
+
+// A page replaced in place (an App installed while its kind of file is open takes it over) is kept as it now is: a
+// restart brings back the App's page, not the preview it replaced — also when it is a later page of its tab's history.
+describe('a page replaced in place is kept as it now is', () => {
+  it('an App taking over a file opened from the folder: the restart restores the App\'s page', () => {
+    const id = 'replaced-kept'; const layout = chatLayoutOf(id);
+    const folder = openPanelItem(id, folderItem())!;
+    expect(openPanelItem(id, { kind: null, itemId: 'X', title: 'X.md', file: { document: false, contentType: 'text/markdown', version: 1, size: 3 } }, { from: folder })).toBe(folder);
+    expect(chatPaneOf(id, folder)!.navigationOf(folder)!.pages).toHaveLength(2);
+    replacePanelItem(id, folder, { kind: 'workspace.file', itemId: 'X', title: 'X.md' });
+    const restarted = chatLayoutOf(`${id}-restart`);
+    restarted.restoreSnapshot(JSON.parse(JSON.stringify(layout.snapshot)));
+    expect(panelTabsOf(`${id}-restart`).map((tab) => tab.item)).toContainEqual(expect.objectContaining({ kind: 'workspace.file', itemId: 'X' }));
   });
 });

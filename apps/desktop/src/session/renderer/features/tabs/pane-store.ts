@@ -217,6 +217,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       detachTab: action,
       adoptEntry: action,
       navigate: action,
+      replaceCurrentPage: action,
       go: action,
       goTo: action,
       setPageViewState: action,
@@ -555,6 +556,20 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       pages.push({ kind, state, ...(viewState ? { viewState } : {}) });
       this._showPage(entry, { pages, index: pages.length - 1 });
     });
+  }
+
+  /**
+   * The page on screen in this tab is now `state`, in place: the same page of its history (no page more), its kept
+   * snapshot too — what a restart restores is this page as it is now, not as it first came.
+   */
+  replaceCurrentPage(tabId: string, state: unknown): void {
+    const entry = this.entries.get(tabId);
+    if (!entry) return;
+    entry.state = state;
+    if (!entry.history) return;
+    const pages = [...entry.history.pages];
+    pages[entry.history.index] = { ...pages[entry.history.index], kind: entry.kind, state: toJS(state) };
+    entry.history = { pages, index: entry.history.index };
   }
 
   go(tabId: string, delta: -1 | 1): Promise<boolean> {
