@@ -5,7 +5,7 @@ import { Check, Search, Sparkles, X } from '@/lib/icons'
 import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { preserveComposerFocus } from '../composer/composer-focus'
-import { filterCreationSkills, type CreationSkill } from './create-skills'
+import { creationSkillsHostTooOld, filterCreationSkills, type CreationSkill } from './create-skills'
 import './create-controls-catalog'
 
 export function SelectedCreationSkills({ skills, onChange }: { skills: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void }) {
@@ -19,15 +19,18 @@ export function SelectedCreationSkills({ skills, onChange }: { skills: readonly 
   </div> : null
 }
 
-export function CreateSkillsList({ deviceId, phone, harness, projectId, search, selected, onChange }: {
+export function CreateSkillsList({ deviceId, deviceLabel, phone, harness, projectId, search, selected, onChange }: {
   deviceId: string | null; phone: boolean; harness: string | null; projectId: string | null; search: string
+  deviceLabel?: string
   selected: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const state = useReplica(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
   if (phone) return <p role="status" className="gg-phone-composer-sheet-status">{t('failedSkills')}</p>
   if (!deviceId || !harness || state.state === 'unknown') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
-  const retry = <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
+  const oldHost = state.error && creationSkillsHostTooOld(state.error)
+  const retry = <div className="gg-phone-composer-sheet-status" role="alert" data-testid="agent-watch-create-skills-error" data-failure={oldHost ? 'host-update-required' : 'read-failed'}>
+    {oldHost ? t('skillsHostUpdateRequired', { device: deviceLabel ?? t('device') }) : t('failedSkills')}
     <Button variant="ghost" size="sm" onClick={() => void creationSkills.refresh(deviceId, harness, projectId)}>{t('retry')}</Button></div>
   if (state.state === 'error') return retry
   const filtered = filterCreationSkills(state.value.skills, search)

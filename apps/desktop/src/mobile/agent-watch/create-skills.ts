@@ -10,6 +10,14 @@ export class CreationSkillsReadError extends Error {
   }
 }
 
+/** A missing route is a host-version signal; permission/refusal and real scan failures remain failures. */
+export function creationSkillsHostTooOld(error: Error): boolean {
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : null
+  if (code === 'forbidden' || code === 'EACCES') return false
+  return code === 'host_update_required' || code === 'unknown_method' || code === 'method_not_found'
+    || /No handler registered for ['"]sessionTimeline\.sessionCreateSkills['"]/.test(error.message)
+}
+
 /** Read the selected harness's native skills on its execution computer, never installed Apps. */
 export async function loadCreationSkills(api: SkillSource, harness: string, projectId: string | null) {
   const result = await api.sessionCreateSkills({ harness, ...(projectId ? { projectId } : {}) })

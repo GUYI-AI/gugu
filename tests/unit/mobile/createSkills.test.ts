@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { filterCreationSkills, loadCreationSkills } from '../../../apps/desktop/src/mobile/agent-watch/create-skills'
+import { creationSkillsHostTooOld, filterCreationSkills, loadCreationSkills } from '../../../apps/desktop/src/mobile/agent-watch/create-skills'
 
 describe('native creation skills', () => {
   it('requests the selected harness and actual project, without an App catalog', async () => {
@@ -22,6 +22,15 @@ describe('native creation skills', () => {
   it('propagates the original transport rejection with its code', async () => {
     const error = Object.assign(new Error('host disconnected'), { code: 'unreachable' })
     await expect(loadCreationSkills({ sessionCreateSkills: async () => { throw error } }, 'codex', null)).rejects.toBe(error)
+  })
+
+  it('distinguishes a missing host route from permission, offline and scanning failures', () => {
+    expect(creationSkillsHostTooOld(new Error("No handler registered for 'sessionTimeline.sessionCreateSkills'"))).toBe(true)
+    expect(creationSkillsHostTooOld(Object.assign(new Error('unknown route'), { code: 'unknown_method' }))).toBe(true)
+    expect(creationSkillsHostTooOld(Object.assign(new Error('denied'), { code: 'forbidden' }))).toBe(false)
+    expect(creationSkillsHostTooOld(Object.assign(new Error('EACCES: SKILL.md'), { code: 'skills_unavailable' }))).toBe(false)
+    expect(creationSkillsHostTooOld(Object.assign(new Error('offline'), { code: 'unreachable' }))).toBe(false)
+    expect(creationSkillsHostTooOld(new Error("No handler registered for 'another.route'"))).toBe(false)
   })
 
 })
