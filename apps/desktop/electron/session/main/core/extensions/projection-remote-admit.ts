@@ -15,5 +15,5 @@ export async function admitRemoteProjection(input: ProjectionRemoteAppWatch, sen
   // A page and its program are one App, never two halves of different releases (as for app_call).
   if (version !== input.version) throw Object.assign(new Error(`That computer has version ${version} of this App`), { code: 'version-mismatch' });
   if (!(await agentSessionContext(input.session))) throw Object.assign(new Error('This task is not on that computer'), { code: 'not-found' });
-  return extensionProjections.deviceViewer(input.app, input.session, input.source, send);
+  return extensionProjections.deviceViewer(input.app, input.session, input.source, send, input.presentation === 1);
 }

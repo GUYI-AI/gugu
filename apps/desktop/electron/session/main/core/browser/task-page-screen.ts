@@ -74,6 +74,22 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
   const held = new Map<string, HeldInput>();
   let sequence = 0;
   let starting: Promise<void> | null = null;
+  let refreshQueued = false, stopped = false;
+  let offFeedback = () => {};
+  const start = () => {
+    starting = page.startScreen(frame => {
+      if (frame.data.length * 3 / 4 > PROJECTION_FRAME_BYTES || stopped) return;
+      const number = ++sequence;
+      const target = frame.feedback?.target;
+      handle.publish({ sequence: number, width: frame.width, height: frame.height, mime: 'image/jpeg', data: frame.data,
+        ...(target ? { target } : {}) });
+      if (frame.feedback) {
+        const { target: _target, ...feedback } = frame.feedback;
+        handle.present({ ...feedback, frame: { sequence: number, width: frame.width, height: frame.height, target } });
+      } else handle.present(null);
+    });
+    void starting.catch(() => { void handle.close(); });
+  };
   const handle = screens.open({ extensionId: TASK_PAGE, sessionId }, {
     async input(input, { frame, viewer }) {
       const own = held.get(viewer) ?? { buttons: new Set(), keys: new Set() };
@@ -87,14 +103,17 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
     },
     // A new viewer gets the current picture: starting the screencast again paints it at once.
     refresh() {
-      starting = page.startScreen((frame) => {
-        if (frame.data.length * 3 / 4 > PROJECTION_FRAME_BYTES) return;
-        handle.publish({ sequence: ++sequence, width: frame.width, height: frame.height, mime: 'image/jpeg', data: frame.data });
-      });
-      void starting.catch(() => { void handle.close(); });
+      start();
     },
-    async close() { await starting?.catch(() => {}); await page.stopScreen(); },
+    async close() { stopped = true; offFeedback(); await starting?.catch(() => {}); await page.stopScreen(); },
   });
+  offFeedback = page.feedback?.subscribe(() => {
+    // Reuse the page's existing capture path. A moved cursor never decorates the previous capture.
+    handle.present(null);
+    if (refreshQueued || stopped) return;
+    refreshQueued = true;
+    void Promise.resolve().then(() => { refreshQueued = false; if (!stopped) start(); });
+  }) ?? (() => {});
   page.once('destroyed', () => { void handle.close(); });
   return { id: handle.id, viewers: 0, page, close: () => handle.close() };
 }
@@ -104,7 +123,7 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
  * viewer leaving stops the screencast.
  */
 export async function connectTaskPageScreen(sessionId: string, page: () => Promise<TaskPageScreenTarget | null>,
-  send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void = () => {},
+  send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void = () => {}, presentation = false,
 ): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }> {
   let entry = open.get(sessionId);
   if (!entry) {
@@ -117,7 +136,7 @@ export async function connectTaskPageScreen(sessionId: string, page: () => Promi
   const screen = await entry;
   let viewer: ReturnType<ExtensionProjections['connect']>;
   try {
-    viewer = screens.connect({ extensionId: TASK_PAGE, sessionId }, screen.id, { transport: 'device', send, onClose: () => () => {} });
+    viewer = screens.connect({ extensionId: TASK_PAGE, sessionId }, screen.id, { transport: 'device', presentation, send, onClose: () => () => {} });
   } catch (error) {
     // The page went away since: the next watch opens it afresh.
     if (open.get(sessionId) === entry) open.delete(sessionId);

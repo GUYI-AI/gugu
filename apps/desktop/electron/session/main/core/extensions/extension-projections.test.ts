@@ -15,6 +15,7 @@ function wire(transport: 'local' = 'local') {
   return {
     packets,
     transport,
+    presentation: true,
     send: (packet: ProjectionHostPacket) => { packets.push(packet); },
     onClose: (close: () => void) => { lost = close; return () => { lost = () => {}; }; },
     disconnect: () => lost(),
@@ -43,6 +44,34 @@ afterEach(() => {
 });
 
 describe('App/session scoped picture and input', () => {
+  it('keeps an unnegotiated older viewer on the original pixel packet contract', async () => {
+    const s = setup(), connection = { ...wire(), presentation: false };
+    s.resources.connect(owner, s.resource.id, connection);
+    const target = { id: 'window-7', revision: 1 };
+    s.resource.publish({ sequence: 1, width: 640, height: 480, mime: 'image/png', data: 'YQ==', target });
+    s.resource.present({ frame: { sequence: 1, width: 640, height: 480, target }, targetLabel: 'Editor' });
+    expect(connection.packets.map(packet => packet.type)).toEqual(['state', 'frame']);
+    expect(connection.packets[0]).not.toHaveProperty('sourceId');
+    await s.resource.close();
+  });
+  it('stamps presentation identity and invalidates a cleared or replaced target frame', async () => {
+    const s = setup(), v = s.attach();
+    const frame = { sequence: 1, width: 640, height: 480, mime: 'image/png', data: 'YQ==', target: { id: 'window-7', revision: 1 } };
+    s.resource.publish(frame);
+    const value = { frame: { sequence: 1, width: 640, height: 480, target: frame.target }, targetLabel: 'Editor' };
+    s.resource.present(value);
+    expect(v.connection.packets.at(-1)).toEqual({ type: 'presentation', sourceId: s.resource.id,
+      generation: v.connection.generation(), revision: 1, presentation: value });
+    expect(() => s.resource.present({ ...value, frame: { ...value.frame, width: 641 } })).toThrow(/does not match/);
+    s.resource.present(null);
+    expect(v.connection.packets.at(-1)).toMatchObject({ type: 'presentation', revision: 2, presentation: null });
+    expect(() => s.resource.present(value)).toThrow(/does not match/);
+    s.resource.publish({ ...frame, sequence: 2, target: { id: 'window-8', revision: 2 } });
+    expect(() => s.resource.present(value)).toThrow(/does not match/);
+    s.authorize.mockImplementation(() => { throw new Error('revoked'); });
+    expect(() => s.resource.present(null)).toThrow('revoked');
+    await s.resource.close();
+  });
   it('describes only authorized sources in the requested session with their actual geometry', async () => {
     const s = setup();
     expect(s.resources.describeSession('task-b')).toEqual([]);

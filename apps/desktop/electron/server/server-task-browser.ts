@@ -8,6 +8,7 @@ import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
 import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
+import { browserPageFeedback, browserScreencastFeedback } from '@shared/browser-page-feedback';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -23,7 +24,8 @@ import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from
 type CdpMessage = { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown; error?: { message: string }; sessionId?: string };
 
 /** One painted picture of a task page: JPEG, and the page's CSS pixel size it maps input to. */
-export type TaskPageScreenFrame = { data: string; width: number; height: number };
+export type TaskPageScreenFrame = { data: string; width: number; height: number;
+  feedback?: ReturnType<typeof import('@shared/browser-page-feedback').browserFrameFeedback> };
 
 /** The subset of Electron's `WebContents` / `Debugger` that `createPageProtocol` uses. */
 export interface TaskPageContents {
@@ -99,6 +101,7 @@ class PipeConnection extends EventEmitter {
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 class PageTarget extends EventEmitter implements TaskPageContents {
+  readonly feedback = browserPageFeedback(this);
   private session: string | null = null;
   private readonly children = new Set<string>();
   private readonly native = new EventEmitter();
@@ -113,6 +116,13 @@ class PageTarget extends EventEmitter implements TaskPageContents {
 
   constructor(private readonly connection: PipeConnection, readonly targetId: string) {
     super();
+    this.feedback.useClock(async () => {
+      if (!this.watchSession || this.destroyed) throw new Error('The browser clock is unavailable');
+      const raw = await this.connection.send('Performance.getMetrics', {}, this.watchSession) as { metrics?: Array<{ name: string; value: number }> };
+      const timestamp = raw.metrics?.find(metric => metric.name === 'Timestamp')?.value;
+      if (typeof timestamp !== 'number') throw new Error('The browser omitted its monotonic clock');
+      return timestamp;
+    });
     connection.on('event', this.onEvent);
   }
 
@@ -188,6 +198,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
         const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string } | undefined;
         if (!frame || frame.parentId || !main(frame.id)) break;
         this.url = `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
+        this.feedback.invalidate();
         this.emit('did-navigate', {}, this.url);
         void this.readHistory();
         break;
@@ -198,9 +209,12 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       case 'Page.screencastFrame': {
         // Paced by acknowledging: the next frame comes once this one was taken.
         void this.connection.send('Page.screencastFrameAck', { sessionId: params.sessionId }, this.watchSession!).catch(() => {});
-        const metadata = params.metadata as { deviceWidth?: number; deviceHeight?: number } | undefined;
+        const metadata = params.metadata as { deviceWidth?: number; deviceHeight?: number; monotonicTimestamp?: number;
+          pageScaleFactor?: number; offsetTop?: number } | undefined;
         if (typeof params.data === 'string' && metadata?.deviceWidth && metadata.deviceHeight) {
-          this.screen?.({ data: params.data, width: Math.round(metadata.deviceWidth), height: Math.round(metadata.deviceHeight) });
+          const width = Math.round(metadata.deviceWidth), height = Math.round(metadata.deviceHeight);
+          this.screen?.({ data: params.data, width, height, feedback: browserScreencastFeedback(this.feedback.snapshot(),
+            metadata.monotonicTimestamp, width, height, metadata.pageScaleFactor, metadata.offsetTop) });
         }
         break;
       }
@@ -235,6 +249,8 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   async watch(): Promise<void> {
     const { sessionId } = await this.connection.send('Target.attachToTarget', { targetId: this.targetId, flatten: true }) as { sessionId: string };
     this.watchSession = sessionId;
+    // Per-host watcher only: it does not enable metrics on an App's separate borrowed CDP session.
+    await this.connection.send('Performance.enable', { timeDomain: 'timeTicks' }, sessionId).catch(() => undefined);
     await this.connection.send('Page.enable', {}, sessionId);
     const tree = await this.connection.send('Page.getFrameTree', {}, sessionId) as { frameTree: { frame: { id: string; url: string } } };
     this.mainFrame = tree.frameTree.frame.id;
@@ -347,6 +363,7 @@ export function taskBrowserArguments(profile: string, userAgent: string, root: b
 
 /** A task page as another computer watches and drives it. */
 export interface TaskPageScreenTarget {
+  feedback?: import('@shared/browser-page-feedback').BrowserPageFeedback;
   startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void>;
   stopScreen(): Promise<void>;
   input(method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText', params: Record<string, unknown>): Promise<unknown>;
