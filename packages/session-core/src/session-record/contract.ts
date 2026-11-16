@@ -1,4 +1,9 @@
 import type { TurnFileRef } from '../acp/models/turn-files';
+export type {
+  CreationAttachmentManifest, CreationAttachmentTarget, CreationAttachmentDraftReceipt,
+  SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftResult, SessionAdmitCreatedAttachmentsRequest,
+  RegisteredCreationAttachments, ResolvedCreationAttachment,
+} from './creation-attachment-protocol';
 import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
 export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
 export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
