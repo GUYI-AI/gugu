@@ -4,12 +4,16 @@ import { page } from 'vitest/browser'
 import { MessageProvider } from '@gugu/session-ui/react/components'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
+import { ThemeProvider } from '@/store/theme'
+import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { followRendererSession } from '@/lib/replica'
 import { CreateSessionPage } from '@/mobile/agent-watch/CreateSessionPage'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
 import '@/i18n/registerMainCatalog'
+import '@/mobile/agent-watch/agent-watch.css'
+import '@renderer/index.css'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -44,16 +48,21 @@ it.each(['light', 'dark'] as const)('%s: real New task Work panel separates mode
     models: [{ id: 'native:sol', name, description, source: 'harness' }, { id: 'sonnet', name: 'Unchanged alias', description: 'A deliberately long unbroken description: ' + 'a'.repeat(100), source: 'harness' }],
   }))
   await page.viewport(320, 640)
-  setLocalePreference('zh-CN'); document.documentElement.dataset.theme = theme
+  setLocalePreference('zh-CN'); writeThemePreference(theme)
   followRendererSession('SIGNED_IN', 'model-copy-owner')
-  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''
-  host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column'
+  host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''; host.dataset.taScope = ''
+  host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;background:var(--ta-panel-bg)'
   root = createRoot(host)
-  root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><CreateSessionPage onCreated={vi.fn()} /></MessageProvider></SessionUiTheme></LocalizationProvider>)
+  root.render(<ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><CreateSessionPage onCreated={vi.fn()} /></MessageProvider></SessionUiTheme></LocalizationProvider></ThemeProvider>)
   await until('real thread editor', () => !!host?.querySelector('[contenteditable]'))
   expect(host!.textContent).toContain('新建任务')
   expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('第一句话…')
   expect(host!.textContent).not.toContain('agentWatch.')
+  await until('production shell theme applied', () => document.documentElement.dataset.theme === theme)
+  await document.fonts.ready
+  await expect.element(page.getByRole('heading', { name: '新建任务', exact: true })).toBeVisible()
+  expect(getComputedStyle(host!).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+  await page.screenshot({ path: `__screenshots__/owner-phone-regression/B-new-task-page-${theme}-320.png` })
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.elementLocator(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
   const row = () => document.querySelector<HTMLElement>('[data-dimension="model"][data-option-id="native:sol"]')!
