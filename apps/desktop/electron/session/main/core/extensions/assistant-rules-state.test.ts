@@ -262,6 +262,30 @@ function holdNextAccountRead() {
 }
 
 describe('controlled ownership and ordering of assistant state publications', () => {
+  it.each(['owner-1', 'owner-2'])('keeps the latest pending notification after an older account response for %s', async oldOwner => {
+    const api = await publishedAccountRoot('owner-1');
+    state.signedIn = oldOwner;
+    const oldRead = holdNextAccountRead();
+    api.ensureAssistantApp('assistant');
+    try {
+      await oldRead.entered;
+      state.signedIn = 'owner-1';
+      api.ensureAssistantApp('assistant'); // newer read is pending=true, including the deduplicated case
+      await releasedAccountReadDrained(); // cached account module; only Promise continuations remain
+      expect(await api.assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(api.told.at(-1)).toEqual({ pending: true, stuck: false });
+      oldRead.reply.resolve(oldOwner);
+      await releasedAccountReadDrained();
+      expect(await api.assistantRulesState()).toEqual({ pending: true, stuck: false });
+      expect(api.told.at(-1)).toEqual({ pending: true, stuck: false });
+    } finally {
+      oldRead.reply.resolve(oldOwner);
+      await releasedAccountReadDrained();
+      state.accountRead = null;
+      void api.going.catch(() => undefined);
+    }
+  });
+
   it('keeps the newer ready notification when an older no-rules account read finishes last', async () => {
     const api = await publishedAccountRoot('owner-1');
     const oldRead = holdNextAccountRead();
