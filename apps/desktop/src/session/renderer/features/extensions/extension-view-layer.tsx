@@ -333,7 +333,7 @@ export const ExtensionPage = observer(function ExtensionPage({
       guestReadyRef.current = null;
       guestBinding.reset();
       paintedRef.current = false;
-      if (pageKey) extensionViewStore.widgetPainted(pageKey, false);
+      if (pageKey) extensionViewStore.pagePainted(pageKey, false);
       ++aimSeqRef.current;
       if (!element) return;
       let fallback: ReturnType<typeof setTimeout> | undefined;
@@ -344,7 +344,7 @@ export const ExtensionPage = observer(function ExtensionPage({
         if (webviewRef.current !== element || !claimOf()?.widget) return;
         clearTimeout(fallback);
         paintedRef.current = true;
-        if (pageKey) extensionViewStore.widgetPainted(pageKey);
+        if (pageKey) extensionViewStore.pagePainted(pageKey);
         capture();
       };
       const ready = () => {
@@ -362,7 +362,7 @@ export const ExtensionPage = observer(function ExtensionPage({
         if (webviewRef.current !== element) return;
         log.warn('Extension surface render process gone; reloading', { kind });
         paintedRef.current = false;
-        if (pageKey) extensionViewStore.widgetPainted(pageKey, false);
+        if (pageKey) extensionViewStore.pagePainted(pageKey, false);
         guestReadyRef.current = null;
         guestBinding.reset();
         ++aimSeqRef.current;
@@ -376,7 +376,7 @@ export const ExtensionPage = observer(function ExtensionPage({
       // Electron guests are separate documents: their wheel cannot bubble into the chat's scroller.
       const wheel = (event: Event) => {
         const message = event as Event & { channel: string; args: { x: number; y: number }[] };
-        if (message.channel === 'gugu-widget-painted') { painted(); return; }
+        if (message.channel === 'gugu-page-painted') { painted(); return; }
         if (message.channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); return; }
         if ((!inline && !claimOf()?.widget) || message.channel !== 'gugu-widget-wheel') return;
         const delta = message.args[0];

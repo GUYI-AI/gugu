@@ -74,7 +74,7 @@ let messageView = false;
 if (PerformanceObserver.supportedEntryTypes.includes('paint')) {
   const firstPaint = new PerformanceObserver(list => {
     if (list.getEntries().some(entry => entry.name === 'first-contentful-paint')) {
-      ipcRenderer.sendToHost('gugu-widget-painted');
+      ipcRenderer.sendToHost('gugu-page-painted');
       firstPaint.disconnect();
     }
   });
