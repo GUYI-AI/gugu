@@ -156,6 +156,8 @@ const ptyConfigV1 = z.object({
    * ⚠️ 它记的是**这个 id 的来历**,不是又存一份 id —— id 只有 `session_id` 那一处。
    */
   providerMintedSessionId: z.boolean().optional(),
+  /** 换计费路的重开留下的待办,与 ACP 那份同义(见 ACP 配置的同名字段)。 */
+  forkOnStartProviderSessionId: z.string().optional(),
   /**
    * 资源库 → MCP:新建这条任务时带上的那几台(资源库里「默认启用」的)(名字)。每次开 / 续开按名字现取那台机器列表里的记录,
    * 经会话能力包送进去(`owner: 'integration'`)。缺席 = 一台都没带(或这一格之前的任务)。

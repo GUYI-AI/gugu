@@ -189,7 +189,7 @@ import { UNATTENDED_SESSION_PERMISSION_MODE } from '@main/core/sessions/unattend
 import { getPlugin, listPlugins, toAgentProviderId } from '@main/core/agents/plugin-registry'
 import { recordChildHarnessDefault } from '@main/core/sessions/child-harness-default'
 import { providerConsumesStartupPrompt } from '@gugu/session-core/agents/plugins'
-import { pluginRegistry, type AgentProviderId } from '@gugu/session-plugins/agents'
+import { pluginRegistry, resolveSessionpageCredentialLifecycle, type AgentProviderId } from '@gugu/session-plugins/agents'
 import {
   localSessionIds,
   assertOutboundProjectIds,
@@ -1306,8 +1306,10 @@ export async function reloadEmdashSession(input: {
   const workspace = await resolveWorkspace(session.projectId, mounted.workspaceId)
   if (!workspace) throw new Error(`session ${sessionId} workspace is not mounted`)
   const reloadSurface = session.runtime === 'acp' ? 'acp' : 'tui'
-  const sourceChangeSession = getPlugin(session.providerId).capabilities.sessionBundle
-    .credentialLifecycle?.[reloadSurface]?.sourceChangeSession ?? 'preserve'
+  // The leg's declaration as the registry resolves it: a terminal leg carried by a native surface (Codex's TUI rides
+  // its app-server) answers with that surface's declaration.
+  const sourceChangeSession = resolveSessionpageCredentialLifecycle(session.providerId, reloadSurface)
+    ?.sourceChangeSession ?? 'preserve'
 
   // Both session-page legs use this host-owned stop/start boundary. PTY has no ACP store to
   // reattach, so the renderer reconnects its existing terminal resource after this returns.
@@ -1332,12 +1334,8 @@ export async function reloadEmdashSession(input: {
     let configBeforePatch: typeof sessions.$inferSelect.config | null = null
     const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
     const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
-    if (sourceChanged && sourceChangeSession === 'fork') {
-      // No terminal leg declares it today: the terminal start has no route-switch fork, and resuming instead would
-      // be refused by the very harness that asked for a fork.
-      throw new Error(`session ${sessionId} PTY reload cannot fork its provider session onto another billing route`)
-    }
     const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
+    const forkProviderSession = sourceChanged && sourceChangeSession === 'fork'
     let platformWritten = false
     if (input.resetModel) {
       // 与 ACP 腿同一个决定:两半一起清。
@@ -1378,6 +1376,19 @@ export async function reloadEmdashSession(input: {
         platformWritten = true
       }
     }
+    if (forkProviderSession) {
+      // 与 ACP 腿同一格待办:原生会话 id 不动,这次起在新路上把它分叉出来(同一个 agent)。起不来时下面的回滚
+      // 把记录整份写回重开前那一份(没有这一格),与模型选择、计费路一起回到旧路 —— 旧路上续接原线程仍然成立。
+      const rows = await db.select({ config: sessions.config })
+        .from(sessions).where(eq(sessions.id, sessionId))
+      const current = rows[0]?.config
+      if (!current || typeof current !== 'object') {
+        throw new Error(`session ${sessionId} has no config to record its fork in (${reason})`)
+      }
+      await db.update(sessions)
+        .set({ config: { ...current, forkOnStartProviderSessionId: providerSessionId } })
+        .where(eq(sessions.id, sessionId))
+    }
     const sessionMount = resolveSession(session.projectId, sessionId)
     if (!sessionMount) throw new Error(`session ${sessionId} session runtime is not mounted`)
     try {
@@ -1390,7 +1401,8 @@ export async function reloadEmdashSession(input: {
         true,
       )
       const resumed = (await getSessions()).find((candidate) => candidate.id === sessionId)
-      if (!resumed || (!replaceProviderSession && resumed.providerSessionId !== providerSessionId)) {
+      // 分叉换掉 id 是本意(新 id 带着全部上下文);换掉 / 分叉之外,id 变了就是续错了。
+      if (!resumed || (!replaceProviderSession && !forkProviderSession && resumed.providerSessionId !== providerSessionId)) {
         if (resumed?.providerSessionId && resumed.providerSessionId !== providerSessionId) {
           await setProviderSessionId(sessionId, providerSessionId)
         }
@@ -1405,7 +1417,7 @@ export async function reloadEmdashSession(input: {
         const { pendingRestart: _pendingRestart, providerSessionState: _providerSessionState, ...cleanConfig } = currentConfig
         await db.update(sessions).set({ config: cleanConfig }).where(eq(sessions.id, sessionId))
       }
-      return { nativeSession: resumed.providerSessionId === providerSessionId ? 'preserved' : 'replaced' }
+      return { nativeSession: resumed.providerSessionId === providerSessionId || forkProviderSession ? 'preserved' : 'replaced' }
     } catch (error) {
       if (configBeforePatch) {
         const message = error instanceof Error ? error.message : String(error)

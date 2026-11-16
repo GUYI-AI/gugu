@@ -98,6 +98,8 @@ export interface CodexPtyStartInfo {
   forkFromProviderSessionId?: string
   /** Existing Codex thread to resume after the app/session is reopened. */
   resumeProviderSessionId?: string
+  /** A billing-route switch: fork `resumeProviderSessionId` onto this route as the same agent instead of resuming it. */
+  forkKeepsAgent?: boolean
   /** Persist the actual app-server thread id before the create call returns to the renderer. */
   onProviderSessionId?: (providerSessionId: string) => Promise<void>
   /** codex 给 thread 起的名 → 会话标题(优先级由会话页后端那侧判)。 */
@@ -261,6 +263,12 @@ async function provisionAndOverrideOnce(
       '[sessionpage] codex pty divert received both fork and resume thread ids (choose one)',
     )
   }
+  // A billing-route switch: codex refuses to resume this thread under the new route's provider (0.166+, the TUI's
+  // `thread/resume` included), so it is forked onto this route and the TUI resumes the fork. Same agent: no handoff.
+  if (info.forkKeepsAgent && !resumeThreadId) {
+    throw new Error('[sessionpage] codex pty route-switch fork has no thread to fork')
+  }
+  const routeSwitchThreadId = info.forkKeepsAgent ? resumeThreadId : undefined
   const isFresh = !forkThreadId && !resumeThreadId
   // #5331 台账:codex 这条腿 spawn 前的三大发 —— 身份供给 / 能力包物化 / app-server 起 thread。
   const codexSteps: Record<string, number> = {}
@@ -281,7 +289,7 @@ async function provisionAndOverrideOnce(
 
   const tmuxBackendName = backendSessionNameFor(info.tmuxSessionName) ?? undefined
   // #6264 上一个宿主进程留下的那台(TUI 一直连着它)。fork 永远是新会话,不接。
-  const survivor = tmuxBackendName && !forkThreadId
+  const survivor = tmuxBackendName && !forkThreadId && !routeSwitchThreadId
     ? await awaitStartupPhase(survivingCodexBackend(tmuxBackendName), signal, (ms) => { codexSteps['tmux-survivor'] = ms })
     : null
   const makeSession = () => new CodexAppServerSession(
@@ -353,21 +361,27 @@ async function provisionAndOverrideOnce(
     // thread 就是咕咕载入的,排队的消息会立刻起轮、TUI 又成了「中途加入」。于是在一台**临时**
     // app-server 上 fork(fork 出来的 thread 当场落盘,codex 的设计如此),拆掉它,再把这条已在盘上的
     // thread 当成 resume 交给 TUI 载入 —— 与「重新打开」走同一条路。代价:fork 时多起一次 app-server。
-    const forkOnScratchAppServer = async (): Promise<string> => {
+    // 换计费路的分叉(`routeSwitchThreadId`)走同一台临时 app-server:它带着新路的 provider,fork 出来的 thread
+    // 就落在新路上;同一个 agent 接着干,❌ 补交接。
+    const forkOnScratchAppServer = async (source: string, handoff: boolean): Promise<string> => {
       const scratch = new CodexAppServerSession(`${provisioned!.guguAgentUserId}:fork-scratch`, codexBin!)
       try {
-        const forked = await scratch.start(info.cwd, { ...engineOptions, forkFromThreadId: forkThreadId })
+        const forked = await scratch.start(info.cwd, { ...engineOptions, forkFromThreadId: source })
         if (!forked) throw new Error('codex scratch app-server fork returned no thread id')
         // @@@fork-identity 新 agent 的身份指令 codex 不认(openai/codex#19045)⇒ 趁还在临时 app-server 上,
         // 往历史末尾补一条只含身份差异与交接说明的开发者消息;它随 thread 落盘,TUI 载入后照样生效。
-        await scratch.injectItems(codexForkHandoffItems(engineOptions.developerInstructions))
+        if (handoff) await scratch.injectItems(codexForkHandoffItems(engineOptions.developerInstructions))
         return forked
       } finally {
         await scratch.dispose()
       }
     }
-    const tuiResumeThreadId = forkThreadId
-      ? await awaitStartupPhase(forkOnScratchAppServer(), signal, (ms) => { codexSteps['scratch-fork'] = ms })
+    const tuiResumeThreadId = forkThreadId || routeSwitchThreadId
+      ? await awaitStartupPhase(
+        forkOnScratchAppServer((forkThreadId ?? routeSwitchThreadId)!, !routeSwitchThreadId),
+        signal,
+        (ms) => { codexSteps['scratch-fork'] = ms },
+      )
       : resumeThreadId
     // #6264 接回:不起进程、不重下发配置(它仍是上一个宿主起它时那一份,MCP 授权、平台中转口都稳定不变)。
     // 接不上 → 收掉那台,换一个干净的会话对象照常新起(同一 thread resume),❌ 让这次打开失败。

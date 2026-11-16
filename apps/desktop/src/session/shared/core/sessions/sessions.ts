@@ -277,7 +277,7 @@ export type Session = {
    * pty 分叉没有它 —— 那条在 spawn 时当场用掉,不落库。
    */
   forkFromProviderSessionId?: string;
-  /** ACP: the next start forks this (still current) provider session onto the new billing route. See session-config. */
+  /** The next start forks this (still current) provider session onto the new billing route. See session-config. */
   forkOnStartProviderSessionId?: string;
   /** Native provider control endpoint recorded by a host-owned session-TUI transport. */
   providerSessionEndpoint?: string;

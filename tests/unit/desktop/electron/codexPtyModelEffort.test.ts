@@ -653,6 +653,32 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     expect(waitedFirstDeliveryThreads).toEqual([])
     expect(onProviderSessionId).toHaveBeenCalledWith('forked-thread-1')
   })
+  // A billing-route switch: codex (0.166+) refuses the TUI's `thread/resume` of this thread under the new route's
+  // provider, so the thread is forked on the new route's scratch app-server and the TUI resumes the fork. It is the
+  // same agent continuing: no handoff is injected, and the fork's id becomes the conversation's provider session.
+  it('a route-switch reopen forks the recorded thread on the new route as the same agent', async () => {
+    const onProviderSessionId = vi.fn(async () => {})
+    await provisionAndOverride(
+      {
+        sessionId: 'conv-route-switch-1',
+        providerId: 'codex',
+        cwd: '/tmp/w',
+        baseCommand: '/x/codex',
+        resumeProviderSessionId: 'existing-thread-1',
+        forkKeepsAgent: true,
+        onProviderSessionId,
+        permissionMode: 'edit',
+      },
+      deps,
+    )
+    expect(started).toEqual([
+      expect.objectContaining({ agentUserId: 'agent-1:fork-scratch', forkFromThreadId: 'existing-thread-1' }),
+      expect.objectContaining({ agentUserId: 'agent-1', forkFromThreadId: undefined, tuiLoads: 'resume', resumeThreadId: 'forked-thread-1' }),
+    ])
+    expect(scratchEvents).toEqual(['dispose:agent-1:fork-scratch'])
+    expect(injectedItems).toEqual([])
+    expect(onProviderSessionId).toHaveBeenCalledWith('forked-thread-1')
+  })
   it('重开会话使用 thread/resume 且不发送 fresh-session 待命 prompt', async () => {
     await provisionAndOverride(
       {

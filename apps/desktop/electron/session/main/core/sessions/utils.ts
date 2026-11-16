@@ -145,7 +145,7 @@ export function mapSessionRowToSession(
     // ❌ 别再只读 pty 那一支:ACP 分叉会因此在侧栏丢掉「fork 自 ×」。
     forkedFrom: config?.forkedFrom,
     forkFromProviderSessionId: config?.type === 'acp' ? config.forkFromProviderSessionId : undefined,
-    forkOnStartProviderSessionId: config?.type === 'acp' ? config.forkOnStartProviderSessionId : undefined,
+    forkOnStartProviderSessionId: config?.forkOnStartProviderSessionId,
     providerSessionEndpoint: config?.providerSessionEndpoint,
     providerMintedSessionId: config?.providerMintedSessionId,
     // Its one name: a bound task's pending-bind record is empty (task-name.ts).
