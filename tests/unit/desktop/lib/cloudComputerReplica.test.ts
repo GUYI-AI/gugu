@@ -102,6 +102,21 @@ describe('cloudComputer read', () => {
     } finally { harness.cleanup() }
   })
 
+  it('an account without a cloud computer is asked once: a chat opening one more reader asks again ❌', async () => {
+    const harness = createReactHarness()
+    function Probe() { useCloudComputer(); return null }
+    try {
+      await harness.render(createElement('div', null, createElement(Probe, { key: 'shell' })))
+      await settle()
+      expect(calls).toHaveLength(1)
+      calls[0]!({ ...snap('none'), deviceId: null })
+      await vi.waitFor(() => expect(cloudComputer.peek()).toMatchObject({ state: 'value' }))
+      await harness.render(createElement('div', null, createElement(Probe, { key: 'shell' }), createElement(Probe, { key: 'chat' })))
+      await settle()
+      expect(calls).toHaveLength(1)
+    } finally { harness.cleanup() }
+  })
+
   it('唤醒途中交出的新状态 ❌ 被它之前发出的那次 /state 盖回去', async () => {
     writeCachedDevices([])
     const older = readCloudSnapshotNow()

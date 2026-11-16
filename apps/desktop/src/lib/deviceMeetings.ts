@@ -18,6 +18,8 @@ export const deviceMeetings = replica({
     throw new Error(`calendar read failed: ${result.code}`)
   },
   refreshEvery: 30_000,
+  // As fresh as its poll: a surface opening within it is no reason to read again.
+  fresh: 30_000,
   refreshOnFocus: true,
   // Only the status (`{"status":"missing"}`, ~70 B with its key): the settings row's first frame.
   persist: { maxBytes: 128, maxEntries: 1, carry: ({ status }: DeviceMeetings): DeviceMeetings => ({ status }) },

@@ -71,6 +71,8 @@ const creditAccount = replica({
   persist: { maxBytes: 2048, maxEntries: 1 },
   // 实时那一路(广播、回到前台)只在有人看着时挂着;数据本身跟账号走,没人看也不清。
   watch: { start: (owner) => watchBilling(owner) },
+  // Fed by that feed (and read again when it starts): ❌ read again by every surface that shows the credits.
+  fresh: Infinity,
 })
 
 // 计费版本:库的广播、回到前台各推进一次;用量页据此重取会员。

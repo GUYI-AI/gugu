@@ -20,6 +20,9 @@ export const devicesModel = replica({
   scope: 'account',
   // 读的那一段在 devicesRead.ts,按需载入:这个文件是很多非 React 读者的叶子模块,❌ 把聊天服务拉进它们的依赖。
   read: async (owner) => (await import('./devicesRead')).readDevices(owner),
+  // Kept current by its push (DevicesProvider's account-revision feed, a durable cursor that also covers the time before it
+  // listened): one more surface showing the machines is no reason to read them again.
+  fresh: Infinity,
   // An active account's digests do not fit: then no row's digest is carried (a whole field, ❌ cut short); readers take a
   // row without it as "not known yet". A heavy account can pass the limit (a known issue).
   persist: {
@@ -46,7 +49,8 @@ export function subscribeCachedDevices(listener: () => void): () => void {
   return devicesModel.subscribe([], () => listener())
 }
 
-/** Put rows for the account signed in now (a test or a synchronous writer; after an await use `devicesModel.at()`). */
+/** Rows kept from before for the account signed in now (as the snapshot's copy: shown at once, read again by the next reader). */
 export function writeCachedDevices(rows: readonly Device[]): void {
   devicesModel.set([], [...rows])
+  void devicesModel.refresh()
 }

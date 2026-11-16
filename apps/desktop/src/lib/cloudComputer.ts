@@ -104,6 +104,10 @@ export const cloudComputer = replica({
   read: (_owner: string): Promise<CloudComputerState> => readCloudComputer(),
   refreshOnFocus: true,
   refreshEvery: cloudComputerRefreshMs,
+  // Every change reaches it: its poll while it has one (3 s on the way, 30 s otherwise), the account's device revisions
+  // (DevicesProvider asks again when a machine row changes) and focus. A surface opening is no change: an account
+  // without a cloud computer is asked once, not on every chat it opens.
+  fresh: Infinity,
   // `{available, snapshot}`: a fixed shape of a state, a device id, an error line and a time, ~300 B.
   persist: { maxBytes: 1024, maxEntries: 1 },
 })
@@ -205,6 +209,8 @@ function requireClient() {
 
 /** 现问一次管家,返回此刻的快照;没有这项服务 = null,问不到就抛。 */
 export async function readCloudSnapshotNow(): Promise<CloudComputerSnapshot | null> {
+  // A decision asks the cloud computer now (the held value may be minutes old): marked stale at once, then read (or joined).
+  void cloudComputer.refresh()
   const value = await cloudComputer.fetch()
   return value.available ? value.snapshot : null
 }

@@ -140,6 +140,9 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   }, [userId])
   useEffect(() => {
     if (!userId) return
+    // The feed of `devices` (fresh: Infinity) starts here: starting over rows already held reads them once (what changed
+    // while nobody listened, e.g. the shell was inactive); a read already on its way is that read.
+    if (devicesModel.peek().state === 'value' && !devicesModel.isFetching()) void devicesModel.refresh()
     return subscribeAccountRevision('device_changed', (operations) => {
       // 只有可能牵动云电脑的那几条才去问管家:它自己那一行(睡下 / 醒来)、新出现或被移除的一台(开通 / 销毁)。
       // 别的电脑每 30 秒一次的心跳摘要 ❌ —— 忙账号六七台机器,每次心跳都多一发管家请求。

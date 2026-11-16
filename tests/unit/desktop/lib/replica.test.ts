@@ -491,6 +491,20 @@ describe('core batch: device reads and change feeds', () => {
     harness.cleanup({ keepReads: true })
   })
 
+  it('a model with no push (fresh 0) is read again by a surface that opens while another surface keeps showing it', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const reads = vi.fn(async () => 'v')
+    const model = rm.replica({ name: 'test-open-reads', scope: 'account', read: reads })
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
+    await harness.render(createElement('div', null, createElement(Probe, { key: 'resident' }))); await settle()
+    expect(reads).toHaveBeenCalledTimes(1)
+    await harness.render(createElement('div', null, createElement(Probe, { key: 'resident' }), createElement(Probe, { key: 'opened' }))); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
+    harness.cleanup({ keepReads: true })
+  })
+
   it("the previous account's feed stops when the account changes, ❌ kept until the surface goes", async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const log: string[] = []

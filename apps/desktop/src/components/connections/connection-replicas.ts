@@ -38,6 +38,8 @@ export const chatChannels = replica({
   refreshOnFocus: true,
   // The channel's health moves on the cloud computer (starting → running, a login lapsing); nothing pushes it here.
   refreshEvery: 10_000,
+  // As fresh as its poll: a surface opening within it is no reason to read again.
+  fresh: 10_000,
   // A connection change (made here or heard from the owner's bus) reads it again while a surface shows it.
   watch: { start: () => watchConnections() },
   // Bound: ≤ 4 kinds × (fixed fields ≈ 260 + label ≤ 128) + ≈ 300 = 1,852 ≤ 2,048; a list outside it is not kept (❌ cut).
