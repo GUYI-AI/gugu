@@ -25,16 +25,19 @@ describe('Claude AI review prerequisites', () => {
   it.each(['2.1.302', '2.1.311', '2.2.0', '3.0.0'])('accepts actual CLI %s at or after the floor', version => {
     expect(claudeAutoReviewAvailable(version, 'claude-opus-5')).toBe(true);
   });
-  it.each(['opus', 'opus[1m]', 'claude-opus-5', 'claude-fable-5-1[1m]', 'fable', 'sonnet', 'claude-sonnet-4-6', 'claude-sonnet-5-1', 'claude-sonnet-5', 'claude-haiku-5-5'])('allows supported main model %s', model => {
+  it.each(['opus', 'opus[1m]', 'claude-opus-5', 'claude-fable-5-1[1m]', 'fable', 'claude-sonnet-4-6', 'claude-sonnet-5-1', 'claude-sonnet-5', 'claude-haiku-5-5'])('allows supported main model %s', model => {
     expect(claudeAutoReviewAvailable('2.1.302', model)).toBe(true);
   });
-  it.each(['deepseek-v4', 'glm-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'haiku', '', 'default', 'proxy/claude-opus-5'])('does not infer support for %s', model => {
+  it.each(['sonnet', 'deepseek-v4', 'glm-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'haiku', '', 'default', 'proxy/claude-opus-5'])('does not infer support for %s', model => {
     expect(claudeAutoReviewAvailable('2.1.311', model)).toBe(false);
   });
   it('resolves default from native model facts and preserves other modes', () => {
     expect(modes('2.1.311', 'default', 'Claude Opus 5')).toHaveLength(5);
     expect(modes('2.1.311', 'default', 'DeepSeek V4')).toHaveLength(4);
     expect(modes('2.1.301', 'default', 'Claude Opus 5')).toHaveLength(4);
+    expect(modes('2.1.311', 'sonnet', 'Claude Sonnet 4.6')).toHaveLength(5);
+    expect(modes('2.1.311', 'sonnet', 'Claude Sonnet 4.5')).toHaveLength(4);
+    expect(modes('2.1.311', 'sonnet')).toHaveLength(4);
   });
   it('sends native auto rather than the bypass flag', () => {
     const command = provider.behavior.prompt!.buildCommand({ cli: '/fixture/claude', model: 'claude-opus-5', permissionMode: 'ai-review' });

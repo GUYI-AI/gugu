@@ -22,7 +22,7 @@ export function claudeReviewConfig(options: readonly SessionConfigOption[], vers
   const selected = model?.type === 'select' ? model.currentValue : null;
   const choice = model?.type === 'select' ? flattenSelectOptions(model.options).find(option => option.value === selected) : undefined;
   // A default/haiku alias needs the model the producer describes, rather than an SDK default.
-  const resolved = selected === 'default' || selected === 'haiku'
+  const resolved = selected === 'default' || selected === 'haiku' || selected === 'sonnet'
     ? `${choice?.name ?? ''} ${choice?.description ?? ''}`.match(/(?:claude-)?(?:opus|fable|sonnet|haiku)[- ]\d+(?:[- .]\d+)?/i)?.[0]?.replace(/[ .]/g, '-')
     : selected;
   const available = claudeAutoReviewAvailable(version, resolved);
