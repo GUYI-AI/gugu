@@ -196,6 +196,7 @@ function InnerLayout({
   // 手机上从别处直达设置的某一格(openSettingsSection):进来的是那一格,返回就退出「我的」,❌ 先落到没进过的设置首页。
   const settingsLinkedRef = useRef(false)
   const [watchCreateRequest, setWatchCreateRequest] = useState(0)
+  const [watchCreateFromCurrentRoute, setWatchCreateFromCurrentRoute] = useState(false)
   // 手机上非项目群输入框的「新任务」:与 watchCreateRequest 一起递进去,null = 不进群。
   const [watchTaskGroup, setWatchTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
   const [openedPhoneApp, setOpenedPhoneApp] = useState<{ kind: string; name: string } | null>(null)
@@ -382,6 +383,9 @@ function InnerLayout({
   // 桌面:gugu-dev#181 只有一个「新建会话」—— 会话页的新建会话页(不进群)。
   const openAgentCreateDraftFromContacts = useCallback(() => {
     if (mobile) {
+      const from = shellTab.under()
+      if (from !== 'tasks') setWatchParentTab(from)
+      setWatchCreateFromCurrentRoute(from === 'tasks')
       setWatchTaskGroup(null)
       setActiveTab('tasks')
       setWatchCreateRequest((n) => n + 1)
@@ -389,7 +393,7 @@ function InnerLayout({
     }
     setActiveTab('tasks')
     appState.navigation.navigate('new-session')
-  }, [setActiveTab, mobile])
+  }, [setActiveTab, mobile, shellTab])
   const sessionSlotRef = useRef<HTMLDivElement>(null)
   const composerSlotRef = useRef<HTMLDivElement>(null)
   const emdashFrameHomeRef = useRef<HTMLDivElement>(null)
@@ -668,6 +672,9 @@ function InnerLayout({
       if (typeof chatId !== 'string' || chatId.length === 0) return
       const name = readChats().chats.find((chat) => chat.id === chatId)?.name || t('group.settings.groupFallback', { ns: 'messaging' })
       if (mobile) {
+        const from = shellTab.under()
+        if (from !== 'tasks') setWatchParentTab(from)
+        setWatchCreateFromCurrentRoute(from === 'tasks')
         setWatchTaskGroup({ chatId, name })
         setActiveTab('tasks')
         setWatchCreateRequest((n) => n + 1)
@@ -679,7 +686,7 @@ function InnerLayout({
     }
     window.addEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
     return () => window.removeEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
-  }, [setActiveTab, mobile, openChatBlock, readChats, t])
+  }, [setActiveTab, mobile, openChatBlock, readChats, t, shellTab])
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
@@ -1176,6 +1183,7 @@ function InnerLayout({
                   active={activeTab === 'tasks'}
                   onExit={exitPhoneSessions}
                   createRequest={watchCreateRequest}
+                  createFromCurrentRoute={watchCreateFromCurrentRoute}
                   taskInGroup={watchTaskGroup}
                   openRequest={watchOpenRequest}
                   onOpenGroupChat={handleReturnToGroup}

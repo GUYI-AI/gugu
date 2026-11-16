@@ -160,11 +160,13 @@ vi.mock('../../../../apps/desktop/src/components/ChatListPanel', async () => {
     ChatListPanel: ({
       onChatSelected,
       onNewProject,
+      onOpenSessionCreate,
       lead,
       headerLeading,
     }: {
       onChatSelected?: () => void
       onNewProject?: () => void
+      onOpenSessionCreate?: () => void
       lead?: React.ReactNode
       headerLeading?: React.ReactNode
     }) => (
@@ -172,6 +174,7 @@ vi.mock('../../../../apps/desktop/src/components/ChatListPanel', async () => {
         headerLeading,
         lead,
         React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-row', onClick: onChatSelected }, 'chat-list-panel'),
+        onOpenSessionCreate ? React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-create-agent', onClick: onOpenSessionCreate }, 'create agent') : null,
         onNewProject
           ? React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-new-project', onClick: onNewProject }, 'new project')
           : null)
@@ -225,9 +228,9 @@ vi.mock('../../../../apps/desktop/src/mobile/agent-watch/AgentWatchPage', async 
   const React = await vi.importActual<typeof import('react')>('react')
   const { useBackLayer } = await vi.importActual<typeof import('../../../../apps/desktop/src/components/ui/sheetStack')>('../../../../apps/desktop/src/components/ui/sheetStack')
   return {
-    AgentWatchPage: ({ active, createRequest, onExit }: { active: boolean; createRequest?: number; onExit: () => void }) => {
+    AgentWatchPage: ({ active, createRequest, createFromCurrentRoute, onExit }: { active: boolean; createRequest?: number; createFromCurrentRoute?: boolean; onExit: () => void }) => {
       useBackLayer(onExit, active)
-      return React.createElement('div', { 'data-testid': 'mock-agent-watch-page', 'data-active': String(active), 'data-create-request': String(createRequest ?? 0) },
+      return React.createElement('div', { 'data-testid': 'mock-agent-watch-page', 'data-active': String(active), 'data-create-request': String(createRequest ?? 0), 'data-create-from-current-route': String(createFromCurrentRoute ?? false) },
         React.createElement('button', { 'data-testid': 'mock-session-back', onClick: onExit }, 'back'))
     },
     AgentWatchRoot: () => {
@@ -607,6 +610,46 @@ describe('MainLayout', () => {
       expect(Boolean(harness.container.querySelector('[data-testid="mock-chat-row"]'))).toBe(source === 'list')
       expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
     }
+  })
+  it.each(['list', 'chat', 'contacts', 'project', 'settings'] as const)('captures the actual %s shell origin for phone creation and restores it on exit', async source => {
+    platformMock.kind = 'capacitor'
+    platformMock.capabilities.sessionHost = false
+    chatStoreMock.chats = [{ id: 'original-chat', kind: 'group' }] as never
+    chatStoreMock.activeChatId = 'original-chat'
+    await renderMainLayoutWithToast()
+    if (source === 'chat') await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
+    if (source === 'contacts' || source === 'project') {
+      await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
+      if (source === 'project') await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-push"]') as HTMLElement)
+    }
+    if (source === 'settings') await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileProfileNav}"]`) as HTMLElement)
+    for (const method of ['header', 'native'] as const) {
+      if (source === 'list') await clickElement(harness.container.querySelector('[data-testid="mock-chat-create-agent"]') as HTMLElement)
+      else await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId: 'original-chat' } })) })
+      expect(layerOpen('mobile-sessions-layer')).toBe(true)
+      expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-create-from-current-route')).toBe('false')
+      if (method === 'header') await clickElement(harness.container.querySelector('[data-testid="mock-session-back"]') as HTMLElement)
+      else await nativeBack()
+      expect(layerOpen('mobile-sessions-layer')).toBe(false)
+      expect(layerOpen('mobile-settings-layer')).toBe(source === 'settings')
+      expect(chatStoreMock.activeChatId).toBe('original-chat')
+      expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
+      if (source === 'contacts' || source === 'project') expect(harness.container.querySelector('[data-mobile-tab-page="contacts"]')?.hasAttribute('inert')).toBe(false)
+      expect(Boolean(harness.container.querySelector('nav'))).toBe(source === 'list' || source === 'contacts')
+    }
+  })
+  it('keeps the original outer shell parent when creation starts inside an already open Agent layer', async () => {
+    platformMock.kind = 'capacitor'
+    platformMock.capabilities.sessionHost = false
+    await renderMainLayoutWithToast()
+    await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileProfileNav}"]`) as HTMLElement)
+    await act(async () => { window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, { detail: { deviceId: 'host', session: { conversationId: 'task-session', supported: true } } })) })
+    expect(layerOpen('mobile-sessions-layer')).toBe(true)
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId: 'original-chat' } })) })
+    expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-create-from-current-route')).toBe('true')
+    await clickElement(harness.container.querySelector('[data-testid="mock-session-back"]') as HTMLElement)
+    expect(layerOpen('mobile-sessions-layer')).toBe(false)
+    expect(layerOpen('mobile-settings-layer')).toBe(true)
   })
   it.each(['messages', 'contacts', 'project', 'notification'] as const)('adds one session layer from %s and returns to the retained source', async source => {
     platformMock.kind = 'capacitor'
