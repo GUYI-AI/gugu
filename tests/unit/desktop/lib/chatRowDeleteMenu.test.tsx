@@ -9,6 +9,8 @@ vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ us
 vi.mock('../../../../apps/desktop/src/hooks/useMarkChatsRead', () => ({ useMarkChatsRead: () => vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 const archive = vi.hoisted(() => ({ confirm: vi.fn(async (_agentUserId: string) => false) }))
+const danger = vi.hoisted(() => ({ answer: true, confirm: vi.fn(async (_action: string, _kind: string | null, _name: string) => danger.answer) }))
+vi.mock('../../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmConversationAction: danger.confirm }))
 vi.mock('../../../../apps/desktop/src/lib/archiveOwnedAgent', () => ({ confirmOwnedAgentArchive: archive.confirm }))
 vi.mock('../../../../apps/desktop/src/components/chat/useGroupChatSettings', () => ({ useGroupChatSettings: () => ({ settings: scope.settings, error: null }) }))
 
@@ -59,12 +61,14 @@ it.each([
 
 it.each([[true, 1], [false, 0]])('dissolving a group asks first: confirmed %s runs the delete %i time', async (answer, runs) => {
   scope.settings = { can_dissolve: true }
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(answer)
+  danger.answer = answer
+  danger.confirm.mockClear()
+  const confirm = danger.confirm
   await harness.render(<ChatRowContextMenu chat={chat({ id: 'g', kind: 'group' })} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onDelete={onDelete} />)
   await clickElement((await deletion())!)
   expect(confirm).toHaveBeenCalledOnce()
-  expect(onDelete).toHaveBeenCalledTimes(runs)
-  confirm.mockRestore()
+  expect(confirm.mock.calls[0]?.[0]).toBe('delete-chat')
+  await vi.waitFor(() => expect(onDelete).toHaveBeenCalledTimes(runs))
 })
 
 // The reported cell: my agent's chat-list row is its task, so it offers what the task's tab offers (session/shared/session-menu.ts).

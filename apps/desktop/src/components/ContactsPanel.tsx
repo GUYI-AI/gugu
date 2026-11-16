@@ -75,6 +75,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
+import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
 import {
   cpaneActionsClass, cpaneAvatarClass, cpaneCardClass, cpaneNameClass, cpaneStatusClass, ct,
@@ -382,13 +383,13 @@ function ContactsThreeSectionSidebar({
     },
     [onPin, onMarkUnread, onToggleNotif, onRemove, onStartChat, contactPinned, contactNotifMuted, getContactRemoveLabel]
   )
-  // #1694 — 群行右键菜单：复用 ContactRowContextMenu，仅给 置顶 / 通知 / 退出·解散（不传 onStartChat/onMarkUnread）。
+  // #1694 — 群行右键菜单：ContactRowContextMenu 按会话动作表(入口 contacts-group)画；这里只给群的置顶 / 通知 / 退出·解散。
   // 角色化：owner → 「解散群聊」，member → 「退出群聊」；确认弹窗 + 真正动作在父层 onGroupLeaveOrDissolve。
   const buildGroupRowMenu = useCallback(
     (g: ContactGroupChat): ContactRowMenuActions | undefined => {
       if (!onGroupPin || !onGroupToggleNotif || !onGroupLeaveOrDissolve) return undefined
       return {
-        removeLabel: g.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'),
+        removeLabel: g.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'), group: { chatId: g.id, role: g.my_role, name: g.name },
         isPinned: groupPinned?.get(g.id) ?? false,
         notifMuted: groupNotifMuted?.get(g.id) ?? g.is_muted,
         onPin: () => onGroupPin(g),
@@ -894,7 +895,7 @@ function GroupChatsDetail({
   const menuForGroup = (group: ContactGroupChat): ContactRowMenuActions | undefined => {
     if (!onGroupPin || !onGroupToggleNotif || !onGroupLeaveOrDissolve) return undefined
     return {
-      removeLabel: group.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'),
+      removeLabel: group.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'), group: { chatId: group.id, role: group.my_role, name: group.name },
       isPinned: groupPinned?.get(group.id) ?? false,
       notifMuted: groupNotifMuted?.get(group.id) ?? group.is_muted,
       onPin: () => onGroupPin(group),
@@ -1141,13 +1142,12 @@ export const ContactsPanel = memo(function ContactsPanel({
     },
     [chats, setChatNotificationLevel]
   )
-  // 角色化：owner → 解散群聊（deleteChat persist → chats.status='archived'，全员退出）；
-  // member → 退出群聊（leaveGroup 删自己 chat_members 行）。确认弹窗复用 ChatManagementActions 文案。
+  // 角色化：owner → 解散群聊（deleteChat persist → chats.status='archived'，全员退出）；member → 退出群聊（leaveGroup
+  // 删自己 chat_members 行）。确认走会话动作表那一份(confirmConversationAction),与聊天列表同一个确认框。
   const handleGroupLeaveOrDissolve = useCallback(
     async (g: ContactGroupChat) => {
       const isOwner = g.my_role === 'owner'
-      const ok = window.confirm(isOwner ? ct('confirmations.dissolveGroup') : ct('confirmations.leaveGroup'))
-      if (!ok) return
+      if (!(await confirmConversationAction(isOwner ? 'delete-chat' : 'leave-group', 'group', g.name ?? ''))) return
       // #1694-followup — 对齐 handleRemoveContact:成功/失败都 toast，别静默吞(fail-loud)。
       try {
         if (isOwner) await deleteChat(g.id, true)
@@ -1301,7 +1301,7 @@ export const ContactsPanel = memo(function ContactsPanel({
     const name = displayName(contact)
     const isOwnedAgent = contact.type === 'agent' && contact.owner_user_id === user?.id
     if (isOwnedAgent && closeIfMyAssistant(user?.id, contact.id)) return // #7350 删的是咕咕:换成关闭咕咕那份确认
-    if (!isOwnedAgent && !window.confirm(ct('confirmations.deleteContact', { name }))) return
+    if (!isOwnedAgent && !(await confirmConversationAction('remove-contact', 'dm', name))) return
     try {
       if (isOwnedAgent) { if (!(await confirmOwnedAgentArchive(contact.id, name, removeOwnedAgent))) return }
       else await removeContact(contact.id)

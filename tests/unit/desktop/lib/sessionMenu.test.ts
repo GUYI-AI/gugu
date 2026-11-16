@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SESSION_MENU_EXCLUDES, sessionMenu, type SessionMenuAction, type SessionMenuEntry, type SessionMenuState } from '../../../../apps/desktop/src/session/shared/session-menu'
 
-const ALL: SessionMenuAction[] = ['mark-read', 'pin', 'sidebar-pin', 'rename', 'notifications', 'archive', 'fork', 'copy-id', 'reload', 'legacy-history', 'mark-all-read', 'delete-chat']
+const ALL: SessionMenuAction[] = ['open-chat', 'mark-read', 'mark-unread', 'pin', 'sidebar-pin', 'rename', 'notifications', 'archive', 'fork', 'copy-id', 'reload', 'legacy-history', 'mark-all-read', 'delete-chat']
 const live: SessionMenuState = { pinned: false, sidebarPin: 'pin', canFork: true, hasLegacyHistory: true, hasUnread: true, hasAnyUnread: true }
 /** Every action the entry does not exclude: what a correctly wired entry can run. */
 const handledBy = (entry: SessionMenuEntry) => new Set(ALL.filter((id) => SESSION_MENU_EXCLUDES[entry][id] === undefined))
@@ -17,6 +17,9 @@ describe('one session menu table', () => {
     expect(ids('tab')).toEqual(['pin', 'sidebar-pin', 'rename', 'archive', 'fork', 'copy-id', 'reload', 'legacy-history'])
     expect(ids('sidebar-row')).toEqual(['pin', 'sidebar-pin', 'rename', 'archive', 'fork', 'copy-id'])
     expect(ids('phone')).toEqual(['pin', 'rename', 'archive'])
+    // Contacts: my agent's contact row is its task too (rename, archive), plus opening its chat.
+    expect(ids('contacts')).toEqual(['open-chat', 'mark-read', 'pin', 'rename', 'notifications', 'archive'])
+    expect(ids('contacts', { ...live, hasUnread: false })).toEqual(['open-chat', 'mark-unread', 'pin', 'rename', 'notifications', 'archive'])
   })
 
   it('every entry is a subsequence of the one order, with the same label for the same action', () => {
