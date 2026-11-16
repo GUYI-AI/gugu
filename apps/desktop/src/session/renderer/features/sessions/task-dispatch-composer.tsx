@@ -3,7 +3,7 @@ import { useState, type ReactElement } from 'react';
 import { Unknown } from '@/components/ui/Unknown';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { replica, useReplica } from '@/lib/replica';
-import { devicesModel } from '@/store/devicesCache';
+import { thisDeviceId } from '@/store/thisDevice';
 import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
@@ -80,8 +80,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   });
   // What the person picked here (null = nothing picked yet: the chat's remembered project shows).
   const [picked, setPicked] = useState<{ projectId: string | undefined } | null>(null);
-  const devices = useReplica(devicesModel, []);
-  const localDeviceId = devices.state === 'value' ? devices.value.find((device) => device.is_current_device)?.device_id ?? null : null;
+  const self = useReplica(thisDeviceId, []);
+  const localDeviceId = self.state === 'value' ? self.value : null;
   // 这个对话记着的项目(哪台机器上的都算,认回账号上的项目):群和它的话题里 ❌ 沿用(#2599)。
   const remembers = !inGroup && picked === null;
   const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
@@ -91,12 +91,12 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   const selection: { known: true; projectId: string | undefined } | { known: false; failed: Error | null } = picked
     ? { known: true, projectId: picked.projectId }
     : !remembers ? { known: true, projectId: undefined }
-    : devices.state === 'error' ? { known: false, failed: devices.error }
+    : self.state === 'error' ? { known: false, failed: self.error }
     : memory.state === 'error' ? { known: false, failed: memory.error }
-    : devices.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false, failed: null }
+    : self.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false, failed: null }
     : { known: true, projectId: memory.state === 'value' && memory.value ? rememberedTaskRow(memory.value, accountProjectsStore) : undefined };
   const retryMemory = () => {
-    if (devices.state === 'error') void devicesModel.refresh();
+    if (self.state === 'error') void thisDeviceId.refresh();
     else if (localDeviceId) void chatTaskProject.refresh(chatId, localDeviceId);
   };
   const selectedId = selection.known ? selection.projectId : undefined;

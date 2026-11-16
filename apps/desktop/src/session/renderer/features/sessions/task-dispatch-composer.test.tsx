@@ -66,15 +66,19 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 
 const { TaskDispatchComposer } = await import('./task-dispatch-composer');
 const { followRendererSession, queryClient } = await import('@/lib/replica');
-const { devicesModel } = await import('@/store/devicesCache');
+const { platform } = await import('@/platform');
+const { thisDeviceId } = await import('@/store/thisDevice');
+// The account's cloud device list cannot be read (offline): which computer this is comes from the local host.
+vi.mock('@/store/devicesRead', () => ({ readDevices: async () => { throw new Error('offline') } }));
 
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   queryClient.clear();
   followRendererSession('SIGNED_IN', 'tester');
-  // This computer's own row (the remembered project is kept per chat and device).
-  devicesModel.set([], [{ device_id: 'mac', is_current_device: true } as never]);
+  // This computer, as the local host knows it (the remembered project is kept per chat and device).
+  platform.getLocalDeviceSelfSnapshot = async () => ({ device_id: 'mac' } as never);
+  thisDeviceId.set([], 'mac');
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -118,6 +122,15 @@ describe('#2599 the project field in a group', () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="topic-1" chatName="定价页方案" inGroup />));
     await act(async () => {});
     expect(messageHost.rememberedTaskProject).not.toHaveBeenCalled();
+  });
+
+  it('the account\'s device list unreadable (offline): the box still asks the remembered project of this computer (❌ the box replaced by a failure about the project)', async () => {
+    messageHost.rememberedTaskProject.mockClear();
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-offline" />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(messageHost.rememberedTaskProject).toHaveBeenCalledWith('dm-offline', 'mac');
+    expect(host.querySelector('[data-testid="task-dispatch-project-failed"]')).toBeNull();
+    expect(host.querySelector('[data-composer-placeholder]')).not.toBeNull();
   });
 
   it('a direct message still starts from the project picked for it before', async () => {

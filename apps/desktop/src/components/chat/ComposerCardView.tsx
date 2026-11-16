@@ -14,7 +14,7 @@ import { useShownAgentName } from '../../hooks/useShownAgentName'
 import { useAvatarIdentity } from '../../lib/avatarIdentity'
 import { myAgentJoinRequests } from '../../lib/agentJoinRequests'
 import { useReplica } from '../../lib/replica'
-import { devicesModel } from '../../store/devicesCache'
+import { thisDeviceId } from '../../store/thisDevice'
 import { rendererLogger } from '../../lib/log'
 import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
@@ -79,7 +79,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
   const seated = !!task && !!memberProfiles?.[task.agentUserId] && memberProfiles[task.agentUserId]!.membership !== 'former'
   const join = useMyAgentJoin(owned && isGroup && !seated ? chatId : null, task?.agentUserId ?? null)
   const status = useAgentDisplayStatuses(task ? [task.agentUserId] : [])[task?.agentUserId ?? '']
-  const openable = task && (owned || onOpenTopic)
+  const openable = task && (onOpenTopic || (owned && place.local !== null))
   return (
     <ComposerCardFrame
       cardType={card.type}
@@ -88,7 +88,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
       title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')}: ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
       time={time}
       text={card.text}
-      onOpen={openable ? () => (onOpenTopic ? onOpenTopic() : openTaskCardSession(task, place.local)) : undefined}
+      onOpen={openable ? () => (onOpenTopic ? onOpenTopic() : openTaskCardSession(task, place.local === true)) : undefined}
       links={!!onOpenFile}
     >
       {task?.files?.length ? (
@@ -205,15 +205,17 @@ export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefi
  * 卡上「在哪」:我的卡、会话就在这台电脑上 = 不写(点卡打开;卡就在它的项目群或对话里,原型里卡上只有三行);
  * 我在别的电脑上派的 = 那台电脑;同事的卡 = 在他的电脑上(过程看不到,结果看群里)。
  */
-function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: string): { local: boolean; label: string | null } {
+function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: string): { local: boolean | null; label: string | null } {
   const { t } = useTranslation('messaging')
-  // 这台电脑是哪一台:设备表里标着 is_current_device 的那一行(与 AssistantShellHost 同一个说法)。
-  const devices = useReplica(devicesModel, task && isMine ? [] : null)
+  // 这台电脑是哪一台:本机宿主说(IPC,❌ 等云端设备表 —— 离线或没读过时它是未知)。
+  const self = useReplica(thisDeviceId, task && isMine ? [] : null)
   if (!task) return { local: false, label: null }
   if (!isMine) return { local: false, label: t('message.taskCard.onColleagueComputer', { name: senderName }) }
-  // 设备表还没读到:卡上先不写「在哪」(❌ 猜成别的电脑)。
-  if (devices.state !== 'value') return { local: false, label: null }
-  const here = devices.value.find((device) => device.is_current_device)?.device_id ?? null
+  // 还不知道这台是哪台:卡上不写「在哪」,也不能点(❌ 猜成别的电脑、按远端路线打开)。本机宿主答不出(error):
+  // 按会话 id 打开(不带项目、不并排),那条路线对哪台电脑上的会话都成立。
+  if (self.state === 'unknown') return { local: null, label: null }
+  if (self.state === 'error') return { local: false, label: null }
+  const here = self.value
   if (here !== task.deviceId) return { local: false, label: here ? t('message.taskCard.onMachine', { machine: task.machineLabel }) : null }
   return { local: true, label: null }
 }
