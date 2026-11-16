@@ -1,0 +1,124 @@
+// Multipart uploads from a host that can send signed part PUTs (S6): the client half of attachments upload /
+// upload-parts / upload-complete. The fake server keeps the state the way the backend does (the parts reported done).
+import { describe, expect, it } from 'vitest'
+import { contentRequestId, uploadAttachmentBytes, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+const PART = 4
+const KEY = 'staging/u/22222222-2222-4222-8222-222222222222'
+type Answer = { status: number; body?: unknown }
+function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) => number | null; complete?: Array<Answer>; begin?: Array<Answer> } = {}) {
+  const done = new Set(opts.done ?? [])
+  const stored = new Map<number, Uint8Array>()
+  const calls: Array<{ route: string; body: Record<string, unknown> }> = []
+  const puts: Array<{ n: number; headers: Record<string, string>; bytes: Uint8Array }> = []
+  const tries = new Map<number, number>()
+  let size = 0, signedRound = 0
+  const json = (answer: Answer) => new Response(JSON.stringify(answer.body ?? {}), { status: answer.status })
+  const fetch = (async (input: string, init: RequestInit = {}) => {
+    if (input === 'https://oss.example/form') return new Response(null, { status: 204 })
+    if (input.startsWith('https://oss.example/')) {
+      const n = Number(new URL(input).searchParams.get('partNumber'))
+      const attempt = (tries.get(n) ?? 0) + 1
+      tries.set(n, attempt)
+      const bytes = new Uint8Array(await (init.body as Blob).arrayBuffer())
+      puts.push({ n, headers: init.headers as Record<string, string>, bytes })
+      const refused = opts.refuse?.(n, attempt)
+      if (refused) return new Response(null, { status: refused })
+      stored.set(n, bytes)
+      return new Response(null, { status: 200 })
+    }
+    const route = input.split('/').at(-1)!, body = JSON.parse(String(init.body)) as Record<string, unknown>
+    calls.push({ route, body })
+    const count = Math.ceil(size / PART)
+    if (route === 'upload') {
+      const next = opts.begin?.shift()
+      if (next) return json(next)
+      size = Number(body.size_bytes)
+      if (!body.parts) return json({ status: 200, body: { staging_key: KEY, url: 'https://oss.example/form', fields: {}, max_bytes: size } })
+      return json({ status: 200, body: { staging_key: KEY, max_bytes: size, expires_at: '2030-01-01T00:00:00Z', parts: { part_bytes: PART, count: Math.ceil(size / PART) } } })
+    }
+    if (route === 'upload-parts') {
+      for (const n of body.done as number[]) done.add(n)
+      signedRound++
+      const todo = Array.from({ length: count }, (_, i) => i + 1).filter(n => !done.has(n)).slice(0, 2)
+      return json({ status: 200, body: { done: [...done].sort(), todo: todo.map(n => ({ n, bytes: n < count ? PART : size - (count - 1) * PART,
+        url: `https://oss.example/${KEY}?partNumber=${n}&round=${signedRound}`, headers: { 'content-length': String(n < count ? PART : size - (count - 1) * PART), authorization: 'OSS4-HMAC-SHA256 …', 'x-oss-date': 'now' } })) } })
+    }
+    if (route === 'upload-complete') {
+      const next = opts.complete?.shift()
+      if (next) return json(next)
+      return json({ status: 200, body: { staging_key: KEY, size_bytes: size } })
+    }
+    return new Response('unexpected', { status: 500 })
+  }) as typeof globalThis.fetch
+  const endpoint: AttachmentsEndpoint = { supabaseUrl: 'https://project.example', anonKey: 'public', token: 'user', fetch, signedParts: true }
+  return { endpoint, calls, puts, stored, done }
+}
+const file = (n = 10) => ({ bytes: new Blob([Uint8Array.from({ length: n }, (_, i) => i)]), name: 'big.bin', contentType: 'application/octet-stream' })
+const scope = { chat_id: 'chat', as: 'agent', request_id: '11111111-1111-4111-8111-111111111111' }
+
+describe('multipart uploads from a host that sends signed parts', () => {
+  it('only an endpoint with signedParts asks for parts; a page keeps the one form request', async () => {
+    const page = server()
+    await uploadAttachmentBytes({ ...page.endpoint, signedParts: undefined }, file(), scope)
+    expect(page.calls[0]!.body).not.toHaveProperty('parts')
+    expect(page.calls.map(c => c.route)).toEqual(['upload'])
+    const host = server()
+    await uploadAttachmentBytes(host.endpoint, file(), scope)
+    expect(host.calls[0]!.body.parts).toBe(true)
+  })
+  it('sends each part as its slice with the signed headers (content-length left to the runtime), reports them, then joins', async () => {
+    const s = server()
+    const progress: number[] = []
+    expect(await uploadAttachmentBytes(s.endpoint, file(10), scope, { onProgress: p => progress.push(p.loaded) })).toBe(KEY)
+    expect(s.calls.map(c => c.route)).toEqual(['upload', 'upload-parts', 'upload-parts', 'upload-parts', 'upload-complete'])
+    expect(s.calls.filter(c => c.route === 'upload-parts').map(c => c.body.done)).toEqual([[], [1, 2], [3]])
+    expect([...s.stored.entries()].sort(([a], [b]) => a - b).map(([n, bytes]) => [n, [...bytes]])).toEqual([[1, [0, 1, 2, 3]], [2, [4, 5, 6, 7]], [3, [8, 9]]])
+    for (const put of s.puts) {
+      expect(Object.keys(put.headers).map(h => h.toLowerCase())).not.toContain('content-length')
+      expect(put.headers.authorization).toContain('OSS4-HMAC-SHA256')
+    }
+    expect(progress.at(-1)).toBe(10)
+  })
+  it('a later call for the same upload sends only the parts the server has not recorded', async () => {
+    const s = server({ done: [1, 2] })
+    await uploadAttachmentBytes(s.endpoint, file(10), scope)
+    expect(s.puts.map(p => p.n)).toEqual([3])
+  })
+  it('a part whose signature expired (403) is signed again; refused again right after a fresh signature, it fails', async () => {
+    const once = server({ refuse: (n, attempt) => n === 2 && attempt === 1 ? 403 : null })
+    await uploadAttachmentBytes(once.endpoint, file(10), scope)
+    expect(once.puts.filter(p => p.n === 2)).toHaveLength(2)
+    const always = server({ refuse: n => n === 1 ? 403 : null })
+    await expect(uploadAttachmentBytes(always.endpoint, file(4 * PART), scope)).rejects.toThrow('refused a fresh part signature')
+  })
+  it('a join refused for missing parts goes back for them; a join that does not make the file starts once more from upload', async () => {
+    const missing = server({ complete: [{ status: 409, body: { error: 'upload_incomplete', message: 'Parts not sent yet: 2' } }] })
+    await uploadAttachmentBytes(missing.endpoint, file(10), scope)
+    expect(missing.calls.map(c => c.route)).toEqual(['upload', 'upload-parts', 'upload-parts', 'upload-parts', 'upload-complete', 'upload-parts', 'upload-complete'])
+    const changed = server({ complete: [{ status: 409, body: { error: 'upload_changed', message: 'The parts make 4 bytes, not 10' } }] })
+    await uploadAttachmentBytes(changed.endpoint, file(10), scope)
+    expect(changed.calls.filter(c => c.route === 'upload').map(c => c.body.request_id)).toEqual([scope.request_id, scope.request_id])
+    const twice = server({ complete: [0, 1].map(() => ({ status: 409, body: { error: 'upload_changed', message: 'no' } })) })
+    await expect(uploadAttachmentBytes(twice.endpoint, file(10), scope)).rejects.toMatchObject({ code: 'upload_changed' })
+  })
+  it('a given id whose permit was used or lapsed (on upload or while reporting parts) starts once more under a fresh id, once', async () => {
+    const expired = { status: 410, body: { error: 'expired', message: 'Upload permit expired' } }
+    const atStart = server({ begin: [expired] })
+    await uploadAttachmentBytes(atStart.endpoint, file(10), scope)
+    const ids = atStart.calls.filter(c => c.route === 'upload').map(c => c.body.request_id)
+    expect([ids[0], ids.length]).toEqual([scope.request_id, 2])
+    expect(ids[1]).not.toBe(scope.request_id)
+    // A resumed upload that had stopped reporting: the permit lapsed between calls, so its parts are asked for in vain.
+    const midway = server({ complete: [expired] })
+    await uploadAttachmentBytes(midway.endpoint, file(10), scope)
+    expect(midway.calls.filter(c => c.route === 'upload').map(c => c.body.request_id)).toEqual([scope.request_id, expect.not.stringMatching(scope.request_id)])
+    await expect(uploadAttachmentBytes(server({ begin: [expired, expired] }).endpoint, file(10), scope)).rejects.toMatchObject({ code: 'expired' })
+  })
+  it('a content request id is the same for the same identity, differs otherwise, and has the UUID shape', async () => {
+    const a = await contentRequestId('chat', 'agent', 'c1', 'ab'.repeat(32), '10')
+    expect(a).toBe(await contentRequestId('chat', 'agent', 'c1', 'ab'.repeat(32), '10'))
+    expect(a).not.toBe(await contentRequestId('chat', 'agent', 'c2', 'ab'.repeat(32), '10'))
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+})

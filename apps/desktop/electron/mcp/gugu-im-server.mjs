@@ -4,7 +4,7 @@ import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { openAsBlob } from 'node:fs'
 import { basename, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path'
@@ -24,7 +24,8 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { AttachmentsError, commitAttachment, contentRequestId, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
@@ -436,7 +437,8 @@ function rpcErrorDetail(raw) {
 
 // The attachments function (core's one client, packages/core/src/cloud/attachmentsApi.ts): this session's server and token.
 async function attachmentsEndpoint(context, fetchImpl = fetch) {
-  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl }
+  // A main process: signed part PUTs go straight to the store, so large files upload in parts and resume.
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
 }
 // 鉴权失效只允许读取一次 host fresh token；transport/5xx 在 post helper 内按稳定 row 有界重试。
 function isRefreshableAuthError(err) {
@@ -2232,7 +2234,11 @@ async function uploadForSend(args, deps, label, chatId, read) {
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   const bytes = read ?? await uploadBlob(label, args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
-  return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType }, { chat_id: chatId, as: deps.context.agentId }) }
+  // The same file from this agent to this chat is one upload: sent again after a timeout or restart, it resumes.
+  const sha = read ? createHash('sha256').update(read).digest('hex') : await fileSha256(String(args.file_path))
+  const request_id = await contentRequestId('chat', deps.context.agentId, chatId ?? '', sha, String(bytes.size ?? bytes.byteLength))
+  return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
+    { chat_id: chatId, as: deps.context.agentId, request_id }) }
 }
 
 /**
