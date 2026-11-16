@@ -37,6 +37,6 @@ it.each([390, 1000])('keeps native source selection and its one Cite action usab
   expect(box.right).toBeLessThanOrEqual(width)
   await page.elementLocator(document.querySelector('.gg-file-cite-popup button')!).click()
   await until('the selection reaches the cite callback', () => cite.mock.calls.length === 1)
-  expect(cite).toHaveBeenCalledWith({ text: 'second', at: { lines: '2' } })
+  expect(cite).toHaveBeenCalledWith({ text: 'second', at: { lines: '2' }, code: true })
   await until('the action closes once cited', () => !document.querySelector('.gg-file-cite-popup'))
 })

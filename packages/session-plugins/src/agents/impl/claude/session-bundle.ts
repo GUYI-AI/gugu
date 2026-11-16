@@ -1,6 +1,5 @@
 import { CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
 import { harnessPlatform } from './platform';
-import { claudeSessionFlagSettings } from './platform-model';
 import {
   createHash,
 } from 'node:crypto';
@@ -695,14 +694,22 @@ export function materializeClaudeSessionBundle(
     };
   }
 
-  const sessionFlags = claudeSessionFlagSettings(bundle.model);
-  // Older version-paired bridges must keep the legacy startup envelope when Fast is off.
-  // The live configuration channel still acknowledges an explicit off before the next turn.
-  if (sessionFlags.fastMode === false) delete sessionFlags.fastMode;
+  const settingsHome = bundle.env.GUGU_HOME?.trim();
+  if (!settingsHome && bundle.autonomy?.permissionMode === 'ai-review') {
+    throw new Error('Claude AI review requires a host-owned settings directory');
+  }
+  const reviewerSettings = settingsHome ? {
+    path: join(settingsHome, 'capability-packages', 'claude', 'reviewer-settings', `${CLAUDE_REVIEWER_MODEL}.json`),
+    content: `${JSON.stringify(claudeReviewSettings({}))}\n`,
+    mode: 0o600 as const,
+  } : null;
   const options = {
-    // Native ACP sessions bypass platformModel.load. Only secret-free session flags go
-    // inline here; a host-owned settings path replaces this value with its merged document.
-    settings: claudeReviewSettings(sessionFlags),
+    ...(reviewerSettings ? { settings: reviewerSettings.path } : {}),
+    // ❌ No inline `settings` here: on the ACP wire `options.settings` is a settings-file path
+    // (acpSessionMetaSchema), and only the host that owns such a file sets it (platform sessions).
+    // A native session's Fast reaches Claude through the ACP `fast` config option at startup
+    // (SessionManager.applyInitialFastMode), so an inline copy would be a second path that the
+    // wire rejects before the adapter is ever spawned.
     ...(plugin ? { plugins: [{ type: 'local', path: plugin.root }, ...(library ? [{ type: 'local', path: library.root }] : [])] } : {}),
     // #5117 咕咕在子智能体卡上有「停止」按钮(适配器 `_session/async_task/stop` → SDK `stop_task`)。
     // 向 SDK 声明这一点(0.3.257 起认):按「停止」中断这一轮时**放过**还在跑的后台子智能体,
@@ -770,6 +777,7 @@ export function materializeClaudeSessionBundle(
 
   return {
     ...common,
+    artifacts: [...artifacts, ...(reviewerSettings ? [reviewerSettings] : [])],
     argsAppend: [],
     acp: {
       mcpServers: [],

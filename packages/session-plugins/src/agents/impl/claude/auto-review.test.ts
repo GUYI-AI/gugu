@@ -1,3 +1,4 @@
+import { acpSessionMetaSchema } from '@gugu/session-core/acp/client';
 import { describe, expect, it } from 'vitest';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { claudeAutoReviewAvailable, claudeReviewConfig, CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
@@ -43,8 +44,21 @@ describe('Claude AI review prerequisites', () => {
     expect(JSON.parse(command.args[command.args.indexOf('--settings') + 1])).toMatchObject({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
   });
   it.each(['acp', 'tui'] as const)('pins Haiku on the %s session materialization, without changing host CLI', surface => {
-    const result = materializeClaudeSessionBundle({ surface, lifecycle: 'fresh', cwd: '/fixture' }, { mcpServers: [], env: {}, model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [] });
+    const result = materializeClaudeSessionBundle({ surface, lifecycle: 'fresh', cwd: '/fixture' }, { mcpServers: [], env: { GUGU_HOME: '/fixture/gugu' }, model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [] });
     expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(CLAUDE_REVIEWER_MODEL);
-    if (surface === 'acp') expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } } } } });
+    if (surface === 'acp') {
+      const artifact = result.artifacts.find(file => file.path.endsWith(`${CLAUDE_REVIEWER_MODEL}.json`));
+      expect(artifact).toMatchObject({ mode: 0o600 });
+      expect(JSON.parse(artifact!.content)).toEqual({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
+      expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: artifact!.path } } });
+    }
   });
+});
+
+it('uses a settings-file path on the native ACP wire even when AI review is enabled later', () => {
+  const result = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
+    mcpServers: [], env: { GUGU_HOME: '/fixture/gugu' }, model: null, autonomy: { permissionMode: 'edit' }, promptBlocks: {}, packages: [],
+  });
+  expect(acpSessionMetaSchema.safeParse(result.acp?.meta).success).toBe(true);
+  expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: expect.any(String) } } });
 });
