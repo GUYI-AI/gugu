@@ -110,6 +110,7 @@ import { createProbeConnectionCredentials } from './harness-catalog-probe-connec
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
+import { installerFailureLogPath, reportInstallerFailures } from './installer-failure-log'
 import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } from './macDmgUpdater'
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
@@ -2822,6 +2823,22 @@ function purgeUpdaterCacheOnce(): void {
     })
   } catch (error) {
     updaterLogger.warn({ error: String(error) }, '[updater] 清更新缓存时出错(不影响启动)')
+  }
+}
+
+// @@@install-failure-log — 上一次安装/更新若在 Windows 事务安装器里失败,原因只在 NSIS「显示细节」里一闪而过;
+// 安装器把它追加进 %ProgramData%\gugu\installer\<exe>.log,这里在启动时把还没报过的条目原样记进应用日志。
+function reportInstallerFailuresOnce(): void {
+  if (!app.isPackaged || process.platform !== 'win32' || !process.env.ProgramData) return
+  try {
+    const count = reportInstallerFailures({
+      logPath: installerFailureLogPath(process.env.ProgramData, process.execPath),
+      seenPath: join(app.getPath('userData'), 'installer-failures-reported'),
+      report: (entry) => updaterLogger.error({ entry }, '[updater] 上一次 Windows 安装没有完成(安装器记录)'),
+    })
+    if (count) updaterLogger.warn({ count }, '[updater] 已记下安装器留下的失败记录')
+  } catch (error) {
+    updaterLogger.warn({ error: String(error) }, '[updater] 读安装器失败记录时出错(不影响启动)')
   }
 }
 
@@ -6581,6 +6598,7 @@ app.whenReady().then(async () => {
   // server 的升级另有一套(后台下好、没有 agent 在跑时切换),❌ 走桌面这套弹界面的更新器。
   if (!SERVER_MODE) {
     purgeUpdaterCacheOnce()
+    reportInstallerFailuresOnce()
     updateChecks.startAutomatic()
   }
 

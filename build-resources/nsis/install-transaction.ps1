@@ -7,7 +7,11 @@ param(
   [Parameter(Mandatory=$true)][string]$InstallKey,
   [Parameter(Mandatory=$true)][string]$UninstallKey,
   [Parameter(Mandatory=$true)][ValidateSet('all','CurrentUser')][string]$Mode,
-  [string]$LinkManifest
+  [string]$LinkManifest,
+  # @@@install-failure-log — NSIS shows this script's error only in its "Show details" pane, which is gone once the
+  # window closes (a field report had nothing but "Installation Aborted" at ~3/4 progress). Every failure is also
+  # appended here; the app reads it on its next start and records it in its own log.
+  [string]$FailureLog = (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) ("gugu\installer\" + [IO.Path]::GetFileNameWithoutExtension($Executable) + '.log'))
 )
 # Runs from NSIS's private plugin directory, never from a directory being renamed.
 # No network, Node installation, profile, user-data deletion, or process termination.
@@ -223,6 +227,7 @@ try {
   exit 0
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
+  $failure = $_.Exception
   if ($Phase -eq 'finish' -and (Test-Path -LiteralPath $statePath)) {
     # Consult the persisted commit, not the in-memory flag: a full disk may have
     # prevented Save-State itself, in which case backups are still for rollback.
@@ -239,5 +244,14 @@ try {
   if ($Phase -ne 'rollback' -and (Test-Path -LiteralPath $statePath)) {
     try { $s = Load-State; if (-not $s.completed) { Restore-State $s } } catch { [Console]::Error.WriteLine("Rollback preserved: $($_.Exception.Message)") }
   }
+  try {
+    $roots = @($Target) + @(if ($s) { $s.roots | ForEach-Object { $_.root } })
+    $entry = [ordered]@{ time=[DateTime]::UtcNow.ToString('o'); phase=$Phase; version=$Version; mode=$Mode; target=$Target; error=$failure.Message; cause=$failure.GetBaseException().Message
+      # What still runs from the trees being replaced: the usual reason a directory rename is refused.
+      running=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $path = $_.ExecutablePath; $path -and @($roots | Where-Object { $path.StartsWith("$_\", [StringComparison]::OrdinalIgnoreCase) }).Count } | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }) }
+    New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($FailureLog)) -Force | Out-Null
+    $kept = @(if (Test-Path -LiteralPath $FailureLog) { Get-Content -LiteralPath $FailureLog -Encoding UTF8 | Select-Object -Last 49 })
+    [IO.File]::WriteAllLines($FailureLog, [string[]]($kept + ($entry | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
+  } catch { [Console]::Error.WriteLine("Could not record the failure in ${FailureLog}: $($_.Exception.Message)") }
   exit 2
 }
