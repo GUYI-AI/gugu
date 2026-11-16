@@ -20,3 +20,5 @@ it('excludes unmatched terminal URL brackets',()=>{const url='https://example.te
 it('resolves terminal URLs across wrapped rows',()=>{const url='https://example.test/long/path';const b=buffer([url.slice(0,20),url.slice(20)]);expect(getTerminalLinkAtBufferCell(b,1,2)).toBe(url);expect(getTerminalLinkAtBufferCell(b,2,2)).toBe(url);expect(getTerminalLinkAtBufferCell(b,2,20)).toBeNull();});
 
 it('backspaces supplementary terminal input',()=>{const input=new SubmittedInputBuffer();expect(input.feed('fix 😀\u007fnow\r')).toEqual(['fix now']);});
+
+it('deletes supplementary terminal input',()=>{const input=new SubmittedInputBuffer();expect(input.feed('😀fix\u0001\u0004\r')).toEqual(['fix']);});

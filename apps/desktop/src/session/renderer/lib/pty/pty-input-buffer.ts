@@ -201,7 +201,7 @@ class LineEditor {
         case 'delete':
           if (this.cursor < this.lineBuffer.length) {
             this.lineBuffer =
-              this.lineBuffer.slice(0, this.cursor) + this.lineBuffer.slice(this.cursor + 1);
+              this.lineBuffer.slice(0, this.cursor) + this.lineBuffer.slice(this.nextOffset(this.cursor));
           }
           break;
         case 'kill-line':
@@ -223,6 +223,10 @@ class LineEditor {
     }
 
     return submitted;
+  }
+
+  private nextOffset(offset: number): number {
+    return Math.min(this.lineBuffer.length, offset + ((this.lineBuffer.codePointAt(offset) ?? 0) > 0xffff ? 2 : 1));
   }
 
   private previousOffset(offset: number): number {
