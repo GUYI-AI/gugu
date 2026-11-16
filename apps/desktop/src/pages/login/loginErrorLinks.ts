@@ -1,9 +1,9 @@
 const LOGIN_ERROR_HOSTS = new Set(['gugu.nextmind.space'])
 const BARE_HK_ADDRESS = 'gugu.nextmind.space/hk'
-const BARE_HK_PREFIX = /(?:^|[\s(\[{"'“‘（【「『，。！？；、])$/u
+const BARE_HK_PREFIX = /(?:^|[\s([{"'“‘（【「『，。！？；、])$/u
 const BARE_HK_SUFFIX = /^(?:$|[\s)\]}"'”’）】」』，。！？；、]|[.,;!?](?=$|[\s)\]}"'”’）】」』，。！？；、]))/u
 // Mask whole URL-like tokens, including their quotes and brackets, before finding bare addresses.
-const URL_TOKEN = /(?:[a-z][a-z0-9+.-]*:|\/\/|[?#]|[^\s()\[\]{}<>"'“”‘’，。！？；、（）【】「」『』]+[\/?#=])[^\s]*/gi
+const URL_TOKEN = /(?:[a-z][a-z0-9+.-]*:|\/\/|[?#]|[^\s()[\]{}<>"'“”‘’，。！？；、（）【】「」『』]+[/?#=])[^\s]*/gi
 
 export type LoginErrorPart = { text: string; href?: string }
 
