@@ -170,8 +170,21 @@ function handover(store: SettingsStore, hasTable: boolean): DeviceSettingsHandov
   };
   return {
     settings: Object.fromEntries(HANDED_OVER_SETTINGS.map((key) => [key, meta(key)])) as DeviceSettingsHandover['settings'],
-    themePackCss: hasTable ? themePackStylesheetNow(store) : '',
+    themePackCss: hasTable ? handedStylesheet(store) : '',
   };
+}
+
+/**
+ * The theme packs' stylesheet for the first frame. An imported theme file that cannot be read loses only the colours
+ * (said in the log), never the rest of the handover: theme, language and tint are still the person's from the first frame.
+ */
+function handedStylesheet(store: SettingsStore): string {
+  try {
+    return themePackStylesheetNow(store);
+  } catch (error) {
+    log.error('the theme packs could not be read for the first frame; it starts with the default colours', { error: String(error) });
+    return '';
+  }
 }
 
 /**

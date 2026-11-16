@@ -97,6 +97,20 @@ describe('device settings handover', () => {
   });
 });
 
+describe('a broken imported theme file (review B1-2)', () => {
+  it('loses only the colours: theme and language are still handed over for the first frame', async () => {
+    fixture = await openFixture('empty'); h.db = fixture.db;
+    const store = new SettingsStore();
+    answerDeviceSettings({ theme: 'dark', locale: 'en-US' }, store);
+    mkdirSync(join(h.userData, 'theme-packs'), { recursive: true });
+    writeFileSync(join(h.userData, 'theme-packs', 'imported.json'), '{ not json');
+    const answer = answerDeviceSettings({}, store);
+    expect(answer.handover.settings.theme.value).toBe('dark');
+    expect(answer.handover.settings.locale.value).toBe('en-US');
+    expect(answer.handover.themePackCss).toBe('');
+  });
+});
+
 describe('the theme setting has a writer now', () => {
   it('reads values stored before it had one, and the terminal colour scheme follows the choice', () => {
     expect(themeSchema.parse('emdark')).toBe('dark');
