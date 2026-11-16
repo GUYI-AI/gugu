@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs;运行时 import 可用。
 import { callTool } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
@@ -20,7 +20,7 @@ const envelope = '[附件] deck.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))) })
 
-async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer } = {}) {
+async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer; pending?: number } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'gugu-download-test-'))
   homes.push(home)
   const asked: unknown[] = []
@@ -39,6 +39,7 @@ async function setup(message: Record<string, unknown> | null, opts: { agentSees?
     resolveFile: async (ref: Record<string, unknown>, actorId: string) => {
       asked.push([ref]); expect(actorId).toBe(AGENT)
       if (opts.signed === false) return { status: 'gone', sha256: null }
+      if (opts.pending && asked.length <= opts.pending) return { status: 'pending', sha256: null }
       fetched.push('verified original')
       return verifiedFileHandle(opts.bytes ?? Buffer.from('bytes'), { file_name: 'notes.pdf', content_type: 'application/pdf' })
     },
@@ -63,6 +64,31 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(name.endsWith('.html')).toBe(true)
     expect(name).not.toContain('�')
     expect(name).toMatch(/^(?:核对🍵)*(?:核对|核)?\.html$/u)
+  })
+
+  // Owner 11-15: a message is there before its bytes. The agent's read waits a while for the sender's upload, then says so by name.
+  test('a file whose sender is still uploading is waited on, then read once it lands', async () => {
+    const { call, fetched } = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null }, { pending: 3 })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    try {
+      const read = call()
+      await vi.advanceTimersByTimeAsync(3_000)
+      vi.useRealTimers()
+      expect(JSON.stringify(await read)).toContain('notes.pdf')
+      expect(fetched).toEqual(['verified original'])
+    } finally { vi.useRealTimers() }
+  })
+
+  test('a file still uploading after the wait names itself and says the sender is still uploading', async () => {
+    const { call, fetched } = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null }, { pending: 100 })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    try {
+      const read = call().catch((error: Error) => error)
+      await vi.advanceTimersByTimeAsync(8_100)
+      const error = await read
+      expect(String(error)).toMatch(/notes\.pdf.*发送方仍在上传/)
+      expect(fetched).toEqual([])
+    } finally { vi.useRealTimers() }
   })
 
   test('old message: resolves the message through the same private provider; preserves the original filename', async () => {

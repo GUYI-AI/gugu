@@ -27,6 +27,7 @@ function attachmentsFake(uploads: string[], commits: Array<Record<string, unknow
   const fetch = (async (url: string, init?: RequestInit) => {
     if (url.endsWith('/attachments/upload')) return new Response(JSON.stringify({ staging_key: `staging/o/${uploads.length + 1}`, url: 'https://oss.test/', fields: {}, max_bytes: 25 * 1024 * 1024 }))
     if (url === 'https://oss.test/') { uploads.push(((init?.body as FormData).get('file') as File).name); return new Response(null, { status: 204 }) }
+    if (url.endsWith('/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     const args = JSON.parse(String(init?.body)) as Record<string, unknown>
     commits.push(args)
     return new Response(JSON.stringify({ message: { id: args.message_id, chat_id: args.chat_id } }))
@@ -150,7 +151,8 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
     }, deps)
     if (refuse) await expect(send).rejects.toThrow(`收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：${refuse}。用 message_members 查有效成员后重发。`)
     else expect(await send).toContain(expected)
-    expect(uploads).toEqual(['proof.txt'])
+    // Bytes go up only behind a committed message: a refused send uploads none.
+    expect(uploads).toEqual(refuse ? [] : ['proof.txt'])
     expect(commits).toHaveLength(1)
     expect(commits[0]).toMatchObject({ to_user_ids: [to] })
   })

@@ -17,14 +17,14 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { fileRefKey } from '@gugu/core/shared/fileResolver'
+import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { AttachmentsError, commitAttachment, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
@@ -2225,12 +2225,12 @@ async function documentUploadBytes(args) {
   return workspaceUploadKind(resolveUploadName(args), contentType, new Uint8Array(bytes)).kind === 'document' ? bytes : null
 }
 
-// gugu_file:send-file = 字节经 attachments/upload 直传 OSS,attachments/commit 放进会话的「附件」、发一条附件消息(#7290 gugu-3,
-// 和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, label, chatId, read) {
+// gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
+// (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
+async function uploadForSend(args, deps, label, chatId) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const bytes = read ?? await uploadBlob(label, args, contentType)
+  const bytes = await uploadBlob(label, args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType }, { chat_id: chatId, as: deps.context.agentId }) }
 }
@@ -2357,7 +2357,15 @@ async function downloadFile(args, deps) {
   let saving = downloading.get(key)
   if (!saving) {
     saving = (async () => {
-      const file = await deps.resolveFile(source.ref, source.reader)
+      // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
+      const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
+      let file = await deps.resolveFile(source.ref, source.reader)
+      while (file.status === 'pending' && Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
+        file = await deps.resolveFile(source.ref, source.reader)
+      }
+      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
+      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
       if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
@@ -2450,11 +2458,16 @@ async function handleFile(args, deps) {
     }))) {
       fileName = resolveUploadName(args)
     } else {
-      const upload = await uploadForSend(args, deps, 'message_send_file', chatId, documentBytes ?? undefined)
-      const { endpoint, contentType, stagingKey } = upload
-      fileName = upload.fileName
+      // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
+      const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+      const bytes = documentBytes ?? await uploadBlob('message_send_file', args, contentType)
+      const endpoint = await deps.attachmentsEndpoint()
+      const declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: chatId, as: deps.context.agentId })
+      fileName = resolveUploadName(args)
       const commit = {
-        staging_key: stagingKey,
+        staging_key: declared.staging_key,
+        sha256: declared.sha256,
+        size_bytes: declared.size_bytes,
         message_id: messageId,
         chat_id: chatId,
         sender_user_id: deps.context.agentId,
@@ -2470,6 +2483,10 @@ async function handleFile(args, deps) {
       message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
         if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
+      })
+      if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
+        { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}).catch((error) => {
+        throw new Error(`message_send_file: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
       })
     }
     if (!message?.id) throw new Error('message_send_file: the server did not confirm the send')

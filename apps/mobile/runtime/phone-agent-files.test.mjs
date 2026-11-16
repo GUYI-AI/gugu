@@ -72,6 +72,7 @@ async function fixture() {
       if (String(url).endsWith('/attachments/upload')) return json({ staging_key: 'staged', url: 'https://storage.invalid/put', fields: {}, max_bytes: 1024 })
       if (String(url).includes('/put')) return new Response('', { status: 200 })
       if (String(url).endsWith('/attachments/commit')) return json({ message: { id: JSON.parse(options.body).message_id } })
+      if (String(url).endsWith('/attachments/finish')) return json({ status: 'ready' })
       throw new Error('unexpected endpoint')
     } }),
   }
@@ -92,7 +93,7 @@ test('native chunks become an owner-scoped complete artifact and private permiss
   } finally { await fx.close() }
 })
 
-test('file sending uses core attachment upload/commit with the agent sender, stable message id and real bytes', async () => {
+test('file sending declares the file in its commit (agent sender, stable message id), then uploads the real bytes and finishes them', async () => {
   const fx = await fixture()
   const checked = []
   try {
@@ -108,6 +109,11 @@ test('file sending uses core attachment upload/commit with the agent sender, sta
     assert.deepEqual(Buffer.from(await upload.arrayBuffer()), bytes)
     const commit = JSON.parse(fx.requests.find(([url]) => url.endsWith('/commit'))[1].body)
     assert.equal(commit.sender_user_id, agent.agentUserId)
+    // One path for every sender (owner 11-15): the message goes with the file's index, its bytes follow it.
+    assert.deepEqual({ sha256: commit.sha256, size_bytes: commit.size_bytes }, { sha256: createHash('sha256').update(bytes).digest('hex'), size_bytes: bytes.length })
+    const order = fx.requests.map(([url]) => url.endsWith('/commit') ? 'commit' : url.includes('/put') ? 'bytes' : url.endsWith('/finish') ? 'finish' : null).filter(Boolean)
+    assert.deepEqual(order, ['commit', 'bytes', 'finish'])
+    assert.equal(JSON.parse(fx.requests.find(([url]) => url.endsWith('/finish'))[1].body).message_id, commit.message_id)
     assert.equal(sent.details.message_id, `msg:${commit.message_id}`)
     assert.equal(checked.length >= 2, true)
     assert.deepEqual(checked[0][1], [proof])

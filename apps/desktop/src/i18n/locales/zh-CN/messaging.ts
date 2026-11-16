@@ -376,6 +376,11 @@ export default {
     "besideUnavailable": "这个文件现在取不到。",
     "besideOutside": "只能取到这份文档所在文件夹里的文件。",
     "imageUnavailable": "图片暂时打不开",
+    "senderUploading": "发送方还没传完",
+    "senderUploadFailed": "发送方没有传完这个文件",
+    "uploading": "正在上传",
+    "notUploaded": "还没传完",
+    "uploadFailed": "上传失败，点按重试",
     "newerInFolder": "文件夹里有新版",
     "retry": "重试"
   },
