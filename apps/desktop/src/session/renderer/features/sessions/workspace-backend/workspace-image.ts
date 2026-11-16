@@ -2,11 +2,7 @@ import { replica } from '@/lib/replica';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { workspaceEvents, workspaceRpc } from './workspace-backend';
 
-/**
- * An image a workspace file shows (markdown `![](./shot.png)`), as the machine reads it: a `data:` URL, or null when
- * the file is not there. The file can change, so the machine's file feed reads it again (`watchWorkspaceImages`);
- * held a minute after the last surface leaves; bytes are never kept across restarts.
- */
+/** An image a workspace file shows, as a `data:` URL (null: no such file); re-read by the file feed (`watchWorkspaceImages`). */
 export const workspaceImage = replica({
   name: 'workspaceImage',
   scope: 'account',

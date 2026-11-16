@@ -14,17 +14,13 @@ interface ChangesViewModeToggleProps {
 }
 
 export function ChangesViewModeToggle({ value, onChange, label }: ChangesViewModeToggleProps) {
+  const { translate } = useSessionMessages();
+  const [open, setOpen] = useState(false);
   // Not read yet: the button's place, ❌ a button that would switch away from a layout nobody chose.
   if (value === null) return <Unknown className="size-6" />;
-  return <KnownChangesViewModeToggle value={value} onChange={onChange} label={label} />;
-}
-
-function KnownChangesViewModeToggle({ value, onChange, label }: ChangesViewModeToggleProps & { value: ChangesListViewMode }) {
-  const { translate } = useSessionMessages();
   const nextMode: ChangesListViewMode = value === 'flat' ? 'tree' : 'flat';
   const Icon = value === 'flat' ? AlignJustify : ListTree;
   const tooltip = translate(value === 'flat' ? 'changes.switchToTree' : 'changes.switchToFlat');
-  const [open, setOpen] = useState(false);
 
   return (
     <Tooltip

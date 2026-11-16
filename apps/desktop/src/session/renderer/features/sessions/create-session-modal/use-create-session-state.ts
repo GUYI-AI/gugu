@@ -63,9 +63,8 @@ export function useCreateSessionState(
   const directIssueSessionName = getIssueSessionName(linkedIssue);
 
   /**
-   * The name suggestion this box asks for now, or null when it asks for none (the setting is off or not read yet, or an
-   * issue names the task itself). A suggestion is an LLM command whose answer fills an input the person can edit:
-   * asked once per request, never read again as data (PLAN-REVIEW Q6).
+   * The name suggestion asked for now, or null (setting off / not read, or an issue names the task). An LLM command
+   * whose answer fills an editable input: asked once per request, never read again as data.
    */
   const request = useMemo((): NameRequest | null => {
     if (autoGenerateName !== true) return null;

@@ -60,11 +60,8 @@ export function resolveMachineProject(target: MachineCreateTarget): Promise<stri
   return target.projectId ? Promise.resolve(target.projectId) : remoteHostsStore.ensureTaskWorkspace(target.deviceId);
 }
 
-/**
- * The local project a new task on another machine goes into (`projectId` '' = that machine's task workspace, prepared
- * on the first ask). Read while the machine is connected and again when it reconnects; not kept across restarts.
- */
-export const machineProject = replica({
+/** The project a new task on another machine goes into (`projectId` '' = that machine's task workspace). */
+const machineProject = replica({
   name: 'machineProject',
   scope: 'account',
   read: async (_owner, deviceId: string, projectId: string): Promise<string> => {
@@ -107,8 +104,6 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
     wasConnected.current = connected;
     if (came && target) void machineProject.refresh(target.deviceId, target.projectId ?? '');
   }, [connected, target?.deviceId, target?.projectId]);
-  // The name comes from remoteHostsStore (MobX, PR 5), which cannot tell "not listed" from "not read yet"; a machine
-  // it does not list is named by its id, as before (an open issue of this PR, said in its report).
   const label = device?.label ?? target?.deviceId ?? '';
   // 选着的机器掉线了:右下角那条提示说(重连第几次 → 离线 / 失败,或 → 已连上),输入框照旧可写、写好的内容留着(不重挂)。
   useMachineNotice(

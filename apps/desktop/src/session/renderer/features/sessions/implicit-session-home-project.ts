@@ -125,11 +125,7 @@ function removeFailedImplicitProject(
   }
 }
 
-/**
- * The hidden task-home project, registered and mounted for this run (its id is a constant; what a surface waits for is
- * that it is ready). Read once per account (the project store is the signed-in account's), never pushed. A failure is
- * the reading's error (a typed `ImplicitSessionHomeProjectError`), said where the composer is.
- */
+/** The hidden task-home project, ready for this run (read once per account; a failure is an `ImplicitSessionHomeProjectError`). */
 export const implicitSessionHome = replica({
   name: 'implicitSessionHome',
   scope: 'account',

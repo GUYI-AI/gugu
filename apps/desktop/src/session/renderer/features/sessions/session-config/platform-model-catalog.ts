@@ -35,11 +35,7 @@ export type PlatformModelCatalog = {
 };
 
 export type PlatformModelCatalogState = PlatformModelCatalog & {
-  /**
-   * The catalog and what it rests on (the account's catalog, the engine's sessionpage integration on its machine, a
-   * session's preselection) are read. While false, `models` is empty and means nothing: the model trigger holds its
-   * place (`modelUnknown`), ❌ the harness route drawn and replaced.
-   */
+  /** The catalog and what it rests on are read; while false `models` means nothing (❌ the harness route drawn, then replaced). */
   known: boolean;
   /** Read in this run (not the last run's snapshot) without a failure: an empty list here proves no retirement. */
   settled: boolean;
@@ -229,7 +225,7 @@ function gateReason(providerId: string, surface: SessionpageSessionSurface, agen
  * The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. Only for a
  * catalog as read (`catalogDetailed`): one restored from the snapshot carries no multipliers or levels.
  */
-export function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
+function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
   if (!catalogDetailed(catalog)) throw new Error('platformModelsFor needs the catalog as read (with its menu details)');
   const protocol = platformWireProtocol(providerId) as PlatformModelProtocol | null;
   if (!protocol || !PROTOCOLS.includes(protocol)) return [];
@@ -284,11 +280,8 @@ function watchCatalog(): () => void {
 
 /**
  * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)时什么都不读。
- *
- * Derived, not read per surface: the account's catalog (`platformModels`, kept across restarts, so a New task draws the
- * Gugu group in its first frame), filtered to the engine's protocol and gated by its sessionpage integration on the
- * machine; a session adds its preselection (`sessionPlatformSelection`). A machine that is not connected is not asked
- * (its last answers stay); when it connects, what is stale is asked again.
+ * Derived, not read per surface: the account's catalog (`platformModels`) filtered to the engine's protocol and gated by
+ * its sessionpage integration on the machine; a session adds its preselection. A disconnected machine is not asked.
  */
 export function usePlatformModelCatalog(
   providerId: string | null,

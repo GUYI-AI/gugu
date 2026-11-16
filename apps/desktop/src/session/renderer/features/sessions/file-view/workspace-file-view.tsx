@@ -71,8 +71,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
 }) {
   const { translate } = useSessionMessages();
   const { toast } = useToast();
-  // 「打开方式」lists this computer's programs as the project tab's menu does: installed, not hidden in settings, the
-  // default first (shared `openInMenuApps`). Read from the replicas both entries share; not known yet = no entries.
+  // 「打开方式」lists this computer's programs as the project tab's menu does (shared `openInMenuApps`).
   const openInApps = useOpenInMenu();
   const [revision, setRevision] = useState(0);
   // What it re-reads on: the change feed, which on Linux only carries directories someone watches.

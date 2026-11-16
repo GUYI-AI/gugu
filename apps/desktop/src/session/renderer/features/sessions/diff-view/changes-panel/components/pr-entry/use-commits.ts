@@ -24,13 +24,10 @@ export function commitRangeForPullRequest(pr: PullRequest): CommitRange {
   };
 }
 
-export type CommitPage = { commits: Commit[]; aheadCount: number };
+type CommitPage = { commits: Commit[]; aheadCount: number };
 
-/**
- * One page of the commits between two oids. Immutable for its key (both ends are object ids), so read once and kept a
- * while after the list closes.
- */
-export const commitPage = replica({
+/** One page of the commits between two oids: immutable for its key, read once and kept a while. */
+const commitPage = replica({
   name: 'commitPage',
   scope: 'device',
   read: async (_owner, projectId: string, workspaceId: string, baseRefOid: string, headRefOid: string, offset: number): Promise<CommitPage> => {

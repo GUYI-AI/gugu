@@ -35,11 +35,7 @@ export type EffectiveProvider = {
   error: string | null;
   /** 选中的这家是用户自己表过态的,不是我方按出厂偏好猜的 —— 决定它该不该被记成「上次用过的」。 */
   chosenByUser: boolean;
-  /**
-   * The choice rests on what is read: the default agent setting, the remembered agent and the machine's agent list. Until
-   * all three are, `providerId` is not the choice (it would be the factory preference, then jump): draw the agent and
-   * model triggers as unknown.
-   */
+  /** The default agent setting, the remembered agent and the agent list are read; until then `providerId` is not the choice. */
   known: boolean;
 };
 

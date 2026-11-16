@@ -24,11 +24,8 @@ import { sessionComposerDockBandClassName, sessionComposerDockedWidthClassName }
 import { cancelComposerVerb, composerVerbLook } from './composer-verb-tag';
 import { machineComposerProps } from './use-machine-create-target';
 
-/**
- * The project a chat remembers for new tasks on this computer (the host keeps it per chat and device). Read when the
- * dispatch box opens, ❌ pushed; a pick writes it (`set` once the host stored it). Not kept across restarts.
- */
-export const chatTaskProject = replica({
+/** The project a chat remembers for new tasks on this computer (kept by the host per chat and device; never pushed). */
+const chatTaskProject = replica({
   name: 'chatTaskProject',
   scope: 'account',
   read: (_owner, chatId: string, deviceId: string) => sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).catch((error: unknown) => {
@@ -87,11 +84,9 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   // 这个对话记着的项目(哪台机器上的都算,认回账号上的项目):群和它的话题里 ❌ 沿用(#2599)。
   const remembers = !inGroup && picked === null;
   const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
-  // The project shown: the one picked; else (outside a group) the remembered one, unknown until it is read — ❌ "no
-  // project" first and the remembered one popping in. 在 observer 的渲染里认:账号上的项目列表变了,跟着重认。
-  // A memory that could not be read is said where the project picker goes, with a retry, and nothing is sent until it is
-  // known: ❌ "no project" drawn and the task sent to the implicit directory instead of the project used last (review 4
-  // Q3). A device with no row of its own has no memory to read (nothing was ever remembered for it here).
+  // The project shown: the one picked; else the remembered one, unknown until read (❌ "no project", then it pops in);
+  // 在 observer 的渲染里认:账号上的项目列表变了,跟着重认。Unreadable memory blocks sending (❌ the task goes to the
+  // implicit directory instead of the project used last). A device with no row of its own has no memory to read.
   const selection: { known: true; projectId: string | undefined } | { known: false; failed: Error | null } = picked
     ? { known: true, projectId: picked.projectId }
     : !remembers ? { known: true, projectId: undefined }
@@ -141,11 +136,9 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   };
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
-      {/* The remembered project not read yet: the box's place is held (❌ the machine box first, then the project's). */}
       {!selection.known ? (
         selection.failed ? (
-          // Its place, saying why, with the picker beside it: a project picked by hand is the one sent to (`picked`). No
-          // composer until then, so nothing goes to the implicit directory while the project is not known.
+          // A project picked by hand is the one sent to (`picked`); no composer until then.
           <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">
             <ComposerProjectPicker selectedId={undefined} onSelect={pickProject} />
             <ReadFailedLine message={translate('taskDispatch.projectMemoryFailed')} onRetry={retryMemory} />

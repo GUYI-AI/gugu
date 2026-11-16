@@ -31,10 +31,7 @@ export function scheduleSlotShown(reading: Reading<readonly SessionSchedule[]>):
   return reading.state !== 'value' || reading.value.length > 0;
 }
 
-/**
- * The schedule's place for one task's reading: the chip once known, a chip-sized placeholder while the machine has not
- * answered (❌ "no schedule"), the failure with a retry. Callers draw the tray / slot when `scheduleSlotShown`.
- */
+/** The schedule's place: the chip, a chip-sized placeholder while unknown (❌ "no schedule"), or the failure. */
 export function SessionScheduleSlot({ machine, reading }: { machine: string | null; reading: Reading<readonly SessionSchedule[]> }) {
   if (reading.state === 'unknown') return <Unknown className="h-5 w-32" />;
   if (reading.state === 'error') {

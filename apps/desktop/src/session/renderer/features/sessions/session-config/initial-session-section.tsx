@@ -146,15 +146,9 @@ function releaseAttachmentPreview(attachment: { previewUrl?: string }): void {
 }
 
 export type InitialSessionState = {
-  /**
-   * The agent choice rests on what is read (the new-task memory, the default agent setting, the machine's agent list).
-   * While false, `provider` is null and means nothing: the agent trigger holds its place.
-   */
+  /** The agent choice rests on what is read; while false `provider` means nothing and the agent trigger holds its place. */
   providerKnown: boolean;
-  /**
-   * The model choice rests on what is read (the harness's catalog, the Gugu catalog, the default model's credential).
-   * While false the model trigger holds its place (❌ "Model", a raw id, or the harness default replaced by a Gugu model).
-   */
+  /** The model choice rests on what is read (harness catalog, Gugu catalog, credential); while false its trigger holds its place. */
   modelKnown: boolean;
   provider: AgentProviderId | null;
   setProvider: (provider: AgentProviderId | null) => void;
