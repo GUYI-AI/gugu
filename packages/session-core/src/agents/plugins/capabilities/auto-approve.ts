@@ -11,6 +11,7 @@ const modeEntrySchema = z.object({
   aliases: z.array(z.string()).optional(),
   legs: z.array(z.enum(['acp', 'tui'])).optional(),
   reviewRequirements: z.object({ minimumCliVersion: z.string(), modelPattern: z.string() }).optional(),
+  billingRoutes: z.array(z.enum(['own', 'platform'])).optional(),
 });
 
 /**

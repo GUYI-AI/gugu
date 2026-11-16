@@ -1,5 +1,6 @@
 import {
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   GUGU_PERMISSION_MODES,
   type GuguPermissionMode,
   isDestructivePermissionMode,
@@ -23,10 +24,14 @@ export function sessionPermissionModeOptions(
   options: Options | null,
   liveSetting?: Pick<LiveSettingCapability, 'channel'> | null,
   sessionModes?: 'permission' | 'none',
+  billing?: { route: 'own' | 'platform' | 'unknown'; modeMap?: ProviderPermissionModeMap },
 ): Options | null {
   if (sessionModes === 'none') return null;
   if (liveSetting?.channel === 'unsupported') return null;
-  return options;
+  if (!options || !billing) return options;
+  return Object.fromEntries(Object.entries(options).filter(([id]) => permissionModeSupportsBillingRoute(
+    classifyProviderPermissionMode(id, billing.modeMap), billing.modeMap, billing.route,
+  )));
 }
 
 /**

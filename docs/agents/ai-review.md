@@ -11,9 +11,9 @@ The app preserves the chosen host executable. This feature does not install or u
 
 ## Gateway rollout prerequisite
 
-Gateway-backed Codex sessions additionally require a reachable `codex-auto-review` model on the Responses route. A UI option alone cannot make that gateway service available.
+Codex sessions using Gugu credits hide this permission tier because the production gateway reviewer is disabled. Sessions using the user's own native Codex account retain it. An unknown billing route does not expose the tier; startup and live-setting admission enforce the same restriction.
 
-Ship the client that filters the internal reviewer from main-model selectors before enabling that reviewer on a production gateway. The release coordinator must then ask the gateway team to enable it and verify the gateway-backed approval flow. Until that prerequisite is met, production gateway-backed Codex AI review is unavailable and can return HTTP 503. Staging availability does not prove production availability. This client change does not modify a gateway or its configuration.
+Ship the client that filters the internal reviewer from main-model selectors before enabling that reviewer on a production gateway. The release coordinator must then ask the gateway team to enable it and verify the gateway-backed approval flow. The current client restriction remains in place until a later client change verifies and enables the gateway-backed approval flow. Production reviewer requests currently return HTTP 503. Staging availability does not prove production availability. This client change does not modify a gateway or its configuration.
 
 ## Official references
 

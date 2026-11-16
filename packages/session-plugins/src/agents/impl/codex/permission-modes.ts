@@ -3,7 +3,8 @@ import type { ProviderPermissionModeMap } from '@gugu/session-core/acp/models/pe
 export const CODEX_PERMISSION_MODES = {
   'read-only': { id: ':read-only' },
   edit: { id: ':workspace' },
-  'ai-review': { id: 'auto-review' },
+  // The production gateway reviewer is disabled until the filtered client is released.
+  'ai-review': { id: 'auto-review', billingRoutes: ['own'] },
   'full-access': { id: ':danger-full-access' },
 } satisfies ProviderPermissionModeMap;
 

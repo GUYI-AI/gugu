@@ -57,6 +57,7 @@ import {
   acpErr,
   canRepresentPermissionMode,
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   isAutoApproveIntent,
   isTopPermissionRung,
   resolvePermissionModeFallback,
@@ -2328,6 +2329,7 @@ export class SessionManager implements InboundRouter {
       projectId: input.projectId,
       providerId: input.providerId,
       acpSessionId,
+      billingRoute: input.platformModel === null ? 'own' : input.platformModel ? 'platform' : 'unknown',
       ...(input.platformAccessSessionId ? { platformCredentials: true } : {}),
       ...(provider?.capabilities.acp.liveSettings
         ? { liveSettings: provider.capabilities.acp.liveSettings }
@@ -2447,6 +2449,11 @@ export class SessionManager implements InboundRouter {
     if (input.permissionMode === 'ai-review' && !provider?.capabilities.autoApprove.modes?.['ai-review']) {
       throw new Error('This harness does not support AI review');
     }
+    if (!permissionModeSupportsBillingRoute(
+      resolveSessionPermissionMode(input),
+      provider?.capabilities.autoApprove.modes,
+      input.platformModel === null ? 'own' : input.platformModel ? 'platform' : 'unknown',
+    )) throw new Error('This permission tier is unavailable for the session billing route');
     if (provider?.capabilities.acp.sessionModes === 'none') return;
     if (provider?.capabilities.autoApprove.kind !== 'supported') return;
     // 只读**权限那一维**的声明:三维各自声明(见 `LiveSettingsCapability`),量过模型那一维的家

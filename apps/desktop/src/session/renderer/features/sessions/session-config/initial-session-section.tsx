@@ -1,4 +1,4 @@
-import { meetsReviewModeRequirements } from '@gugu/session-core/acp/client';
+import { meetsReviewModeRequirements, permissionModeSupportsBillingRoute } from '@gugu/session-core/acp/client';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -1120,7 +1120,8 @@ export function useInitialSessionState(
   );
   const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
   const reviewEntry = capabilities?.autoApprove.modes?.['ai-review'];
-  const autoReviewAvailable = !unattended && !!reviewEntry && (platformModel
+  const autoReviewAvailable = !unattended && !!reviewEntry
+    && permissionModeSupportsBillingRoute('ai-review', capabilities?.autoApprove.modes, platformModel ? 'platform' : 'own') && (platformModel
     ? (reviewCatalog.kind === 'ready' || reviewCatalog.kind === 'auth-required') && reviewCatalog.reviewerAvailable === true
       && meetsReviewModeRequirements(reviewEntry.reviewRequirements, { cliVersion: reviewCatalog.cliVersion, model: platformModel.replace(/^platform:/, '') })
     : reviewCatalog.kind === 'ready' && reviewCatalog.selected === model && reviewCatalog.autoReview === true);

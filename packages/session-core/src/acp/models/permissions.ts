@@ -111,8 +111,18 @@ const READ_ONLY_PERMISSION_MODE_PATTERN = /read[-_]?only/i;
  * 用于反查 agent 当前档属于三档里的哪一档。
  */
 export type ProviderPermissionModeMap = {
-  [K in GuguPermissionMode]?: { id: string; aliases?: readonly string[]; legs?: readonly ('acp' | 'tui')[]; reviewRequirements?: import('./review-mode').ReviewModeRequirements };
+  [K in GuguPermissionMode]?: { id: string; aliases?: readonly string[]; legs?: readonly ('acp' | 'tui')[]; reviewRequirements?: import('./review-mode').ReviewModeRequirements; billingRoutes?: readonly ('own' | 'platform')[] };
 };
+
+/** A restricted tier needs a confirmed billing route; unknown is never an own-account login. */
+export function permissionModeSupportsBillingRoute(
+  mode: GuguPermissionMode,
+  map: ProviderPermissionModeMap | undefined,
+  route: 'own' | 'platform' | 'unknown',
+): boolean {
+  const routes = map?.[mode]?.billingRoutes;
+  return !routes || (route !== 'unknown' && routes.includes(route));
+}
 
 /**
  * 把 agent 自报的原生档位 id 归类到咕咕三档。
