@@ -36,10 +36,10 @@ describe('destructive menu actions ask first', () => {
   })
 
   it('names each conversation deletion by what it does', () => {
-    void confirmConversationAction('delete-chat', 'group', 'G')
+    void confirmConversationAction('delete-chat', 'dm', 'D')
     void confirmConversationAction('delete-chat', 'topic', 'T')
     void confirmConversationAction('leave-group', 'group', 'G')
     void confirmConversationAction('remove-contact', 'dm', 'P')
-    expect(modal.show.mock.calls.map(([, args]) => args.confirmLabel)).toEqual(['解散群聊', '删除话题', '退出群聊', '删除联系人'])
+    expect(modal.show.mock.calls.map(([, args]) => args.confirmLabel)).toEqual(['删除聊天', '删除话题', '退出群聊', '删除联系人'])
   })
 })

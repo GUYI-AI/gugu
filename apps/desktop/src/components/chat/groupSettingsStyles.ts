@@ -10,6 +10,11 @@ export const settingsSectionLabelStyle: CSSProperties = {
   fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', fontWeight: 'var(--font-weight-medium)', color: 'var(--muted-fg)',
   margin: 'var(--spacing-2xl) 0 var(--spacing-xs)',
 }
+/** The irreversible action at the bottom of a settings page (dissolve or leave a group, delete a topic): menu-table.ts @@@menu-order. */
+export const settingsDangerRowStyle: CSSProperties = {
+  marginTop: 20, textAlign: 'center', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', fontWeight: 500,
+  cursor: 'pointer', padding: 11, borderRadius: 'var(--radius-xl)', background: 'var(--danger-tint)',
+}
 export const settingsRowStyle: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '15px 0',
 }

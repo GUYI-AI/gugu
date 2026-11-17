@@ -4,10 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../store/chatContext'
 import { useToast } from '../toastContext'
 import { useMarkChatsRead } from '../../hooks/useMarkChatsRead'
-import { chatsInReadScope, conversationCanDelete, hasUnreadInRows, rowRoomCanDelete } from '../../session/shared/conversation-row-menu'
+import { chatsInReadScope, hasUnreadInRows, ownedAgentDmCanDelete } from '../../session/shared/conversation-row-menu'
 import { rendererLogger } from '../../lib/log'
 import { messageForUser } from '../../lib/userFacingError'
-import { useGroupChatSettings } from './useGroupChatSettings'
 import { ConversationRowContextMenu } from './ConversationRowContextMenu'
 import { useAuth } from '../../store/auth'
 import { directoryRows, useDirectoryDevices, useLiveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
@@ -33,7 +32,8 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   /** #2548 given only for an agent row pinned to the desktop one list: the menu offers 取消固定到左侧栏. */
   onUnpinFromSidebar?: () => void
   onSetNotificationLevel: (level: NotificationLevel) => void
-  onDelete: () => void
+  /** Delete my archived agent's conversation (the session table's delete-chat); only a chat-list row of a DM gives it. */
+  onDelete?: () => void
 }) {
   const { chats, identitiesById, markUnread, leaveGroup } = useChatStore('chats', 'identitiesById', 'markUnread', 'leaveGroup')
   const nativeRows = directoryRows(useDirectoryDevices(), useLiveDeviceSessions())
@@ -44,22 +44,11 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   const { updateAgentProfile, removeOwnedAgent, contacts, updateContactAlias } = useContactsStore()
   const [aliasOpen, setAliasOpen] = useState(false)
   const aliasOpening = useRef(false)
-  const { settings, error } = useGroupChatSettings(chat.kind === 'group' || chat.kind === 'topic' ? chat.id : null)
   const peer = identitiesById[chat.peer_user_id ?? '']
   const ownedAgentDm = user && peer?.type === 'agent' && peer.owner_user_id === user.id ? peer : undefined
   const friend = chat.kind === 'dm' ? contacts.find((contact) => contact.id === chat.peer_user_id && contact.type !== 'agent') : undefined
-  const room = chat.kind === 'group' || chat.kind === 'topic'
-  // A room's authority not read yet: the rows' roles draw the menu's shape from the first frame (CH5: the delete item used
-  // to appear, or vanish, after the read); only when the rows do not say does the item keep its place, disabled.
-  const canDelete = room && settings === null && !error
-    ? rowRoomCanDelete(chat, (id) => chats.find((row) => row.id === id)) ?? 'unknown' as const
-    : conversationCanDelete(chat.kind, settings, ownedAgentDm)
   const hasUnread = hasUnreadInRows(chatsInReadScope(chats, chat.id)) || nativeUnreadTargets(nativeRows, chatsInReadScope(chats, chat.id), false).length > 0
   const hasAnyUnread = hasUnreadInRows(chats) || nativeUnreadTargets(nativeRows, chats, true).length > 0
-  const remove = () => void Promise.resolve().then(onDelete).catch((error: unknown) => {
-    log.error({ error: String(error), chatId: chat.id }, 'delete chat failed')
-    toast(t('chatList.deleteFailed'), 'error', messageForUser(error))
-  })
   // My agent's row is its task (task-name.ts): the session menu, the one table its tab and sidebar row draw from
   // (session/shared/session-menu.ts). Archive and rename go through the agent (lib/archiveOwnedAgent), which finds the
   // machine its task is on.
@@ -82,7 +71,12 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
         })
       },
       'mark-all-read': () => markRead(),
-      'delete-chat': remove,
+      ...(onDelete ? { 'delete-chat': () => void confirmConversationAction('delete-chat', 'dm', agentName).then((ok) => {
+        if (ok) void Promise.resolve().then(onDelete).catch((error: unknown) => {
+          log.error({ error: String(error), chatId: chat.id }, 'delete chat failed')
+          toast(t('chatList.deleteFailed'), 'error', messageForUser(error))
+        })
+      }) } : {}),
     }
     const items = sessionMenu('chat-row', {
       pinned: chat.is_pinned === true,
@@ -90,7 +84,7 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
       archived: ownedAgentDm.session_archived_at != null || ownedAgentDm.removed_at != null,
       hasUnread, hasAnyUnread,
       notificationsMuted: chat.notification_level === 'none',
-      canDeleteChat: conversationCanDelete(chat.kind, null, ownedAgentDm),
+      canDeleteChat: ownedAgentDmCanDelete(ownedAgentDm),
     }, new Set(Object.keys(run) as SessionMenuAction[]))
     return <Menu x={menu.x} y={menu.y} minWidth={160} onClose={menu.onClose}>
       <MenuTableItems items={items} testIdPrefix="conversation-row" onAction={(id) => { menu.onClose(); run[id]!() }} />
@@ -100,10 +94,13 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   // outlives the menu: choosing it keeps the menu's close request, the sheet's own close ends both.
   if (aliasOpen && friend) return <AliasSheet name={friend.display_name} alias={friend.alias} avatarUrl={friend.avatar} seed={friend.id} onSave={(alias) => updateContactAlias(friend.id, alias)} onClose={menu.onClose} />
   const name = chat.name || peer?.display_name || ''
-  const confirmed = (action: 'leave-group' | 'delete-chat', then: () => void) => () => void confirmConversationAction(action, chat.kind, name).then((ok) => { if (ok) then() })
-  return <ConversationRowContextMenu {...menu} entry="chat-row" loadError={error}
+  const leave = () => void confirmConversationAction('leave-group', chat.kind, name).then((ok) => { if (ok) void leaveGroup(chat.id).catch((error: unknown) => {
+    log.error({ error: String(error), chatId: chat.id }, 'leave group failed')
+    toast(t('toast.leaveFailed', { ns: 'contacts' }), 'error', messageForUser(error))
+  }) })
+  return <ConversationRowContextMenu {...menu} entry="chat-row"
     onClose={() => { if (!aliasOpening.current) menu.onClose() }}
-    state={{ kind: chat.kind === 'group' || chat.kind === 'topic' ? chat.kind : 'dm', canDelete, pinned: chat.is_pinned,
+    state={{ kind: chat.kind === 'group' || chat.kind === 'topic' ? chat.kind : 'dm', pinned: chat.is_pinned,
       canLeave: chat.kind === 'group' && chat.my_role != null && chat.my_role !== 'owner', friend: friend !== undefined,
       notificationsMuted: chat.notification_level === 'none', hasUnread, hasAnyUnread }}
     run={{
@@ -113,10 +110,6 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
       'mark-all-read': () => markRead(),
       pin: onPin,
       notifications: () => onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none'),
-      'leave-group': confirmed('leave-group', () => void leaveGroup(chat.id).catch((error: unknown) => {
-        log.error({ error: String(error), chatId: chat.id }, 'leave group failed')
-        toast(t('toast.leaveFailed', { ns: 'contacts' }), 'error', messageForUser(error))
-      })),
-      ...(canDelete === true ? { 'delete-chat': confirmed('delete-chat', remove) } : canDelete === 'unknown' ? { 'delete-chat': () => undefined } : {}),
+      'leave-group': leave,
     }} />
 }

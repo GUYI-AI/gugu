@@ -34,8 +34,8 @@ describe('contacts rows draw from the object tables', () => {
 
   it('a friend offers alias, and removing the friend goes through the panel\'s confirming handler', async () => {
     await harness.render(<ContactRowContextMenu x={10} y={10} onClose={vi.fn()} {...base} contact={contact({ id: 'p', type: 'human' })} />)
-    expect(ids()).toContain('set-alias')
     await open()
+    expect(ids()).toContain('set-alias')
     await clickElement(document.querySelector<HTMLElement>('[data-testid="contact-row-remove-contact"]')!)
     expect(onRemove).toHaveBeenCalledOnce()
   })

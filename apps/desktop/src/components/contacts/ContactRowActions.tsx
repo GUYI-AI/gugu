@@ -69,12 +69,12 @@ export function ContactRowContextMenu({
   }
   const run: Record<string, () => void> = agent
     ? { ...common, rename: () => showModal('renameSessionModal', { sessionId: '', currentTitle: agent.display_name, rename: (name) => updateAgentProfile(agent.id, { name }) }), archive: onRemove }
-    : { ...common, 'set-alias': () => { aliasOpening.current = true; setAliasOpen(true) }, 'leave-group': onRemove, 'delete-chat': onRemove, 'remove-contact': onRemove }
+    : { ...common, 'set-alias': () => { aliasOpening.current = true; setAliasOpen(true) }, 'leave-group': onRemove, 'remove-contact': onRemove }
   const items = agent
     ? sessionMenu('contacts', { pinned: isPinned, sidebarPin: null, hasUnread, notificationsMuted: notifMuted }, keysOf(run))
     : conversationMenu(group ? 'contacts-group' : 'contacts', {
         kind: group ? 'group' : 'dm', hasUnread, pinned: isPinned, notificationsMuted: notifMuted, friend: person !== undefined,
-        canLeave: group !== undefined && group.role !== 'owner', canDelete: group?.role === 'owner',
+        canLeave: group !== undefined && group.role !== 'owner',
       }, keysOf(run))
   return (
     <Menu x={x} y={y} minWidth={160} onClose={() => { if (!aliasOpening.current) onClose() }}>
