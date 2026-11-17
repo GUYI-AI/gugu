@@ -64,7 +64,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
   const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery]);
-  // Words not settled into a read are unknown; a retained reading still belongs to its earlier words.
+  // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
   const settled = debouncedQuery === search;
   const current = settled && reading.state === 'value' ? reading.value : null;
   // The last completed reading stays shown (.gg-stale), including zero rows, while the next words' are on their way.
@@ -73,6 +73,8 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });
   const results = current ?? (!commandsMode && held.state === 'value' ? held.value : null);
   const stale = current === null && results !== null;
+  // Only retained read rows are stale; live chats and the current words' search link are independent.
+  const readingGroupClass = stale ? `${GROUP_CLASS} gg-stale` : GROUP_CLASS;
   // A failed read, or a refresh failing over results still drawn: said above them with a retry.
   const failed = settled ? refreshFailure(reading) : null;
   const commands = useObserver(() => rankPaletteMatches(commandRegistry.activeCommands
@@ -118,10 +120,10 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           className="w-full bg-transparent px-3 py-3 text-sm outline-none placeholder:text-foreground/40" autoFocus />
       </div>
       <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
-        className={stale ? 'max-h-96 overflow-y-auto p-1 gg-stale' : 'max-h-96 overflow-y-auto p-1'}>
-        {(commandsMode || results) && (
+        className="max-h-96 overflow-y-auto p-1">
+        {(commandsMode || current) && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">
-            {translate('palette.noResults', { query: stale && heldQuery !== null ? heldQuery : search })}
+            {translate('palette.noResults', { query: search })}
           </Command.Empty>
         )}
         {commandsMode ? (
@@ -151,7 +153,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
               </div>
             )}
             {tasks && tasks.length > 0 && (
-              <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={GROUP_CLASS}>
+              <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={readingGroupClass}>
                 {tasks.map((item) => {
                   const open = () => { if (item.projectId) { done(); followLink({ kind: 'session', sessionId: item.id, projectId: item.projectId }); } };
                   const store = !item.deviceId && item.projectId ? getSessionPageStore(item.projectId, item.id) : undefined;
@@ -165,7 +167,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
               </Command.Group>
             )}
             {search ? projects && projects.length > 0 && (
-              <Command.Group heading={translate('palette.projects')} className={GROUP_CLASS}>
+              <Command.Group heading={translate('palette.projects')} className={readingGroupClass}>
                 {projects.map((item) => (
                   <Command.Item key={item.id} value={`project:${item.id}`} className={PALETTE_ITEM_CLASS}
                     onSelect={() => { done(); navigate('project', { projectId: item.id }); }}>

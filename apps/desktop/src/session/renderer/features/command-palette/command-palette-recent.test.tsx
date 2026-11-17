@@ -65,7 +65,7 @@ vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (key: string) => key }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
-  useSessionMessages: () => ({ translate: (key: string, values?: { query?: string }) => key === 'palette.noResults' ? `${key}:${values?.query}` : key }),
+  useSessionMessages: () => ({ translate: (key: string) => key }),
 }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { activeCommands: [] } }));
@@ -248,20 +248,14 @@ describe('palette search reading', () => {
       expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
       expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
       expect(host.textContent).not.toContain('palette.noResults');
+      expect(host.querySelector('[cmdk-list]')!.className).not.toContain('gg-stale');
+      expect(host.querySelector('[data-value="search-messages"]')?.closest('.gg-stale')).toBeNull();
       await vi.waitFor(() => expect(answers).toHaveLength(index + 2));
       await act(async () => answers[index + 1]!([]));
       await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
       expect(rows()).toBe(emptyReadingRows);
     }
 
-    // Clearing the input retains the completed empty value's own words until the new read settles.
-    await act(async () => { setValue.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); });
-    await vi.waitFor(() => expect(host.querySelector('[cmdk-empty]')?.textContent).toBe('palette.noResults:wee'));
-    expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
-    expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
-    await vi.waitFor(() => expect(answers).toHaveLength(4));
-    await act(async () => answers[3]!([]));
-    await vi.waitFor(() => expect(host.querySelector('[cmdk-empty]')?.textContent).toBe('palette.noResults:'));
   });
 
   it('says a failed search and reads again on retry, ❌ an empty list', async () => {
@@ -309,8 +303,11 @@ describe('palette search reading', () => {
       expect(taskRows().length).toBeGreaterThan(0);
       expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
       // Dimmed only by `.gg-stale` (after 150 ms, styles/staleResultsDelay.test.ts): nothing changes at once.
-      expect(host.querySelector('[cmdk-list][data-stale]')!.className).toContain('gg-stale');
-      expect(host.querySelector('[cmdk-list][data-stale]')!.className).not.toMatch(/opacity-/);
+      const retainedGroup = host.querySelector('[cmdk-item][data-value^="task:"]')!.closest('[cmdk-group]')!;
+      expect(retainedGroup.className).toContain('gg-stale');
+      expect(retainedGroup.className).not.toMatch(/opacity-/);
+      expect(host.querySelector('[cmdk-list]')!.className).not.toContain('gg-stale');
+      expect(host.querySelector('[data-value="search-messages"]')?.closest('.gg-stale')).toBeNull();
       await vi.waitFor(() => expect(answers).toHaveLength(index + 2));
       await act(async () => answers[index + 1]!(fixture.results.slice(0, 2)));
       await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
