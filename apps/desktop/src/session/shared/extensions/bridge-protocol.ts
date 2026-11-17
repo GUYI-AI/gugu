@@ -158,7 +158,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
 // box in the page). Presentation only, as 51: an older host opens the one image.
-export const EXTENSION_API_VERSION = 57;
+// 58 (app-context-menu.ts): `showContextMenu` rows say `icon: 'quote' | 'file'`, the glyphs of the host's own 引用 rows, so an
+// App's cite row looks like a file's or a message's. Presentation only, as 51: an older host draws the label alone.
+export const EXTENSION_API_VERSION = 58;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

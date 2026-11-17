@@ -19,3 +19,7 @@ it('carries a row\'s program for its icon, and drops one of the wrong type witho
   expect(appContextMenuOf({ x: 1, y: 2, items: [{ id: 'a', label: 'VS Code', program: 'vscode' }, { id: 'b', label: 'Terminal', program: 7 }] }))
     .toEqual({ x: 1, y: 2, items: [{ id: 'a', label: 'VS Code', program: 'vscode' }, { id: 'b', label: 'Terminal' }] });
 });
+it('carries a row\'s icon when it is one of the host\'s cite glyphs (API 58), and drops any other without failing the menu', () => {
+  expect(appContextMenuOf({ x: 1, y: 2, items: [{ id: 'cite', label: '引用', icon: 'quote' }, { id: 'whole', label: '引用文件', icon: 'file' }, { id: 'open', label: 'Open', icon: 'external-link' }, { id: 'x', label: 'X', icon: 3 }] }))
+    .toEqual({ x: 1, y: 2, items: [{ id: 'cite', label: '引用', icon: 'quote' }, { id: 'whole', label: '引用文件', icon: 'file' }, { id: 'open', label: 'Open' }, { id: 'x', label: 'X' }] });
+});

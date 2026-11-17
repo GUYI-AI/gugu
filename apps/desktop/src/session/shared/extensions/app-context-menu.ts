@@ -2,7 +2,8 @@ import type { ContentMenuItem } from '../content-context-menu';
 
 /** App labels/actions cross the bridge; the shared host keeps presentation and selection. An item with `items` opens
  * them beside it (the host's submenu); ids are unique across the whole menu, and only leaves are picked. `checked`, `danger`,
- * `title`, `person` (API 38) and `program` (API 51) only say how a row looks: a wrong one is left out, the row stays. */
+ * `title`, `person` (API 38), `program` (API 51) and `icon` (API 58: `quote` | `file`, the host's own cite rows' glyphs)
+ * only say how a row looks: a wrong one is left out, the row stays. */
 export function appContextMenuOf(args: Record<string, unknown>): { x: number; y: number; items: ContentMenuItem[] } {
   if (typeof args.x !== 'number' || !Number.isFinite(args.x) || typeof args.y !== 'number' || !Number.isFinite(args.y) || !Array.isArray(args.items)) {
     throw new Error('showContextMenu needs finite x/y and an items array');
@@ -19,7 +20,8 @@ export function appContextMenuOf(args: Record<string, unknown>): { x: number; y:
     // Presentation hints: one of the wrong type is dropped (the row is drawn without it), never the whole menu.
     const flag = (value: unknown) => typeof value === 'boolean' ? value : undefined;
     const text = (value: unknown) => typeof value === 'string' && value.trim() ? value : undefined;
-    const hints = { checked: flag(item.checked), danger: flag(item.danger), title: text(item.title), person: text(item.person), program: text(item.program) };
+    const icon = item.icon === 'quote' || item.icon === 'file' ? item.icon : undefined;
+    const hints = { checked: flag(item.checked), danger: flag(item.danger), title: text(item.title), person: text(item.person), program: text(item.program), icon };
     return {
       id: item.id, label: item.label,
       ...(item.enabled === undefined ? {} : { enabled: item.enabled }),
