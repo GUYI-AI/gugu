@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { isPhoneDevice } from '@gugu/core/cloud/devices'
-import { Check, ChevronLeft, ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
+import { Check, ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
 import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { Button } from '@/components/ui/Button'
@@ -84,9 +84,9 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
       {controlsExtra}
     </PhoneComposerControlRow></div>
     <PhoneComposerSheet open={view !== null && !(phone && view === 'skills' && !existingSession)} onClose={() => setView(null)} title={title}
+      onBack={view && compact && view !== 'device' && view !== 'skills' ? () => setView('device') : undefined}
       anchor={compact ? view === 'skills' ? skillsButton : modelButton : undefined} testId="agent-watch-create-controls-sheet"
       footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
-      {view && compact && view !== 'device' && view !== 'skills' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
       {view === 'device' && <>
         {existingSession ? <Summary dimension="machine" title={t('device')} value={machine ? label(machine.device) : tf('noMachine')} readOnly onClick={() => {}} /> : <>
         <div className="gg-phone-composer-section-label">{t('device')}</div>

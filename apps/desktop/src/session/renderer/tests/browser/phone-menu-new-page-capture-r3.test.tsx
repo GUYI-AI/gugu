@@ -1,3 +1,4 @@
+import { normalCodexModelRows, normalCodexSelectedId } from './fixtures/phone-normal-model-catalog'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
@@ -31,7 +32,7 @@ import '@/mobile/phone-look.css'
 // Submission is deliberately rejected at that boundary: no real host, model,
 // upload, native acceptance or provider acknowledgement is simulated as success.
 const fixture = vi.hoisted(() => ({
-  owner: 'DE-new-owner', supported: true,
+  owner: 'DE-new-owner', supported: true, normal: false,
   device: { device_id: 'create-FG-device', label: '隔离验收设备', hostname: 'fixture', platform: 'linux',
     status: 'online', is_online: true, last_seen_at: '2026-11-17T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } },
   models: vi.fn<(device: string, harness: string, leg: unknown, selected: string | null) => Promise<SessionpageSessionCreateModels>>(),
@@ -49,7 +50,7 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
   machineRpc: () => { throw new Error('Skills RPC is outside this thinking/Fast test') },
   fetchCreateOptions: async () => ({ projects: [],
-    lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: 'native:sol', effort: 'medium' },
+    lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: fixture.normal ? normalCodexSelectedId : 'native:sol', effort: 'medium' },
     harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
   fetchCreateModels: fixture.models, createSession: fixture.create,
   fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.create,
@@ -60,10 +61,10 @@ beforeEach(() => {
   fixture.created.mockReset(); fixture.create.mockReset(); fixture.models.mockReset()
   fixture.create.mockRejectedValue(Object.assign(new Error('Controlled submission boundary rejection'), { code: 'fixture_submission_rejected' }))
   fixture.models.mockImplementation(async (_device, harness, _leg, selected) => ({
-    harness, transport: 'acp', selected: selected ?? 'native:sol', selectedEffort: 'medium',
+    harness, transport: 'acp', selected: selected ?? (fixture.normal ? normalCodexSelectedId : 'native:sol'), selectedEffort: 'medium',
     harnessState: 'ready', harnessReason: null, guguReason: null, harnessAuth: 'signed-in', selectedCredential: 'credentialed',
     efforts: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'high', name: 'High' }],
-    models: [{ id: 'native:sol', name: 'GPT-6.1-Sol', source: 'harness' }, { id: 'sonnet', name: 'Original alias', source: 'harness' }],
+    models: fixture.normal ? normalCodexModelRows : [{ id: 'native:sol', name: 'GPT-6.1-Sol', source: 'harness' }, { id: 'sonnet', name: 'Original alias', source: 'harness' }],
     // Deliberately reports selected=on: new creation must still default OFF.
     ...(fixture.supported && selected === 'native:sol' ? { fast: {
       model: 'native:sol', selected: 'on', available: [{ id: 'on', name: 'On' }, { id: 'off', name: 'Off' }],
@@ -95,6 +96,7 @@ async function mount(width: number, theme: 'light' | 'dark') {
 
 // D/E capture only: real pages and production portal remain mounted. The
 // account/directory/catalog/transport are controlled; no host or send is run.
+let normalCapture = false
 const deHost = () => host!
 const deRow = () => deHost().querySelector<HTMLElement>('[data-phone-composer-controls]')!
 const deWork = () => deHost().querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!
@@ -107,7 +109,7 @@ function assertDirection(open: boolean) {
   expect(button.querySelector('svg[data-phone-menu-direction]')?.getAttribute('data-phone-menu-direction')).toBe(open ? 'down' : 'up')
   expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
 }
-async function panelReady() {
+async function panelReady(child = false) {
   await until('real page popup settled', () => !!dePanel() && getComputedStyle(dePanel()!).opacity === '1')
   await Promise.all(dePanel()!.getAnimations().map(a => a.finished))
   const panel = dePanel()!, close = panel.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-controls-sheet-close"]')!
@@ -118,6 +120,16 @@ async function panelReady() {
   expect(c.right).toBeLessThanOrEqual(p.right)
   expect(c.top).toBeGreaterThanOrEqual(p.top)
   expect(c.bottom).toBeLessThanOrEqual(p.top + 60)
+  const back = panel.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-controls-sheet-back"]')
+  expect(!!back).toBe(child)
+  expect([...panel.querySelectorAll('button')].some(button => button.textContent?.trim() === '返回')).toBe(false)
+  if (back) {
+    const b = back.getBoundingClientRect()
+    expect(back.getAttribute('aria-label')).toBe('返回')
+    expect(b.height).toBeGreaterThanOrEqual(44); expect(b.width).toBeGreaterThanOrEqual(44)
+    expect(b.left).toBeGreaterThanOrEqual(p.left); expect(b.right).toBeLessThanOrEqual(p.left + p.width / 2)
+    expect(b.top).toBeGreaterThanOrEqual(p.top); expect(b.bottom).toBeLessThanOrEqual(p.top + 60)
+  }
   assertDirection(true)
 }
 function assertVisibleRow() {
@@ -141,10 +153,13 @@ function assertDisclosure(expanded: boolean) {
 async function deCapture(group: 'D' | 'E', phase: string, width: number, theme: 'light' | 'dark') {
   expect(document.body.textContent).not.toMatch(/agentWatch\.|shell\./)
   assertVisibleRow()
-  await page.screenshot({ path: `__screenshots__/owner-phone-regression/${group}-new-page-${phase}-${width}-${theme}.png` })
+  if (normalCapture) expect(document.body.textContent).not.toMatch(/Original alias|Unchanged alias|aaaa{6}/)
+  await page.screenshot({ path: `__screenshots__/owner-phone-regression/${normalCapture ? 'normal' : 'internal-pressure'}/${group}-new-page-${phase}-${width}-${theme}.png` })
 }
-for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) {
-  it(`${width}/${theme}: actual new-page page shows menu directions, root and model child Close, and retained draft disclosure`, async () => {
+for (const normal of [false, true]) for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) {
+  it(`${normal ? 'normal metadata' : 'internal original directory'}/${width}/${theme}: actual new-page page shows menu directions, root and model child Close, and retained draft disclosure`, async () => {
+    fixture.normal = normal; normalCapture = normal
+    const expectedModelId = normal ? normalCodexSelectedId : 'native:sol'
     await mount(width, theme)
     const original = deHost().querySelector<HTMLElement>('[contenteditable]')!
     const engine = (original as HTMLElement & { editor: { commands: { setContent(html: string): void; clearContent(emit: boolean): void } } }).editor
@@ -157,9 +172,16 @@ for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) 
     expect(dePanel()!.querySelector('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')).not.toBeNull()
     await deCapture('E', 'root-down-close', width, theme)
     await page.elementLocator(dePanel()!.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
-    await until('actual model child rendered', () => !!dePanel()?.querySelector('[data-dimension="model"][data-option-id="native:sol"]'))
-    await panelReady()
+    await until('actual model child rendered', () => !!dePanel()?.querySelector(`[data-dimension="model"][data-option-id="${expectedModelId}"]`))
+    await panelReady(true)
     await deCapture('E', 'child-down-close', width, theme)
+    await page.getByTestId('agent-watch-create-controls-sheet-back').click()
+    await until('header Back returns to actual Work root', () => !!dePanel()?.querySelector('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]'))
+    await panelReady()
+    await deCapture('E', 'child-header-back-root', width, theme)
+    await page.elementLocator(dePanel()!.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
+    await until('actual model child reopened', () => !!dePanel()?.querySelector('[data-dimension="model"][role="radio"]'))
+    await panelReady(true)
     await page.getByTestId('agent-watch-create-controls-sheet-close').click()
     await until('actual child Close removes popup', () => dePanel() === null)
     assertDirection(false); expect(deHost().querySelector('[contenteditable]')).toBe(original)

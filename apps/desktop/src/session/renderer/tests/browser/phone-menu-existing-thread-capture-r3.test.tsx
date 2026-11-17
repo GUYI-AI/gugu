@@ -1,3 +1,4 @@
+import { normalCodexModelRows, normalCodexSelectedId } from './fixtures/phone-normal-model-catalog'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
@@ -33,10 +34,10 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), topics: null as TopicSummary[] | null, topicError: null as string | null }))
+const actions = vi.hoisted(() => ({ normal: false, pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), topics: null as TopicSummary[] | null, topicError: null as string | null }))
 vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()), useTopicsOfChat: () => ({ topics: actions.topics, loading: actions.topics === null && actions.topicError === null, error: actions.topicError, reload: actions.reloadTopics }) }))
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({ props: {
-  modelOptions: { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: 'glm', onModelChange: actions.pickModel,
+  modelOptions: actions.normal ? Object.fromEntries(normalCodexModelRows.map(row => [row.id, { name: row.name, description: row.description }])) : { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: actions.normal ? normalCodexSelectedId : 'glm', onModelChange: actions.pickModel,
 }, confirmation: null, steers: false }) }))
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => {
   const real = await original<typeof import('@/mobile/agent-watch/sessionpage-rpc')>()
@@ -71,11 +72,13 @@ async function mount(sessionId:string,entry:string|null,full=false,width=390,the
  // The production full screen already supplies its body inset; only isolated controls need a fixture inset.
  harness=createReactHarness();harness.container.dataset.taScope='';Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:full?'0':'16px',background:'var(--ta-panel-bg)'})
  await renderWithAppProviders(harness,<ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider></ThemeProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
+ await until('actual existing Thread editor initialized', () => !!(harness?.container.querySelector('[contenteditable]') as (HTMLElement & { editor?: unknown }) | null)?.editor)
 }
 afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell');document.documentElement.removeAttribute('data-theme')})
 
 // D/E capture only: real pages and production portal remain mounted. The
 // account/directory/catalog/transport are controlled; no host or send is run.
+let normalCapture = false
 const deHost = () => harness!.container
 const deRow = () => deHost().querySelector<HTMLElement>('[data-phone-composer-controls]')!
 const deWork = () => deHost().querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!
@@ -88,7 +91,7 @@ function assertDirection(open: boolean) {
   expect(button.querySelector('svg[data-phone-menu-direction]')?.getAttribute('data-phone-menu-direction')).toBe(open ? 'down' : 'up')
   expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
 }
-async function panelReady() {
+async function panelReady(child = false) {
   await until('real page popup settled', () => !!dePanel() && getComputedStyle(dePanel()!).opacity === '1')
   await Promise.all(dePanel()!.getAnimations().map(a => a.finished))
   const panel = dePanel()!, close = panel.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-controls-sheet-close"]')!
@@ -99,6 +102,16 @@ async function panelReady() {
   expect(c.right).toBeLessThanOrEqual(p.right)
   expect(c.top).toBeGreaterThanOrEqual(p.top)
   expect(c.bottom).toBeLessThanOrEqual(p.top + 60)
+  const back = panel.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-controls-sheet-back"]')
+  expect(!!back).toBe(child)
+  expect([...panel.querySelectorAll('button')].some(button => button.textContent?.trim() === '返回')).toBe(false)
+  if (back) {
+    const b = back.getBoundingClientRect()
+    expect(back.getAttribute('aria-label')).toBe('返回')
+    expect(b.height).toBeGreaterThanOrEqual(44); expect(b.width).toBeGreaterThanOrEqual(44)
+    expect(b.left).toBeGreaterThanOrEqual(p.left); expect(b.right).toBeLessThanOrEqual(p.left + p.width / 2)
+    expect(b.top).toBeGreaterThanOrEqual(p.top); expect(b.bottom).toBeLessThanOrEqual(p.top + 60)
+  }
   assertDirection(true)
 }
 function assertVisibleRow() {
@@ -122,10 +135,13 @@ function assertDisclosure(expanded: boolean) {
 async function deCapture(group: 'D' | 'E', phase: string, width: number, theme: 'light' | 'dark') {
   expect(document.body.textContent).not.toMatch(/agentWatch\.|shell\./)
   assertVisibleRow()
-  await page.screenshot({ path: `__screenshots__/owner-phone-regression/${group}-existing-thread-${phase}-${width}-${theme}.png` })
+  if (normalCapture) expect(document.body.textContent).not.toMatch(/Original alias|Unchanged alias|aaaa{6}/)
+  await page.screenshot({ path: `__screenshots__/owner-phone-regression/${normalCapture ? 'normal' : 'internal-pressure'}/${group}-existing-thread-${phase}-${width}-${theme}.png` })
 }
-for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
-  it(`${width}/${theme}: actual existing-thread page shows menu directions, root and model child Close, and retained draft disclosure`, async () => {
+for (const normal of [false, true]) for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
+  it(`${normal ? 'normal metadata' : 'internal original directory'}/${width}/${theme}: actual existing-thread page shows menu directions, root and model child Close, and retained draft disclosure`, async () => {
+    actions.normal = normal; normalCapture = normal
+    const expectedModelId = normal ? normalCodexSelectedId : 'glm'
     await mount('room-task', 'chat:room', true, width, theme)
     const original = deHost().querySelector<HTMLElement>('[contenteditable]')!
     const engine = (original as HTMLElement & { editor: { commands: { setContent(html: string): void; clearContent(emit: boolean): void } } }).editor
@@ -139,9 +155,16 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     expect(dePanel()!.querySelector('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')).not.toBeNull()
     await deCapture('E', 'root-down-close', width, theme)
     await page.elementLocator(dePanel()!.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
-    await until('actual model child rendered', () => !!dePanel()?.querySelector('[data-dimension="model"][data-option-id="glm"]'))
-    await panelReady()
+    await until('actual model child rendered', () => !!dePanel()?.querySelector(`[data-dimension="model"][data-option-id="${expectedModelId}"]`))
+    await panelReady(true)
     await deCapture('E', 'child-down-close', width, theme)
+    await page.getByTestId('agent-watch-create-controls-sheet-back').click()
+    await until('header Back returns to actual Work root', () => !!dePanel()?.querySelector('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]'))
+    await panelReady()
+    await deCapture('E', 'child-header-back-root', width, theme)
+    await page.elementLocator(dePanel()!.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
+    await until('actual model child reopened', () => !!dePanel()?.querySelector('[data-dimension="model"][role="radio"]'))
+    await panelReady(true)
     await page.getByTestId('agent-watch-create-controls-sheet-close').click()
     await until('actual child Close removes popup', () => dePanel() === null)
     assertDirection(false); expect(deHost().querySelector('[contenteditable]')).toBe(original)

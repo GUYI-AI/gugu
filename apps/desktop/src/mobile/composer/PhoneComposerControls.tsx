@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { ChevronDown, ChevronUp, X } from '@/lib/icons'
+import { ChevronDown, ChevronLeft, ChevronUp, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import { PhoneViewportContext } from '../usePhoneViewport'
@@ -72,8 +72,10 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
   </Button>
 }
 
-export function PhoneComposerSheet({ open, onClose, title, children, footer, testId, anchor, className }: {
+export function PhoneComposerSheet({ open, onClose, onBack, title, children, footer, testId, anchor, className }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; testId: string
+  /** Child navigation returns one level; the persistent top-right Close dismisses the whole panel. */
+  onBack?: () => void
   /** A short model/device menu grows above its row; long lists use the bottom sheet. */
   anchor?: RefObject<HTMLButtonElement | null>; className?: string
 }) {
@@ -102,7 +104,7 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
   }, [anchor, compact])
   const setShade = useCallback((element: HTMLDivElement | null) => { shade.current = element; measure() }, [measure])
   const setPopup = useCallback((element: HTMLDivElement | null) => { popup.current = element; measure() }, [measure])
-  useBackLayer(onClose, open)
+  useBackLayer(onBack ?? onClose, open)
   useLayoutEffect(() => {
     if (!open) return
     measure()
@@ -115,7 +117,11 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
       window.removeEventListener('resize', measure)
     }
   }, [open, measure])
-  return <Dialog.Root open={open} modal={false} disablePointerDismissal onOpenChange={(next) => { if (!next) onClose() }}>
+  return <Dialog.Root open={open} modal={false} disablePointerDismissal onOpenChange={(next, details) => {
+    if (next) return
+    if (details.reason === 'escape-key' && onBack) { details.cancel(); onBack(); return }
+    onClose()
+  }}>
     {open ? <Dialog.Portal>
       <div ref={setShade} className="gg-phone-composer-shade"
         onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClose} />
@@ -124,6 +130,9 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
         onPointerDownCapture={preservePanelComposerFocus} onMouseDownCapture={preservePanelComposerFocus}>
         {!compact && <div className="gg-phone-composer-sheet-handle" aria-hidden="true" />}
         <div className="gg-phone-composer-sheet-head">
+          {onBack && <IconButton size="lg" aria-label={t('back')} className="gg-phone-composer-sheet-back"
+            data-testid={`${testId}-back`}
+            onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onBack}><ChevronLeft /></IconButton>}
           <Dialog.Title>{title}</Dialog.Title>
           <IconButton size="lg" aria-label={t('close')} className="gg-phone-composer-sheet-close"
             data-testid={`${testId}-close`}

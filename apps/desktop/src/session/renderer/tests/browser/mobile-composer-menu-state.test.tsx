@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { Button } from '@/components/ui/Button'
@@ -11,6 +11,7 @@ import { PhoneRoomComposerControls } from '@/mobile/chat/PhoneRoomComposerContro
 import { PhoneSkillsManager } from '@/mobile/local-agent/PhoneTaskSkillsButton'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { NATIVE_BACK_EVENT } from '@/components/ui/sheetStack'
 import '@/mobile/agent-watch/create-controls-catalog'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
@@ -29,7 +30,8 @@ function Menus() {
     <PhoneComposerControl label="工作" testId="work" menuExpanded={view !== null} onClick={() => setView('root')} />
     <PhoneComposerControl label="选择文件" testId="action" onClick={() => {}} />
   </PhoneComposerControlRow>
-    <PhoneComposerSheet open={view !== null} title={view === 'child' ? '子面板' : '工作'} testId="work-sheet" onClose={() => setView(null)}>
+    <PhoneComposerSheet open={view !== null} title={view === 'child' ? '子面板' : '工作'} testId="work-sheet" onClose={() => setView(null)}
+      onBack={view === 'child' ? () => setView('root') : undefined}>
       <Button onClick={() => setView('child')}>打开子面板</Button>
     </PhoneComposerSheet></>
 }
@@ -71,6 +73,19 @@ it.each(['light', 'dark'] as const)('%s: the shared menu reflects open state and
   await page.getByRole('button', { name: '打开子面板', exact: true }).click()
   await expect.element(page.getByRole('heading', { name: '子面板', exact: true })).toBeVisible()
   direction('work', true)
+  await page.getByTestId('work-sheet-back').click()
+  await expect.element(page.getByRole('heading', { name: '工作', exact: true })).toBeVisible()
+  direction('work', true)
+  await page.getByRole('button', { name: '打开子面板', exact: true }).click()
+  window.dispatchEvent(new CustomEvent(NATIVE_BACK_EVENT))
+  await expect.element(page.getByRole('heading', { name: '工作', exact: true })).toBeVisible()
+  direction('work', true)
+  await page.getByRole('button', { name: '打开子面板', exact: true }).click()
+  document.querySelector<HTMLButtonElement>('[data-testid="work-sheet-back"]')!.focus()
+  await userEvent.keyboard('{Escape}')
+  await expect.element(page.getByRole('heading', { name: '工作', exact: true })).toBeVisible()
+  direction('work', true)
+  await page.getByRole('button', { name: '打开子面板', exact: true }).click()
   await page.getByTestId('work-sheet-close').click()
   await until('child sheet closed', () => !document.querySelector('[data-testid="work-sheet"]'))
   direction('work', false)
