@@ -19,7 +19,7 @@ async function owner() {
 }
 const claudeId = 'attachment-owner-native-claude';
 afterEach(() => {
-  claudeSessionDelivery.unregisterSession(claudeId);
+  claudeSessionDelivery.teardown(claudeId);
   claudeSessionDelivery.setSend(null);
   vi.restoreAllMocks();
 });
