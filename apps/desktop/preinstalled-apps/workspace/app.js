@@ -737,6 +737,8 @@ async function applyContext(ctx) {
     // The same place, more said of it (its path, its machine): the line that says where it is says so.
     renderCrumbs()
     if (restored && inWorkspace() && !ctx.file) void listDownTo(state.folder ?? '')
+    // Shown again in another tab (closed, then opened again): read again, what was shown staying until the answer.
+    else if (previous && previous.tabId !== ctx.tabId && inGroup && canRead() && !ctx.file) void refreshList()
   }
   // The host hands this page a file when it picked this App for it (真源 §2.6: a click goes to the host,
   // which picks the most specific claim; .md and plain .json are this App's). The host's header then has
@@ -829,6 +831,7 @@ async function refreshList(readPreferences = false) {
   // The whole tree read before is from before now: the next search reads it again (what it holds is shown meanwhile).
   if (state.whole === true) state.whole = null
   let listError = null
+  let kept = false
   try {
     const place = rootPlace()
     const [, preferences] = await Promise.all([
@@ -843,14 +846,27 @@ async function refreshList(readPreferences = false) {
       state.folder = null
       return refreshList(readPreferences)
     }
-    if (state.listing === asked) forgetListed()
     listError = error.code === 'denied' ? state.t.denied : failureText(error)
+    // What was read before stays, the failure said over it with 重试 (❌ kept as if read now, with nothing said).
+    kept = error.code !== 'denied' && state.listed.has(state.folder ?? '')
+    if (state.listing === asked && !kept) forgetListed()
   }
   if (state.listing !== asked) return
   state.listing = null
-  state.listError = listError
+  state.listError = kept ? null : listError
   for (const change of asked.heard) take(change)
   showList()
+  if (!kept) return
+  showBanner(listError, 'error', true)
+  $('list-banner').append(' ', Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: listAgain }))
+  window.addEventListener('online', listAgain, { once: true })
+}
+
+/** The list read again (重试, or the network back): the failure said over it goes. */
+function listAgain() {
+  window.removeEventListener('online', listAgain)
+  hideBanner()
+  void refreshList()
 }
 
 // 「附件」 by its path: the database finds it by its role, whatever it is called on screen.
