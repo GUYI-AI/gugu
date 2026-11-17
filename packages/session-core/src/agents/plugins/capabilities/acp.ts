@@ -485,6 +485,12 @@ export interface IAcpBehavior {
   catalogModelsInConfigUpdate?: boolean;
 
   /**
+   * Only the model config option contains ids selectable through set_config_option. The legacy models list may
+   * encode a separate thinking level in each id (agy acp 1.5.10), whose read-back normalizes to the family id.
+   */
+  catalogModelSource?: 'config-options';
+
+  /**
    * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks
    * `auth.checkStatus`: signed out ⇒ `auth-required`, `unknown` keeps the list.
    */

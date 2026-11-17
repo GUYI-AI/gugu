@@ -225,6 +225,7 @@ export type AcpSpawnSpec = {
   sessionMeta?: Record<string, unknown>;
   /** See `catalogModelsInConfigUpdate` on the plugin's ACP behavior. */
   modelsInConfigUpdate?: boolean;
+  modelSource?: 'config-options';
   /** 插件的 `acp.authenticateWhenAdvertised`:agent 报了这个方法就先认证、再开探针那条会话(与真会话同一条)。 */
   authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
   /** `acp.catalogNeedsSignIn`: the account row's sign-in reading; `null` = cannot read. */
@@ -876,7 +877,7 @@ async function probeOnce(
         const state = await Promise.race([
           rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised,
             // Own route only: a placeholder or connection pass runs on credentials that are not this account.
-            probeCredentials ? undefined : spec.readSignIn),
+            probeCredentials ? undefined : spec.readSignIn, spec.modelSource),
           processFailed,
           watchdog.stalled,
         ]);
@@ -1118,6 +1119,7 @@ class AcpProbeClient {
     modelsInConfigUpdate?: boolean,
     authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
     readSignIn?: AcpSpawnSpec['readSignIn'],
+    modelSource?: AcpSpawnSpec['modelSource'],
   ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,
@@ -1257,7 +1259,9 @@ class AcpProbeClient {
     const modelOption = options.find((o) => o.category === 'model');
     const configModels = toChoices(modelOption);
     const reportedModels = toAvailableModels(response?.models?.availableModels);
-    const models = [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
+    const models = modelSource === 'config-options' && configModels.length > 0
+      ? configModels
+      : [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
     // Signed out ⇒ auth-required with `initialize`'s login methods. Unknown keeps the list; expired is `withAuthExpiry`'s.
     const signIn = await readSignIn?.();
     if (signIn?.kind === 'unauthenticated' && signIn.reason !== 'expired') return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };

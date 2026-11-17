@@ -23,6 +23,7 @@ import { HOST_SHELL_DENIED_ENV_VARS, SHARED_AGENT_ENV_VARS } from '@gugu/session
 export { P0_FAMILIES, WITHHELD_FAMILIES } from './conformance/p0-families';
 import { provider as amp } from './impl/amp';
 import { provider as antigravity } from './impl/antigravity';
+import { provider as antigravityCliAcp } from './impl/antigravity-cli-acp';
 import { provider as auggie } from './impl/auggie';
 import {
   CLAUDE_GUGU_CAPABILITY_PACKAGE,
@@ -95,6 +96,7 @@ const providers = [
   qwen,
   droid,
   antigravity,
+  antigravityCliAcp,
   cursor,
   copilot,
   amp,

@@ -17,6 +17,7 @@ import {
 } from '../../helpers/subscription';
 import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus } from './auth';
 import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
+import { readAgyAcpTier } from './acp-tier';
 
 /**
  * Antigravity 的「订阅」读数(product spec)。读的是终端版 `agy` 那条登录(能力里声明
@@ -28,7 +29,8 @@ import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
  * ⚠️ 没登录时 `agy -p` 会自己起 Google 登录流程并在约 60 秒后打开浏览器(2026-10-13 调研时实撞)⇒
  *    只在 `agy models` 已经答「登着」之后才问，而且 30 秒必停 —— 赶在它可能弹浏览器之前。
  *
- * 套餐:agy 本地不存档位;Antigravity 桌面版(IDE)把服务端答的用户状态缓存在
+ * 套餐:优先读同一登录的 `agy acp` 的 `session/new._meta.antigravity.tier.name`(ACP 1.4+官方扩展),
+ * 只握手、不开推理、不触发登录。旧 CLI 不提供此字段时，Antigravity 桌面版(IDE)的旧缓存仍作后备:
  * `User/globalStorage/state.vscdb` 的 `antigravityUnifiedStateSync.userStatus`(两层 base64 包着 protobuf,
  * 里面是 `g1-pro-tier` + 「Google AI Pro」,本机实测)。它只和 IDE 上一次运行一样新 ⇒ 随读数给 `planAsOf`。
  * 没装 IDE / 读不出 ⇒ 档位读不出。Ultra 的 5x / 20x 只能按内部编号分，对应关系没验证 ⇒ Ultra 一律 `tierUnknown`。
@@ -51,6 +53,10 @@ export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<Subscr
   const auth = await antigravityCliAuthStatus(ctx);
   if (auth.kind === 'unauthenticated') return { payer: 'not-signed-in' };
   if (auth.kind === 'unknown') return { payer: 'unknown', ...(auth.message ? { message: auth.message } : {}) };
+
+  const tier = await readAgyAcpTier(ctx);
+  if (tier?.kind === 'not-signed-in') return { payer: 'not-signed-in' };
+  if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name };
 
   const cached = await readIdeTier(ctx);
   if (!cached) return { payer: 'subscription', plan: 'Google AI', tierUnknown: true };

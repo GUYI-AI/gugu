@@ -89,6 +89,21 @@ beforeEach(() => {
   setProbeConnectionModelResolver(async () => null)
 })
 describe('ACP 模型目录探测', () => {
+  it('keeps a provider\'s model and thinking pickers separate when legacy model ids encode both', async () => {
+    const entry = await fakeAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, {
+    sessionId: 'native-cli',
+    configOptions: [{ id: 'model', category: 'model', type: 'select', currentValue: 'claude-sonnet-5-5', options: [{ value: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }] }],
+    models: { availableModels: [{ modelId: 'claude-sonnet-5-5-high', name: 'Claude Sonnet 5.5 (High)' }] },
+  });
+}
+`);
+    setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, modelSource: 'config-options' as const }));
+    const state = await probeHarnessModelCatalog('antigravity-cli-acp', 'acp');
+    expect(state).toMatchObject({ kind: 'ready', models: [{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }] });
+  });
   it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {
     await useAgent(`
 const options = model => [

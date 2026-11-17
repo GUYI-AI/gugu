@@ -31,6 +31,9 @@ export function normalizeAgentType(agentType: string | null | undefined): AgentT
   if (raw === 'claude' || raw === 'claude-code' || raw === 'cc') return 'claude-code'
   if (raw === 'codex') return 'codex'
   if (raw === 'gemini' || raw === 'gemini-cli') return 'gemini'
+  // Both official Antigravity execution providers use the existing contact type. The session keeps its own
+  // provider id; registering the CLI ACP entry must not require changing the backend's agent-type constraint.
+  if (raw === 'antigravity-cli-acp') return 'antigravity'
   if (raw === 'opencode') return 'opencode'
   if (raw === 'hermes') return 'hermes'
   if (raw === 'openclaw') return 'openclaw'

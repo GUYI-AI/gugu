@@ -13,7 +13,7 @@ describe('上架闸的 model 维(#6335)', () => {
       const model = provider.capabilities.sessionBundle?.units.model;
       return model?.kind === 'none' && model.degraded.code === 'unsupported-channel';
     });
-    expect(unsupportedModel.map((provider) => provider.metadata.id).filter((id) => id !== 'antigravity' && id !== 'kiro' && !withheld.has(id)))
+    expect(unsupportedModel.map((provider) => provider.metadata.id).filter((id) => id !== 'antigravity' && id !== 'antigravity-cli-acp' && id !== 'kiro' && !withheld.has(id)))
       .toEqual([]);
   });
 });
@@ -26,9 +26,11 @@ describe('上架名单', () => {
   // owner 2026-11-05「上架成第 12 家:同意」⇒ DeepSeek Harness 上架,第 12 家。
   // owner 2026-11-08「再开个车道去适配 kilo」⇒ Kilo 上架,第 13 家。
   // owner 2026-11-08 approved Kiro: model `unsupported-channel`, the user's own Kiro credits, same as antigravity. 14th.
-  it('owner 拍板的 14 家', () => {
+  // The dedicated CLI ACP entry exposes Google's current model catalog while the old Antigravity entry keeps its sessions.
+  it('the existing offer plus the dedicated Antigravity CLI ACP entry', () => {
     expect(listUserExposedPlugins().map((provider) => provider.metadata.id).sort()).toEqual([
       'antigravity',
+      'antigravity-cli-acp',
       'claude',
       'codebuddy',
       'codex',

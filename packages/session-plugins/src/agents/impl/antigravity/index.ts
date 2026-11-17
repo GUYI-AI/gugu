@@ -58,7 +58,7 @@ const sessionBundle = antigravitySessionBundleDescriptor satisfies SessionBundle
  * `antigravity` 命令(「在 Antigravity IDE 中打开」靠它判 IDE,`openInApps.ts`)。
  * 用户自己用 install.sh 装在 `~/.local/bin/agy` 的那一份,按二进制名 `agy` 照常被认出来。
  */
-const ANTIGRAVITY_CLI_COMPANION = {
+export const ANTIGRAVITY_CLI_COMPANION = {
   id: ANTIGRAVITY_CLI_PROGRAM,
   name: 'Antigravity CLI',
   legs: ['tui' as const],
