@@ -70,7 +70,7 @@ describe('attachment bytes go up behind their message', () => {
     await beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1'))
     expect(server.finish).toHaveBeenCalledTimes(2)
     expect(server.finish).toHaveBeenLastCalledWith({ staging_key: 'pending/message-1', file_name: 'photo.png', content_type: 'image/png', message_id: 'message-1' })
-    expect(progress.set).toHaveBeenCalledWith('message-1', { sha256: 'a'.repeat(64), loaded: 2, total: 5, attempt: 1 })
+    expect(progress.set).toHaveBeenCalledWith('message-1', { sha256: 'a'.repeat(64), chatId: 'chat', loaded: 2, total: 5, attempt: 1 })
     expect(progress.set).toHaveBeenLastCalledWith('message-1')
     expect(progress.fail).not.toHaveBeenCalled()
   })

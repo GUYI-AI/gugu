@@ -16,9 +16,10 @@ export function createAttachmentUploadHost(deps: {
   account(): Promise<{ id: string; home: string; endpoint(): Promise<AttachmentsEndpoint> } | null>
   progress(event: AttachmentProgressEvent): void
   warn(error: unknown): void
+  result?(result: { messageId: string; attempt: number; elapsedMs: number; outcome: 'success' | 'failed' }): void
 }) {
   let current: { id: string; home: string; queue: ReturnType<typeof createDeclaredUploads> } | null = null
-  const latest = new Map<string, AttachmentProgressEvent>()
+  const latest = new Map<string, { event: AttachmentProgressEvent; started: number }>()
   async function runtime() {
     const account = await deps.account()
     if (current?.id !== account?.id) { current?.queue.dispose(); current = null; latest.clear() }
@@ -32,10 +33,14 @@ export function createAttachmentUploadHost(deps: {
       copyOf: sha => storedCopy(account.home, sha), warn: deps.warn,
       progress: (messageId, progress) => {
         if (current?.id !== account.id) return
-        const event = progress ? { ...progress, messageId } : { ...latest.get(messageId)!, messageId, done: true }
-        if (progress) latest.set(messageId, event)
+        const previous = latest.get(messageId)
+        const started = previous && !(previous.event.failed && progress && !progress.failed) ? previous.started : performance.now()
+        const event = progress ? { ...progress, messageId } : previous ? { ...previous.event, done: true } : null
+        if (!event) return
+        if (progress) latest.set(messageId, { event, started })
         else latest.delete(messageId)
-        if (event.sha256) deps.progress(event)
+        if (!progress || progress.failed) deps.result?.({ messageId, attempt: event.attempt, elapsedMs: Math.round(performance.now() - started), outcome: progress?.failed ? 'failed' : 'success' })
+        deps.progress(event)
       },
     }) }
     return current
@@ -62,11 +67,16 @@ export function createAttachmentUploadHost(deps: {
         name: file.name, contentType: file.contentType, size: file.size }, copy, declared.plan ?? null)
       return { staging_key: declared.staging_key, sha256, size_bytes: declared.size_bytes }
     },
-    async drop(messageId: string) { (await runtime())?.queue.drop(messageId) },
+    async drop(messageId: string) {
+      const host = await runtime(), previous = latest.get(messageId)
+      latest.delete(messageId)
+      if (previous) deps.progress({ ...previous.event, done: true })
+      host?.queue.drop(messageId)
+    },
     async retry(messageId: string) { await (await runtime())?.queue.retry(messageId) },
     async resume() {
       const host = await runtime()
-      for (const event of latest.values()) deps.progress(event)
+      for (const { event } of latest.values()) deps.progress(event)
       await host?.queue.resume()
     },
     dispose() { current?.queue.dispose(); current = null; latest.clear() },

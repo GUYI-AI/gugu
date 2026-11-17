@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const queue = vi.hoisted(() => ({ begin: vi.fn().mockResolvedValue(undefined), drop: vi.fn(), retry: vi.fn().mockResolvedValue(undefined), resume: vi.fn().mockResolvedValue(undefined) }))
-const create = vi.hoisted(() => vi.fn(() => queue))
+const create = vi.hoisted(() => vi.fn((_host: import('@gugu/core/cloud/declaredUploads').DeclaredUploadHost) => queue))
+const timing = vi.hoisted(() => ({ stage: vi.fn(), finish: vi.fn() }))
 const copies = vi.hoisted(() => new Map<string, Blob>())
 const changed = vi.hoisted(() => vi.fn())
 const progress = vi.hoisted(() => ({ set: vi.fn(), fail: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentSendTiming', () => ({ attachmentSendTiming: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentSendTiming', () => ({ attachmentSendTiming: () => timing }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }))
 vi.mock('@gugu/core/cloud/declaredUploads', () => ({ createDeclaredUploads: create }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ cachedAttachmentCopy: async (sha: string) => copies.get(sha) ?? null }))
@@ -19,6 +20,7 @@ describe('one upload host per platform', () => {
     const adapter = await import('../../../../apps/desktop/src/lib/attachmentUploads')
     await adapter.resumeAttachmentUploads()
     expect(create).not.toHaveBeenCalled()
+    expect(() => adapter.beginAttachmentUpload({ messageId: 'm', chatId: 'chat', as: 'owner', pendingKey: 'key', sha256: 'a'.repeat(64), name: 'file', contentType: 'text/plain', size: 1 }, new Blob(['x']), null)).toThrow('native host')
     expect(invoke).toHaveBeenCalledWith('attachments:resume', {})
     const sha256 = 'a'.repeat(64); copies.set(sha256, new Blob(['image']))
     const event = eventOn.mock.calls[0]![1] as (event: unknown) => void
@@ -40,5 +42,11 @@ describe('one upload host per platform', () => {
     expect(create).toHaveBeenCalledOnce()
     expect(queue.resume).toHaveBeenCalledTimes(2)
     expect(queue.drop).toHaveBeenCalledWith('m')
+    const host = create.mock.calls[0]![0]
+    host.progress('upload', { sha256: 'a'.repeat(64), chatId: 'chat', loaded: 0, total: 1, attempt: 1 })
+    host.progress('upload')
+    expect(timing.finish).toHaveBeenLastCalledWith('success', 'bytes')
+    host.progress('failed', { sha256: 'a'.repeat(64), chatId: 'chat', loaded: 0, total: 1, attempt: 1, failed: true })
+    expect(timing.finish).toHaveBeenLastCalledWith('failed', 'bytes')
   })
 })

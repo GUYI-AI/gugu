@@ -262,5 +262,6 @@ export async function storeBytes(guguHome: string, sha256: string, name: string,
   const revision = { source: 'managed-object' as const, file_name: name, content_type: bytes.type || 'application/octet-stream', size_bytes: bytes.size, sha256 }
   const source = async () => ({ size: bytes.size, read: async (offset: number, length: number) => new Uint8Array(await bytes.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
   const save = createFileSaver({ local: async () => null, metadata: async () => ({ status: 'ready', revision }), managed: source, ssh: async () => null, temporary: source })
+  // The saver consumes these local bytes; its ref is a placeholder, never a cloud read or authorization.
   await save(revision, { ref: { message_id: sha256 }, actor: { accountId: 'local', actorId: 'local' } }, fileStoreDirectory(guguHome), name, true)
 }

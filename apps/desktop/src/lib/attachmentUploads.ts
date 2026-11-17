@@ -10,11 +10,17 @@ import { rendererLogger } from './log'
 export type { AttachmentUploadTask } from '@gugu/core/cloud/declaredUploads'
 
 const log = rendererLogger('chat/attachment-uploads')
+const timings = new Map<string, ReturnType<typeof attachmentSendTiming>>()
 const copies = new Map<string, Blob>(), shas = new Map<string, string>()
 const warn = (error: unknown) => log.warn({ error: String(error) }, 'Attachment upload host failed')
 const native = globalThis.window?.electronAPI
 const invoke = (channel: string, messageId?: string) => native!.invoke(channel, messageId ? { messageId } : {})
 function progress(messageId: string, value?: DeclaredUploadProgress) {
+  if (!native && value && !timings.has(messageId)) timings.set(messageId, attachmentSendTiming(messageId, value.chatId ?? ''))
+  if (!value || value.failed) {
+    timings.get(messageId)?.finish(value?.failed ? 'failed' : 'success', 'bytes')
+    timings.delete(messageId)
+  }
   if (value) {
     if (shas.get(messageId) !== value.sha256) {
       shas.set(messageId, value.sha256)
@@ -35,7 +41,7 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
 const local = native ? null : createDeclaredUploads({
   endpoint: async () => ({ ...await (await import('./attachmentsEndpoint')).attachmentsEndpoint(), upload: xhrAttachmentUpload }),
   copyOf: async sha => (await import('./attachmentBytes')).cachedAttachmentCopy(sha), progress, warn,
-  attempt: (task, attempt, run) => attachmentSendTiming(task.messageId, task.chatId).stage('upload', attempt, run, undefined, { timeoutMs: null }),
+  attempt: (task, attempt, run) => timings.get(task.messageId)!.stage('upload', attempt, run, undefined, { timeoutMs: null }),
 })
 native?.eventOn('attachments:progress', value => {
   const event = value as AttachmentProgressEvent
@@ -43,9 +49,11 @@ native?.eventOn('attachments:progress', value => {
 })
 const retry = (messageId: string): Promise<unknown> => native ? invoke('attachments:retry', messageId) : local!.retry(messageId)
 export function beginAttachmentUpload(task: AttachmentUploadTask, file: Blob, plan: AttachmentUploadPlan | null): Promise<void> {
-  return native ? invoke('attachments:retry', task.messageId).then(() => undefined) : local!.begin(task, file, plan)
+  if (!local) throw new Error('Desktop attachment uploads begin in the native host')
+  return local.begin(task, file, plan)
 }
 export function dropAttachmentUpload(messageId: string): void {
+  timings.delete(messageId)
   if (native) void invoke('attachments:drop', messageId).catch(warn)
   else local!.drop(messageId)
   progress(messageId)

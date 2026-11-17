@@ -3,7 +3,7 @@ import { AttachmentsError, finishDeclaredAttachment, pendingAttachmentUploads, t
 import { linkedAttachmentSignal, runAttachmentStage, type AttachmentStageOperation } from './attachmentDeadline'
 
 export type AttachmentUploadTask = { messageId: string; chatId: string; as: string; pendingKey: string; sha256: string; name: string; contentType: string; size: number }
-export type DeclaredUploadProgress = { sha256: string; loaded: number; total: number; attempt: number; failed?: boolean; final?: boolean }
+export type DeclaredUploadProgress = { sha256: string; chatId?: string; loaded: number; total: number; attempt: number; failed?: boolean; final?: boolean }
 export type DeclaredUploadHost = {
   endpoint(): Promise<AttachmentsEndpoint>
   copyOf(sha256: string): Promise<Blob | null>
@@ -13,19 +13,21 @@ export type DeclaredUploadHost = {
 }
 const FINISH_WAIT_MS = 120_000, RETRY_FIRST_MS = 5_000, RETRY_MAX_MS = 60_000
 export function createDeclaredUploads(host: DeclaredUploadHost) {
-  const running = new Map<string, Promise<void>>(), dropped = new Set<string>()
+  const running = new Map<string, Promise<void>>()
+  // False until a late prepare or running upload has observed the cancellation.
+  const dropped = new Map<string, boolean>()
   const controllers = new Set<AbortController>()
   const again = new Map<string, { task: AttachmentUploadTask; file: Blob; timer: ReturnType<typeof setTimeout>; delay: number }>()
   let askAgain: { timer: ReturnType<typeof setTimeout>; delay: number } | null = null
   let resuming: Promise<void> | null = null, closed = false
   function begin(task: AttachmentUploadTask, file: Blob, plan: AttachmentUploadPlan | null): Promise<void> {
     if (closed) return Promise.reject(new Error('Attachment upload host stopped'))
-    if (dropped.has(task.messageId)) return Promise.resolve()
+    if (dropped.has(task.messageId)) { dropped.set(task.messageId, true); return Promise.resolve() }
     const current = running.get(task.messageId)
     if (current) return current
     const later = again.get(task.messageId)
     if (later) clearTimeout(later.timer)
-    const run = upload(task, file, plan).finally(() => running.delete(task.messageId))
+    const run = upload(task, file, plan).finally(() => { running.delete(task.messageId); if (dropped.has(task.messageId)) dropped.set(task.messageId, true) })
     running.set(task.messageId, run)
     run.catch(() => undefined) // The caller and progress report the error; background retries own the duty.
     return run
@@ -33,7 +35,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
   function drop(messageId: string) {
     const later = again.get(messageId)
     if (later) { clearTimeout(later.timer); again.delete(messageId) }
-    dropped.add(messageId)
+    dropped.set(messageId, running.has(messageId) || !!later)
     host.progress(messageId)
   }
   function retry(messageId: string): Promise<void> {
@@ -47,6 +49,8 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
   async function readPending() {
     try {
       const uploads = await pendingAttachmentUploads(await host.endpoint())
+      const pendingIds = new Set(uploads.map(upload => upload.message_id))
+      for (const [id, observed] of dropped) if (observed && !pendingIds.has(id) && !running.has(id)) dropped.delete(id)
       if (askAgain) { clearTimeout(askAgain.timer); askAgain = null }
       for (const pending of uploads) {
         if (closed || running.has(pending.message_id) || dropped.has(pending.message_id)) continue
@@ -66,7 +70,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
     }
   }
   async function upload(task: AttachmentUploadTask, file: Blob, first: AttachmentUploadPlan | null) {
-    let progress: DeclaredUploadProgress = { sha256: task.sha256, loaded: 0, total: task.size, attempt: 1 }
+    let progress: DeclaredUploadProgress = { sha256: task.sha256, chatId: task.chatId, loaded: 0, total: task.size, attempt: 1 }
     host.progress(task.messageId, progress)
     let stage: { capDeadline(expiresAt: string | undefined): void; progress(sent?: number, total?: number): void } | null = null
     try {
@@ -91,7 +95,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
           onPlan: plan => { stage?.capDeadline(plan.expires_at); stage?.progress() },
           onProgress: (transfer, attempt) => {
             stage?.progress(transfer.loaded, transfer.total)
-            progress = { sha256: task.sha256, loaded: transfer.loaded, total: transfer.total ?? task.size, attempt }
+            progress = { sha256: task.sha256, chatId: task.chatId, loaded: transfer.loaded, total: transfer.total ?? task.size, attempt }
             host.progress(task.messageId, progress)
           },
           declarationWaitMs: FINISH_WAIT_MS,
