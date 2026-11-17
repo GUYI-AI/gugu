@@ -26,6 +26,7 @@ import { desktopWorkerPath } from '@main/worker-manifest';
 import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
+import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
 import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, readConnectionModels, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId, updateHarnessConnectionModels } from '@main/core/agents/harness-connections';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
@@ -141,6 +142,12 @@ export async function getAgentConfigRuntimeHandle(): Promise<AgentConfigRuntimeH
 
 export async function getAgentConfigRuntimeClient(): Promise<AgentConfigRuntimeClient> {
   return withHostResolvedCli((await getAgentConfigRuntimeHandle()).client);
+}
+
+/** The account row's sign-in reading (the CLI and config root a session runs); `null` when the worker cannot read it. */
+export async function readAgentAuthStatus(providerId: string): Promise<AgentAuthStatus | null> {
+  const result = await (await getAgentConfigRuntimeClient()).refreshAuthStatus({ providerId });
+  return result.success ? result.data : null;
 }
 
 /**

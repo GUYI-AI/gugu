@@ -264,6 +264,16 @@ function block(selector, declarations) {
  * @param {string} tokensCss
  * @returns {string}
  */
+/**
+ * A scale as an App page gets it: plain px. The phone's text factors (@@@text-scale, `var(--text-scale, 1)` in
+ * tokens.css) are written on the host's own <html> and never reach an App's frame, so here they are 1.
+ * @param {string} value
+ * @returns {string}
+ */
+function atAppScale(value) {
+  return value.replace(/^calc\((\d+(?:\.\d+)?)px \* 1\)$/, '$1px')
+}
+
 export function appPaletteCss(tokensCss) {
   const rules = parseRules(tokensCss);
   const colorsOf = (theme, active) => {
@@ -273,7 +283,7 @@ export function appPaletteCss(tokensCss) {
   const dark = colorsOf('dark', []);
   const light = colorsOf('light', []);
   const scaleTokens = tokensFor(rules, 'dark', []);
-  const scales = APP_PALETTE_SCALES.map(([name, token]) => [name, resolve(token, scaleTokens, [name])]);
+  const scales = APP_PALETTE_SCALES.map(([name, token]) => [name, atAppScale(resolve(token, scaleTokens, [name]))]);
   const changed = (base, next) => next.filter(([, value], index) => value !== base[index][1]);
 
   const out = ['@layer gugu {', block(':root', scales)];
@@ -289,7 +299,7 @@ export function appPaletteCss(tokensCss) {
     if (lightDelta.length) parts.push(block(':root[data-gugu-theme="light"]', lightDelta));
     out.push(`@media ${CONDITIONS[condition].page} {\n${parts.join('\n')}\n}`);
   }
-  const mobileScales = APP_PALETTE_SCALES.map(([name, token]) => [name, resolve(token, tokensFor(rules, 'dark', ['mobile']), [name])]);
+  const mobileScales = APP_PALETTE_SCALES.map(([name, token]) => [name, atAppScale(resolve(token, tokensFor(rules, 'dark', ['mobile']), [name]))]);
   const mobileDelta = changed(scales, mobileScales);
   if (mobileDelta.length) out.push(`@media ${CONDITIONS.mobile.page} {\n${block(':root', mobileDelta)}\n}`);
   out.push('}');
