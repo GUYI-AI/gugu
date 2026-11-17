@@ -44,6 +44,11 @@ describe('Windows private creation persistence (real SQLite, portable encryption
     await expect(openCreationAttachmentJournal(root, 'owner', 'device', 'request', { platform: 'win32', windowsProtection: secure })).rejects.toThrow('unavailable');
     const [key] = await readdir(root); expect(await readdir(join(root, key))).toEqual([]);
   });
+  it('requires native Electron protection unless an explicit protector is supplied', async () => {
+    const root = await fresh();
+    await expect(openWindowsCreationJournal(root, 'binding')).rejects.toThrow('unavailable');
+    expect(await readdir(root)).toEqual([]);
+  });
   it('binds sealed facts to their request and refuses a different OS key or corrupted ciphertext', async () => {
     const root = await fresh(), secure = protection();
     const journal = await openWindowsCreationJournal(root, 'binding-a', secure);
