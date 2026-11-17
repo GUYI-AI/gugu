@@ -32,13 +32,27 @@ const run = ({ index, total: globalTotal }) => new Promise(resolve => {
   })
   children.push(child)
   let firstError = false
-  let hardStop
+  let hardStop, stdioStop
+  let settled = false
+  const finish = (code, signal, stdioUnverified = false) => {
+    if (settled) return
+    settled = true
+    clearTimeout(hardStop); clearTimeout(stdioStop)
+    resolve({ index, total: globalTotal, code: firstError || stdioUnverified ? 1 : code ?? 1, signal, stdioUnverified })
+  }
   const forward = (output, line) => {
     const tag = total > 1 ? `[${index}/${globalTotal}] ` : ''
     // Forward the complete original line/frame before stopping its emitting child.
     output.write(tag + line + '\n')
     if (firstError || !readHFirstErrorFrame(line)) return
     firstError = true
+    // Exit is not EOF: descendants may retain the pipe after this child exits.
+    stdioStop = setTimeout(() => {
+      process.stderr.write(tag + 'H first-error stdio deadline exceeded; remaining writers are unverified.\n')
+      finish(child.exitCode, child.signalCode, true)
+      // Close only our read ends. Never discover or signal unknown pipe holders.
+      child.stdout.destroy(); child.stderr.destroy()
+    }, 4000)
     process.stderr.write(tag + 'H first error recorded; this shard fails, remaining cases are unverified.\n')
     if (child.exitCode === null && child.signalCode === null) {
       child.kill('SIGTERM')
@@ -51,7 +65,7 @@ const run = ({ index, total: globalTotal }) => new Promise(resolve => {
   createInterface({ input: child.stderr }).on('line', line => forward(process.stderr, line))
   child.on('exit', () => clearTimeout(hardStop))
   // Wait for stdio as well as process exit, so a final frame cannot be lost.
-  child.on('close', (code, signal) => resolve({ index, total: globalTotal, code: firstError ? 1 : code ?? 1, signal }))
+  child.on('close', (code, signal) => finish(code, signal))
 })
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => children.forEach(child => child.kill(signal)))

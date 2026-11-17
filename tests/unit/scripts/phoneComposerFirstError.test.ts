@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -62,3 +62,36 @@ it('does not stop a child for a similar console string', () => {
   const output = execFileSync(process.execPath, [cli, '--project', 'session-browser', 'selected.test.ts'], { cwd: root, encoding: 'utf8', timeout: 10_000 })
   expect(output).toContain('completed normally')
 })
+
+it('bounds inherited stdio after the emitting root exits without signalling its unknown holder', () => {
+  const root = fixture('')
+  const pidFile = join(root, 'owned-fixture-helper.pid')
+  const nonce = 'H_PIPE_HOLDER_' + root.split('/').at(-1)!
+  writeFileSync(join(root, 'node_modules/vitest/vitest.mjs'), `
+    import { spawn } from 'node:child_process';
+    import { writeFileSync } from 'node:fs';
+    const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)', ${JSON.stringify(nonce)}], { stdio: ['ignore', 'inherit', 'inherit'] });
+    writeFileSync(${JSON.stringify(pidFile)}, String(helper.pid));
+    process.stdout.write(${JSON.stringify(wire(frame) + '\n')});
+    process.exit(0);
+  `)
+  try {
+    const result = spawnSync(process.execPath, [cli, '--project', 'session-browser', 'selected.test.ts'], { cwd: root, encoding: 'utf8', timeout: 10_000 })
+    expect(result.status).toBe(1)
+    expect(result.stdout).toContain(wire(frame))
+    expect(result.stderr).toContain('remaining writers are unverified')
+    expect(result.error).toBeUndefined()
+    const pid = Number(readFileSync(pidFile, 'utf8'))
+    // The runner must not signal this holder. This test owns it independently.
+    expect(() => process.kill(pid, 0)).not.toThrow()
+  } finally {
+    if (existsSync(pidFile)) {
+      const pid = Number(readFileSync(pidFile, 'utf8'))
+      const inventory = execFileSync('pgrep', ['-af', nonce], { encoding: 'utf8' })
+      expect(inventory.split('\n').some(line => Number(line.trim().split(/\s/)[0]) === pid)).toBe(true)
+      const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
+      expect(command).toContain(nonce)
+      process.kill(pid, 'SIGTERM')
+    }
+  }
+}, 15_000)
