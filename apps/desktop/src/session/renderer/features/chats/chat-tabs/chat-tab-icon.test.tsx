@@ -30,6 +30,13 @@ vi.mock('@/components/appSlot/FileHostMark', () => ({ FileHostMark: () => <b dat
 
 const { chatPanelTabProvider } = await import('./chat-tab-providers');
 
+/** A family's glyph as the DOM serializes it (what `FileMark` puts in its svg). */
+function glyph(family: keyof typeof FILE_MARKS) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.innerHTML = FILE_MARKS[family].glyph;
+  return svg.innerHTML;
+}
+
 function strip(item: PanelItem) {
   const el = document.createElement('div');
   const root = createRoot(el);
@@ -45,13 +52,13 @@ describe('a chat tab is marked by what it shows, as it is named', () => {
   it('a file an App opened: the file\'s family mark from the one table, not the App\'s icon', () => {
     const deck = strip({ kind: 'office.main', itemId: 'deck', title: 'report.pptx', fileName: 'report.pptx' });
     expect(deck.app).toBe(false);
-    expect(deck.glyph).toBe(FILE_MARKS.slides.glyph);
+    expect(deck.glyph).toBe(glyph('slides'));
   });
 
   it('a markdown file: the text family mark, as in the folder and on its card', () => {
     const notes = strip({ kind: 'workspace.file', itemId: 'notes', title: 'notes.md', fileName: 'notes.md' });
     expect(notes.devicon).toBeUndefined();
-    expect(notes.glyph).toBe(FILE_MARKS.text.glyph);
+    expect(notes.glyph).toBe(glyph('text'));
   });
 
   it('a code file keeps its devicon', () => {
