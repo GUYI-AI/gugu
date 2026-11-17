@@ -524,7 +524,6 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
               parentProjectId={row.parentProjectId}
               hasChildren={row.hasChildren}
               expanded={sidebarStore.expandedSessionIds.has(row.sessionId)}
-              needsAttention={row.needsAttention}
               treeSummary={row.summary}
               onToggle={() => sidebarStore.toggleSessionExpanded(row.sessionId)}
               sidebarPinMark
