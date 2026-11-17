@@ -94,6 +94,29 @@ describe('App 设置页', () => {
     expect(api.agentTools).toHaveBeenCalledWith({ extensionId: 'notes' });
   });
 
+  it('read before, a refresh that fails is said with a retry, what was read staying: tools, skills, data size', async () => {
+    let fail = false;
+    const failing = <T,>(data: T) => vi.fn(async () => (fail ? { success: false, error: 'machine unreachable' } : { success: true, data }));
+    const given = { ...api, agentTools: failing([{ name: 'add', about: 'Add a note' }]), agentSkills: failing(['notes']), appData: failing({ bytes: 2048 }) };
+    const { extensionAgentTools, extensionAgentSkills, extensionDataBytes } = await import('../market-replicas');
+    apis.set('manage-refresh', given);
+    await render({ api: given, hostKey: 'remote:manage-refresh', onClearData: () => undefined }, async (document) => {
+      expect(document.querySelectorAll('[data-refresh-failed]')).toHaveLength(0);
+      fail = true;
+      await act(async () => {
+        await Promise.all([
+          extensionAgentTools.refresh('remote:manage-refresh', 'notes', '1.0.0'),
+          extensionAgentSkills.refresh('remote:manage-refresh', 'notes', '1.0.0'),
+          extensionDataBytes.refresh('remote:manage-refresh', 'notes'),
+        ]).catch(() => undefined);
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(document.querySelectorAll('[data-refresh-failed]')).toHaveLength(3);
+      expect(document.querySelector('[data-testid="app-manage-tools"]')?.textContent).toContain('extensions.manageTools(1)');
+      expect(document.querySelector('[data-testid="app-manage-skills"]')?.textContent).toContain('notes');
+    });
+  });
+
   it('the tools heading waits for the tools: never 「给 agent 的工具」 first and then 「工具（N）」', async () => {
     let answer!: (reply: unknown) => void;
     const agentTools = vi.fn(() => new Promise((resolve) => { answer = resolve; }));

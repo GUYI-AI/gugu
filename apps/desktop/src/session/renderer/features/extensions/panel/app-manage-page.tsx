@@ -22,6 +22,7 @@ import type { ResourceContext } from '@shared/resource-actions';
 import { AppSettingsForm } from '../app-settings-form';
 import { useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { extensionAgentSkills, extensionAgentTools, extensionDataBytes, marketVersionHistory } from '../market-replicas';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
@@ -246,6 +247,8 @@ export function AppManagePage({
         {historyOpen ? (
           <fieldset disabled={readOnly} className="contents">
             <div className="mk-vers">
+              {/* Read before, its refresh failed: said with a retry, the versions read before staying (❌ shown as current). */}
+              <RefreshFailed error={historyReading.state === 'value' ? historyReading.error : null} onRetry={() => void marketVersionHistory.refresh(hostKey, manifest.id)} />
               <VersionHistorySection
                 state={history}
                 extensionId={manifest.id}
@@ -329,6 +332,8 @@ export function AppManagePage({
             : translate('extensions.addsToolsWhenOn', { programs: listOf(programs, locale) })} testId="app-manage-tools" />
         )
       ) : null}
+      {programs.length > 0 && tools.state === 'value'
+        ? <RefreshFailed error={tools.error} onRetry={() => void extensionAgentTools.refresh(hostKey, manifest.id, manifest.version)} /> : null}
       {manifest.contributes.skills ? (
         <Row title={translate('extensions.manageSkills')} testId="app-manage-skills"
           note={!api.agentSkills ? translate('extensions.addsSkillsText')
@@ -336,6 +341,8 @@ export function AppManagePage({
             : skills.state === 'error' ? translate('extensions.loadFailed')
             : skills.value.length > 0 ? translate('extensions.manageSkillsNote', { skills: skills.value.join(listJoin) }) : translate('extensions.addsSkillsText')} />
       ) : null}
+      {manifest.contributes.skills && api.agentSkills && skills.state === 'value'
+        ? <RefreshFailed error={skills.error} onRetry={() => void extensionAgentSkills.refresh(hostKey, manifest.id, manifest.version)} /> : null}
       {manifest.contributes.instructions ? (
         <Collapsible className="mg-row is-block" data-testid="app-product-instructions">
           <CollapsibleTrigger className="mg-row-toggle">
@@ -358,6 +365,7 @@ export function AppManagePage({
       <Row title={translate('extensions.manageDataRow')} note={translate('extensions.manageDataNote')} testId="app-manage-data">
         <span className="mg-value">{dataBytes.state === 'value' ? (dataBytes.value === 0 ? translate('extensions.manageDataNone') : formatSize(dataBytes.value))
           : dataBytes.state === 'error' ? translate('extensions.manageDataUnreadable') : <Unknown className="w-12" />}</span>
+        {dataBytes.state === 'value' ? <RefreshFailed error={dataBytes.error} onRetry={() => void extensionDataBytes.refresh(hostKey, manifest.id)} /> : null}
         <Button type="button" variant="outline" size="sm" disabled={readOnly} onClick={onClearData} data-testid="app-manage-data-clear">{translate('extensions.manageDataClear')}</Button>
       </Row>
     ) });
