@@ -612,7 +612,8 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const k = key(...args)
       return k ? queryClient.prefetchQuery(options(k)) : Promise.resolve()
     },
-    fetch: (...args) => queryClient.fetchQuery(options(requireKey(args))) as Promise<V>,
+    // Async throughout: no signed-in account is a rejected read (a caller's `.catch` hears it), ❌ a throw before the promise.
+    fetch: async (...args) => queryClient.fetchQuery(options(requireKey(args))) as Promise<V>,
     set: (args, value) => { putValue(requireKey(args), value) },
     at: (...args) => {
       // Bound now: a write that answers after the account changed lands in the account that asked, ❌ in the next one.
