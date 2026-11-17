@@ -20,6 +20,7 @@ import {
 } from '../../../scripts/ci/ci-spec-coverage.mts'
 
 const roots: string[] = []
+const NATIVE_SKILLS_SPEC = 'tests/integration/desktop/phoneNativeSkills.capture.tsx'
 
 function fixtureRoot(): string {
   const root = mkdtempSync(path.join(tmpdir(), 'gugu-ci-spec-'))
@@ -73,9 +74,11 @@ describe('CI e2e/integration spec coverage', () => {
     expect(e2eSpecs.length).toBeGreaterThan(0)
     expect(e2eSpecs.every((file) => file.startsWith('tests/e2e/ci/local/'))).toBe(true)
     expect(Object.keys(exemptions).filter((file) => file.startsWith('tests/e2e/'))).toEqual([])
+    const automaticSpecs = result.discovered.filter((file) => !Object.hasOwn(exemptions, file))
+    expect(automaticSpecs).toEqual([...e2eSpecs, NATIVE_SKILLS_SPEC].sort())
     expect(result.groupCounts
       .filter((group) => group.disposition === 'automatic executor')
-      .reduce((total, group) => total + group.count, 0)).toBe(e2eSpecs.length)
+      .reduce((total, group) => total + group.count, 0)).toBe(automaticSpecs.length)
   })
 
   it('discovers the PR web projects by directory and keeps them fail-closed through the required aggregate', () => {
@@ -116,8 +119,9 @@ describe('CI e2e/integration spec coverage', () => {
       changedPaths: ['tests/e2e/ci/local/search-field-consistency.spec.ts'],
       packageScripts: {},
     }).filter((command) => command.job === 'web-smoke')
-    expect(commands).toHaveLength(1)
-    const perShard = commands.map((command) => collectRunnerFiles(process.cwd(), command))
+    const playwrightCommands = commands.filter((command) => command.runner === 'playwright')
+    expect(playwrightCommands).toHaveLength(1)
+    const perShard = playwrightCommands.map((command) => collectRunnerFiles(process.cwd(), command))
     expect(perShard.every((files) => files.length > 0)).toBe(true)
     // e2e/ci 下的每个 spec 都必须被这个 job 真收走(#6270 起 e2e 不接受豁免)。
     const allCiSpecs = execFileSync('git', ['ls-files', '-z', '--', 'tests/e2e/ci'], { encoding: 'utf8' })
@@ -127,6 +131,13 @@ describe('CI e2e/integration spec coverage', () => {
     const collected = [...new Set(perShard.flat())].sort()
     expect(collected).toEqual(allCiSpecs)
     expect(collected.every((file) => file.startsWith('tests/e2e/ci/local/'))).toBe(true)
+
+    const skillsCommands = commands.filter((command) => command.runner === 'vitest')
+    expect(skillsCommands).toHaveLength(1)
+    expect(skillsCommands[0]!.args).toEqual([
+      '--config', 'capture-tools/native-skills/vitest.config.ts', '--project=session-browser', '--maxWorkers=1',
+    ])
+    expect(collectRunnerFiles(process.cwd(), skillsCommands[0]!)).toEqual([NATIVE_SKILLS_SPEC])
 
     const manifest = JSON.parse(readFileSync('.github/ci-spec-coverage.json', 'utf8'))
     expect(manifest.automaticExecutors).toHaveLength(1)
@@ -149,7 +160,7 @@ describe('CI e2e/integration spec coverage', () => {
       workflows: [{ ...loadCoverageWorkflowInventory(process.cwd()).find(entry => entry.path === '.github/workflows/ci.yml'), path: '.github/workflows/ci.yml', workflow }],
       changedPaths: [relativeSpec],
       packageScripts: {},
-    }).filter((command) => command.job === 'web-smoke' && command.env.GUGU_E2E_CI_PROJECT === 'local')
+    }).filter((command) => command.job === 'web-smoke' && command.runner === 'playwright' && command.env.GUGU_E2E_CI_PROJECT === 'local')
 
     expect(commands).toHaveLength(1)
     expect(new Set(commands.flatMap((command) => collectRunnerFiles(root, command))).has(relativeSpec)).toBe(true)
