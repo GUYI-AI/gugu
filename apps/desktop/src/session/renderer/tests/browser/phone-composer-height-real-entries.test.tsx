@@ -48,6 +48,7 @@ vi.mock('@renderer/features/projects/components/main-panel/project-run-machine',
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
   machineRpc: () => { throw new Error('Unrelated skills RPC forbidden') },
+  readOpenedFileChunk: async () => { throw new Error('Unrelated file preview RPC forbidden') },
   fetchCreateOptions: async () => ({ projects: [],
     lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: 'native:sol', effort: 'medium' },
     harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),

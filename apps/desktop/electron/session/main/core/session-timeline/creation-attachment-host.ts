@@ -116,11 +116,11 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
       const protocol = await journal.read('admissionProtocol');
       const claiming = await journal.read('admitting');
       if (protocol !== null && protocol.version !== 2) throw unverified('The original input admission protocol is invalid');
+      if (prepared && prepared.placementKey !== key) throw unverified('The original placement identities cannot be changed');
       if (claiming !== null && (!prepared || protocol === null || claiming.initialMessageId !== input.initialMessageId
         || claiming.placementKey !== key || claiming.placementKey !== prepared.placementKey)) {
         throw unverified('The original first-input claim cannot be verified');
       }
-      if (prepared && prepared.placementKey !== key) throw unverified('The original placement identities cannot be changed');
       if (prepared) {
         const prior = deps.prior(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files);
         if (prior === 'uncertain') throw unverified('The original first-input receipt conflicts');

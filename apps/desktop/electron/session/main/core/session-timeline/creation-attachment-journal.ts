@@ -66,7 +66,7 @@ async function preparePosixDirectory(root: string, directory: string, durability
   if (isAbsolute(suffix) || parts.includes('..') || parts.length > 32) {
     throw attachmentCreationUnverified('Attachment creation storage is outside its durable boundary');
   }
-  const held: DirectoryEntry[] = []; let failed = false;
+  const held: DirectoryEntry[] = []; let closeFailed = false, closeError: unknown;
   try {
     held.push(await holdDirectory(durabilityRoot, durabilityRoot === root));
     for (const part of [...parts, relative(root, directory)]) {
@@ -83,14 +83,15 @@ async function preparePosixDirectory(root: string, directory: string, durability
       await verifyDirectory(child); await verifyDirectory(parent);
     }
     for (const entry of held) await verifyDirectory(entry);
-  } catch (error) { failed = true; throw error; }
-  finally {
-    let closeError: unknown;
+  } finally {
     for (const entry of held.reverse()) {
-      try { await entry.handle.close(); } catch (error) { closeError ??= error; }
+      try { await entry.handle.close(); }
+      catch (error) { if (!closeFailed) { closeFailed = true; closeError = error; } }
     }
-    if (!failed && closeError) throw closeError;
   }
+  // A body failure propagates after cleanup and never reaches this line.
+  // A cleanup-only failure must still refuse, including a falsy thrown value.
+  if (closeFailed) throw closeError;
 }
 
 /** Append-only facts: a crash cannot turn an uncertain creation or admission back into a fresh request. */

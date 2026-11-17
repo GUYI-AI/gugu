@@ -8,6 +8,7 @@ import type { SessionCreateAttachmentDraftRequest } from '@gugu/session-core/ses
 
 const fault = vi.hoisted(() => ({
   fail: null as { path: string; occurrence: number } | null,
+  closeFailures: new Map<string, unknown>(),
   syncs: new Map<string, number>(), events: [] as string[], opened: 0, closed: 0,
 }));
 // Real directory handles and actual fsync remain in the path; only the chosen
@@ -26,12 +27,15 @@ vi.mock('node:fs/promises', async importOriginal => {
       }
       await sync();
     };
-    handle.close = async () => { try { await close(); } finally { fault.closed += 1; } };
+    handle.close = async () => {
+      try { await close(); } finally { fault.closed += 1; }
+      if (fault.closeFailures.has(path)) throw fault.closeFailures.get(path);
+    };
     return handle;
   } };
 });
 const roots: string[] = [];
-beforeEach(() => { fault.fail = null; fault.syncs.clear(); fault.events.length = 0; fault.opened = 0; fault.closed = 0; });
+beforeEach(() => { fault.fail = null; fault.closeFailures.clear(); fault.syncs.clear(); fault.events.length = 0; fault.opened = 0; fault.closed = 0; });
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
 async function fixture() {
@@ -79,6 +83,18 @@ describe.skipIf(process.platform === 'win32')('creation directory durability bef
     const f = await fixture();
     await expect(openCreationAttachmentJournal(f.root, 'owner', 'device', 'creation')).rejects.toThrow('durable attachment storage boundary');
     expect(await readdir(f.anchor)).toEqual([]); expect(fault.opened).toBe(0);
+  });
+  it('preserves the barrier failure when cleanup also fails and still closes all ancestors', async () => {
+    const f = await fixture();
+    fault.fail = { path: join(f.anchor, 'private', 'creation-attachments'), occurrence: 2 };
+    fault.closeFailures.set(f.root, new Error('close acknowledgement failed'));
+    await expect(createAttachmentCreationHost(f.deps).create(f.request)).rejects.toThrow('directory barrier failed');
+    expect(fault.closed).toBe(fault.opened); expect(f.deps.create).not.toHaveBeenCalled(); expect(f.deps.send).not.toHaveBeenCalled();
+  });
+  it('refuses a cleanup-only failure even when its thrown value is undefined', async () => {
+    const f = await fixture(); fault.closeFailures.set(f.root, undefined);
+    await expect(createAttachmentCreationHost(f.deps).create(f.request)).rejects.toBeUndefined();
+    expect(fault.closed).toBe(fault.opened); expect(f.deps.create).not.toHaveBeenCalled(); expect(f.deps.send).not.toHaveBeenCalled();
   });
   it('rejects paths outside the anchor and excessive depth without creating them', async () => {
     const f = await fixture();
