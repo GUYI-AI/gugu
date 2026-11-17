@@ -215,7 +215,10 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
                 className={cn('relative flex h-full shrink-0 items-center gap-2 text-[length:var(--font-body)] transition-colors',
                   on ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-[2px] after:rounded-full after:bg-foreground' : 'text-foreground/50 hover:text-foreground/80')}>
                 {translate(`globalSearch.facet.${value}`)}
-                {view.counts === null ? <Unknown className="w-6" /> : count ? <span className="tabular-nums text-foreground/35">{countLabel(count)}</span> : null}
+                {/* The largest count is 100+: unknown, zero and digits occupy the same slot. */}
+                <span className="inline-block w-[4ch] shrink-0 tabular-nums text-foreground/35">
+                  {count === null ? <Unknown className="w-full" /> : countLabel(count)}
+                </span>
               </button>
             )
           })}
