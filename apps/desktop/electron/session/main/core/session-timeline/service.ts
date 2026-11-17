@@ -816,7 +816,7 @@ export function after(input: {
 type SourceWindowReader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
 let sourceWindowOpening: Promise<SourceWindowReader> | null = null;
 
-/** Desktop reopening has its own bounded source path, including its subscription. */
+/** Desktop reopening has its own bounded source path, including its subscription. A failed opening is not kept: the next read opens again. */
 function sourceWindowReader(): Promise<SourceWindowReader> {
   return sourceWindowOpening ??= (async () => {
     const [{ join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
@@ -847,7 +847,10 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
       backgroundRead: process.env.GUGU_WINDOW_IO_TRACE === '1'
         ? (jobId, io) => log.info('sessionWindow: read', { jobId, phase: 'reverse', ...io }) : undefined,
     });
-  })();
+  })().catch((error: unknown) => {
+    sourceWindowOpening = null;
+    throw error;
+  });
 }
 async function withSourceWindow<T>(read: (reader: SourceWindowReader) => Promise<T>): Promise<SessionTimelineResult<T>> {
   try { return { ok: true, value: await read(await sourceWindowReader()) }; }
