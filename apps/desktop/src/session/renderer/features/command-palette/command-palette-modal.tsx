@@ -121,7 +121,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
         className={stale ? 'max-h-96 overflow-y-auto p-1 gg-stale' : 'max-h-96 overflow-y-auto p-1'}>
         {(commandsMode || results) && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">
-            {translate('palette.noResults', { query: stale ? heldQuery : search })}
+            {translate('palette.noResults', { query: stale && heldQuery !== null ? heldQuery : search })}
           </Command.Empty>
         )}
         {commandsMode ? (
