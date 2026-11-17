@@ -1,3 +1,4 @@
+import { sliceWholeCharacters } from '@gugu/core/shared/unicodeSlice';
 import type { ActivityPreviewSource } from '@gugu/session-chat-ui/activity-preview';
 
 export type SearchItemKind = 'project' | 'session';
@@ -30,11 +31,9 @@ export function excerpt(text: string, query: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   const first = query.trim().split(/\s+/)[0] ?? '';
   const at = matchRanges(flat, first)[0]?.start ?? 0;
-  let start = Math.max(0, at - 30);
-  if (start > 0 && /[\uDC00-\uDFFF]/.test(flat[start]) && /[\uD800-\uDBFF]/.test(flat[start - 1])) start -= 1;
-  let end = Math.min(flat.length, start + 120);
-  if (end < flat.length && /[\uDC00-\uDFFF]/.test(flat[end]) && /[\uD800-\uDBFF]/.test(flat[end - 1])) end -= 1;
-  return `${start > 0 ? '…' : ''}${flat.slice(start, end)}${end < flat.length ? '…' : ''}`;
+  const start = Math.max(0, at - 30);
+  const end = Math.min(flat.length, start + 120);
+  return `${start > 0 ? '…' : ''}${sliceWholeCharacters(flat, start, end)}${end < flat.length ? '…' : ''}`;
 }
 
 export interface CommandPaletteQuery {

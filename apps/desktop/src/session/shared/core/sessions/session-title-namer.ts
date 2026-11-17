@@ -1,3 +1,5 @@
+import { sliceWholeCharacters } from '@gugu/core/shared/unicodeSlice';
+
 /**
  * #7337 咕咕自己给会话起名:拿首轮找一个平台模型要一个短名。这里是纯逻辑(提示词、各家关思考的写法、
  * 回答的清洗),主进程那一半(签票、发请求、落库)在 electron/session-title-namer.ts。
@@ -95,12 +97,6 @@ export function shortFirstUtteranceTitle(firstUtterance: string | undefined): st
 export function shouldGenerateSessionTitle(firstUtterance: string | undefined): boolean {
   const text = usableFirstUtterance(firstUtterance);
   return text !== null && text.length > SHORT_FIRST_UTTERANCE;
-}
-
-function sliceWholeCharacters(text: string, start: number, end: number): string {
-  if (start > 0 && /[\uDC00-\uDFFF]/.test(text[start]) && /[\uD800-\uDBFF]/.test(text[start - 1])) start += 1;
-  if (end < text.length && /[\uDC00-\uDFFF]/.test(text[end]) && /[\uD800-\uDBFF]/.test(text[end - 1])) end -= 1;
-  return text.slice(start, end);
 }
 
 function boundedInput(firstUtterance: string): string {

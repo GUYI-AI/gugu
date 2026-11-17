@@ -1,3 +1,5 @@
+import { fencedLineMask } from '@gugu/core/shared/markdownFences'
+
 const INLINE_CODE = /((`+)(?!`)[^\n]*?\2(?!`))/
 
 /**
@@ -17,19 +19,8 @@ export function markdownPlainText(text: string): string {
 }
 
 function withoutFencedBlocks(text: string): string {
-  let fence: { marker: string; length: number } | null = null;
-  return text.split('\n').filter(line => {
-    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    if (fence) {
-      if (match && match[1][0] === fence.marker && match[1].length >= fence.length && !match[2].trim()) fence = null;
-      return false;
-    }
-    if (match && (match[1][0] !== '`' || !match[2].includes('`'))) {
-      fence = { marker: match[1][0], length: match[1].length };
-      return false;
-    }
-    return true;
-  }).join('\n');
+  const mask = fencedLineMask(text);
+  return text.split('\n').filter((_, index) => !mask[index]).join('\n');
 }
 
 function replaceInlineLinks(text: string): string {
