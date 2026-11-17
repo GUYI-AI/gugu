@@ -16,6 +16,7 @@ import { lineNumberSelection, previewSelectionLines, previewSelectionText } from
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
+import { mountOutline } from './outline.js'
 import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
@@ -120,6 +121,7 @@ const STRINGS = {
     edit: '编辑',
     split: '对照',
     preview: '阅读',
+    outline: '提纲',
     bold: '加粗',
     italic: '斜体',
     code: '代码',
@@ -366,6 +368,7 @@ const STRINGS = {
     edit: 'Edit',
     split: 'Side by side',
     preview: 'Read',
+    outline: 'Outline',
     bold: 'Bold',
     italic: 'Italic',
     code: 'Code',
@@ -644,6 +647,8 @@ async function previewKit() {
 
 // A Workspace page starts when its folder or file is opened. Prepare its existing reader while it awaits context.
 const previewReady = previewKit().then((md) => ({ md }), (error) => ({ error }))
+// The headings of the document being read, beside it (outline.js).
+mountOutline($('outline'), $('preview'))
 
 // A leading `---` block is the file's front matter, as the preview reads it: one quiet block, not the setext heading
 // lezer's markdown makes of `key: value` above the closing `---`.
@@ -805,6 +810,7 @@ function renderChrome() {
     $(`fmt-${fmt}`).title = t[fmt]
   }
   $('block-handle').setAttribute('aria-label', t.blockActions)
+  $('outline').setAttribute('aria-label', t.outline)
   $('doc-empty-title').textContent = t.emptyTitle
   $('preview-cut').textContent = fmt(t.previewCut, { size: sizeOf(LONG_TEXT) })
   $('doc-empty-hint').textContent = t.emptyHint
