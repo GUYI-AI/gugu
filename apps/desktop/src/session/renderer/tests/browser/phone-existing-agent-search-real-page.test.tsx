@@ -14,7 +14,7 @@ import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/
 import { publishChatSummaries } from '@/lib/chatSummariesBridge'
 import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { chat, device, displayIdentity, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
-import { until } from '../../../../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMobileWorkspaceCatalog'
 import '@/i18n/registerMessagingCatalog'
@@ -127,26 +127,81 @@ for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) 
     expect(header()?.textContent).toContain('同名智能体')
     expect(document.documentElement.dataset.theme).toBe(theme)
     expect(document.body.textContent).not.toMatch(/agentWatch\.|shell\./)
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/I-existing-sidebar-open-controlled-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/I-existing-sidebar-open-controlled-${width}-${theme}.png` })
     list().scrollTop = 400
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     expect(list().scrollTop).toBeGreaterThan(0)
     expect(search().getBoundingClientRect().top).toBeGreaterThanOrEqual(list().getBoundingClientRect().top - 1)
     expect(search().getBoundingClientRect().top).toBeLessThanOrEqual(list().getBoundingClientRect().top + 12)
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/I-existing-sidebar-scroll-controlled-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/I-existing-sidebar-scroll-controlled-${width}-${theme}.png` })
     await page.getByTestId('phone-agents-search').fill('同名')
     await until('duplicate names remain distinct catalog entries', () => panel().querySelectorAll('[data-testid="phone-sidebar-agent"]').length === 2)
     expect(panel().querySelector('[data-session-id="I-session-0"]')).not.toBeNull()
     expect(panel().querySelector('[data-session-id="I-session-1"]')).not.toBeNull()
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/I-existing-sidebar-search-controlled-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/I-existing-sidebar-search-controlled-${width}-${theme}.png` })
     await page.elementLocator(panel().querySelector<HTMLElement>('[data-session-id="I-session-1"]')!).click()
     await until('actual page consumes the emitted B destination', () => header()?.dataset.sessionId === 'I-session-1'
       && header()?.dataset.agentId === 'I-agent-1')
     expect(destinations.at(-1)).toMatchObject({ deviceId: machine.device_id,
       session: { conversationId: 'I-session-1' }, innerSidebarEntry: `chat:${roomId}` })
     await until('chosen row closes the actual panel', () => !document.querySelector('[data-testid="phone-room-controls-sheet"]'))
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/I-existing-sidebar-picked-b-controlled-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/I-existing-sidebar-picked-b-controlled-${width}-${theme}.png` })
     await openActualAgentPicker()
     expect((document.querySelector('[data-testid="phone-agents-search"]') as HTMLInputElement).value).toBe('')
+  })
+}
+
+for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) {
+  it(`${width}/${theme}: normal Agent catalog search keeps the actual selected identities (controlled directory/lost transport)`, async () => {
+    await page.viewport(width, 844); setLocalePreference('zh-CN'); writeThemePreference(theme)
+    document.documentElement.setAttribute('data-phone-shell', '')
+    const names = ['资料助手', '代码助手', '需求梳理', '方案整理', '接口检查', '文档归档']
+    const normalSessions = names.map((name, index) => ({ ...sessions[index]!, title: name, lastInteractedAt: null }))
+    const normalIdentities = Object.fromEntries(normalSessions.map(session => [session.agent!.userId, displayIdentity(session.agent!.userId, {
+      type: 'agent', owner_user_id: 'I-owner', display_name: session.title, avatar: null,
+    })]))
+    installIdentityDirectoryBridge(); publishIdentityDirectory(normalIdentities, null)
+    const room = chat({ id: roomId, kind: 'group', name: '产品讨论' })
+    publishChatSummaries([room]); publishDirectoryDevices([machine])
+    updateDeviceSessions(machine.device_id, { projects: [], sessions: normalSessions, cached: false, loading: false, error: null })
+    harness = createReactHarness(); harness.container.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column'
+    await renderWithAppProviders(harness, <ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><DevicesContext.Provider value={devices}>
+      <PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" className="h-full flex flex-col" style={{ background: 'var(--ta-panel-bg)' }}><ControlledOuterBoundary /></PhoneViewportShell>
+    </DevicesContext.Provider></SessionUiTheme></LocalizationProvider></ThemeProvider>, { auth: { id: 'I-owner' }, chat: { chats: [room], identitiesById: normalIdentities } })
+    await act(async () => { window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, {
+      detail: { deviceId: machine.device_id, session: normalSessions[0]!, innerSidebarEntry: `chat:${roomId}` },
+    })) })
+    const header = () => harness!.container.querySelector<HTMLElement>('[data-testid="agent-watch-hero"]')!
+    const panel = () => document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')
+    const capture = async (phase: string) => {
+      await untilStable('normal Agent catalog and current heading geometry is stable', () => [header(), panel()].map(element => {
+        if (!element) return null
+        const box = element.getBoundingClientRect(), style = getComputedStyle(element)
+        return [box.left, box.top, box.width, box.height, style.opacity, style.transform]
+      }))
+      expect(document.documentElement.dataset.theme).toBe(theme)
+      expect(document.body.textContent).not.toMatch(/同名智能体|其它智能体|agentWatch\.|shell\./)
+      await page.screenshot({ path: `__screenshots__/owner-phone-regression/I-normal-${phase}-controlled-${width}-${theme}.png` })
+    }
+    await until('normal source Agent A and its room sidebar', () => header()?.dataset.sessionId === 'I-session-0' && !!harness?.container.querySelector('[data-anchor-chat="I-existing-room"]'))
+    expect(header().dataset.agentId).toBe('I-agent-0'); expect(header().textContent).toContain('资料助手')
+    await openActualAgentPicker()
+    await until('normal authorized catalog appears', () => panel()?.querySelectorAll('[data-testid="phone-sidebar-agent"]').length === names.length)
+    const list = panel()!.querySelector<HTMLElement>('.gg-phone-composer-sheet-list')!
+    const search = panel()!.querySelector<HTMLElement>('.gg-phone-navigation-search')!
+    expect(list.firstElementChild?.firstElementChild).toBe(search); expect(getComputedStyle(search).position).toBe('sticky')
+    await capture('open')
+    await page.getByTestId('phone-agents-search').fill('代码')
+    await until('normal search selects the code Agent ID', () => panel()?.querySelectorAll('[data-testid="phone-sidebar-agent"]').length === 1)
+    expect(panel()!.querySelector('[data-session-id="I-session-1"]')).not.toBeNull(); await capture('search')
+    await page.elementLocator(panel()!.querySelector<HTMLElement>('[data-session-id="I-session-1"]')!).click()
+    await until('normal selection routes to Agent B', () => !panel() && header()?.dataset.sessionId === 'I-session-1' && header()?.dataset.agentId === 'I-agent-1')
+    expect(header().textContent).toContain('代码助手'); expect(destinations.at(-1)).toMatchObject({ deviceId: machine.device_id, session: { conversationId: 'I-session-1' }, innerSidebarEntry: `chat:${roomId}` })
+    await capture('picked-b')
+    await openActualAgentPicker()
+    expect((document.querySelector('[data-testid="phone-agents-search"]') as HTMLInputElement).value).toBe('')
+    await page.elementLocator(panel()!.querySelector<HTMLElement>('[data-session-id="I-session-0"]')!).click()
+    await until('normal catalog switches back to the original Agent ID', () => !panel() && header()?.dataset.sessionId === 'I-session-0' && header()?.dataset.agentId === 'I-agent-0')
+    expect(header().textContent).toContain('资料助手'); await capture('picked-a-again')
   })
 }

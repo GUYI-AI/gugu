@@ -26,12 +26,13 @@ const reads = vi.hoisted(() => ({ topics: [
   { chat_id: 'context-topic-a', name: '同名话题', source_message_id: 'anchor-a', creator_user_id: 'owner', last_message_at: null, message_count: 0, participant_count: 1, is_participant: true },
   { chat_id: 'context-topic-b', name: '同名话题', source_message_id: 'anchor-b', creator_user_id: 'owner', last_message_at: null, message_count: 0, participant_count: 1, is_participant: true },
 ] }))
+const pressureTopics = reads.topics
 vi.mock('@/platform', () => import('../../../../../../../tests/support/capacitorPlatformTestDouble'))
 vi.mock('@/lib/chat', async original => ({ ...await original<object>(), ...await import('../../../../../../../tests/support/contactsChatServiceTestDouble') }))
 vi.mock('@/lib/topics', async original => ({ ...await original<object>(), topicService: { listTopicsOfChat: vi.fn(async () => reads.topics) } }))
 vi.mock('@/hooks/useRoomCollab', async original => ({ ...await original<object>(), useRoomCollab: () => ({ snapshot: null, error: null, reload: vi.fn(), authorityRevision: 0 }) }))
 let harness: ReturnType<typeof createReactHarness> | undefined
-afterEach(() => { harness?.cleanup(); closeInfoTab('context-room'); closeTopicTab('context-room'); document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
+afterEach(() => { harness?.cleanup(); closeInfoTab('context-room'); closeTopicTab('context-room'); reads.topics = pressureTopics; document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
 
 async function waitForTopicDetailsPage() {
   await expect.element(page.getByTestId('chat-settings-panel')).toBeVisible()
@@ -72,23 +73,23 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await page.getByTestId('phone-topics-search').fill('同名')
     expect(document.documentElement.dataset.theme).toBe(theme)
     expect(harness.container.textContent).not.toMatch(/agentWatch\.|shell\./)
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/J-real-room-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/J-real-room-${width}-${theme}.png` })
     await page.elementLocator(document.querySelector<HTMLElement>('[data-topic-id="context-topic-b"][role="radio"]')!).click()
     await until('actual B route and title', () => topicTabOf(group.id)?.topic.topicChatId === 'context-topic-b' && header()?.dataset.chatContextId === 'context-topic-b')
     expect(header().textContent).toContain('同名话题')
     expect(harness.container.querySelector('[data-testid="topic-split-pane"]')?.getAttribute('data-topic-id')).toBe('context-topic-b')
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-b-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/L-topic-b-${width}-${theme}.png` })
     // The underlying room and its topic both retain their real controls; select the visible topic pane explicitly.
     await page.getByTestId('topic-split-pane').getByTestId('phone-room-topics').click()
     await page.elementLocator(document.querySelector<HTMLElement>('[data-topic-id="context-topic-a"][role="radio"]')!).click()
     await until('actual A route and title', () => topicTabOf(group.id)?.topic.topicChatId === 'context-topic-a' && header()?.dataset.chatContextId === 'context-topic-a')
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-a-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/L-topic-a-${width}-${theme}.png` })
     await page.elementLocator(header().querySelector<HTMLElement>('[role="button"]')!).click()
     await until('topic details keep the actual topic identity', () => infoTabOf(group.id)?.info.topic?.topicChatId === 'context-topic-a' && header()?.dataset.chatContextId === 'context-topic-a')
     await waitForTopicDetailsPage()
     expect(infoTabOf(group.id)?.info.topic?.topicChatId).toBe('context-topic-a')
     expect(header().dataset.chatContextId).toBe('context-topic-a')
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-info-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/L-topic-info-${width}-${theme}.png` })
     // Info is a real pushed page; its Back covers the retained topic header.
     // Click that visible page, never force-click the underlying topic button.
     await page.getByTestId('chat-settings-panel').getByRole('button', { name: '返回', exact: true }).click()
@@ -96,6 +97,62 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await page.elementLocator(header().querySelector<HTMLButtonElement>('button')!).click()
     await until('actual Back returns to room', () => topicTabOf(group.id) === null && header()?.dataset.chatContextId === 'context-room')
     expect(header().textContent).toContain('来源群')
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-return-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/L-return-${width}-${theme}.png` })
+  })
+}
+
+for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
+  it(`${width}/${theme}: normal topic names follow their real room and topic routes through details Back`, async () => {
+    await page.viewport(width, 844); setLocalePreference('zh-CN'); writeThemePreference(theme)
+    document.documentElement.setAttribute('data-phone-shell', '')
+    reads.topics = pressureTopics.map((topic, index) => ({ ...topic, name: index === 0 ? '需求讨论' : '方案评审' }))
+    closeInfoTab('context-room'); closeTopicTab('context-room'); harness = createReactHarness()
+    Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
+    const group = chat({ id: 'context-room', kind: 'group', name: '产品讨论' })
+    await renderWithAppProviders(harness, <ThemeProvider><LocalizationProvider><PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--ta-panel-bg)' }}>
+      <ChatAreaPanel mobile onBack={vi.fn()} />
+    </PhoneViewportShell></LocalizationProvider></ThemeProvider>, { chat: { activeChat: group, activeChatId: group.id,
+      chats: [group, ...reads.topics.map(topic => chat({ id: topic.chat_id, kind: 'topic', source_chat_id: group.id, name: topic.name }))],
+    } })
+    const header = () => harness!.container.querySelector<HTMLElement>('[data-chat-area-header]')!
+    const panel = () => document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')
+    const capture = async (phase: string) => {
+      await untilStable('normal topic heading and navigation panel geometry is stable', () => [header(), panel()].map(element => {
+        if (!element) return null
+        const box = element.getBoundingClientRect(), style = getComputedStyle(element)
+        return [box.left, box.top, box.width, box.height, style.opacity, style.transform]
+      }))
+      expect(document.documentElement.dataset.theme).toBe(theme)
+      expect(harness!.container.textContent).not.toMatch(/同名话题|agentWatch\.|shell\./)
+      await page.screenshot({ path: `__screenshots__/owner-phone-regression/${phase}-${width}-${theme}.png` })
+    }
+    await until('normal source-room identity', () => header()?.dataset.chatContextId === group.id)
+    expect(header().textContent).toContain('产品讨论')
+    await page.getByTestId('session-chat-panel').getByTestId('phone-room-topics').click()
+    await until('normal topic rows use the real IDs', () => !!panel()?.querySelector('[data-topic-id="context-topic-a"]') && !!panel()?.querySelector('[data-topic-id="context-topic-b"]'))
+    await expect.element(page.getByTestId('phone-topics-search')).toBeVisible()
+    await capture('J-normal-open')
+    await page.getByTestId('phone-topics-search').fill('方案')
+    await until('normal search retains only its actual topic ID', () => !panel()?.querySelector('[data-topic-id="context-topic-a"]') && !!panel()?.querySelector('[data-topic-id="context-topic-b"]'))
+    await capture('J-normal-search')
+    await page.elementLocator(panel()!.querySelector<HTMLElement>('[data-topic-id="context-topic-b"][role="radio"]')!).click()
+    await until('normal topic B route and heading', () => topicTabOf(group.id)?.topic.topicChatId === 'context-topic-b' && header()?.dataset.chatContextId === 'context-topic-b')
+    expect(header().textContent).toContain('方案评审')
+    expect(harness.container.querySelector('[data-testid="topic-split-pane"]')?.getAttribute('data-topic-id')).toBe('context-topic-b')
+    await capture('L-normal-topic-b')
+    await page.getByTestId('topic-split-pane').getByTestId('phone-room-topics').click()
+    expect((document.querySelector('[data-testid="phone-topics-search"]') as HTMLInputElement).value).toBe('')
+    await page.elementLocator(panel()!.querySelector<HTMLElement>('[data-topic-id="context-topic-a"][role="radio"]')!).click()
+    await until('normal topic A route and heading', () => topicTabOf(group.id)?.topic.topicChatId === 'context-topic-a' && header()?.dataset.chatContextId === 'context-topic-a')
+    expect(header().textContent).toContain('需求讨论'); await capture('L-normal-topic-a')
+    await page.elementLocator(header().querySelector<HTMLElement>('[role="button"]')!).click()
+    await until('normal details keep topic A identity', () => infoTabOf(group.id)?.info.topic?.topicChatId === 'context-topic-a')
+    await waitForTopicDetailsPage()
+    expect(header().dataset.chatContextId).toBe('context-topic-a'); await capture('L-normal-topic-info')
+    await page.getByTestId('chat-settings-panel').getByRole('button', { name: '返回', exact: true }).click()
+    await until('normal details Back restores topic A', () => !infoTabOf(group.id)?.shown && header()?.dataset.chatContextId === 'context-topic-a')
+    await page.elementLocator(header().querySelector<HTMLButtonElement>('button')!).click()
+    await until('normal topic Back restores its actual source room', () => topicTabOf(group.id) === null && header()?.dataset.chatContextId === group.id)
+    expect(header().textContent).toContain('产品讨论'); await capture('L-normal-return')
   })
 }
