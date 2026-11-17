@@ -28,6 +28,10 @@ import '@/mobile/phone-look.css'
 vi.mock('@/platform', () => import('../../../../../../../tests/support/capacitorPlatformTestDouble'))
 vi.mock('@/lib/chat', async original => ({ ...await original<object>(), ...await import('../../../../../../../tests/support/contactsChatServiceTestDouble') }))
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../../../../../tests/support/agentDisplayStatusTestDouble'))
+// This controlled account's private chats have no topics. Keep the real reader
+// and settings UI; provide its normal transport result rather than a live fetch.
+const reads = vi.hoisted(() => ({ listTopics: vi.fn(async (_chatId: string, _topicChatId?: string) => []) }))
+vi.mock('@/lib/topics', async original => ({ ...await original<object>(), topicService: { listTopicsOfChat: reads.listTopics } }))
 let harness: ReturnType<typeof createReactHarness> | undefined
 const ids = ['private-header-a', 'private-header-b', 'private-header-agent'] as const
 afterEach(() => {
@@ -39,6 +43,7 @@ afterEach(() => {
 
 for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
   it(`${width}/${theme}: actual private heading follows peer identity, alias and route without a task title`, async () => {
+    reads.listTopics.mockClear()
     await page.viewport(width, 844); setLocalePreference('zh-CN'); writeThemePreference(theme)
     document.documentElement.setAttribute('data-phone-shell', '')
     for (const id of ids) { closeInfoTab(id); closeTopicTab(id) }
@@ -99,6 +104,11 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await untilStable('private details viewport geometry is stable across frames', detailsGeometry)
     expect(coversViewport(detailsGeometry())).toBe(true)
     expect(infoTabOf(a.id)?.shown).toBe(true)
+    await until('the normal private topic directory read has settled', () => {
+      const settings = details.querySelector('[data-testid="group-agent-flood-settings"]')
+      return reads.listTopics.mock.calls.some(([chatId]) => chatId === a.id) && settings?.childElementCount === 0
+    })
+    expect(details.querySelector('[role="alert"]')).toBeNull()
     await capture('human-details')
     await page.getByTestId('chat-settings-panel').getByRole('button', { name: '返回', exact: true }).click()
     await until('details Back restores the current private chat', () => !infoTabOf(a.id)?.shown)

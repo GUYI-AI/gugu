@@ -19,7 +19,7 @@ import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge'
 import { createReactHarness, renderWithAppProviders, device, displayIdentity } from '../../../../../../../tests/support/testHarness'
-import { until } from '../../../../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMessagingCatalog'
 import '@/i18n/registerContactsCatalog'
@@ -113,6 +113,25 @@ const shown = (testId: string) => harness!.container.querySelector<HTMLElement>(
 const layerOpen = () => shown('mobile-sessions-layer')?.hasAttribute('data-open') === true
 async function systemBack() { await act(async () => { window.dispatchEvent(new CustomEvent(NATIVE_BACK_EVENT)) }) }
 async function screenshot(entry: Entry, theme: 'light' | 'dark', phase: string) {
+  // navigateMobile commits the route before its old/new picture transition ends.
+  // Its real finished handler clears this marker; never skip the animation to capture.
+  await until('the real mobile page transition has finished before capture', () => document.documentElement.dataset.mobileDirection === undefined)
+  const atOrigin = ['before', 'returned-origin', 'cancel-origin', 'consecutive-back'].includes(phase)
+  const nav = () => harness!.container.querySelector<HTMLElement>('[data-phone-tabbar]')
+  if (atOrigin) await until('the returned shell has its real bottom navigation', () => !!nav()?.getBoundingClientRect().height)
+  await untilStable('the real shell page and bottom navigation geometry have settled', () => (
+    [...harness!.container.querySelectorAll<HTMLElement>('[data-mobile-tab-page], [data-phone-tabbar], [data-testid="mobile-sessions-layer"]')].map(element => {
+      const box = element.getBoundingClientRect(), style = getComputedStyle(element)
+      return { tab: element.dataset.mobileTabPage, open: element.dataset.open, inert: element.inert,
+        rect: [box.left, box.top, box.width, box.height], opacity: style.opacity, transform: style.transform }
+    })
+  ))
+  expect(document.documentElement.dataset.mobileDirection).toBeUndefined()
+  if (atOrigin) {
+    const selected = entry === 'messages' ? AUTOMATION_TEST_IDS.mobileMessagesNav : AUTOMATION_TEST_IDS.mobileContactsNav
+    expect(nav()!.querySelector(`[data-testid="${selected}"]`)?.getAttribute('aria-current')).toBe('page')
+    await expectOrigin(entry)
+  }
   await page.screenshot({ path: `__screenshots__/owner-phone-regression/M-${entry}-${theme}-${phase}.png` })
 }
 async function mount(theme: 'light' | 'dark') {
