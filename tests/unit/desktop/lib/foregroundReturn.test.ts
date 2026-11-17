@@ -9,10 +9,10 @@ import { createReactHarness } from '../../../support/testHarness'
  * app and came back (main.ts @@@app-presence; switching between Gugu windows is no leaving there). Focus or visibility
  * moving inside the app is no return.
  */
-const host = vi.hoisted(() => ({ presence: null as null | ((present: boolean) => void) }))
+const host = vi.hoisted(() => ({ presence: null as null | ((present: boolean) => void), initial: true }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: {
-    subscribeAppPresence: (listener: (present: boolean) => void) => { host.presence = listener; listener(true); return () => { host.presence = null } },
+    subscribeAppPresence: (listener: (present: boolean) => void) => { host.presence = listener; listener(host.initial); return () => { host.presence = null } },
     // The window-focus answer (main.ts @@@app-active) stays "a Gugu window has the focus" throughout these switches.
     subscribeAppActive: (listener: (active: boolean) => void) => { listener(true); return () => undefined },
   },
@@ -25,14 +25,15 @@ const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolv
 let visibility: DocumentVisibilityState = 'visible'
 
 beforeEach(() => {
+  host.initial = true
   notifyManager.setScheduler((callback) => { callback() })
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
   rm.followRendererSession('SIGNED_IN', 'alice')
-  installReadOnReturn()
 })
 afterEach(() => { vi.restoreAllMocks(); rm.queryClient.clear() })
 
 async function shown(name: string) {
+  installReadOnReturn()
   const reads = vi.fn(async () => 'v')
   const model = rm.replica({ name, scope: 'account', fresh: Infinity, refreshOnFocus: true, read: reads })
   function Probe() { rm.useReplica(model, []); return null }
@@ -64,6 +65,14 @@ describe('a return to the app', () => {
     await switchVisibility('hidden'); await switchVisibility('visible')
     window.dispatchEvent(new Event('focus')); await settle()
     expect(reads).toHaveBeenCalledTimes(1)
+    harness.cleanup({ keepReads: true })
+  })
+
+  it('started in the background (the host says not present at first): the first return reads once', async () => {
+    host.initial = false
+    const { reads, harness } = await shown('test-return-background')
+    host.presence?.(true); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
     harness.cleanup({ keepReads: true })
   })
 })

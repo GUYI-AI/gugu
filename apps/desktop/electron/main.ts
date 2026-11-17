@@ -1,4 +1,5 @@
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
+import { followAppPresence } from './app-presence'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import './browser-user-agent-bootstrap'
@@ -2334,31 +2335,14 @@ ipcMain.handle('app:is-active', () => isAppActive())
 const sendAppActive = (): void => { mainWindow?.webContents.send('app:active-changed', isAppActive()) }
 app.on('browser-window-focus', sendAppActive)
 app.on('browser-window-blur', sendAppActive)
-// @@@app-presence 「人离开了咕咕 / 回来了」,只给「回前台重读」用(lib/foregroundReturn.ts;@@@app-active 的已读判断不动)。
-// 在咕咕自己的窗口之间切换不算离开:macOS 用应用自己的 resign / become active(切自家窗口不触发);别处是窗口焦点,
-// 「没有咕咕窗口有焦点」要持续 APP_LEAVE_CONFIRM_MS 才算离开(切窗口时先 blur 旧窗、再 focus 新窗,中间有个空档)。
-const APP_LEAVE_CONFIRM_MS = 200
-let appPresent = true
-const sendAppPresence = (present: boolean): void => {
-  if (present === appPresent) return
-  appPresent = present
-  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present)
-}
-ipcMain.handle('app:is-present', () => appPresent)
-if (process.platform === 'darwin') {
-  app.on('did-resign-active', () => sendAppPresence(false))
-  app.on('did-become-active', () => sendAppPresence(true))
-} else {
-  let leaving: ReturnType<typeof setTimeout> | undefined
-  app.on('browser-window-blur', () => {
-    clearTimeout(leaving)
-    leaving = setTimeout(() => { if (!BrowserWindow.getFocusedWindow()) sendAppPresence(false) }, APP_LEAVE_CONFIRM_MS)
-  })
-  app.on('browser-window-focus', () => {
-    clearTimeout(leaving)
-    sendAppPresence(true)
-  })
-}
+// @@@app-presence — in Gugu or not, for the reads on a return (electron/app-presence.ts).
+const appPresence = followAppPresence({
+  platform: process.platform,
+  on: (event, listener) => { app.on(event as 'did-become-active', listener) },
+  focused: () => BrowserWindow.getFocusedWindow() !== null,
+  send: (present) => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present) },
+})
+ipcMain.handle('app:is-present', () => appPresence.present())
 // @@@win-titlebar-row — Windows 标题栏「编辑 / 视图」菜单的命令(清单与理由见 window-menu-commands.ts)。
 ipcMain.on('window:menu-command', (event, command: unknown) => {
   const window = BrowserWindow.fromWebContents(event.sender)
