@@ -56,7 +56,8 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     const draw = (active: ChatItem, directory = identities) => renderWithAppProviders(harness!,
       <ThemeProvider><LocalizationProvider><PhoneViewportShell mobile data-phone-shell="" data-ta-scope=""
         style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--ta-panel-bg)' }}>
-        <ChatAreaPanel mobile onBack={back} />
+        {/* Observe the zero-argument navigation contract, not React's event payload. */}
+        <ChatAreaPanel mobile onBack={() => back()} />
       </PhoneViewportShell></LocalizationProvider></ThemeProvider>,
       { auth: { id: 'private-header-owner' }, chat: { activeChat: active, activeChatId: active.id, chats: [a, b, agent], identitiesById: directory } })
     const header = () => harness!.container.querySelector<HTMLElement>('[data-chat-area-header]')!
