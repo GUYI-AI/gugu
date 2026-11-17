@@ -467,6 +467,26 @@
 
 
 /* Entity and actual state occupy one compact shared header, with no second title/hero above the thread. */
+.gg-aw > .gg-aw-centered-header {
+  --session-header-side-width: var(--control-h-touch);
+  display: grid;
+  grid-template-columns: var(--session-header-side-width) minmax(0, 1fr) var(--session-header-side-width);
+}
+.gg-aw > .gg-pane-header.gg-aw-centered-header[data-divider] { border-bottom: 1px solid var(--border); }
+.gg-aw > .gg-aw-centered-header:has(> .gg-pane-actions > :nth-child(2)) {
+  --session-header-side-width: calc(var(--control-h-touch) * 2 + 2px);
+}
+.gg-aw-centered-header .gg-pane-heading {
+  grid-area: 1 / 2;
+  text-align: center;
+}
+.gg-aw-centered-header .gg-pane-actions {
+  grid-area: 1 / 3;
+  justify-self: end;
+  margin-inline-start: 0;
+}
+.gg-aw-centered-header .gg-aw-title-with-watch { vertical-align: top; }
+.gg-aw-centered-header .gg-aw-header-context { justify-content: center; }
 .gg-aw .gg-aw-title-avatar {
   display: inline-flex;
   width: var(--avatar-sm);

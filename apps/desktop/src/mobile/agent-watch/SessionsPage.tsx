@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { Button } from '@/components/ui/Button'
@@ -14,7 +14,7 @@ import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-me
 import { MenuTableItems } from '@/components/MenuTableItems'
 
 const PHONE_MENU_ACTIONS: ReadonlySet<SessionMenuAction> = new Set(['pin', 'rename', 'archive'])
-import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
+import { DropdownMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu'
 import { useToast } from '@/components/toastContext'
 import { Field } from '@/components/ui/Field'
 import { formatRelativeTime } from '@/i18n/format'
@@ -52,10 +52,14 @@ export function SessionMenuButton({ menu, target, id, size, className, testId }:
 
 export function SessionActions({
   menu,
-  onArchived
+  onArchived,
+  appItems,
+  canManage = true,
 }: {
   menu: SessionMenuHandle
   onArchived?: () => void
+  appItems?: ReactNode
+  canManage?: boolean
 }) {
   const { t } = useTranslation('main')
   const { toast } = useToast()
@@ -93,12 +97,14 @@ export function SessionActions({
       <DropdownMenu.Root handle={menu} modal={false}>
         {({ payload: target }) => target ? (
           <DropdownMenu.Content aria-label={target.session.title} className="min-w-[160px]">
-            {target.phoneHost ? (
+            {appItems}
+            {appItems && canManage ? <MenuSeparator /> : null}
+            {canManage && (target.phoneHost ? (
               <MenuItem data-testid="agent-watch-session-stop" onClick={() => { void cancelPhoneSessionTurn(target.deviceId, target.session.conversationId).catch(failed) }}>
                 {t('agentWatch.sessions.stop')}
               </MenuItem>
             ) : <MenuTableItems testIdPrefix="agent-watch-session" onAction={(id) => phoneMenuRun(target)[id]!()}
-              items={sessionMenu('phone', { pinned: target.session.isPinned === true, sidebarPin: null }, PHONE_MENU_ACTIONS)} />}
+              items={sessionMenu('phone', { pinned: target.session.isPinned === true, sidebarPin: null }, PHONE_MENU_ACTIONS)} />)}
           </DropdownMenu.Content>
         ) : null}
       </DropdownMenu.Root>

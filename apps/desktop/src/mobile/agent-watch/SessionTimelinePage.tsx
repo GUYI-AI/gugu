@@ -43,7 +43,7 @@ import { agentStatusColorVar, presentAgentStatus } from '@gugu/core/shared/agent
 import { useAgentWatchSession } from './useAgentWatchSession'
 import { DropdownMenu } from '@/components/ui/Menu'
 import { type SessionMenuTarget, SessionActions, SessionMenuButton } from './SessionsPage'
-import { SessionAppMenu } from './SessionAppMenu'
+import { SessionAppMenu, SessionAppMenuItems } from './SessionAppMenu'
 import { useMachineLabel } from './useMachineLabel'
 import { SessionAppFrame } from '@/components/appSlot/SessionAppFrame'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
@@ -233,7 +233,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     ) : undefined,
     headerTestId: 'agent-watch-hero',
   }
-  const headerSubtitle = sourceGroupName ? <span className="flex min-w-0 items-center gap-2">
+  const headerSubtitle = mobile && sourceGroupName ? <span className="gg-aw-header-context flex min-w-0 items-center gap-2">
     <span data-phone-header-source="" className="truncate">{sourceGroupName}</span>
     {taskHeader.subtitle}
   </span> : taskHeader.subtitle
@@ -266,7 +266,16 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     </div>
   ) : null
 
-  // 会话的管理动作与列表行尾「…」同一个面板;都要那台机器执行,离线不给。
+  const centeredHeader = mobile && !appPanel && appKind === null
+  const appNavigation = !phoneHost && !appPanel ? {
+    appKind,
+    onConversation: () => setAppKind(null),
+    apps: [{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps],
+    onOpenApp: setAppKind,
+  } : null
+  const canManage = reachable && !hostSilent
+  const appItems = centeredHeader && appNavigation ? <SessionAppMenuItems {...appNavigation} /> : undefined
+  // The centered phone header puts App navigation in the same overflow as session actions.
   const headerActions = (
     <>
       {cloudAsleep && (wakeIssue || wakeDropped) ? (
@@ -274,13 +283,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           <RefreshCw />
         </IconButton>
       ) : null}
-      {!phoneHost && !appPanel ? <SessionAppMenu
-        appKind={appKind}
-        onConversation={() => setAppKind(null)}
-        apps={[{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps]}
-        onOpenApp={setAppKind}
-      /> : null}
-      {reachable && !hostSilent ? (
+      {appNavigation && !centeredHeader ? <SessionAppMenu {...appNavigation} /> : null}
+      {canManage || appItems ? (
         <SessionMenuButton menu={sessionMenu} target={{ deviceId: device.device_id, session, phoneHost }} size="md" testId="agent-watch-session-page-menu" />
       ) : null}
     </>
@@ -301,6 +305,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     {live => (
     <AgentWatchScreen
       {...taskHeader}
+      centeredHeader={centeredHeader}
+      titleLeading={centeredHeader ? undefined : taskHeader.titleLeading}
       title={<PhoneLiveWindowTitle name={shownName} live={live} />}
       subtitle={headerSubtitle}
       onBack={appKind === PHONE_TASK_BROWSER ? () => setAppKind(null) : onBack}
@@ -370,7 +376,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       </div>
       </PhoneLiveWindowSurface>
       {appKind === PHONE_TASK_BROWSER && <PhoneTaskBrowser key={`${device.device_id}:${session.conversationId}`} deviceId={device.device_id} sessionId={session.conversationId} onSent={() => setAppKind(null)} />}
-      <SessionActions menu={sessionMenu} onArchived={onBack} />
+      <SessionActions menu={sessionMenu} onArchived={onBack} appItems={appItems} canManage={canManage} />
     </AgentWatchScreen>
     )}
     </PhoneLiveWindowConversation>

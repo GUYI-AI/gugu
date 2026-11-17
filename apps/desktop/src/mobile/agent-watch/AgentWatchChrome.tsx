@@ -28,6 +28,7 @@ export function AgentWatchScreen({
   bodyFill,
   bodyRef,
   panelLayer = false,
+  centeredHeader = false,
 }: {
   title: ReactNode
   onBack?: () => void
@@ -54,6 +55,7 @@ export function AgentWatchScreen({
    * round back control (`ta-circle`, as the panel's own pages draw it).
    */
   panelLayer?: boolean
+  centeredHeader?: boolean
 }) {
   const { t } = useTranslation('main')
   return (
@@ -66,6 +68,7 @@ export function AgentWatchScreen({
         titleLeading={titleLeading}
         titleLevel={onBack ? 'panel' : 'page'}
         data-testid={headerTestId}
+        className={centeredHeader ? 'gg-aw-centered-header' : undefined}
         actions={actions}
         leading={onBack && panelLayer ? (
           <IconButton className="ta-circle gg-aw-panel-back" aria-label={t('settings.back')} title={t('settings.back')} onClick={onBack}>
