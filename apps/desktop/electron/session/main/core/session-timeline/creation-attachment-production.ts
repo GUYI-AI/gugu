@@ -9,7 +9,7 @@ import { agentOwnerUserId } from '@gugu/core/local/state/agentOwner';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { createAttachmentCreationHost } from './creation-attachment-host';
 import { attachmentCreationUnverified as unverified } from './creation-attachment-journal';
-import { priorInputAdmission } from './input-admission';
+import { readCreationInputCustody } from './input-admission';
 import { handoffCreationAttachmentInput } from './creation-attachment-handoff';
 
 const host = createAttachmentCreationHost({
@@ -54,7 +54,10 @@ const host = createAttachmentCreationHost({
         version: resolved.revision.version, sizeBytes: saved.size_bytes, sha256: saved.sha256 };
     } finally { await resolved.dispose(); }
   },
-  prior: (conversationId, text, clientMessageId, files) => priorInputAdmission({ conversationId, text, clientMessageId, files }),
+  prior: (conversationId, text, clientMessageId, files) => {
+    const evidence = readCreationInputCustody({ conversationId, text, clientMessageId, files });
+    return evidence === 'custody' ? 'accepted' : evidence === 'absent' ? null : 'uncertain';
+  },
   send: async (conversationId, text, clientMessageId, files, expected) => {
     const identity = sessionIdentityHost();
     await handoffCreationAttachmentInput(expected, async () => {
