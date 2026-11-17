@@ -7,7 +7,7 @@ import { ThemeProvider } from '@/store/theme'
 import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { closeInfoTab, closeTopicTab, topicTabOf, infoTabOf } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
-import { until } from '../../../../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
@@ -32,6 +32,27 @@ vi.mock('@/lib/topics', async original => ({ ...await original<object>(), topicS
 vi.mock('@/hooks/useRoomCollab', async original => ({ ...await original<object>(), useRoomCollab: () => ({ snapshot: null, error: null, reload: vi.fn(), authorityRevision: 0 }) }))
 let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => { harness?.cleanup(); closeInfoTab('context-room'); closeTopicTab('context-room'); document.documentElement.removeAttribute('data-phone-shell'); delete document.documentElement.dataset.theme })
+
+async function waitForTopicDetailsPage() {
+  await expect.element(page.getByTestId('chat-settings-panel')).toBeVisible()
+  // ChatAreaPanel's real mobile RightPanel is this details root's parent.
+  // Visibility alone is already true while its x=100% -> 0 entrance is moving.
+  const panel = harness!.container.querySelector<HTMLElement>('[data-testid="chat-settings-panel"]')!.parentElement!
+  const geometry = () => {
+    const box = panel.getBoundingClientRect(), viewport = harness!.container.getBoundingClientRect()
+    const style = getComputedStyle(panel)
+    return {
+      position: style.position, opacity: Number(style.opacity), transform: style.transform,
+      animating: panel.getAnimations().some(animation => animation.pending || (animation.playState !== 'finished' && animation.playState !== 'idle')),
+      edges: [box.left - viewport.left, box.top - viewport.top, box.right - viewport.right, box.bottom - viewport.bottom],
+    }
+  }
+  const coversViewport = (reading: ReturnType<typeof geometry>) => reading.position === 'fixed' && reading.opacity === 1 &&
+    !reading.animating && reading.edges.every(delta => Math.abs(delta) <= 0.5)
+  await until('real topic details entrance covers the phone viewport', geometry, coversViewport)
+  await untilStable('real topic details viewport geometry is stable across frames', geometry)
+  expect(coversViewport(geometry()), 'the stable details page still covers the viewport before capture').toBe(true)
+}
 
 for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
   it(`${width}/${theme}: real room route selects topic B, switches to A and returns to its source`, async () => {
@@ -64,10 +85,12 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-a-${width}-${theme}.png` })
     await page.elementLocator(header().querySelector<HTMLElement>('[role="button"]')!).click()
     await until('topic details keep the actual topic identity', () => infoTabOf(group.id)?.info.topic?.topicChatId === 'context-topic-a' && header()?.dataset.chatContextId === 'context-topic-a')
+    await waitForTopicDetailsPage()
+    expect(infoTabOf(group.id)?.info.topic?.topicChatId).toBe('context-topic-a')
+    expect(header().dataset.chatContextId).toBe('context-topic-a')
     await page.screenshot({ path: `__screenshots__/owner-phone-regression/L-topic-info-${width}-${theme}.png` })
     // Info is a real pushed page; its Back covers the retained topic header.
     // Click that visible page, never force-click the underlying topic button.
-    await expect.element(page.getByTestId('chat-settings-panel')).toBeVisible()
     await page.getByTestId('chat-settings-panel').getByRole('button', { name: '返回', exact: true }).click()
     await until('details Back restores its topic', () => !infoTabOf(group.id)?.shown && header()?.dataset.chatContextId === 'context-topic-a')
     await page.elementLocator(header().querySelector<HTMLButtonElement>('button')!).click()
