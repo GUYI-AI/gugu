@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
-import { ChevronDown, ChevronLeft } from '@/lib/icons';
+import { ChevronDown, ChevronLeft, Minimize2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@renderer/lib/ui/dropdown-menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -13,6 +13,7 @@ import { SESSION_TAB_HEIGHT_PX } from './tab-bar/tab-chip';
 import { isUnavailableTabResource, UnavailableTabBarItem } from './unavailable-tab';
 import { TabStripMotion } from './tab-bar/tab-motion';
 import { useTabOrderPreview } from './tab-bar/use-tab-order-preview';
+import { tabFullscreen } from './tab-fullscreen';
 
 export const TabBar = observer(function TabBar({
   tabTrailingSlot,
@@ -44,6 +45,11 @@ export const TabBar = observer(function TabBar({
   // pane's ordinary action group, never in the absolute, fixed-width grip slot.
   const returnConversation = !ownsFileToolbar && active && opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation && (pane.navigationOf(active.tabId)?.index ?? 0) === 0
     ? <Button size="icon-sm" variant="ghost" data-testid="tab-return-conversation" aria-label={translate('tabs.backToConversation')} title={translate('tabs.backToConversation')} onClick={() => void pane.go(active.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
+  // A page in full screen covers the whole workspace: its strip offers a worded way out, whichever page it is (file, App,
+  // browser). The tab's own ⤡ and Esc do the same; this is the one a person reads. A narrow strip keeps only its icon (index.css).
+  const fullscreen = tabFullscreen.isOn(pane) || (!!side && tabFullscreen.isOn(side.pane));
+  const exitFullscreen = fullscreen
+    ? <Button size="sm" variant="ghost" className="gap-1 text-xs" data-testid="tab-exit-fullscreen" aria-label={translate('tabs.restorePane')} title={translate('tabs.restorePane')} onClick={() => tabFullscreen.exit()}><Minimize2 className="size-3.5" /><span data-slot="tab-exit-fullscreen-label">{translate('tabs.restorePane')}</span></Button> : null;
   const resolvedTabs = pane.resolvedTabs;
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -111,7 +117,7 @@ export const TabBar = observer(function TabBar({
           />
         ) : null
       }
-      actionsSlot={returnConversation ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{returnConversation}{actionsSlot}</div> : actionsSlot}
+      actionsSlot={returnConversation || exitFullscreen ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{exitFullscreen}{returnConversation}{actionsSlot}</div> : actionsSlot}
       reserveShellRestoreLane={reserveShellRestoreLane}
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
