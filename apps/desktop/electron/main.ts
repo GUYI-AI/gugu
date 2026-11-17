@@ -4606,12 +4606,14 @@ app.whenReady().then(async () => {
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
+  if (!IS_TEST_MODE) {
+    if (process.defaultApp) {
+      if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
+      }
+    } else {
+      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
     }
-  } else {
-    app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
   }
   setupRendererCommandIpcHandlers()
   // 应用菜单(app-menu.ts):mac「咕咕」那一栏多一项「设置…」;@@@devtools-lock 锁了的包「视图」里没有
