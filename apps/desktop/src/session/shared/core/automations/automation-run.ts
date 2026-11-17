@@ -17,7 +17,7 @@ export type RunError = {
   step: 'queue' | 'create_session' | 'launch_session' | 'start_agent' | 'deliver';
   code: string;
   message?: string; // supplementary context (branch name, timeout ms, etc.)
-  /** Host-owned delivery startup retries; persists across scheduler/app restarts, never counts busy waits. */
+  /** Durable startup reservations, charged before start; a crash can consume one without starting. Busy waits do not count. */
   deliveryRecoveryAttempts?: number;
 };
 

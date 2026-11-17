@@ -3,7 +3,7 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import type { AutomationRun } from '@shared/core/automations/automation-run';
-import { executeAgentDelivery, MAX_SCHEDULE_DELIVERY_RECOVERIES } from './actions/deliverToAgent';
+import { executeAgentDelivery, MAX_SCHEDULE_DELIVERY_RECOVERIES, type AgentScheduleDeliveryDeps } from './actions/deliverToAgent';
 import { agentScheduleChangeText, restoreAgentSchedules, runAgentScheduleAction, tellAgentScheduleChanged } from './agent-schedules';
 import { AutomationScheduler, type SchedulerCallbacks } from './automation-scheduler';
 import { archiveSession } from '@main/core/sessions/archiveSession';
@@ -304,10 +304,13 @@ describe('到点送回建它的会话', () => {
     let current = await insertRun({ automationId: id, triggerConfigSnapshot: run.triggerConfigSnapshot,
       agentConfigSnapshot: run.agentConfigSnapshot, scheduledAt: run.scheduledAt,
       status: 'creating_session', triggerKind: 'cron', startedAt: Date.now() });
-    const deliver = vi.fn(async (_session, _envelope, _text, _scope, _receipt, allowRecovery) => ({
-      id: 'stable-failed-start', status: 'queued' as const,
-      recovery: { state: allowRecovery ? 'started' as const : 'needed' as const, cause: 'channel could not resume' },
-    }));
+    const reservations: boolean[] = [];
+    const deliver = vi.fn<AgentScheduleDeliveryDeps['deliver']>(async (_session, _envelope, _text, _scope, _receipt, reserve) => {
+      const allowed = await reserve('channel could not resume');
+      reservations.push(allowed);
+      return { id: 'stable-failed-start', status: 'queued',
+        recovery: { state: allowed ? 'started' : 'needed', cause: 'channel could not resume' } };
+    });
     const deps = { sessionPresent: async () => true, deliver };
     for (let i = 0; i < MAX_SCHEDULE_DELIVERY_RECOVERIES; i++) {
       await executeAgentDelivery(automation, current, () => {}, deps);
@@ -321,7 +324,7 @@ describe('到点送回建它的会话', () => {
       deliveryRecoveryAttempts: MAX_SCHEDULE_DELIVERY_RECOVERIES });
     expect(JSON.parse(failed.error).message).toContain('channel could not resume');
     expect(JSON.parse(failed.error).message).toContain('remains queued');
-    expect(deliver.mock.calls.at(-1)![5]).toBe(false);
+    expect(reservations).toEqual([true, true, true, false]);
     expect(new Set(deliver.mock.calls.map(call => call[4].id))).toEqual(new Set([current.id]));
   });
 
@@ -432,18 +435,20 @@ describe('一次性过了那一刻就收口', () => {
     expect(enabledOf(id)).toBe(0);
   });
 
-  it('送到一半应用退出:重启时那次记 interrupted_by_restart,这条一次性随之关掉', async () => {
+  it('requeues an interrupted agent delivery instead of closing its one-time schedule', async () => {
     const id = await oneTime();
     vi.setSystemTime(NOW + 4 * 60_000);
     fixture.sqlite
       .prepare(`UPDATE automation_runs SET status = 'creating_session', started_at = ? WHERE automation_id = ?`)
       .run(NOW + 3 * 60_000, id);
     const record = recordingCallbacks();
+    mocks.messageSessionFrom.mockResolvedValue({ id: 'queued-before-interruption', status: 'queued' });
     const scheduler = new AutomationScheduler(record.callbacks);
     scheduler.start();
-    await record.when(() => enabledOf(id) === 0);
+    await record.when(() => record.steps.some(run => run.automationId === id && (run.status === 'queued' || run.status === 'failed')));
     scheduler.stop();
-    expect(record.steps.find((run) => run.automationId === id)?.error).toMatchObject({ code: 'interrupted_by_restart' });
+    expect(record.steps.find((run) => run.automationId === id)?.status).toBe('queued');
+    expect(enabledOf(id)).toBe(1);
     expect(keeperNextDue()).toBeNull();
   });
 

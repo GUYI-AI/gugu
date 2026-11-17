@@ -2027,9 +2027,17 @@ export async function messageSessionDeliveryFrom(
   if (result?.status === 'failed' || !result?.message_id) {
     throw Object.assign(new Error(result?.error?.message ?? `the message to session ${sessionId} was not delivered`), { code: result?.error?.code });
   }
-  return { id: result.message_id, status: result.status,
-    ...(result.status === 'queued' && options.recoverPending !== undefined && transportOf(resolveSessionRow(rows, sessionId)) === 'acp'
-      ? { recovery: sessionLife().recoverQueuedDelivery(sessionId, result.message_id, options.recoverPending) } : {}) };
+  if (result.status === 'queued' && options.recoverPending && transportOf(resolveSessionRow(rows, sessionId)) === 'acp') {
+    const life = sessionLife();
+    let recovery = life.recoverQueuedDelivery(sessionId, result.message_id, false);
+    // Reserve durably before asking Life to start. A crash may consume a reservation without starting;
+    // it must never start first and lose the charge. Life rechecks eligibility after the await.
+    if (recovery.state === 'needed' && await options.recoverPending(recovery.cause)) {
+      recovery = life.recoverQueuedDelivery(sessionId, result.message_id, true);
+    }
+    return { id: result.message_id, status: result.status, recovery };
+  }
+  return { id: result.message_id, status: result.status };
 }
 
 /** The App-facing receipt keeps its existing id/deferred shape. */
@@ -2039,7 +2047,7 @@ export async function messageSessionFrom(envelope: DeliveryEnvelope, sessionId: 
 }
 
 /** `from`: the session of the agent that works the App's page (owner 10-14) — it is the one telling, so not itself. */
-type AppMessageOptions = { delivery?: 'queue' | 'defer'; key?: string; keyScope: string; from?: string; receipt?: { id: string; at: string }; recoverPending?: boolean };
+type AppMessageOptions = { delivery?: 'queue' | 'defer'; key?: string; keyScope: string; from?: string; receipt?: { id: string; at: string }; recoverPending?: (cause: string) => Promise<boolean> };
 
 function appMessage(sessionId: string, text: string, options: AppMessageOptions): Extract<SessionAction, { action: 'message' }> {
   return {

@@ -15,7 +15,7 @@ import {
   nextScheduledRunAt,
   startCreatingSession,
 } from './repo';
-import { markRunFailed, markRunSkipped, type OnStepCompleted } from './run-transitions';
+import { markRunFailed, markRunSkipped, updateRunOrThrow, type OnStepCompleted } from './run-transitions';
 import { runQueuedAutomation, type AutomationRunExecutor } from './runtime';
 import { prepareAgentScheduleChanges } from './assistant-panel-schedule-preparation';
 
@@ -70,6 +70,7 @@ export class AutomationScheduler {
   private tickTail: Promise<void> = Promise.resolve();
   private drainTail: Promise<void> = Promise.resolve();
   private bootstrapTail: Promise<void> = Promise.resolve();
+  private recoveryTail: Promise<void> = Promise.resolve();
   private readonly deliveryRetryAfter = new Map<string, number>();
   private readonly inFlight = new Set<string>(); // automation IDs currently executing
   private readonly deletingAutomationIds = new Set<string>();
@@ -85,7 +86,7 @@ export class AutomationScheduler {
   start(): void {
     if (this.timer) return;
 
-    this.recoverInterruptedRuns().catch((error) => {
+    this.recoveryTail = this.recoverInterruptedRuns().catch((error) => {
       log.error('AutomationScheduler recovery failed', { error: String(error) });
     });
     this.reload().catch((error) => {
@@ -141,6 +142,7 @@ export class AutomationScheduler {
   }
 
   async reload(): Promise<void> {
+    await this.recoveryTail;
     const blocked = await prepareAgentScheduleChanges();
     const run = this.bootstrapTail.then(() => this.bootstrapDueRuns(blocked));
     this.bootstrapTail = run.catch((error) => {
@@ -182,7 +184,14 @@ export class AutomationScheduler {
     const now = Date.now();
 
     const stuckCreating = await findRunsStuckInCreatingSession();
-    for (const { id } of stuckCreating) {
+    for (const { id, agentSessionId } of stuckCreating) {
+      if (agentSessionId) {
+        // Delivery uses one durable message id: replay the admission check, not a fresh message.
+        // Preserve any pre-start reservation. Accepted/unknown are reconciled by the delivery owner.
+        const queued = await updateRunOrThrow(id, { status: 'queued', finishedAt: null });
+        this.callbacks.onRunStep(queued);
+        continue;
+      }
       const failed = await markRunFailed(
         id,
         { step: 'create_session', code: 'interrupted_by_restart' },
@@ -304,6 +313,7 @@ export class AutomationScheduler {
   }
 
   async drainQueue(prepared?: Map<string, Error>): Promise<void> {
+    await this.recoveryTail;
     const blocked = prepared ?? await prepareAgentScheduleChanges();
     const run = this.drainTail.then(() => this.pumpQueue(blocked));
     this.drainTail = run.catch((error) => {

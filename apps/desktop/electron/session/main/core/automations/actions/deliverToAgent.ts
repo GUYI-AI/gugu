@@ -15,7 +15,7 @@ import { describeScheduleTime } from '../schedule-time';
 import { sessionUsesAssistantPanel } from '../../sessions/session-admission-preparation';
 import type { HostSessionDeliveryReceipt } from '../../sessions/session-orchestration';
 
-/** Additional startup attempts for one stable scheduled input; busy/dispatching waits do not spend this budget. */
+/** Additional startup reservations for one stable input; busy/dispatching waits do not spend this budget. */
 export const MAX_SCHEDULE_DELIVERY_RECOVERIES = 3;
 
 /**
@@ -35,7 +35,7 @@ export type AgentScheduleDeliveryDeps = {
     text: string,
     keyScope: string,
     receipt: { id: string; at: string },
-    allowRecovery: boolean,
+    reserveRecovery: (cause: string) => Promise<boolean>,
   ): Promise<HostSessionDeliveryReceipt>;
 };
 
@@ -48,10 +48,10 @@ const defaultDeps: AgentScheduleDeliveryDeps = {
       .limit(1);
     return !!row && row.archivedAt == null;
   },
-  async deliver(sessionId, envelope, text, keyScope, receipt, allowRecovery) {
+  async deliver(sessionId, envelope, text, keyScope, receipt, reserveRecovery) {
     // 动态取:会话编排拖着整套会话页运行时,调度器的单测不该为它付代价。
     const { messageSessionDeliveryFrom } = await import('@main/core/sessions/session-orchestration');
-    return messageSessionDeliveryFrom(envelope, sessionId, text, { keyScope, receipt, recoverPending: allowRecovery });
+    return messageSessionDeliveryFrom(envelope, sessionId, text, { keyScope, receipt, recoverPending: reserveRecovery });
   },
 };
 
@@ -93,7 +93,8 @@ export async function executeAgentDelivery(
 
   const context = agentScheduleContext(automation, run);
   const receipt = { id: run.id, at: new Date(run.scheduledAt ?? run.startedAt ?? automation.createdAt).toISOString() };
-  const recoveries = run.error?.deliveryRecoveryAttempts ?? 0;
+  let recoveries = run.error?.deliveryRecoveryAttempts ?? 0;
+  let pendingError = run.error;
   try {
     const delivery = await deps.deliver(
       sessionId,
@@ -108,23 +109,31 @@ export async function executeAgentDelivery(
       text,
       `automation:${automation.id}`,
       receipt,
-      recoveries < MAX_SCHEDULE_DELIVERY_RECOVERIES,
+      async cause => {
+        if (recoveries >= MAX_SCHEDULE_DELIVERY_RECOVERIES) return false;
+        const attempts = recoveries + 1;
+        const reserved = await updateRunOrThrow(run.id, { error: { step: 'deliver', code: 'delivery_recovery_reserved',
+          message: cause, deliveryRecoveryAttempts: attempts } });
+        recoveries = attempts;
+        pendingError = reserved.error;
+        return true;
+      },
     );
     if (delivery.status === 'queued') {
       const recovery = delivery.recovery;
-      const attempts = recoveries + (recovery?.state === 'started' ? 1 : 0);
+      const attempts = recoveries;
       const message = recovery && recovery.state !== 'waiting' ? recovery.cause
-        : run.error?.message ?? `Message ${delivery.id} is durably queued but has not been admitted`;
+        : pendingError?.message ?? `Message ${delivery.id} is durably queued but has not been admitted`;
       const error = { step: 'deliver' as const, code: 'delivery_pending', message, deliveryRecoveryAttempts: attempts };
       if (recovery?.state === 'blocked' || recovery?.state === 'needed') {
         const failed = await markRunFailed(run.id, { ...error,
           code: recovery.state === 'blocked' ? 'delivery_recovery_blocked' : 'delivery_recovery_exhausted',
-          message: `${message}; message ${delivery.id} remains queued; automatic startup recovery stopped (${attempts} attempts)` });
+          message: `${message}; message ${delivery.id} remains queued; automatic startup recovery stopped (${attempts} reservations)` });
         onStepCompleted(failed);
         return err(error.message);
       }
       const queued = await updateRunOrThrow(run.id, { status: 'queued', finishedAt: null,
-        error: (recovery && recovery.state !== 'waiting') || run.error ? error : null });
+        error: (recovery && recovery.state !== 'waiting') || pendingError ? error : null });
       onStepCompleted(queued);
       return err('delivery_not_admitted');
     }
