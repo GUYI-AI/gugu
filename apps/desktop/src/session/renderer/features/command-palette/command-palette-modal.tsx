@@ -64,7 +64,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
   const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery]);
-  // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
+  // Words not settled into a read are unknown; a retained reading still belongs to its earlier words.
   const settled = debouncedQuery === search;
   const current = settled && reading.state === 'value' ? reading.value : null;
   // The last completed reading stays shown (.gg-stale), including zero rows, while the next words' are on their way.
@@ -119,9 +119,9 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
       </div>
       <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
         className={stale ? 'max-h-96 overflow-y-auto p-1 gg-stale' : 'max-h-96 overflow-y-auto p-1'}>
-        {(commandsMode || current) && (
+        {(commandsMode || results) && (
           <Command.Empty className="py-8 text-center text-sm text-foreground/40">
-            {translate('palette.noResults', { query: search })}
+            {translate('palette.noResults', { query: stale ? heldQuery : search })}
           </Command.Empty>
         )}
         {commandsMode ? (

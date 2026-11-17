@@ -5,6 +5,8 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { publishRendererSession } from '@/lib/sessionPublication';
+import { clearViewState } from '@/lib/viewStateTable';
+import { queryClient as replicaQueries } from '@/lib/replica';
 import type { Session } from '@shared/core/sessions/sessions';
 import type { SearchItem } from '@shared/core/search';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
@@ -63,7 +65,7 @@ vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (key: string) => key }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
-  useSessionMessages: () => ({ translate: (key: string) => key }),
+  useSessionMessages: () => ({ translate: (key: string, values?: { query?: string }) => key === 'palette.noResults' ? `${key}:${values?.query}` : key }),
 }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { activeCommands: [] } }));
@@ -97,6 +99,8 @@ beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.localStorage.clear();
   signIn('recent-account-a');
+  for (const account of ['recent-account-a', 'recent-account-b']) clearViewState({ conversation: '', panel: 'recent-tasks', account });
+  replicaQueries.removeQueries({ queryKey: ['commandPaletteSearch'] });
   fixture.opened.mockClear();
   fixture.markOpened.mockClear();
   fixture.search.mockReset().mockImplementation(async () => fixture.results);
@@ -249,6 +253,15 @@ describe('palette search reading', () => {
       await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
       expect(rows()).toBe(emptyReadingRows);
     }
+
+    // Clearing the input retains the completed empty value's own words until the new read settles.
+    await act(async () => { setValue.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    await vi.waitFor(() => expect(host.querySelector('[cmdk-empty]')?.textContent).toBe('palette.noResults:wee'));
+    expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
+    await vi.waitFor(() => expect(answers).toHaveLength(4));
+    await act(async () => answers[3]!([]));
+    await vi.waitFor(() => expect(host.querySelector('[cmdk-empty]')?.textContent).toBe('palette.noResults:'));
   });
 
   it('says a failed search and reads again on retry, ❌ an empty list', async () => {
