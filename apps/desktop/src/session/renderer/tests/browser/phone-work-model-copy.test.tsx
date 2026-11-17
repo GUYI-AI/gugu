@@ -117,9 +117,11 @@ it.each(['light', 'dark'] as const)('%s: existing session Work separates model c
   const detail = row('native-model').querySelector<HTMLElement>('.gg-aw-choice-desc')!
   expect(label.textContent).toBe('GPT-6.1-Sol')
   expect(detail.textContent).toBe('Latest workhorse model for coding and everyday work.')
-  expect(getComputedStyle(label.parentElement!).flexDirection).toBe('column')
-  expect(detail.getBoundingClientRect().top).toBeGreaterThanOrEqual(label.getBoundingClientRect().bottom)
-  expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth)
+  expect(getComputedStyle(label.parentElement!).flexDirection).toBe('row')
+  expect(Math.abs(detail.getBoundingClientRect().top - label.getBoundingClientRect().top)).toBeLessThanOrEqual(4)
+  expect(getComputedStyle(label).whiteSpace).toBe('nowrap')
+  expect(getComputedStyle(detail).whiteSpace).toBe('nowrap')
+  expect(getComputedStyle(detail).textOverflow).toBe('ellipsis')
   await page.screenshot({ path: `__screenshots__/internal-phone-model-pressure/B-existing-model-${theme}-320.png` })
   await page.elementLocator(row('sonnet')).click()
   await until('the original alias reaches the real setting callback', () => host.set.mock.calls.some(([dimension, value]) => dimension === 'model' && value === 'sonnet'))
@@ -150,9 +152,11 @@ it.each(['light', 'dark'] as const)('%s: normal production catalog at the real e
     const label = row(model.id).querySelector<HTMLElement>('.gg-aw-choice-label')!
     const detail = row(model.id).querySelector<HTMLElement>('.gg-aw-choice-desc')!
     expect(label.textContent).toBe(model.name); expect(detail.textContent).toBe(model.description)
-    expect(getComputedStyle(label.parentElement!).flexDirection).toBe('column')
-    expect(detail.getBoundingClientRect().top).toBeGreaterThanOrEqual(label.getBoundingClientRect().bottom)
-    expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth)
+    expect(getComputedStyle(label.parentElement!).flexDirection).toBe('row')
+    expect(Math.abs(detail.getBoundingClientRect().top - label.getBoundingClientRect().top)).toBeLessThanOrEqual(4)
+    expect(getComputedStyle(label).whiteSpace).toBe('nowrap')
+    expect(getComputedStyle(detail).whiteSpace).toBe('nowrap')
+    expect(getComputedStyle(detail).textOverflow).toBe('ellipsis')
   }
   expect(document.body.textContent).not.toMatch(/agentWatch\.|Unchanged alias|Alternative native model|a{30}/)
   await page.screenshot({ path: `__screenshots__/owner-phone-regression/B-normal-existing-model-${theme}-320.png` })

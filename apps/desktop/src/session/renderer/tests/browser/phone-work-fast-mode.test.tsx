@@ -128,7 +128,7 @@ for (const { normal, width, theme } of scenarios) it(normal
     await page.elementLocator(document.querySelector<HTMLElement>('[data-dimension="effort"][data-testid="agent-watch-create-options-drill"]')!).click()
     const levels = Array.from(document.querySelectorAll('[data-testid="phone-thinking-options"] [role="radio"]'))
     expect(levels.map(level => level.getAttribute('data-option-id'))).toEqual(['low', 'medium', 'high'])
-    expect(levels.map(level => level.textContent)).toEqual(['低', '中', '高'])
+    expect(levels.map(level => level.querySelector('.gg-aw-choice-label')?.textContent)).toEqual(['低', '中', '高'])
     await page.getByTestId('agent-watch-create-controls-sheet-back').click()
   }
   const toggle = panel.getByRole('switch', { name: 'Fast', exact: true })
@@ -160,7 +160,7 @@ for (const { normal, width, theme } of scenarios) it(normal
   if (normal) {
     await closeWork(); await openWork()
     await expect.element(toggle).toHaveAttribute('aria-checked', 'true')
-    await until('high returned value survives closing Work', () => document.querySelector('[data-testid="phone-thinking-options"] [data-option-id="high"]')?.getAttribute('aria-checked') === 'true')
+    await until('high returned value survives closing Work', () => document.querySelector('[data-dimension="effort"] .gg-phone-composer-summary-value')?.textContent === '高')
   }
   await toggle.click()
   await expect.element(toggle).toHaveAttribute('aria-checked', 'false')
@@ -168,7 +168,7 @@ for (const { normal, width, theme } of scenarios) it(normal
   if (normal) {
     await closeWork(); await openWork()
     await expect.element(toggle).toHaveAttribute('aria-checked', 'false')
-    await until('high and OFF returned values survive reopening Work', () => document.querySelector('[data-testid="phone-thinking-options"] [data-option-id="high"]')?.getAttribute('aria-checked') === 'true')
+    await until('high and OFF returned values survive reopening Work', () => document.querySelector('[data-dimension="effort"] .gg-phone-composer-summary-value')?.textContent === '高')
     await capture('G-existing-fast-off-again')
     expect(host.set.mock.calls).toEqual([['fast', 'on'], ['effort', 'high'], ['fast', 'off']])
     await page.elementLocator(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
@@ -193,13 +193,13 @@ it('normal production catalog: existing Work without Fast retains text IDs acros
   await mount(390, 'dark')
   const assertUnavailable = async () => {
     expect(document.querySelector('[data-testid="agent-watch-create-controls-sheet"] [data-phone-fast]')).toBeNull()
+    expect(document.body.textContent).toContain(normalCodexModelRows[0]!.name)
+    expect(document.body.textContent).toContain('隔离验收设备')
+    expect(document.body.textContent).not.toMatch(/Native Codex model|qa-fast-device|agentWatch\./)
     await page.elementLocator(document.querySelector<HTMLElement>('[data-dimension="effort"][data-testid="agent-watch-create-options-drill"]')!).click()
     const choices = Array.from(document.querySelectorAll('[data-testid="phone-thinking-options"] [role="radio"]'))
     expect(choices.map(choice => choice.getAttribute('data-option-id'))).toEqual(['low', 'medium', 'high'])
     expect(choices.find(choice => choice.getAttribute('data-option-id') === 'medium')?.getAttribute('aria-checked')).toBe('true')
-    expect(document.body.textContent).toContain(normalCodexModelRows[0]!.name)
-    expect(document.body.textContent).toContain('隔离验收设备')
-    expect(document.body.textContent).not.toMatch(/Native Codex model|qa-fast-device|agentWatch\./)
     expect(host.set).not.toHaveBeenCalled()
     await page.getByTestId('agent-watch-create-controls-sheet-back').click()
   }

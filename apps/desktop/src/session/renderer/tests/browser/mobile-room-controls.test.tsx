@@ -42,7 +42,7 @@ async function mount(theme:'light'|'dark'='dark',state:'ready'|'loading'|'failed
 }
 afterEach(()=>{harness?.cleanup();harness=null;document.documentElement.removeAttribute('data-phone-shell');onPick=vi.fn();onOpen=vi.fn();retry=vi.fn()})
 
-it.each(['light','dark'] as const)('%s: topic and Agent sheets preserve the composing editor and caret',async theme=>{
+it.each(['light','dark'] as const)('%s: topic and Agent sheets dismiss keyboard focus while preserving the editor and caret',async theme=>{
  const editor=await mount(theme);await page.getByTestId('room-editor').fill('正在输入中文')
  const text=document.createTreeWalker(editor,NodeFilter.SHOW_TEXT).nextNode()!
  const selection=getSelection()!,range=document.createRange();range.setStart(text,2);range.collapse(true);selection.removeAllRanges();selection.addRange(range)
@@ -51,9 +51,9 @@ it.each(['light','dark'] as const)('%s: topic and Agent sheets preserve the comp
  editor.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'ni'}))
  await page.getByTestId('phone-room-topics').click();await page.getByRole('heading',{name:'话题',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
  await page.getByTestId('phone-room-agents').click();await page.getByRole('heading',{name:'智能体',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
- expect(harness!.container.querySelector('[contenteditable]')).toBe(editor);expect(document.activeElement).toBe(editor)
+ expect(harness!.container.querySelector('[contenteditable]')).toBe(editor);expect(document.activeElement).not.toBe(editor)
  expect(selection.anchorNode).toBe(before.node);expect(selection.anchorOffset).toBe(before.offset);expect(editor.textContent).toBe(before.text)
- expect(blur).not.toHaveBeenCalled();expect(end).not.toHaveBeenCalled()
+ expect(blur).toHaveBeenCalledTimes(1);expect(end).not.toHaveBeenCalled()
 })
 
 it('lists the main room and every topic with real unread values and dispatches the selected topic',async()=>{

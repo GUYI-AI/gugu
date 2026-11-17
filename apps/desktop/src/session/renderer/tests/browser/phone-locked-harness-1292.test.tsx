@@ -119,7 +119,11 @@ it.each([false, true])(
     const attachment = harness.container.querySelector<HTMLButtonElement>('[data-phone-attachment]')!
     const editor = harness.container.querySelector<HTMLElement>('[contenteditable]')!
     expect(attachment).not.toBeNull()
-    expect(attachment.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
+    expect(getComputedStyle(attachment).display).toBe('none')
+    expect(harness.container.querySelector(working ? 'button[aria-label="停止生成"]' : 'button[aria-label="发送消息"]')).not.toBeNull()
+    ;(editor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
+    await until('two-line attachment action is visible', () => getComputedStyle(attachment).display !== 'none')
+    expect(attachment.getBoundingClientRect().left).toBeGreaterThanOrEqual(editor.getBoundingClientRect().right)
     const chooseFile = vi.spyOn(harness.container.querySelector<HTMLInputElement>('input[type="file"]')!, 'click').mockImplementation(() => {})
     await userEvent.click(attachment)
     expect(chooseFile).toHaveBeenCalledOnce()
@@ -133,7 +137,7 @@ it.each([false, true])(
       Math.abs(locked.getBoundingClientRect().y - model.getBoundingClientRect().y)
     ).toBeLessThan(8)
     const send = harness.container.querySelector<HTMLButtonElement>(
-      working ? 'button[aria-label="停止生成"]' : 'button[aria-label="发送消息"]'
+      'button[aria-label="发送消息"]'
     )!
     expect(send).not.toBeNull()
     expect(

@@ -50,6 +50,7 @@ function ComposerControlRow({ children }: { children: ReactNode }) {
     <div id={itemsId} className="gg-phone-composer-controls-items" hidden={collapsed} inert={collapsed || undefined}>{children}</div>
     <IconButton size="sm" aria-label={t(collapsed ? 'expand' : 'collapse')} aria-expanded={!collapsed} aria-controls={itemsId}
       data-testid="phone-composer-menu-toggle" className="gg-phone-composer-menu-toggle"
+      onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus}
       onClick={() => setManualCollapsed(!collapsed)}>
       {collapsed ? <ChevronUp /> : <ChevronDown />}
     </IconButton>

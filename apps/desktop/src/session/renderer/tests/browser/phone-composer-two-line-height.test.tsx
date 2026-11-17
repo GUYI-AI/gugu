@@ -52,16 +52,18 @@ for (const width of [320, 390]) for (const theme of ['dark', 'light'] as const) 
     await setLines(2)
     await vi.waitFor(() => expect(Math.abs(input.getBoundingClientRect().height - (2 * line + padding))).toBeLessThanOrEqual(1))
     expect(input.scrollHeight).toBeLessThanOrEqual(input.clientHeight + 1)
-    const expand = composer.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
+    expect(composer.querySelector('[data-phone-editor-toggle]')).toBeNull()
+    const attachment = composer.querySelector<HTMLElement>('[data-phone-attachment]')!
     const sendButton = composer.querySelector<HTMLElement>('[data-phone-send]')!
-    const expandBox = expand.getBoundingClientRect(), sendBox = sendButton.getBoundingClientRect()
-    expect(expandBox.height).toBeGreaterThanOrEqual(32)
+    const attachmentBox = attachment.getBoundingClientRect(), sendBox = sendButton.getBoundingClientRect()
+    expect(attachmentBox.height).toBeGreaterThanOrEqual(32)
     expect(sendBox.height).toBeGreaterThanOrEqual(44)
-    expect(expandBox.bottom, 'Expand and Send retain distinct touch targets').toBeLessThanOrEqual(sendBox.top + 0.5)
+    expect(attachmentBox.bottom, 'Attachment and Send retain distinct touch targets').toBeLessThanOrEqual(sendBox.top + 0.5)
     await page.screenshot({ element: harness.container, path: `__screenshots__/owner-phone-regression/H-shared-composer-${width}-${theme}-two-lines.png` })
     await setLines(3)
     const attach = composer.querySelector<HTMLElement>('[data-phone-attachment]')!
     expect(getComputedStyle(attach).display).not.toBe('none')
+    const expand = composer.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
     const controls = [expand, attach, sendButton].map(node => node.getBoundingClientRect())
     for (let i = 1; i < controls.length; i++) expect(controls[i - 1]!.bottom).toBeLessThanOrEqual(controls[i]!.top + 0.5)
     await setLines(2)
