@@ -311,8 +311,9 @@ import {
 } from './sessionpage/local-session-source'
 import { resolveSessionpageAgentCard } from './sessionpage/sessionpage-agent-card'
 import { loadSessionpageCanonicalAgentIdentities } from './sessionpage/sessionpage-agent-identity'
-import { SESSION_SHELL_CHANNELS, agentNamesFromPeers, type SessionShellAgentName } from '../src/session/shared/lib/ipc/shell-port'
-import { sessionpageAgentProvisionedEvent } from '../src/session/shared/lib/ipc/sessionpage-identity-contract'
+import { SESSION_SHELL_CHANNELS, agentNamesFromPeers } from '../src/session/shared/lib/ipc/shell-port'
+import { sessionpageAgentProvisionedEvent, sessionpageBirthGroupJoinEvent } from '../src/session/shared/lib/ipc/sessionpage-identity-contract'
+import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpageBirthGroupJoin } from './sessionpage/sessionpage-birth-group-join'
 import type { EventDefinition } from '../src/session/shared/lib/ipc/events'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
@@ -2738,36 +2739,6 @@ ipcMain.on('device-runtime:scheduled-tasks-changed', () => {
 // @@@local-device-self - The renderer should not ask the cloud whether its own machine
 ipcMain.handle('device:get-self-snapshot', () => getLocalDeviceSelfSnapshot())
 
-// @@@share-card-rename 改名也有两半,云端与本机。
-// 云端那半是 identity.users.display_name(聊天页 / 通讯录 / 名片海报读它);本机那半是花名册 agents.json
-// 上的 name,会话页读它(分享按钮的提示、分享卡片里那个名字、按名字寻址)。provisioning 复用花名册上的
-// existing.name 且**从不**回读云端,所以只改云端 = 同一个 agent 在两页叫两个名字,而这正是
-// sessionpage-agent-card 注释里写明要避免的那件事。
-// 渲染层在云端改名**成功之后**调它(同 release 的次序:云端认了,才轮得到本机跟上)。
-// 本机没有花名册记录不是失败(那个 agent 是在别的设备上开的户,这台机器上本来就没有它的那一半)→ 回 false。
-ipcMain.handle('owned-agent:rename-local-footprint', async (_e, arg: unknown) => {
-  const input = (arg ?? {}) as { agentUserId?: unknown; name?: unknown }
-  const agentUserId = typeof input.agentUserId === 'string' ? input.agentUserId.trim() : ''
-  const name = typeof input.name === 'string' ? input.name.trim() : ''
-  if (!agentUserId) throw new Error('owned-agent rename 缺 agentUserId')
-  // 空名不是「不改」,是一个会把花名册写坏的值 —— 调用方本就不该发出来,发出来就响亮拒绝。
-  if (!name) throw new Error('owned-agent rename 缺 name')
-  const { listAgents, writeAgentName } = await import('@gugu/core/local/state/agents')
-  // includeGuests:会话页会话的身份可能还挂在 guest 记录上,漏掉它就等于「这台机器上没有」而静默不改。
-  const roster = await listAgents(process.env, { includeGuests: true })
-  const existing = roster.find((agent) => agent.gugu_user_id === agentUserId)
-  if (!existing) return false
-  // The cloud already took this person's rename: it is this device's latest name and it is published.
-  await writeAgentName(agentUserId, name, 'local', process.env)
-  await writeAgentName(agentUserId, name, 'published', process.env)
-  // The roster write renames the bound task (task-name.ts announces it to every surface). Its agent is told
-  // only when it has a session to hear it (no session binding = nothing is running under that name yet).
-  const sessionId = existing.cache?.[SESSION_CACHE_KEY]
-  if (typeof sessionId === 'string' && sessionId && existing.name !== name) tellRenamedAgentsSession({ agentUserId, displayName: name })
-  return true
-})
-
-
 ipcMain.handle('dialog:select-file', async () => {
   const options: OpenDialogOptions = { properties: ['openFile'] }
   const result = mainWindow
@@ -3991,6 +3962,17 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentCard, async (_event, sessionId: u
     (agentUserIds) => loadSessionpageCanonicalAgentIdentities(auth, agentUserIds),
   )
 })
+handleShellChannel(SESSION_SHELL_CHANNELS.birthGroupJoin, async (_event, sessionId: unknown) => {
+  const auth = await authProvider?.getAuth()
+  if (!auth?.accessToken || !auth.userId) return null
+  return sessionpageBirthGroupJoin(String(sessionId ?? ''), process.env, auth.userId)
+})
+handleShellChannel(SESSION_SHELL_CHANNELS.retryBirthGroupJoin, async (_event, sessionId: unknown) => {
+  const auth = await authProvider?.getAuth()
+  if (!auth?.accessToken || !auth.userId) throw new Error('Sign in to retry joining the group')
+  return retrySessionpageBirthGroupJoin(String(sessionId ?? ''), process.env,
+    { accessToken: auth.accessToken, userId: auth.userId }, createLogger('sessionpage/provision'))
+})
 // 侧栏逐行 hover 要说「这一行是谁」(#5818):就是本机名册(session_peers)那一份的投影,名字同样取自
 // identity.users.display_name。
 handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
@@ -4219,8 +4201,8 @@ function sendUiEvent<T>(event: EventDefinition<T>, ...payload: T extends void ? 
 // 身份是会话启动后**才**到位的(云端 provision + roster 落盘),任务一创建就已渲染 → 分享入口第一次查必然是 null,
 // 所以一落地就播一次(❌ 轮询)。播给本机窗口,也播给经设备连接看着这台机器的别的电脑(#6264:server 上只有后者)。
 // 载荷形状由事件定义钉住(会话页按 conversationId 认领),❌ 原样转主进程自己那份事件(那边叫 sessionId)。
-function sendSessionpageIdentityEvent(event: EventDefinition<SessionShellAgentName>, payload: SessionShellAgentName): void {
-  sendUiEvent(event, payload)
+function sendSessionpageIdentityEvent<T extends object>(event: EventDefinition<T>, payload: T): void {
+  mainWindow?.webContents.send(event.name, payload)
   emdashBridge?.broadcastDeviceSessionHostEvent(event.name, payload)
 }
 // #7337 咕咕给新会话起名:建会话时记下,这条会话拿到 agent 身份(签票要挂在它名下)时以它的名义找设置里的模型要一个短名。
@@ -4254,6 +4236,11 @@ onSessionpageAgentProvisioned((event) => {
   // S2b 读者触发③(身份就绪):可投递 = 身份就绪 + 各腿登记好,两个边界各踢一次,后到的那一次投得出去。
   // 各腿的登记点另踢(ACP:运行时启动成功;PTY:registerLive;codex:threadId;claude:tools/list)。
   onSessionpageSessionLive(event.agentUserId, event.sessionId)
+})
+
+// A born-in-chat join that failed (or a retry that settled it): the session page shows it as a condition with a retry.
+onSessionpageBirthGroupJoin(({ sessionId, join }) => {
+  sendSessionpageIdentityEvent(sessionpageBirthGroupJoinEvent, { conversationId: sessionId, join })
 })
 
 /** #6396 在这条会话的对话里画「名字已被占用」那一行(见 sessionpage-rename-announcement.ts)。递不到只记一笔:名字本身已经换好了。 */

@@ -51,7 +51,7 @@ async function renderDialog(messages: MessageItem[], onClose = vi.fn()) {
   await act(async () => {
     root.render(createElement(ForwardMessageDialog, {
       messages,
-      chats: [chat({ id: 'src', name: 'Source' }), chat({ id: 'a', name: 'Alpha' })],
+      chats: [chat({ id: 'src', name: 'Source' }), chat({ id: 'a', name: 'Alpha', last_message_at: '2026-06-01T00:00:00.000Z' })],
       sourceChatId: 'src',
       onForward: vi.fn(async () => {}),
       onClose,

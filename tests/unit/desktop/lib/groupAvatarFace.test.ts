@@ -8,7 +8,7 @@ describe('default group face', () => {
     expect(index).toBeLessThan(12)
     expect(groupAvatarColorIndex('3f6c1a52-chat')).toBe(index)
     expect(new Set(Array.from({ length: 200 }, (_, n) => groupAvatarColorIndex(`chat-${n}`))).size).toBe(12)
-    expect(groupAvatarThemeColors(index)).toEqual({ color: `var(--avatar-group-text-${index + 1})`, strokeColor: `var(--avatar-group-stroke-${index + 1})`, fill: `var(--avatar-group-fill-${index + 1})` })
+    expect(groupAvatarThemeColors(index)).toEqual({ color: `var(--avatar-group-text-${index + 1})`, strokeColor: `var(--avatar-group-stroke-${index + 1})` })
   })
 
   it.each([
@@ -23,26 +23,26 @@ describe('default group face', () => {
   })
 
   it('draws a circular outline around the text, or around the group mark when there is none', () => {
-    const mark = groupAvatarSvg({ color: '#3370FF', fill: '#fff', px: 64 })
+    const mark = groupAvatarSvg({ color: '#3370FF', px: 64 })
     expect(mark).not.toContain('<text')
-    expect(mark).toMatch(/<circle cx="104" cy="104" r="[\d.]+"[^>]*stroke="#3370FF"/)
-    const sizeOf = (text: string) => /font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text, fill: '#fff', px: 64 }))?.[1]
+    expect(mark).toMatch(/<circle cx="104" cy="104" r="[\d.]+" fill="none" stroke="#3370FF"/)
+    const sizeOf = (text: string) => /font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text, px: 64 }))?.[1]
     expect([sizeOf('团'), sizeOf('团队'), sizeOf('MKT'), sizeOf('产品设计'), sizeOf('Branding')]).toEqual(['116', '80', '80', '80', '80'])
     expect(sizeOf('WWWW')).toBe('80')
     expect(sizeOf('mmmm')).toBe('80')
     expect(sizeOf('AI研发')).toBe('80')
     expect(sizeOf('🚀')).toBe('76')
     expect(sizeOf('👩‍💻研发')).toBe('50')
-    expect(groupAvatarSvg({ color: '#3370FF', text: '&<', fill: '#fff', px: 64 })).toContain('&#38;&#60;')
+    expect(groupAvatarSvg({ color: '#3370FF', text: '&<', px: 64 })).toContain('&#38;&#60;')
   })
 
   it('keeps the outline readable and draws text only from 24px, always on one line', () => {
-    const strokeOf = (px: number) => Number(/stroke-width="([\d.]+)"/.exec(groupAvatarSvg({ color: '#3370FF', fill: '#fff', px }))![1])
+    const strokeOf = (px: number) => Number(/stroke-width="([\d.]+)"/.exec(groupAvatarSvg({ color: '#3370FF', px }))![1])
     expect(strokeOf(208)).toBe(6.5)
     expect(strokeOf(32) * 32 / 208).toBeCloseTo(1.5)
-    const texts = (px: number) => groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px }).match(/<text/g)?.length
+    const texts = (px: number) => groupAvatarSvg({ color: '#3370FF', text: '产品讨论', px }).match(/<text/g)?.length
     expect([texts(20), texts(24), texts(28), texts(32), texts(48)]).toEqual([undefined, 1, 1, 1, 1])
-    expect(/font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px: 32 }))?.[1], 'sized for the one line shown').toBe('80')
+    expect(/font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text: '产品讨论', px: 32 }))?.[1], 'sized for the one line shown').toBe('80')
   })
 })
 
@@ -50,7 +50,7 @@ describe('default group face', () => {
 describe('circular avatar text room', () => {
   it.each([24, 28, 32, 48, 96])('reserves room for single/double characters and wide WW at %spx', (px) => {
     for (const text of ['团', '宣传', 'WW', '🚀', '👩‍💻研', '👩‍💻🚀', '🇨🇳研']) {
-      const svg = groupAvatarSvg({ color: '#3370FF', text, fill: '#fff', px })
+      const svg = groupAvatarSvg({ color: '#3370FF', text, px })
       const size = Number(/font-size="(\d+)"/.exec(svg)![1])
       const stroke = Number(/stroke-width="([\d.]+)"/.exec(svg)![1])
       const count = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].length

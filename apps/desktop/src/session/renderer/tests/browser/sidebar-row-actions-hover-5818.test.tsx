@@ -78,6 +78,8 @@ vi.mock('@renderer/lib/stores/app-state', async () => {
   },
   sidebarStore: {
     remoteSession: () => undefined,
+    // 这些行都在项目行下:置顶是会话自己的(row-pin.ts)。
+    rowOfSession: () => 'proj-1',
     // 设置 `interface.showLeftSidebarAgentNameOnHover` 的镜像(现在开的是身份卡,#6092)。这里是**开**的那一档;
     // 关掉那一档由下面单独一条用例把它翻过去判。
     agentNameOnHoverEnabled: true,

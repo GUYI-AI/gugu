@@ -34,7 +34,7 @@
 .gg-phone-composer-sheet-status { padding: 12px 8px; font-size: var(--font-body); color: var(--text-secondary); }
 .gg-phone-composer-search { display: flex; align-items: center; min-height: 44px; gap: 10px; padding-inline: 4px; }
 .gg-phone-composer-search > svg { width: 20px; height: 20px; color: var(--text-secondary); }
-.gg-phone-composer-search > input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-size: 16px; }
+.gg-phone-composer-search > input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--font-size-md); }
 .gg-phone-skill-icon { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; color: var(--live-light); }
 .gg-phone-skill-icon > img { width: 24px; height: 24px; object-fit: contain; }
 .gg-phone-skill-icon > svg { width: 22px; height: 22px; }

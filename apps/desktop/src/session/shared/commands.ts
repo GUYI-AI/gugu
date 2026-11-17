@@ -215,13 +215,14 @@ export const COMMANDS = defineCommands({
     category: 'Task View',
   },
   'task.pin': {
-    label: 'Pin Task',
+    label: 'Pin',
     description: 'Pin this task to keep it at the top',
     iconKey: 'pin',
     category: 'Task View',
   },
   'task.archive': {
-    label: 'Archive Task',
+    label: 'Archive session',
+    labelKey: 'task.archiveTaskTitle',
     description: 'Archive the current task',
     iconKey: 'archive',
     defaultHotkey: 'Mod+Shift+E',
@@ -450,7 +451,8 @@ export const COMMANDS = defineCommands({
   },
   'session.rename': {
     defaultHotkey: (platform) => sessionActionDefault('R', platform),
-    label: 'Rename Task',
+    label: 'Rename',
+    labelKey: 'task.rename',
     description: 'Rename the highlighted task in place',
     category: 'Navigation',
     conflictBehavior: 'allow',

@@ -269,12 +269,7 @@ export interface CreateModelsDeps {
 }
 
 const defaultCreateModelsDeps: CreateModelsDeps = {
-  readAuth: async (providerId) => {
-    const { getAgentConfigRuntimeClient } = await import('@main/core/agent-config/runtime-process/host');
-    const runtime = await getAgentConfigRuntimeClient();
-    const result = await runtime.refreshAuthStatus({ providerId });
-    return result.success ? result.data : null;
-  },
+  readAuth: async (providerId) => (await import('@main/core/agent-config/runtime-process/host')).readAgentAuthStatus(providerId),
 };
 
 export async function createModels(
