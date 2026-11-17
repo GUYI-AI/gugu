@@ -7,7 +7,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
+import { presentAgentStatus, type AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
+import { chatAgentSection } from '@renderer/features/sidebar/chat-agents';
 import { SessionRowShell } from '@renderer/features/sidebar/sidebar-session-row';
 import type { SessionBranchSummary } from '@renderer/features/sidebar/sidebar-session-branch';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -35,23 +36,27 @@ beforeEach(async () => {
 afterEach(() => { root.unmount(); host.remove(); park.remove(); });
 
 const running = presentAgentStatus({ reading: { status: 'working', detail: null } });
+const asking = presentAgentStatus({ reading: { status: 'needs_user', detail: null } });
 const tree = (total: number, active: number): SessionBranchSummary => ({
   total, active: active > 0 ? [{ count: active, presentation: running }] : [],
 });
 
-async function mount(rows: { id: string; tree?: SessionBranchSummary; expanded?: boolean; needsAttention?: boolean }[]) {
+type Row = { id: string; tree?: SessionBranchSummary; expanded?: boolean; presentation?: AgentStatusPresentation };
+
+async function mount(rows: Row[], extra: (row: Row) => object = () => ({})) {
   root.render(
     <SessionLocalizationProvider>
       {rows.map((row) => (
         <SessionRowShell
           key={row.id}
           sessionId={row.id} rowVariant="tree" depth={0} hasChildren={row.tree !== undefined} expanded={row.expanded ?? false}
-          needsAttention={row.needsAttention ?? false} treeSummary={row.tree} title={LONG_TITLE} harness={null}
-          presentation={presentAgentStatus({ reading: { status: 'idle', detail: null } })}
+          treeSummary={row.tree} title={LONG_TITLE} harness={null}
+          presentation={row.presentation ?? presentAgentStatus({ reading: { status: 'idle', detail: null } })}
           lastInteractedAt={new Date(Date.now() - 3 * 3600_000).toISOString()}
           doneUnread={false} isActive={false} isCursor={false} isPendingArchive={false}
           quickActions={{ isPinned: false, onSetPinned: () => {}, archiveLabel: 'Archive', onArchive: () => {} }}
           onOpen={() => {}}
+          {...extra(row)}
         />
       ))}
     </SessionLocalizationProvider>,
@@ -78,10 +83,10 @@ function trailing(id: string) {
 
 it('keeps the count and the status side by side against the right edge, leaving the rest to the title', async () => {
   const cases = [
-    { id: 'none-dot', needsAttention: true },
+    { id: 'none-dot', presentation: asking },
     { id: 'zero', tree: tree(0, 0) },
-    { id: 'one-digit-dot', tree: tree(7, 0), needsAttention: true },
-    { id: 'two-digit-dot-expanded', tree: tree(38, 2), expanded: true, needsAttention: true },
+    { id: 'one-digit-dot', tree: tree(7, 0), presentation: asking },
+    { id: 'two-digit-dot-expanded', tree: tree(38, 2), expanded: true, presentation: asking },
     { id: 'two-digit-time', tree: tree(38, 0) },
     { id: 'two-digit-running', tree: tree(38, 12) },
   ];
@@ -102,4 +107,17 @@ it('keeps the count and the status side by side against the right edge, leaving 
     }
   }
   expect([...gaps]).toEqual([12]);
+});
+
+it('a child in error leaves the running parent showing its own running state', async () => {
+  const failed = presentAgentStatus({ reading: { status: 'error', detail: null } });
+  const entry = (id: string, presentation: AgentStatusPresentation, parentSessionId?: string) =>
+    ({ id, projectId: 'p', isPinned: false, time: 1, presentation, parentSessionId });
+  // The agents section's own rows, rendered as the inner sidebar renders them.
+  const { rows } = chatAgentSection([entry('parent', running), entry('child', failed, 'parent')], { expanded: new Set(), showAll: false });
+  await mount([{ id: 'alone', presentation: running }, { id: 'parent', presentation: running, tree: rows[0]!.summary }], (row) =>
+    row.id === 'parent' ? rows[0]! : {});
+  const labels = (id: string) => Array.from(host.querySelectorAll(`[data-session-id="${id}"] [data-row-hover-actions] > :last-child [aria-label]`), (el) => el.getAttribute('aria-label'));
+  expect(labels('alone')).toHaveLength(1);
+  expect(labels('parent')).toEqual(labels('alone'));
 });
