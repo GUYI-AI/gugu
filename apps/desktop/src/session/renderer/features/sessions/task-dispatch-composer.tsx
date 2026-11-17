@@ -2,7 +2,8 @@ import { observer } from 'mobx-react-lite';
 import { useState, type ReactElement } from 'react';
 import { Unknown } from '@/components/ui/Unknown';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
-import { replica, useReplica } from '@/lib/replica';
+import { refreshFailure, replica, useReplica } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { thisDeviceId } from '@/store/thisDevice';
 import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
@@ -85,16 +86,18 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   const remembers = !inGroup && picked === null;
   const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
   // The remembered project is unknown until read (❌ "no project", then it pops in); unreadable memory blocks sending
-  // (❌ the task goes to the implicit directory instead of the project used last).
+  // (❌ the task goes to the implicit directory instead of the project used last). This computer's id read as none and
+  // not read again is unreadable too (❌ "no project" from a read that failed); an id read is this computer's for good.
+  const selfFailure = localDeviceId === null ? refreshFailure(self) : null;
   const selection: { known: true; projectId: string | undefined } | { known: false; failed: Error | null } = picked
     ? { known: true, projectId: picked.projectId }
     : !remembers ? { known: true, projectId: undefined }
-    : self.state === 'error' ? { known: false, failed: self.error }
+    : selfFailure ? { known: false, failed: selfFailure }
     : memory.state === 'error' ? { known: false, failed: memory.error }
     : self.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false, failed: null }
     : { known: true, projectId: memory.state === 'value' && memory.value ? rememberedTaskRow(memory.value, accountProjectsStore) : undefined };
   const retryMemory = () => {
-    if (self.state === 'error') void thisDeviceId.refresh();
+    if (selfFailure) void thisDeviceId.refresh();
     else if (localDeviceId) void chatTaskProject.refresh(chatId, localDeviceId);
   };
   const selectedId = selection.known ? selection.projectId : undefined;
@@ -135,6 +138,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   };
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
+      {/* The remembered project shown, its re-read failed: said with a retry (❌ the project read before as if current). */}
+      {selection.known ? <RefreshFailed error={refreshFailure(memory)} onRetry={retryMemory} /> : null}
       {!selection.known ? (
         selection.failed ? (
           <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">

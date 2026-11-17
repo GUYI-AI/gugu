@@ -92,3 +92,16 @@ it('offers a newer package when the installed App lacks the widget view', async 
   await until('the new view is available to install', () => !!button());
   expect(harness.container.textContent).toContain('message.widgetUnavailable.view');
 });
+it('the chat\'s packages read before, a read again that fails keeps the offer and says the failure with a retry', async () => {
+  state.manifests = [{ id: 'vote', version: '1.0.0', contributes: { tabs: [{ name: 'old' }] } }];
+  state.shared.set('vote', pkg());
+  await mount();
+  await until('the new view is available to install', () => !!button());
+  expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull();
+  const shared = state.shared;
+  state.shared = new Map([['broken', { get card() { throw new Error('chat unreadable'); } }]]);
+  await sharedAppPackages.refresh('chat').catch(() => undefined);
+  await until('the failed read again is said', () => !!harness.container.querySelector('[data-refresh-failed]'));
+  expect(button()).toBeDefined();
+  state.shared = shared;
+});

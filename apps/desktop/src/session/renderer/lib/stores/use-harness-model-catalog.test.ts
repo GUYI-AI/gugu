@@ -31,9 +31,9 @@ function lookup(haiku: string): HarnessCatalogLookup {
 }
 
 function ModelList() {
-  const { state } = useHarnessModelCatalog('claude', 'acp');
+  const { state, refreshFailed } = useHarnessModelCatalog('claude', 'acp');
   const haiku = state.kind === 'ready' ? state.models.find((m) => m.id === 'haiku')?.name : state.kind;
-  return React.createElement('span', { 'data-testid': 'haiku' }, haiku ?? '');
+  return React.createElement('span', { 'data-testid': 'haiku', 'data-refresh-failed': refreshFailed ? '' : undefined }, haiku ?? '');
 }
 
 /**
@@ -86,6 +86,17 @@ describe('useHarnessModelCatalog —— 本机清单每次打开都问主进程'
 
     expect(mocks.modelCatalog).toHaveBeenCalledTimes(2);
     expect(shown()).toBe('Haiku 5.5');
+  });
+
+  it('读到过、再问没问到 → 照旧给上次那份,并带出这次的失败(❌ 上次的当成现在的)', async () => {
+    mocks.modelCatalog.mockResolvedValue(lookup('Haiku 4.5'));
+    await render(React.createElement(ModelList));
+    expect(container.querySelector('[data-refresh-failed]')).toBeNull();
+    await render(null);
+    mocks.modelCatalog.mockRejectedValue(new Error('harness gone'));
+    await render(React.createElement(ModelList));
+    expect(shown()).toBe('Haiku 4.5');
+    expect(container.querySelector('[data-refresh-failed]')).not.toBeNull();
   });
 
   /** 阴控:问的时机是「挂上来」,❌ 不是每次重渲染 —— 那会变成每帧一趟 IPC。 */

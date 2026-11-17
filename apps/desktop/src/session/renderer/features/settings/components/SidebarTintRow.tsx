@@ -3,6 +3,8 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { Switch } from '@/components/ui/Switch';
 import { SettingsRow } from '@/components/settings/SettingsPrimitives';
 import { Unknown } from '@/components/ui/Unknown';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { refreshFailure } from '@/lib/replica';
 
 /**
  * @@@sidebar-tint 侧栏渐进底色,在设置「界面」最上面。同属外观,但**不是**第四种主题:通过 --sidebar 调整导航底色,
@@ -27,6 +29,8 @@ export function SidebarTintRow() {
           aria-label={translate('theme.sidebarTintAria')}
         />
       ) : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
-    />
+    >
+      <RefreshFailed error={refreshFailure(sidebarTintEnabled)} />
+    </SettingsRow>
   );
 }

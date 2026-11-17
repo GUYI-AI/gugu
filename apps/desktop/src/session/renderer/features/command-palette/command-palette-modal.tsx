@@ -30,7 +30,7 @@ import { paletteTasks } from './palette-tasks';
 import { recentTaskIds } from './recent-tasks';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { replica, useReplica } from '@/lib/replica';
+import { refreshFailure, replica, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import type { SearchItem } from '@shared/core/search';
 
@@ -73,7 +73,8 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });
   const results = current ?? (!commandsMode && held.state === 'value' ? held.value : null);
   const stale = current === null && results !== null;
-  const failed = settled && reading.state === 'error' ? reading.error : null;
+  // A failed read, or a refresh failing over results still drawn: said above them with a retry.
+  const failed = settled ? refreshFailure(reading) : null;
   const commands = useObserver(() => rankPaletteMatches(commandRegistry.activeCommands
     .filter((command, index, all) => command.enabled !== false && !command.hideFromPalette
       && all.findIndex((other) => other.id === command.id) === index)

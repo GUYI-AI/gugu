@@ -61,6 +61,7 @@ vi.mock('@renderer/features/library/library-host', async () => ({
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
 const { marketShelf } = await import('@renderer/features/extensions/market-replicas');
+const { marketUpdates } = await import('@renderer/features/extensions/installed-extensions');
 
 describe('the App page when a read fails or cannot be asked', () => {
   let dom: JSDOM;
@@ -110,6 +111,18 @@ describe('the App page when a read fails or cannot be asked', () => {
     await turn();
     expect(doc().querySelector('[data-testid="extension-row-notes"]')).not.toBeNull();
     expect(h.api.list).toHaveBeenCalledTimes(asked);
+  });
+
+  it('which Apps have a new version, read before, a re-read that fails: said with a retry beside the Apps still drawn', async () => {
+    await open();
+    await click(doc().querySelector('[data-testid="extensions-tab-installed"]')!);
+    await until('its Apps drawn', () => doc().querySelector('[data-testid="extension-row-notes"]'), (row) => row !== null);
+    await until('updates read', () => marketUpdates.peek(h.host.key).state, (state) => state === 'value');
+    expect(doc().querySelector('[data-refresh-failed]')).toBeNull();
+    h.api.marketUpdates.mockResolvedValueOnce({ success: false, error: 'machine unreachable' });
+    await act(async () => { await marketUpdates.refresh(h.host.key).catch(() => undefined); });
+    await until('the failure said', () => doc().querySelector('[data-testid="extensions-installed-panel"] [data-refresh-failed]'), (node) => node !== null);
+    expect(doc().querySelector('[data-testid="extension-row-notes"]')).not.toBeNull();
   });
 
   it('a cold start\'s first screen and the market unreadable: said with a retry, ❌ the first screen forever', async () => {

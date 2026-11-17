@@ -154,27 +154,33 @@ export const AutomationRow = observer(function AutomationRow({
             <Unknown className="w-48" />
           ) : latest.state === 'error' ? (
             <RefreshFailed error={latest.error} />
-          ) : latest.value ? (
-            ((run) => {
-              const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
-              const time = run.startedAt ?? run.finishedAt;
-              return (
-                <span className="flex items-center gap-1.5 text-sm text-foreground-muted">
-                  {spin ? (
-                    <LoadingIndicator size="inline" className={textClass} />
-                  ) : (
-                    <Icon className={cn('size-3.5 shrink-0', textClass)} />
-                  )}
-                  {translate('automations.lastRunOn')}
-                  {time && <AbsoluteTime value={time} className="text-foreground-muted" />} {' '}
-                  {formatRunTriggerKindLabel(translate, run.triggerKind)}
-                </span>
-              );
-            })(latest.value)
           ) : (
-            <span className="text-sm text-foreground-passive">
-              {translate('automations.noRuns')}
-            </span>
+            // Read before, its refresh failed: said under what was read (❌ drawn as current).
+            <div className="flex min-w-0 flex-col gap-0.5">
+              {latest.value ? (
+                ((run) => {
+                  const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
+                  const time = run.startedAt ?? run.finishedAt;
+                  return (
+                    <span className="flex items-center gap-1.5 text-sm text-foreground-muted">
+                      {spin ? (
+                        <LoadingIndicator size="inline" className={textClass} />
+                      ) : (
+                        <Icon className={cn('size-3.5 shrink-0', textClass)} />
+                      )}
+                      {translate('automations.lastRunOn')}
+                      {time && <AbsoluteTime value={time} className="text-foreground-muted" />} {' '}
+                      {formatRunTriggerKindLabel(translate, run.triggerKind)}
+                    </span>
+                  );
+                })(latest.value)
+              ) : (
+                <span className="text-sm text-foreground-passive">
+                  {translate('automations.noRuns')}
+                </span>
+              )}
+                <RefreshFailed error={latest.error} />
+            </div>
           )}
 
           <div className="shrink-0 text-xs text-foreground-muted">
@@ -183,12 +189,17 @@ export const AutomationRow = observer(function AutomationRow({
                 <Unknown className="w-32" />
               ) : next.state === 'error' ? (
                 <RefreshFailed error={next.error} />
-              ) : next.value?.scheduledAt ? (
-                <span className="flex items-center gap-1">
-                  {translate('automations.nextRunScheduled')}
-                  <AbsoluteTime value={next.value.scheduledAt} />
-                </span>
-              ) : null
+              ) : (
+                <>
+                  {next.value?.scheduledAt ? (
+                    <span className="flex items-center gap-1">
+                      {translate('automations.nextRunScheduled')}
+                      <AbsoluteTime value={next.value.scheduledAt} />
+                    </span>
+                  ) : null}
+                  <RefreshFailed error={next.error} />
+                </>
+              )
             ) : (
               <span className="text-foreground-passive">
                 {/* #7221 跑过的一次性不是被谁关掉了,是那一次已经过去了(成败看左边那一行的图标)。 */}

@@ -10,7 +10,7 @@ import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { messageForUser } from '@/lib/userFacingError'
-import { replica, useReplica } from '@/lib/replica'
+import { refreshFailure, replica, useReplica } from '@/lib/replica'
 
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
 
@@ -34,7 +34,9 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   const [pending, setPending] = useState(false)
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
   const options = reading.state === 'value' ? reading.value : null
-  const readError = reading.state === 'error' ? messageForUser(reading.error) : null
+  // Unread, or read before and its read again failing (the options read before stay drawn): said in the composer notice.
+  const readFailure = refreshFailure(reading)
+  const readError = readFailure ? messageForUser(readFailure) : null
   const write = async (send: () => Promise<SessionpageSessionOptionsWithMenu>) => {
     if (!args) return false
     const entry = conversationOptions.at(...args)

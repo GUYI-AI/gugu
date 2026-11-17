@@ -15,6 +15,7 @@ import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
 import { holderOfflineText, offlineHolder, useHolderBack, type OfflineHolder } from '../../lib/fileHost'
 import { replica, useReplica } from '../../lib/replica'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { createSelectStore, useSelect } from '../../lib/selectStore'
 import { messageForUser } from '../../lib/userFacingError'
 import { useToast } from '../toastContext'
@@ -291,7 +292,12 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   }
   const actions = messageActionItems({ isRetracted: !!message?.retracted_at, content: message?.content ?? null, onForward: !readOnly && message && onForward ? () => onForward(message) : undefined, onDownload: missing ? undefined : download }, t)
   if (file.source.kind === 'hosted' && !missing) for (const app of file.source.openIn ?? []) actions.push({ key: `open-in-${app.key}`, icon: SquareArrowRight, label: app.label, onSelect: app.open })
-  const connection = besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : undefined
+  // Read before, its read again (on reconnect) failing: the bytes drawn stay, the failure said with a retry (❌ drawn as current).
+  const refreshFailed = !streamed && bytes.state === 'value' ? bytes.error : null
+  const connection = besideOffline || refreshFailed ? <>
+    {besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : null}
+    <RefreshFailed error={refreshFailed} onRetry={() => void previewShown.refresh(key, attempt, bytesOf)} />
+  </> : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
   const shown = read?.binary ? 'unsupported' : kind
   return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, onAnnotate: readOnly ? undefined : file.source.annotate, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />

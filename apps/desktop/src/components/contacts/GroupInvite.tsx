@@ -30,6 +30,7 @@ import { GroupInviteCode } from '../chat/GroupInviteShare'
 import { groupSettings } from '../chat/useGroupChatSettings'
 import { groupRoster } from '../../hooks/useRoomCollab'
 import { useReplica } from '../../lib/replica'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { publicGroupInvite } from '../../lib/publicGroupInvite'
 
 /** 群聊详情里扫码加入的码。项目群不拉人(gugu-dev#181):不出码,说一句原因。 */
@@ -251,7 +252,11 @@ export function GroupInviteJoinModal({
             <Button variant="ghost" size="sm" onClick={() => void publicGroupInvite.refresh(publicId)}>{t('common.retry')}</Button>
           </div>
         ) : (
-          <PublicGroupInviteSearchResult lookup={reading.value} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
+          <>
+            <PublicGroupInviteSearchResult lookup={reading.value} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
+            {/* Looked up before, its lookup again failing: what was read stays, the failure said with a retry (❌ drawn as current). */}
+            {reading.error ? <div style={{ padding: '0 16px 16px' }}><RefreshFailed error={reading.error} onRetry={() => void publicGroupInvite.refresh(publicId)} /></div> : null}
+          </>
         )}
       </div>
     </Sheet>

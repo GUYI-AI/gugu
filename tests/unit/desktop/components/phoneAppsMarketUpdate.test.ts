@@ -162,6 +162,19 @@ describe('「App」 on the phone: a row is a name and how it stands', () => {
   })
 })
 
+describe('「App」 on the phone: a market answer read before whose read again fails', () => {
+  it('keeps 「更新到 vX」 and says the failure with a retry (❌ the old offer drawn as current)', async () => {
+    phone.marketUpdates.mockResolvedValue({ success: true, data: { checkedAt: '', updates: { notes: { version: '1.1.0', releaseNotes: '' } }, yanked: {}, deprecated: {} } })
+    await harness.render(createElement(Apps))
+    await until('notes offers its update', () => row('notes')?.textContent?.includes('1.1.0') === true)
+    expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+    phone.marketUpdates.mockResolvedValue({ success: false, error: 'market unreachable' })
+    await act(async () => { await marketUpdates.refresh('phone').catch(() => undefined) })
+    await until('the failed read again is said', () => harness.container.querySelector('[data-refresh-failed]') !== null)
+    expect(row('notes')?.textContent).toContain('1.1.0')
+  })
+})
+
 describe('「App」 on the phone: an App’s settings page', () => {
   const toggleEnabled = async () => { await act(async () => { (page('[data-testid="app-manage-switch"]') ?? page('[data-testid="app-manage-action"]'))!.click() }) }
 

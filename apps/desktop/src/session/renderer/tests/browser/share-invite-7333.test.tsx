@@ -203,4 +203,17 @@ describe('share and invite surfaces use the approved roles without changing acti
     await userEvent.click(close);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+  it('a group looked up before whose lookup again fails stays drawn and says the failure with a retry', async () => {
+    const lookup = vi.spyOn(contactsService, 'lookupPublicGroupInvite').mockResolvedValue({ status: 'available', group } as never);
+    harness = createReactHarness();
+    await renderWithAppProviders(harness, createNode(GroupInviteJoinModal, { publicId: 7334, joinToken: 'invite-fixture-token', onClose: () => undefined }), { chat: {} });
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await until('the group is drawn', () => dialog.textContent?.includes(group.name) === true);
+    expect(dialog.querySelector('[data-refresh-failed]')).toBeNull();
+    lookup.mockRejectedValue(new Error('lookup_public_group failed'));
+    const { publicGroupInvite } = await import('@/lib/publicGroupInvite');
+    await act(async () => { await publicGroupInvite.refresh(7334).catch(() => undefined); });
+    await until('the failed lookup again is said', () => !!dialog.querySelector('[data-refresh-failed]'));
+    expect(dialog.textContent).toContain(group.name);
+  });
 });

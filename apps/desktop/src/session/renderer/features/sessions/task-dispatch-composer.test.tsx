@@ -167,6 +167,23 @@ describe('the remembered project is a reading', () => {
     expect(host.querySelector('[data-composer-placeholder]')).not.toBeNull();
   });
 
+  it('read before, a re-read that fails is said with a retry over the box (❌ the project read before as if current)', async () => {
+    messageHost.rememberedTaskProject.mockResolvedValueOnce(null);
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-5" />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(host.querySelector('[data-refresh-failed]')).toBeNull();
+    // Opened again: the memory is read again (fresh 0), and that read fails.
+    messageHost.rememberedTaskProject.mockRejectedValueOnce(new Error('host gone'));
+    await act(async () => root.render(<></>));
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-5" />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(host.querySelector('[data-refresh-failed]')).not.toBeNull();
+    // The box stays: what was read is still drawn.
+    expect(host.querySelector('[data-composer-placeholder]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="task-dispatch-project-failed"]')).toBeNull();
+  });
+
   it('after a failed read the project can be picked by hand, and the task goes to the picked project', async () => {
     messageHost.rememberedTaskProject.mockRejectedValueOnce(new Error('host gone'));
     await act(async () => root.render(<TaskDispatchComposer chatId="dm-4" />));

@@ -280,6 +280,26 @@ describe('useAgentInstallationStatuses invalidate', () => {
     expect(status.installProgress).toBeNull();
   });
 
+  it('the statuses read before, a re-read that fails: the installation stays and the failure is handed to the surface', async () => {
+    let status!: ReturnType<typeof useAgentInstallationStatus>;
+    function AgentProbe() { status = useAgentInstallationStatus('claude'); return null; }
+    await act(async () => {
+      root.render(React.createElement(QueryClientProvider, { client: queryClient },
+        React.createElement(SessionLocalizationProvider, null, React.createElement(AgentProbe))));
+    });
+    await settle();
+    expect(status.statusFailure).toBeNull();
+    mocks.listAgentInstallationStatus.mockRejectedValue(new Error('machine gone'));
+    await act(async () => {
+      const read = agentInstallationStatus.refresh(null).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await read;
+    });
+    await settle();
+    expect(agentInstallationStatus.peek(null)).toMatchObject({ state: 'value', value: [] });
+    expect(status.statusFailure?.message).toBe('machine gone');
+  });
+
   it('marks the per-registry version cache stale after an install', async () => {
     queryClient.setQueryData(SOURCE_VERSIONS_KEY, {
       npmmirror: { version: '1.0.0', outdated: true },

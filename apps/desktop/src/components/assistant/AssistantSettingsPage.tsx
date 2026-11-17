@@ -12,6 +12,7 @@ import { OnboardingSlot } from './AssistantShellHost'
 import { Button } from '../ui/Button'
 import { ChevronLeft } from '@/lib/icons'
 import { useAssistantHome } from '../../lib/useAssistantHome'
+import { refreshFailure } from '../../lib/replica'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { useAssistantPanelBack } from '../../lib/assistantPanelPage'
 import { onAssistantSettingsSection, takeAssistantSettingsSection } from '../../lib/assistantSettingsSection'
@@ -36,8 +37,9 @@ export function AssistantSetupPage() {
   const { t } = useTranslation('assistant')
   const { user } = useAuth()
   const { mine, contact } = useAssistantHome()
-  const unreadable = !contact && mine.reading.state === 'error'
-  if (!contact && mine.reading.state === 'value' && !mine.reading.value.agentId) return user?.id ? <SetupAfterAppIntro key={user.id} ownerId={user.id} /> : null
+  // "None" kept from a read whose read again failed is not known now (another device may have made one): unreadable, ❌ the guide.
+  const unreadable = !contact && refreshFailure(mine.reading) !== null
+  if (!contact && !unreadable && mine.reading.state === 'value' && !mine.reading.value.agentId) return user?.id ? <SetupAfterAppIntro key={user.id} ownerId={user.id} /> : null
   return (
     <div data-testid="assistant-setup-page">
       <SettingsNote tone={unreadable ? 'danger' : undefined}>{t(unreadable ? 'identity.unreadable' : 'identity.loading')}</SettingsNote>

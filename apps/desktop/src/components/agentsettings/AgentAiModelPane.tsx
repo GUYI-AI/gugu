@@ -21,7 +21,7 @@ import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
 import { agentModelSelection, sessionCreateModels, useDetailedPlatformCatalog } from '../../lib/agentModelReplicas'
-import { useReplica } from '../../lib/replica'
+import { refreshFailure, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
@@ -80,12 +80,15 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
   const harnessReading = useReplica(sessionCreateModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, 'general', null, isLocal ? 'local' : 'machine'] : null)
   const harness: SessionpageSessionCreateModels | null = harnessReading.state === 'value' ? harnessReading.value : null
-  const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
+  // A failed read, or a re-read failing over the harness state still drawn: said with a retry (❌ drawn as current).
+  const harnessFailure = refreshFailure(harnessReading)
+  const harnessFailed = harnessFailure ? messageForUser(harnessFailure) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
   // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
   // Restored from the snapshot (no multipliers or context, the menu's details): unknown here until the read lands.
   const catalogReading = useDetailedPlatformCatalog(protocol !== null)
-  const catalogError = catalogReading.state === 'error' ? messageForUser(catalogReading.error) : null
+  const catalogFailure = refreshFailure(catalogReading)
+  const catalogError = catalogFailure ? messageForUser(catalogFailure) : null
   // The platform models this engine can run: none without a protocol; null while the catalog is not read; a failed read
   // offers none and says why (catalogError).
   const listed = useMemo((): PlatformCatalogModel[] | null => !protocol ? []

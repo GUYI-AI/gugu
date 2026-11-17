@@ -13,7 +13,7 @@ import { integrationIcons } from '@gugu/session-plugins/integration-icons';
 import { assistantReadWaiting } from '@/mobile/assistant/phoneRead';
 import { useConnectionList } from '@/components/assistant/assistant-panel-reads';
 import { chatChannels } from '@/components/connections/connection-replicas';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
@@ -101,11 +101,13 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
   // As the profile page reads them (assistant-profile.tsx ProfileHome), under the same key.
   const apps = useConnectionList(assistantId ? panel : undefined, false, i18n.language);
   const chat = useReplica(chatChannels, []);
-  // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable.
-  const appsFailed = apps.state === 'error' && !assistantReadWaiting(apps.error);
+  // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable. A refresh that failed
+  // over what was read is unreadable too: the contract has no "last read" state (❌ the old count handed over as current).
+  const appsFailure = refreshFailure(apps);
+  const appsFailed = appsFailure !== null && !assistantReadWaiting(appsFailure);
   const counts = appAssistantCountsOf({
     devices: shell?.deviceCount === undefined ? LOADING : ready(shell.deviceCount),
-    connectedApps: machineFailed || appsFailed || chat.state === 'error' ? UNREADABLE
+    connectedApps: machineFailed || appsFailed || refreshFailure(chat) !== null ? UNREADABLE
       : apps.state === 'value' && chat.state === 'value'
         ? ready(assistantApplicationCounts(apps.value.items, apps.value.configured, apps.value.statuses, chat.value)) : LOADING,
     // The desktop's sidebar holds them; a window without the agent runtime has no such list to count.

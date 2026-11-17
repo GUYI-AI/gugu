@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { SettingsGroup,SettingsPage,SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { AppConnectionHero } from '@/components/assistant/AppConnectionHero'
 import { assistantAccountDisplayName,type AssistantConnectedApp } from '@/components/assistant/assistant-app-connections'
@@ -60,6 +61,8 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
     {app.connectionStatus ? <p role="status">{app.name} : {app.connectionStatus}</p> : null}
     {snapshot.state === 'error' && !accounts ? <p role="alert">{copy('readUnavailable')} <Button size="sm" variant="ghost" onClick={() => void ownerConnections.refresh()}>{t('machine.retry')}</Button></p> : null}
     {!accounts && snapshot.state !== 'error' ? <AppConnectionListPlaceholder /> : null}
+    {/* Read before, its read again failing: the accounts read stay, the failure said with a retry (❌ drawn as current). */}
+    {snapshot.state === 'value' ? <RefreshFailed error={snapshot.error} onRetry={() => void ownerConnections.refresh()} /> : null}
     {accounts?.length ? <SettingsGroup title={copy('accounts')}>
       {accounts.map(row => <SettingsRow key={JSON.stringify([host.connectionMetadata?.ownerId,row.resource_key])}
         title={assistantAccountDisplayName(row.data.displayName) ?? assistantAccountDisplayName((row.data.publicMetadata as { login?: unknown } | undefined)?.login) ?? app.name}

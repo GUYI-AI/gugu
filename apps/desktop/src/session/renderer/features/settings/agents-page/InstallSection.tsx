@@ -24,6 +24,10 @@ import {
   toSelection,
 } from './installation-sources';
 import { AgentAdvancedSection } from './AgentAdvancedSection';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { refreshFailure } from '@/lib/replica';
+import { installSourceVersions } from '@renderer/lib/stores/agent-replicas';
+import { useLibraryHost } from '@renderer/features/library/library-host';
 import { InstallationOverrideCard } from './InstallationOverrideCard';
 import { resolveManagedUpdate, resolveUpdateAction } from './update-action';
 
@@ -52,6 +56,7 @@ export const InstallSection = observer(function InstallSection({
    * 主进程顺手给它们计时 —— 装的时候按「谁先正确答出来」选源(#6157 的自动选源)。
    */
   const sourceVersions = useInstallSourceVersions(agentId, hasRegistryOptions);
+  const machine = useLibraryHost().remote?.deviceId ?? null;
 
   const [selectedSource, setSelectedSource] = useState<SelectedSource>(() =>
     liveRefFor(vm.used, vm.installations),
@@ -292,8 +297,13 @@ export const InstallSection = observer(function InstallSection({
   const ready = vm.status === 'available' && state !== 'broken' && state !== 'installing' && !vm.isUninstalling && !vm.lastInstallError && !vm.lastUpdateError;
   return <>
     {sources}
+    {/* The installation read before (or the library row standing in), its re-read failed: said with a retry. */}
+    <RefreshFailed error={vm.statusFailure} onRetry={() => void vm.refresh()} />
     {ready && agentPayload && <AgentAccountSection agent={agentPayload} />}
-    <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange} />
+    <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
+      {/* The sources' versions could not be read (again): said where they are listed. */}
+      {registries.length > 0 ? <RefreshFailed error={refreshFailure(sourceVersions)} onRetry={() => void installSourceVersions.refresh(machine, agentId)} /> : null}
+    </AgentAdvancedSection>
   </>;
 });
 

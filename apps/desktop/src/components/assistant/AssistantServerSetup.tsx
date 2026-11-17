@@ -17,6 +17,7 @@ import { clearAssistantOnboardingNavigation } from '../../lib/assistantOnboardin
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '../ui/Button'
 import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { useReplica } from '../../lib/replica'
 import { devicesModel } from '../../store/devicesCache'
 import { assistantServerTargets } from '../../lib/assistantServerTargets'
@@ -133,6 +134,8 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
             </Button>)}
           </div> : <p className="ta-onb-note" data-testid="assistant-server-empty">{t('server.empty')}</p>}
           <p className="ta-onb-note">{t('server.addNote')}</p>
+          {/* Read before, its read again failing (this page's 刷新 too): said by the list it left (retry = 刷新 beside it). */}
+          <RefreshFailed error={devices.error} />
           <div className="ta-onb-row">
             <Button onClick={openDevices} data-testid="assistant-server-add">{t('server.add')}</Button>
             <Button variant="ghost" onClick={() => void devicesModel.refresh()}>{t('server.refresh')}</Button>

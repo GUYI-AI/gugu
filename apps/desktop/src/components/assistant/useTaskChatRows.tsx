@@ -35,7 +35,7 @@ export function useTaskChatRows(messages: readonly MessageItem[], ownerId: strin
     // @@@reading-default(paired) - a work whose read failed adds no exchanges; its failure is said by the collaboration-unavailable notice (`unavailable`)
     return works.flatMap((reading, index) => reading.state === 'value' ? assistantWorkExchanges(reading.value.events, workIds[index]!) : [])
   }, [task, workIds, works])
-  const unavailable = ledger.state === 'error' || works.some(reading => refreshFailure(reading) !== null)
+  const unavailable = refreshFailure(ledger) !== null || works.some(reading => refreshFailure(reading) !== null)
   // @@@reading-default(paired) - the chat's own messages are drawn while the exchanges are not read yet; the row-high placeholder in `notice` says more are coming
   const allRows = useMemo(() => taskChatRows(messages, exchanges ?? [], task), [messages, exchanges, task])
   const count = history.key === key ? history.count : 80

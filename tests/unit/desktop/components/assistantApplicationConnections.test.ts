@@ -30,6 +30,13 @@ it('retains the known WeChat entry: no cloud computer is not connected; not read
   expect(assistantConnectedApps([], { state: 'error', error: new Error('unreadable') }, () => '微信', '聊天')).toMatchObject([{ id: 'wechat', state: 'checkFailed' }])
 })
 
+it('a channel list read before whose read again failed is a failed check, ❌ the old health (connected) drawn as current', () => {
+  const services = { kinds: ['wechat'], channels: [{ kind: 'wechat', health: { state: 'running' } }] } as ChatChannelList
+  const kept = { state: 'value' as const, value: services, stale: true, error: new Error('offline') }
+  expect(assistantConnectedApps([], kept, () => '微信', '聊天')).toMatchObject([{ id: 'wechat', state: 'checkFailed', saved: true }])
+  expect(assistantConnectedApps([], read(services), () => '微信', '聊天')).toMatchObject([{ id: 'wechat', state: 'connected' }])
+})
+
 it('counts connected products once, without treating saved unverified grants as connected', () => {
   const items = [{ id: 'feishu', name: '飞书' }] as IntegrationMetadata[]
   const services = { kinds: ['wechat'], channels: [{ kind: 'wechat', health: { state: 'running' } }] } as ChatChannelList

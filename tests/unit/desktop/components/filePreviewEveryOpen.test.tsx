@@ -8,13 +8,14 @@ import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { createReactHarness } from '../../../support/testHarness'
 import { freshReplicaAccount } from '../../../support/replicaAccount'
 
-const io = vi.hoisted(() => ({ resolves: 0, acknowledgements: 0, acknowledged: () => Promise.resolve() as Promise<void> }))
+const io = vi.hoisted(() => ({ resolves: 0, acknowledgements: 0, acknowledged: () => Promise.resolve() as Promise<void>, resolveFails: false }))
 vi.mock('@/lib/fileAccess', async (original) => ({
   ...await original<object>(),
   fileReader: () => ({ accountId: 'every-open-reader' }),
   fileReadSignal: () => undefined,
   resolveFile: async () => {
     io.resolves += 1
+    if (io.resolveFails) throw new Error('offline')
     return { status: 'ready', revision: { sha256: null, source: 'cloud', file_name: 'notes.txt', content_type: 'text/plain', size_bytes: 5 }, reader: { accountId: 'every-open-reader' } }
   },
 }))
@@ -27,8 +28,8 @@ vi.mock('@gugu/core/shared/fileResolver', async (original) => ({
 }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [] }) }))
 vi.mock('@/components/chat/MessageFilePreviewPanel', () => ({
-  MessageFilePreviewPanel: ({ content, error, loading }: { content: unknown; error?: string; loading?: boolean }) =>
-    createElement('aside', null, error ?? (loading ? 'loading' : String(content))),
+  MessageFilePreviewPanel: ({ content, error, loading, connection }: { content: unknown; error?: string; loading?: boolean; connection?: unknown }) =>
+    createElement('aside', null, connection as never, error ?? (loading ? 'loading' : String(content))),
 }))
 
 const { MessageFilePreview } = await import('@/components/chat/MessageFilePreview')
@@ -44,6 +45,7 @@ describe('a preview reads and acknowledges its bytes on every opening', () => {
     io.resolves = 0
     io.acknowledgements = 0
     io.acknowledged = () => Promise.resolve()
+    io.resolveFails = false
     harness = createReactHarness()
   })
   afterEach(() => { harness.cleanup() })
@@ -63,5 +65,15 @@ describe('a preview reads and acknowledges its bytes on every opening', () => {
     expect(io.resolves).toBe(2)
     expect(io.acknowledgements).toBe(2)
     expect(harness.container.textContent).toBe(i18n.getFixedT('zh-CN', 'messaging')('attachmentView.fileNoAccess'))
+  })
+  it('open, a read again (reconnect) that fails keeps the bytes drawn and says the failure with a retry', async () => {
+    await open()
+    expect(harness.container.textContent).toBe('notes')
+    io.resolveFails = true
+    const { queryClient } = await import('@/lib/replica')
+    await act(async () => { await queryClient.refetchQueries({ type: 'active' }).catch(() => undefined) })
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)) })
+    expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
+    expect(harness.container.textContent).toContain('notes')
   })
 })

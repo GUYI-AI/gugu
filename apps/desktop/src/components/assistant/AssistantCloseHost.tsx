@@ -31,7 +31,7 @@ import { rendererLogger } from '../../lib/log'
 import { desktopIpc } from '../../platform/desktopIpc'
 import { machineRpc } from '../../mobile/agent-watch/sessionpage-rpc'
 import { clearServerAssistantSetup } from '../../lib/assistantServerSetup'
-import { replica, useReplica } from '../../lib/replica'
+import { refreshFailure, replica, useReplica } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -197,7 +197,8 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
   }, [deps])
   const reading = useReplica(assistantClosePlan, woken === 'ready' ? [assistantId, ...home] : null)
   // 读不到它开过哪些会话 = 不知道那个勾在说什么、也不知道它自己的会话在哪:❌ 照着空清单关。
-  const unreadable = woken === 'failed' || reading.state === 'error'
+  // 读到过、再读失败也一样:清单照画,说读不到,❌ 照着旧清单关。
+  const unreadable = woken === 'failed' || refreshFailure(reading) !== null
 
   const confirm = async (plan: LocalClosePlan) => {
     setClosing(true)
@@ -258,7 +259,7 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
         )}
         <div className="flex justify-end gap-2">
           <Button size="sm" onClick={onClose} disabled={closing}>{t('closeDialog.cancel')}</Button>
-          <Button size="sm" variant="danger" disabled={closing || !plan} onClick={() => { if (plan) void confirm(plan) }} data-testid="assistant-close-confirm">
+          <Button size="sm" variant="danger" disabled={closing || !plan || unreadable} onClick={() => { if (plan) void confirm(plan) }} data-testid="assistant-close-confirm">
             {closing ? t('closeDialog.closing') : t('closeDialog.confirm')}
           </Button>
         </div>

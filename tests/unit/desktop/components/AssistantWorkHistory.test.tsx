@@ -80,3 +80,19 @@ it('resolves a pre-ledger task link from account assignments without contacting 
   expect(cloud.history).toHaveBeenCalledWith('assistant','legacy-work')
   expect(cloud.history).not.toHaveBeenCalledWith('assistant','other-work')
 })
+
+it('a ledger read before whose read again fails keeps the rows and says the collaboration record is incomplete', async () => {
+  const work = { work_id: 'work-l', coordinator_session_id: 'home', coordinator_device_id: 'offline-home', executors: [{ session_id: 'worker', device_id: 'offline' }] }
+  cloud.list.mockResolvedValue([work])
+  cloud.history.mockResolvedValue([event('work-l', 'Ledger result')])
+  const ledgerRequest = { ...request('work-l'), workId: undefined }
+  rememberAssistantTaskChat('owner', ledgerRequest as never); showAssistantTaskChat({ ownerId: 'owner', request: ledgerRequest as never, name: 'worker' })
+  await renderWithAppProviders(harness, <View />)
+  await vi.waitFor(() => expect(harness.container.textContent).toContain('Ledger result'))
+  expect(harness.container.textContent).not.toContain('暂时无法读取完整的协作记录')
+  cloud.list.mockRejectedValue(new Error('Account API offline'))
+  const { assistantWorkRecords } = await import('../../../../apps/desktop/src/components/assistant/assistant-work-records')
+  await act(async () => { await assistantWorkRecords.refresh('assistant').catch(() => undefined) })
+  await vi.waitFor(() => expect(harness.container.textContent).toContain('暂时无法读取完整的协作记录'))
+  expect(harness.container.textContent).toContain('Ledger result')
+})

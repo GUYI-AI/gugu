@@ -26,6 +26,7 @@ import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Unknown } from '@/components/ui/Unknown';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { refreshFailure } from '@/lib/replica';
 
 export type AddRemoteModalArgs = {
   projectId: string;
@@ -70,6 +71,7 @@ export const AddRemoteModal = observer(function AddRemoteModal({
     !!settingsStore && settingsStore.pageData.data === null && settingsError === null;
 
   const { owners, owner, retry: retryOwners, handleOwnerChange } = useGitHubRepositoryOwnerSelect(githubAccountId);
+  const ownersFailure = refreshFailure(owners);
   const selectedRemote = getGitRepositoryStore(projectId)?.pushRemote.name ?? 'origin';
   const canSubmitCreateRepository =
     githubAccountId !== null &&
@@ -251,8 +253,9 @@ export const AddRemoteModal = observer(function AddRemoteModal({
                 </p>
               )}
               {settingsError && <p className="text-foreground-destructive text-xs">{settingsError}</p>}
-              {owners.state === 'error' && (
-                <ReadFailedLine className="text-foreground-destructive" message={owners.error.message} onRetry={retryOwners} />
+              {/* Unreadable, or read before and its re-read failed (the owners read before stay offered). */}
+              {ownersFailure && (
+                <ReadFailedLine className="text-foreground-destructive" message={ownersFailure.message} onRetry={retryOwners} />
               )}
             </Field>
             <Field>

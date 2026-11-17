@@ -22,7 +22,8 @@ import './connection-copy'
 import { connectionApplicationStatus } from './connection-application-status'
 import { useConnectionRecovery } from './useConnectionRecovery'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
-import { chatChannels,useOwnerConnectionsReading } from './connection-replicas'
+import { chatChannels,ownerConnections,useOwnerConnectionsReading } from './connection-replicas'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 
 /** Both settings shells use the same controller without resolving an assistant. */
@@ -64,6 +65,9 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
         {devices.devices.map(device => <option key={device.device_id} value={device.device_id}>{device.label || device.hostname}</option>)}
       </select>
     </label> : null}
+    {/* The snapshot read before, its read again failing: rows keep its statuses, the failure said with a retry (an unread
+        snapshot is said by the provider's connection notice). */}
+    <RefreshFailed error={snapshot.state === 'value' ? snapshot.error : null} onRetry={() => void ownerConnections.refresh()} />
     <ConnectedAppsCatalog apps={apps} scope={host.key} open={setOpenId} mobile={mobile} panelNavigation={panelNavigation}
       connectionRead={configured ? 'ready' : 'pending'}
       icon={(app,size) => app.integration ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />

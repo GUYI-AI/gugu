@@ -12,6 +12,7 @@ import { messageById } from '../lib/messageById'
 import { readRevisionResourceKey } from '../lib/accountRevisionCoordinator'
 import { useReplicas } from '../lib/replica'
 import { Avatar } from './Avatar'
+import { RefreshFailed } from './ui/RefreshFailed'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { useAgentMessagePreview } from '../hooks/useAgentMessagePreview'
 import type { RunningToken } from './RunningTokenBar'
@@ -46,7 +47,7 @@ type PromptMessage = Pick<MessageItem, 'id' | 'sender_user_id' | 'content' | 're
 function usePromptMessages(
   ids: readonly string[],
   loaded: readonly MessageItem[],
-): (id: string) => PromptMessage | null | undefined | Error {
+): (id: string) => PromptLookup | undefined {
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
   const byId = new Map<string, PromptMessage>(loaded.map((message) => [message.id, message]))
   const missing = ids.filter((id) => !byId.has(id))
@@ -63,16 +64,19 @@ function usePromptMessages(
   const read = new Map(missing.map((id, index) => [id, readings[index]!]))
   return (id) => {
     const shown = byId.get(id)
-    if (shown) return shown
+    if (shown) return { message: shown, failed: null }
     const reading = read.get(id)
     if (!reading || reading.state === 'unknown') return undefined
-    return reading.state === 'error' ? reading.error : reading.value
+    return reading.state === 'error' ? { message: reading.error, failed: null } : { message: reading.value, failed: reading.error }
   }
 }
 
+/** message: Error = 没读到;failed = 读到过、重读(撤回后)没读到:照画读到的那份,并说重读失败。 */
+type PromptLookup = { message: PromptMessage | null | Error; failed: Error | null }
+
 type Block =
   /** message 为 null = 看卡的人读不到这条输入,画占位;Error = 没读到,照实说。 */
-  | { kind: 'prompt'; id: string; message: PromptMessage | null | Error }
+  | { kind: 'prompt'; id: string; message: PromptMessage | null | Error; failed: Error | null }
   | { kind: 'text'; id: string; text: string }
   | { kind: 'activity'; id: string; text: string }
   | { kind: 'tools'; id: string; parts: { state: string; count: number }[] }
@@ -80,7 +84,7 @@ type Block =
 /** 条目 → 版块:prompt 读得到画正文、读不到或没有 id 画占位,还在取的先不画;连续工具并成一行、按类别合计。 */
 const promptIdOf = (messageId: string) => messageId.replace(/^msg:/, '')
 
-function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) => PromptMessage | null | undefined | Error, activityText: ReturnType<typeof useActivityPreviewText>): Block[] {
+function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) => PromptLookup | undefined, activityText: ReturnType<typeof useActivityPreviewText>): Block[] {
   const blocks: Block[] = []
   const activities = new Set<string>()
   for (const entry of entries) {
@@ -92,10 +96,11 @@ function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) 
       continue
     }
     if (entry.kind === 'prompt') {
-      const message = entry.messageId ? lookup(promptIdOf(entry.messageId)) : null
-      if (message === undefined) continue
+      const found = entry.messageId ? lookup(promptIdOf(entry.messageId)) : { message: null, failed: null }
+      if (found === undefined) continue
+      const { message, failed } = found
       const readable = message instanceof Error ? message : message && message.content && !message.retracted_at ? message : null
-      blocks.push({ kind: 'prompt', id: entry.id, message: readable })
+      blocks.push({ kind: 'prompt', id: entry.id, message: readable, failed })
     } else if (entry.kind === 'tool') {
       const last = blocks[blocks.length - 1]
       const same = last?.kind === 'tools' ? last.parts.find((part) => part.state === entry.state) : undefined
@@ -124,6 +129,7 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
       return (
         <div className="mp-prompt" data-preview-entry="prompt" data-preview-prompt="elsewhere">
           <div className="mp-prompt-body">{t('runtime.messagePreview.promptElsewhere')}</div>
+          <RefreshFailed error={block.failed} />
         </div>
       )
     }
@@ -131,6 +137,7 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
       <div className="mp-prompt" data-preview-entry="prompt">
         <span className="mp-prompt-who">{senderName(block.message.sender_user_id)}</span>
         <div className="mp-prompt-body">{block.message.content}</div>
+        <RefreshFailed error={block.failed} />
       </div>
     )
   }

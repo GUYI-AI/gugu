@@ -87,6 +87,8 @@ export function useHarnessModelCatalog(
   return {
     /** 还没探完时是 `unknown` —— 界面据此显示「读取中」，❌ 不显示「没有模型」。 */
     state,
+    /** `state` is the catalog read before and its re-read failed: a surface says so beside it (❌ the old catalog as current). */
+    refreshFailed: reading.state === 'value' ? reading.error : null,
     // 后台还在探也算「在读」—— 手上这份可能是陈的,调用方有权知道它还会变。
     isLoading: reading.state === 'unknown' || (reading.state === 'value' && reading.value.refreshing),
   };

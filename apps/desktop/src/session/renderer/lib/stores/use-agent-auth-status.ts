@@ -3,7 +3,7 @@ import {
   type AuthStatusModelState,
 } from '@gugu/session-core/workspace-server/agent-config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { agentConfigList } from './live/agent-config-list';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { log } from '@renderer/utils/logger';
@@ -97,8 +97,9 @@ export function useAgentAuthStatuses(
 
   const auths = useMemo(() => programsKey.split('\u0000').map((key, index): AuthStatusModelState | null => {
     const program = key === '' ? undefined : key;
-    // 通道根本没建起来(wire 不在 / runtime 掉线)同样落终局读数。
-    if (list.state === 'error') return providerId ? { status: { kind: 'unknown', message: list.error.message }, login: null } : null;
+    // 通道根本没建起来(wire 不在 / runtime 掉线)同样落终局读数;读到过、重读没成也一样(❌ 上次的登录态当成现在的)。
+    const listFailure = refreshFailure(list);
+    if (listFailure) return providerId ? { status: { kind: 'unknown', message: listFailure.message }, login: null } : null;
     const entry = list.state === 'value' && providerId ? list.value[providerId] : undefined;
     const read = (program === undefined ? entry?.auth : entry?.programAuth?.[program]) ?? null;
     const failed = failures?.get(index);
@@ -118,6 +119,7 @@ export function useAgentAuthStatuses(
  */
 export function useExpiredAgentIds(enabled = true): ReadonlySet<string> | null {
   const list = useReplica(agentConfigList, enabled ? [null] : null);
-  const key = list.state === 'value' ? [...expiredProviderIds(list.value)].sort().join('\u0000') : null;
+  // Its re-read failed: no marks, as when unreadable (❌ the expired set read before drawn as current).
+  const key = list.state === 'value' && !list.error ? [...expiredProviderIds(list.value)].sort().join('\u0000') : null;
   return useMemo(() => (key === null ? null : new Set(key ? key.split('\u0000') : [])), [key]);
 }

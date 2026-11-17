@@ -6,7 +6,8 @@ import { Switch } from '../ui/Switch'
 import { Unknown } from '../ui/Unknown'
 import { requestAssistantClose } from '../../lib/assistantClose'
 import { SettingsGroup, SettingsPage, SettingsRow } from '../settings/SettingsPrimitives'
-import { quickChatShortcutLabel, useQuickChatState } from './useQuickChatState'
+import { RefreshFailed } from '../ui/RefreshFailed'
+import { quickChatShortcutLabel, quickChatState, useQuickChatState } from './useQuickChatState'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
 
 /** 快速聊天(全局快捷键叫出的小窗)那一组:住云上 / 住电脑两种家的齿轮页都有,只在桌面版。 */
@@ -19,7 +20,9 @@ export function QuickChatSettingsGroup({ assistantName }: { assistantName: strin
   if (reading.state === 'value' && !reading.value.supported) return null
   const state = reading.state === 'value' ? reading.value : null
   return (
-    <SettingsGroup title={t('quickChat.settingsTitle')}>
+    // Read before, its read again failing: the switch stays, the failure said with a retry (❌ drawn as current).
+    <SettingsGroup title={t('quickChat.settingsTitle')}
+      footer={reading.state === 'value' ? <RefreshFailed error={reading.error} onRetry={() => void quickChatState.refresh()} /> : undefined}>
       <SettingsRow
         title={t('quickChat.settingsRow')}
         description={

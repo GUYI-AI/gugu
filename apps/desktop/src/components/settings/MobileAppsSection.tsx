@@ -7,7 +7,7 @@ import { rendererLogger } from '@/lib/log'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { queryClient, useReplica } from '@/lib/replica'
+import { queryClient, refreshFailure, useReplica } from '@/lib/replica'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { AppMarketContent, AppMarketFirstScreen, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
 import { marketShelf } from '@/session/renderer/features/extensions/market-replicas'
@@ -88,7 +88,8 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
   const rows = full ? (query.trim() === '' ? full.items : phoneSearchRows(full.items, query.trim())) : null
   const hasMore = rows !== null && pages * MARKET_PAGE_SIZE < rows.length
 
-  const unreadable = installedReading.state === 'error' || (installedReading.state === 'value' && installedReading.value.unreadable !== null)
+  // Unread, or read before and its read again failing (the list read stays drawn), or the phone's store unreadable: said with a retry.
+  const unreadable = refreshFailure(installedReading) !== null || (installedReading.state === 'value' && installedReading.value.unreadable !== null)
   const readAgain = () => {
     void phoneApps.reload().then(() => installedExtensions.refresh(PHONE_HOST), (error: unknown) => {
       log.error({ error: String(error) }, 'Phone Apps unreadable')

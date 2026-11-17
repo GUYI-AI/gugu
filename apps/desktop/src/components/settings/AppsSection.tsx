@@ -1,11 +1,12 @@
 import { metadataSeparator } from '@/i18n/format'
 import { ExtensionMonogram } from '@/session/renderer/features/extensions/panel/extension-monogram'
 import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { ResourceMenu } from '../ResourceMenu'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from '@/lib/icons'
-import { PHONE_HOST, useInstalledApps, type InstalledApps, type MarketUpdates } from '../../session/renderer/features/extensions/installed-extensions'
+import { marketUpdates, PHONE_HOST, useInstalledApps, type InstalledApps, type MarketUpdates } from '../../session/renderer/features/extensions/installed-extensions'
 import type { Reading } from '../../lib/replica'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { localizedManifestText } from '../../session/shared/extensions/catalog'
@@ -52,7 +53,11 @@ export function AppsSection({ offered, onManage }: { offered: Reading<MarketUpda
 
   return (
     <SettingsPage data-testid="settings-apps">
-      <SettingsGroup note={t('settings.apps.intro')}>
+      {/* The offers read before, their read again failing: the 「更新到 vX」 read stay, the failure said with a retry (❌ drawn as
+          current). Unreachable with none read offers nothing, the version each row has is still true. The installed list's own
+          failure is said by MobileAppsSection's banner. */}
+      <SettingsGroup note={t('settings.apps.intro')}
+        footer={offered.state === 'value' ? <RefreshFailed error={offered.error} onRetry={() => void marketUpdates.refresh(PHONE_HOST)} /> : undefined}>
         {installed.state === 'unknown' ? (
           <SettingsRow data-testid="settings-apps-unknown" leading={<Unknown className="mk-icon" />} title={<Unknown className="w-24" />} description={<Unknown className="w-32" />} />
         ) : installed.state === 'error' ? (

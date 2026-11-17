@@ -26,6 +26,7 @@ import {
 import { useReplica, type Reading, refreshFailure } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { Unknown } from '@/components/ui/Unknown';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -209,8 +210,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const fullShelf = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null;
   const firstScreen = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null;
   // A failed read is said above the market with a retry; what was read stays drawn.
-  const marketFailure = (reading: Reading<unknown>) => (reading.state === 'unknown' ? null : reading.error);
-  const shownFailure = debouncedQuery === '' ? marketFailure(shelfReading) : marketFailure(searchReading);
+  const shownFailure = debouncedQuery === '' ? refreshFailure(shelfReading) : refreshFailure(searchReading);
   const shelf: ShelfState = useMemo((): ShelfState => {
     if (debouncedQuery === '') {
       if (fullShelf) return { status: 'ready', query: '', errorKind: fullShelf.errorKind, items: fullShelf.items, invalid: fullShelf.invalid, total: fullShelf.total, page: fullShelf.page, hasMore: false, featured: fullShelf.featured, home: fullShelf.home, loadingMore: false };
@@ -1372,6 +1372,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </Button>
               </div>
             )}
+            {/* Which Apps have a new version (the rows' update marks, the tab's dot) could not be read again: said with a retry. */}
+            {!machineOffline ? <RefreshFailed error={refreshFailure(updatesReading)} onRetry={() => void marketUpdates.refresh(host.key)} /> : null}
 
             {installed.state === 'unknown' && (
               <div className="mk-sec">

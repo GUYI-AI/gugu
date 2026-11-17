@@ -288,6 +288,18 @@ describe('AgentAiModelPane', () => {
     expect(harness.container.textContent).not.toContain('咕咕模型暂不可用')
   })
 
+  it('a catalog and harness read before whose reads again fail stay offered and say the failure (❌ drawn as current)', async () => {
+    await harness.render(createNode(AgentAiModelPane, { agent }))
+    await waitForCondition(() => harness.container.querySelectorAll('option').length === 2, 'options')
+    fetchPlatformModelCatalog.mockReset().mockRejectedValue(new Error('catalog unreachable'))
+    fetchAgentHarnessModels.mockReset().mockRejectedValue(new Error('device unreachable'))
+    const { platformModels, sessionCreateModels } = await import('../../../../apps/desktop/src/lib/agentModelReplicas')
+    await Promise.all([platformModels.refresh(), sessionCreateModels.refresh()]).catch(() => undefined)
+    await waitForCondition(() => harness.container.textContent?.includes('catalog unreachable') === true
+      && harness.container.textContent?.includes('device unreachable') === true, 'refresh failures said')
+    expect(harness.container.querySelectorAll('option')).toHaveLength(2)
+  })
+
   // #6212 copilot runs on Gugu's models (its injection contract is wired, protocol openai-responses); the pane
   // used to read it as "cannot use models provided by Gugu" because a second type → engine list stopped at six types.
   it('offers Gugu models to a copilot agent on its own protocol', async () => {

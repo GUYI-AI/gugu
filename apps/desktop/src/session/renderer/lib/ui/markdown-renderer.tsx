@@ -1,7 +1,7 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import React, { useCallback, useEffect } from 'react';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { workspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
 import { Markdown, type MarkdownDensity } from '@/components/markdown/Markdown';
@@ -34,7 +34,7 @@ const ResolvedImage: React.FC<{
 }> = ({ src, alt, images }) => {
   const path = images.pathOf(src);
   const reading = useReplica(workspaceImage, path ? [images.projectId, images.workspaceId, path] : null);
-  const failed = reading.state === 'error' ? reading.error : null;
+  const failed = refreshFailure(reading);
   useEffect(() => {
     if (failed) rendererLogger('markdown/image').error({ error: failed }, 'image resolution failed');
   }, [failed]);
@@ -45,7 +45,13 @@ const ResolvedImage: React.FC<{
   if (path && reading.state === 'unknown') return <Unknown className="h-24 w-40" />;
   const dataUrl = reading.state === 'value' ? reading.value : null;
   if (!dataUrl) return <span className="text-foreground-muted inline-block text-xs">[Image not found: {src}]</span>;
-  return <ExpandableImage src={dataUrl} alt={alt} className="max-w-full rounded-sm" />;
+  return (
+    <>
+      <ExpandableImage src={dataUrl} alt={alt} className="max-w-full rounded-sm" />
+      {/* Read before, its re-read failed: the image read before stays, the failure beside it (❌ shown as current). */}
+      {failed ? <span role="alert" data-refresh-failed="" className="text-foreground-muted inline-block text-xs">[{messageForUser(failed)}]</span> : null}
+    </>
+  );
 };
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({

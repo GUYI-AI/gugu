@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { agentSettings } from './agent-replicas';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
@@ -32,6 +32,9 @@ export function useAgentSettings(id: string) {
   const data = reading.state === 'value' ? reading.value : null;
   return {
     isLoading: reading.state === 'unknown',
+    /** Not read, or read before and its re-read failed (`value` then stays what was read): a surface says it with `retry`. */
+    error: refreshFailure(reading),
+    retry: () => void agentSettings.refresh(machine, id),
     value: data?.value,
     defaults: data?.defaults,
     overrides: data?.overrides,

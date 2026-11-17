@@ -13,6 +13,8 @@ import { setNotificationSettings, useNotificationSettingsReading, type Notificat
 import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
+import { refreshFailure } from '../../lib/replica'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { HelpImproveSettingGroup } from '../HelpImprove'
@@ -155,11 +157,15 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
       {(platform.kind !== 'capacitor' || platform.capabilities.notifications) && <SettingsGroup
         title={t('settings.general.notifications')}
         note={t('settings.general.notificationsScope')}
-        footer={notificationHint !== null ? (
-          <SettingsNote role="status">
-            {t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])}
-          </SettingsNote>
-        ) : undefined}
+        footer={<>
+          {notificationHint !== null ? (
+            <SettingsNote role="status">
+              {t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])}
+            </SettingsNote>
+          ) : null}
+          {/* The toggles' setting unread, or its re-read failing under the values still drawn: said (❌ drawn as current). */}
+          <RefreshFailed error={refreshFailure(notificationSettings)} />
+        </>}
       >
         {/* 系统权限的**状态与开关入口只在「权限」页**(product spec)。owner 2026-09-15:
             「手机端通用这有通知,怎么权限这还有通知,这是我困糊的点」—— 同一个事实只显示一处。
@@ -224,7 +230,7 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
           只在有托盘角标的宿主上出现(能力位 badge,目前只有桌面):手机上没有托盘,一个拨了也不会有任何
           变化的开关就是 fake。 */}
       {platform.capabilities.badge && (
-        <SettingsGroup title={t('settings.general.trayBadge')}>
+        <SettingsGroup title={t('settings.general.trayBadge')} footer={<RefreshFailed error={refreshFailure(trayBadgeEnabled)} />}>
           <SettingsRow
             title={t('settings.general.trayBadgeEnabled')}
             control={trayBadgeEnabled.state === 'value' ? (

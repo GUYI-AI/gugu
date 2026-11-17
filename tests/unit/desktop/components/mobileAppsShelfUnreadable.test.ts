@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 
 const manifest = vi.hoisted(() => ({ id: 'notes', name: 'Notes', version: '1.0.0', apiVersion: 35, defaultLocale: 'en', permissions: { capabilities: [] }, contributes: { tabs: [] } }))
-const market = vi.hoisted(() => ({ entries: [{ manifest, cloud: {}, ref: { extensionId: 'notes', version: '1.0.0' } }], featured: [], fails: true }))
+const market = vi.hoisted(() => ({ entries: [{ manifest, cloud: {}, ref: { extensionId: 'notes', version: '1.0.0' } }], featured: [], fails: true, installedError: null as Error | null }))
 
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({
   PHONE_CAPABILITIES: [],
@@ -17,7 +17,7 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
   installedExtensions: { refresh: async () => {} },
-  useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: { manifests: [manifest], unreadable: null, isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null } }),
+  useInstalledApps: () => ({ state: 'value', stale: false, error: market.installedError, value: { manifests: [manifest], unreadable: null, isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null } }),
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () => ({
   PHONE_HOST: 'phone',
@@ -64,4 +64,12 @@ it('a kept first screen and the shelf unreadable: the failure is said with a ret
   await act(async () => { find('[data-testid="phone-app-market"] [role="alert"] button')!.click() })
   await vi.waitFor(() => expect(find('[data-testid="shelf"]')).not.toBeNull())
   expect(find('[data-testid="phone-app-market"] [role="alert"]')).toBeNull()
+})
+
+it('the installed list read before, its read again failing: the banner says so with a retry', async () => {
+  market.installedError = new Error('store unreadable')
+  try {
+    await harness.render(createElement(MobileAppsSection))
+    expect(find('[data-testid="phone-apps-unreadable"]')).not.toBeNull()
+  } finally { market.installedError = null }
 })

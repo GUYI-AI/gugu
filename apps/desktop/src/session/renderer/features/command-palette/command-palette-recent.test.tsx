@@ -234,6 +234,20 @@ describe('palette search reading', () => {
     await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-2']));
   });
 
+  it('a search read before whose read again fails says so with a retry, its rows staying', async () => {
+    fixture.search.mockReset().mockImplementation(async () => fixture.results.slice(3, 4));
+    await typed('fresh-3');
+    await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-3']));
+    fixture.search.mockReset().mockRejectedValue(new Error('index gone'));
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 6_000);
+    try {
+      await typed('fresh-3');
+      await vi.waitFor(() => expect(host.querySelector('[role=alert]')).not.toBeNull());
+      expect(taskRows()).toEqual(['fresh-3']);
+    } finally { clock.mockRestore(); }
+  });
+
   /**
    * Typing three characters, the result area never goes rows → none → rows (each new key is unknown
    * until its read lands). The previous words' rows stay, dimmed, until the next words' arrive.

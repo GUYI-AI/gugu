@@ -1,5 +1,6 @@
 import { Pencil, Plus, Sparkles, Trash2, X } from '@/lib/icons'
-import { useReplicas } from '@/lib/replica';
+import { refreshFailure, useReplicas } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { configuredConnections } from '@/components/connections/connection-replicas';
 import { observer } from 'mobx-react-lite';
 import { useEffect, type ReactNode } from 'react';
@@ -112,6 +113,7 @@ export function IntegrationDetailSidebar({
                             : translate('github.connectHint')
                         }
                       />
+                      <RefreshFailed error={githubAccounts.error} onRetry={() => void githubAccountsModel.refresh()} />
                     </>
                   )}
                 </div>
@@ -261,6 +263,8 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
         </InfoRow>
       </div>
       {failed && <p className="px-1 text-xs text-foreground-muted">{failed}</p>}
+      {/* The account read before, its re-read failed: said with a retry (❌ its name shown as current). */}
+      {accounts.state === 'value' ? <RefreshFailed error={accounts.error} onRetry={retry} /> : null}
       {!integration.readOnly && (
         <div className="flex justify-end gap-2">
           {integration.onEditAccount && account && (
@@ -437,6 +441,7 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
           const query = machine.key === current.key ? null : configured.get(machine.key);
           const known = query === null ? integration.isConfigurationKnown : query?.state === 'value';
           const isConfigured = query === null ? integration.isConfigured : query?.state === 'value' && query.value[integration.id] === true;
+          const failure = query ? refreshFailure(query) : null;
           const state = !machine.online
             ? translate('integrations.deviceOffline')
             : query?.state === 'error'
@@ -449,9 +454,11 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
           return (
             <InfoRow key={machine.key} label={machine.label}>
               {machine.online && known && <StatusDot tone={deviceStatusTone(isConfigured)} />}
-              <span className="text-foreground-muted" title={query?.state === 'error' ? String(query.error) : undefined}>
+              <span className="text-foreground-muted" title={failure ? String(failure) : undefined}>
                 {state}
               </span>
+              {/* Read before on that machine, its re-read failed: said beside what was read (❌ shown as current). */}
+              {query?.state === 'value' ? <RefreshFailed error={query.error} onRetry={() => void configuredConnections.refresh(machine.key)} /> : null}
             </InfoRow>
           );
         })}

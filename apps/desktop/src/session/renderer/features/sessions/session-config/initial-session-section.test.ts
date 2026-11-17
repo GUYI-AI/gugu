@@ -249,9 +249,13 @@ function harnessCatalog(state: HarnessCatalogState) {
   harnessCatalogRef.current = state;
 }
 
+/** A re-read that failed over what was read: the agents list, the harness catalog (both stay drawn). */
+const keptReadErrors = vi.hoisted(() => ({ agents: null as Error | null, catalog: null as Error | null }));
+
 vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
   useHarnessModelCatalog: () => ({
     state: harnessCatalogRef.current,
+    refreshFailed: keptReadErrors.catalog,
     isLoading: false,
     refresh: vi.fn(),
   }),
@@ -277,7 +281,7 @@ vi.mock('@renderer/lib/stores/use-harness-model-credential', () => ({
 
 vi.mock('@renderer/lib/stores/use-agents', () => ({
   useAgents: () => ({
-    state: 'value', stale: false, error: null,
+    state: 'value', stale: false, error: keptReadErrors.agents,
     value: (agentFixtureRef.current ??= [
       {
         id: 'claude',
@@ -2187,6 +2191,28 @@ describe('InitialSessionField', () => {
     expect(latestState?.harnessNotice).toBe('harnessCatalog.notInstalled|Claude Code');
     expect(noticeText()).toContain('harnessCatalog.notInstalled');
     expect(noticeText()).toContain('Claude Code');
+  });
+
+  it('the agents or the model list read before, a re-read that failed: said with a retry, both still offered', async () => {
+    harnessCatalog({ kind: 'ready', models: [{ id: 'opus', name: 'Opus' }], selected: 'opus', efforts: [], selectedEffort: null });
+    platformCatalog({ models: [GLM], agentDefault: null });
+    try {
+      keptReadErrors.agents = new Error('machine unreachable');
+      await renderField();
+      expect(noticeText()).toMatch(/Couldn't read the latest|没读到最新的/);
+      expect(chatComposerProps().agentOptions?.length).toBeGreaterThan(0);
+      keptReadErrors.agents = null;
+      await renderField();
+      expect(mocks.dismissNotice).toHaveBeenCalled();
+      mocks.notify.mockClear();
+      keptReadErrors.catalog = new Error('harness gone');
+      await renderField();
+      expect(noticeText()).toMatch(/Couldn't read the latest|没读到最新的/);
+      expect(Object.keys(chatComposerProps().modelOptions ?? {})).toContain('opus');
+    } finally {
+      keptReadErrors.agents = null;
+      keptReadErrors.catalog = null;
+    }
   });
 
   it('stays silent about the model catalog while no agent is selected', async () => {

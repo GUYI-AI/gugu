@@ -22,7 +22,7 @@ const reads = vi.hoisted(() => ({
 }));
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }));
 // The connections list is the `connectionList` replica's reading; the fixtures below say it the old way (loading / ok / error).
-const readingOf = (read: Record<string, unknown>) => read.state === 'ok' ? { state: 'value', value: read.data, stale: false, error: null }
+const readingOf = (read: Record<string, unknown>) => read.state === 'ok' ? { state: 'value', value: read.data, stale: false, error: read.error ?? null }
   : read.state === 'error' ? { state: 'error', error: read.error ?? new Error('unreadable') } : { state: 'unknown' };
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-reads', () => ({ useConnectionList: () => readingOf(reads.apps) }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-integrations', () => ({ readAssistantPanelIntegrations: vi.fn(), peekAssistantPanelIntegrations: vi.fn() }));
@@ -133,6 +133,24 @@ describe('the counts as read states', () => {
     mount();
     expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
     expect(last().connectors).toEqual({ state: 'unreadable' });
+  });
+
+  it('read before, a refresh that failed is unreadable: the old count and list are not handed over as current', async () => {
+    reads.apps = { ...ok(), error: new Error('panel unreachable') };
+    mount();
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
+    expect(last().connectors).toEqual({ state: 'unreadable' });
+    act(() => root.unmount());
+    root = createRoot(container);
+    resetAssistantAppCountsForTest();
+    reads.pushes = [];
+    reads.apps = ok();
+    reads.chatList = () => Promise.reject(new Error('channels unreachable'));
+    mount();
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'ready' } });
+    await act(async () => { await chatChannels.refresh().catch(() => undefined); });
+    expect(chatChannels.peek()).toMatchObject({ state: 'value', error: expect.any(Error) });
+    await act(async () => { await vi.waitFor(() => expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } })); });
   });
 
   it('nothing handed over while the window shows no assistant', () => {

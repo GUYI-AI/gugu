@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
-import { useReplica } from '../../lib/replica'
+import { refreshFailure, useReplica } from '../../lib/replica'
 import { chatFileMetadata } from '../../lib/fileMetadataReplica'
 import { messageById } from '../../lib/messageById'
 import { useChatStore } from '../../store/chatContext'
@@ -37,7 +37,8 @@ function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps 
   const reading = useReplica(chatFileMetadata, [itemId, version ?? null])
   const file = reading.state === 'value' ? reading.value : null
   const ready = file?.status === 'ready' ? file.revision : null
-  const reason = reading.state === 'error' ? t('attachmentView.fileUnavailable')
+  // A failed read, or one again failing over the name read before (it stays drawn): greyed with the reason (❌ drawn as current).
+  const reason = refreshFailure(reading) ? t('attachmentView.fileUnavailable')
     : file && file.status !== 'ready' ? t(file.status === 'gone' ? 'attachmentView.fileGone' : file.status === 'expired' ? 'attachmentView.fileExpired' : 'attachmentView.fileMissing')
       : ready?.source === 'local' && ready.host_online === false ? t('attachmentView.holderOffline', { machine: ready.host_label ?? t('attachmentView.holderMachine') }) : null
   // Named the way the file list names it (GroupFileName, 摩擦单 F39): the file's own name once read, the link's words before.
@@ -51,7 +52,7 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const reading = useReplica(messageById, messageId ? [messageId] : null)
-  const message = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error', isSuccess: reading.state === 'value' }
+  const message = { data: reading.state === 'value' ? reading.value : undefined, isError: refreshFailure(reading) !== null, isSuccess: reading.state === 'value' }
   let label: ReactNode = children
   let unavailable = false
   if (messageId) {

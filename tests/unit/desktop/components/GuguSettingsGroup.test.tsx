@@ -20,9 +20,9 @@ vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
     }),
   }
 })
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistantContact: () => ({ homeDeviceId: (mine.value as { homeDeviceId?: string }).homeDeviceId ?? 'cloud-1', contact: mine.value.contact,
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ refreshMyAssistant: async () => undefined, useMyAssistantContact: () => ({ homeDeviceId: (mine.value as { homeDeviceId?: string }).homeDeviceId ?? 'cloud-1', contact: mine.value.contact,
   reading: mine.value.loading ? { state: 'unknown' } : mine.value.error ? { state: 'error', error: new Error(mine.value.error) }
-    : { state: 'value', value: { agentId: mine.value.agentId, provisionDeviceId: 'cloud-1' }, stale: false, error: null } }) }))
+    : { state: 'value', value: { agentId: mine.value.agentId, provisionDeviceId: 'cloud-1' }, stale: false, error: (mine.value as { keptError?: Error }).keptError ?? null } }) }))
 
 vi.mock('../../../../apps/desktop/src/components/assistant/AssistantShellHost', () => ({
   AssistantStatusGroups: ({ assistantName }: { assistantName: string }) => createElement('div', { 'data-testid': 'status-groups' }, assistantName),
@@ -193,6 +193,20 @@ describe('咕咕的设置页(资料,画在它 App 的面板上)', () => {
       invoke.mockResolvedValue({ ok: true } as never)
       queryClient.removeQueries({ queryKey: ['deviceMeetings'] })
     }
+  })
+
+  it('云上的状态读到过、再读失败:状态组照画,说没读到最新的、给重试(❌ 当成当前的)', async () => {
+    mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
+    await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), { ...awake, stale: true, error: new Error('steward unreachable') } as never)
+    expect(q('status-groups')?.textContent).toBe('小咕')
+    expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
+  })
+
+  it('留着的「还没有」、再读失败:说读不到,❌ 照旧的画开通', async () => {
+    mine.value = { contact: null, agentId: null, loading: false, error: null, keptError: new Error('offline') } as never
+    await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), awake)
+    expect(q('onboarding-slot')).toBeNull()
+    expect(q('settings-assistant')?.textContent).not.toBe('')
   })
 
   it('还没开通:这一页只说开通(流程在引导格里),不画名字 / 状态那些', async () => {

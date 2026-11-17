@@ -3,7 +3,7 @@ import { ChevronRight, Folder, FolderPlus, FileText, Home, Link as LinkIcon, Ref
 import { deviceFsMakeDirectory } from '../lib/deviceFs'
 import type { DeviceFsEntry } from '@gugu/core/cloud/deviceFsProtocol'
 import { remoteDirectory, RemoteDirectoryError, UNREACHABLE_PATH_CODES, type RemoteDirectory } from '../lib/remoteDirectory'
-import { useReplica, useReplicaFetching } from '../lib/replica'
+import { refreshFailure, useReplica, useReplicaFetching } from '../lib/replica'
 import type { DeviceRpcError } from '../lib/deviceRpc'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
@@ -167,7 +167,9 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
     () => (draftSplit && completionEntries ? completionCandidates(completionEntries, draftSplit.prefix) : []),
     [completionEntries, draftSplit],
   )
-  const completionError = pathDraft !== null && !completingShown && completion.state === 'error' ? navErrorOf(completion.error instanceof RemoteDirectoryError ? completion.error.path : askedDir ?? '', completion.error) : null
+  // A failed read, or a re-read failing under suggestions from the listing read before (they stay, the failure said over them).
+  const completionFailure = pathDraft !== null && !completingShown ? refreshFailure(completion) : null
+  const completionError = completionFailure ? navErrorOf(completionFailure instanceof RemoteDirectoryError ? completionFailure.path : askedDir ?? '', completionFailure) : null
   useEffect(() => { setHighlight(-1) }, [pathDraft])
 
   const selectPathOnMount = useRef(false)
@@ -410,6 +412,11 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             // 浮层公式(docs/design/ui-visual-spec.md §6.3):--radius-surface + 唯一那档 lift,❌ 再叠一圈 border。
             className="absolute top-full right-2 left-9 z-10 m-0 mt-1 list-none rounded-[var(--radius-surface)] bg-[var(--popover)] p-1 shadow-[var(--shadow-lift)]"
           >
+            {completionError ? (
+              <li role="status" data-testid="remote-folder-path-completion-error" className="truncate px-2 py-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]">
+                {navErrorMessage(completionError, t)}
+              </li>
+            ) : null}
             {suggestions.map((entry, index) => (
               <li
                 key={entry.name}
@@ -428,7 +435,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             ))}
           </ul>
         ) : null}
-        {completionError ? (
+        {completionError && !(pathDraft !== null && suggestions.length > 0) ? (
           <span role="status" data-testid="remote-folder-path-completion-error" className="absolute top-full right-2 left-9 z-10 mt-1 truncate rounded-[var(--radius-surface)] bg-[var(--popover)] px-2 py-1 text-[length:var(--font-caption)] text-[var(--danger-fg)] shadow-[var(--shadow-lift)]">
             {navErrorMessage(completionError, t)}
           </span>

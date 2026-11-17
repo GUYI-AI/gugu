@@ -61,7 +61,8 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
       if (next !== 'preparing' && next !== 'moving') void moveRecovery.refresh(assistantId)
     })
   }, [localDeviceId, assistantId])
-  const recoveryFailed = recovery.state === 'error'
+  // Unread, or read before and its read again failing (the resume row stays drawn): said with a retry, the moves waiting.
+  const recoveryFailed = refreshFailure(recovery) !== null
   // Not read yet on a computer: the move actions wait for it (a half-done move must be resumed, ❌ a second one started).
   const recoveryUnknown = !!localDeviceId && recovery.state === 'unknown'
   const pending = move.phase.kind === 'done' || recovery.state !== 'value' ? null : recovery.value

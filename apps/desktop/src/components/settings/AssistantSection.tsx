@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { useReplica } from '../../lib/replica'
+import { refreshFailure, useReplica } from '../../lib/replica'
+import { cloudComputer as cloudComputerModel } from '../../lib/cloudComputer'
+import { refreshMyAssistant } from '../../lib/myAssistant'
 import { deviceMeetings } from '../../lib/deviceMeetings'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
@@ -55,17 +57,18 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   const [lookOpen, setLookOpen] = useState(false)
 
   // 还没有咕咕:一页只画「安家」的流程(会员一键领取、非会员装在这台电脑上)。认它是谁还在读 / 读不到时照实说,❌ 当成没有。
+  // 读到过、再读失败(比如留着的「还没有」):此刻不知道,照实说读不到,❌ 照旧的画「安家」。
   if (!contact) {
+    if (refreshFailure(mine.reading))
+      return (
+        <SettingsPage data-testid="settings-assistant">
+          <SettingsNote tone="danger">{t('identity.unreadable')}</SettingsNote>
+        </SettingsPage>
+      )
     if (mine.reading.state === 'unknown' || (mine.reading.state === 'value' && mine.reading.value.agentId))
       return (
         <SettingsPage data-testid="settings-assistant">
           <SettingsNote>{t('identity.loading')}</SettingsNote>
-        </SettingsPage>
-      )
-    if (mine.reading.state === 'error')
-      return (
-        <SettingsPage data-testid="settings-assistant">
-          <SettingsNote tone="danger">{t('identity.unreadable')}</SettingsNote>
         </SettingsPage>
       )
     return (
@@ -118,6 +121,8 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
             stack
           />
         ) : null}
+        {/* Who it is read before, its read again failing (its home is that read's): said with a retry. */}
+        <RefreshFailed error={mine.reading.state === 'value' ? mine.reading.error : null} onRetry={() => void refreshMyAssistant()} />
       </SettingsGroup>
 
       {/* 它记得什么 / 每天做什么:数据在助理 App 的页里,这里是入口(手机上没有这一组)。 */}
@@ -146,7 +151,11 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
       {home?.kind === 'computer' ? (
         <ComputerHomeGroups home={home} assistantName={name} move={move} />
       ) : snapshot && (snapshot.state === 'awake' || snapshot.state === 'asleep' || snapshot.state === 'waking') ? (
-        <AssistantStatusGroups snapshot={snapshot} device={device} assistantName={name} move={move} />
+        <>
+          {/* The state read before, its read again failing: the groups keep it, the failure said with a retry (❌ drawn as current). */}
+          <RefreshFailed error={refreshFailure(cloudComputer)} onRetry={() => void cloudComputerModel.refresh()} />
+          <AssistantStatusGroups snapshot={snapshot} device={device} assistantName={name} move={move} />
+        </>
       ) : move ? (
         <AssistantMoveGroup {...move} />
       ) : null}
@@ -164,7 +173,7 @@ function MeetingReminderGroup() {
   const enabled = useMeetingReminderPref()
   const reading = useReplica(deviceMeetings, [])
   return (
-    <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
+    <SettingsGroup title={t('title')} data-testid="settings-assistant-voice" footer={<RefreshFailed error={refreshFailure(enabled)} />}>
       <SettingsRow
         title={t('meeting.setting')}
         description={reading.state === 'unknown' ? <Unknown className="w-56" />

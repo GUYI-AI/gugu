@@ -119,3 +119,14 @@ it('resumes a persisted server setup once under StrictMode', async () => {
   // The account's machines are one shared replica (read for the shell anyway); a resumed setup draws no target list from it.
   expect(query('assistant-server-target')).toBeNull()
 })
+
+it('a server list read before whose 刷新 fails keeps the servers and says the refresh failed', async () => {
+  await render()
+  expect(harness.container.querySelectorAll('[data-testid="assistant-server-target"]')).toHaveLength(2)
+  expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+  f.list.mockRejectedValue(new Error('offline'))
+  const { devicesModel } = await import('@/store/devicesCache')
+  await act(async () => { await devicesModel.refresh().catch(() => undefined) })
+  await vi.waitFor(() => expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull())
+  expect(harness.container.querySelectorAll('[data-testid="assistant-server-target"]')).toHaveLength(2)
+})

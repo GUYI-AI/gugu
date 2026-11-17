@@ -79,4 +79,18 @@ describe('the close confirmation reads the sessions it will act on', () => {
     expect(confirmButton()?.disabled).toBe(true)
     expect(rig.close).not.toHaveBeenCalled()
   })
+  it('a session list read before whose read again fails stays shown, is said, and confirm stays off (❌ closes the old list)', async () => {
+    rig.home = { kind: 'computer', hostKind: 'desktop', thisDevice: true, deviceId: 'this', label: null, online: true, known: true }
+    rig.sessionsList.mockResolvedValueOnce({ sessions: [session('s-gugu', { agent: { userId: GUGU } }), session('s-child', { spawnedByConversationId: 's-gugu' })] })
+      .mockRejectedValue(new Error('host gone'))
+    await renderWithAppProviders(harness, createNode(AssistantCloseHost), { contacts: {} })
+    await requestClose()
+    await waitForCondition(() => shownSessions().includes('s-child'), 'started sessions not shown')
+    expect(confirmButton()?.disabled).toBe(false)
+    const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
+    await act(async () => { await queryClient.refetchQueries({ type: 'active' }).catch(() => undefined) })
+    await waitForCondition(() => !!dialog()?.querySelector('[role="alert"]'), 'refresh failure not said')
+    expect(shownSessions()).toContain('s-child')
+    expect(confirmButton()?.disabled).toBe(true)
+  })
 })

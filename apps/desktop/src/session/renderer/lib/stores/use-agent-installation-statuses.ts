@@ -1,7 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { useMutation, useMutationState } from '@tanstack/react-query';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { createElement, type ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -394,6 +394,8 @@ export type HostDependencyInstallation = {
   lastUpdateError: AgentInstallErrorPresentation | null;
   /** 最近一次成功安装的发起时刻(本次会话内),没有则 null。供「刚装好」用。 */
   lastInstallSucceededAt: number | null;
+  /** The statuses could not be read, or their re-read failed over what is drawn: said with `refresh`. */
+  statusFailure: Error | null;
   /** The install method currently being installed, if any. */
   installingMethod: InstallMethod | undefined;
   /** The concrete registry currently being installed, if any. */
@@ -593,6 +595,7 @@ export function useAgentInstallationStatus(
     lastInstallError,
     lastUpdateError,
     lastInstallSucceededAt,
+    statusFailure: refreshFailure(statusesReading),
     installingMethod,
     installingRegistry,
     updatingMethod,

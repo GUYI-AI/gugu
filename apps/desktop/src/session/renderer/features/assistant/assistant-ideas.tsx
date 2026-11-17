@@ -7,7 +7,7 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { ideaGroups, type TodayIdea, type TodayRead } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
-import type { Reading } from '@/lib/replica';
+import { refreshFailure, type Reading } from '@/lib/replica';
 
 /**
  * #7199 「灵感」:输入框右上方一颗「灵感」胶囊,点开一块面板,一张卡 = 一件它现在就能替你做的事,
@@ -76,6 +76,8 @@ export function IdeasPanel({
           <X />
         </button>
       </div>
+      {/* Whether the capsule is hidden could not be read again: said here, beside its switch (the capsule has no room). */}
+      <RefreshFailed error={refreshFailure(hidden)} />
       {confirming ? (
         <div className="ta-card ta-ideas-confirm" role="alertdialog" aria-label={t('ideas.hideTitle')} data-testid="assistant-ideas-confirm">
           <span className="ta-tile-title">{t('ideas.hideTitle')}</span>

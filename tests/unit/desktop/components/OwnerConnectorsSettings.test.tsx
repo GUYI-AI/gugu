@@ -5,7 +5,7 @@ import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest'
 import { clickElement,createReactHarness,renderWithAppProviders } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
-const fixture = vi.hoisted(() => ({ data: {} as Record<string,unknown>,rows: [] as unknown[],change: vi.fn(async () => ({ status: 'pending' })),
+const fixture = vi.hoisted(() => ({ data: {} as Record<string,unknown>,rows: [] as unknown[],snapshotFails: false,change: vi.fn(async () => ({ status: 'pending' })),
   notify: vi.fn(),showSetup: vi.fn(),showGithub: vi.fn(),showConfirm: vi.fn(),retryOperation: vi.fn(async () => {}) }))
 vi.mock('@/lib/notices',() => ({ notify: fixture.notify }))
 vi.mock('@/lib/useAssistantHome',() => ({ useAssistantHome() { throw new Error('Unexpected assistant initialization') } }))
@@ -19,7 +19,10 @@ vi.mock('@/components/connections/useOwnerLibraryHost',() => ({ useOwnerLibraryH
   connectionMetadata: { ownerId: 'owner',authorityEpoch: '1',collection: async () => fixture.rows,change: fixture.change,invalidate: vi.fn(),
     snapshot: async () => snapshotOf() } }) }))
 vi.mock('@/lib/connectionBridge',() => ({ connectionBridge: () => ({ retryOperation: fixture.retryOperation,
-  routing: { peek: () => ({ mode: 'owner',epoch: '1' }) },metadata: () => ({ snapshot: async () => snapshotOf() }) }) }))
+  routing: { peek: () => ({ mode: 'owner',epoch: '1' }) },metadata: () => ({ snapshot: async () => {
+    if (fixture.snapshotFails) throw new Error('snapshot unreachable')
+    return snapshotOf()
+  } }) }) }))
 vi.mock('@/session/renderer/features/library/library-host',() => ({ LibraryHostProvider: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/session/renderer/features/integrations/integrations-provider',() => ({ IntegrationsProvider: ({ children }: { children: ReactNode }) => children,
   useIntegrationsContext: () => fixture.data }))
@@ -37,7 +40,7 @@ const app = (id: string,custody?: 'platform') => ({ id,name: id === 'github' ? '
   icon: { kind: 'svg',variants: [] },auth: { methods: custody ? [{ kind: 'form',custody,fields: [] }] : [] },capabilities: {},abilities: [],playbooks: [],features: [] })
 beforeEach(() => {
   harness = createReactHarness(); client = new QueryClient({ defaultOptions: { queries: { retry: false,gcTime: 0 } } }); sequence += 1
-  fixture.rows = []; fixture.notify.mockClear(); fixture.change.mockReset(); fixture.change.mockResolvedValue({ status: 'pending' }); fixture.showSetup.mockClear(); fixture.showGithub.mockClear(); fixture.showConfirm.mockClear(); fixture.retryOperation.mockClear()
+  fixture.rows = []; fixture.snapshotFails = false; fixture.notify.mockClear(); fixture.change.mockReset(); fixture.change.mockResolvedValue({ status: 'pending' }); fixture.showSetup.mockClear(); fixture.showGithub.mockClear(); fixture.showConfirm.mockClear(); fixture.retryOperation.mockClear()
   fixture.data = { integrations: [app('github'),app('amap','platform')],configuredConnections: {},connectionStatus: {},
     configuredConnectionsError: null,connectionCheckError: null,reloadConnections: vi.fn(),connectionOperations: [] }
   publishRendererSession('SIGNED_IN',{ user: { id: `owner-${sequence}` },access_token: 'fixture' } as Session)
@@ -133,5 +136,26 @@ describe('owner connection settings without an assistant or native host', () => 
     expect(q('application-list-pending')).toBeTruthy()
     expect(harness.container.textContent).not.toMatch(/重试|没读到|尚未准备好/)
     expect(q('connected-apps-empty')).toBeNull()
+  })
+  it('a snapshot read before whose read again fails keeps the rows and accounts and says the failure with a retry (list and detail)', async () => {
+    fixture.rows = [{ owner_user_id: 'owner',domain: 'integrations',resource_key: JSON.stringify(['device:one','github-key']),
+      source: { scopeKey: 'device:one',resourceKey: 'github-key' },device_id: 'one',revision: '5',data: { providerId: 'github',accountId: 'acc',displayName: 'octo' } }]
+    await render()
+    await act(async () => { await vi.waitFor(() => expect(ownerConnections.peek('1',null).state).toBe('value')) })
+    expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+    fixture.snapshotFails = true
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await act(async () => {
+        const read = ownerConnections.refresh('1',null).catch(() => undefined)
+        await vi.advanceTimersByTimeAsync(60_000)
+        await read
+      })
+    } finally { vi.useRealTimers() }
+    await vi.waitFor(() => expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull())
+    expect(q('assistant-connector-github')).toBeTruthy()
+    await clickElement(q('assistant-connector-github'))
+    expect(harness.container.textContent).toContain('octo')
+    expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
   })
 })

@@ -171,6 +171,22 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     expect(current!.catalogError).toBeNull();
   });
 
+  it('the machine\'s answer or the session\'s preselection read before, a re-read that fails: said with a retry, the group kept', async () => {
+    mount(<Probe provider="claude" session="session-3" />);
+    await settle();
+    expect(current!.catalogError).toBeNull();
+    io.harness.mockRejectedValue(new Error('machine gone'));
+    await act(async () => { current!.refresh(); });
+    await settle();
+    expect(current).toMatchObject({ settled: false, catalogError: expect.stringContaining('host-not-ready') });
+    expect(current!.models.map((model) => model.id)).toEqual(['glm-5.3-flash', 'opus-5.5']);
+    io.harness.mockResolvedValue(harnessAnswer());
+    io.invoke.mockRejectedValue(new Error('host gone'));
+    await act(async () => { current!.retry(); });
+    await settle();
+    expect(current).toMatchObject({ catalogError: expect.stringContaining('host-not-ready'), sessionSelection: { modelId: 'glm-5.3-flash' } });
+  });
+
   it('a session adds its preselection, read of the host for that session only', async () => {
     mount(<Probe provider="claude" session="session-1" />);
     await settle();

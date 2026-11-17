@@ -82,6 +82,8 @@ import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-mode
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { agentsMetadata, harnessModelCatalog } from '@renderer/lib/stores/agent-replicas';
+import { useTranslation } from 'react-i18next';
 import { agentsAnswerAwaited } from '@renderer/lib/stores/agents-answer';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
@@ -1066,6 +1068,19 @@ export function useInitialSessionState(
     } : null);
   useSessionInputNotice(`session-provider:${machine ?? 'local'}:${providerId ?? 'none'}`, providerError ? {
     title: providerError,
+  } : null);
+  // The agents offered and this agent's model list stay what was read before when their re-read fails: said with a retry
+  // (❌ the old list as current). Not read at all is the provider / catalog notices above.
+  const { t: common } = useTranslation('common');
+  // A harness re-read failure already raised the Gugu-models retry notice above (its catalog counts the harness): said once.
+  const keptReadFailure = (agentsReading.state === 'value' ? agentsReading.error : null)
+    ?? (platformCatalogNotice?.retryable ? null : harnessCatalog.refreshFailed);
+  useSessionInputNotice(`session-kept-reads:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`, keptReadFailure ? {
+    title: common('staleRead.failed'), tier: 'warning', diagnostic: keptReadFailure.message,
+    action: { label: common('staleRead.retry'), onClick: () => {
+      void agentsMetadata.refresh(machine);
+      if (providerId) void harnessModelCatalog.refresh(providerId, sessionpageSurface, machine);
+    } },
   } : null);
 
   /**

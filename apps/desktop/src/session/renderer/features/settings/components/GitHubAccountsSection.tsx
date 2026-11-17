@@ -21,6 +21,7 @@ import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { PRODUCT_NAME } from '@shared/app-identity';
 import type { GitHubAccountSummary } from '@shared/github';
 
@@ -67,6 +68,8 @@ export function GitHubAccountsSection() {
       ) : (
         <GitHubAccountRows accounts={sortGitHubAccountsByDefault(accounts.value)} />
       )}
+      {/* Read before, its re-read failed: said with a retry, the accounts read before staying (❌ shown as current). */}
+      {accounts.state === 'value' ? <RefreshFailed error={accounts.error} onRetry={() => void githubAccounts.refresh()} /> : null}
     </section>
   );
 }

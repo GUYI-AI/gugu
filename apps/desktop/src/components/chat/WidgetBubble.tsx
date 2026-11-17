@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite'
 import { useContext, useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
-import { useReplica } from '../../lib/replica'
+import { refreshFailure, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { marketOffers, useMarketOffers } from '../appSlot/marketOffers'
 import { useTranslation } from 'react-i18next'
@@ -128,7 +128,8 @@ function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; 
     ? widgetInstallOffer(availableInstallOffers(shared.value, marketReading.state === 'value' ? marketReading.value : null, installed.value.manifests, installed.value.origins),
       widget.app, widget.view, platform.kind === 'electron' ? 'desktop' : 'phone') : null
   const offerUnknown = asked && (shared.state === 'unknown' || marketReading.state === 'unknown' || installed.state === 'unknown')
-  const readFailed = shared.state === 'error' ? shared.error : marketReading.state === 'error' ? marketReading.error : null
+  // Unread, or read before and its read again failing (the offer from what was read stays): said with a retry.
+  const readFailed = refreshFailure(shared) ?? refreshFailure(marketReading)
   const install = async () => {
     if (!appsHere || !offer) return
     setInstalling(true)

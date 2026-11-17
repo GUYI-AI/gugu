@@ -100,6 +100,19 @@ describe('the setup layer over the App\'s panel (AssistantSetupPage)', () => {
     }
     who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } }
   })
+
+  it('"none" kept from a read whose read again failed: says it is unreadable, ❌ the guide (another device may have made one)', async () => {
+    who.mine = { reading: { state: 'error', error: new Error('offline') } }
+    await layerPage()
+    const unreadable = harness.container.textContent
+    harness.cleanup(); harness = createReactHarness()
+    who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: true, error: new Error('offline') } }
+    await layerPage()
+    expect(seen('assistant-setup-page')).toBe(true)
+    expect(seen('name-step') || seen('intro')).toBe(false)
+    expect(harness.container.textContent).toBe(unreadable)
+    who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } }
+  })
 })
 
 describe('开通 inside the assistant App', () => {
