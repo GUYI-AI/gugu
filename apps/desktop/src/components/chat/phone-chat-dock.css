@@ -1,5 +1,4 @@
-/* The phone footer owns a real row. Messages end above it, including the running pills. */
-.gg-phone-chat-dock { position: relative; flex: 0 0 auto; min-width: 0; width: 100%; z-index: 20; }
+/* The phone floats the same dock as desktop; these rules only tighten its rows. */
 .gg-phone-chat-dock [data-running-bar-slot]:has(> [data-running-bar-content]:empty) { display: none; }
 /* The running strip already owns its spacing. Do not stack a desktop 42px
    reservation and the composer's separate top inset between these phone rows. */

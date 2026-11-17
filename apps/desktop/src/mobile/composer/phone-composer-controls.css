@@ -1,7 +1,9 @@
 /* Reference 05: 90/943 button height, 20/943 gaps. Reference 07: 28/943 side insets. */
 .gg-phone-composer-controls { display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; min-width: 0; padding-block: 2px; margin-bottom: var(--phone-composer-row-input-gap, 4px); opacity: 1; transition: opacity var(--transition-fast); }
 .gg-phone-composer-control { flex: 0 0 auto; position: relative; min-height: 44px; height: 44px; padding: 0 12px; gap: 4px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font-size: var(--font-body); }
-.gg-phone-composer-control::before { content: ''; position: absolute; inset: 4px 0; border: 1px solid var(--border-color); border-radius: 8px; pointer-events: none; }
+/* The row floats over the messages (ChatBottomDock): like every floating card, the visible box draws its own background. */
+.gg-phone-composer-control { isolation: isolate; }
+.gg-phone-composer-control::before { content: ''; position: absolute; z-index: -1; inset: 4px 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg); pointer-events: none; }
 .gg-phone-composer-control[data-active] { color: var(--live-light); }
 .gg-phone-composer-control[data-active]::before { border-color: var(--live-light); }
 .gg-phone-composer-control > svg { width: 16px; height: 16px; }

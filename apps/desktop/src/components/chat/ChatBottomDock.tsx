@@ -48,19 +48,19 @@ export function ChatBottomDock({ reserve, above, running = false, children }: { 
         top = Math.min(top, offset)
       }
       const height = el.offsetHeight
-      rule.style.setProperty(CHAT_DOCK_HEIGHT_VAR, `${mobile ? 0 : height}px`)
-      rule.style.setProperty(CHAT_DOCK_AVATAR_HEIGHT_VAR, `${mobile ? 0 : height - top}px`)
+      rule.style.setProperty(CHAT_DOCK_HEIGHT_VAR, `${height}px`)
+      rule.style.setProperty(CHAT_DOCK_AVATAR_HEIGHT_VAR, `${height - top}px`)
     }
     report()
     const observer = new ResizeObserver(report)
     observer.observe(el)
     if (preview) observer.observe(preview)
     return () => { observer.disconnect(); dockSheet!.deleteRule([...dockSheet!.cssRules].indexOf(rule)); column.removeAttribute('data-chat-dock-column') }
-  }, [hasAbove, columnId, mobile])
+  }, [hasAbove, columnId])
   return (
     <>
-      {reserve && !mobile && <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)] shrink-0" />}
-      <div ref={ref} data-chat-bottom-dock="" data-running-status={running || undefined} className={mobile ? 'gg-phone-chat-dock' : `${composerSlotClass} absolute!`}>
+      {reserve && <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)] shrink-0" />}
+      <div ref={ref} data-chat-bottom-dock="" data-running-status={running || undefined} className={`${composerSlotClass} absolute!${mobile ? ' gg-phone-chat-dock' : ''}`}>
         <div className={`${composerSlotInnerClass} pb-0! pointer-events-none!`}>{above}</div>
         <div className={composerSlotInnerClass}>{children}</div>
       </div>
