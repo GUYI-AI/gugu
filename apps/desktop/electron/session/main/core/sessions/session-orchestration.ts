@@ -2004,26 +2004,42 @@ async function sendSessionMessage(
  * 发起方会话只在 agent 操作 App 页面时有(`from`,它不能发给自己);否则与别的机器上的发起方一样是 null。信封由发信方
  * 那一侧给,这里只管投。送达回 message id,否则带原因抛。
  */
-export async function messageSessionFrom(
+export type HostSessionDeliveryReceipt = {
+  id: string;
+  status: 'delivered' | 'queued' | 'deferred';
+  recovery?: import('./session-life').QueuedDeliveryRecovery;
+};
+
+/** Keep admission visible to host-owned deliveries whose completion depends on it. */
+export async function messageSessionDeliveryFrom(
   envelope: DeliveryEnvelope,
   sessionId: string,
   text: string,
   /** `queue` / `key` exactly as `session_message` takes them; `keyScope` names the sender (`app:<id>`). */
   options: AppMessageOptions,
-): Promise<{ id: string; deferred?: true }> {
+): Promise<HostSessionDeliveryReceipt> {
   const action = appMessage(sessionId, text, options);
   const stored = options.receipt ? readAcceptedMessage(sessionDirectMessageId(options.keyScope, sessionId, action)) : undefined;
   const durableEnvelope: DeliveryEnvelope = stored ? () => stored.content : envelope;
-  const { recipients } = await sendSessionMessage(options.from ?? null, durableEnvelope, action, options.keyScope, await allSessionRows());
+  const rows = await allSessionRows();
+  const { recipients } = await sendSessionMessage(options.from ?? null, durableEnvelope, action, options.keyScope, rows);
   const [result] = recipients;
   if (result?.status === 'failed' || !result?.message_id) {
     throw Object.assign(new Error(result?.error?.message ?? `the message to session ${sessionId} was not delivered`), { code: result?.error?.code });
   }
-  return { id: result.message_id, ...(result.status === 'deferred' ? { deferred: true as const } : {}) };
+  return { id: result.message_id, status: result.status,
+    ...(result.status === 'queued' && options.recoverPending !== undefined && transportOf(resolveSessionRow(rows, sessionId)) === 'acp'
+      ? { recovery: sessionLife().recoverQueuedDelivery(sessionId, result.message_id, options.recoverPending) } : {}) };
+}
+
+/** The App-facing receipt keeps its existing id/deferred shape. */
+export async function messageSessionFrom(envelope: DeliveryEnvelope, sessionId: string, text: string, options: AppMessageOptions): Promise<{ id: string; deferred?: true }> {
+  const result = await messageSessionDeliveryFrom(envelope, sessionId, text, options);
+  return { id: result.id, ...(result.status === 'deferred' ? { deferred: true as const } : {}) };
 }
 
 /** `from`: the session of the agent that works the App's page (owner 10-14) — it is the one telling, so not itself. */
-type AppMessageOptions = { delivery?: 'queue' | 'defer'; key?: string; keyScope: string; from?: string; receipt?: { id: string; at: string } };
+type AppMessageOptions = { delivery?: 'queue' | 'defer'; key?: string; keyScope: string; from?: string; receipt?: { id: string; at: string }; recoverPending?: boolean };
 
 function appMessage(sessionId: string, text: string, options: AppMessageOptions): Extract<SessionAction, { action: 'message' }> {
   return {

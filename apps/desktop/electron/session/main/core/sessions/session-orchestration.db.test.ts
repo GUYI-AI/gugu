@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   /** Creation turns are admitted as pending rows (enqueue); an empty creation queue is an explicit start. */
   lifeEnqueue: vi.fn((_input: { sessionId: string; messageId: string; text: string; kind: string; turn?: unknown }) => ({ seq: 1, state: 'queued' })),
   lifeStart: vi.fn((_sessionId: string, _origin?: string): void => undefined),
+  lifeRecover: vi.fn(() => ({ state: 'waiting' as const })),
   /** A session's LifeView kind (absent = dormant). */
   lifeKinds: {} as Record<string, string>,
   emit: vi.fn(),
@@ -132,6 +133,7 @@ vi.mock('@main/core/pty/tmux-session-name', () => ({
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit, on: mocks.on } }));
 vi.mock('@main/core/sessions/session-life', () => ({ sessionLife: () => ({
   interrupt: mocks.lifeInterrupt, restore: mocks.lifeRestore, enqueue: mocks.lifeEnqueue, start: mocks.lifeStart,
+  recoverQueuedDelivery: mocks.lifeRecover,
   // The projection an ACP session's status is composed from: at rest unless a case says otherwise.
   status: (sessionId: string) => ({ kind: mocks.lifeKinds[sessionId] ?? 'dormant', stage: null }),
 }) }));
@@ -197,6 +199,7 @@ import { getPlugin } from '../agents/plugin-registry';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import {
   messageSessionFrom,
+  messageSessionDeliveryFrom,
   assertOutboundProjectIds,
   runRemoteSessionAction,
   runSessionAction,
@@ -264,6 +267,8 @@ describe('session orchestration', () => {
     // The real durable queue: what a start would deliver, one row per message id.
     mocks.lifeEnqueue.mockImplementation((input) => enqueuePending(input as Parameters<typeof enqueuePending>[0]));
     mocks.lifeStart.mockClear();
+    mocks.lifeRecover.mockReset();
+    mocks.lifeRecover.mockReturnValue({ state: 'waiting' });
     mocks.emit.mockReset();
     mocks.on.mockReset();
     mocks.openFileResultListener = undefined;
@@ -466,6 +471,37 @@ describe('session orchestration', () => {
   // 对照组(父提交 9951620de):App 走聊天(写一条悄悄话),根本不经过这一层。
   describe('from a sender that is not a session (messageSessionFrom)', () => {
     const envelope = (messageId: string, text: string) => `<app-envelope msg="${messageId}">${text}</app-envelope>`;
+
+    it('host admission keeps queued visible while the App receipt remains compatible', async () => {
+      mocks.sendMessage.mockResolvedValue({ id: 'queued-stable', status: 'queued' });
+      expect(await messageSessionDeliveryFrom(envelope, 'caller', 'pending', { keyScope: 'automation:a', recoverPending: false }))
+        .toEqual({ id: 'queued-stable', status: 'queued', recovery: { state: 'waiting' } });
+      expect(mocks.lifeRecover).toHaveBeenCalledWith('caller', 'queued-stable', false);
+      mocks.lifeRecover.mockClear();
+      expect(await messageSessionFrom(envelope, 'caller', 'pending', { keyScope: 'app:lens' })).toEqual({ id: 'queued-stable' });
+      expect(mocks.lifeRecover).not.toHaveBeenCalled();
+    });
+
+    it('host admission uses the original stable run identity across queued recovery and admission', async () => {
+      const receipt = { id: '022ebf62-18b2-4d78-987e-ddb02dd04c46', at: '2026-10-26T07:00:00.000Z' };
+      mocks.sendMessage.mockImplementation(async params => ({ id: params.clientMessageId, status: 'queued' }));
+      await messageSessionDeliveryFrom(envelope, 'caller', 'pending', { keyScope: 'automation:a', receipt, recoverPending: true });
+      const first = mocks.sendMessage.mock.calls.at(-1)![0];
+      mocks.readAcceptedMessage.mockReturnValueOnce({ id: first.clientMessageId, sessionId: 'caller', content: first.text });
+      mocks.sendMessage.mockImplementation(async params => ({ id: params.clientMessageId, status: 'delivered' }));
+      mocks.lifeRecover.mockClear();
+      expect(await messageSessionDeliveryFrom(() => 'changed', 'caller', 'later text',
+        { keyScope: 'automation:a', receipt, recoverPending: true })).toEqual({ id: first.clientMessageId, status: 'delivered' });
+      expect(mocks.sendMessage.mock.calls.at(-1)![0]).toMatchObject({ clientMessageId: first.clientMessageId, text: first.text });
+      expect(mocks.lifeRecover).not.toHaveBeenCalled();
+    });
+
+    it('host admission never requests recovery after an uncertain delivery', async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ id: 'unknown', status: 'outcome-unknown' });
+      await expect(messageSessionDeliveryFrom(envelope, 'caller', 'pending',
+        { keyScope: 'automation:a', recoverPending: true })).rejects.toMatchObject({ code: 'SESSION_DIRECT_OUTCOME_UNKNOWN' });
+      expect(mocks.lifeRecover).not.toHaveBeenCalled();
+    });
 
     it('recovers the same host update twice through real orchestration and persists one accepted notice', async () => {
       const actual = await vi.importActual<typeof import('./sendMessage')>('./sendMessage');

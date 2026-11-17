@@ -13,6 +13,10 @@ import type { AutomationRun } from '@shared/core/automations/automation-run';
 import { markRunDone, markRunFailed, updateRunOrThrow, type OnStepCompleted } from '../run-transitions';
 import { describeScheduleTime } from '../schedule-time';
 import { sessionUsesAssistantPanel } from '../../sessions/session-admission-preparation';
+import type { HostSessionDeliveryReceipt } from '../../sessions/session-orchestration';
+
+/** Additional startup attempts for one stable scheduled input; busy/dispatching waits do not spend this budget. */
+export const MAX_SCHEDULE_DELIVERY_RECOVERIES = 3;
 
 /**
  * #7221 agent 给自己排的那一类到点:把当初那句交代原样送回建它的那条会话 —— 同一身份、同一段对话,
@@ -30,8 +34,9 @@ export type AgentScheduleDeliveryDeps = {
     envelope: (messageId: string, text: string) => string,
     text: string,
     keyScope: string,
-    receipt: { id: string; at: string }
-  ): Promise<{ id: string }>;
+    receipt: { id: string; at: string },
+    allowRecovery: boolean,
+  ): Promise<HostSessionDeliveryReceipt>;
 };
 
 const defaultDeps: AgentScheduleDeliveryDeps = {
@@ -43,10 +48,10 @@ const defaultDeps: AgentScheduleDeliveryDeps = {
       .limit(1);
     return !!row && row.archivedAt == null;
   },
-  async deliver(sessionId, envelope, text, keyScope, receipt) {
+  async deliver(sessionId, envelope, text, keyScope, receipt, allowRecovery) {
     // 动态取:会话编排拖着整套会话页运行时,调度器的单测不该为它付代价。
-    const { messageSessionFrom } = await import('@main/core/sessions/session-orchestration');
-    return messageSessionFrom(envelope, sessionId, text, { keyScope, receipt });
+    const { messageSessionDeliveryFrom } = await import('@main/core/sessions/session-orchestration');
+    return messageSessionDeliveryFrom(envelope, sessionId, text, { keyScope, receipt, recoverPending: allowRecovery });
   },
 };
 
@@ -88,8 +93,9 @@ export async function executeAgentDelivery(
 
   const context = agentScheduleContext(automation, run);
   const receipt = { id: run.id, at: new Date(run.scheduledAt ?? run.startedAt ?? automation.createdAt).toISOString() };
+  const recoveries = run.error?.deliveryRecoveryAttempts ?? 0;
   try {
-    await deps.deliver(
+    const delivery = await deps.deliver(
       sessionId,
       (messageId, said) =>
         buildScheduledEnvelope({
@@ -101,11 +107,33 @@ export async function executeAgentDelivery(
         }),
       text,
       `automation:${automation.id}`,
-      receipt
+      receipt,
+      recoveries < MAX_SCHEDULE_DELIVERY_RECOVERIES,
     );
+    if (delivery.status === 'queued') {
+      const recovery = delivery.recovery;
+      const attempts = recoveries + (recovery?.state === 'started' ? 1 : 0);
+      const message = recovery && recovery.state !== 'waiting' ? recovery.cause
+        : run.error?.message ?? `Message ${delivery.id} is durably queued but has not been admitted`;
+      const error = { step: 'deliver' as const, code: 'delivery_pending', message, deliveryRecoveryAttempts: attempts };
+      if (recovery?.state === 'blocked' || recovery?.state === 'needed') {
+        const failed = await markRunFailed(run.id, { ...error,
+          code: recovery.state === 'blocked' ? 'delivery_recovery_blocked' : 'delivery_recovery_exhausted',
+          message: `${message}; message ${delivery.id} remains queued; automatic startup recovery stopped (${attempts} attempts)` });
+        onStepCompleted(failed);
+        return err(error.message);
+      }
+      const queued = await updateRunOrThrow(run.id, { status: 'queued', finishedAt: null,
+        error: (recovery && recovery.state !== 'waiting') || run.error ? error : null });
+      onStepCompleted(queued);
+      return err('delivery_not_admitted');
+    }
+    if (delivery.status !== 'delivered') throw new Error(`Scheduled input was ${delivery.status}, not admitted`);
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === 'SESSION_DIRECT_NOT_LIVE') {
-      const queued = await updateRunOrThrow(run.id, { status: 'queued', finishedAt: null });
+      const queued = await updateRunOrThrow(run.id, { status: 'queued', finishedAt: null,
+        error: { step: 'deliver', code: 'delivery_not_admitted', message: error instanceof Error ? error.message : String(error),
+          deliveryRecoveryAttempts: recoveries } });
       onStepCompleted(queued);
       return err('delivery_not_admitted');
     }

@@ -3,14 +3,14 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import type { AutomationRun } from '@shared/core/automations/automation-run';
-import { executeAgentDelivery } from './actions/deliverToAgent';
+import { executeAgentDelivery, MAX_SCHEDULE_DELIVERY_RECOVERIES } from './actions/deliverToAgent';
 import { agentScheduleChangeText, restoreAgentSchedules, runAgentScheduleAction, tellAgentScheduleChanged } from './agent-schedules';
 import { AutomationScheduler, type SchedulerCallbacks } from './automation-scheduler';
 import { archiveSession } from '@main/core/sessions/archiveSession';
 import { sessionEvents } from '@main/core/sessions/session-events';
 import { projectEvents } from '@main/core/projects/project-events';
 import { AutomationsService } from './automations-service';
-import { closeSpentOneTimeAutomation, getAutomation, insertRun } from './repo';
+import { closeSpentOneTimeAutomation, getAutomation, insertRun, startCreatingSession } from './repo';
 import { setOwnerTimeZoneContext } from '@shared/core/automations/timezone';
 
 // #7221 agent 给自己排的已安排:建、看、取消、到点送回、建它的会话不在了。读写的是真库(迁移跑到最新),
@@ -32,6 +32,7 @@ vi.mock('@main/core/sessions/archiveSession', () => ({ archiveSession: vi.fn() }
 vi.mock('./actions/sessionCreate', () => ({ executeSessionCreate: vi.fn() }));
 vi.mock('@main/core/sessions/session-orchestration', () => ({
   messageSessionFrom: mocks.messageSessionFrom,
+  messageSessionDeliveryFrom: mocks.messageSessionFrom,
 }));
 
 /** 云电脑管家睡前算「下一次到期」的那条查询,逐字(夜间统筹转来的硬约束)。新的这一类必须被它看见。 */
@@ -92,7 +93,7 @@ beforeEach(async () => {
   fixture = await openFixture('empty');
   mocks.db = fixture.db;
   mocks.messageSessionFrom.mockReset();
-  mocks.messageSessionFrom.mockResolvedValue({ id: 'delivered-1' });
+  mocks.messageSessionFrom.mockResolvedValue({ id: 'delivered-1', status: 'delivered' });
   service = new AutomationsService();
   seedProjectAndSessions();
 });
@@ -251,6 +252,22 @@ describe('到点送回建它的会话', () => {
     expect(listed.schedules[0]).toMatchObject({ active: false, next_run_at: null, last_run: { status: 'done' } });
   });
 
+  it('does not finish a schedule whose stable message is queued but has not been admitted', async () => {
+    const { id, run } = await dueOneTimeRun();
+    const automation = (await getAutomation(id))!;
+    const started = await insertRun({ automationId: id, triggerConfigSnapshot: run.triggerConfigSnapshot,
+      agentConfigSnapshot: run.agentConfigSnapshot, scheduledAt: run.scheduledAt,
+      status: 'creating_session', triggerKind: 'cron', startedAt: Date.now() });
+    const result = await executeAgentDelivery(automation, started, () => {}, {
+      sessionPresent: async () => true,
+      deliver: async () => ({ id: 'stable-reminder', status: 'queued' as const }),
+    });
+    expect(result.success).toBe(false);
+    expect(fixture.sqlite.prepare('SELECT status, finished_at FROM automation_runs WHERE id=?').get(started.id))
+      .toMatchObject({ status: 'queued', finished_at: null });
+    expect(await closeSpentOneTimeAutomation(id, Date.now())).toBe(false);
+  });
+
   it('重复的:送完照常预排下一次', async () => {
     const created = await runAgentScheduleAction(AGENT, { action: 'schedule_create', prompt: 'agenda', cron: '0 8 * * *', tz: 'Asia/Shanghai' });
     vi.setSystemTime(Date.UTC(2026, 9, 15, 0, 0, 30));
@@ -259,6 +276,66 @@ describe('到点送回建它的会话', () => {
     await record.when(() => record.steps.some((run) => run.status === 'done'));
     await record.when(() => keeperNextDue() === Date.UTC(2026, 9, 16, 0, 0, 0));
     expect((await getAutomation(scheduleIdOf(created)))?.enabled).toBe(true);
+  });
+
+  it('waits through busy queue drains with one identity and does not spend startup retries', async () => {
+    const { id, run } = await dueOneTimeRun();
+    const automation = (await getAutomation(id))!;
+    let current = await insertRun({ automationId: id, triggerConfigSnapshot: run.triggerConfigSnapshot,
+      agentConfigSnapshot: run.agentConfigSnapshot, scheduledAt: run.scheduledAt,
+      status: 'creating_session', triggerKind: 'cron', startedAt: Date.now() });
+    const deliver = vi.fn().mockResolvedValue({ id: 'same-pending', status: 'queued', recovery: { state: 'waiting' } });
+    const deps = { sessionPresent: async () => true, deliver };
+    for (let i = 0; i < 5; i++) {
+      expect((await executeAgentDelivery(automation, current, () => {}, deps)).success).toBe(false);
+      current = (await startCreatingSession(current.id))!;
+      expect(current.error).toBeNull();
+    }
+    deliver.mockResolvedValue({ id: 'same-pending', status: 'delivered' });
+    expect((await executeAgentDelivery(automation, current, () => {}, deps)).success).toBe(true);
+    expect(new Set(deliver.mock.calls.map(call => call[4].id))).toEqual(new Set([current.id]));
+    expect(fixture.sqlite.prepare('SELECT status, error FROM automation_runs WHERE id=?').get(current.id))
+      .toEqual({ status: 'done', error: null });
+  });
+
+  it('persists a bounded recovery budget across new scheduler attempts and exposes the last failure', async () => {
+    const { id, run } = await dueOneTimeRun();
+    const automation = (await getAutomation(id))!;
+    let current = await insertRun({ automationId: id, triggerConfigSnapshot: run.triggerConfigSnapshot,
+      agentConfigSnapshot: run.agentConfigSnapshot, scheduledAt: run.scheduledAt,
+      status: 'creating_session', triggerKind: 'cron', startedAt: Date.now() });
+    const deliver = vi.fn(async (_session, _envelope, _text, _scope, _receipt, allowRecovery) => ({
+      id: 'stable-failed-start', status: 'queued' as const,
+      recovery: { state: allowRecovery ? 'started' as const : 'needed' as const, cause: 'channel could not resume' },
+    }));
+    const deps = { sessionPresent: async () => true, deliver };
+    for (let i = 0; i < MAX_SCHEDULE_DELIVERY_RECOVERIES; i++) {
+      await executeAgentDelivery(automation, current, () => {}, deps);
+      current = (await startCreatingSession(current.id))!;
+      expect(current.error?.deliveryRecoveryAttempts).toBe(i + 1);
+    }
+    await executeAgentDelivery(automation, current, () => {}, deps);
+    const failed = fixture.sqlite.prepare('SELECT status, error FROM automation_runs WHERE id=?').get(current.id) as { status: string; error: string };
+    expect(failed.status).toBe('failed');
+    expect(JSON.parse(failed.error)).toMatchObject({ code: 'delivery_recovery_exhausted',
+      deliveryRecoveryAttempts: MAX_SCHEDULE_DELIVERY_RECOVERIES });
+    expect(JSON.parse(failed.error).message).toContain('channel could not resume');
+    expect(JSON.parse(failed.error).message).toContain('remains queued');
+    expect(deliver.mock.calls.at(-1)![5]).toBe(false);
+    expect(new Set(deliver.mock.calls.map(call => call[4].id))).toEqual(new Set([current.id]));
+  });
+
+  it('does not retry an uncertain delivery or mark it admitted', async () => {
+    const { id, run } = await dueOneTimeRun();
+    const automation = (await getAutomation(id))!;
+    const started = await insertRun({ automationId: id, triggerConfigSnapshot: run.triggerConfigSnapshot,
+      agentConfigSnapshot: run.agentConfigSnapshot, scheduledAt: run.scheduledAt,
+      status: 'creating_session', triggerKind: 'cron', startedAt: Date.now() });
+    const deliver = vi.fn().mockRejectedValue(Object.assign(new Error('receipt outcome unknown'), { code: 'SESSION_DIRECT_OUTCOME_UNKNOWN' }));
+    await executeAgentDelivery(automation, started, () => {}, { sessionPresent: async () => true, deliver });
+    expect(fixture.sqlite.prepare('SELECT status FROM automation_runs WHERE id=?').pluck().get(started.id)).toBe('failed');
+    expect(await startCreatingSession(started.id)).toBeNull();
+    expect(deliver).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -313,7 +390,7 @@ describe('到点送回建它的会话', () => {
     expect(mocks.messageSessionFrom).toHaveBeenCalledTimes(1);
     expect(fixture.sqlite.prepare('SELECT enabled FROM automations WHERE id=?').pluck().get(id)).toBe(1);
     expect(fixture.sqlite.prepare("SELECT status FROM automation_runs WHERE automation_id=? AND status <> 'scheduled'").pluck().get(id)).toBe('queued');
-    mocks.messageSessionFrom.mockResolvedValue({ id: 'accepted' });
+    mocks.messageSessionFrom.mockResolvedValue({ id: 'accepted', status: 'delivered' });
     vi.setSystemTime(Date.now() + 2000);
     await scheduler.drainQueue();
     await record.when(() => record.steps.some(row => row.status === 'done'));
@@ -327,7 +404,7 @@ describe('到点送回建它的会话', () => {
     const started = await insertRun({ automationId: id,triggerConfigSnapshot: run.triggerConfigSnapshot,
       agentConfigSnapshot: run.agentConfigSnapshot,scheduledAt: run.scheduledAt,status: 'creating_session',triggerKind: 'cron',startedAt: Date.now() });
     const deliver = vi.fn().mockRejectedValueOnce(Object.assign(new Error('面板状态暂时不可用。'),{ code: 'SESSION_DIRECT_NOT_LIVE' }))
-      .mockResolvedValue({ id: 'native-admitted' });
+      .mockResolvedValue({ id: 'native-admitted', status: 'delivered' });
     const deps = { sessionPresent: async () => true,deliver };
     expect((await executeAgentDelivery(automation,started,() => {},deps)).success).toBe(false);
     expect(fixture.sqlite.prepare('SELECT status, finished_at FROM automation_runs WHERE id=?').get(started.id)).toMatchObject({ status: 'queued',finished_at: null });
