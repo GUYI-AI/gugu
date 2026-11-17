@@ -30,7 +30,7 @@ describe('POSIX bounded private creation facts', () => {
       });
     }, 5000);
     try {
-      const [code] = await once(child, 'exit');
+      const [code] = await once(child, 'close');
       expect(expired, error).toBe(false); expect(code, error).toBe(0); expect(output).toContain('FIFO_REJECTED');
     } finally { clearTimeout(timer); }
   }, 10_000);
