@@ -371,7 +371,8 @@ describe('Agent owner and source-group listen-mode controls', () => {
   it('includes listen-mode editing in a group owner’s menu for another agent', async () => {
     await renderPanel('owner-1')
     await click(q('[data-member-row="codex"] button[aria-label^="管理"]'))
-    expect(menuItems()).toEqual(['设为管理员', '改为主动', '移出群聊'])
+    // menu-table.ts @@@menu-order: listen mode (weekly) before admin (once, if ever); removing is last.
+    expect(menuItems()).toEqual(['改为主动', '设为管理员', '移出群聊'])
   })
 
   it('普通成员只在自己的 agent 上有 ⋯:改档位、让它退出群聊', async () => {

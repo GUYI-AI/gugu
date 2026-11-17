@@ -1,11 +1,11 @@
 import { MoreHorizontal } from '@/lib/icons'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import type { MenuTableItem } from '../session/shared/menu-table'
+import { menuLayout, type MenuTableItem } from '../session/shared/menu-table'
 import { menuTableIcon, menuTableLabel } from './menuTablePresentation'
 import type { ReactNode } from 'react'
 import { MenuFold, MenuItem } from './ui/Menu'
 
-/** The rows of an object's action table (session/shared/menu-table.ts), inside whichever menu the entry opens: unfolded first, then 更多. */
+/** The rows of an object's action table (session/shared/menu-table.ts), inside whichever menu the entry opens, laid out by `menuLayout`. */
 export function MenuTableItems<A extends string>({ items, onAction, testIdPrefix = 'session-menu', foldExtra }: {
   items: readonly MenuTableItem<A>[]
   onAction: (id: A) => void
@@ -20,9 +20,9 @@ export function MenuTableItems<A extends string>({ items, onAction, testIdPrefix
       {menuTableLabel(item.label)}
     </MenuItem>
   }
-  const folded = items.filter((item) => item.fold)
+  const { top, more: folded } = menuLayout(items)
   return <>
-    {items.filter((item) => !item.fold).map(row)}
+    {top.map(row)}
     {(folded.length > 0 || foldExtra) && <MenuFold icon={<MoreHorizontal size={15} />} label={translateSessionMessage('common.more')} data-testid={`${testIdPrefix}-more`}>{foldExtra}{folded.map(row)}</MenuFold>}
   </>
 }

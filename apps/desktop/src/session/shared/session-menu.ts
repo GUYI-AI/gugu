@@ -115,31 +115,45 @@ const session = (key: string): MenuLabel => ({ ns: 'session', key })
 const messaging = (key: string): MenuLabel => ({ ns: 'messaging', key })
 const contacts = (key: string): MenuLabel => ({ ns: 'contacts', key })
 
-/** The whole table, in order, before any entry leaves anything out. */
+/**
+ * The whole table, in order, before any entry leaves anything out. Ordered by menu-table.ts @@@menu-order; there is no
+ * click data, so each row says why it sits where it does.
+ */
 function allItems(state: SessionMenuState): SessionMenuItem[] {
   const items: SessionMenuItem[] = [
+    // Message: what a contacts row is opened for (excluded wherever clicking the row already opens it).
     { id: 'open-chat', label: contacts('contextMenu.startChat'), icon: 'chat' },
-    // Read state is one row: mark read while something is unread, mark unread otherwise.
+    // Read state, one row: mark read while something is unread, mark unread otherwise. Several times a day, triaging.
     state.hasUnread
       ? { id: 'mark-read', label: messaging('chatList.markRead'), icon: 'read' }
       : { id: 'mark-unread', label: contacts('contextMenu.markUnread'), icon: 'unread' },
+    // Pin: a few times a week, keeping the tasks in hand at the top.
     { id: 'pin', label: session(state.pinned ? 'task.unpin' : 'task.pin'), icon: state.pinned ? 'unpin' : 'pin' },
+    // Rename: once for many tasks, soon after they start.
+    { id: 'rename', label: session('task.rename'), icon: 'rename' },
   ]
+  // Archive: how every finished task ends, so as frequent as tasks are started. Undone from its toast or history, so
+  // not destructive: the last top-level row.
+  if (!state.archived) items.push({ id: 'archive', label: session('task.archiveTaskTitle'), icon: 'archive' })
+  // 更多 — pin to the sidebar: set once for an agent that lives in a group or project.
   if (state.sidebarPin) {
     items.push(state.sidebarPin === 'unpin'
-      ? { id: 'sidebar-pin', label: session('task.unpinFromSidebar'), icon: 'sidebar-off' }
-      : { id: 'sidebar-pin', label: session('task.pinToSidebar'), icon: 'sidebar' })
+      ? { id: 'sidebar-pin', label: session('task.unpinFromSidebar'), icon: 'sidebar-off', fold: true }
+      : { id: 'sidebar-pin', label: session('task.pinToSidebar'), icon: 'sidebar', fold: true })
   }
-  items.push(
-    { id: 'rename', label: session('task.rename'), icon: 'rename' },
-    { id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell' },
-  )
-  if (!state.archived) items.push({ id: 'archive', label: session('task.archiveTaskTitle'), icon: 'archive' })
+  // 更多 — notifications: set once per agent, if ever; one's own agents are rarely muted.
+  items.push({ id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell', fold: true })
+  // 更多 — fork: a few times a week at most, to try another direction.
   if (state.canFork) items.push({ id: 'fork', label: session('sidebar.forkSession'), icon: 'fork', fold: true })
-  items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
-  if (!state.reloading) items.push({ id: 'reload', label: session('task.manualReload'), icon: 'reload', fold: true })
-  if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
+  // 更多 — mark all read: acts on the whole chat list, not on this row.
   items.push({ id: 'mark-all-read', label: messaging('chatList.markAllRead'), icon: 'read', fold: true, disabled: !state.hasAnyUnread })
+  // 更多 — restart: only when a task is stuck.
+  if (!state.reloading) items.push({ id: 'reload', label: session('task.manualReload'), icon: 'reload', fold: true })
+  // 更多 — copy the session id: a tool for reporting a problem.
+  items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
+  // 更多 — the legacy history: read once, after the move to tasks.
+  if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
+  // 更多, last — delete an archived agent's conversation: rare and destructive, asks first.
   if (state.archived && state.canDeleteChat) {
     items.push({ id: 'delete-chat', label: messaging('chatList.delete'), icon: 'trash', fold: true, danger: true, disabled: state.canDeleteChat === 'unknown' })
   }

@@ -166,14 +166,17 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
           const menuProfile = payload ? profileOf(payload) : null
           return menuProfile ? (
             <DropdownMenu.Content className="min-w-[160px]" aria-label={t('group.memberList.manage', { name: menuProfile.displayName })}>
-              {isGroup && canManage(menuProfile) ? (
-                <MenuItem onClick={() => { void setRole(menuProfile, menuProfile.role === 'admin' ? 'member' : 'admin') }}>
-                  {menuProfile.role === 'admin' ? t('group.memberList.revokeAdmin') : t('group.memberList.makeAdmin')}
-                </MenuItem>
-              ) : null}
+              {/* Ordered by session/shared/menu-table.ts @@@menu-order (no click data; a short menu, so flat). Listen mode:
+                  weekly, tuning how an agent joins in. Admin: set once per member, if ever. Remove: rare, destructive, last,
+                  asks first. */}
               {canEditListenMode(menuProfile) ? (
                 <MenuItem onClick={() => { void setListenMode(menuProfile, menuProfile.listenMode === 'active' ? 'passive' : 'active') }}>
                   {menuProfile.listenMode === 'active' ? t('group.memberList.setPassive') : t('group.memberList.setActive')}
+                </MenuItem>
+              ) : null}
+              {isGroup && canManage(menuProfile) ? (
+                <MenuItem onClick={() => { void setRole(menuProfile, menuProfile.role === 'admin' ? 'member' : 'admin') }}>
+                  {menuProfile.role === 'admin' ? t('group.memberList.revokeAdmin') : t('group.memberList.makeAdmin')}
                 </MenuItem>
               ) : null}
               {canManage(menuProfile) || ownsAgent(menuProfile) || isSelfLeaving(menuProfile) ? (
