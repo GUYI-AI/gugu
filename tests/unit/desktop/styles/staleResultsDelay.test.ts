@@ -26,20 +26,31 @@ function keyframes(name: string): AtRule {
 
 const declarations = (node: Rule) => Object.fromEntries(node.nodes.flatMap((child) => child.type === 'decl' ? [[child.prop, child.value]] : []))
 
-/** The shared timing (@@@placeholder-reveal): `--gg-placeholder-delay` / `--gg-placeholder-duration` on :root. */
-function timing(): { delay: string; duration: string } {
+/** The shared timing (@@@placeholder-reveal): `--gg-placeholder-delay` / `-duration` / `-easing` on :root. */
+function timing(): { delay: string; duration: string; easing: string } {
   const root = declarations(rule(':root'))
-  return { delay: root['--gg-placeholder-delay']!, duration: root['--gg-placeholder-duration']! }
+  return { delay: root['--gg-placeholder-delay']!, duration: root['--gg-placeholder-duration']!, easing: root['--gg-placeholder-easing']! }
 }
 
-it('the held results are not dimmed within 150 ms, then dim over 250 ms: an animation after a delay', () => {
+/** The opacity a placeholder has `ms` after it is drawn, by the tokens (CSS cubic-bezier, solved for x). */
+function placeholderOpacityAt(ms: number): number {
+  const { delay, duration, easing } = timing()
+  const progress = Math.min(1, Math.max(0, (ms - parseFloat(delay)) / parseFloat(duration)))
+  const [x1, y1, x2, y2] = easing.match(/[\d.]+/g)!.map(Number) as [number, number, number, number]
+  const at = (t: number, a: number, b: number) => 3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t * t * b + t ** 3
+  let lo = 0, hi = 1
+  for (let i = 0; i < 60; i += 1) { const mid = (lo + hi) / 2; if (at(mid, x1, x2) < progress) lo = mid; else hi = mid }
+  return at(lo, y1, y2)
+}
+
+it('the held results are not dimmed within 150 ms, then dim slowly: an animation after a delay', () => {
   const stale = declarations(rule('.gg-stale'))
   // Nothing applies at once: no opacity of its own, no transition (that would start moving at 0 ms).
   expect(stale.opacity).toBeUndefined()
   expect(stale.transition).toBeUndefined()
-  expect(timing()).toEqual({ delay: '150ms', duration: '250ms' })
-  const [name, duration, , delay, fill] = stale.animation!.split(/\s+/)
-  expect([duration, delay, fill]).toEqual(['var(--gg-placeholder-duration)', 'var(--gg-placeholder-delay)', 'both'])
+  expect(timing()).toMatchObject({ delay: '150ms', duration: '450ms' })
+  const [name, duration, easing, delay, fill] = stale.animation!.split(/\s(?![^(]*\))/)
+  expect([duration, easing, delay, fill]).toEqual(['var(--gg-placeholder-duration)', 'var(--gg-placeholder-easing)', 'var(--gg-placeholder-delay)', 'both'])
   const frames = keyframes(name!).nodes!.filter((node): node is Rule => node.type === 'rule')
   expect(declarations(frames.find((node) => node.selector === 'from')!).opacity).toBe('1')
   expect(declarations(frames.find((node) => node.selector === 'to')!).opacity).toBe('0.6')
@@ -48,9 +59,15 @@ it('the held results are not dimmed within 150 ms, then dim over 250 ms: an anim
 it('the placeholder, the loading lines and the held results share one timing (one rule for "a value on its way")', () => {
   const placeholder = declarations(rule('.gg-unknown, .gg-loading-line'))
   const stale = declarations(rule('.gg-stale'))
-  const timingOf = (animation: string) => animation.split(/\s+/).filter((part) => part.startsWith('var('))
+  const timingOf = (animation: string) => animation.split(/\s(?![^(]*\))/).filter((part) => part.startsWith('var('))
   expect(timingOf(placeholder.animation!)).toEqual(timingOf(stale.animation!))
-  const [name] = placeholder.animation!.split(/\s+/)
+  const [name] = placeholder.animation!.split(/\s/)
   const frames = keyframes(name!).nodes!.filter((node): node is Rule => node.type === 'rule')
   expect(declarations(frames.find((node) => node.selector === 'from')!).opacity).toBe('0')
+})
+
+it('a placeholder is still under half visible 450 ms after it is drawn (a read answering within ~half a second leaves a faint bar)', () => {
+  expect(placeholderOpacityAt(150)).toBe(0)
+  expect(placeholderOpacityAt(450)).toBeLessThan(0.5)
+  expect(placeholderOpacityAt(600)).toBeCloseTo(1)
 })

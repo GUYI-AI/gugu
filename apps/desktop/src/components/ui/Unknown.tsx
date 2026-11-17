@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
  * @@@unknown-slot — what a surface draws where a value goes while its replica is `unknown` (lib/replica.ts).
  * A static neutral bar the size of the value it stands for: no pulse, no text, nothing that could be read as a value
  * (a switch drawn off, a 0, "none", a raw id). It takes the value's place at once (one line tall by default) but shows
- * only after 150 ms, fading in (`.gg-unknown`, @@@placeholder-reveal in tokens.css): a read that answers sooner leaves nothing drawn in between. Size it at
+ * only after 150 ms, fading in slowly (`.gg-unknown`, @@@placeholder-reveal in tokens.css): a read that answers sooner leaves nothing drawn in between. Size it at
  * the call site so the value lands without moving anything.
  */
 export function Unknown({ className }: { className?: string }) {
