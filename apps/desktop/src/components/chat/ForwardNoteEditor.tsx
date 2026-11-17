@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import type { MentionItem } from '@gugu/session-ui/react/components'
-import { addressedUserIds } from '@/lib/mention'
-import { useAuth } from '../../store/auth'
 import type { ForwardNote } from './forwardToChats'
 import { NoteEditor } from './NoteEditor'
-import type { MentionTarget } from './useChatDraft'
-import { useChatMentionRoster, useGroupMentionProvider } from './useGroupMentionProvider'
+import { useChatNote } from './useGroupMentionProvider'
 
 /**
  * A forward's note: the group composer's editor and @, over the members of the chat being forwarded into. @ needs one
@@ -19,17 +15,9 @@ export function ForwardNoteEditor({ chat, onChange }: {
   onChange: (note: ForwardNote) => void
 }) {
   const { t } = useTranslation('messaging')
-  const { user } = useAuth()
   const [text, setText] = useState('')
-  const [picks, setPicks] = useState<MentionTarget[]>([])
-  const roster = useChatMentionRoster(chat)
-  const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId: roster.room ? chat?.id : null,
-    isGroupChat: roster.room, groupMembers: roster.groupMembers, currentUserId: user?.id ?? null, agentStatuses: roster.agentStatuses })
-  useEffect(() => { onChange({ text, toUserIds: roster.room ? addressedUserIds(text, picks, members) : [] }) }, [text, picks, members, roster.room, onChange])
-  const onMentionInsert = useCallback((item: MentionItem) => {
-    const pick = pickOf(item)
-    if (pick) setPicks((current) => current.some((existing) => existing.userId === pick.userId) ? current : [...current, pick])
-  }, [pickOf])
+  const { mentionProvider, renderMentionIcon, onMentionInsert, addressed } = useChatNote(chat)
+  useEffect(() => { onChange({ text, toUserIds: addressed(text) }) }, [text, addressed, onChange])
   return (
     <div className="rounded-[var(--radius-control)] border border-[var(--border-strong)] px-[10px] py-[7px] text-[length:var(--font-body)]" data-forward-note="">
       <NoteEditor inputTestId="forward-note" placeholder={t('forward.note')}

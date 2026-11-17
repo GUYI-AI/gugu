@@ -3259,8 +3259,11 @@ function showSelection(picks, end, inPreview = false) {
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
-  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
-  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
+  // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
+  // whose folder the file is in, its members to @ (55).
+  const entry = state.current?.entry
+  $('send-sel').hidden = !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
+    : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3329,8 +3332,8 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   }
 }
 
-// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
-// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Send (a task's working copy, API 54; a chat's folder, 55): the same words and pills, in the host's box beside the selection,
+// with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
 // Called inside the click, as the host requires.
 async function send(current = state.current, picks = state.picks) {
   const cited = citeOf(current, picks)

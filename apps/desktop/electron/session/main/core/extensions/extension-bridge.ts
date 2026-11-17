@@ -1,4 +1,4 @@
-import { requirePreinstalledFiles, selectionSendOf } from '@shared/extensions/selection-send';
+import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf, type SelectionSendOpen, type SelectionSendTo } from '@shared/extensions/selection-send';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
@@ -1950,9 +1950,15 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   switch (method) {
     case 'filesSendSelection': {
       requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
-      const page = thePage(caller), sessionId = sessionOfBinding(page);
-      if (!sessionId) throw Object.assign(new Error('Send needs a session page'), { code: 'denied' });
-      const ask: SelectionSendAsk = { sessionId, webContentsId: caller.pageId, open: selectionSendOf(args, page.workspace) };
+      const page = thePage(caller), sessionId = sessionOfBinding(page), chatId = page.workspace ? null : page.conversation;
+      let to: SelectionSendTo, open: SelectionSendOpen;
+      if (sessionId) [to, open] = [{ session: sessionId }, selectionSendOf(args, page.workspace)];
+      else if (chatId) {
+        // API 55 A chat's folder: the chat is the page's, as the binding says; the call names none.
+        const { chatSelectionPillsForApp } = await import('@main/core/extensions/extension-send');
+        [to, open] = [{ chat: chatId }, await chatSelectionSendOf(args, refs => chatSelectionPillsForApp(chatId, refs))];
+      } else throw Object.assign(new Error('Send needs a session page or a chat\'s folder'), { code: 'denied' });
+      const ask: SelectionSendAsk = { to, webContentsId: caller.pageId, open };
       const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
       // Only the outcome goes back to the page: never the words, a member or a message id.
       return await invokeInEmbedder(page.embedderId, EXTENSION_SELECTION_SEND_METHOD, ask) === 'sent' ? 'sent' : 'cancelled';

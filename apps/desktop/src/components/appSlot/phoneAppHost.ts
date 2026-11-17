@@ -13,7 +13,7 @@ import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
 import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, viewedAmongOf, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
-import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
+import { AppSendError, chatSelectionPills, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
 import { openSelectionSend } from '../chat/selectionSendAsk'
@@ -86,7 +86,7 @@ import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/s
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
 import { appToast } from '../../session/shared/extensions/app-toast'
-import { requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
+import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
 import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
@@ -686,10 +686,13 @@ export function hostAppFrame(
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
       case 'filesSendSelection': {
         requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
-        if (!session) refused('denied', 'Send needs a session page')
-        const { draft, quote, pills } = selectionSendOf(args, sessionWorkspace(session.id))
+        // API 55 A page of a chat's folder sends into that chat, the binding's; the call names none.
+        const chatId = session ? null : hosted.binding.chatId
+        if (!session && !chatId) refused('denied', 'Send needs a session page or a chat\'s folder')
+        const { draft, quote, pills } = session ? selectionSendOf(args, sessionWorkspace(session.id))
+          : await chatSelectionSendOf(args, refs => chatSelectionPills(sendPlatform, chatId!, refs))
         // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
-        return await openSelectionSend({ cite: { draft, quote, pills }, sessionId: session.id, anchor: 'dock' })
+        return await openSelectionSend({ cite: { draft, quote, pills }, to: session ? { session: session.id } : { chat: chatId! }, anchor: 'dock' })
       }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
