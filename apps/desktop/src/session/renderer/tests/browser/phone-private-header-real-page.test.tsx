@@ -9,7 +9,7 @@ import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { closeInfoTab, closeTopicTab, infoTabOf } from '@renderer/features/chats/chat-tabs/chat-layouts'
 import { chat, displayIdentity, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
-import { until } from '../../../../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMobileWorkspaceCatalog'
@@ -83,6 +83,21 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await until('private details belong to the current chat', () => infoTabOf(a.id)?.shown === true)
     expect(infoTabOf(b.id)?.shown).not.toBe(true)
     await expect.element(page.getByTestId('chat-settings-panel')).toBeVisible()
+    // This is the same real RightPanel entrance as the topic details page;
+    // a visible but still translated page is not an acceptable capture.
+    const details = harness.container.querySelector<HTMLElement>('[data-testid="chat-settings-panel"]')!.parentElement!
+    const detailsGeometry = () => {
+      const box = details.getBoundingClientRect(), viewport = harness!.container.getBoundingClientRect(), style = getComputedStyle(details)
+      return { position: style.position, opacity: Number(style.opacity), transform: style.transform,
+        animating: details.getAnimations().some(animation => animation.pending || (animation.playState !== 'finished' && animation.playState !== 'idle')),
+        edges: [box.left - viewport.left, box.top - viewport.top, box.right - viewport.right, box.bottom - viewport.bottom] }
+    }
+    const coversViewport = (reading: ReturnType<typeof detailsGeometry>) => reading.position === 'fixed' && reading.opacity === 1 &&
+      !reading.animating && reading.edges.every(delta => Math.abs(delta) <= 0.5)
+    await until('private details entrance covers the phone viewport', detailsGeometry, coversViewport)
+    await untilStable('private details viewport geometry is stable across frames', detailsGeometry)
+    expect(coversViewport(detailsGeometry())).toBe(true)
+    expect(infoTabOf(a.id)?.shown).toBe(true)
     await capture('human-details')
     await page.getByTestId('chat-settings-panel').getByRole('button', { name: '返回', exact: true }).click()
     await until('details Back restores the current private chat', () => !infoTabOf(a.id)?.shown)
