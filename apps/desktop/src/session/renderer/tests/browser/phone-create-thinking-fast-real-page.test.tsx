@@ -13,6 +13,7 @@ import { followRendererSession } from '@/lib/replica'
 import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { normalCodexModelRows, normalCodexSelectedId } from './fixtures/phone-normal-model-catalog'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMessagingCatalog'
 import '@/mobile/agent-watch/agent-watch.css'
@@ -31,7 +32,7 @@ import '@/mobile/phone-look.css'
 // Submission is deliberately rejected at that boundary: no real host, model,
 // upload, native acceptance or provider acknowledgement is simulated as success.
 const fixture = vi.hoisted(() => ({
-  owner: 'create-FG-owner', supported: true,
+  owner: 'create-FG-owner', normal: false, supported: true,
   device: { device_id: 'create-FG-device', label: '隔离验收设备', hostname: 'fixture', platform: 'linux',
     status: 'online', is_online: true, last_seen_at: '2026-11-17T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } },
   models: vi.fn<(device: string, harness: string, leg: unknown, selected: string | null) => Promise<SessionpageSessionCreateModels>>(),
@@ -49,24 +50,25 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
   machineRpc: () => { throw new Error('Skills RPC is outside this thinking/Fast test') },
   fetchCreateOptions: async () => ({ projects: [],
-    lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: 'native:sol', effort: 'medium' },
+     lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: fixture.normal ? normalCodexSelectedId : 'native:sol', effort: 'medium' },
     harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
   fetchCreateModels: fixture.models, createSession: fixture.create,
   fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.create,
 }))
 let root: Root | null = null, host: HTMLDivElement | null = null, sequence = 0
 beforeEach(() => {
-  fixture.owner = `create-FG-owner-${++sequence}`; fixture.supported = true
+  fixture.owner = `create-FG-owner-${++sequence}`; fixture.normal = false; fixture.supported = true
   fixture.created.mockReset(); fixture.create.mockReset(); fixture.models.mockReset()
   fixture.create.mockRejectedValue(Object.assign(new Error('Controlled submission boundary rejection'), { code: 'fixture_submission_rejected' }))
   fixture.models.mockImplementation(async (_device, harness, _leg, selected) => ({
-    harness, transport: 'acp', selected: selected ?? 'native:sol', selectedEffort: 'medium',
+    harness, transport: 'acp', selected: selected ?? (fixture.normal ? normalCodexSelectedId : 'native:sol'), selectedEffort: 'medium',
     harnessState: 'ready', harnessReason: null, guguReason: null, harnessAuth: 'signed-in', selectedCredential: 'credentialed',
     efforts: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'high', name: 'High' }],
-    models: [{ id: 'native:sol', name: 'GPT-6.1-Sol', source: 'harness' }, { id: 'sonnet', name: 'Original alias', source: 'harness' }],
+    models: fixture.normal ? normalCodexModelRows.map(row => ({ ...row }))
+      : [{ id: 'native:sol', name: 'GPT-6.1-Sol', source: 'harness' }, { id: 'sonnet', name: 'Original alias', source: 'harness' }],
     // Deliberately reports selected=on: new creation must still default OFF.
-    ...(fixture.supported && selected === 'native:sol' ? { fast: {
-      model: 'native:sol', selected: 'on', available: [{ id: 'on', name: 'On' }, { id: 'off', name: 'Off' }],
+    ...(fixture.supported && selected === (fixture.normal ? normalCodexSelectedId : 'native:sol') ? { fast: {
+      model: fixture.normal ? normalCodexSelectedId : 'native:sol', selected: 'on', available: [{ id: 'on', name: 'On' }, { id: 'off', name: 'Off' }],
     } } : {}),
   }))
 })
@@ -111,7 +113,7 @@ async function closeWork() {
 }
 async function capture(name: string) {
   expect(document.body.textContent).not.toContain('agentWatch.')
-  const folder = name.startsWith('G-new-model-') ? 'internal-phone-model-pressure' : 'owner-phone-regression'
+  const folder = fixture.normal ? 'owner-phone-regression' : 'internal-phone-model-pressure'
   await page.screenshot({ path: `__screenshots__/${folder}/${name}.png` })
 }
 function assertAdvertisedTextChoices() {
@@ -139,9 +141,18 @@ async function submitAtControlledBoundary(expected: { model: string; effort: str
   expect(fixture.created).not.toHaveBeenCalled()
   expect(fixture.create).toHaveBeenCalledTimes(1)
 }
-for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) {
-  it(`${width}/${theme}: real creation Work preserves text IDs and Fast on/off across close/reopen, then sends the selected payload`, async () => {
+// Preserve the original native:sol/alias cases, but keep their controlled copy
+// internal. Normal delivery uses B's production metadata snapshot and raw IDs;
+// it remains a controlled catalog, not a live CLI/account capability probe.
+for (const normal of [false, true]) for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) {
+  it(normal ? `${width}/${theme}: normal production catalog preserves text IDs, Fast state and the creation payload`
+    : `${width}/${theme}: real creation Work preserves text IDs and Fast on/off across close/reopen, then sends the selected payload`, async () => {
+    fixture.normal = normal
     await mount(width, theme); await openWork(); assertAdvertisedTextChoices()
+    if (normal) {
+      expect(sheet()!.textContent).toContain(normalCodexModelRows[0]!.name)
+      expect(document.body.textContent).not.toMatch(/Original alias|native:sol|GPT-6\.1-Sol|agentWatch\./)
+    }
     expect(effort('medium')!.getAttribute('aria-checked')).toBe('true')
     await until('target-bound Fast is available', () => !!fast())
     expect(fast()!.getAttribute('aria-pressed')).toBe('false')
@@ -160,7 +171,8 @@ for (const width of [320, 390]) for (const theme of ['light', 'dark'] as const) 
     await capture(`G-new-fast-off-again-${width}-${theme}`)
     await page.elementLocator(fast()!).click()
     await until('Fast draft re-enabled', () => fast()?.getAttribute('aria-pressed') === 'true')
-    await submitAtControlledBoundary({ model: 'native:sol', effort: 'high', fastMode: true })
+    if (normal) await submitAtControlledBoundary({ model: normalCodexSelectedId, effort: 'high', fastMode: true })
+    else await submitAtControlledBoundary({ model: 'native:sol', effort: 'high', fastMode: true })
   })
 }
 it('creation switches the original model alias, clears Fast, and does not revive it when the native target returns', async () => {
@@ -181,10 +193,18 @@ it('creation switches the original model alias, clears Fast, and does not revive
   await capture('G-new-model-reset-fast-off-390-dark')
   await submitAtControlledBoundary({ model: 'native:sol', effort: 'medium', fastMode: false })
 })
-it('a new task without Fast capability retains only real text levels and omits Fast from the actual submission', async () => {
+for (const normal of [false, true]) it(normal
+  ? 'normal production catalog: new task without Fast preserves text IDs and omits Fast from submission'
+  : 'a new task without Fast capability retains only real text levels and omits Fast from the actual submission', async () => {
+  fixture.normal = normal
   fixture.supported = false
   await mount(390, 'dark'); await openWork(); assertAdvertisedTextChoices()
   expect(fast()).toBeNull()
+  if (normal) {
+    expect(sheet()!.textContent).toContain(normalCodexModelRows[0]!.name)
+    expect(document.body.textContent).not.toMatch(/Original alias|native:sol|GPT-6\.1-Sol|agentWatch\./)
+  }
   await capture('G-new-fast-unavailable-390-dark')
-  await submitAtControlledBoundary({ model: 'native:sol', effort: 'medium' })
+  if (normal) await submitAtControlledBoundary({ model: normalCodexSelectedId, effort: 'medium' })
+  else await submitAtControlledBoundary({ model: 'native:sol', effort: 'medium' })
 })
