@@ -7,11 +7,11 @@ import type { PanelItem } from './chat-panel-item';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// The strip's two slots for a panel tab: the mark before its name, and what follows the name.
+// The strip's two slots for a panel tab: the mark before its name, and the mark that stays after it.
 vi.mock('@renderer/features/tabs/tab-bar/generic-tab-item', () => ({
   GenericTabDragPreview: () => null,
-  GenericTabItem: ({ preSlot, statusSlot }: { preSlot?: ReactNode; statusSlot?: ReactNode }) => (
-    <><span data-slot="pre">{preSlot}</span><span data-slot="status">{statusSlot}</span></>
+  GenericTabItem: ({ preSlot, markSlot }: { preSlot?: ReactNode; markSlot?: ReactNode }) => (
+    <><span data-slot="pre">{preSlot}</span><span data-slot="mark">{markSlot}</span></>
   ),
 }));
 // Office is an installed App with a page of its own (so in `openableApps`); its chat files open in `office.main`.
@@ -42,8 +42,8 @@ function strip(item: PanelItem) {
   const root = createRoot(el);
   const Item = chatPanelTabProvider.TabBarItem!;
   act(() => root.render(<Item tab={{ tabId: 't', resource: { state: item } } as never} host={{} as never} ctx={{ place: { kind: 'chat', chatId: 'chat' } } as never} />));
-  const pre = el.querySelector('[data-slot=pre]')!, status = el.querySelector('[data-slot=status]')!;
-  const read = { app: !!pre.querySelector('[data-app-icon]'), glyph: pre.querySelector('svg')?.innerHTML, devicon: pre.querySelector('i[class*=devicon]')?.className, hostBefore: !!pre.querySelector('[data-host-mark]'), hostAfter: !!status.querySelector('[data-host-mark]') };
+  const pre = el.querySelector('[data-slot=pre]')!, mark = el.querySelector('[data-slot=mark]')!;
+  const read = { app: !!pre.querySelector('[data-app-icon]'), glyph: pre.querySelector('svg')?.innerHTML, devicon: pre.querySelector('i[class*=devicon]')?.className, hostBefore: !!pre.querySelector('[data-host-mark]'), hostAfter: !!mark.querySelector('[data-host-mark]') };
   act(() => root.unmount());
   return read;
 }

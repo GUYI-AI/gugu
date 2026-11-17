@@ -140,7 +140,7 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   if (fileHost) kindCommands.push({ id: `${tab.tabId}:file-storage`, label: t('fileStoredOn.settings'), group: 'file', run: openFileStorageSettings });
   return (
     <div className="contents" data-panel-tab={isFolderItem(item) ? 'folder' : (item.kind ?? 'preview')}>
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<PanelIcon item={item} />} statusSlot={<>{fileHost ? <FileHostMark host={fileHost} /> : null}<ExtensionTabBadge badge={surface.badge} /></>} kindCommands={kindCommands} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<PanelIcon item={item} />} markSlot={fileHost ? <FileHostMark host={fileHost} /> : null} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
     </div>
   );
 });

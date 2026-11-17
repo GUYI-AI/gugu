@@ -74,6 +74,8 @@ export interface TabChipProps extends Omit<ComponentPropsWithoutRef<'div'>, 'tit
   preSlot?: ReactNode;
   /** 覆盖默认的 `<TabTitle>{label}</TabTitle>`(重命名输入框)。 */
   labelSlot?: ReactNode;
+  /** 标题后面常在的小标记(文件存在哪台机器):不让给关闭钮,窄到只剩图标时与标题一起收起。 */
+  markSlot?: ReactNode;
   /** 压在关闭钮底下的状态(脏点、git 状态图标)。 */
   statusSlot?: ReactNode;
   /** 关不掉的页签(项目块的项目群那一枚)不给这两样:没有关闭钮,状态照画。 */
@@ -104,6 +106,7 @@ export function TabChip({
   hasError,
   preSlot,
   labelSlot,
+  markSlot,
   statusSlot,
   closeLabel,
   onClose,
@@ -182,6 +185,7 @@ export function TabChip({
             {hint ? <span className="ml-1 text-xs text-foreground-muted">{hint}</span> : null}
           </TabTitle>
         )}
+        {density.value === 'icon' ? null : markSlot}
         {density.value === 'full' ? actionSlot : null}
         {/* 窄到只剩图标的活动页签:关闭钮也浮起来,图标居中(全名在悬浮提示里)。非活动的那种没有钮,状态照画。 */}
         {noClose || !onClose ? (
