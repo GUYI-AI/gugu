@@ -9,6 +9,8 @@ import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { followRendererSession } from '@/lib/replica'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
+import { ThemeProvider } from '@/store/theme'
+import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { publishChatSummaries } from '@/lib/chatSummariesBridge'
 import { installOwnedAgentEntry } from '@/lib/ownedAgentConversation'
@@ -61,7 +63,7 @@ const Conversation = observer(() => {
 async function mount() {
   followRendererSession('SIGNED_IN', 'owner')
   await page.viewport(390, 844)
-  document.documentElement.dataset.theme = 'dark'
+  writeThemePreference('dark')
   document.documentElement.setAttribute('data-phone-shell', '')
   bodyClass = document.body.className
   bodyStyle = document.body.getAttribute('style')
@@ -77,7 +79,7 @@ async function mount() {
   ], cached: false, loading: false, error: null })
   harness = createReactHarness()
   Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column', padding: '16px' })
-  await renderWithAppProviders(harness, <LocalizationProvider><SessionUiTheme theme="dark"><Conversation /></SessionUiTheme></LocalizationProvider>,
+  await renderWithAppProviders(harness, <ThemeProvider><LocalizationProvider><SessionUiTheme theme="dark"><Conversation /></SessionUiTheme></LocalizationProvider></ThemeProvider>,
     { auth: { id: 'owner' }, chat: { chats }, contacts: { contacts: [] } })
   await page.getByTestId('agent-watch-create-model-device').click()
   await until('phone Work reads native thinking options', () => !!document.querySelector('[data-testid="agent-watch-create-controls-sheet"] [data-testid="phone-thinking-options"]'))
