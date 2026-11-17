@@ -1,11 +1,9 @@
 import type { ChatCommands } from '@gugu/session-chat-ui'
-import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions'
 
-/** User thumbnails and their full-size preview read the same immutable runtime attachment. */
+/** User thumbnails and their full-size preview read the same immutable runtime attachment, by the id the desktop uses too. */
 export function nativeUserAttachmentCommands(deps: {
-  turns: () => readonly TranscriptTurn[]
-  readImage: (itemId: string, attachmentId: string) => Promise<string>
+  readImage: (attachmentId: string) => Promise<string>
   readPathImage: (path: string) => Promise<string | null>
   openImage: (url: string, name: string, thumb?: HTMLElement) => void
   openFile: (path: string) => void
@@ -18,9 +16,7 @@ export function nativeUserAttachmentCommands(deps: {
     const ready = cached.get(attachment.id)
     if (ready) return ready
     const path = pathAttachmentTarget(attachment.id)
-    const item = path ? null : deps.turns().flatMap(turn => turn.items).find(item =>
-      item.kind === 'message' && item.role === 'user' && item.attachments?.some(ref => ref.id === attachment.id))
-    const reading = path ? deps.readPathImage(path) : item ? deps.readImage(item.id, attachment.id) : Promise.resolve(null)
+    const reading = path ? deps.readPathImage(path) : deps.readImage(attachment.id)
     const pending = reading.then(url => { failures.delete(attachment.id); return url }).catch(error => {
       cached.delete(attachment.id); failures.set(attachment.id, error); return null
     })

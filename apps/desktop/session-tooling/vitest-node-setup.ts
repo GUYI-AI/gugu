@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { vi } from 'vitest';
 import { installJsdomCanvasStub } from '../../../tests/support/jsdom-canvas-stub';
+import { layOutScrollers } from '../../../tests/support/scrollerLayout';
 
 // 这个 project 的默认环境是 node，但单个文件可以用 `// @vitest-environment jsdom` pragma 换到 DOM
 // （acp-chat-store.session-absent.test.ts 就是），而 jsdom 没有 canvas 2D 上下文 ——
@@ -26,6 +27,8 @@ import { installJsdomCanvasStub } from '../../../tests/support/jsdom-canvas-stub
 // 装这一格前它在 CI 上红过一次：`Test Files 1 failed | 625 passed`，`Tests` 一条都没红。
 // 函数自己判 `typeof window`，所以纯 node 的文件走到这里是 no-op。
 installJsdomCanvasStub();
+// Same as the `gugu` setup: a growing list mounts the lines that fit its scroller (@@@growing-list), and jsdom has no layout.
+if (typeof window !== 'undefined') layOutScrollers('[data-growing-list]');
 
 // 同一条 import 链上的第二件事:真 lottie 播放器模块顶层排了一条关不掉的轮询,会活过 jsdom
 // 拆除再把无关的 job 判红(#5237)。安装点和上面那格是同一批 —— `gugu` 与 `session-main` 两份

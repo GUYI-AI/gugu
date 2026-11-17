@@ -167,7 +167,7 @@ export function createExtensionNotifier(deps: ExtensionNotifierDeps) {
     if (tagKey) byTag.get(tagKey)?.close();
 
     const banner = deps.show({
-      title: `${localizedManifestText(manifest, deps.locale()).name} · ${parsed.title}`,
+      title: `${localizedManifestText(manifest, deps.locale()).name}: ${parsed.title}`,
       body: parsed.body,
       silent: !sound,
       onClick: () => {

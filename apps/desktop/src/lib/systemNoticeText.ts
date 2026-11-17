@@ -35,6 +35,8 @@ function memberManagedText(content: string): string {
 
 export function systemNoticeText(notice: SystemNotice | null, content: string): string {
   switch (notice?.kind) {
+    case 'migration-placeholder':
+      return say('group.notice.migrationPlaceholder')
     case 'turn-failure':
       return agentFailureText(notice.reason)
     case 'agent-flood':

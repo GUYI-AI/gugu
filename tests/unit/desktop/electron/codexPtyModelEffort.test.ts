@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@gugu/core/cloud/agentIdentityReconcile', () => ({
 }))
 import {
+  guguAppsBlock,
   guguSessionSurfaceBlock,
   loadCodexAppServerCapabilities,
   PRODUCT_CAPABILITY_PACKAGES,
@@ -285,6 +286,14 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     waitForFirstDelivery = null
     provisionCalls = 0
   })
+  it.each(['priority', 'default'] as const)('passes validated speed %s into the inference app-server', async (serviceTier) => {
+    const sessionId = `fast-tier-${serviceTier}`
+    try {
+      await provisionAndOverride({ sessionId, providerId: 'codex', permissionMode: 'edit', cwd: '/tmp/w', baseCommand: '/x/codex', serviceTier }, deps)
+      expect(started[0]?.extraArgs).toEqual(expect.arrayContaining([`service_tier="${serviceTier}"`]))
+    } finally { await teardown(sessionId) }
+  })
+
   it('起 app-server 时带上模型与推理强度', async () => {
     const out = await provisionAndOverride(
       {
@@ -305,7 +314,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       expect.arrayContaining(['model="gpt-5.6-sol"', 'model_reasoning_effort="high"']),
     )
     expect(started[0]?.developerInstructions).toBe(
-      PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + IDENTITY,
+      PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + guguAppsBlock([], []) + IDENTITY,
     )
     expect(registeredAgents).toEqual(['agent-1'])
     expect(emittedProvisionEvents).toHaveLength(1)
@@ -618,7 +627,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     expect(started).toEqual([
       expect.objectContaining({
         agentUserId: 'agent-1:fork-scratch',
-        developerInstructions: PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + IDENTITY,
+        developerInstructions: PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + guguAppsBlock([], []) + IDENTITY,
         forkFromThreadId: 'parent-thread-1',
         threadStart: { approvalPolicy: 'never', sandbox: 'read-only' },
         extraArgs: expect.arrayContaining(['model="gpt-5.6-sol"', 'model_reasoning_effort="high"']),

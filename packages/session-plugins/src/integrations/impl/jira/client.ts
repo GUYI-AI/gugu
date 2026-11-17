@@ -41,7 +41,7 @@ export async function verifyJiraCredentials(
     const user = await client.myself.getCurrentUser();
     return ok({
       displayName: user.displayName,
-      displayDetail: `${credentials.data.email} · ${new URL(credentials.data.siteUrl).host}`,
+      displayDetail: `${credentials.data.email} (${new URL(credentials.data.siteUrl).host})`,
       credentials: credentials.data,
     });
   } catch (error) {

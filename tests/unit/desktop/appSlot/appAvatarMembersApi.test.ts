@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { injectAppRuntime } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
@@ -13,6 +14,11 @@ beforeAll(async () => {
     entryPoints: [fileURLToPath(new URL('../../../../apps/desktop/src/session/app-runtime/ui/ui-entry.ts', import.meta.url))],
     bundle: true, write: false, format: 'iife', platform: 'browser',
     alias: { '@gugu/session-ui/icon-bodies': fileURLToPath(new URL('../../../../packages/session-ui/src/icon-bodies.ts', import.meta.url)) },
+    // `?raw` as vite and buildAppRuntime read it: the file's text (ui-entry's file-tile.css).
+    plugins: [{ name: 'raw', setup(b) {
+      b.onResolve({ filter: /\?raw$/ }, async ({ path, kind, resolveDir }) => ({ path: (await b.resolve(path.slice(0, -4), { kind, resolveDir })).path, namespace: 'raw' }))
+      b.onLoad({ filter: /.*/, namespace: 'raw' }, ({ path }) => ({ contents: readFileSync(path, 'utf-8'), loader: 'text' }))
+    } }],
   })
   script = result.outputFiles[0]!.text
 })

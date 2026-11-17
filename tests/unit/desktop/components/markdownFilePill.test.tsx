@@ -46,13 +46,13 @@ describe('a pill pointing at a group file, in a chat bubble', () => {
     expect(pill.classList.contains('gg-md-mention')).toBe(true)
     expect(pill.textContent).toBe('演示稿 · 第 3 页 · 标题')
     // The words come from the messaging strings (filePill.picked); the label leads, the version note follows.
-    expect(pill.title.startsWith('演示稿 · 第 3 页 · 标题 · ')).toBe(true)
+    expect(pill.title.startsWith('演示稿 · 第 3 页 · 标题 (')).toBe(true)
     expect(container.textContent).toBe('把这处改成蓝色 演示稿 · 第 3 页 · 标题')
     await act(async () => {
       pill.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await vi.dynamicImportSettled()
     })
-    expect(openResource).toHaveBeenCalledExactlyOnceWith({ kind: 'file', itemId: ITEM, version: 7, at: { slide: '3', shape: '12' } })
+    expect(openResource).toHaveBeenCalledExactlyOnceWith({ kind: 'file', itemId: ITEM, version: 7, at: { slide: '3', shape: '12' } }, undefined)
     expect(onOpenLink).not.toHaveBeenCalled()
     expect(decodeURI(pill.getAttribute('href')!)).toBe(`gugu-file://${ITEM}?v=7#slide=3&shape=12`)
   })

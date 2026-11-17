@@ -1,9 +1,10 @@
 export default {
-  "fileAnnotation": { "addToChat": "Add to chat", "optionalComment": "Add an optional comment…", "comment": "Comment", "line": "Line {{start}}", "lines": "Lines {{start}}–{{end}}", "selectLine": "Select line {{line}}", "failed": "Could not save the comment. Try again." },
+  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
+  "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
   "agent": {
     "identity": {
       "phone": "Phone Agent",
-      "pending": "Agent · identifying harness",
+      "pending": "Identifying agent harness",
       "unavailable": "Agent harness unavailable",
       "removed": "Removed agent",
       "cloud": "Gagent"
@@ -68,8 +69,8 @@ export default {
         "timeout": "No response in time",
         "rateLimited": "Too many requests",
         "nextMessage": "The next message will retry automatically",
-        "recovered_one": "{{name}}: {{count}} earlier reply failed · recovered",
-        "recovered_other": "{{name}}: {{count}} earlier failed replies · recovered",
+        "recovered_one": "{{name}} has recovered after {{count}} earlier failed reply.",
+        "recovered_other": "{{name}} has recovered after {{count}} earlier failed replies.",
         "settings": "Open settings"
       },
       "state": {
@@ -194,7 +195,7 @@ export default {
       "machine": "This computer",
       "all": "All agents",
       "allSub": "Including the agents in each project",
-      "chosen": "Agents, groups and projects · {{count}}",
+      "chosen": "{{count}} agents, groups, or projects selected",
       "project": "Project",
       "cardGroup": "Card's chat",
       "agent": "Your agent",
@@ -265,6 +266,7 @@ export default {
     }
   },
   "chatList": {
+    "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
     "create": "New",
@@ -275,10 +277,17 @@ export default {
     "delete": "Delete",
     "disableNotifications": "Mute notifications",
     "deleteFailed": "Could not delete this conversation",
+    "deleteChat": "Delete chat",
+    "deleteChatConfirm": "Delete this chat with “{{name}}”? Its history is deleted with it.",
+    "deleteTopic": "Delete topic",
+    "deleteTopicConfirm": "Delete topic “{{name}}”? It is removed from every member's list.",
+    "dissolveGroup": "Dissolve group",
+    "leaveGroup": "Leave group",
+    "markTopicsRead": "Mark this group's topics read",
     "draft": "[Draft]",
-    "moreTopics": "More · {{count}}",
-    "moreTopics_one": "More · {{count}}",
-    "moreTopics_other": "More · {{count}}",
+    "moreTopics": "More topics ({{count}})",
+    "moreTopics_one": "More topics ({{count}})",
+    "moreTopics_other": "More topics ({{count}})",
     "empty": "No chats yet",
     "emptyHint": "Use “New Agent” above to start your first conversation",
     "emptyHintMobile": "Create an agent from the Projects tab to start your first conversation",
@@ -301,8 +310,7 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin",
-    "unpinFromSidebar": "Unpin from sidebar"
+    "unpin": "Unpin"
   },
   "chatService": {
     "errors": {
@@ -376,6 +384,11 @@ export default {
     "besideUnavailable": "This file is not available right now.",
     "besideOutside": "Only files in this document's folder can be shown.",
     "imageUnavailable": "Image unavailable right now",
+    "senderUploading": "The sender is still uploading",
+    "senderUploadFailed": "The sender's upload did not complete",
+    "uploading": "Uploading",
+    "notUploaded": "Not uploaded yet",
+    "uploadFailed": "Upload failed, tap to retry",
     "newerInFolder": "Newer version in the folder",
     "retry": "Retry"
   },
@@ -403,11 +416,11 @@ export default {
       "attachFolder": "Attach folder",
       "attachFailed": "Could not attach the folder. Try again.",
       "action": "New task",
-      "chip": "New task · {{agent}}",
+      "chip": "New task with {{agent}}",
       "pickAgent": "Choose agent",
       "placeholder": "What should {{agent}} do?",
       "pickFolder": "Tap a folder to start",
-      "where": "{{folder}} · {{machine}}",
+      "where": "In {{folder}} on {{machine}}",
       "offline": "{{machine}} is offline. Pick another folder.",
       "optionsFailed": "Could not read the agents on {{machine}}. Check it is online, then pick the folder again.",
       "noAgent": "No usable agent on {{machine}}",
@@ -432,6 +445,7 @@ export default {
     "attachmentSendTimedOut": "Attachment send timed out.",
     "attachmentPersistenceFailed": "Could not save {{fileName}}",
     "attach": "Add",
+    "attachmentsMenu": "Attachments",
     "cancelQuote": "Cancel reply",
     "disabled": "You cannot send messages in this chat",
     "exitWhisper": "Exit whisper mode",
@@ -470,7 +484,7 @@ export default {
       "task": "New task",
       "agent": "New agent"
     },
-    "whisperBanner": "Whisper to {{name}} · only visible to you both",
+    "whisperBanner": "Whisper to {{name}}, visible only to you both.",
     "whisperPlaceholder": "Whisper to {{name}}…"
   },
   "emoji": {
@@ -499,6 +513,7 @@ export default {
     "forwarding": "Forwarding…",
     "noResults": "No chats found",
     "noTargets": "No chats available for forwarding",
+    "people": "Contacts",
     "note": "Add a note",
     "preview": {
       "attachment": "[Attachment]",
@@ -538,6 +553,7 @@ export default {
       "separator": ", "
     },
     "notice": {
+      "migrationPlaceholder": "This message was not migrated.",
       "agentFloodGroup": "This group has many agents, so they now reply only when @-mentioned.",
       "agentFloodTopic": "This topic has many agents, so they now reply only when @-mentioned.",
       "left": "{{actor}} left the group",
@@ -598,9 +614,9 @@ export default {
       "pendingApproval_one": "Submitted for approval: {{count}} Agent will join once the owner or an admin approves",
       "pendingApproval_other": "Submitted for approval: {{count}} Agents will join once the owner or an admin approves",
       "add": "Add",
-      "addWithCount": "Add · {{count}} members",
-      "addWithCount_one": "Add · {{count}} member",
-      "addWithCount_other": "Add · {{count}} members",
+      "addWithCount": "Add {{count}} members",
+      "addWithCount_one": "Add {{count}} member",
+      "addWithCount_other": "Add {{count}} members",
       "adding": "Adding…",
       "allFailed": "{{failed}} failed: {{reason}}",
       "humanPermissionHint": "You cannot invite people, but you can still add your own Agents.",
@@ -690,9 +706,9 @@ export default {
       "members": "Group members",
       "posterCta": "Scan to join and collaborate with AI",
       "posterQrCaption": "Scan to join the group",
-      "posterSubtitle": "Group chat · {{count}} members",
-      "posterSubtitle_one": "Group chat · {{count}} member",
-      "posterSubtitle_other": "Group chat · {{count}} members",
+      "posterSubtitle": "A group with {{count}} members",
+      "posterSubtitle_one": "A group with {{count}} member",
+      "posterSubtitle_other": "A group with {{count}} members",
       "reject": "Reject",
       "removeConfirm": "Remove {{name}} from the group?",
       "removeMember": "Remove {{name}} from the group",
@@ -785,6 +801,8 @@ export default {
       "openLink": "Open link",
       "selectText": "Select text",
       "delete": "Delete",
+      "deleteConfirm": "Delete this message? It cannot be restored.",
+      "deleteTitle": "Delete message",
       "forward": "Forward",
       "more": "More",
       "openTopic": "Open a topic",
@@ -806,7 +824,7 @@ export default {
     "me": "Me",
     "read": "Read",
     "readCount": "Read by {{read}}",
-    "readUnreadCount": "Read by {{read}} · unread by {{unread}}",
+    "readUnreadCount": "Read by {{read}}, unread by {{unread}}",
     "receipt": {
       "allRead": "Read by everyone",
       "noneRead": "No one has read this yet",
@@ -848,7 +866,7 @@ export default {
       "schedule": "Scheduled",
       "handedTo": "Assigned to",
       "onMachine": "on {{machine}}",
-      "onColleagueComputer": "{{name}}’s task · Cannot view",
+      "onColleagueComputer": "Cannot view {{name}}’s task",
       "awaitingApproval": "Waiting for the group owner to let it in",
       "rejected": "Not let into the group; its result is in its session",
       "open": "Open this session",
@@ -868,14 +886,13 @@ export default {
     "viaApp": "Sent for you by the “{{app}}” App",
     "viaAppFor": "Sent for {{name}} by the “{{app}}” App",
     "voice": "Voice message {{duration}}",
-    "whisperBoth": "Whisper · only visible to you both",
-    "whisperOnlyYou": "Whisper · only visible to you",
-    "whisperTo": "Whisper to {{name}} · only visible to you both",
+    "whisperBoth": "Whisper visible only to you both",
+    "whisperOnlyYou": "Whisper visible only to you",
+    "whisperTo": "Whisper to {{name}}, visible only to you both.",
     "widget": "[Widget]",
     "reference": { "loading": "Loading…", "unreadable": "A message you cannot see", "widgetUnreadable": "A widget you cannot see", "widgetRetracted": "This widget was retracted", "widgetElsewhere": "This widget is in another conversation", "locate": "Go to original", "locateActive": "Go to active widget", "previewQuote": "[Quote]", "previewMessage": "[Quoted message]" },
     "widgetUnavailable": { "missing": "App is not installed.", "disabled": "App is switched off.", "view": "This App view is unavailable.", "platform": "This App cannot run here." }
   },
-  "searchTrail": {"position": "“{{query}}” {{index}}/{{total}}", "positionNoWords": "{{index}}/{{total}}", "previous": "Previous", "next": "Next (⌘G)", "results": "Results", "close": "Close search"},
   "outbox": {
     "selectFileAgain": "Upload interrupted. Select the file again.",
     "sourceNotSent": "The original message was not sent. Retry it before forwarding again.",
@@ -921,7 +938,7 @@ export default {
     },
     "anchor": {
       "lead": "Topic",
-      "separator": " · ",
+      "separator": " ",
       "messageCount": "{{count}} messages",
       "messageCount_one": "{{count}} message",
       "participantCount": "{{count}} participants",

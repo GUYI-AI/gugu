@@ -1,6 +1,8 @@
+import { metadataSeparator } from '@/i18n/format'
+import { Unknown } from '@/components/ui/Unknown';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
@@ -43,10 +45,9 @@ import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
 import {
   ConnectionActionError,
   errorText,
-  readUsage,
+  refreshSubscriptionReadings,
   sessionsBusyOf,
-  SUBSCRIPTION_STALE_MS,
-  subscriptionKey
+  useSubscriptionUsage
 } from './subscription-queries'
 import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
 import { nativeConfigured, useConnectionDetails, useListedConnections } from './listed-connections'
@@ -120,8 +121,8 @@ export function SubscriptionConnections({
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
-  // 资源库详情里后台重读失败就退避重试(读数留着);订阅页那一行读失败当场说出来。
-  const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent, settingsRows && !embedded)
+  // A failed read says so at once on every surface (a value already read stays, with the failure next to it).
+  const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent)
   const empty = listed?.length === 0
   const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
     if (next && empty) setAdding(true)
@@ -154,7 +155,7 @@ export function SubscriptionConnections({
   const apiKeyMethod = form !== null
   const canAdd = accountMethod !== null || apiKeyMethod
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) })
+    refreshSubscriptionReadings(machine, agent.id)
     void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) })
   }
   const action = useMutation({
@@ -485,9 +486,7 @@ export function SubscriptionConnections({
                 />
               </div>
             )}
-            {listed === undefined && !connections.error && (
-              <p className="p-2 text-xs">{translate('subscriptions.checking')}</p>
-            )}
+            {listed === undefined && !connections.error && <Unknown className="m-2 h-3 w-40" />}
             {connections.error && (
               <p className="subscription-error p-2" role="alert">
                 {errorText(connections.error)}
@@ -675,15 +674,8 @@ function ConnectionOption({
   const { translate } = useSessionMessages()
   const details = useConnectionDetails(machine, agent.id, connection.id)
   // 不切过去也看得到这个号还剩多少(10-30 owner):按连接读，与「订阅」行同一把键、同一份读数。
-  const usage = useQuery({
-    queryKey: subscriptionKey(machine, agent.id, 'usage', connection.id),
-    queryFn: () => readUsage(machine, agent.id, false, connection.id),
-    staleTime: SUBSCRIPTION_STALE_MS,
-    retry: false,
-    refetchOnWindowFocus: false,
-    // 没登录的号没有额度可读;API key 的余量只在厂商后台。
-    enabled: connection.kind !== 'api-key' && details.data?.status.kind === 'authenticated'
-  })
+  // 没登录的号没有额度可读;API key 的余量只在厂商后台。
+  const usage = useSubscriptionUsage(machine, agent.id, connection.id, connection.kind !== 'api-key' && details.data?.status.kind === 'authenticated')
   const quota = usage.data?.kind === 'windows' ? remainingLine(usage.data.windows, translate) : null
   const nearlyUsed =
     usage.data?.kind === 'windows' &&
@@ -708,7 +700,7 @@ function ConnectionOption({
             modelsLine(connection.models, translate)
           ]
             .filter(Boolean)
-            .join(' · ')
+            .join(metadataSeparator())
         : status?.kind === 'unauthenticated'
           ? translate(
               status.reason === 'expired'
@@ -716,7 +708,7 @@ function ConnectionOption({
                 : 'subscriptions.connections.signedOut'
             )
           : details.isPending
-            ? translate('subscriptions.checking')
+            ? <Unknown className="w-28" />
             : translate('subscriptions.connections.account')
   const Choice = selectItem ? SelectItem : DropdownMenuRadioItem
   const options = (
@@ -830,7 +822,7 @@ function remainingLine(
       (window) =>
         `${translate('subscriptions.remaining', { window: windowLabel(window, translate) })} ${percent.format(100 - Math.min(100, Math.max(0, window.usedPercent)))}%`
     )
-    .join(' · ')
+    .join(metadataSeparator())
 }
 
 function ConnectionForm({

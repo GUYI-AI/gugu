@@ -8,7 +8,6 @@ import {
   sessionStateSchema,
   terminalStateSchema,
   transcriptTurnSchema,
-  type AttachmentRef,
   type AcpRuntimeError,
   type HistoryPage,
   type PromptDraftUpdate,
@@ -180,21 +179,6 @@ export class AcpLiveSession {
     return this.client.exportRawAcpLog({ sessionId: this.sessionId });
   }
 
-  downloadAttachment(
-    id: string
-  ): Promise<Result<{ ref: AttachmentRef; data: Uint8Array }, unknown>> {
-    return this.client.downloadAttachment({ id }).then(async (result) => {
-      if (!result.success) return result;
-      return {
-        success: true,
-        data: {
-          ref: result.data.meta,
-          data: await result.data.bytes(),
-        },
-      };
-    });
-  }
-
   revertSession(anchor: string) {
     return this.client.revertSession({ sessionId: this.sessionId, anchor });
   }
@@ -228,7 +212,7 @@ export class AcpLiveSession {
     return this.client.setPromptDraft({ sessionId: this.sessionId, draft });
   }
 
-  setModelOption(dimension: 'model' | 'effort', value: string): Promise<Result<LiveSettingResult, unknown>> {
+  setModelOption(dimension: 'model' | 'effort' | 'fast', value: string): Promise<Result<LiveSettingResult, unknown>> {
     return this.client.setModelOption({ sessionId: this.sessionId, dimension, value });
   }
 

@@ -1,3 +1,3 @@
-export const enUSSharedMessages = {} as const;
+export const enUSSharedMessages = { 'metadata.separator': ', ' } as const;
 
-export const zhCNSharedMessages: Record<keyof typeof enUSSharedMessages, string> = {};
+export const zhCNSharedMessages: Record<keyof typeof enUSSharedMessages, string> = { 'metadata.separator': '，' };

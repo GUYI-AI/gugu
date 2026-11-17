@@ -2,14 +2,15 @@
 /**
  * #7333 chrome 字号按消费角色落到字阶,真 Chromium:
  *   ① chrome 正文 13 → 14/20:收尾行与它的动作(外框 28 不动)、mermaid 的占位与出错两句;
- *   ② 标记 11 → 12/18:收尾徽章(外框 24)、附件名(`ATTACH_LABEL_LINE` 18,量高与绘制一起变)、缩略图「+N」;
+ *   ② 标记 11 → 12/18:收尾徽章(外框 24)、缩略图「+N」;附件文件行照 assistant-ui:名字 14/20 字重 500、类型 12/16(`FILE_ROW`,量高与绘制一起变);
  *   ③ 收尾详情是可逐字复制的等宽原文:代码档 13/20,`DETAIL_LINE_H` 20,原文与「一次看 6 行、自己滚」保留;
  *   ④ micro 10 只量折叠箭头的字形(图标几何),不在这里。
  * 读的是计算值、行**里面**的矩形,以及展开后的量高 === 真实 DOM。选择器落空时键缺席 → undefined(响亮的失败)。
  */
 import { ROW_H } from '@session-chat/components/engine/row-metrics'
 import { mermaidError, mermaidPlaceholder } from '@session-chat/components/rows/markdown/mermaid/mermaid.css'
-import { ATTACH_LABEL_GAP, ATTACH_TILE, attachChipHeight } from '@session-chat/components/rows/message/metrics'
+import { FILE_ROW } from '@gugu/session-shared/file-row'
+import { FILE_MARKS } from '@gugu/session-shared/file-marks'
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
 import { toolUnitDef } from '@session-chat/components/rows/tools/tool/tool.def'
 import { DETAIL_PAD_Y } from '@session-chat/components/rows/turn-outcome/turn-outcome.css'
@@ -18,6 +19,8 @@ import type { ChatMessage, ChatToolCall, TurnOutcomeItem } from '@session-chat/m
 import { turnOutcomeDetailId } from '@session-chat/state/flatten'
 import { describe, expect, it } from 'vitest'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
+
+const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 
 const COMPACT = { size: 14, leading: 20 } as const
 const CAPTION = { size: 12, leading: 18 } as const
@@ -134,28 +137,34 @@ describe('the turn outcome in the master\'s tiers (#7333 chrome)', () => {
 })
 
 describe('the small marks in the caption tier (#7333 chrome)', () => {
-  it('an attachment\'s name is 12/18 inside its chip; the chip is tile + gap + 18 = what measure() reserves', async () => {
+  it('an attachment file row: name 14/20 weight 600, extension 12/16, inside it; the row is FILE_ROW.height = what measure() reserves', async () => {
     const message: ChatMessage = {
       kind: 'message',
       id: 'chrome-attach',
       role: 'user',
-      text: 'Two pictures.',
-      attachments: [{ id: 'missing-image', name: 'a-picture-whose-name-is-long.png' }],
+      text: 'One file.',
+      attachments: [{ id: 'path:/u/a.pdf', name: 'a-file-whose-name-is-long-enough-to-be-cut-in-its-row.pdf', kind: 'file' }],
     }
     const reading = await renderAndMeasureUnit(messageUnitDef, message, makeContractCtx({ width: 640 }), (host): Record<string, number> => {
-      const chip = [...host.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.includes('a-picture'))
-      if (!chip) return { chip: 0 }
-      const read: Record<string, number> = { chip: 1, chipHeight: Math.round(chip.getBoundingClientRect().height) }
-      const name = [...chip.querySelectorAll('span')].find((s) => s.textContent === 'a-picture-whose-name-is-long.png') ?? null
-      readSlot(read, 'name', name, chip.getBoundingClientRect())
-      if (name) read.cut = (name as HTMLElement).scrollWidth > (name as HTMLElement).clientWidth ? 1 : 0
+      const row = host.querySelector<HTMLElement>('.gg-file-row')
+      if (!row) return { chip: 0 }
+      const box = row.getBoundingClientRect()
+      const read: Record<string, number> = { chip: 1, chipHeight: Math.round(box.height), chipWidth: Math.round(box.width) }
+      const name = row.querySelector<HTMLElement>('.gg-file-row-name')
+      readSlot(read, 'name', name, box)
+      readSlot(read, 'type', row.querySelector('.gg-file-row-detail'), box)
+      if (name) { read.cut = name.scrollWidth > name.clientWidth ? 1 : 0; read.nameWeight = Number(getComputedStyle(name).fontWeight) }
+      read.pdfGlyph = row.querySelector('.gg-file-row-icon svg')?.innerHTML === drawn(FILE_MARKS.pdf.glyph) ? 1 : 0
       return read
     })
     const read = reading.inspected
-    expect(read.chip, 'the attachment chip did not render').toBe(1)
-    expectTier(read, 'name', CAPTION)
-    expect(read.chipHeight).toBe(attachChipHeight())
-    expect(attachChipHeight(), 'ATTACH_LABEL_LINE did not follow the 18 line').toBe(ATTACH_TILE + ATTACH_LABEL_GAP + CAPTION.leading)
+    expect(read.chip, 'the attachment row did not render').toBe(1)
+    expectTier(read, 'name', { size: FILE_ROW.nameSize, leading: FILE_ROW.nameLine })
+    expect(read.nameWeight).toBe(600)
+    expect(read.pdfGlyph, 'the row draws the pdf family glyph from the shared table').toBe(1)
+    expectTier(read, 'type', { size: FILE_ROW.detailSize, leading: FILE_ROW.detailLine })
+    expect(read.chipHeight).toBe(FILE_ROW.height)
+    expect(read.chipWidth, 'the row is fixed-width, not as wide as its name').toBe(FILE_ROW.width)
     expect(read.cut, 'the long name was not cut: the ellipsis is untested').toBe(1)
     expect(reading.dom).toBe(reading.computed)
   })

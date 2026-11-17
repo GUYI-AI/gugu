@@ -1,5 +1,5 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { indexHermesPrompts, originalHermesPrompt, type HermesPromptIndex } from '@gugu/session-core/acp/hermes-prompt';
+import { indexNativePrompts, originalNativePrompt, type NativePromptIndex } from '@gugu/session-core/acp/native-prompt';
 
 /**
  * 认「库里这一轮 = 记录里那一轮」靠什么,按记录的格式分:
@@ -39,16 +39,16 @@ export function turnIdentityKeys(turn: TranscriptTurn): Set<string> {
 
 const squeeze = (text: string) => text.replace(/\s+/g, ' ').trim();
 
-/** 人说的完整原文;仅 Hermes 原生全文有宿主摘要凭据时还原当时正文,不按标签猜。 */
-export function turnPrompt(turn: TranscriptTurn, hermes?: HermesPromptIndex): string | null {
+/** 人说的完整原文;记录里的原生全文有宿主摘要凭据时还原当时正文(附件行、上下文都是宿主加的),不按标签猜。 */
+export function turnPrompt(turn: TranscriptTurn, receipts?: NativePromptIndex): string | null {
   const user = turn.items.find((item) => item.kind === 'message' && item.role === 'user');
-  const text = user && 'text' in user ? squeeze(hermes ? originalHermesPrompt(user.text, hermes) ?? user.text : user.text) : '';
+  const text = user && 'text' in user ? squeeze(receipts ? originalNativePrompt(user.text, receipts) ?? user.text : user.text) : '';
   return text || null;
 }
 
 /** 问答成对的指纹:人说的那句 + agent 最后回的那句。只有一边(只调了工具、没说话)= null。 */
-export function turnFingerprint(turn: TranscriptTurn, hermes?: HermesPromptIndex): string | null {
-  const prompt = turnPrompt(turn, hermes);
+export function turnFingerprint(turn: TranscriptTurn, receipts?: NativePromptIndex): string | null {
+  const prompt = turnPrompt(turn, receipts);
   const replies = turn.items.filter((item) => item.kind === 'message' && item.role === 'assistant' && 'text' in item && item.text.trim());
   const reply = replies.at(-1);
   if (!prompt || !reply || !('text' in reply)) return null;
@@ -57,8 +57,8 @@ export function turnFingerprint(turn: TranscriptTurn, hermes?: HermesPromptIndex
 
 export type Identity = { keys: Set<string>; fingerprint: string | null; prompt: string | null };
 
-export const identify = (turn: TranscriptTurn, hermes?: HermesPromptIndex): Identity =>
-  ({ keys: turnIdentityKeys(turn), fingerprint: turnFingerprint(turn, hermes), prompt: turnPrompt(turn, hermes) });
+export const identify = (turn: TranscriptTurn, receipts?: NativePromptIndex): Identity =>
+  ({ keys: turnIdentityKeys(turn), fingerprint: turnFingerprint(turn, receipts), prompt: turnPrompt(turn, receipts) });
 
 /**
  * The same identity with every string replaced by a short digest: matching only compares for equality, so the ingest
@@ -146,14 +146,14 @@ export function recordTurnsAfterStore(
   record: readonly TranscriptTurn[],
   storedNewestFirst: readonly TranscriptTurn[],
   identity: RecordIdentity = 'ids',
-  options: { hasOlderStoredTurns?: boolean; hermesPromptReceipts?: boolean } = {},
+  options: { hasOlderStoredTurns?: boolean } = {},
 ): TranscriptTurn[] | null {
   if (storedNewestFirst.length === 0) return [...record];
   const stored = storedNewestFirst.map((turn) => identify(turn));
-  const hermes = options.hermesPromptReceipts ? indexHermesPrompts(storedNewestFirst.flatMap((turn) => turn.items)) : undefined;
-  if (hermes && record.some((turn) => turn.items.some((item) => item.kind === 'message' && item.role === 'user'
-    && originalHermesPrompt(item.text, hermes) === null))) return null;
-  const picked = matchAfterStore(record.map((turn) => identify(turn, hermes)), stored, identity, options);
+  const receipts = indexNativePrompts(storedNewestFirst.flatMap((turn) => turn.items));
+  if (record.some((turn) => turn.items.some((item) => item.kind === 'message' && item.role === 'user'
+    && originalNativePrompt(item.text, receipts) === null))) return null;
+  const picked = matchAfterStore(record.map((turn) => identify(turn, receipts)), stored, identity, options);
   return picked === null ? null : picked.map((index) => record[index]);
 }
 

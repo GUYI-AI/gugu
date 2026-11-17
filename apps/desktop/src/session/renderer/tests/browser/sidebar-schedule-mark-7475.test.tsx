@@ -85,7 +85,7 @@ it('鼠标:指针进行,钟排进 hover 层置顶 / 归档的左边(不叠),停�
   expect(tip).toContain('检查 CI 结果');
   expect(tip).toMatch(/\d\d:\d\d/);
   // 几条:那一句里的条数(界面语言跟着测试的 locale,两种都认)。
-  expect(tip).toMatch(/2 (个定时|scheduled)/);
+  expect(tip).toMatch(/2 (个定时|tasks scheduled)/);
 });
 
 it('阴控:没有定时就照旧是那个时间', async () => {

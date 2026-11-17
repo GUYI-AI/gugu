@@ -46,7 +46,6 @@ import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
-import { SearchTrailBar } from './SearchTrailBar'
 
 /**
  * @@@5856 话题分栏 —— 右侧那条独立收发的话题线(product spec)。
@@ -103,6 +102,7 @@ export type TopicSplitPaneProps = {
   runningTokens?: RunningToken[]
   /** 运行条详情卡读哪条会话(来源群)。 */
   runningPreviewChatId?: string | null
+  composerControls?: React.ReactNode
   onClose: () => void
   /** 发言人的 id —— ChatMessageComposer 的 @ 候选与自指要用它。 */
   currentUserId: string | null
@@ -207,6 +207,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   agentStatuses,
   runningTokens,
   runningPreviewChatId = null,
+  composerControls,
   history,
   onClose,
   currentUserId,
@@ -333,7 +334,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     flashMessageId,
   }), [showMessage, rows, messages, mobile, memberReadSeqs, deliveryWaits, recipientFacts, memberProfiles, memberProfileOpener, onOpenAttachment, readReceiptHandle, onReaction, onForward, onDelete, onQuote, flashMessageId, history, visible])
 
-  // 手机上话题是来源页的一枚页签:在前面时,返回先回到来源那一枚。
+  // Phone topic navigation stays in its source room; Back first returns to the main conversation.
   useBackLayer(onClose, mobile && visible !== false)
   const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
   const page = (
@@ -376,7 +377,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </div>
         )}
 
-        <SearchTrailBar chatId={topic.chatId} surface={paneRef} enabled={visible !== false} />
         <div
           data-testid="topic-split-messages"
           style={TOPIC_SPLIT_MESSAGES_STYLE}
@@ -415,7 +415,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
             重写一份等于把它们统统退回未解决态,而且不报任何错(owner 2026-09-19 实测点破)。
             话题是一间屋子 ⇒ isGroupChat,寻址规则与群一致。 */}
         {/* 话题里运行条那一行同样是固定高的一行;只在传了 runningTokens 时才有(手机整页话题),桌面分栏旁边群里那一条一直看得见。 */}
-        <ChatBottomDock reserve={messages.length === 0} above={runningTokens &&
+        <ChatBottomDock reserve={messages.length === 0} running={!!runningTokens?.length} above={runningTokens &&
         <RunningBarSlot>
         {runningTokens.length > 0 ? (
           <RunningTokenBar
@@ -431,6 +431,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </RunningBarSlot>
         }>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
+        {composerControls}
         <ChatMessageComposer
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}

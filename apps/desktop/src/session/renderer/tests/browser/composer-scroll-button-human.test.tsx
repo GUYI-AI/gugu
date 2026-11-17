@@ -25,7 +25,7 @@ it.each([
   await page.viewport(width, 800)
   const recover = vi.fn()
   host = document.body.appendChild(document.createElement('div'))
-  host.style.cssText = `position:relative;width:${width}px;height:600px`
+  host.style.cssText = `position:relative;width:${width}px;height:600px;display:flex;flex-direction:column;justify-content:flex-end`
   if (width < 720) host.setAttribute('data-phone-shell', '')
   root = createRoot(host)
   root.render(<LocalizationProvider>

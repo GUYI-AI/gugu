@@ -1,5 +1,6 @@
 import { IdentityPlaceholder } from '@/components/IdentityPlaceholder'
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { GrowingList, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
 import { observer } from 'mobx-react-lite'
 import { Avatar } from '@/components/Avatar'
 import { ListRowContent } from '@/components/ui/ListRow'
@@ -11,6 +12,7 @@ import { followLink } from '@/lib/guguLinks'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { messageForUser } from '@/lib/userFacingError'
 import { askTaskReveal } from '@/hooks/useSourceMessageReveal'
+import { askFlashWords } from '@/lib/sourceMessageReveal'
 import { conversationLink } from '@gugu/core/shared/ui/guguLink'
 import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
 import { matchRanges } from '@shared/core/search'
@@ -49,6 +51,17 @@ const NameRow = observer(function NameRow({ id, userId, groupAvatar, name, query
   )
 })
 
+// @@@search-line-height - where the lines not mounted yet go (every mounted line is measured). A scope line is 34 px; a hit is
+// 58 px with one line of text and 78 px with two (line-clamp-2). Whether the text wraps is guessed from its width at 14 px
+// (a wide CJK character ≈ 14 px, any other ≈ 7) against the text column: the list minus its padding and the row's (2 × 8 each),
+// the avatar (20) and the gap (10).
+const SCOPE_LINE_HEIGHT = 34
+function hitHeight(text: string, list: HTMLElement | null): number {
+  let width = 0
+  for (const char of text) width += char.codePointAt(0)! >= 0x2e80 ? 14 : 7
+  return list && width > list.clientWidth - 62 ? 78 : 58
+}
+
 function Highlighted({ text, query }: { text: string; query: string }): ReactNode {
   const parts: ReactNode[] = []
   let at = 0
@@ -71,8 +84,8 @@ function formatWhen(iso: string): string {
 }
 
 /** Go to where a hit was said: a chat message through its conversation link, a task turn through the task's reveal. */
-export function openHit(hit: SearchHit): void {
-  if (hit.kind === 'message') { followLink(conversationLink(hit.chatId, hit.messageId)); return }
+export function openHit(hit: SearchHit, words = ''): void {
+  if (hit.kind === 'message') { askFlashWords(hit.messageId, words); followLink(conversationLink(hit.chatId, hit.messageId)); return }
   askTaskReveal(hit.taskId, messageQuoteLink({ kind: 'session', sessionId: hit.taskId, itemId: hit.itemId }))
   followLink({ kind: 'session', sessionId: hit.taskId, projectId: hit.projectId })
   window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
@@ -91,7 +104,8 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const summaries = useChatSummaries()
   const view = useGlobalSearch(text, chips, facet, tasks)
   const [composition, setComposition] = useState<string | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
+  const [list, setList] = useState<HTMLDivElement | null>(null)
+  const lineWindowRef = useRef<GrowingListWindow | null>(null)
   const facets: readonly SearchFacet[] = tasks ? ['all', 'message', 'task', 'file'] : ['all', 'message', 'file']
 
   const chatName = (chatId: string) => summaries.get(chatId)?.alias || summaries.get(chatId)?.name || translate('globalSearch.unknownChat')
@@ -108,26 +122,26 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
     group.hits.push(hit)
   }
   const ordered = groups.flatMap((group) => group.hits)
+  const scoped = view.scopes.some((chip) => chip.kind === 'in' || chip.kind === 'in-task')
+  // @@@growing-list: the results mount around the visible part of the panel; a group's scope line heads its hits.
+  const lines = groups.flatMap((group) => [...(scoped ? [] : [{ kind: 'scope' as const, group }]), ...group.hits.map((hit) => ({ kind: 'hit' as const, hit }))])
   const named = useNameMatches(view.query, NAMED_LIMIT, names && !!view.query && facet === 'all' && chips.length === 0)
   const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', groupAvatar: chat.avatar ?? null, name: chat.name ?? '', open: () => openGroup(id) })),
       ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id) }))]
   const selected = ordered.find((hit) => hit.id === selectedId) ?? ordered[0] ?? null
-  const scoped = view.scopes.some((chip) => chip.kind === 'in' || chip.kind === 'in-task')
   // Words, a sender or a kind of message: any of them is a search; with none the panel shows the quick filters.
   const hasQuery = !!text.trim() || chips.some((chip) => chip.kind === 'from' || chip.kind === 'type')
   const inChat = chips.find((chip) => chip.kind === 'in')?.chatId ?? null
   const inputRef = useRef<HTMLInputElement>(null)
   const [dateNote, setDateNote] = useState<string | null>(null)
 
-  useEffect(() => { listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [selected?.id])
+  const selectedLine = lines.findIndex((line) => line.kind === 'hit' && line.hit.id === selected?.id)
+  useEffect(() => { if (selectedLine >= 0) lineWindowRef.current?.scrollToIndex(selectedLine, { align: 'auto' }) }, [selectedLine])
 
   const open = (hit: SearchHit) => {
-    if (hit.kind === 'message') {
-      const hits = ordered.flatMap((one) => one.kind === 'message' ? [{ chatId: one.chatId, messageId: one.messageId }] : [])
-      updateSearchSession({ selectedId: hit.id, trail: { hits, index: hits.findIndex((one) => one.messageId === hit.messageId), query: view.query } })
-    }
+    if (hit.kind === 'message') updateSearchSession({ selectedId: hit.id })
     if (view.query) rememberSearch(recentScope, view.query)
-    onOpen(); openHit(hit)
+    onOpen(); openHit(hit, view.query)
   }
   const addKind = (type: SearchKind) => { if (!chips.some((chip) => chip.kind === 'type' && chip.type === type)) setChips([...chips, { kind: 'type', type }]) }
   // 「日期」 alone goes straight to that day's first message in this conversation.
@@ -206,7 +220,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         </div>
       )}
 
-      <div ref={listRef} className={cn('flex-1 overflow-y-auto px-2', hasQuery && 'min-h-48 pb-2')} role="listbox" aria-label={translate('globalSearch.results')}>
+      <div ref={setList} data-growing-list="" className={cn('flex-1 overflow-y-auto px-2', hasQuery && 'min-h-48 pb-2')} role="listbox" aria-label={translate('globalSearch.results')}>
         {view.error && <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{messageForUser(view.error)}</div>}
         {hasQuery && view.taskIndex?.state === 'preparing' && (facet === 'all' || facet === 'task') && (
           <div role="status" className="px-3 py-3 text-sm text-foreground/50">{view.taskIndex.total
@@ -217,7 +231,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{translate('globalSearch.indexingTasksFailed')}</div>
         )}
         {!hasQuery && (
-          <div className="grid grid-cols-3 gap-1 border-t border-foreground/[0.08] px-1 pt-2" data-testid="global-search-quick">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(max(8em,calc((100%_-_0.5rem)/3)),1fr))] gap-1 border-t border-foreground/[0.08] px-1 pt-2 text-[length:var(--font-body)]" data-testid="global-search-quick">
             {quick.filter((item) => !item.scoped || inChat).map((item) => (
               <span key={item.key} className="relative">
                 <button type="button" data-quick={item.key} onClick={(event) => item.run(event.currentTarget)}
@@ -268,36 +282,46 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
             )}
           </div>
         )}
-        {groups.map((group) => (
-          <Fragment key={group.key}>
-            {!scoped && <button type="button" title={translate('globalSearch.scopeTo')}
-              className="flex w-full items-center gap-2 px-2 pb-1 pt-3 text-left text-xs text-foreground/45 hover:text-foreground/70"
-              onClick={() => setChips([...chips, group.scope])}>
-              <span className="truncate font-medium">{group.label}</span>
-              {group.task && <span className="shrink-0 text-foreground/35">· {translate('globalSearch.task')}</span>}
-            </button>}
-            {group.hits.map((hit) => {
-              const isSelected = hit.id === selected?.id
-              const sender = hit.kind === 'message' ? hit.sender ?? translate('globalSearch.system') : translate(hit.role === 'assistant' || hit.activity ? 'globalSearch.agent' : 'globalSearch.you')
+        <GrowingList
+          scroller={list}
+          count={lines.length}
+          getKey={(index) => { const line = lines[index]!; return line.kind === 'hit' ? line.hit.id : `scope:${line.group.key}` }}
+          estimateSize={(index) => { const line = lines[index]!; return line.kind === 'hit' ? hitHeight(line.hit.text, list) : SCOPE_LINE_HEIGHT }}
+          windowRef={(lineWindow) => { lineWindowRef.current = lineWindow }}
+          renderLine={(index) => {
+            const line = lines[index]!
+            if (line.kind === 'scope') {
+              const { group } = line
               return (
-                <button type="button" role="option" aria-selected={isSelected} data-selected={isSelected} key={hit.id}
-                  onMouseMove={() => { if (!isSelected) updateSearchSession({ selectedId: hit.id }) }}
-                  onClick={() => open(hit)}
-                  className={cn('flex w-full items-start gap-[var(--row-gap)] rounded-lg px-2 py-2 text-left outline-none', isSelected && 'bg-foreground/[0.06]')}>
-                  <ResultAvatar hit={hit} name={sender} />
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-2 text-sm leading-5 text-foreground/85"><Highlighted text={hit.text} query={view.query} /></span>
-                    <span className="mt-1 flex items-center gap-2 text-xs text-foreground/40">
-                      <span className="truncate">{sender}</span>
-                      <span aria-hidden>·</span><span className="shrink-0 tabular-nums">{formatWhen(hit.at)}</span>
-                    </span>
-                  </span>
-                  {isSelected && <span className="mt-1 shrink-0 text-foreground/35 max-sm:hidden"><Shortcut hotkey="Enter" variant="keycaps" /></span>}
+                <button type="button" data-search-scope="" title={translate('globalSearch.scopeTo')}
+                  className="flex w-full items-center gap-2 px-2 pb-1 pt-3 text-left text-xs text-foreground/45 hover:text-foreground/70"
+                  onClick={() => setChips([...chips, group.scope])}>
+                  <span className="truncate font-medium">{group.label}</span>
+                  {group.task && <span className="shrink-0 text-foreground/35"> {translate('globalSearch.task')}</span>}
                 </button>
               )
-            })}
-          </Fragment>
-        ))}
+            }
+            const { hit } = line
+            const isSelected = hit.id === selected?.id
+            const sender = hit.kind === 'message' ? hit.sender ?? translate('globalSearch.system') : translate(hit.role === 'assistant' || hit.activity ? 'globalSearch.agent' : 'globalSearch.you')
+            return (
+              <button type="button" role="option" aria-selected={isSelected} data-selected={isSelected}
+                onMouseMove={() => { if (!isSelected) updateSearchSession({ selectedId: hit.id }) }}
+                onClick={() => open(hit)}
+                className={cn('flex w-full items-start gap-[var(--row-gap)] rounded-lg px-2 py-2 text-left outline-none', isSelected && 'bg-foreground/[0.06]')}>
+                <ResultAvatar hit={hit} name={sender} />
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 text-sm leading-5 text-foreground/85"><Highlighted text={hit.text} query={view.query} /></span>
+                  <span className="mt-1 flex items-center gap-2 text-xs text-foreground/40">
+                    <span className="truncate">{sender}</span>
+                    <span className="shrink-0 tabular-nums">{formatWhen(hit.at)}</span>
+                  </span>
+                </span>
+                {isSelected && <span className="mt-1 shrink-0 text-foreground/35 max-sm:hidden"><Shortcut hotkey="Enter" variant="keycaps" /></span>}
+              </button>
+            )
+          }}
+        />
       </div>
 
       {hasQuery && view.elsewhere && chips.some((chip) => chip.kind === 'in') && (

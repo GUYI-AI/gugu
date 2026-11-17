@@ -7,6 +7,7 @@ import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge'
 import { chatStore, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
 import type { SessionInputOutbox } from '@/lib/sessionInputOutbox'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
@@ -43,7 +44,7 @@ const release = vi.hoisted(() => vi.fn(async () => null))
 vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await original<object>()), releaseQueuedSessionInput: release }))
 
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   machineRpc: vi.fn(() => ({})), fetchBackgroundTasks: vi.fn(async () => []),
@@ -280,7 +281,7 @@ it.each((['accepted', 'failed'] as const).flatMap(result => (['unchanged', 'shar
 
 it.each((['phone', 'native'] as const).flatMap(mode => ['', 'Hi again', 'Hi appended'].map(text => ({ mode, text }))))('keeps input that advances before draft hydration ($mode / $text)', async ({ mode, text }) => {
   await page.viewport(mode === 'phone' ? 390 : 1000, 844)
-  localStorage.removeItem('gugu.native-offline-draft:owner/host/hydrate')
+  viewStateCache.write('view:owner/task:host/hydrate/draft', undefined)
   let pulse!: () => void
   function AfterInput({ active }: { active: boolean }) {
     useLayoutEffect(() => {

@@ -320,7 +320,7 @@ export const MessageBubble = memo(function MessageBubble({
                 title={readReceiptLabel(readReceiptRead, readReceiptTotal, t)}
                 style={{
                   border: 0, background: 'transparent',
-                  width: compactMobile ? 44 : 15, height: compactMobile ? 44 : 15,
+                  width: compactMobile ? 'var(--msg-avatar-gutter-touch)' : 15, height: compactMobile ? 'var(--msg-avatar-gutter-touch)' : 15,
                   padding: 0, display: 'inline-flex',
                   alignItems: 'center',
                   cursor: readReceiptHandle ? 'pointer' : 'default',

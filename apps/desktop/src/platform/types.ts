@@ -1,3 +1,4 @@
+import type { AccountClosureNative } from './accountClosure'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -35,11 +36,15 @@ interface PlatformCapabilities {
   mobileApps: boolean
   /** This shell implements the native phone tools and installation identity. */
   phoneDevice: boolean
+  /** A registered native phone Agent host; independent of Android phone tools. */
+  phoneAgentHost?: boolean
   /**
    * 记住看文件、看图时最后用的阅读缩放,下次打开照它。阅读缩放靠滚轮、缩放键、菜单设定,只有电脑上有;
    * 手机上的捏合、双击只是看一眼,不留下比例,所以手机壳没有这一位(读写都不发生)。
    */
   readingZoomMemory: boolean
+  /** This shell registers an owner-verified native calendar settings surface. */
+  calendarSettings?: boolean
 }
 
 /** 交给系统分享面板的一份内容。附件只给地址,由宿主自己取字节,交出去的是文件本身。 */
@@ -85,6 +90,7 @@ export interface FeedbackLogTail {
 export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_full' | 'not_confirmed' | null
 
 export interface AppPlatform {
+  accountClosure: AccountClosureNative
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
   capabilities: PlatformCapabilities
@@ -218,9 +224,4 @@ export interface AppPlatform {
   getLocalUsageSnapshot?: (request: LocalUsageRequest) => Promise<LocalUsageSnapshot>
   /** Electron main-process reachable agent creation tools; unavailable on web/mobile. */
   getAgentCreationTools?: () => Promise<unknown>
-  /**
-   * @@@share-card-rename 改名的本机那半:把新名字写回花名册(会话页读它)。云端改名成功后调。
-   * 与上面那条同理,只有拥有本机足迹的宿主实现它;web 上没有这一半,所以是可选的。
-   */
-  renameOwnedAgentLocalFootprint?: (agentUserId: string, name: string) => Promise<void>
 }

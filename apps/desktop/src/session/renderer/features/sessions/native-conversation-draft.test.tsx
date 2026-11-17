@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { ChatStoreProvider, useChatStore } from '@/store/chatContext';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { useSessionConversationDraft } from '@/mobile/agent-watch/use-session-conversation-draft';
 
 const scope = vi.hoisted(() => ({ account: 'owner' as string | null, initial: {} as Record<string, string> }));
@@ -32,7 +33,7 @@ function Composer({ native = true, session = 'task' }: { native?: boolean; sessi
 }
 const render = (child: ReactNode) => act(() => root.render(<Account>{child}</Account>));
 beforeEach(() => {
-  scope.account = 'owner'; scope.initial = {}; localStorage.clear();
+  scope.account = 'owner'; scope.initial = {}; localStorage.clear(); viewStateCache.forget('view:');
   node = document.body.appendChild(document.createElement('div')); root = createRoot(node);
 });
 afterEach(() => { act(() => root.unmount()); node.remove(); });

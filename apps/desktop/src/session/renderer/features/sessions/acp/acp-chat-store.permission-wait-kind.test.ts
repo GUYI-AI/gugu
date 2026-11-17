@@ -56,7 +56,7 @@ describe('permission band title', () => {
         current: () => ({ pendingPermissions: [{ requestId: 'r1', toolCall, options: [{ optionId: 'a', name: 'Allow', kind: 'allow_once' }] }] }),
       },
     } as never;
-    expect(store.permissionQueue[0]?.title).toBe('plugin_gugu-product_gugu · dice__roll');
+    expect(store.permissionQueue[0]?.title).toBe('plugin_gugu-product_gugu, dice__roll');
   });
 });
 

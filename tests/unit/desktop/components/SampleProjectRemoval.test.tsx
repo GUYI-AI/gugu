@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+// Destructive actions ask first (lib/confirmDanger); here the person confirms.
+const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true))
+vi.mock('@/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
 import { act } from 'react'
 import { clickElement, createNode, createReactHarness, fireContextMenu, waitForCondition } from '../../../support/testHarness'
 

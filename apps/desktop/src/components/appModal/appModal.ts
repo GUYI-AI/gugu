@@ -10,6 +10,8 @@ export interface AppModalPresentation {
   partition?: string;
   frameName?: string;
   opener: HTMLElement;
+  /** The layer of the window it is drawn in, when that is not this one (a page in a window of its own). */
+  container?: HTMLElement | null;
   attach(element: BrowserWebviewElement | HTMLIFrameElement): () => void;
   focus(edge: AppModalFocus): void | Promise<void>;
   dismiss(error?: string): void | Promise<void>;

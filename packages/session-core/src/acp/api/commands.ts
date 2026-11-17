@@ -73,6 +73,7 @@ export const acpStartInputSchema = z.object({
   model: z.string().nullable(),
   /** Reasoning-effort level picked before the session existed; applied right after the model. */
   effort: z.string().nullable().optional(),
+  fastMode: z.boolean().optional(),
   /** Permission choice made before the ACP session exposed its provider-owned mode ids (咕咕的档位). */
   permissionMode: z.enum(GUGU_PERMISSION_MODES).optional(),
   initialQueue: z.array(promptInputSchema).optional(),
@@ -157,7 +158,7 @@ export const stopBackgroundTaskCommandSchema = z.object({
 });
 export const setModelOptionCommandSchema = z.object({
   sessionId: z.string(),
-  dimension: z.enum(['model', 'effort']),
+  dimension: z.enum(['model', 'effort', 'fast']),
   value: z.string(),
 });
 export const setModeOptionCommandSchema = z.object({

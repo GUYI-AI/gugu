@@ -55,7 +55,8 @@ export function useEffectiveProvider(
   );
 
   const { translate } = useSessionMessages();
-  const { value: defaultAgentValue } = useAppSettingsKey('defaultAgent');
+  const { settings: defaultAgentValueSettings } = useAppSettingsKey('defaultAgent');
+  const defaultAgentValue = defaultAgentValueSettings.state === 'value' ? defaultAgentValueSettings.value.value : undefined;
   const { data: agents } = useAgents();
   const defaultProviderId = defaultAgentValue as AgentProviderId | null;
   const knownProviderIds = useMemo(

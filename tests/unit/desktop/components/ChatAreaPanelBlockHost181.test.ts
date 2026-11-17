@@ -16,6 +16,8 @@ import { closeChatTab, closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, pan
 import { publishChatSummaries } from '../../../../apps/desktop/src/lib/chatSummariesBridge'
 
 const { getImRepositoryMock } = vi.hoisted(() => ({ getImRepositoryMock: vi.fn() }))
+const shell = vi.hoisted(() => ({ mobile: false }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
 
 // Solid's DOM renderer runs in the Chromium project; keep the React host/providers real here.
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/chat-transcript', async importOriginal => ({
@@ -77,6 +79,7 @@ afterEach(() => {
 })
 
 async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }, kind: 'group' | 'dm' | 'ai' = 'group', mobile = false, project = false, hideRunningStatus = false) {
+  shell.mobile = mobile
   const chrome = hideRunningStatus ? { placeholder: 'Chat', attachGlyph: null, hideRunningStatus: true } : undefined
   const panel = createNode(ChatAreaPanel, { openNonce: 0, blockHost, mobile, ...(chrome ? { chrome } : {}) })
   await renderWithAppProviders(harness, project ? createNode(InChatSlot.Provider, { value: { projectName: 'Settings project' } }, panel) : panel, {

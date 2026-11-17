@@ -22,7 +22,7 @@ export function useBrowserAnnotations({ sessionId, browserId, visible, available
   const { translate } = useSessionMessages();
   return {
     toolbar: sessionId && available ? <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0"
-      aria-label={translate(active ? 'annotations.exit' : 'annotations.annotate')} aria-pressed={active} title={active ? `${translate('annotations.hint')} · ${translate('annotations.browse')}` : translate('annotations.annotate')}
+      aria-label={translate(active ? 'annotations.exit' : 'annotations.annotate')} aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
       onClick={() => setActive(!active)}><MessageSquare className="size-4" /></Button> : null,
     overlay: active && visible && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
       inspect={inspect} onExit={exit} /> : null,
@@ -139,7 +139,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
         <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" aria-label={translate('annotations.comment')} disabled={busy || !text.trim()}><Check className="size-3.5" /></Button>
       </form>}
       {!selection && !draft.items.length && <div className="pointer-events-none absolute top-2 left-4 max-w-80 rounded-xl bg-foreground px-4 py-2 text-center text-xs text-background">
-        {translate('annotations.hint')} · {translate('annotations.browse')}
+        {translate('annotations.hint')}  {translate('annotations.browse')}
       </div>}
       {error && <p role="alert" className="absolute top-4 left-4 rounded-lg bg-background p-2 text-sm">{translate('annotations.failed')}</p>}
     </div>}

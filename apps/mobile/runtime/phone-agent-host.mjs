@@ -25,8 +25,9 @@ import { startPhoneAgentRpc } from './phone-agent-rpc.mjs'
 import { phoneCommunicationTools, deliverPhoneOutbox } from './phone-agent-tools.mjs'
 import { phoneCalendarEventView } from '../../desktop/src/mobile/phone-device/phoneCalendarView.ts'
 import { phoneChatReadTools } from './phone-agent-chat.mjs'
-import { phoneFileTools, phoneInboxAttachmentRow, phoneTurnFiles } from './phone-agent-files.mjs'
+import { phoneFileTools, phoneTurnFiles } from './phone-agent-files.mjs'
 import { phoneWebTool } from './phone-agent-web.mjs'
+import { cleanupStaleRemoteFileDirectories } from '../../desktop/electron/remoteFileOpen.ts'
 import { phoneMemoryTools } from './phone-agent-memory.mjs'
 import { createPhoneSessionTools } from './phone-agent-sessions.mjs'
 import { createPhoneActionRuntime } from './phone-actions.mjs'
@@ -95,6 +96,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
+  // A download interrupted and never asked for again leaves its chunks in the file cache: drop the stale ones, as the
+  // desktop does at start (same function, same lifetime). A failure is reported, never a reason not to start.
+  void cleanupStaleRemoteFileDirectories(join(store.directory, 'file-cache'))
+    .catch((error) => warn(`stale file cache cleanup failed: ${error instanceof Error ? error.message : String(error)}`))
   const updateReadiness = () => {
     const wasReady = ready
     ready = startupComplete && authenticated && rpcConnected && heartbeatHealthy && !stopped && !signingOut
@@ -212,11 +217,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         if (!Array.isArray(raw)) throw new Error('agent inbox is not an array')
         const rows = raw.map(unreadRowFromRpc)
         for (const row of rows) rowsById.set(row.id, row)
-        return rows.map(phoneInboxAttachmentRow)
+        return rows
       },
       markRead: ({ chatId, messageId }) => cloud.rpc('identity', 'mark_read_on_deliver', { p_chat_id: chatId, p_message_id: messageId, p_user_id: agentUserId }),
       inject: async (input) => {
-        if (input.attachments?.length) throw new Error('附件未转换为手机宿主的文件元数据，未接收本次消息')
         const row = rowsById.get(input.sourceMessageId)
         if (!row) throw new Error('inbox admission has no authoritative source row')
         const confirmation = actions?.confirmationForMessage(agent, row)
@@ -698,7 +702,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       // This successful probe can restore heartbeat health; the other startup/auth/RPC gates
       // still have to be true before the device advertises a task runtime.
       const available = startupComplete && authenticated && rpcConnected
-      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: available ? 1 : 0, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
+      // This host's version is known even while startup/auth/RPC readiness is pending.
+      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
       if (error) throw new Error(error.message)
       if (stopped || signingOut) return
       if (available && store.state.preparationBackoff) {
@@ -724,7 +729,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (!data) return
     if (data.capabilities?.host_kind !== 'phone') throw new Error('手机设备登记信息与当前宿主不一致')
     // Stopping task execution does not stop the phone's independently enabled action endpoint.
-    const updated = await cloud.identity.from('gugu_devices').update({ capabilities: { ...data.capabilities, runtimes: [], host_runtime_capability: 0 }, updated_at: new Date().toISOString() }).eq('device_id', deviceId).eq('user_id', ownerId)
+    const updated = await cloud.identity.from('gugu_devices').update({ capabilities: { ...data.capabilities, runtimes: [] }, updated_at: new Date().toISOString() }).eq('device_id', deviceId).eq('user_id', ownerId)
     if (updated.error) throw new Error(updated.error.message)
   }
 

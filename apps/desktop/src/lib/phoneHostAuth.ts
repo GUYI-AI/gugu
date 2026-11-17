@@ -66,6 +66,15 @@ export function phoneHostRestoreSession(fallback: () => Promise<SessionResult>):
 export function phoneHostSignOut(fallback: () => Promise<{ error: unknown }>): Promise<{ error: unknown; signedOutSession?: Session }> {
   if (!available()) return fallback()
   return ordered(async () => {
+    if (Capacitor.getPlatform() === 'ios') {
+      const { prepareIOSSignOut } = await import('../mobile/ios-runtime/iosOwnerClient')
+      const ownerId = getRendererSession()?.user.id
+      if (!ownerId) throw new Error('Current login is required before native sign-out')
+      await prepareIOSSignOut(ownerId)
+      const result = await fallback()
+      if (!result.error) returnedSession = null
+      return result
+    }
     const host = await native.authSession({ action: 'sign_out' })
     if (!host.available) {
       const result = await fallback()

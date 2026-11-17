@@ -1,5 +1,6 @@
 // @@@6357 working 栏悬浮卡 MessagePreview:版式照 assistant-ui SharedConversation,浮层档 tokens,
 // 承载信息的字只用 --text-primary / --text-secondary(tertiary 过不了 AA)。
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useState } from 'react'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useTranslation } from 'react-i18next'
@@ -139,7 +140,7 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
     <div className="mp-mono" data-preview-entry="tool">
       {block.parts
         .map((part) => t('runtime.messagePreview.toolCount', { state: t(`runtime.stateWord.${part.state}`), count: part.count }))
-        .join(' · ')}
+        .join(metadataSeparator())}
     </div>
   )
 }
@@ -182,7 +183,7 @@ export function MessagePreviewCard({
     rel,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(metadataSeparator())
 
   let note: string | null = null
   if (state.status === 'live' && !preview) note = t('runtime.messagePreview.unavailable')

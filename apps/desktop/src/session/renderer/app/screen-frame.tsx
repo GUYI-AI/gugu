@@ -13,7 +13,6 @@ import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
-import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
@@ -56,9 +55,21 @@ export const ScreenFrame = observer(function ScreenFrame() {
   return (
     // 工作区的锚点:页签全屏(tab-fullscreen.ts)的那一格贴到这里的四条边上。
     <div className="flex h-full min-h-0 min-w-0 flex-1 bg-background-tertiary" data-screen-frame="" style={{ anchorName: WORKSPACE_ANCHOR } as CSSProperties}>
-      <BlockTree node={layout} />
+      <BlockCut node={layout.type === 'pane' ? soleBlock(layout) : layout} />
     </div>
   );
+});
+
+/**
+ * 只有一块时也画成一刀(一个格子、份额 100):分出第二块、收回一块时,留下的那块还在同一组里同一个 key 下,不重挂。
+ * 重挂的代价在对话块:格子换了一个 div,壳画进去的整个对话(落点、消息窗、每条 Markdown)跟着重建。
+ */
+const soleBlock = (pane: Extract<PaneLayoutNode, { type: 'pane' }>): Extract<PaneLayoutNode, { type: 'split' }> => ({
+  type: 'split',
+  id: `sole-${pane.paneId}`,
+  orientation: 'horizontal',
+  children: [pane],
+  sizes: [100],
 });
 
 /** 一块的占位贴到哪个锚点名上:会话页按这个名字找到自己那块。 */
@@ -101,19 +112,27 @@ const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayout
   const participantOwner = groupParticipantPanes.pairIn(node)?.chatId;
   const participantWidth = groupParticipantPanes.rightWidth;
 
-  useEffect(() => {
+  // 份额以 node.sizes 为准:库里的布局对不上就摆回去。
+  const syncLayout = (current?: Record<string, number>) => {
     const handle = groupRef.current;
     if (!handle) return;
     const wanted = Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0]));
     try {
-      const current = handle.getLayout();
-      if (ids.every((id) => Math.abs((current[id] ?? -1) - wanted[id]) < 0.5)) return;
+      const layout = current ?? handle.getLayout();
+      if (ids.every((id) => Math.abs((layout[id] ?? -1) - wanted[id]) < 0.5)) return;
       handle.setLayout(wanted);
     } catch {
       // Not laid out yet (first paint): its defaultSize already says the same.
     }
-    // ids / sizes are read through their keys: a new array every render must not re-run this.
-  }, [idsKey, sizesKey, groupRef]);
+  };
+  // ids / sizes are read through their keys: a new array every render must not re-run this.
+  useEffect(() => syncLayout(), [idsKey, sizesKey, groupRef]);
+  // The panel set the library last reported a layout for. A report for another set (a block opened or closed under
+  // this cut, including the library's own late report of the set it had before) is put back to node.sizes: a fresh
+  // mount would have used each panel's defaultSize there. A report for the same set again (a min-size clamp on a window
+  // resize) is the library's own and is left alone, so the two never fight. It starts as the set the group mounts with:
+  // that one is laid out from defaultSize already, so a later setLayout for it (the participant width) is left alone.
+  const reportedIds = useRef([...ids].sort().join(','));
 
   useEffect(() => {
     const element = groupElementRef.current;
@@ -122,18 +141,19 @@ const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayout
     return observeGroupParticipantWidth(element, node, handle, groupParticipantPanes);
   }, [groupRef, idsKey, sizesKey, node.orientation, participantOwner, participantWidth]);
 
-  // 这一刀下面换了一块(比如占一块的 App 被收走,旁边那一列塌成一块):这组整个重挂,按 node.sizes 重新摆。
-  // 不重挂时新挂上的那块进不了库里的布局,只拿到 1% 宽(2026-10-09 实测挤成 19px);库文档给的做法就是按
-  // 这组有哪几块换 key(react-resizable-panels v4「Conditional panels」)。块里的东西不怕重挂:会话页是贴上来的,
-  // App 的页在共用槽里挪来挪去,都不跟着重建。
+  // 这一刀下面换了一块:❌ 按有哪几块换 key 重挂整组 —— 留下的对话块会跟着重建(落点、焦点、光标、开着的右栏都没了)。
+  // 新挂上的那块只拿到 1% 的事(2026-10-09 挤成 19px)由上面 reportedIds 那条规则摆回 node.sizes。
   return (
     <ResizablePanelGroup
-      key={idsKey}
       orientation={node.orientation}
       groupRef={groupRef}
       elementRef={groupElementRef}
       disabled={fullscreen}
       onLayoutChanged={(layout, meta) => {
+        // Sorted: the library lists a panel in registration order, so one opened in the middle comes last.
+        const reported = Object.keys(layout).sort().join(',');
+        if (!meta.isUserInteraction && reported !== reportedIds.current) syncLayout(layout);
+        reportedIds.current = reported;
         if (meta.isUserInteraction) {
           screenLayout.setSplitSizes(node.id, ids.map((id) => layout[id] ?? 0));
           const participant = groupParticipantPanes.pairIn(node);
@@ -198,14 +218,13 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
  */
 const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: string; chatId: string }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   return (
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
+      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
       actionsSlot={
         <TabBarActionRow atWindowEdge={corners.topRight}>
           <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
@@ -240,7 +259,6 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
  */
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, `screen:${blockId}`), installedExtensionsStore.tabTitle(tabKind) ?? tabKind);
   const corners = screenLayout.corners(blockId);
@@ -250,7 +268,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         leadingSlot={
           <ContextMenu.Root>
             <ContextMenu.Trigger className="flex h-full items-center">
@@ -312,7 +330,6 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
  */
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const { chatId, tabKind, itemId, title } = content;
   const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const slot = `screen:${blockId}`;
@@ -326,7 +343,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         leadingSlot={
           <BlockGrip
             label={translate('screen.gripApp')}

@@ -42,6 +42,7 @@ import {
   createSignal,
   on,
   onCleanup,
+  mapArray,
   onMount,
   untrack,
   useContext,
@@ -630,7 +631,7 @@ export function ChatRoot(props: ChatRootProps) {
       // Incremental append: only process the new tail.
       const tail = next.slice(prevSource.length);
       const prevKind = prevUnits.length > 0 ? prevUnits[prevUnits.length - 1].kind : undefined;
-      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, prev.dayKey, lastConversationMessage(prevUnits), trailingActivity(prevUnits));
+      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, prev.dayKey, lastConversationMessage(prevUnits), trailingActivity(prevUnits), prevUnits.at(-1));
       const indexById = new Map(prev.indexById);
       const base = prevUnits.length;
       for (let j = 0; j < newUnits.length; j++) {
@@ -808,16 +809,16 @@ export function ChatRoot(props: ChatRootProps) {
       const ctx = withBackground ? full : { ...full, backgroundTasks: () => null };
       if (!at && !pendingPrompt && !pendingMessages.length) {
         if (!condition && !withBackground) return [] as ReturnType<typeof flattenTier>;
-        return flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()));
+        return flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()), committedUnits().at(-1));
       }
       const activeTurn = activeTurnWithInputs(at, pendingPrompt, pendingMessages, state().transcript.state.committedTurns)!;
       // Reserve the same process row from send to startup: adding it at acknowledgement scrolls a long transcript.
       const pending = [...(pendingPrompt ? [pendingPrompt] : []), ...pendingMessages];
       const failedPending = !at && pending.length > 0 && pending.every(input => input.stopped || input.delivery?.state === 'waiting' || input.delivery?.state === 'failed' || input.delivery?.state === 'unknown');
-      const body = flattenTier([activeTurn], failedPending ? { ...ctx, active: false } : ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()));
+      const body = flattenTier([activeTurn], failedPending ? { ...ctx, active: false } : ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()), committedUnits().at(-1));
       // A held input has no running process row, but it cannot hide the host's compression/stop/failure state.
       if (!failedPending) return body;
-      return [...body, ...flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, body.at(-1)?.kind ?? prevKind, committedBuild()!.dayKey, lastConversationMessage(body), trailingActivity(body))];
+      return [...body, ...flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, body.at(-1)?.kind ?? prevKind, committedBuild()!.dayKey, lastConversationMessage(body), trailingActivity(body), body.at(-1))];
     };
     const units = build(false);
     if (!background) return { units, backgroundOwner: null as string | null };
@@ -1207,14 +1208,20 @@ export function ChatRoot(props: ChatRootProps) {
    * Each anchor's stuck summary (PinnedUserSummary): its height, one or two lines whatever the message's length, and
    * where it rests below the lane's top: behind the last `height` px of the message's bubble (@@@pin-cover).
    */
-  const pinGeometry = createMemo(() => {
-    const ctx = measureContext();
-    return new Map(pinAnchors().map(index => {
-      const unit = untrack(() => units().at(index)!);
-      const s = pinSummary(unit.data as ChatMessage, ctx, UNIT_REGISTRY.message!.vars as MessageVars);
-      return [index, { height: s.height + PIN_SUMMARY_GAP, rest: (unit.gapBefore ?? 0) + s.rest }];
-    }));
+  // Each anchor follows its own message: when that message changes (its attachments arrive, its text is edited) its summary
+  // moves with the bubble in the same frame, instead of staying where the bubble was and covering what took its place.
+  // A streaming patch rebuilds `units()` but not these messages, so it re-lays out no summary.
+  const pinAnchorGeometry = mapArray(pinAnchors, index => {
+    const message = createMemo(() => units().at(index)?.data);
+    return [index, createMemo<{ height: number; rest: number }>(previous => {
+      // Rows and anchors change in one batch; an anchor about to be dropped keeps its place until it is.
+      const data = message();
+      if (!data) return previous;
+      const s = pinSummary(data as ChatMessage, measureContext(), UNIT_REGISTRY.message!.vars as MessageVars);
+      return { height: s.height + PIN_SUMMARY_GAP, rest: (untrack(() => units().at(index)?.gapBefore) ?? 0) + s.rest };
+    }, { height: 0, rest: 0 }, { equals: (a, b) => a.height === b.height && a.rest === b.rest })] as const;
   });
+  const pinGeometry = createMemo(() => new Map(pinAnchorGeometry().map(([index, geometry]) => [index, geometry()])));
   const pinHeight = (idx: number) => pinGeometry().get(idx)?.height ?? 0;
   const pinRest = (idx: number) => pinGeometry().get(idx)?.rest ?? 0;
 
@@ -1937,6 +1944,8 @@ export function ChatRoot(props: ChatRootProps) {
 
   const schedulePrefetch = () => {
     if (!viewShown() || prefetchIdleId !== null) return;
+    // Ahead-of-viewport measurement is optional; missing WebKit APIs must not abort the frame before rows commit.
+    if (typeof requestIdleCallback !== 'function' || typeof cancelIdleCallback !== 'function') return;
     prefetchIdleId = requestIdleCallback(runPrefetchSlice, { timeout: 500 });
   };
 

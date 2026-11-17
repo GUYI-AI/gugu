@@ -8,7 +8,7 @@ import { installedExtensionsStore } from '../session/renderer/features/extension
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
 import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
-import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from 'react'
 import '@/styles/desktop-shell.css'
 import '@/session/renderer/features/assistant/assistant-today.css'
 import '@/mobile/phone-shell.css'
@@ -31,7 +31,7 @@ import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneLayer } from '@/mobile/PhoneLayer'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import { PhonePartnersPage } from '@/mobile/partners/PhonePartnersPage'
-import { useReportChatOnScreen } from '@/lib/onScreenChat'
+import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
 import { useLinkNavigation } from '../hooks/useLinkNavigation'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
 import { ChatListPanel } from '../components/ChatListPanel'
@@ -98,10 +98,12 @@ import { hydrateSidebarTint } from '../lib/sidebarTint'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
+import { PhoneSessionModalHost } from '../components/PhoneSessionModalHost'
 import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
+import { draftWithPills } from '@gugu/session-shared/markdown'
 import { APP_COMPOSE_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_OPEN_WITH_EVENT, type AppComposeDetail, type AppOpenInChatDetail, type AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { chatSlotKey } from '../lib/shellSlots'
 import { assistantSlotKey } from '../lib/assistantShellBridge'
@@ -142,6 +144,12 @@ interface MainLayoutProps {
 const ignoreShellCommit = () => {}
 
 // ── InnerLayout ────────────────────────────────────────────────────────────────
+
+/** The chat page counts as hidden while the window is not in front: only this reads window activity, not the shell. */
+function ActiveChatArea({ hidden, ...props }: ComponentProps<typeof ChatAreaPanel>) {
+  const active = useAppActive()
+  return <ChatAreaPanel {...props} hidden={hidden || !active} />
+}
 
 function InnerLayout({
   user,
@@ -316,9 +324,9 @@ function InnerLayout({
       setAppDetail(target)
       openSettingsSection('apps')
     },
-    openFile: async (chatId, target, source) => {
-      if (mobile || !await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
-      await askChatFile(chatId, { itemId: target.itemId, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
+    openFile: async (chatId, target, source, opener) => {
+      if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
+      await askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
     openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
@@ -364,19 +372,13 @@ function InnerLayout({
     setActiveTab('contacts')
     setNewProjectRequest((n) => n + 1)
   }, 'push'), [setActiveTab])
-  const onScreenChatId = useReportChatOnScreen(activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null)
+  const shownChatId = activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null
+  useReportChatOnScreen(shownChatId)
   // showSessionCreate already derives "closed" the instant activeTab leaves 'chats', but the underlying state must
   // reset too — otherwise switching back to chats later silently resurrects a create page the user never reopened.
   useEffect(() => {
     if (activeTab !== 'chats' && sessionCreateOpen) setSessionCreateOpen(false)
   }, [activeTab, sessionCreateOpen])
-  const openSessionCreate = useCallback(() => {
-    if (!sessionHostAvailable) return
-    setActiveTab('chats')
-    setSessionCreateOpen(true)
-    shellTab.setChatFrom(null)
-  }, [setActiveTab, shellTab, sessionHostAvailable])
-
   // 联系人页的「新建 Agent」。手机:去会话页建 agent 的那条路(先选机器),与会话页右上 + 同一条。
   // 桌面:gugu-dev#181 只有一个「新建会话」—— 会话页的新建会话页(不进群)。
   const openAgentCreateDraftFromContacts = useCallback(() => {
@@ -699,13 +701,13 @@ function InnerLayout({
       if (!detail) return
       // #1925 Drawn beside an App's page right now: its composer there takes the draft, nothing else comes up.
       const besideApp = appConversationSurfaceShows(detail.chatId)
+      const text = draftWithPills(detail.text, (detail.refs ?? []).map(filePillText).join('\n'))
       if (!besideApp && openOwnedAgent(detail.chatId, undefined, {
-        text: [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n'),
+        text,
         files: detail.images?.map(image => new File([image.bytes], image.name, { type: image.type })), append: true,
       })) { setDraftQuote(detail.chatId, null); return }
       const placed = (chatId: string) => {
         if (detail.whisperTo) setDraftWhisper(chatId, detail.whisperTo)
-        const text = [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n')
         if (text) writeDraft(chatId, { at: 'end', text })
         if (detail.images?.length) {
           const images = detail.images.map((image) => ({
@@ -1082,7 +1084,7 @@ function InnerLayout({
                         if (focusTarget === 'composer') focusComposerForUserEntry('chat-entry')
                       }, 'push')}
                       onScan={handleScan}
-                      onOpenSessionCreate={mobile && sessionHostAvailable ? openSessionCreate : undefined}
+                      onOpenSessionCreate={mobile ? openAgentCreateDraftFromContacts : undefined}
                       onNewProject={mobile ? openNewProject : undefined}
                     />
                   </ResizableChatListPane>
@@ -1090,11 +1092,11 @@ function InnerLayout({
                     {/* 创建面打开时聊天区只隐藏不卸载(同 #6158 的常驻面):从前条件卸载,关掉创建面回来 = 整个面板重挂,
                         消息列表、滚动位置、分栏、群协作状态全部重来一遍,就是那一下白闪。 */}
                     <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
-                      <ChatAreaPanel
+                      <ActiveChatArea
                         imPage
                         chatId={activeChatId}
                         navigationTarget={unreadNavigationTarget === 'chat'}
-                        hidden={showCreateSurface || onScreenChatId !== activeChatId}
+                        hidden={showCreateSurface || shownChatId !== activeChatId}
                         mobile={mobile}
                         openNonce={chatOpenNonce}
                         onBack={mobile ? pressBack : undefined}
@@ -1296,12 +1298,13 @@ function InnerLayout({
         <AssistantShellHost />
       )}
       {/* gugu-dev#181 项目块、对话块里的对话:会话页留格子(lib/shellSlots.ts 的 chat:<id>),这里画进去。 */}
+      {(mobile || sessionHostAvailable) && <OwnedAgentResourcesHost ownerId={user.id} mobile={mobile} />}
       {!mobile && sessionHostAvailable && (
-        <><OwnedAgentResourcesHost ownerId={user.id} /><ChatSlotHost
+        <ChatSlotHost
           onOpenUserChat={slotOpenProfileChat}
          
           onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile}
-        /></>
+        />
       )}
       {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}
@@ -1313,6 +1316,7 @@ function InnerLayout({
       {!mobile && sessionHostAvailable && <AppHostLayerHost visible={activeTab === 'tasks'} />}
       {/* Entry switch: the trusted assistant App bound to the assistant's chat by the host; every entry asks lib/assistantEntry.ts. */}
       {!mobile && sessionHostAvailable && <AssistantAppEntryHost />}
+      {!sessionHostAvailable && <PhoneSessionModalHost />}
 
     </PhoneViewportShell>
   )

@@ -7,9 +7,12 @@
 //   ④ 「群成员」「群公告」是设置栈里的一页:页头与其它二级页同一个,返回(含安卓返回键)回到一级页。
 //      一级页上没有第二份名单。
 //   ⑤ 协作规则在二级页编辑,「完成」才写,写完回到一级页。
-//   ⑥ 离开群组走抽屉内确认,❌ window.confirm。
+//   ⑥ 退出群聊走抽屉内确认,❌ window.confirm。
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Destructive actions ask first (lib/confirmDanger); here the person confirms.
+const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true))
+vi.mock('../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
 import type { GroupChatSettings, GroupCollabSnapshot, GroupMemberItem } from '../../../packages/core/src/shared/types/chat'
 import { chat, createNode, createReactHarness, displayIdentity, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
 
@@ -245,8 +248,9 @@ describe('settings held above the panel (the chat area): opening the panel reads
     getSettings.mockResolvedValue(settingsRow({ allow_member_invite: true }))
     await act(async () => { finishRead(settingsRow()); await Promise.resolve(); await Promise.resolve() })
     expect(switchByLabel('允许普通成员邀请联系人')?.getAttribute('aria-checked')).toBe('true')
-    // The opening read, the manage page's own (AgentFloodThresholdSetting), and the one read again after the dropped read.
-    await waitForCondition(() => getSettings.mock.calls.length === readsBefore + 3, 'the dropped read is read again')
+    // The opening read and the one read again after the dropped read: the manage page's threshold row reads the same
+    // reading (it used to read the settings itself, a third time).
+    await waitForCondition(() => getSettings.mock.calls.length === readsBefore + 2, 'the dropped read is read again')
   })
 
   it('a read that starts while a write is in flight is dropped, then read again when the write returns', async () => {
@@ -352,12 +356,12 @@ describe('#6418 群聊设置 —— 二级页', () => {
     await waitForCondition(() => page() === 'main', 'back to main')
   })
 
-  it('离开群组走抽屉内确认,❌ window.confirm', async () => {
+  it('退出群聊走抽屉内确认,❌ window.confirm', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm')
     const props = await renderDrawer('member-1')
     await click(q('[data-testid="group-settings-exit"]'))
     expect(props.onLeaveGroup).not.toHaveBeenCalled()
-    const buttons = [...document.querySelectorAll('button')].filter((b) => b.textContent?.trim() === '离开群组')
+    const buttons = [...document.querySelectorAll('button')].filter((b) => b.textContent?.trim() === '退出群聊')
     await click(buttons[buttons.length - 1] as HTMLElement)
     expect(props.onLeaveGroup).toHaveBeenCalledTimes(1)
     expect(confirmSpy).not.toHaveBeenCalled()
@@ -390,7 +394,7 @@ describe('the first page after the header cleanup', () => {
   it('lists members, the folder, then the settings; search is not here; clearing sits with leaving at the bottom', async () => {
     await renderDrawer('member-1')
     expect(text()).not.toContain('查找聊天记录')
-    const order = ['群成员', '文件', '群公告', '协作规则', '群描述', '消息通知', '置顶对话', '危险操作', '清空聊天记录', '离开群组'].map((label) => [label, text().indexOf(label)] as const)
+    const order = ['群成员', '文件', '群公告', '协作规则', '群描述', '消息通知', '置顶对话', '危险操作', '清空聊天记录', '退出群聊'].map((label) => [label, text().indexOf(label)] as const)
     expect(order.filter(([, at]) => at < 0), 'every row is on the page').toEqual([])
     expect(order.map(([, at]) => at)).toEqual([...order.map(([, at]) => at)].sort((a, b) => a - b))
   })

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { codexTerminalUpdate } from './codex-terminals.mjs'
+import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
 
 // Thin protocol adapter: preserve Gugu's ACP host contract while running the user's own Codex app-server.
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
@@ -54,6 +55,8 @@ let selectedPermissionProfile = null
  */
 let selectedModel = null
 let selectedEffort = null
+// Accepted preference is sampled only when a new turn starts.
+let selectedFastMode = false
 /** `model/list` 读成功的结果。对同一个 app-server 进程是常量,缓存住。 */
 let modelCatalog = null
 /**
@@ -524,6 +527,7 @@ async function loadModelCatalog(timeoutMs = 45_000) {
         ...(raw.description ? { description: String(raw.description) } : {}),
         efforts,
         defaultEffort: String(raw.defaultReasoningEffort ?? '').trim() || null,
+        serviceTiers: !process.env.GUGU_PLATFORM_MODELS?.trim() && Array.isArray(raw.serviceTiers) ? raw.serviceTiers : [],
       })
     }
     cursor = String(response?.nextCursor ?? response?.next_cursor ?? '').trim() || null
@@ -605,7 +609,8 @@ function effortConfigOptions(selectedModelId, selectedEffortId, models) {
 
 /** 把 model / thought_level 两组并进 configOptions(已有同 category 的不覆盖)。 */
 function withModelConfigOptions(existing, modelSelected, effortSelected, models) {
-  const list = Array.isArray(existing) ? [...existing] : []
+  const list = Array.isArray(existing) ? existing.filter((option) => option?.configId !== 'fast') : []
+  list.push(...codexFastConfigOptions(models.find((model) => model.id === modelSelected), selectedFastMode))
   const has = (category) =>
     list.some((option) => option && typeof option === 'object' && option.category === category)
   if (!has('model')) list.push(...modelConfigOptions(modelSelected, models))
@@ -845,6 +850,19 @@ async function startApp(servers) {
     appStarting = null
   })
   return appStarting
+}
+
+/**
+ * @@@codex-account-gate — signed out, Codex still opens threads and lists its models; the first turn 401s.
+ * So a session needing an OpenAI login (`requiresOpenaiAuth`) with no account is refused with ACP
+ * `authRequired` (-32000). Custom providers (gugu's route, API-key connections) report `false` and pass;
+ * `session/list` is not gated. Shapes measured on codex 0.163 / 0.169 are in codexAccountGate.test.ts.
+ */
+async function requireCodexAccount() {
+  const read = await appRequest('account/read', {})
+  if (read?.requiresOpenaiAuth === true && !read.account) {
+    throw Object.assign(new Error('Authentication required: sign in to Codex (codex login) first.'), { code: -32000 })
+  }
 }
 
 async function startAppOnce(servers) {
@@ -1276,6 +1294,7 @@ const SESSION_LOAD_SOFT_BUDGET_MS = 30_000
  * 问一次,它自己会说(不支持时 `thread/start` 回 `paginated threads require ...`)。
  */
 async function startThread(base) {
+  base = { ...base, serviceTier: 'default' }
   try {
     return await appRequest('thread/start', { ...base, historyMode: THREAD_HISTORY_MODE })
   } catch (error) {
@@ -2268,6 +2287,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/fork') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 运行时分叉(侧边聊天)不许在 codex 的线程台账里留痕 ⇒ `ephemeral: true`(缺省)。
     // 持久分叉(spec session-fork-share 的「Fork 会话」)正好相反:它就是要落成一条能重开的
@@ -2276,6 +2296,7 @@ async function handleAcpRequest(message) {
     //    而症状要到用户下次打开它时才出现。
     const ephemeralFork = params?._meta?.gugu?.ephemeralFork !== false
     const forked = await appRequest('thread/fork', {
+      serviceTier: 'default',
       threadId: params.sessionId,
       ephemeral: ephemeralFork,
       excludeTurns: true,
@@ -2358,6 +2379,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/new') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     const started = await startThread({
       cwd: params.cwd,
@@ -2409,10 +2431,12 @@ async function handleAcpRequest(message) {
     const generation = ++loadGeneration
     const loadStartedAt = Date.now()
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 见 @@@resume-provider:resume 要用**这个进程**的 provider,❌ 不是 rollout 里记的那个。
     const resumeProvider = await processModelProviderOnce(params.cwd)
     const resumed = await appRequest('thread/resume', {
+      serviceTier: 'default',
       threadId: params.sessionId,
       cwd: params.cwd,
       ...(resumeProvider ? { modelProvider: resumeProvider } : {}),
@@ -2523,8 +2547,9 @@ async function handleAcpRequest(message) {
       return
     }
     throwIfInsertionCancelled(insertion)
+    const tier = codexTierForTurn((await modelCatalogOnce()).find((model) => model.id === selectedModel), selectedFastMode)
     const started = await appRequest('turn/start', { threadId: sessionId, input,
-      clientUserMessageId: insertion.clientId })
+      serviceTierForTurn: tier, clientUserMessageId: insertion.clientId })
     const turnId = String(started?.turn?.id ?? '')
     if (!turnId) throw new Error('local Codex turn/start returned no turn id')
     if (insertion.cancelled && activeCycle?.turnId === turnId) await cancelTurn(turnId)
@@ -2539,6 +2564,19 @@ async function handleAcpRequest(message) {
     if (!established) throw new Error('no local Codex session')
     if (params.type !== 'id') throw new Error('Codex config options require an id value')
     const configId = String(params.configId ?? '')
+
+    if (configId === 'fast') {
+      const value = String(params.value ?? '')
+      const models = await modelCatalogOnce()
+      if (!['on', 'off'].includes(value) || !codexFastTier(models.find((model) => model.id === selectedModel))) {
+        respond(id, null, { code: -32602, message: 'Fast is not available for the current Codex model' })
+        return
+      }
+      selectedFastMode = value === 'on'
+      const modes = await probePermissionModes(null, selectedPermissionProfile)
+      respond(id, { configOptions: withModelConfigOptions(withPermissionModeConfigOptions(null, modes), selectedModel, selectedEffort, models) })
+      return
+    }
 
     // ── model / effort ────────────────────────────────────────────────────────
     //

@@ -41,17 +41,17 @@ describe('one participant workspace beside its source group', () => {
   });
 
   it('shares the remembered right width across participants and retains it on reload', () => {
-    const values = new Map<string, string>();
-    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
     const { screen } = setup();
-    const panes = new GroupParticipantPanes(screen, storage);
+    const panes = new GroupParticipantPanes(screen);
+    panes.useAccount('panes-reload');
     panes.rememberWidth(600);
     panes.show('group', source, agent('a'), 1000);
     expect(screen.layout?.type === 'split' && screen.layout.sizes).toEqual([40, 60]);
     panes.show('group', source, agent('b'), 1000);
     expect(screen.layout?.type === 'split' && screen.layout.sizes).toEqual([40, 60]);
-    const restored = new GroupParticipantPanes(screen, storage);
-    expect(restored.rightWidth).toBe(600);
+    const restored = new GroupParticipantPanes(screen);
+    restored.useAccount('panes-reload');
+    expect(restored.rightWidth, 'kept in the view-state table').toBe(600);
     expect(restored.ownerOf(screen.blockOf(agent('b'))!)).toBe('group');
   });
 
@@ -103,10 +103,8 @@ it('does not hide a participant independently rearranged away from its source', 
 });
 
 it('keeps saved placement and width separate across accounts', () => {
-  const values = new Map<string, string>();
-  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
   const { screen } = setup();
-  const panes = new GroupParticipantPanes(screen, storage);
+  const panes = new GroupParticipantPanes(screen);
   panes.useAccount('first');
   panes.rememberWidth(600);
   panes.show('group', source, agent('a'));

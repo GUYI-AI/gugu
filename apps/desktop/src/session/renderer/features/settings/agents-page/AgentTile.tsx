@@ -52,7 +52,7 @@ export function AgentTile({
       data-state={state}
       // @@@raw agent name — agent 名是 provider 数据,只做插值。
       aria-label={`${agent.name} — ${translate(readingLabelKey(agent.reading))}${
-        warn && signInExpired ? ` · ${translate('agentsPage.accountExpired')}` : ''
+        warn && signInExpired ? ` (${translate('agentsPage.accountExpired')})` : ''
       }`}
       className="group flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg px-1 pt-3 pb-2 text-center outline-none hover:bg-row-hover focus-visible:bg-row-hover"
     >

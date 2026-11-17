@@ -70,6 +70,39 @@ const SESSION_ROWS: SessionpageListSpec = {
   },
 }
 
+/**
+ * A session as session_get / session_children show it (MCP surface review 11-16: these two were 15% of all gugu tool
+ * output). Kept: what an agent acts on — status, model, preview, a failure, waiting permissions or prompts, context use
+ * and the transcript. Dropped: the host's own bookkeeping (ids repeated bare, rate limits, recent action names, update
+ * times), default flags and the preview's activity versions.
+ */
+const RUNTIME_SHOWN = ['lifecycle', 'lastTurnError', 'failure', 'pendingPermissionCount', 'queuedPromptCount', 'backgroundAgentCount', 'backgroundCommandCount', 'contextTokens', 'contextSize', 'transcriptPath'] as const
+
+function withoutActivityVersions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutActivityVersions)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'activityVersion').map(([key, entry]) => [key, withoutActivityVersions(entry)]))
+}
+
+export function presentSession(row: unknown): unknown {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row
+  const { runtime, pinned, preview, ...rest } = row as Record<string, unknown>
+  const shown: Record<string, unknown> = { ...rest }
+  if (pinned === true) shown.pinned = true
+  if (runtime && typeof runtime === 'object') {
+    const kept = Object.fromEntries(RUNTIME_SHOWN.map((key) => [key, (runtime as Record<string, unknown>)[key]])
+      .filter(([, value]) => value !== null && value !== undefined && value !== 0 && !(Array.isArray(value) && value.length === 0)))
+    if (Object.keys(kept).length) shown.runtime = kept
+  }
+  if (preview !== undefined) shown.preview = withoutActivityVersions(preview)
+  return shown
+}
+
+const presentSessionList = (result: unknown): unknown => {
+  if (!result || typeof result !== 'object' || !Array.isArray((result as { items?: unknown }).items)) return result
+  return { ...(result as Record<string, unknown>), items: (result as { items: unknown[] }).items.map(presentSession) }
+}
+
 export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   {
     name: 'session_devices',
@@ -121,7 +154,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'session_spawn',
-    description: 'Start a persistent Gugu agent; returns stable session_id and model. Omit transport to inherit your chat or terminal UI.',
+    description: 'Start a persistent Gugu agent; returns session_id, model, chat session_link. Omit transport to inherit your chat or terminal UI.',
     schema: z.object({
       prompt: z.string().min(1),
       source_link: sourceLinkSchema.optional(),
@@ -137,6 +170,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       chat_id: z.string().min(1).describe('A group your owner is in, for the child to join.').optional(),
     }).strict(),
     action: 'spawn',
+    linksSession: true,
   },
   {
     name: 'session_ask_user',
@@ -163,10 +197,11 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
     }).strict(),
     action: 'children',
     list: SESSION_ROWS,
+    present: presentSessionList,
   },
   {
     name: 'session_message',
-    description: 'Message sessions across devices: session:<id>, aid:<Agent ID>, gugu:<number> from session_peers. Resumes stopped recipients; reports delivery. Owner sees task exchanges. Chat members: message_send.',
+    description: 'Message sessions across devices: session:<id>, aid:<Agent ID>, gugu:<number> from session_peers. Resumes stopped recipients (to stop one: catalog session_stop); reports delivery. Owner sees task exchanges. Chat members: message_send.',
     schema: z.strictObject({
       // ACP XML/JSON bridges sometimes serialize array parameters as JSON strings。协议边界兼容是
       // im-mcp spec 的既有合同(「合法的 JSON 序列化数组继续在协议边界兼容,裸字符串或非法 JSON
@@ -256,6 +291,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
     description: 'Read this session (omit session_id) or another of yours: project_id, transport, status, model, preview. Pass model.spawn_model_id, not model.id, to session_spawn.',
     schema: z.object({ session_id: sessionIdSchema.describe(SESSION_ID_DESCRIPTION).optional() }).strict(),
     action: 'get',
+    present: presentSession,
   },
   {
     name: 'session_stop',

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { CSSProperties, ReactNode } from 'react'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import type { ChatItem, GroupCollabSnapshot, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { GroupFolderRow, GroupMembersRow } from './GroupInfoRows'
+import { GroupFolderRow, GroupMemberCount, GroupMembersRow } from './GroupInfoRows'
 import { GroupNameRow } from './GroupNameRow'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
@@ -20,6 +20,7 @@ import { useSettingsPages } from './useSettingsPages'
 import { SettingsNavRow, SettingsPageFrame, SettingsPageHead } from './groupSettingsUi'
 import {
   settingsBodyStyle,
+  settingsDangerRowStyle,
   settingsErrorStyle,
   settingsMobileBodyStyle,
   settingsReadOnlyBoxStyle,
@@ -42,10 +43,6 @@ const avatarUploadingStyle: CSSProperties = {
 }
 const profileTextStyle: CSSProperties = { flex: 1, minWidth: 0 }
 const memberCountStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3 }
-const leaveStyle: CSSProperties = {
-  marginTop: 20, textAlign: 'center', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', fontWeight: 500,
-  cursor: 'pointer', padding: 11, borderRadius: 'var(--radius-xl)', background: 'var(--danger-tint)',
-}
 const confirmStyle: CSSProperties = { marginTop: 20 }
 const confirmTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)', margin: '0 0 8px' }
 const confirmActionsStyle: CSSProperties = { display: 'flex', gap: 8 }
@@ -76,7 +73,7 @@ export function GroupMembersSection({
   chat: ChatItem
   /** Opened at the members' list or the announcement (the info tab's members button): no way back into the first page. */
   initialPage?: 'main' | 'members' | 'announcement'
-  snapshot: GroupCollabSnapshot
+  snapshot: GroupCollabSnapshot | null
   settingsState?: GroupChatSettingsState
   snapshotError?: MemberListPanelProps['error']
   currentUserId: string | null
@@ -114,8 +111,8 @@ export function GroupMembersSection({
   const [draft, setDraft] = useState('')
   // 成员行的「+」:进成员页时选人页已经开着(成员页自己那一个)。
 
-  const unifiedMembers = useMemo(() => buildUnifiedMembers(snapshot), [snapshot])
-  const totalMembers = snapshot.humans.length + snapshot.agents.length
+  const unifiedMembers = useMemo(() => snapshot ? buildUnifiedMembers(snapshot) : [], [snapshot])
+  const totalMembers = snapshot ? snapshot.humans.length + snapshot.agents.length : null
 
   // @@@2070 群名就地编辑:只写 name。写失败要抛给 GroupNameInlineEdit —— 它据此留在编辑态并标出失败,
   // ❌ 当作改好了把输入框关掉(原因已由 update 放进错误行)。
@@ -236,7 +233,7 @@ export function GroupMembersSection({
             ) : null}
             <div style={profileTextStyle}>
               <GroupNameRow chat={chat} name={groupName} canEdit={viewerIsManager && Boolean(settings)} onCommit={handleRename} />
-              <div style={memberCountStyle}>{t('group.settings.memberCount', { count: totalMembers })}</div>
+              <GroupMemberCount total={totalMembers} style={memberCountStyle} />
             </div>
           </div>
 
@@ -272,7 +269,7 @@ export function GroupMembersSection({
                 </div>
               </div>
             ) : (
-              <div role="button" data-testid="group-settings-exit" style={leaveStyle} onClick={() => setConfirmExit(true)}>
+              <div role="button" data-testid="group-settings-exit" style={settingsDangerRowStyle} onClick={() => setConfirmExit(true)}>
                 {viewerRole === 'owner' ? t('group.settings.dissolve') : t('group.settings.leave')}
               </div>
             )

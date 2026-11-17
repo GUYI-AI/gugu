@@ -12,6 +12,7 @@ const HOME_DIR_PATTERNS: Array<[RegExp, string]> = [
   [/\/Users\/[^/\s]+/g, '/Users/~'],
   [/\/home\/[^/\s]+/g, '/home/~'],
   [/([A-Z]:\\Users\\)[^\\\s]+/gi, '$1~'],
+  [/([A-Z]:\/Users\/)[^/\s]+/gi, '$1~'],
 ];
 
 /** Rewrite home-directory paths to a fixed placeholder. Not a secret regex — purely deterministic. */
@@ -22,13 +23,16 @@ export function normalizePaths(s: string): string {
   );
 }
 
-export function serializeError(e: Error): Record<string, unknown> {
-  return {
-    name: e.name,
-    message: e.message,
-    stack: e.stack ? normalizePaths(e.stack) : undefined,
-    ...(e.cause ? { cause: prepareFields(e.cause) } : {}),
-  };
+export function serializeError(e: Error, seen = new WeakSet<object>()): Record<string, unknown> {
+  seen.add(e);
+  try {
+    return {
+      name: e.name,
+      message: e.message,
+      stack: e.stack ? normalizePaths(e.stack) : undefined,
+      ...('cause' in e ? { cause: prepareFields(e.cause, seen) } : {}),
+    };
+  } finally { seen.delete(e); }
 }
 
 /**
@@ -41,16 +45,26 @@ export function serializeError(e: Error): Record<string, unknown> {
  */
 export function prepareFields(value: unknown, seen = new WeakSet<object>()): unknown {
   if (isSecret(value)) return REDACTED;
-  if (value instanceof Error) return serializeError(value);
-  if (Array.isArray(value)) return value.map((v) => prepareFields(v, seen));
+  if (value instanceof Error) {
+    if (seen.has(value)) return '[Circular]';
+    return serializeError(value, seen);
+  }
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    try { return value.map((v) => prepareFields(v, seen)); }
+    finally { seen.delete(value); }
+  }
   if (value && typeof value === 'object') {
     if (seen.has(value)) return '[Circular]';
     seen.add(value);
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = prepareFields(v, seen);
-    }
-    return out;
+    try {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        Object.defineProperty(out, k, { value: prepareFields(v, seen), enumerable: true, configurable: true, writable: true });
+      }
+      return out;
+    } finally { seen.delete(value); }
   }
   return value;
 }

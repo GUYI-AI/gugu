@@ -9,15 +9,19 @@ const root = mkdtempSync(join(tmpdir(), 'gugu-app-modal-145-'));
 writeFileSync(join(root, 'new.html'), '<input autofocus>');
 const received: { page: number; event: ExtensionHostEvent }[] = [];
 const actions: { window: number | null; action: ExtensionHostAction }[] = [];
-const contents = new Map([1, 2, 3, 4, 42, 43].map((id) => [id, {
-  id, session: { extensionId: id === 3 ? 'other-app' : 'board' }, hostWebContents: { id: id === 4 ? 43 : 42 },
+// 42 is the main window, 43 another window; 44 is a window of 42's own (aux-window.ts): blank, opened and drawn by 42.
+// Pages 5 and 6 are drawn in 44.
+const hostOf = (id: number) => (id === 4 ? 43 : id === 5 || id === 6 ? 44 : 42);
+const contents = new Map([1, 2, 3, 4, 5, 6, 42, 43, 44].map((id) => [id, {
+  id, session: { extensionId: id === 3 ? 'other-app' : 'board' }, hostWebContents: { id: hostOf(id) },
+  getURL: () => (id === 44 ? 'about:blank' : 'gugu-app://app/index.html'), opener: id === 44 ? { contentsId: 42 } : null,
   isDestroyed: () => false, on: vi.fn(), once: vi.fn(),
   send: (_channel: string, event: ExtensionHostEvent) => received.push({ page: id, event }),
 }]));
 const handlers = new Map<string, (event: unknown, args: unknown) => Promise<ExtensionBridgeResponse>>();
 vi.mock('electron', () => ({
   ipcMain: { handle: (name: string, fn: (event: unknown, args: unknown) => Promise<ExtensionBridgeResponse>) => handlers.set(name, fn), on: vi.fn() },
-  webContents: { fromId: (id: number) => contents.get(id) },
+  webContents: { fromId: (id: number) => contents.get(id), fromFrame: (frame: { contentsId: number }) => contents.get(frame.contentsId) },
 }));
 vi.mock('@main/core/extensions/extension-session', () => ({ extensionIdForSession: (session: { extensionId: string }) => session.extensionId, isExtensionSessionConfigured: () => true }));
 vi.mock('@main/core/extensions/extension-background', () => ({ extensionBackgroundWebContentsId: () => null }));
@@ -72,6 +76,18 @@ describe('the App modal bridge', () => {
     expect(await call(42, 'modalHost', { type: 'bind', id: 'one', webContentsId: 4 })).toMatchObject({ ok: false, message: expect.stringContaining('same window') });
     expect(await call(42, 'modalHost', { type: 'bind', id: 'one', webContentsId: 3 })).toMatchObject({ ok: false, message: expect.stringContaining('not "board"') });
     expect(await result).toMatchObject({ ok: false, code: 'failed' });
+  });
+
+  it('a page in a window of its own: the modal is controlled by the renderer drawing that window, and bound in it', async () => {
+    await bindExtensionSurface({ webContentsId: 5, extensionId: 'board', tabId: 'window:w1', tabKind: 'board.main' });
+    const result = call(5, 'modalOpen', { id: 'one', entry: 'new.html', title: 'New card' });
+    await vi.waitFor(() => expect(actions[0]?.action.kind).toBe('openAppModal'));
+    expect(actions[0]).toMatchObject({ window: 44 });
+    expect(await call(44, 'modalHost', { type: 'focus', id: 'one', edge: 'first' })).toMatchObject({ ok: false, code: 'denied' });
+    expect(await call(42, 'modalHost', { type: 'bind', id: 'one', webContentsId: 2 })).toMatchObject({ ok: false, message: expect.stringContaining('same window') });
+    expect(await call(42, 'modalHost', { type: 'bind', id: 'one', webContentsId: 6 })).toEqual({ ok: true, value: undefined });
+    expect(await call(6, 'modalClose', { result: 'done' })).toEqual({ ok: true, value: undefined });
+    expect(await result).toEqual({ ok: true, value: 'done' });
   });
 
   it('rejects outside entries without showing a dialog', async () => {

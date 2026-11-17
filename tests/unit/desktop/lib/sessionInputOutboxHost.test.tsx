@@ -17,7 +17,7 @@ import { REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth'
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/hooks/use-toast', () => ({ toast }))
 const scope = vi.hoisted(() => ({ owner: 'account-a', platform: 'electron', phones: [] as Array<{ device_id: string; is_online: boolean; capabilities: { host_kind: string; remote_protocol?: number } }>, devices: [{ device_id: 'host-a', is_online: false, capabilities: {} }], received: new Map<string, string>(), send: vi.fn(), machines: [] as (string | null)[] }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: scope.owner } }) }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: scope.owner } }), observeRendererSession: () => () => {} }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: scope.devices, phones: scope.phones }) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return scope.platform } } }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', async original => ({ ...await original<object>(), rpcOn: (machine: string | null) => ({ sessionTimeline: { sessionSend: (request: unknown) => { scope.machines.push(machine); return scope.send(request) } } }) }))

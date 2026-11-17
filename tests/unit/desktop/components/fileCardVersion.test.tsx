@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
 import * as attachmentReader from '../../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
@@ -30,7 +30,7 @@ afterEach(() => { ui.cleanup(); attachmentQueryClient.clear(); vi.restoreAllMock
 describe('a file card names the version it pins', () => {
   it('version 3: 第 3 版 before the size; version 1: just the size', async () => {
     await ui.render(createNode(MediaAttachmentBubble, { meta: meta(3), messageId: 'm1', isMine: false }))
-    expect(ui.container.textContent).toContain('第 3 版 · 2.0 KB')
+    expect(ui.container.textContent).toContain('第 3 版，2.0 KB')
     await ui.render(createNode(MediaAttachmentBubble, { meta: meta(1), messageId: 'm1', isMine: false }))
     expect(ui.container.textContent).not.toContain('版')
     expect(ui.container.textContent).toContain('deck.pptx')

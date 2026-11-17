@@ -7,8 +7,10 @@ import { extensionSurfaceStore } from '../../session/renderer/features/extension
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import {
   APP_SESSION_FRAME_NAME,
+  APP_SHOW_SESSION_EVENT,
   type AppOpenWithDetail,
   type AppShowMessageDetail,
+  type AppShowSessionDetail,
 } from '../../session/shared/extensions/app-runtime-protocol'
 import type { ExtensionCapability } from '../../session/shared/extensions/manifest'
 import { extensionProgramNotifiedChannel } from '../../session/shared/extensions/marketEvents'
@@ -20,9 +22,9 @@ import { useAuth } from '../../store/auth'
 import { hostAppFrame, type PhoneAppBinding } from './phoneAppHost'
 import { phoneApps } from './phoneApps'
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
-import { composeChatDraft } from '../../lib/composeDraft'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
 import { Button } from '../ui/Button'
+import { PageLoading } from '../../lib/loading/PageLoading'
 import { useBackLayer } from '../ui/sheetStack'
 
 const OpenedFilePreview = lazy(() => import('../../mobile/agent-watch/opened-file-preview').then((m) => ({ default: m.OpenedFilePreview })))
@@ -58,7 +60,7 @@ export function PhoneAppFrame({
   commandRef,
   testId,
   missingTestId,
-  placeholder,
+  placeholder = <PageLoading />,
 }: {
   kind: string
   /** The slot it is drawn in: what the page says about itself is kept by it. */
@@ -79,7 +81,7 @@ export function PhoneAppFrame({
   commandRef?: { current: ((commandId: string) => void) | null }
   testId: string
   missingTestId: string
-  /** A widget reserves the same slot until its preloaded document has painted. */
+  /** Over the frame until its document has painted (a widget brings its own); the loading mark by default. */
   placeholder?: ReactNode
 }) {
   const extensionId = kind.split('.')[0] ?? kind
@@ -258,19 +260,24 @@ export function PhoneAppFrame({
       </div>
     )
   }
-  if (!app) return <div hidden={hidden} className="min-h-0 flex-1">{placeholder}</div>
+  if (!app) return <div hidden={hidden} className="relative min-h-0 flex-1">{placeholder}</div>
   const documentKey = `${app.version}:${app.src}`
   return (
-    <>
+    // The frame stays visible under its placeholder: a hidden iframe gets no first paint at all (measured, Chromium).
+    <div hidden={hidden} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {workingCopy ? <Suspense fallback={null}><OpenedFilePreview
         {...workingCopy} deviceId={session?.deviceId ?? ''} sessionId={session?.id ?? ''}
-        onQuote={(text) => { if (chatId) composeChatDraft({ chatId, text }) }}
+        // A working copy is its session's file: its cite goes into that session's composer, the session brought up, as the
+        // desktop's does (draftOfWorkingCopyRefs) — a chat's composer has no such file to point at.
+        onQuote={(text) => {
+          const listed = listedSession(devicesRef.current, liveDeviceSessions(), session?.id ?? '')
+          if ('row' in listed) window.dispatchEvent(new CustomEvent<AppShowSessionDetail>(APP_SHOW_SESSION_EVENT, { detail: { ...listed.row, draft: { text } } }))
+        }}
       /></Suspense> : null}
       <iframe
         // Another version or another account is another document: a new frame, and a new host for it.
         key={documentKey}
         ref={frameRef}
-        hidden={hidden}
         title={extensionId}
         // Tells the page's runtime it is in a session: its program calls go to that computer (framed-host.ts).
         {...(session ? { name: APP_SESSION_FRAME_NAME } : {})}
@@ -286,7 +293,7 @@ export function PhoneAppFrame({
         data-app-item={itemId}
         data-app-version={app.version}
       />
-      {!hidden && loaded !== documentKey ? placeholder : null}
-    </>
+      {loaded !== documentKey ? placeholder : null}
+    </div>
   )
 }

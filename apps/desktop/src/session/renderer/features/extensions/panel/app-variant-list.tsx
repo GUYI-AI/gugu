@@ -48,7 +48,7 @@ export function AppVariantList({
               <span className="min-w-0 break-words">
                 {variant.name === 'upstream' ? translate('extensions.variantOriginal', { version: variant.base }) : variant.name}
                 {variant.name !== 'upstream' && (
-                  <span className="text-foreground-secondary"> · {translate('extensions.variantBase', { version: variant.base })}</span>
+                  <span className="text-foreground-secondary">  {translate('extensions.variantBase', { version: variant.base })}</span>
                 )}
               </span>
             </label>

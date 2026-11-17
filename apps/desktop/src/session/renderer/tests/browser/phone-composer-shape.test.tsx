@@ -74,17 +74,17 @@ function alphaOf(css: string): number {
 }
 
 // owner 10-28 手机试用:输入框完全透明,后面滚过的消息和输入的字叠在一起。
-it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid backing over the messages behind it', async (theme) => {
+it.each(['dark', 'light'] as const)('%s: the phone composer has a solid backing and its own space below messages', async (theme) => {
   await page.viewport(390, 844)
   if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
   host = document.body.appendChild(document.createElement('div'))
   host.setAttribute('data-phone-shell', '')
   host.setAttribute('data-ta-scope', '')
-  host.style.cssText = 'position:relative;width:390px;height:600px;overflow:hidden;background:var(--ta-app-bg);color:var(--text-primary)'
+  host.style.cssText = 'position:relative;width:390px;height:600px;display:flex;flex-direction:column;overflow:hidden;background:var(--ta-app-bg);color:var(--text-primary)'
   root = createRoot(host)
   root.render(
     <LocalizationProvider>
-      <div data-test-messages="" data-chat-dock-reads="" style={{ fontSize: 40, lineHeight: '48px' }}>{Array.from({ length: 14 }, (_, index) => <p key={index}>消息 message {index}</p>)}</div>
+      <div data-test-messages="" data-chat-dock-reads="" style={{ flex: 1, minHeight: 0, overflow: 'auto', fontSize: 40, lineHeight: '48px' }}>{Array.from({ length: 14 }, (_, index) => <p key={index}>消息 message {index}</p>)}</div>
       <ChatBottomDock reserve={false}>
         <div data-chat-composer="" style={{ padding: '8px 8px max(8px, env(safe-area-inset-bottom))' }}>
           <ChatMessageComposer onSend={vi.fn(async () => {})} isGroupChat />
@@ -100,14 +100,13 @@ it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid back
   expect(alphaOf(band.backgroundColor), 'the composer row is backed').toBeGreaterThanOrEqual(0.85)
   const bandBox = dock.lastElementChild!.getBoundingClientRect()
   expect(bandBox.height).toBeGreaterThan(input.getBoundingClientRect().height)
-  expect(Number.parseFloat(getComputedStyle(host.querySelector('[data-test-messages]')!).getPropertyValue('--chat-dock-h')), 'the message list reserves the dock height').toBeGreaterThanOrEqual(dock.getBoundingClientRect().height - 1)
+  const list = host.querySelector<HTMLElement>('[data-test-messages]')!
+  expect(Number.parseFloat(getComputedStyle(list).getPropertyValue('--chat-dock-h')), 'normal-flow phone footer needs no duplicate list reservation').toBe(0)
+  expect(list.getBoundingClientRect().bottom, 'the message viewport ends above the phone footer').toBe(dock.getBoundingClientRect().top)
   await page.getByTestId('chat-composer').fill('Typed text stays readable')
   const editor = host.querySelector<HTMLElement>('[contenteditable]')!
   expect(contrast(rgbOf(getComputedStyle(editor).color), rgbOf(getComputedStyle(input).backgroundColor)), 'the typed text reads on the input').toBeGreaterThanOrEqual(4.5)
-  // 让一条消息正好一半压在输入那一行的底下,截图里看得出遮挡。
-  const list = host.querySelector<HTMLElement>('[data-test-messages]')!
-  const bandTop = dock.lastElementChild!.getBoundingClientRect().top - host.getBoundingClientRect().top
-  list.style.marginTop = `${((bandTop - 24) % 48 + 48) % 48}px`
+  list.scrollTop = list.scrollHeight
   await page.screenshot({ path: `phone-composer-backing-${theme}.png` })
 })
 
@@ -172,7 +171,7 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
   const attach = [...host.querySelectorAll<HTMLButtonElement>('[data-slot="composer-actions-start"] > button')].find(button => button !== permission)!
   const input = host.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   const model = host.querySelector<HTMLElement>('[data-testid="composer-model-trigger"]')!
-  const controls = [permission, attach, input, model]
+  const controls = [permission, attach, model]
   for (const [index, control] of controls.entries()) {
     const box = control.getBoundingClientRect()
     expect(box.width).toBeGreaterThan(0)
@@ -185,4 +184,7 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
       expect(overlap, 'each option and the attachment button keeps its own visible target').toBe(false)
     }
   }
+  const editor = input.querySelector<HTMLElement>('[contenteditable]')!.getBoundingClientRect()
+  expect(editor.left).toBeGreaterThanOrEqual(attach.getBoundingClientRect().right)
+  expect(editor.right).toBeLessThanOrEqual(input.getBoundingClientRect().right - 44)
 })

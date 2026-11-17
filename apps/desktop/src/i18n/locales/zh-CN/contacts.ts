@@ -66,14 +66,14 @@ export default {
   "confirmations": {
     "archiveAgent": "归档 Agent「{{name}}」的任务？保留对话历史、文件和配置。",
     "archiveAgentNoTask": "这个 Agent 已没有任务；此次只将它移出群和联系人。",
-    "deleteAgent": "归档任务",
+    "deleteAgent": "归档会话",
     "deleteContact": "删除联系人「{{name}}」？删除后将解除好友关系。",
     "dissolveGroup": "解散后所有成员将退出，确认解散群聊？",
     "leaveGroup": "确认退出该群聊？"
   },
   "contextMenu": {
     "more": "更多",
-    "deleteAgent": "归档任务",
+    "deleteAgent": "归档会话",
     "deleteContact": "删除联系人",
     "disableNotifications": "关闭通知",
     "dissolveGroup": "解散群聊",
@@ -93,9 +93,9 @@ export default {
     "invitesFailed_one": "群已创建，但 {{count}} 个邀请未发出。请在群成员面板重试邀请。",
     "invitesFailed_other": "群已创建，但 {{count}} 个邀请未发出。请在群成员面板重试邀请。",
     "create": "创建群聊",
-    "createWithCount": "创建群聊 · {{count}} 位成员",
-    "createWithCount_one": "创建群聊 · {{count}} 位成员",
-    "createWithCount_other": "创建群聊 · {{count}} 位成员",
+    "createWithCount": "创建群聊（{{count}} 位成员）",
+    "createWithCount_one": "创建群聊（{{count}} 位成员）",
+    "createWithCount_other": "创建群聊（{{count}} 位成员）",
     "creating": "创建中…",
     "emptyContacts": "暂无联系人",
     "failed": "创建群聊失败",
@@ -110,7 +110,7 @@ export default {
     "selectionUnavailable": "所选成员不可用或无法邀请加入此群。",
     "allProjects": "全部",
     "allResults": "全部结果",
-    "localDevice": "{{name}} · 本机",
+    "localDevice": "{{name}}（本机）",
     "recent": "最近"
   },
   "errors": {
@@ -188,9 +188,9 @@ export default {
     "creator": "创建者 {{name}}",
     "groupNumber": "群号 {{number}}",
     "groupNumberHash": "群号 #{{number}}",
-    "groupSummary": "群号 {{number}} · {{count}} 名成员",
-    "groupSummary_one": "群号 {{number}} · {{count}} 名成员",
-    "groupSummary_other": "群号 {{number}} · {{count}} 名成员",
+    "groupSummary": "群号 {{number}}，{{count}} 名成员",
+    "groupSummary_one": "群号 {{number}}，{{count}} 名成员",
+    "groupSummary_other": "群号 {{number}}，{{count}} 名成员",
     "inviteOnly": "仅邀请加入",
     "inviteOnlyError": "该群仅限邀请加入",
     "inviteLinkClosed": "邀请链接已关闭",
@@ -255,8 +255,8 @@ export default {
     "requestFailedFallback": "申请失败，请重试",
     "requested": "已发送加群申请，等群主通过",
     "searchPlaceholder": "输入群号",
-    "summary_one": "群号 {{number}} · {{count}} 名成员",
-    "summary_other": "群号 {{number}} · {{count}} 名成员",
+    "summary_one": "群号 {{number}}，{{count}} 名成员",
+    "summary_other": "群号 {{number}}，{{count}} 名成员",
     "title": "加入群聊"
   },
   "panel": {
@@ -390,14 +390,14 @@ export default {
     "namePlaceholder": "标签名称",
     "rename": "重命名{{name}}",
     "title": "标签",
-    "titleWithCount": "标签 · {{count}} 个对象",
-    "titleWithCount_one": "标签 · {{count}} 个对象",
-    "titleWithCount_other": "标签 · {{count}} 个对象"
+    "titleWithCount": "标签（{{count}} 个对象）",
+    "titleWithCount_one": "标签（{{count}} 个对象）",
+    "titleWithCount_other": "标签（{{count}} 个对象）"
   },
   "toast": {
-    "deleteAgentFailed": "归档任务失败",
+    "deleteAgentFailed": "归档会话失败",
     "deleteContactFailed": "删除联系人失败",
-    "deletedAgent": "任务已归档",
+    "deletedAgent": "会话已归档",
     "deletedContact": "已删除联系人",
     "dissolvedGroup": "已解散群聊",
     "dissolveFailed": "解散群聊失败",

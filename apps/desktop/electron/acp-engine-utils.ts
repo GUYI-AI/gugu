@@ -403,7 +403,7 @@ export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): 
 }
 
 /** chat, file on this machine, acting agent, its message → the sent message; null when the chat does not keep files here. */
-/** `next`: the folder file this is the next version of, from the version named (message_send_file with file and file_path). */
+/** `next`: the folder file this is the next version of, from the version named (message_send with file and file_path). */
 export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, actor: string, message: ProjectFileMessage,
   next?: ProjectFileNextVersion) => Promise<{ message?: Record<string, unknown> } | null>
 

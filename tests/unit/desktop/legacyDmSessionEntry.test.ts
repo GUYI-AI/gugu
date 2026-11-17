@@ -17,7 +17,7 @@ vi.mock('@/lib/supabase', () => {
     identityDb: { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ abortSignal: () => Promise.resolve({ data: [], error: null }) }) }) }) }) },
   };
 });
-vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: 'owner' } }) }));
+vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererSession: () => ({ user: { id: 'owner' } }) }));
 vi.mock('@/lib/authSessionLoss', () => ({ currentAuthSessionSignal: () => new AbortController().signal }));
 vi.mock('@/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (ids: string[]) => ids.map(id => ({ id, type: 'agent', owner_user_id: 'owner', display_name: id })),

@@ -1,4 +1,5 @@
-import { decorateConversationDensity } from './conversation-density';
+import { conversationReferenceInFooter, conversationShowsName, conversationSpeaker, decorateConversationDensity, lastConversationMessage } from './conversation-density';
+import { toolActivationNames } from '../lib/tool-activation';
 import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
 import { sentMessagesOf, withSentReplies, withSettledSentReplies } from './sent-replies';
@@ -66,6 +67,7 @@ import { isDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent
 import { agentSendOf, replyItems } from '@gugu/session-core/session-record/reply-process';
 import { resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
+import { conversationCanCollapse, conversationTailLane } from '@session-chat/components/rows/message/conversation-body';
 import { stampGroupRoles } from '@session-chat/core/units';
 import { localDayKey } from '@session-chat/lib/day-boundary';
 import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, ToolRunItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
@@ -195,6 +197,7 @@ export function flattenTier(
   prevDayKey?: string,
   previousConversation?: ChatMessage,
   previousActivity?: AgentActivityGroup,
+  previousRow?: RenderUnit,
 ): RenderUnit[] {
   const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
   turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
@@ -222,7 +225,21 @@ export function flattenTier(
   let lastDayKey = prevDayKey;
   let conversationOwner: string | undefined;
   let activityEvent: AgentActivityEvent | undefined;
-  let lastConversationPart: 'input' | 'head' | 'step' | 'body' | undefined = previousConversation ? (previousConversation.role === 'user' ? 'input' : 'body') : undefined;
+  // 上一行(增量续排时是上一档的最后一行):不是对话行就是 undefined,接缝按 margin 折叠。
+  let lastConversationRow = previousRow?.conversationPart ? previousRow : undefined;
+  /** 跟在一条消息后面:它的尾行是空白就由尾行顶替行间距,否则(没尾行、尾行里有常驻字)照常留 20。 */
+  const tailLaneOf = (row: RenderUnit): 'none' | 'blank' | 'ink' => {
+    const message = row.data as ChatMessage;
+    if (row.kind !== 'message' || (row.conversationPart !== 'body' && row.conversationPart !== 'input')) return 'none';
+    // 后面还有一行 ⇒ 它不是最新那条。引用在不在脚注,和量高、绘制问同一个函数;头上画不画名字要看前一位说话人 ——
+    // 这一档里的行还没盖上 decorateConversationDensity 的戳,按它的口径(lastConversationMessage)现找;上一档的行已经盖过。
+    // 和 headerLayout 唯一的出入:列宽窄到引用图标旁放不下名字(≤ 26px)时那边不画名字,这里仍当画了。
+    const at = out.lastIndexOf(row);
+    const previous = at < 0 ? undefined : lastConversationMessage(out, at) ?? previousConversation;
+    const previousSpeaker = at < 0 ? message.conversationPreviousSpeaker : previous && conversationSpeaker(previous);
+    return conversationTailLane(message, conversationCanCollapse(message, { expanded: key => ctx.isBubbleExpanded?.(key) ?? false, latestConversationMessageId: null }),
+      conversationReferenceInFooter(message, conversationShowsName(message, previousSpeaker, ctx.viewerId)));
+  };
 
   const processItem = (item: ChatItem | SyntheticItem, folds?: readonly FoldGate[], owner = conversationOwner): void => {
     if (isSubagentChild(item)) return;
@@ -259,13 +276,15 @@ export function flattenTier(
       const part = item.kind === 'message' && (item as ChatMessage).conversationPart === 'head' || item.kind === 'turn-process' ? 'head'
         : item.kind === 'message' && (item as ChatMessage).conversationPart === 'body' ? 'body'
         : conversationOwner ? 'step' : item.kind === 'message' && item.role === 'user' ? 'input' : undefined;
-      if (lastConversationPart && part) {
+      const last = lastConversationRow?.conversationPart;
+      if (last && part) {
         // Keep the normal segment gap below the hover action lane (#1062).
-        group[0].gapBefore = part === 'step' ? (lastConversationPart === 'head' ? 4 : 0)
-          : part === 'body' ? (lastConversationPart === 'step' ? 8 : 4)
-          : part === 'head' && lastConversationPart === 'body' ? 20 : lastConversationPart === 'body' || lastConversationPart === 'input' ? 0 : 20;
+        group[0].gapBefore = part === 'step' ? (last === 'head' ? 4 : 0)
+          : part === 'body' ? (last === 'step' ? 8 : 4)
+          : part === 'head' && last === 'body' ? 20 : tailLaneOf(lastConversationRow!) === 'blank' ? 0 : 20;
       }
-      lastConversationPart = part;
+      if (part) for (const u of group) u.conversationPart = part;
+      lastConversationRow = part ? group[group.length - 1] : undefined;
     }
 
     lastKind = group[group.length - 1].kind;
@@ -356,12 +375,14 @@ export function flattenTier(
       // Folded, a step's pictures would be out of sight: the line carries the last ones (tool-images.ts — seen unopened).
       // Open, each step below draws its own.
       const pictureStep = expanded ? undefined : op.rows.findLast(hasToolPictures) as ToolRunItem['pictureStep'];
+      const toolNames = op.rows.flatMap(row => 'toolCallId' in row || row.kind === 'tool-group' ? toolActivationNames(row) : row.kind === 'tool' ? [...(row.toolNames ?? [])] : []);
       processItem({
         kind: 'tool-run',
         id: runId,
         turnId,
         label: toolRunLabel(tallyToolRun(op.rows, ctx.agentConversation), ctx.translate),
         stepCount: op.rows.length,
+        ...(toolNames.length ? { toolNames } : {}),
         ...(live ? { live: true as const } : {}),
         ...(now ? { now } : {}),
         ...(pictureStep ? { pictureStep } : {}),
@@ -512,7 +533,7 @@ export function flattenTier(
             const id = `${block.id}:steps`;
             out.push({ id, itemId: id, groupId: id, groupRole: 'solo', gapBefore,
               kind: 'conversation-process-steps', data: { id, live: block.live, units },
-              children: units, conversationProcessOwner: conversationOwner });
+              children: units, conversationProcessOwner: conversationOwner, conversationPart: units.at(-1)?.conversationPart });
             lastKind = 'conversation-process-steps';
           }
         };

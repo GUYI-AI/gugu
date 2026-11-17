@@ -148,8 +148,15 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // Presentation only, as 38's hints: an older host draws the label alone.
 // 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
 // as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
-// 53: gesture-only selected-text annotations from the preinstalled Files App into its own session.
-export const EXTENSION_API_VERSION = 53;
+// 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
+// 54 (selection-send.ts): `files.sendSelection({ text, refs, rect, viewport })`, the preinstalled Files App only, inside a
+// real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
+// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
+// only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
+// 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
+// viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
+// box in the page). Presentation only, as 51: an older host opens the one image.
+export const EXTENSION_API_VERSION = 57;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1095,7 +1102,7 @@ export const BRIDGE_VERBS = {
   filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
-  filesAnnotateSelection: { needs: null, only: 'page', gesture: true },
+  filesSendSelection: { needs: null, only: 'page', gesture: true },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
   filesDraft: { needs: null, machine: 'place' },

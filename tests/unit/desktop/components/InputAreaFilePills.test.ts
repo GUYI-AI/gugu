@@ -102,7 +102,7 @@ describe('file citations share the composer document with the words', () => {
     const text = `先改 ${deckToken}，再改 ${sheetToken}，最后检查。`
     await draft(text)
     expect(pills().map((pill) => pill.textContent)).toEqual([deckPill.label, sheetPill.label])
-    expect(pills()[0]!.title).toBe(`${deckPill.label} · 第 7 版上选的`)
+    expect(pills()[0]!.title).toBe(`${deckPill.label} (第 7 版上选的)`)
     expect(pills()[1]!.getAttribute('data-mention-id')).toBe(SHEET)
     expect(readComposer(textarea())).toBe(text)
   })

@@ -22,7 +22,9 @@
  * callbacks do not go stale after React re-renders.
  */
 
+import { metadataSeparator } from '@/i18n/format'
 import { openCreditSettings } from '@/lib/billing/settingsDestination';
+import { billingLinksAvailable } from '@/lib/appLinks';
 import type {
   ChatCommands,
   ChatContext,
@@ -176,7 +178,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
         pinUserMessages: p.pinUserMessages,
         class: p.class,
         contentClass: p.contentClass,
-        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...p.commands, writeClipboardText },
+        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...p.commands,
+          onRechargeCredits: billingLinksAvailable() ? p.commands?.onRechargeCredits ?? openCreditSettings : undefined, writeClipboardText },
         padTop: p.padTop,
         embedded: p.embedded,
         // Thread stable wrappers that read from propsRef at call time — never stale.
@@ -226,7 +229,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
 
   // Push command callbacks reactively so inline functions are never stale.
   useEffect(() => {
-    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...props.commands, writeClipboardText });
+    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...props.commands,
+      onRechargeCredits: billingLinksAvailable() ? props.commands?.onRechargeCredits ?? openCreditSettings : undefined, writeClipboardText });
   }, [props.commands]);
 
   // Layout lives on the process-long context (measurement-coupled), not on the
@@ -247,7 +251,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
     createElement('span', { style: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' } }, entry.text),
   }), entry.root, String(index))), inputFailures.map(entry => createPortal(createElement(FailedSendStatus, {
     reason: entry.error,
-    label: [translateSessionMessage(entry.unknown ? 'transcript.sendUnknown' : 'transcript.sendFailed'), safeFailureLine(entry.reason ?? entry.error ?? '').slice(0, 64)].filter(Boolean).join(' · '),
+    label: [translateSessionMessage(entry.unknown ? 'transcript.sendUnknown' : 'transcript.sendFailed'), safeFailureLine(entry.reason ?? entry.error ?? '').slice(0, 64)].filter(Boolean).join(metadataSeparator()),
     onRetry: entry.retryable ? () => propsRef.current.commands?.onRetrySend?.(entry.itemId) : undefined,
     onDiscard: () => propsRef.current.commands?.onDiscardSend?.(entry.itemId),
   }), entry.root, entry.itemId)));

@@ -14,6 +14,8 @@ import {
   updateDeviceSessions,
 } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { createReactHarness } from '../../support/testHarness'
+import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
+import { readInterface, writeInterface } from '../../../apps/desktop/src/lib/viewStateTable'
 
 const rpc = vi.hoisted(() => ({
   list: { projects: [], sessions: [] } as SessionpageSessionsListResult,
@@ -77,7 +79,7 @@ const flush = () => act(async () => { await new Promise((resolve) => setTimeout(
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
-  localStorage.clear()
+  localStorage.clear(); viewStateCache.forget('view:')
   rpc.updateSession.mockReset()
   rpc.cancelPhoneSessionTurn.mockReset().mockResolvedValue({ cancelled: true })
   store.devices = []
@@ -534,8 +536,8 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
   })
 
   it('点名定位保留收起的分区和展开显示偏好,滚到所属分区', async () => {
-    localStorage.setItem('gugu.agent-watch.collapsed.projects', JSON.stringify(['device-1|p1']))
-    localStorage.setItem('gugu.agent-watch.more.projects', JSON.stringify(['another-project']))
+    writeInterface('gugu.agent-watch.collapsed.projects', ['device-1|p1'])
+    writeInterface('gugu.agent-watch.more.projects', ['another-project'])
     const scrollIntoView = vi.fn()
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = scrollIntoView
@@ -548,8 +550,8 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
       await flush()
       expect(row(harness.container, 'wanted')).toBeNull()
       expect(projectSection()?.getAttribute('data-collapsed')).toBe('true')
-      expect(JSON.parse(localStorage.getItem('gugu.agent-watch.collapsed.projects')!)).toEqual(['device-1|p1'])
-      expect(JSON.parse(localStorage.getItem('gugu.agent-watch.more.projects')!)).toEqual(['another-project'])
+      expect(readInterface('gugu.agent-watch.collapsed.projects')).toEqual(['device-1|p1'])
+      expect(readInterface('gugu.agent-watch.more.projects')).toEqual(['another-project'])
       expect(scrollIntoView).toHaveBeenCalled()
       expect(scrollIntoView.mock.contexts.at(-1)).toBe(projectSection())
     } finally {
@@ -560,8 +562,8 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
   it('定位子会话保留祖先折叠,定位项目也不改写偏好', async () => {
     const folded = JSON.stringify(['parent'])
     const more = JSON.stringify(['another-project'])
-    localStorage.setItem('gugu.agent-watch.collapsed.projects', folded)
-    localStorage.setItem('gugu.agent-watch.more.projects', more)
+    writeInterface('gugu.agent-watch.collapsed.projects', JSON.parse(folded))
+    writeInterface('gugu.agent-watch.more.projects', JSON.parse(more))
     const scrollIntoView = vi.fn()
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = scrollIntoView
@@ -574,29 +576,29 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
       expect(scrollIntoView.mock.contexts.at(-1)).toBe(row(harness.container, 'parent'))
       await renderPage([device()], { reveal: { projectId: 'p1' } })
       expect(projectSection()?.getAttribute('data-collapsed')).toBe('false')
-      expect(localStorage.getItem('gugu.agent-watch.collapsed.projects')).toBe(folded)
-      expect(localStorage.getItem('gugu.agent-watch.more.projects')).toBe(more)
+      expect(JSON.stringify(readInterface('gugu.agent-watch.collapsed.projects'))).toBe(folded)
+      expect(JSON.stringify(readInterface('gugu.agent-watch.more.projects'))).toBe(more)
     } finally { Element.prototype.scrollIntoView = original }
   })
 
   it('定位收在展开显示里的会话不打开列表,手动展开仍能保存并恢复', async () => {
     const more = JSON.stringify(['another-project'])
-    localStorage.setItem('gugu.agent-watch.more.projects', more)
+    writeInterface('gugu.agent-watch.more.projects', JSON.parse(more))
     rpc.list = { projects: [repo], sessions: Array.from({ length: 7 }, (_, index) => summary(`idle-${index}`, index + 1)) }
     online('device-1', rpc.list.sessions)
     await renderPage([device()], { reveal: { deviceId: 'device-1', sessionId: 'idle-0' } })
     expect(row(harness.container, 'idle-0')).toBeNull()
     const toggle = harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-session-more"]')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(localStorage.getItem('gugu.agent-watch.more.projects')).toBe(more)
+    expect(JSON.stringify(readInterface('gugu.agent-watch.more.projects'))).toBe(more)
     await act(async () => toggle.click())
     expect(row(harness.container, 'idle-0')).not.toBeNull()
-    const saved = localStorage.getItem('gugu.agent-watch.more.projects')
-    expect(JSON.parse(saved!)).toEqual(['another-project', 'device-1|p1'])
+    const saved = JSON.stringify(readInterface('gugu.agent-watch.more.projects'))
+    expect(saved && JSON.parse(saved)).toEqual(['another-project', 'device-1|p1'])
     harness.cleanup()
     harness = createReactHarness()
     await renderPage([device()], { reveal: { projectId: 'p1' } })
     expect(row(harness.container, 'idle-0')).not.toBeNull()
-    expect(localStorage.getItem('gugu.agent-watch.more.projects')).toBe(saved)
+    expect(JSON.stringify(readInterface('gugu.agent-watch.more.projects'))).toBe(saved)
   })
 })

@@ -8,6 +8,7 @@
  * 这是壳那棵树的组件:由 AssistantShellHost 画进助理 App 留的「devices」格子(会话页拿不到壳的设备 store)。
  * 用壳的设置原语(与同一页「聊天工具」那一格同一个样子),❌ 混用会话页那张 Tailwind 表的类名(两张表同名不同值)。
  */
+import { metadataSeparator } from '@/i18n/format'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -173,7 +174,7 @@ function DeviceItem({
           {/* 状态点:在线 = live 蓝(design.md 唯一的 accent),离线退成最淡一档 —— 与「设置 → 设备」同一个点。 */}
           <span aria-hidden className={cn('size-[7px] shrink-0 translate-y-[-1px] rounded-[var(--radius-circle)]', lit ? 'bg-live' : 'bg-[var(--faint-fg)]')} />
           {/* 窄屏折行,❌ 截成省略号:「已授权:日历、定位」是这一行要说的事(手机宽度截图实测被截掉)。 */}
-          <span className="min-w-0">{[status, showKind ? t(`devices.kind.${kind}`) : null, summary, configurationCount > 1 ? t('devices.configurationCount', { count: configurationCount }) : null].filter(Boolean).join(' · ')}</span>
+          <span className="min-w-0">{[status, showKind ? t(`devices.kind.${kind}`) : null, summary, configurationCount > 1 ? t('devices.configurationCount', { count: configurationCount }) : null].filter(Boolean).join(metadataSeparator())}</span>
         </span>
       )}
       control={(

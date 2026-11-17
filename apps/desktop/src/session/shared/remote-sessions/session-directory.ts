@@ -7,6 +7,7 @@ import type {
   SessionpageSessionSummary,
 } from '@gugu/session-core/session-record/contract'
 import { sessionListFromDigest } from './session-list-sync'
+import { useSelect, type Readable } from '@/lib/selectStore'
 
 /**
  * 跨机器的会话目录:每台机器上有哪些会话(行上带 agent 的 id)。手机与桌面共用这一份;每个端只有一个写者
@@ -146,6 +147,16 @@ export function subscribeDeviceSessions(listener: () => void): () => void {
 
 export function useLiveDeviceSessions(): Readonly<Record<string, DeviceSessions>> {
   return useSyncExternalStore(subscribeDeviceSessions, liveDeviceSessions)
+}
+
+const directoryReadable: Readable<Readonly<Record<string, DeviceSessions>>> = { get: liveDeviceSessions, subscribe: subscribeDeviceSessions }
+
+/**
+ * What `select` derives from the directory, re-rendering only when that changes (@@@select-store): a running session
+ * republishes its row with every streamed chunk (its preview), and a reader of one field of it must not follow.
+ */
+export function useDeviceSessions<S>(select: (live: Readonly<Record<string, DeviceSessions>>) => S): S {
+  return useSelect(directoryReadable, select, isDeepEqual)
 }
 
 /**

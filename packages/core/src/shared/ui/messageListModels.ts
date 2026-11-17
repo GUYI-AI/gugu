@@ -1,4 +1,5 @@
 import { mergeMessageState } from './messageState'
+import { orderMessages } from './messageTimeline'
 import type { MessageItem, ReactionGroup } from '../types/chat'
 import type { FileMetadata, FileRevision } from '../fileResolver'
 
@@ -99,11 +100,15 @@ export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
     a.seq === b.seq &&
     a.content === b.content &&
     a.content_type === b.content_type &&
+    a.thread_root_id === b.thread_root_id && a.is_thread_root === b.is_thread_root && a.edited_at === b.edited_at &&
     a.retracted_at === b.retracted_at &&
     a.created_at === b.created_at &&
     a.reply_to_message_id === b.reply_to_message_id &&
     a.reply_to_sender_user_id === b.reply_to_sender_user_id && a.reply_to_content === b.reply_to_content &&
     a.sender_user_id === b.sender_user_id &&
+    a.via_app === b.via_app && a.sent_by_agent === b.sent_by_agent &&
+    (a.agent_sender === b.agent_sender || !!a.agent_sender && !!b.agent_sender && a.agent_sender.id === b.agent_sender.id && a.agent_sender.name === b.agent_sender.name) &&
+    a.forwarded_from_message_id === b.forwarded_from_message_id &&
     sameRecipientIds(a.to_user_ids, b.to_user_ids) &&
     sameRecipientIds(a.readers ?? null, b.readers ?? null) &&
     a.is_mine === b.is_mine &&
@@ -111,18 +116,9 @@ export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
     a.delivery_status === b.delivery_status &&
     sameDeliveryBlocks(a.delivery_blocks, b.delivery_blocks) &&
     a.local_send_state === b.local_send_state &&
+    a.local_timeline?.afterSeq === b.local_timeline?.afterSeq && a.local_timeline?.createdAt === b.local_timeline?.createdAt &&
     sameReactions(a.reactions, b.reactions)
   )
-}
-
-// @@@message-order-invariant - a chat's canonical order is the server-assigned `seq` (monotonic per
-function compareMessageOrder(a: MessageItem, b: MessageItem): number {
-  const aPending = a.seq < 1
-  const bPending = b.seq < 1
-  if (aPending !== bPending) return aPending ? 1 : -1
-  if (!aPending) return a.seq - b.seq
-  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
 export function mergeMessagesById(prev: MessageItem[], fresh: MessageItem[], chatId: string): MessageItem[] {
@@ -143,8 +139,7 @@ export function mergeMessagesById(prev: MessageItem[], fresh: MessageItem[], cha
   for (const p of prev) {
     if (!seen.has(p.id) && p.chat_id === chatId) out.push(p)
   }
-  out.sort(compareMessageOrder)
-  return out
+  return orderMessages(out)
 }
 
 // @@@2015 — 乐观回复必须带全引用预览(user_id/content):只带 reply_to_message_id 时,
@@ -176,6 +171,5 @@ export function upsertMessageById(list: MessageItem[], msg: MessageItem): Messag
     return shallowEqualMessage(existing, merged) ? existing : merged
   })
   const result = replaced ? next : [...next, msg]
-  result.sort(compareMessageOrder)
-  return result
+  return orderMessages(result)
 }

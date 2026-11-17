@@ -23,7 +23,7 @@ final class StartupTheme {
     }
 
     static int color(boolean dark) {
-        return dark ? Color.rgb(24, 24, 24) : Color.WHITE;
+        return dark ? Color.rgb(15, 15, 15) : Color.WHITE;
     }
 
     /** Called on the Capacitor plugin thread so durable storage never blocks a UI draw. */

@@ -29,6 +29,7 @@ import {
   normalizeMarkdownSourceWithLines,
   type MarkdownDialectOptions,
 } from '@gugu/session-shared/markdown/dialect';
+import { fileLabelParts } from '@gugu/session-shared/markdown';
 import type { Element, ElementContent, Root as HastRoot } from 'hast';
 import { toHtml } from 'hast-util-to-html';
 import type { Nodes, Root, RootContent } from 'mdast';
@@ -57,15 +58,20 @@ function mentionLabel(mention: MdastMention): string {
 
 function mentionChip(mention: MdastMention): Element {
   const id = mention.target ?? mention.label;
-  const label: ElementContent = { type: 'text', value: mentionLabel(mention) };
+  const text = mentionLabel(mention);
+  // A file's place stays whole: the name is what gets cut when the pill is too wide (`fileLabelParts`).
+  const { name, place } = mention.mentionKind === 'file' ? fileLabelParts(text) : { name: text, place: '' };
+  const span = (className: string, value: string): Element => ({ type: 'element', tagName: 'span', properties: { className: [className] }, children: [{ type: 'text', value }] });
+  const label = place ? [span('gg-md-mention-label', name), span('gg-md-mention-place', place)] : [span('gg-md-mention-label', name)];
   const icon: Element = {
     type: 'element',
     tagName: 'span',
     properties: {
       className: ['gg-md-mention-icon'],
-      dataIcon: mention.iconUrl ? 'url' : mention.iconClass ? 'class' : mention.mentionKind,
+      dataIcon: mention.iconUrl ? 'url' : mention.mentionKind,
       dataIconUrl: mention.iconUrl,
-      dataIconClass: mention.iconClass,
+      // A file's slot draws its family glyph (`FileMark`), read from the name.
+      dataIconName: mention.mentionKind === 'file' ? name : undefined,
     },
     children: [],
   };
@@ -80,9 +86,10 @@ function mentionChip(mention: MdastMention): Element {
       dataMentionEngine: mention.engine,
       dataMentionTitle: mention.title,
       dataMentionTone: mention.tone,
-      title: mention.title ? `${id} · ${mention.title}` : id,
+      // The label is cut to one line: the whole of it, then where it points.
+      title: [text, ...(text === id ? [] : [id]), ...(mention.title ? [mention.title] : [])].join('\n'),
     },
-    children: mention.mentionKind ? [icon, label] : [label],
+    children: mention.mentionKind ? [icon, ...label] : label,
   };
 }
 

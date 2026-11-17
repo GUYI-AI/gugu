@@ -135,16 +135,16 @@ describe('kinds and order', () => {
 })
 
 describe('a row: its suffix, its size, how long its cloud copy has left, the machine it stays on', () => {
-  test('the line says who, when and how big; the mark its suffix', () => {
+  test('the line says who, when and how big; the mark is the host\'s tile by the file\'s name', () => {
     expect([...row('spec').querySelector('.file-meta')!.children].map((c) => c.textContent)).toEqual([expect.stringMatching(/\d\d:\d\d/), '1.1 MB'])
-    expect(row('spec').querySelector('.file-mark')!.textContent).toBe('PDF')
-    expect(row('pack').querySelector('.file-mark')!.textContent).toBe('ZIP')
+    expect(row('spec').querySelector('gugu-file-mark.file-mark[tile]')!.getAttribute('name')).toBe('spec.pdf')
+    expect(row('pack').querySelector('gugu-file-mark.file-mark[tile]')!.getAttribute('name')).toBe('pack.zip')
   })
 
   test('a copy kept for a while says how long, faintly; under a day it says hours; the day it goes on hover', () => {
     expect(row('spec').querySelector('.file-keep'), 'more than three days: Details keeps the full retention').toBe(null)
     const clip = row('clip').querySelector<HTMLElement>('.file-keep')!
-    expect(clip.textContent).toBe('临时 · 5 小时')
+    expect(clip.textContent).toBe('临时保留 5 小时')
     expect(clip.hasAttribute('data-soon')).toBe(true)
     expect(row('pack').querySelector('.file-keep'), 'kept cloud copy: nothing to say (owner 10-28)').toBe(null)
   })

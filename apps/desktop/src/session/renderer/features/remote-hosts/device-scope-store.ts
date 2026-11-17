@@ -3,9 +3,10 @@
 // 一个窗口、一个账号;资源库、已安排、存储这类模块里的东西都是**某一台机器的**,模块顶上一个选择器,默认本机。
 // 选的是**整个模块**看哪台机器 —— 资源库里切到 d22,提示词、智能体、集成、扩展全是 d22 的;❌ 按页各选各的。
 //
-// 记在这个窗口的 sessionStorage 里(每个模块一格):同一个窗口刷新后还停在那台机器上;❌ 不跟账号走
-// (另一台电脑、另一个窗口各看各的)。选着的那台不在名下了(被移除 / 换了账号)就回落本机,❌ 停在一台不存在的机器上。
+// 记在视图状态表里、只放内存(每个模块一格,persist: false):这次打开里一直停在那台机器上,重开回到本机;❌ 不跟账号走
+// (另一台电脑各看各的)。选着的那台不在名下了(被移除 / 换了账号)就回落本机,❌ 停在一台不存在的机器上。
 import { makeAutoObservable } from 'mobx';
+import { DEVICE, readViewState, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 import { localMachineChoice, machineChoiceFromHost, type MachineChoice } from './machine-choice';
 import type { HostConnectionState } from '@renderer/features/remote-hosts/connection-status';
 import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
@@ -13,15 +14,7 @@ import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
 /** 「本机」那一行的 id(本机不在 remoteHostsStore 里)。 */
 export const LOCAL_DEVICE_SCOPE = 'local';
 
-type SessionStore = Pick<Storage, 'getItem' | 'setItem'>;
-
-function windowSessionStorage(): SessionStore | null {
-  try {
-    return typeof window !== 'undefined' ? window.sessionStorage : null;
-  } catch {
-    return null;
-  }
-}
+const scopeOf = (storageKey: string): ViewPanel => ({ conversation: '', panel: `ui:${storageKey}`, account: DEVICE, persist: false });
 
 export class DeviceScopeStore {
   /** 用户选的那一台(可能此刻不在名下 —— 桥还没装好、或已被移除;读 `effective` 才是在用的那台)。 */
@@ -29,27 +22,14 @@ export class DeviceScopeStore {
   /** #2301 Q5: pages of this module now showing that machine's last copy, read-only (the heading says 「只读缓存」). */
   cachedViews = 0;
 
-  constructor(
-    private readonly storageKey: string,
-    private readonly storage: SessionStore | null = windowSessionStorage()
-  ) {
-    let stored: string | null = null;
-    try {
-      stored = storage?.getItem(storageKey) ?? null;
-    } catch {
-      stored = null;
-    }
-    this.selected = stored || LOCAL_DEVICE_SCOPE;
-    makeAutoObservable<DeviceScopeStore, 'storage' | 'storageKey'>(this, { storage: false, storageKey: false });
+  constructor(private readonly storageKey: string) {
+    this.selected = readViewState<{ deviceId: string }>(scopeOf(storageKey)).deviceId || LOCAL_DEVICE_SCOPE;
+    makeAutoObservable<DeviceScopeStore, 'storageKey'>(this, { storageKey: false });
   }
 
   select(deviceId: string): void {
     this.selected = deviceId || LOCAL_DEVICE_SCOPE;
-    try {
-      this.storage?.setItem(this.storageKey, this.selected);
-    } catch {
-      /* 存不下(隐私模式等)就只在这次打开里记着。 */
-    }
+    writeViewState(scopeOf(this.storageKey), { deviceId: this.selected === LOCAL_DEVICE_SCOPE ? undefined : this.selected });
   }
 
   /** A page shows the last copy read-only until the returned release is called. */

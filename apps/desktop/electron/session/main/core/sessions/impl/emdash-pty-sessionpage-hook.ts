@@ -62,6 +62,8 @@ export interface EmdashPtySessionpageStartInfo {
    *  provider's command" this contract exists to avoid, and it drifts the moment a flag changes. */
   model?: string;
   effort?: string;
+  fastMode?: boolean;
+  userSettingsProvided?: boolean;
   /** The composer's permission tier. A diverting host must re-apply it separately because the provider
    *  argv carrying its native flags is replaced wholesale. */
   permissionMode?: GuguPermissionMode;

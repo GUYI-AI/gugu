@@ -4,7 +4,7 @@
 
 /** Return the last path segment, e.g. "src/foo/bar.ts" → "bar.ts". */
 export function basename(path: string): string {
-  return path.split('/').pop() ?? path;
+  return path.split(/[\\/]/).pop() ?? path;
 }
 
 /**

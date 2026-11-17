@@ -104,7 +104,7 @@ it('draws the reader\'s own delivered message with a file and words once each, a
     expect(row.querySelectorAll('[data-attachment-chip]')).toHaveLength(1);
     expect(row.querySelectorAll('[data-user-card]')).toHaveLength(1);
     expect(row.textContent!.split('Are the results out?')).toHaveLength(2);
-    const label = row.querySelector('[data-attachment-chip] > span:last-child')!.getBoundingClientRect();
+    const label = row.querySelector('[data-attachment-chip]')!.getBoundingClientRect();
     expect(label.bottom).toBeLessThanOrEqual(row.querySelector('[data-user-card]')!.getBoundingClientRect().top);
   } finally { view.dispose(); }
 });
@@ -307,7 +307,7 @@ describe('agent-centered conversation bubbles', () => {
   it('writes the step count after the duration on the process line', async () => {
     const view = await mount({ kind: 'message', id: 'counted', role: 'assistant', text: '好了', conversationProcess: { id: 'counted:process', startedAt: 1000, endedAt: 75000, steps: 10 } });
     try {
-      expect(view.host.querySelector('[data-conversation-process]')?.textContent).toBe('1m14s · 10 steps›');
+      expect(view.host.querySelector('[data-conversation-process]')?.textContent).toBe('1m14s, 10 steps›');
     } finally { view.dispose(); }
   });
   it('keeps a zero-body process clock without a disclosure arrow or action', async () => {
@@ -606,7 +606,7 @@ it.each([320, 600])('paints a sent file as the existing left-side attachment car
     const card = row.querySelector<HTMLButtonElement>('[data-attachment-chip]')!;
     expect(row.dataset.side).toBe('left');
     expect(card.dataset.kind).toBe('file');
-    expect(card.textContent).toBe('proof.txt');
+    expect(card.querySelector('.gg-file-row-name')?.textContent).toBe('proof.txt');
     expect(row.querySelector('[data-user-card]'), 'an attachment-only send has no empty text bubble').toBeNull();
     expect(Math.abs(row.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
     card.click();
@@ -625,7 +625,7 @@ it.each([320, 600])('renders an injected original image instead of local-path in
     await expect.poll(() => view.host.querySelector('[data-attachment-chip] img')?.getAttribute('src')).toContain('data:image/gif');
     const card = view.host.querySelector<HTMLButtonElement>('[data-attachment-chip]')!;
     expect(card.dataset.kind).toBe('image');
-    expect(card.textContent).toBe('original.png');
+    expect(card.title).toBe('original.png');
     expect(view.host.textContent).toContain('Look at this');
     expect(view.host.textContent).not.toContain('/private/agent');
     expect(view.host.textContent).not.toContain('Folder file');
@@ -674,7 +674,7 @@ it.each([220, 320, 600])('puts a repeated speaker message reference before its p
     const quote = view.host.querySelector<HTMLButtonElement>('[data-slot="conversation-quote"]')!;
     const process = view.host.querySelector<HTMLElement>('[data-conversation-process]')!;
     expect(quote.textContent).toBe(''); expect(view.host.textContent).not.toContain('旧消息');
-    expect(view.host.querySelector('[data-slot="conversation-reference-separator"]')?.textContent).toBe('·');
+    expect(view.host.querySelector('[data-slot="conversation-reference-separator"]')?.textContent).toBe(' ');
     expect(quote.getBoundingClientRect().right).toBeLessThan(process.getBoundingClientRect().left);
     expect(process.getBoundingClientRect().right).toBeLessThanOrEqual(view.host.getBoundingClientRect().right + 1);
     expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
@@ -807,7 +807,7 @@ it.each([188, 220, 320])('keeps a completed duration and step count on one line 
     const process = header.querySelector<HTMLElement>('[data-conversation-process]')!;
     expect(process.getBoundingClientRect().height, 'time and steps are an atomic line').toBe(22);
     expect(header.getBoundingClientRect().height).toBe(28);
-    expect(process.textContent).toContain('6s · 1 step');
+    expect(process.textContent).toContain('6s, 1 step');
     expect(process.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right + 1);
     assertVisiblePrefix(header.querySelector<HTMLElement>('[title]')!, header);
   } finally { view.dispose(); }

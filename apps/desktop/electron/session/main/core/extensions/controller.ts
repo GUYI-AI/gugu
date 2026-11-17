@@ -1,3 +1,4 @@
+import { liveWindowController } from './live-window-controller';
 import { getMainWindow } from '@main/app/window';
 import type { ChatFileRef, MemberChange } from '@shared/extensions/app-files-core';
 import * as fs from 'node:fs';
@@ -126,6 +127,7 @@ function disclosureOf(manifests: readonly ExtensionManifest[]) {
 const MARKET_READ_MAX_BYTES = 2 * 1024 * 1024;
 
 export const extensionsController = createRPCController({
+  ...liveWindowController,
   variants: async (id: string) => {
     try { return { success: true as const, data: await extensionVariants(id) }; }
     catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
@@ -134,8 +136,8 @@ export const extensionsController = createRPCController({
     try { return { success: true as const, data: await switchExtensionVariant(id, name, consent) }; }
     catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
-  openLink: async (args: { target: import('@gugu/core/shared/ui/guguLink').OpenTarget; groupParticipantRequestId?: string }) =>
-    (await import('./gugu-links')).openLink(args.target, args.groupParticipantRequestId),
+  openLink: async (args: { target: import('@gugu/core/shared/ui/guguLink').OpenTarget; groupParticipantRequestId?: string; source?: { message?: import('@gugu/core/shared/types/chat').MessageItem } }) =>
+    (await import('./gugu-links')).openLink(args.target, args.groupParticipantRequestId, args.source),
   resourceLink: async (target: Exclude<import('@gugu/core/shared/ui/guguLink').GuguLinkTarget, { kind: 'server-login' }>) =>
     (await import('./gugu-links')).linkTo(target),
   list: async () => {
@@ -331,18 +333,20 @@ export const extensionsController = createRPCController({
    * pill): when one App opens it, that App gets the place as the `link` event a gugu link brings — opened and placed here,
    * as `openExtensionLinkWith` opens and places (148 17:21). Several to choose from: the person picks, and no App is told.
    */
-  groupFileOpener: async (args: { chatId: string; itemId: string; at?: Record<string, string> }) => {
+  groupFileOpener: async (args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }) => {
     try {
-      const files = await import('@main/core/extensions/app-files');
-      const chatId = String(args?.chatId ?? '');
-      const target = await files.groupFile(chatId, String(args?.itemId ?? ''));
+      const [files, { viewedAmongOf }] = await Promise.all([import('@main/core/extensions/app-files'), import('@shared/extensions/app-files-core')]);
+      // API 57: the images an App page showed with it, read while the file is (`viewedAmong`, the phone's too).
+      const among = viewedAmongOf(files.viewedAmong, args);
+      const target = await files.groupFile(args?.chatId === undefined ? undefined : String(args.chatId), String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
-      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), chatId, target.itemId);
-      return { success: true as const, data: { ...target, choice } };
+      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), target.chatId, target.itemId);
+      const images = await among(target, choice);
+      return { success: true as const, data: { ...target, choice, ...(images.length ? { among: images } : {}) } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), ...(error instanceof (await import('@main/core/extensions/app-files')).AppFileError ? { code: error.code } : {}) };
     }
   },
 
@@ -1125,11 +1129,16 @@ export const extensionsController = createRPCController({
   },
 
   /** The names of the skills an App brings, as agents read them. */
-  agentSkills: async (args: { extensionId: string }) => {
+  agentSkills: async (args: { extensionId: string }): Promise<
+    | { success: true; data: string[]; entries?: Array<{ name: string; description: string }>; problems?: string[] }
+    | { success: false; error: string }
+  > => {
     try {
       const { manifest, rootDir } = extensionsService().get(args.extensionId);
-      const skills = manifest.contributes.skills ? readExtensionSkills(manifest.id, path.join(rootDir, manifest.contributes.skills), () => {}) : [];
-      return { success: true as const, data: skills.map((skill) => skill.name) };
+      const problems: string[] = [];
+      const skills = manifest.contributes.skills ? readExtensionSkills(manifest.id, path.join(rootDir, manifest.contributes.skills), (message) => problems.push(message)) : [];
+      return { success: true as const, data: skills.map((skill) => skill.name),
+        entries: skills.map(({ name, description }) => ({ name, description })), problems };
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }

@@ -87,7 +87,7 @@ describe('send destinations resolved from the signed-in chat list', () => {
   it.each(['999', '0', '-1', '216012junk', ' 216012', '2.16012e5', '9007199254740992'])('keeps an unknown or invalid address unavailable: %s', address => {
     publishChatSummaries([group()])
     expect(resolveChatId(address)).toBeNull()
-    expect(agentSendLabel(agentSendOf(send(address))!.to, defaultChatTranslator, chatDisplayName)).toBe('Sent · destination name unavailable')
+    expect(agentSendLabel(agentSendOf(send(address))!.to, defaultChatTranslator, chatDisplayName)).toBe('Sent; destination name unavailable.')
   })
 
   it('does not retain destinations from the previous account chat list', () => {

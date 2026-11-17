@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { ComposerEffortOption } from '@gugu/session-ui/react/components';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
@@ -36,7 +37,7 @@ const EFFORT_LABEL_KEYS = {
  */
 export function effortNamesLine(ids: readonly string[], translate: Translate): string | null {
   if (ids.length === 0 || !ids.every((id) => id in EFFORT_LABEL_KEYS)) return null;
-  return ids.map((id) => translate(EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS][0])).join(' · ');
+  return ids.map((id) => translate(EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS][0])).join(metadataSeparator());
 }
 
 /**

@@ -147,15 +147,20 @@ function requireHostWindow(): ExtensionHostWindowChannel {
   return hostWindow;
 }
 
+/** A page no window draws (an App surface of its own): `unavailable`, which the App words for the person itself. */
+function notEmbedded(): Error {
+  return Object.assign(new Error('This surface is not embedded in a renderer that can act on its behalf'), { code: 'unavailable' });
+}
+
 async function deliver(
   origin: ExtensionHostActionOrigin & { embedderId: number | null },
   action: ExtensionHostAction
 ): Promise<ExtensionHostActionResult> {
   if (origin.embedderId === null) {
-    throw new Error('This surface is not embedded in a renderer that can act on its behalf');
+    throw notEmbedded();
   }
   const command: ExtensionHostActionCommand = {
-    origin: { extensionId: origin.extensionId, sessionId: origin.sessionId, tabId: origin.tabId },
+    origin: { extensionId: origin.extensionId, sessionId: origin.sessionId, tabId: origin.tabId, pageId: origin.pageId },
     action,
   };
   const result = await requireHostWindow().invokeRendererExtensions(
@@ -225,13 +230,13 @@ export function listedSessionProject(sessionId: string, hint?: { deviceId?: stri
 
 /** `gugu.dispatch` naming no target: the window that draws the page lets the person pick one (null: they cancelled). */
 export function pickDispatchTarget(embedderId: number | null, ask: DispatchAsk): Promise<DispatchPicked> {
-  if (embedderId === null) return Promise.reject(new Error('This surface is not embedded in a renderer that can act on its behalf'));
+  if (embedderId === null) return Promise.reject(notEmbedded());
   return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(EXTENSION_PICK_DISPATCH_TARGET_METHOD, ask, embedderId) as Promise<DispatchPicked>);
 }
 
 /** #50 One question to the window that draws a page (host-actions.ts), answered by its handler there. */
 export function invokeInEmbedder(embedderId: number | null, method: string, params: unknown): Promise<unknown> {
-  if (embedderId === null) return Promise.reject(new Error('This surface is not embedded in a renderer that can act on its behalf'));
+  if (embedderId === null) return Promise.reject(notEmbedded());
   return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(method, params, embedderId));
 }
 

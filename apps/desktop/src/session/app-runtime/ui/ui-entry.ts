@@ -1,6 +1,8 @@
 import type { ExtensionHostContext, ExtensionMember } from '@shared/extensions/bridge-protocol';
 import { applyThemeColors } from '../theme-colors';
 import { formatCalendarDate } from '@gugu/session-shared/format';
+import { fileTile } from '@gugu/session-shared/file-marks';
+import tileCss from '@gugu/session-shared/file-tile.css?raw';
 import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
 
 /**
@@ -11,13 +13,14 @@ import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
  *   <gugu-avatar user="user:…" name>         a member's face (with `name`: and their name)
  *   <gugu-time datetime="2026-10-05T08:30">  「刚刚 / 3 分钟前 / 08:20 / 昨天 14:20 / 10月3日」, kept current
  *   <gugu-empty icon="archive">…</gugu-empty> an empty state around the App's own words and button
+ *   <gugu-file-mark name="a.xlsx" mime tile>  a file's family glyph (ink); with `tile`: the host's file tile, as on its output cards
  *
  * And the theme: `<html data-gugu-theme>` follows `context.themeMode`, which picks the palette in ui.css (gugu.js has set
  * it already, before the first paint, where the host knows it then: `GuguHost.theme`).
  *
  * Insides are drawn in shadow DOM: an App's `render()` (the template's patching redraw) sees only the empty element
  * and never strips the icon or the face as a child it did not write. ui.css sizes and places the elements (the App can
- * change that); `::part(svg | face | img | name | icon)` reach inside.
+ * change that); `::part(svg | face | img | name | icon | tile | glyph)` reach inside.
  */
 
 type Context = Partial<Pick<ExtensionHostContext, 'locale' | 'themeMode' | 'themeColors' | 'chat'>>;
@@ -231,12 +234,36 @@ export class GuguEmpty extends HTMLElement {
   }
 }
 
+// ── <gugu-file-mark> ────────────────────────────────────────────────────────────────────────────────────────────────
+// The host's own table and tile (`file-marks.ts`, `file-tile.css`): a file looks the same in an App as on the host's cards.
+const fileMarkSheet = sheet(`:host{display:inline-block}svg{display:block;width:100%;height:100%}${tileCss}`);
+export class GuguFileMark extends HTMLElement {
+  static observedAttributes = ['name', 'mime', 'tile'];
+  connectedCallback(): void {
+    this.draw();
+  }
+  attributeChangedCallback(): void {
+    if (this.isConnected) this.draw();
+  }
+  private draw(): void {
+    const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+    root.adoptedStyleSheets = [fileMarkSheet];
+    const mark = fileTile(this.getAttribute('name') ?? '', this.getAttribute('mime') ?? undefined);
+    const glyph = (cls: string) => `<svg part="glyph" class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${mark.glyph}</svg>`;
+    root.innerHTML = this.hasAttribute('tile')
+      ? `<span part="tile" class="gg-file-tile" style="--gg-file-tile: ${mark.color.replace('--file-', '--em-file-')}">${glyph('gg-file-tile-glyph')}</span>`
+      : glyph('');
+    this.setAttribute('aria-hidden', 'true');
+  }
+}
+
 function install(): void {
   if (customElements.get('gugu-icon')) return;
   customElements.define('gugu-icon', GuguIcon);
   customElements.define('gugu-avatar', GuguAvatar);
   customElements.define('gugu-time', GuguTime);
   customElements.define('gugu-empty', GuguEmpty);
+  customElements.define('gugu-file-mark', GuguFileMark);
   void context().then(setTheme);
   // The host pushes a new context when the theme, the language or the members change: everything follows.
   host()?.onContextChanged?.((next) => {

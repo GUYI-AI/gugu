@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { replica, useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@gugu/core/cloud/serverMachineHealth'
-import { Archive, File, FileCode, FileImage, FileText, Monitor } from '@/lib/icons'
+import { Monitor } from '@/lib/icons'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import { messageForUser } from '@/lib/userFacingError'
 import { markFileStorage, readFileStorageOverview, type FileStorageClass, type FileStorageOverview } from '../../lib/fileStorage'
 import { Button } from '../ui/Button'
@@ -20,25 +23,27 @@ const DAY = 86_400_000
 type Expiring = FileStorageOverview['expiring'][number]
 type SortKey = 'name' | 'group' | 'size' | 'expires'
 
-function fileIcon(name: string | null, kind: FileStorageClass) {
-  const suffix = name?.split('.').pop()?.toLowerCase() ?? ''
-  if (kind === 'image' || /^(png|jpe?g|gif|webp|heic|svg)$/.test(suffix)) return FileImage
-  if (/^(zip|rar|7z|tar|gz|tgz)$/.test(suffix)) return Archive
-  if (/^(ts|tsx|js|py|go|rs|java|c|cpp|sh|json|ya?ml)$/.test(suffix)) return FileCode
-  if (/^(pdf|docx?|txt|md|pptx?|key|xlsx?|csv)$/.test(suffix)) return FileText
-  return File
-}
-
 /**
  * 「文件存储与读取」上半(owner 10-28 批的设计稿 evidence/file-storage-design):一条按类着色的用量条 + 一行数字;
  * 旁边一个次级按钮「从云端删除…」,二次确认里勾要删的类别;即将过期的文件一行一个、列对齐、表头可排序,默认 5 个;
  * 每台机器一行。只算自己上传的,数据是 chat.file_storage_overview_as 一次读回来的。删除只删云端副本(file_storage_mark_as
  * release),和发送时的「临时 / 一直保留」是同一个标记。❌ 环形图、柱状图、每行一个大按钮。
  */
+/** What this account keeps in the cloud, by kind, and what expires soon (chat.file_storage_overview_as). */
+const fileStorageOverview = replica({
+  name: 'fileStorageOverview',
+  scope: 'account',
+  read: () => readFileStorageOverview(),
+  persist: { maxBytes: 2048, maxEntries: 1 },
+})
+
 export function FileStorageDashboard() {
   const { t } = useTranslation('settings')
-  const [overview, setOverview] = useState<FileStorageOverview | null>(null)
-  const [failed, setFailed] = useState('')
+  const reading = useReplica(fileStorageOverview, [])
+  const overview = reading.state === 'value' ? reading.value : null
+  // 删除那一步的失败;读失败在 reading 里。
+  const [actionFailed, setFailed] = useState('')
+  const failed = actionFailed || (reading.state === 'error' ? messageForUser(reading.error) : '')
   const [cleaning, setCleaning] = useState(false)
   const [picked, setPicked] = useState<FileStorageClass[]>(['temporary'])
   const [busy, setBusy] = useState(false)
@@ -48,22 +53,26 @@ export function FileStorageDashboard() {
   // dashboard, inside the Settings dialog, as the session-page sections' do — not behind the dialog on <body>.
   const { theme } = useTheme()
 
-  const load = useCallback(() => {
-    let live = true
-    setFailed('')
-    readFileStorageOverview()
-      .then((next) => { if (live) setOverview(next) })
-      .catch((cause: unknown) => { if (live) setFailed(messageForUser(cause)) })
-    return () => { live = false }
-  }, [])
-  useEffect(load, [load])
+  const load = () => { setFailed(''); void fileStorageOverview.refresh() }
 
   if (!overview) {
     return failed
       ? <SettingsGroup title={t('fileStorage.dashboard.title')}>
           <SettingsRow description={failed} control={<Button variant="secondary" size="sm" onClick={load}>{t('fileStorage.retry')}</Button>} />
         </SettingsGroup>
-      : <SettingsNote>{t('fileStorage.loading')}</SettingsNote>
+      // Not read yet: the usage line's own rows (total and button, bar, legend), each a placeholder its height, so the line
+      // lands without moving the settings below; the list of expiring files comes only with files.
+      : <div aria-busy="true" data-testid="file-storage-loading">
+          <div className="flex items-end justify-between gap-4">
+            <Unknown className="h-7 w-24" />
+            <Unknown className="h-[var(--control-h-sm)] w-28 max-[719px]:h-[var(--control-h-touch)]" />
+          </div>
+          <Unknown className="mt-[10px] block h-[10px] w-full" />
+          {/* One per class, in the legend's own wrapping row: two lines on a phone, as the legend. */}
+          <div className="mt-[10px] flex flex-wrap gap-5 text-[length:var(--font-caption)]">
+            {CLASSES.map((name) => <Unknown key={name} className="w-36" />)}
+          </div>
+        </div>
   }
   const size = (bytes: number) => formatBytes(Number(bytes))
   const classLabel = (name: FileStorageClass) => t(`fileStorage.dashboard.classes.${name}`)
@@ -171,7 +180,7 @@ export function FileStorageDashboard() {
                 content={overview.expiry ? t('fileStorage.dashboard.keptRule', { size: size(overview.expiry.large_file_bytes), days: Math.round(overview.expiry.idle_seconds / 86400) })
                   : t('fileStorage.dashboard.keptRuleNoExpiry')} /></span>}
               <b className="ml-1 font-medium text-[var(--fg)]">{size(overview.classes[name].bytes)}</b>
-              <span>&nbsp;· {t('fileStorage.dashboard.files', { count: overview.classes[name].count })}</span>
+              <span> {t('fileStorage.dashboard.files', { count: overview.classes[name].count })}</span>
             </span>
           ))}
         </div>
@@ -187,13 +196,12 @@ export function FileStorageDashboard() {
           </thead>
           <tbody>
             {shown.map((file, index) => {
-              const Icon = fileIcon(file.file_name, file.class)
               const left = days(file.expires_at)
               return (
                 <tr key={`${file.item_id ?? file.chat_id}-${file.expires_at}-${index}`} data-testid="file-storage-file"
                   className="hover:bg-[var(--hover)] [&>td]:truncate [&>td]:border-b [&>td]:border-[var(--border-color)] [&>td]:px-2 [&>td]:py-[7px]">
                   <td data-field="name"><span className="flex min-w-0 items-center gap-2 text-[var(--fg)]">
-                    <Icon size={16} className="shrink-0 text-[var(--muted-fg)]" />
+                    <FileMark name={file.file_name ?? ''} mime={file.class === 'image' ? 'image/*' : undefined} size={16} className="shrink-0 text-[var(--muted-fg)]" />
                     <span className="truncate">{file.file_name ?? classLabel(file.class)}</span>
                   </span></td>
                   <td data-field="group" className="text-[var(--muted-fg)]">{groupName(file.chat_id)}</td>

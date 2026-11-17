@@ -7,7 +7,6 @@ import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
-import { resolveDeliveredAttachment } from '@renderer/lib/chat/delivered-message-presentation';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
 import { appendToDraft } from '@/store/chatContext';
@@ -101,7 +100,7 @@ import type { SessionCondition as ChatSessionCondition } from '@gugu/session-cha
 type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
   actions?: readonly { label: string; pending?: boolean; run: (anchor?: HTMLElement) => void }[];
 };
-import { rpc, rpcOn } from '@renderer/lib/ipc';
+import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -112,6 +111,7 @@ import { resolveSignInTarget } from '@renderer/features/settings/agents-page/age
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
+import { resolveAttachmentDataUrl } from './acp-attachment-image';
 import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
 import { SessionScheduleChip } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
@@ -122,6 +122,7 @@ import { SessionHostQuestion } from '@renderer/features/extensions/session-host-
 import { registerPastedScreenshot } from '@/lib/pastedScreenshot';
 import { useComposerFileUploads } from './use-composer-file-uploads';
 import { shellPort } from '@renderer/lib/shell-port';
+import { useBirthGroupJoin } from './use-birth-group-join';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
@@ -141,7 +142,6 @@ import {
   sessionPermissionModeOptions,
   selectedPermissionModeId,
 } from './permission-mode-options';
-import { resolveVisualEvidenceAttachmentDataUrl } from './acp-chat-resource-manager';
 import { useOpenedOutputMenu } from './opened-output-menu';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
@@ -186,6 +186,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { sessionFastMode } from '../session-config/fast-mode';
+import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
@@ -205,10 +207,10 @@ import {
 import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
 import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
 import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
+import { offerSessionSend } from '../session-send';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const attachmentDataUrlCache = new Map<string, Promise<string | null>>();
 /** `/mcp` 这条自有命令的匹配 —— 与 agent 命令同一口径:空查询全列,否则按名字包含。 */
 function commandMatchesClientQuery(normalized: string): boolean {
   return normalized.length === 0 || 'mcp'.includes(normalized);
@@ -244,52 +246,6 @@ function issueMatchesQuery(issue: LinkedIssue, query: string): boolean {
   return [issue.identifier, issue.displayIdentifier, issue.title]
     .filter((value): value is string => !!value)
     .some((value) => value.toLowerCase().includes(normalized));
-}
-
-function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promise<string | null> {
-  if (id.startsWith('gugu-message-file://')) return resolveDeliveredAttachment(id);
-  const fixtureDataUrl = resolveVisualEvidenceAttachmentDataUrl(store, id);
-  if (fixtureDataUrl) return Promise.resolve(fixtureDataUrl);
-  // 旧消息正文里那条绝对路径投影出来的附件(#5269):字节在盘上,不在 agent 的附件仓里 —— 照那条路径读。
-  const path = pathAttachmentTarget(id);
-  if (path) {
-    const cachedPath = attachmentDataUrlCache.get(id);
-    if (cachedPath) return cachedPath;
-    // 字节在会话所在的那台机器上(别的机器上的会话 = 问那台机器)。
-    const promise = rpcOn(machineRegistry.machineOf(store.projectId)).app.readUserImageDataUrl(path)
-      .then((result) => (result.success ? result.dataUrl : null))
-      .catch((error: unknown) => {
-        // 读不到就退回中性占位块(旧消息里那些指着临时目录的路径就是这种)——❌ 不弹错。
-        log.warn('Failed to read attachment image', { path, error });
-        return null;
-      });
-    attachmentDataUrlCache.set(id, promise);
-    return promise;
-  }
-  if (!store.session) return Promise.resolve(null);
-  const cached = attachmentDataUrlCache.get(id);
-  if (cached) return cached;
-  const promise = store.session
-    .downloadAttachment(id)
-    .then((result) => {
-      if (!result.success) return null;
-      return `data:${result.data.ref.mimeType};base64,${bytesToBase64(result.data.data)}`;
-    })
-    .catch((error: unknown) => {
-      log.warn('Failed to resolve ACP attachment', { id, error });
-      return null;
-    });
-  attachmentDataUrlCache.set(id, promise);
-  return promise;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
 }
 
 // ── Composer for a single store ────────────────────────────────────────────────
@@ -778,6 +734,8 @@ const ComposerForStore = observer(function ComposerForStore({
     agentCreationToolsByEngine,
     localSessionMentionProvider,
   ]);
+  // A selection's Send (`SelectionSend`) sends through this composer: typed words' path, this composer's @.
+  useEffect(() => offerSessionSend(store.sessionId, { send: text => store.submitPrompt(text), mentionProvider }), [store, mentionProvider]);
 
   const { data: agents } = useAgents();
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
@@ -1518,6 +1476,9 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
+        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
+        renderFastModeHint={renderFastModeHint}
         permissionModeOptions={localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
@@ -1801,6 +1762,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   // 「正在打开引擎会话」一类的启动步骤对用户不存在。要人做的事(登录、会员)照常在下面说。
   // 「重来」在途:按钮停下,❌ 连点各投一遍首轮。
   const [restarting, setRestarting] = useState(false);
+  const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
@@ -1845,6 +1807,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         code: 'turn-interrupted',
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
+      });
+      return;
+    }
+    if (!error && birthGroup.join && !signInExpired && !signInMissing) {
+      // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
+      setCondition({
+        code: 'group-join-failed',
+        label: translate('transcript.condition.groupJoinFailed'),
+        detail: birthGroup.join.reason,
+        actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
       });
       return;
     }
@@ -1999,7 +1971,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
@@ -2159,7 +2131,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           if (!path || !store) return;
           // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
           // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
-          // ——附件不是工作区文件,它自己就带着一条绝对路径(#5269)。
+          // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
           makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
           return;
         }

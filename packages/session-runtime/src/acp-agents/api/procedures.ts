@@ -191,7 +191,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     },
     setModelOption(input: {
       sessionId: string;
-      dimension: 'model' | 'effort';
+      dimension: 'model' | 'effort' | 'fast';
       value: string;
     }): Promise<Result<LiveSettingApplyResult, AcpSetModelOptionError>> {
       return runtime.setModelOption(input.sessionId, input.dimension, input.value);
