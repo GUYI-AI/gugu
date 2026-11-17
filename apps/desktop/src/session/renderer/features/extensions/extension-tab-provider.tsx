@@ -155,12 +155,13 @@ function createExtensionTabContent(extensionId: string, kind: string) {
   });
 }
 
-/** The extension's own mark on its tab, read live so an upgrade swaps it in place. */
+/**
+ * A tab's mark says what it shows, as its title does: a file its type (whichever App opened it), the folder App's list a
+ * folder; only an App's own page carries the App's mark, read live so an upgrade swaps it in place.
+ */
 const ExtensionTabIcon = observer(function ExtensionTabIcon({ kind, file }: { kind: string; file?: string }) {
-  // The folder App's tabs say what they show: the list a folder, a file its type. Its own mark stays in the App lists.
-  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) {
-    return file ? <span className="flex shrink-0 text-foreground-muted"><FileIcon filename={fileBaseName(file)} className="shrink-0" /></span> : <Folder className="size-3 text-foreground-muted" />;
-  }
+  if (file) return <span className="flex shrink-0 text-foreground-muted"><FileIcon filename={fileBaseName(file)} className="shrink-0" /></span>;
+  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) return <Folder className="size-3 text-foreground-muted" />;
   const iconDataUrl = installedExtensionsStore.allTabContributions.find(
     (entry) => entry.kind === kind
   )?.iconDataUrl;
