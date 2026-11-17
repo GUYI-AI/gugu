@@ -84,7 +84,8 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const takenOver = useComposerVerbTakeover(chatId)
   const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
   // 手机项目群的「新任务」(电脑上是 ComposerVerbs 换上会话页那一侧的框;手机就地换成新任务的框)。
-  const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, '') })
+  const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, ''),
+    insertSkill: skill => editorApiRef.current?.insertMention(skill) })
   // 新任务的两件事要让这一面里别处的东西让位(运行条、空项目的「新任务」钮,phone-new-task.css):把状态记在这一面的根上。
   // ❌ 写成 `[data-chat-surface]:has(…)`:那会让整面聊天每次增删节点都重算每一行里的一批元素(check-css-parses @@@wide-invalidation)。
   const hostRef = useRef<HTMLDivElement>(null)

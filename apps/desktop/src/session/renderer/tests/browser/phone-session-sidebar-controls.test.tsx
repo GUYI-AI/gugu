@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
 import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarControls'
@@ -26,6 +26,7 @@ import type { SessionpageSessionSummary } from '@gugu/session-core/session-recor
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chat, device, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { revealPhoneControl } from '../../../../../../../tests/support/phoneControlTargets'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -125,7 +126,7 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  } finally { window.removeEventListener(OPEN_LINK_TARGET,capture) }
 })
 
-it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one topic dropdown icon',async({width,theme})=>{
+it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one glyph per label and a clickable final agent control',async({width,theme})=>{
  await mount('room-task','chat:room',true,width,theme)
  await vi.waitFor(()=>{
   const controls=harness!.container.querySelectorAll<HTMLElement>('[data-phone-composer-controls] .gg-phone-composer-control')
@@ -139,8 +140,13 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
  const row=harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
  const buttons=[...row.querySelectorAll<HTMLElement>('.gg-phone-composer-control')]
  expect(buttons.map(button=>button.textContent)).toEqual(['工作','技能','话题','智能体'])
+ const items=row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+ expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+ expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
  for(const [index,button] of buttons.entries()){
+  expect(button.querySelectorAll('svg')).toHaveLength(1)
+  await revealPhoneControl(items,button)
   const box=button.getBoundingClientRect(),style=getComputedStyle(button)
   expect(box.y).toBe(buttons[0]!.getBoundingClientRect().y)
   expect(box.right).toBeLessThanOrEqual(width-16)
@@ -149,10 +155,15 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
   const label=button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
   expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
  }
+ await revealPhoneControl(items,buttons[2]!)
  const topic=buttons[2]!,label=topic.querySelector<HTMLElement>('.gg-phone-composer-control-label')!,icon=topic.querySelector('svg')!
  expect(topic.querySelectorAll('svg')).toHaveLength(1)
  expect(icon.getBoundingClientRect().left-label.getBoundingClientRect().right).toBe(4)
  expect(topic.getBoundingClientRect().right-icon.getBoundingClientRect().right).toBe(12)
+ await revealPhoneControl(items,buttons[3]!)
+ await page.elementLocator(buttons[3]!).click()
+ await expect.element(page.getByTestId('phone-sidebar-agent')).toBeVisible()
+ expect(buttons[3]!.getAttribute('aria-expanded')).toBe('true')
 })
 it('an unrelated task does not inherit room navigation',async()=>{
  await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()
@@ -200,13 +211,16 @@ it('the selected native skill is visible inside the input and accompanies the ac
  await mount('room-task','chat:room',true)
  await page.getByTestId('agent-watch-create-skills').click()
  await page.getByRole('checkbox',{name:/代码检查/}).click()
- await expect.element(page.getByTestId('agent-watch-create-skill-tags')).toBeVisible()
  const editor=harness!.container.querySelector<HTMLElement>('[contenteditable]')!
- await page.elementLocator(editor).fill('检查这一段')
+ await until('skill is an inline reference',()=>editor.querySelector('[data-skill-reference]')?.textContent?.includes('代码检查')===true)
+ expect(harness!.container.querySelector('[data-testid="agent-watch-create-skill-tags"]')).toBeNull()
+ await page.elementLocator(editor).click()
+ await userEvent.type(editor, '{End} 检查这一段')
  await page.getByRole('button',{name:'发送消息',exact:true}).click()
  await until('actual message sent',()=>actions.send.mock.calls.length===1)
- expect(actions.send.mock.calls[0]![0]).toContain('请使用以下技能：代码检查。')
+ expect(actions.send.mock.calls[0]![0]).toContain('@[代码检查](')
  expect(actions.send.mock.calls[0]![0]).toContain('检查这一段')
+ expect(actions.send.mock.calls[0]![0].split('@[代码检查](')).toHaveLength(2)
 })
 
 

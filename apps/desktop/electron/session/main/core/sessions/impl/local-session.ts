@@ -201,11 +201,12 @@ export class LocalSessionProvider implements SessionProvider {
   async sendMessage(
     session: Session,
     message: SessionMessage,
+    beforeAdmission?: () => void,
   ): Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }> {
     const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
     const pty = this.ptysBySession.get(ptySessionId);
     if (!pty) return { status: 'not-ready' };
-    return injectSessionMessageWhenReady({ pty, session, message });
+    return injectSessionMessageWhenReady({ pty, session, message, beforeAdmission });
   }
 
   async startSession(
@@ -563,7 +564,7 @@ export class LocalSessionProvider implements SessionProvider {
         isResuming: commandResuming,
         model: session.model ?? '',
         effort: launchEffort ?? '',
-        fastMode: platformModelForSpawn === null && session.fastMode === true,
+        fastMode: session.fastMode === true,
       });
       agentCommand = applySessionRuntimeCommand(agentCommand, {
         harnessExecutable: compatibleRuntime.executable,
@@ -663,7 +664,7 @@ export class LocalSessionProvider implements SessionProvider {
         // otherwise the composer's model / effort controls silently do nothing on that path.
         model: session.model ?? undefined,
         effort: launchEffort ?? undefined,
-        fastMode: platformModelForSpawn === null && session.fastMode === true,
+        fastMode: session.fastMode === true,
         userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),
         permissionMode,
         // @@@2503 composer 选的模型来源(平台 / harness),按会话记的那条。存量会话没有记录 →
@@ -1133,11 +1134,11 @@ export class LocalSessionProvider implements SessionProvider {
           providerId: session.providerId,
           waitUntilReady: () => admission.waitUntilReady(),
           isTurnInFlight: () => admission.isTurnInFlight(),
-          sendMessage: (message) => this.sendMessage(session, {
+          sendMessage: (message, beforeAdmission) => this.sendMessage(session, {
             id: message.id,
             text: message.text,
             kind: message.kind,
-          }),
+          }, beforeAdmission),
         });
         return;
       }

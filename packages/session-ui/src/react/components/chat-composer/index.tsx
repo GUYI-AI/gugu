@@ -908,7 +908,7 @@ export function ChatComposer({
             ) : promptEditor}
           </div>
 
-          {phoneCapsule && (phoneEditor.multiline || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
+          {phoneCapsule && (phoneEditor.attachmentRow || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
             data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
             aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
             onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}

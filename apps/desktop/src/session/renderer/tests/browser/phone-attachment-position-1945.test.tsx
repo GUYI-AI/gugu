@@ -122,8 +122,8 @@ it.each(cases)('$surface/$theme/$count/$width: pending files align above the edi
   await until('normal file picker mounts', () => !!harness.container.querySelector('input[type="file"][multiple]'))
   if (surface === 'new-task') {
     await act(async () => { startPhoneNewTask('position-task') })
-    await until('project folder chooser mounts', () => !!harness.container.querySelector('[data-testid="project-folder-paper"]'))
-    await act(async () => { harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!.click() })
+    await until('project folder chooser mounts', () => !!document.querySelector('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]'))
+    await act(async () => { document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!.click() })
     await until('new task mode active', () => !!harness.container.querySelector('[data-phone-task]'))
   }
   await pick(count)

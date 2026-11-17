@@ -13,7 +13,7 @@ describe('new task Fast intent', () => {
   it('sends false for untouched and unsupported drafts', () => {
     expect(buildInitialSession(draft())?.fastMode).toBe(false);
   });
-  it('keeps Fast off on the platform route even if draft intent was previously on', () => {
-    expect(buildInitialSession(draft(true, 'platform-model'))?.fastMode).toBe(false);
+  it('preserves an accepted Fast choice on the platform route', () => {
+    expect(buildInitialSession(draft(true, 'platform-model'))?.fastMode).toBe(true);
   });
 });

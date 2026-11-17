@@ -184,6 +184,13 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
 
   return {
     provisionDeps,
+    async attachmentCreationContext() {
+      const auth = await deps.getAuth()
+      if (!auth) throw new Error('Attachment creation requires an authenticated owner')
+      const deviceId = await deps.resolveDeviceId()
+      if (!deviceId) throw new Error('Attachment creation requires the actual host device')
+      return { ownerId: auth.userId, deviceId }
+    },
     async archive(sessionId, confirmedRemoval) {
       const auth = await deps.getAuth()
       if (!auth) {

@@ -17,6 +17,7 @@ import type { CreateMachine } from '@/mobile/agent-watch/create-target'
 import type { CreateSelection } from '@/mobile/agent-watch/create-session-form'
 import type { SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { revealPhoneControl } from '../../../../../../../tests/support/phoneControlTargets'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -35,7 +36,7 @@ function Harness({ projectTask = false }: { projectTask?: boolean }) {
   const projects = [{ chatId: 'project', name: '一个用于窄屏验收的长项目名称', homes: new Map<string, string>() }]
   return <><CreateTarget machines={machines} machine={machines.find((m) => m.device.device_id === machineId)} machineLabel={(d) => d.label}
     onMachine={setMachine} projects={projects} project={projects.find((p) => p.chatId === projectId) ?? null} onProject={setProject} busy={false}
-    projectTask={projectTask ? { onFolder: () => undefined } : undefined}
+    projectTask={projectTask ? { open: false, onFolder: () => undefined } : undefined}
     configuration={{ options, selection, onChange: setSelection, models: null, modelsState: 'ready', skills, onSkills: setSkills }} />
     <div style={{ flex: '0 0 auto' }}><ChatComposer mobile editorOptions={{ inputTestId: 'chat-composer' }} onSubmit={vi.fn()} inputHeader={<SelectedCreationSkills skills={skills} onChange={setSkills} />} /></div>
   </>
@@ -55,7 +56,7 @@ async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US'
   return host.querySelector<HTMLElement>('[contenteditable]')!
 }
 // Owner 2026-11-16 13:27: configuration is available before typing;
-// a nonempty text draft keeps the menu hidden even after the editor blurs.
+// keyboard editing hides the whole row; after blur, a draft retains the disclosure control.
 it.each(['light', 'dark'] as const)('%s: configure first, then a text draft hides controls without replacing the editor', async theme => {
   const editor = await mount(theme)
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
@@ -119,7 +120,7 @@ it('hides the skills entry for a phone target and restores it for a computer wit
 it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'light']] as const)('%s %s: three complete fixed labels fit at 390px without scrolling', async (locale, theme) => {
   await mount(theme, locale)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll<HTMLButtonElement>('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(buttons.map((button) => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) {
@@ -130,15 +131,23 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   }
 })
 
-it('keeps narrow English controls on one line without unnecessary scrolling', async () => {
+it('keeps narrow English controls on one line without unnecessary scrolling and opens the final control', async () => {
   await mount('dark', 'en-US')
   await page.viewport(320, 640)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
+  const items = row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+  expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-  for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
-  row.scrollLeft = row.scrollWidth
-  await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1)
+  for (const button of buttons) {
+    expect(button.querySelectorAll('svg')).toHaveLength(1)
+    await revealPhoneControl(items, button)
+    expect(button.getBoundingClientRect().top).toBe(buttons[0]!.getBoundingClientRect().top)
+    const label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
+  }
+  await page.elementLocator(buttons.at(-1)!).click()
+  await expect.element(page.getByRole('searchbox', { name: 'Search skills' })).toBeVisible()
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
 })
 
@@ -148,7 +157,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '文件夹', '技能'] : ['Work', 'Folder', 'Skills'])
   expect(host!.querySelector('[data-testid="agent-watch-create-agent"]')).toBeNull()
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
@@ -186,9 +195,9 @@ it.each([360, 390])('%ipx: four shared controls retain equal padding and fit wit
   root!.render(<PhoneComposerControlRow>{[
     ['工作', <Monitor />], ['技能', <Sparkles />], ['话题', <Hash />], ['智能体', <Users />],
   ].map(([label, icon], index) => <PhoneComposerControl key={index} label={String(label)} icon={icon} testId={`shared-control-${index}`} onClick={() => {}} />)}</PhoneComposerControlRow>)
-  await until('four shared controls', () => host!.querySelectorAll('[data-phone-composer-controls] button').length === 4)
+  await until('four shared controls', () => host!.querySelectorAll('[data-phone-composer-controls] .gg-phone-composer-control').length === 4)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const [index, button] of buttons.entries()) {
     const box = button.getBoundingClientRect(), style = getComputedStyle(button)
