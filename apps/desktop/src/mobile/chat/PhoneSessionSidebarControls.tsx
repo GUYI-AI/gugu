@@ -9,14 +9,14 @@ import { PhoneComposerControl, PhoneComposerSheet } from '../composer/PhoneCompo
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { openPhoneSidebarSession } from './phone-sidebar-navigation'
 import { CreateTarget, type ExistingSessionModel } from '../agent-watch/CreateTarget'
-import type { useCreationSkillDraft } from '../agent-watch/create-skill-draft'
+import type { creationSkillInput } from '../agent-watch/create-skill-draft'
 import { engineLabel } from '@/lib/usage/engineLabel'
 import type { PhoneSessionSidebarModel } from './usePhoneSessionSidebar'
 import './room-composer-catalog'
 import './phone-room-composer.css'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
 
-export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof useCreationSkillDraft>; nativeSkills?: ReactNode }) {
+export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof creationSkillInput>; nativeSkills?: ReactNode }) {
   const { t } = useTranslation('mobileRoomControls')
   const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
   const agentsButton = useRef<HTMLButtonElement>(null)
@@ -35,7 +35,7 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
       controlsExtra={<>
       {nativeSkills}
       {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
-      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
       </>} />
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
       {view === 'agents' ? listed.map(agent => {

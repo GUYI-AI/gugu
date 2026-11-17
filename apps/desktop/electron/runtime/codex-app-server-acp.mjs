@@ -527,7 +527,7 @@ async function loadModelCatalog(timeoutMs = 45_000) {
         ...(raw.description ? { description: String(raw.description) } : {}),
         efforts,
         defaultEffort: String(raw.defaultReasoningEffort ?? '').trim() || null,
-        serviceTiers: !process.env.GUGU_PLATFORM_MODELS?.trim() && Array.isArray(raw.serviceTiers) ? raw.serviceTiers : [],
+        serviceTiers: Array.isArray(raw.serviceTiers) ? raw.serviceTiers : [],
       })
     }
     cursor = String(response?.nextCursor ?? response?.next_cursor ?? '').trim() || null

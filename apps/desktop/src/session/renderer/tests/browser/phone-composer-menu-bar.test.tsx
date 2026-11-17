@@ -72,7 +72,13 @@ it('human direct messages keep the shared paperclip inside the input and open th
   await until('actual direct composer', () => !!harness!.container.querySelector('[contenteditable]'))
   expect(harness.container.querySelector('[data-phone-composer-controls]')).toBeNull()
   const input = harness.container.querySelector<HTMLElement>('[data-slot="composer-input"]')!
-  const clip = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!.getBoundingClientRect()
+  const attachment = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!
+  expect(getComputedStyle(attachment).display).toBe('none')
+  const editor = input.querySelector<HTMLElement>('[contenteditable]')!
+  ;(editor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
+  await until('two lines expose the shared attachment action', () => getComputedStyle(attachment).display !== 'none')
+  expect(harness!.container.querySelector('[data-phone-editor-toggle]')).toBeNull()
+  const clip = attachment.getBoundingClientRect()
   const box = input.getBoundingClientRect()
   expect(clip.left).toBeGreaterThanOrEqual(box.left); expect(clip.right).toBeLessThanOrEqual(box.right)
   expect(clip.top).toBeGreaterThanOrEqual(box.top); expect(clip.bottom).toBeLessThanOrEqual(box.bottom)

@@ -2164,7 +2164,8 @@ export class CodexAppServerSession {
    * turn/start，因为 Codex 在首条用户消息前不允许 thread/read includeTurns。已 materialize 的 thread 先读
    * inProgress turn:忙 → turn/steer 中途插入(owner #85);闲 → turn/start。steer 输给正在结束的 turn 竞态失败则回退 turn/start。
    */
-  async deliver(text: string): Promise<CodexTurnRef> {
+  async deliver(text: string, beforeAdmission?: () => void): Promise<CodexTurnRef> {
+    beforeAdmission?.()
     if (this.terminalError) throw this.terminalError
     const client = this.client
     if (!client || !this.threadId) throw new Error('codex app-server 会话未建立(fail-loud)')
@@ -2172,7 +2173,7 @@ export class CodexAppServerSession {
     // @@@6112 TUI 还没载入 / 咕咕还没接入:❌ 不读、不起轮,直接交给 codex 队列 —— 服务端在 TUI
     // 载入之后才起这一轮,TUI 不会「中途加入」(实测:先排队、后 TUI resume,3/3 干净)。
     const attached = this.adoptedThreadAttachedSettled()
-    if (!attached) return this.enqueue(client, this.threadId, input)
+    if (!attached) return this.enqueue(client, this.threadId, input, beforeAdmission)
     let activeTurnId: string | null = null
     if (this.threadMaterialization !== 'unmaterialized' && !this.threadRefusesTurnsRead) {
       try {
@@ -2186,6 +2187,7 @@ export class CodexAppServerSession {
         else this.threadMaterialization = 'unmaterialized'
       }
     }
+    beforeAdmission?.()
     if (activeTurnId) {
       try {
         await client.rpc('turn/steer', {
@@ -2203,7 +2205,7 @@ export class CodexAppServerSession {
     // `thread/queue/add`(codex 自带的 `codex queue` 命令、Remote Control 都走它)—— 由服务端在
     // thread 空闲时自己起轮。咕咕自己 turn/start 是「我就是界面」的客户端才用的那条路。
     // 注意官方语义:上一轮被中断(用户按了 Esc)后,队列**不自动续跑**,等人发话。
-    return this.enqueue(client, this.threadId, input)
+    return this.enqueue(client, this.threadId, input, beforeAdmission)
   }
 
   /** 接入已完成 → true;还没开始 / 还在进行 → false;失败 → 抛(fail-loud)。非 tuiLoads 恒为 true。 */
@@ -2218,7 +2220,9 @@ export class CodexAppServerSession {
     client: CodexRpcClient,
     threadId: string,
     input: Array<Record<string, unknown>>,
+    beforeAdmission?: () => void,
   ): Promise<CodexTurnRef> {
+    beforeAdmission?.()
     const clientUserMessageId = crypto.randomUUID()
     let entry!: { submissionId: string | null; resolve: (turnId: string) => void; reject: (error: unknown) => void }
     const dispatched = new Promise<string>((resolve, reject) => { entry = { submissionId: null, resolve, reject } })
@@ -2539,8 +2543,9 @@ export class CodexAppServerRegistry implements SessionpageDeliveryTarget {
   async tryInjectSessionMessage(
     threadId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct' },
+    beforeAdmission?: () => void,
   ): Promise<false | SessionpageTurnReceipt> {
-    return this.tryInjectMessage(threadId, message.text)
+    return beforeAdmission ? this.tryInjectMessage(threadId, message.text, beforeAdmission) : this.tryInjectMessage(threadId, message.text)
   }
 
   /**
@@ -2581,14 +2586,14 @@ export class CodexAppServerRegistry implements SessionpageDeliveryTarget {
     })
   }
 
-  async tryInjectMessage(threadId: string, text: string): Promise<false | SessionpageTurnReceipt> {
+  async tryInjectMessage(threadId: string, text: string, beforeAdmission?: () => void): Promise<false | SessionpageTurnReceipt> {
     const session = [...this.byAgent.values()]
       .map((entry) => entry.session)
       .find((candidate) => candidate.threadId === threadId)
     if (!session?.isLive()) return false
     try {
       deliveryLog.info({ threadId }, 'codex tryInjectMessage entered provider delivery')
-      const turn = await session.deliver(text)
+      const turn = await (beforeAdmission ? session.deliver(text, beforeAdmission) : session.deliver(text))
       deliveryLog.info({ threadId, turnId: turn.turnId, queued: Boolean(turn.queued) }, 'codex tryInjectMessage reached provider delivery')
       if (turn.queued) {
         // 消息已在 codex 自己的队列里(TUI 可见)。completion 跟到它**真正起成的那一轮**结束为止:

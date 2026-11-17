@@ -176,6 +176,9 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
   const attach = [...host.querySelectorAll<HTMLButtonElement>('[data-slot="composer-actions-start"] > button')].find(button => button !== permission)!
   const input = host.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   const model = host.querySelector<HTMLElement>('[data-testid="composer-model-trigger"]')!
+  const inputEditor = input.querySelector<HTMLElement>('[contenteditable]')!
+  ;(inputEditor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
+  await until('two-line attachment is visible', () => getComputedStyle(attach).display !== 'none')
   const controls = [permission, attach, model]
   for (const [index, control] of controls.entries()) {
     const box = control.getBoundingClientRect()
@@ -190,6 +193,6 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
     }
   }
   const editor = input.querySelector<HTMLElement>('[contenteditable]')!.getBoundingClientRect()
-  expect(editor.left).toBeGreaterThanOrEqual(attach.getBoundingClientRect().right)
+  expect(editor.right).toBeLessThanOrEqual(attach.getBoundingClientRect().left)
   expect(editor.right).toBeLessThanOrEqual(input.getBoundingClientRect().right - 44)
 })

@@ -4600,13 +4600,15 @@ app.whenReady().then(async () => {
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      // The app path, not `resolve(argv[1])`: the working directory is userData by now (@@@app-cwd).
-      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [app.getAppPath()])
+  if (!IS_TEST_MODE) {
+    if (process.defaultApp) {
+      if (process.argv.length >= 2) {
+        // The app path, not `resolve(argv[1])`: the working directory is userData by now (@@@app-cwd).
+        app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [app.getAppPath()])
+      }
+    } else {
+      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
     }
-  } else {
-    app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
   }
   setupRendererCommandIpcHandlers()
   // 应用菜单(app-menu.ts):mac「咕咕」那一栏多一项「设置…」;@@@devtools-lock 锁了的包「视图」里没有
@@ -4704,10 +4706,12 @@ app.whenReady().then(async () => {
             : (invokeRendererAuth('getSessionOwner', { waitMs }) as Promise<BootOwnerAnswer>),
         ms,
       )
-    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal) => {
+    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal, beforeAdmission?: () => void) => {
       signal?.throwIfAborted()
+      beforeAdmission?.()
       const ready = await sessionpagePlatformRecovery?.ensureReady(sessionId, `session-message:${message.kind ?? 'ordinary'}`)
       signal?.throwIfAborted()
+      beforeAdmission?.()
       if (ready?.status === 'failed') {
         createLogger('session-message').error({ sessionId, messageId: message.id, error: ready.error }, 'platform credential recovery failed; message remains pending')
         return {
@@ -4718,20 +4722,21 @@ app.whenReady().then(async () => {
       }
       const attempt = async () => {
         signal?.throwIfAborted()
-        const result = await localDelivery.tryInjectSessionMessage(sessionId, message)
+        beforeAdmission?.()
+        const result = await localDelivery.tryInjectSessionMessage(sessionId, message, beforeAdmission)
         return result === false ? 'not-live' as const : result
       }
       let accepted: Exclude<Awaited<ReturnType<typeof attempt>>, 'not-live'>
       if (message.kind === 'session-direct') {
         // #6546 冷目标:与收件箱同一个唤醒入口,等准入后再投一次;叫不醒带着原因报回发送方。
         try {
-          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal)
+          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal, beforeAdmission)
         } catch (error) {
           if (!(error instanceof SessionWakeError)) throw error
           return { status: 'not-ready' as const, reason: `target session not live — ${error.message}` }
         }
       } else {
-        const first = await localDelivery.tryInjectOrWake(sessionId, message)
+        const first = await localDelivery.tryInjectOrWake(sessionId, message, beforeAdmission)
         if (first === false) return { status: 'not-ready' as const }
         accepted = first
       }

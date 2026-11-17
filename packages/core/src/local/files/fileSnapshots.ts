@@ -13,6 +13,20 @@ import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
 
+// Cache instances in one process share directories. Keep each path check and its I/O together:
+// another reader, writer or cleanup must not remove the directory between lstat and realpath.
+const chunkCacheOperations = new Map<string, Promise<void>>()
+async function inChunkCacheDirectory<T>(directory: string, operation: () => Promise<T>): Promise<T> {
+  // Normalize the stable parent, not the removable child: aliases of one cache share the queue.
+  const key = join(await requireAgentFileAccess(dirname(directory)), basename(directory))
+  const result = (chunkCacheOperations.get(key) ?? Promise.resolve()).then(operation)
+  // Only the queue tail settles successfully; the caller receives the original result or failure.
+  const tail = result.then(() => {}, () => {})
+  chunkCacheOperations.set(key, tail)
+  void tail.then(() => { if (chunkCacheOperations.get(key) === tail) chunkCacheOperations.delete(key) })
+  return result
+}
+
 /** Raw resumable chunks share the existing private open-file cache and its stale-directory cleanup. */
 export function createFileChunkCache(tempRoot: string): FileChunkCache {
   const directory = (key: string, index = 0) => {
@@ -21,20 +35,29 @@ export function createFileChunkCache(tempRoot: string): FileChunkCache {
   }
   return {
     async get(key, index) {
-      const file = await requireAgentFileAccess(join(directory(key, index), String(index))), info = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
-      if (!info) return null
-      requireFileRange(FILE_CHUNK_BYTES, 0, info.size)
-      return new Uint8Array(await readFile(file))
+      const root = directory(key, index)
+      return inChunkCacheDirectory(root, async () => {
+        const file = await requireAgentFileAccess(join(root, String(index))), info = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
+        if (!info) return null
+        requireFileRange(FILE_CHUNK_BYTES, 0, info.size)
+        return new Uint8Array(await readFile(file))
+      })
     },
     async put(key, index, bytes) {
       requireFileRange(FILE_CHUNK_BYTES, 0, bytes.length)
-      const root = directory(key, index), file = await requireAgentFileAccess(join(root, String(index)))
-      await requireAgentFileAccess(root)
-      await mkdir(root, { recursive: true, mode: 0o700 })
-      const part = await requireAgentFileAccess(`${file}.${crypto.randomUUID()}.part`)
-      await writeFile(part, bytes, { flag: 'wx', mode: 0o600 }); await rename(part, file)
+      const root = directory(key, index)
+      return inChunkCacheDirectory(root, async () => {
+        const file = await requireAgentFileAccess(join(root, String(index)))
+        await requireAgentFileAccess(root)
+        await mkdir(root, { recursive: true, mode: 0o700 })
+        const part = await requireAgentFileAccess(`${file}.${crypto.randomUUID()}.part`)
+        await writeFile(part, bytes, { flag: 'wx', mode: 0o600 }); await rename(part, file)
+      })
     },
-    clear: key => cleanupRemoteFileDirectory(directory(key)),
+    clear(key) {
+      const root = directory(key)
+      return inChunkCacheDirectory(root, () => cleanupRemoteFileDirectory(root))
+    },
   }
 }
 

@@ -58,7 +58,7 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage),
     selectedEffort: options?.effort?.selected ?? undefined,
     onEffortChange: id => { void pick('effort', id) },
-    // The host filters this group by native capability, current model and explicit own billing.
+    // The host filters this group by the current model's acknowledged native capability.
     fastMode: fastModeValue(options?.fast),
     onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
     renderFastModeHint,

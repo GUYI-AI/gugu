@@ -24,14 +24,14 @@ beforeEach(() => {
 afterEach(() => { h.cleanup(); vi.useRealTimers() })
 
 function Fixture() {
-  const { handlers, panel } = useOpenedOutputOpener({ deviceId: 'device', sessionId: 'task', onQuote: vi.fn(), readFileChunk: m.read })
-  return createNode('div', {}, createNode('button', {
+  const { openFile, handlers, panel } = useOpenedOutputOpener({ deviceId: 'device', sessionId: 'task', onQuote: vi.fn(), readFileChunk: m.read })
+  return createNode('div', {}, createNode('button', { onClick: () => openFile('/workspace/report.txt') }, 'open preview'), createNode('button', {
     onClick: (event: MouseEvent<HTMLButtonElement>) => handlers.onOutputMenu?.({ output: { kind: 'file', path: '/workspace/report.txt' }, itemId: 'output', anchor: event.currentTarget }),
   }, 'file menu'), panel)
 }
 async function render() { await h.render(createNode(ToastContext.Provider, { value: { toast: m.toast } }, createNode(Fixture))) }
 async function download() {
-  await clickElement(h.container.querySelector('button')!)
+  await clickElement([...h.container.querySelectorAll('button')].find(button => button.textContent === 'file menu')!)
   const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(element => element.textContent === '下载')
   expect(item).toBeDefined()
   await clickElement(item!)
@@ -107,4 +107,23 @@ it('suppresses an obsolete save failure after another file action takes over', a
   expect(m.save).toHaveBeenCalledTimes(2)
   await act(async () => { reject(new Error('old save failed')) })
   expect(m.toast).not.toHaveBeenCalled()
+})
+
+it('resumes the preview at the interrupted chunk after the real 512 KiB boundary without restarting its progress', async () => {
+  const first = 'a'.repeat(512 * 1024), tail = 'complete'
+  let interrupted = false
+  m.read.mockImplementation(async ({ offset }: { offset: number }) => {
+    if (!offset) return { size: first.length + tail.length, etag: 'same-file', data: btoa(first) }
+    if (!interrupted) { interrupted = true; throw Object.assign(new Error('window closed'), { code: 'unreachable' }) }
+    return { size: first.length + tail.length, etag: 'same-file', data: btoa(tail) }
+  })
+  await render()
+  await clickElement([...h.container.querySelectorAll('button')].find(button => button.textContent === 'open preview')!)
+  await advance(0)
+  expect(panel()?.textContent).toContain('512')
+  expect(panel()?.textContent).not.toContain('没能从那台电脑取到')
+  await advance(500)
+  expect(m.read.mock.calls.map(([request]) => request.offset)).toEqual([0, first.length, first.length])
+  expect(panel()?.textContent).not.toContain('没能从那台电脑取到')
+  expect(m.save).not.toHaveBeenCalled()
 })
