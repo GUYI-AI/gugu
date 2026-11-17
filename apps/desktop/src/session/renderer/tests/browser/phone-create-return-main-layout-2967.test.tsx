@@ -47,7 +47,9 @@ vi.mock('@/platform', async () => {
   const platform = createCapacitorPlatformTestDouble()
   // A renderer-only phone shell, with a remote computer target; never start a native phone host.
   platform.capabilities.phoneDevice = false
-  return { platform }
+  // The full shell imports SettingsPanel, which reads the platform permission
+  // inventory during module evaluation. This isolated web fixture exposes none.
+  return { platform: { ...platform, systemPermissions: [] } }
 })
 vi.mock('@/lib/chat', () => import('../../../../../../../tests/support/contactsChatServiceTestDouble'))
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../../../../../tests/support/agentDisplayStatusTestDouble'))

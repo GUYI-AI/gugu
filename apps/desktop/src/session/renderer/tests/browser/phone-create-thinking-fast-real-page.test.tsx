@@ -111,7 +111,8 @@ async function closeWork() {
 }
 async function capture(name: string) {
   expect(document.body.textContent).not.toContain('agentWatch.')
-  await page.screenshot({ path: `__screenshots__/owner-phone-regression/${name}.png` })
+  const folder = name.startsWith('G-new-model-') ? 'internal-phone-model-pressure' : 'owner-phone-regression'
+  await page.screenshot({ path: `__screenshots__/${folder}/${name}.png` })
 }
 function assertAdvertisedTextChoices() {
   expect(sheet()!.querySelector('input[type="range"]')).toBeNull()
@@ -124,7 +125,7 @@ function assertAdvertisedTextChoices() {
 async function submitAtControlledBoundary(expected: { model: string; effort: string; fastMode?: boolean }) {
   await closeWork()
   const prompt = '仅用于隔离载荷验收'
-  await page.getByTestId('chat-composer').fill(prompt)
+  await page.elementLocator(editor()).fill(prompt)
   await until('actual send control enabled', () => host?.querySelector<HTMLButtonElement>('[data-phone-send]')?.disabled === false)
   await page.elementLocator(host!.querySelector<HTMLElement>('[data-phone-send]')!).click()
   await until('page submits to controlled RPC boundary', () => fixture.create.mock.calls.length === 1)
