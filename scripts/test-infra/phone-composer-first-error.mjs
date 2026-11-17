@@ -7,6 +7,7 @@ const phases = new Set(['before-test', 'before-real-page-render', 'before-setCon
 const testName = /^(new-page|existing-thread)\/(320|390)\/(light|dark): two lines retain natural height and separate touch targets in the actual Thread$/
 export function readHFirstErrorFrame(line) {
   // Vitest decorates console lines with ANSI, but the frame itself must be the entire line.
+  // eslint-disable-next-line no-control-regex -- strip Vitest's ANSI decoration before validating the entire diagnostic frame.
   const clean = line.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').trim()
   if (!clean.startsWith(H_FIRST_ERROR_PREFIX)) return null
   try {
