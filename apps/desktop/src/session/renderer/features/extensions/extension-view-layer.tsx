@@ -401,22 +401,12 @@ export const ExtensionPage = observer(function ExtensionPage({
       // Loaded is enough for a widget (its snapshot is waiting); any other page shows at its first contentful paint, or after 3s.
       const load = () => { if (isInline) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
-      // Electron guests are separate documents: their wheel cannot bubble into the chat's scroller.
-      const wheel = (event: Event) => {
-        const message = event as Event & { channel: string; args: { x: number; y: number }[] };
-        if (message.channel === 'gugu-page-painted') { painted(); return; }
-        if (message.channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); return; }
-        if (!isInline || message.channel !== 'gugu-widget-wheel') return;
-        const delta = message.args[0];
-        if (!delta || !Number.isFinite(delta.x) || !Number.isFinite(delta.y)) return;
-        for (let node = boxRef.current?.parentElement; node; node = node.parentElement) {
-          if (node.scrollHeight > node.clientHeight && /auto|scroll/.test(getComputedStyle(node).overflowY)) {
-            node.scrollBy({ left: delta.x, top: delta.y, behavior: 'instant' });
-            break;
-          }
-        }
+      const signal = (event: Event) => {
+        const channel = (event as Event & { channel: string }).channel;
+        if (channel === 'gugu-page-painted') painted();
+        else if (channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); }
       };
-      element.addEventListener('ipc-message', wheel);
+      element.addEventListener('ipc-message', signal);
       // Same reason for Esc: pressed in the guest, it leaves full screen here (tab-fullscreen).
       const escape = (event: Event) => { if ((event as Event & { channel: string }).channel === 'gugu-guest-escape') tabFullscreen.exit(); };
       element.addEventListener('ipc-message', escape);
@@ -427,7 +417,7 @@ export const ExtensionPage = observer(function ExtensionPage({
         offZoom?.();
         element.removeEventListener('dom-ready', ready);
         element.removeEventListener('render-process-gone', gone);
-        element.removeEventListener('ipc-message', wheel);
+        element.removeEventListener('ipc-message', signal);
         element.removeEventListener('ipc-message', escape);
         element.removeEventListener('did-finish-load', load);
         clearTimeout(fallback); clearTimeout(loaded); clearTimeout(changed);
