@@ -30,6 +30,8 @@ FunctionEnd
 # be anyone's working directory, so commit failed every time with "being used by another
 # process" (measured: the only handle under the tree was the waiting installer's, access
 # SYNCHRONIZE|FILE_TRAVERSE). The elevated copy asks it to step out first.
+# The app now leaves $INSTDIR itself (@@@app-cwd), but an older app's updater or a double-click
+# from inside $INSTDIR still starts this installer there, so the installer keeps its own step.
 Function guguLeaveInstallDirectory
   SetOutPath "$TEMP"
 FunctionEnd

@@ -587,6 +587,7 @@ function getArgValue(flag: string): string | undefined {
 
 import { writeSharedUserDataPointer } from './session/headless/shared-user-data'
 import { removeLegacyBrowserLogins } from './lib/remove-legacy-browser-logins'
+import { enterUserDataDirectory } from './working-directory'
 
 const IS_TEST_MODE = process.env.GUGU_TEST_MODE === '1'
 // 咕咕 server(product spec):同一份主进程,没有窗口。由 server-entry.ts 置位。
@@ -599,8 +600,11 @@ const deviceLabelOption: { label?: () => string } = SERVER_MODE ? { label: () =>
 
 const userDataDir = getArgValue('--user-data-dir') ?? process.env.GUGU_USER_DATA_DIR
 if (userDataDir) {
-  app.setPath('userData', userDataDir)
+  // Absolute before the working directory moves into it (below): a relative one would mean something else afterwards.
+  app.setPath('userData', resolve(userDataDir))
 }
+// @@@app-cwd - leave the launch directory (on Windows: the install directory) before anything is started.
+if (!SERVER_MODE) enterUserDataDirectory(app.getPath('userData'))
 // @@@5080 把**解析之后**的 userData 真值留给同机的无头宿主,让「桌面版 / 网页版」看同一份会话
 // (owner:「我以为只是换个视窗」)。必须在上面的 setPath 之后取 —— 取早了就写下了被覆盖前的路径。
 // ⚠️ 隔离实例(e2e / 双开)带着自己的 --user-data-dir,❌ 不该把机器级指针改写成它们的临时目录:
@@ -4608,7 +4612,8 @@ app.whenReady().then(async () => {
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
+      // The app path, not `resolve(argv[1])`: the working directory is userData by now (@@@app-cwd).
+      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [app.getAppPath()])
     }
   } else {
     app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
