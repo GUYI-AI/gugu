@@ -162,8 +162,20 @@ export function resolveAccountTargets(
 export function agentOffersConnections(
   agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
 ): boolean {
-  if (!agent) return false;
-  return agentConnectionForm(agent) !== null || resolveAccountTargets(agent).length > 0;
+  return agentAccessMethods(agent).length > 0;
+}
+
+/** The ways the connection panel offers, in its order; empty = no panel. */
+export function agentAccessMethods(
+  agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
+): Array<'account' | 'api-key' | 'endpoint'> {
+  if (!agent) return [];
+  const form = agentConnectionForm(agent);
+  const methods: Array<'account' | 'api-key' | 'endpoint'> = [];
+  if (form?.accounts || resolveAccountTargets(agent).length > 0) methods.push('account');
+  if (form) methods.push('api-key');
+  if (form && form.endpoint !== 'none') methods.push('endpoint');
+  return methods;
 }
 
 export function accountRowOf(
