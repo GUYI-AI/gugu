@@ -856,17 +856,22 @@ async function refreshList(readPreferences = false) {
   state.listError = kept ? null : listError
   for (const change of asked.heard) take(change)
   showList()
-  if (!kept) return
-  showBanner(listError, 'error', true)
-  $('list-banner').append(' ', Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: listAgain }))
-  window.addEventListener('online', listAgain, { once: true })
+  if (kept) failedOverKept(listError, () => void refreshList())
 }
 
-/** The list read again (重试, or the network back): the failure said over it goes. */
-function listAgain() {
-  window.removeEventListener('online', listAgain)
-  hideBanner()
-  void refreshList()
+/**
+ * A folder read before whose read again failed: what was read stays, the failure said over it in the list banner with
+ * 重试; 重试, or the network back, reads it again (❌ the old rows shown as if read now).
+ */
+function failedOverKept(message, again) {
+  const retry = () => {
+    window.removeEventListener('online', retry)
+    hideBanner()
+    again()
+  }
+  showBanner(message, 'error', true)
+  $('list-banner').append(' ', Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: retry }))
+  window.addEventListener('online', retry, { once: true })
 }
 
 // 「附件」 by its path: the database finds it by its role, whatever it is called on screen.
@@ -951,7 +956,9 @@ function readChatFolder(folderId) {
   void readFolders([folderId], null).catch((error) => {
     // Late, for a list no longer on screen: it has no say in the one that is.
     if (inWorkspace() || state.ctx?.chat?.id !== chat) return
-    state.listError = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
+    const message = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
+    if (error.code !== 'denied' && state.listed.has(folderId)) return failedOverKept(message, () => readChatFolder(folderId))
+    state.listError = message
     showList()
   })
 }
@@ -976,10 +983,12 @@ async function listFolder(folder, again = false) {
     listed = await gugu.files.list({ workspace, folder })
   } catch (error) {
     if (!inWorkspace() || copyOf()?.id !== workspace) return
-    state.listError = error.code === 'denied' ? state.t.denied
+    const message = error.code === 'denied' ? state.t.denied
       : copy.machine && error.code === 'unavailable' ? fmt(state.t.folderMachineOffline, { machine: copy.machine })
         : copy.machine && error.code === 'not-found' && !folder ? fmt(state.t.folderGone, { machine: copy.machine })
           : failureText(error)
+    if (error.code !== 'denied' && state.listed.has(folder)) return failedOverKept(message, () => void listFolder(folder, true))
+    state.listError = message
     return showList()
   }
   if (!inWorkspace() || copyOf()?.id !== workspace) return
