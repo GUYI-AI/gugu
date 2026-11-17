@@ -17,6 +17,9 @@ import type { CreditAmount } from '@gugu/core/billing/creditAmount'
 import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
 import { readCreditV2Account } from './v2/runtime'
+import { rendererLogger } from '../log'
+
+const planLog = rendererLogger('billing/plan')
 
 export interface SpendingSnapshot {
   /** unknown = 这个账号在这台设备上还没读到过;界面画占位,❌ 画「—」或 0。 */
@@ -116,7 +119,10 @@ export function onPlanChange(listener: () => void): () => void {
   const stopChanges = creditAccount.subscribe([], ({ reading }) => {
     const plan = planOf(reading)
     if (plan === null) return
-    if (seen !== null && plan !== seen) listener()
+    if (seen !== null && plan !== seen) {
+      planLog.info({ from: seen, to: plan }, 'the account plan changed: following surfaces read again')
+      listener()
+    } else if (seen === null) planLog.info({ plan }, 'the account plan is known (followed from here)')
     seen = plan
   })
   // Marked stale, then read (or joined: a surface showing the credits reads them on the same return).

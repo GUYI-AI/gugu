@@ -43,7 +43,13 @@ export function followCatalogChanges(refresh: () => void): () => void {
   let stopPlan: (() => void) | null = null
   let stopped = false
   void import('./billing/useSpendingPower').then(
-    ({ onPlanChange }) => { if (!stopped) stopPlan = onPlanChange(refresh) },
+    ({ onPlanChange }) => {
+      if (stopped) return
+      stopPlan = onPlanChange(() => {
+        rendererLogger('model-catalog').info({}, 'the account plan changed: the model catalog is read again')
+        refresh()
+      })
+    },
     (error: unknown) => { rendererLogger('model-catalog').error({ error: String(error) }, 'the billing module could not load: the catalog does not follow plan changes') },
   )
   return () => {
