@@ -667,7 +667,12 @@ export type SessionConditionCode =
    */
   | 'membership-required'
   /** 上一轮被宿主的退出打断了(更新 / 重启 / 没正常退出):开机收残记下的,下一轮开工就没了。宿主总是给 label。 */
-  | 'turn-interrupted';
+  | 'turn-interrupted'
+  /**
+   * This session's agent was started from a group chat and could not join it (the database refused or kept failing).
+   * `detail` is the database's answer; the action retries the join. Gone once the agent is in the group.
+   */
+  | 'group-join-failed';
 
 export type SessionCondition = Omit<SessionConditionItem, 'kind' | 'id' | 'hasVisibleHistory'>;
 

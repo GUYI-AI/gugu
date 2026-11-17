@@ -45,7 +45,7 @@ export const EXTENSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'app_pack',
-    description: 'Only for sharing an App with other people: pack a bundle directory into a .guguext file; it must pass the same checks app_install runs. With chat_id it also goes into that chat as an App card the people there install from, in the same call; without, send the returned file_path with message_send_file. Installing and testing your own App never needs it — app_install takes the folder, and puts it on your owner\'s computer.',
+    description: 'Only for sharing an App with other people: pack a bundle directory into a .guguext file; it must pass the same checks app_install runs. With chat_id it also goes into that chat as an App card the people there install from, in the same call; without, send the returned file_path with message_send. Installing and testing your own App never needs it — app_install takes the folder, and puts it on your owner\'s computer.',
     schema: z.object(APP_PACK_ARGS).strict(),
     action: 'pack',
   },
@@ -73,7 +73,7 @@ export const EXTENSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
     name: 'app_check',
     // Owner 10-13: the page is kept to go on with (page), it runs where it opens. Owner 10-14: you work it — the one
     // sentence says so, and nothing else warns.
-    description: 'Run an installed App as a hidden page and work it as yourself: operations and shared-state writes are real. A widget message (message_id or widget_id) opens the original card with its data, sender and manifest size; tab_kind is inferred. Otherwise give tab_kind: item_id opens a chat file, chat_id its side panel, file_path a session file. Returns loaded, errors with source/line (including separately labelled historical page errors), console, accessibility snapshot, pictures by default, and shown instead of changing the person’s screen or composer. Widget checks report their version, size, locale/theme or rendered:false with reason/text. Steps click/tap, fill, press and wait using roles/names from snapshot. The returned page continues where it stopped; give page with tab_kind and steps. See guide widgets for real operations and vote identity.',
+    description: 'Run an installed App as a hidden page and work it as yourself: operations and shared-state writes are real. A widget message (message_id or widget_id) opens the original card with its data, sender and manifest size; tab_kind is inferred. Otherwise give tab_kind: item_id opens a chat file, chat_id its side panel, file_path a session file. Returns loaded, errors with source/line (including separately labelled historical page errors), console, accessibility snapshot, pictures by default, and shown instead of changing the person’s screen or composer. Widget checks report their version, size, locale/theme or rendered:false with reason/text. Steps click/tap, fill, press and wait using roles/names from snapshot. The returned page continues where it stopped; give page with tab_kind and steps. Real operations and vote identity: the App reference docs, apps-widgets.md.',
     schema: z.object(APP_CHECK_ARGS).strict().superRefine((args, ctx) => {
       const message = appCheckTargetError(args)
       if (message) ctx.addIssue({ code: 'custom', message })

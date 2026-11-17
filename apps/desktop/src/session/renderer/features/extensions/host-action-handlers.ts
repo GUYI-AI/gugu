@@ -1,7 +1,7 @@
 import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view-kinds';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
-import { followLink, openLinkTarget } from '@/lib/guguLinks';
+import { followLink, openLinkTarget, OpenSuperseded } from '@/lib/guguLinks';
 import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -42,6 +42,8 @@ import {
 import {
   APP_FORWARD_FILES_EVENT,
   APP_OPEN_WITH_EVENT,
+  boxOnWindow,
+  type ViewBox,
 } from '@shared/extensions/app-runtime-protocol';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
@@ -100,6 +102,16 @@ function pageElement(webContentsId: number | null): BrowserWebviewElement | null
   return null;
 }
 
+/**
+ * A box a page gave in its own coordinates (`openingViewOf`), on the window its <webview> is in; a page with no webview
+ * here (the phone's frame, whose host placed it already) gives it on the window. A page not in this window: none.
+ */
+function boxOnPage(box: ViewBox, webContentsId: number | null): ViewBox | undefined {
+  if (webContentsId === null) return box;
+  const view = pageElement(webContentsId);
+  return view?.ownerDocument === document ? boxOnWindow(box, view.getBoundingClientRect()) : undefined;
+}
+
 /** The document a page is drawn in: what the host draws for it goes there. */
 const pageDocument = (webContentsId: number | null): Document => pageElement(webContentsId)?.ownerDocument ?? document;
 
@@ -128,7 +140,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       if (action.chatId) return openLinkTarget({ kind: 'app', extensionId: action.extensionId, tab: action.tab ?? installedExtensionsStore.mainTabOf(action.extensionId)?.kind.slice(action.extensionId.length + 1) ?? '', path: '', query: {}, place: { chat: action.chatId } });
       { const opened = openApp(action.extensionId, action.tab); revealSessionpage(); return opened; }
     case 'openChatFile':
-      if (action.onlyIfOpen) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
+      if ('onlyIfOpen' in action) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
         const tabs = panelTabsOf(action.chatId);
         if (!tabs.some((entry) => entry.shown && !entry.inWindow && groupPageSlot(action.chatId, entry.tabId) === fromTab)) return;
         if (action.intent && action.intent !== 'navigate') return;
@@ -138,9 +150,19 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
         // The body is already there. The original metadata validation starts after presenting it.
         return new Promise<{ chat: string }>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve({ chat: action.chatId }))));
       });
-      return openLinkTarget({ kind: 'file', itemId: action.itemId });
+      // A page's own open (`fromTab`): its tab waits beside that page, the page's state kept on it for the way back.
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin, chatPaneOf }) => {
+        const origin = fromTab ? chatPageOrigin(fromTab) : null;
+        if (origin && action.viewState) chatPaneOf(origin.chatId, origin.tabId)?.setPageViewState(origin.tabId, action.viewState);
+        return openLinkTarget({ kind: 'file', itemId: action.itemId, ...(action.at ? { at: action.at } : {}) }, {
+          ...(action.chatId ? { chatId: action.chatId } : {}), ...(action.fileName ? { fileName: action.fileName } : {}),
+          ...(action.among ? { among: action.among } : {}), ...(action.origin ? { origin: action.origin } : {}),
+          ...(origin ? { from: { chatId: origin.chatId, tabId: origin.tabId } } : {}), ...(action.intent ? { intent: action.intent } : {}),
+        // Superseded (the person moved on) is no failure; one is told as the host said it (its code, its words).
+        }).catch((error: unknown) => { if (!(error instanceof OpenSuperseded)) throw (error as { cause?: unknown }).cause ?? error; });
+      });
     case 'openLinkTarget':
-      return openLinkTarget(action.target);
+      return openLinkTarget(action.target, action.source);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
       const app = installedExtensionsStore.manifests.find((manifest) => manifest.id === action.extensionId)?.name ?? action.extensionId;
@@ -329,7 +351,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
           pane?.setPageViewState(tabId, action.viewState);
         }
         // The person cancelled 「用哪个打开」: nothing opens, and nothing went wrong.
-        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
+        const origin = action.origin ? boxOnPage(action.origin, pageId) : undefined;
+        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}), ...(action.among ? { among: action.among } : {}), ...(origin ? { origin } : {}) });
       })();
     }
     case 'openSessionFolder': {
@@ -352,8 +375,9 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       peekStore.open(sessionId, tabId, action.target);
       return;
     }
-    case 'openApp':
     case 'openChatFile':
+      return openForClick('origin' in action && action.origin ? { ...action, origin: boxOnPage(action.origin, pageId) } : action, tabId);
+    case 'openApp':
     case 'openLinkTarget':
       return openForClick(action, tabId);
     // #1925 The assistant's own screens, each by its existing entry; and the setup steps an App draws, moved on.

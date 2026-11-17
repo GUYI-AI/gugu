@@ -33,8 +33,6 @@ import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scop
 import { DeviceSettingsScope } from './DeviceSettingsScope';
 import { SubscriptionsSettingsPage } from '../subscriptions/SubscriptionsSettingsPage';
 import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
-import { platform } from '@/platform';
-import { ModalRenderer } from '@renderer/lib/modal/modal-renderer';
 import { HomeConnectorsSettings,CloudConnectorsSettings } from '../../assistant/assistant-connectors-settings';
 import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';
@@ -145,7 +143,7 @@ const SECTION_CONTENT: Record<SessionSettingsSection, (context: SessionSettingsC
  * 只补上它们在本页树里本来就有的几样 —— 同一个 queryClient(设置存取写的就是它的缓存)、本页的文案、
  * 浮层落点(壳给一个在弹窗**里面**的元素:弹窗的焦点圈、点外面关、inert 都按 DOM 包含关系判)。
  * 少补一样,那一格在弹窗里直接渲染失败 —— tests/browser/session-settings-content.test.tsx 逐格渲染钉住。
- * 浏览器的确认框走全局 modalStore,由本页 App 里那一个 ModalRenderer 画;这几格画着的时候让它落进同一个落点。
+ * 浏览器的确认框走全局 modalStore,由本页 App 里那一个 ModalRenderer 画(手机壳:PhoneSessionModalHost);这几格画着的时候让它落进同一个落点。
  */
 export function SessionSettingsContent({
   section,
@@ -165,7 +163,6 @@ export function SessionSettingsContent({
       <SessionLocalizationProvider>
         <UiPortalContainerProvider value={portalContainer}>
           <InSettingsPanelProvider>{SECTION_CONTENT[section](context)}</InSettingsPanelProvider>
-          {!platform.capabilities.sessionHost ? <ModalRenderer /> : null}
         </UiPortalContainerProvider>
       </SessionLocalizationProvider>
     </QueryClientProvider>

@@ -6,7 +6,7 @@ const work: NativeWork = { source: 'source', project: 'project:one', minimumExec
 const call = (name: string, input: Record<string, unknown>, line: number, result?: unknown): NativeCall => ({ id: String(line), name, input, line, result, outcome: 'succeeded', timestamp: `2026-10-21T00:00:${String(line).padStart(2, '0')}Z` })
 const executor = [call('Write', { file_path: '/out/report.md' }, 3)]
 const parent = () => [call('mcp__gugu__session_spawn', { project: 'project:one', prompt: '12000', source_link: 'source' }, 1, { session_id: 'session:worker' }),
-  call('Read', { file_path: '/out/report.md' }, 4), call('mcp__gugu__message_send_file', { file_path: '/out/package.zip' }, 5)]
+  call('Read', { file_path: '/out/report.md' }, 4), call('mcp__gugu__message_send', { file_path: '/out/package.zip' }, 5)]
 
 describe('actual native evidence', () => {
   it('ignores API request snapshots, and a disabled Bash request is not execution', () => {

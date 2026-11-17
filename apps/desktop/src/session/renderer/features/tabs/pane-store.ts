@@ -217,6 +217,8 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       detachTab: action,
       adoptEntry: action,
       navigate: action,
+      replaceCurrentPage: action,
+      discardPage: action,
       go: action,
       goTo: action,
       setPageViewState: action,
@@ -555,6 +557,34 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       pages.push({ kind, state, ...(viewState ? { viewState } : {}) });
       this._showPage(entry, { pages, index: pages.length - 1 });
     });
+  }
+
+  /** The page on screen is now `state`, in place: the same page of its history, kept as it now is (not its old view state). */
+  replaceCurrentPage(tabId: string, state: unknown): void {
+    const entry = this.entries.get(tabId);
+    if (!entry) return;
+    entry.state = state;
+    if (!entry.history) return;
+    const pages = [...entry.history.pages];
+    pages[entry.history.index] = { kind: entry.kind, state: toJS(state) };
+    entry.history = { pages, index: entry.history.index };
+  }
+
+  /**
+   * The page of this tab's history that `matches` is dropped, so neither Back nor Forward reaches it; on screen, the page
+   * before it shows again. `alone`: the tab's only page (closing the tab is the caller's); `none`: no page matches.
+   */
+  discardPage(tabId: string, matches: (state: unknown) => boolean): 'dropped' | 'alone' | 'none' {
+    const entry = this.entries.get(tabId);
+    const history = this.navigationOf(tabId);
+    if (!entry || !history) return 'none';
+    const at = history.pages.findIndex((page, index) => matches(index === history.index ? entry.state : page.state));
+    if (at < 0) return 'none';
+    if (history.pages.length === 1) return 'alone';
+    const pages = history.pages.filter((_page, index) => index !== at);
+    if (at === history.index) this._showPage(entry, { pages, index: Math.max(0, at - 1) });
+    else entry.history = { pages, index: at < history.index ? history.index - 1 : history.index };
+    return 'dropped';
   }
 
   go(tabId: string, delta: -1 | 1): Promise<boolean> {

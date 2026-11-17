@@ -66,7 +66,7 @@ describe('approved live-window presentation', () => {
     expect(model.getSnapshot().presentation?.orientation).toBe('portrait');
   });
   it('retains the last picture after completion and never creates a takeover state', () => {
-    const model = opened(); model.observe(context, []);
+    const model = opened(); model.observe(context, [{ ...source(), status: 'finished' }]);
     expect(model.getSnapshot()).toMatchObject({ visible: true, operating: false, source: { status: 'finished' } });
     expect(model.getSnapshot().presentation?.mode).toBe('floating');
   });

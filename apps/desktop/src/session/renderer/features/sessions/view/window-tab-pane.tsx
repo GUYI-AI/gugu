@@ -11,7 +11,8 @@ import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context'
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { ShellTitlebarDragRegion } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { SessionContentGate } from '../main-panel';
-import { useWorkspaceViewModel } from '../session-view-context';
+import { useSessionViewContext, useWorkspaceViewModel } from '../session-view-context';
+import { DesktopLiveWindowHeader } from '../../live-window/DesktopLiveWindowHeader';
 import { TabBarActionRow } from '../titlebar-actions';
 import { SessionMachineStatus } from './session-machine-status';
 
@@ -33,7 +34,11 @@ export const WindowTabPane = observer(function WindowTabPane({ windowId, paneId 
 });
 
 const SessionWindowTabPane = observer(function SessionWindowTabPane({ windowId, paneId }: { windowId: string; paneId: string }) {
-  return <WindowTabPaneContent windowId={windowId} paneId={paneId} paneLayout={useWorkspaceViewModel().paneLayout} status={<SessionMachineStatus />} />;
+  const { projectId } = useSessionViewContext();
+  const { paneLayout } = useWorkspaceViewModel();
+  const active = paneLayout.windowPanes.get(paneId)?.pane.activeEntry;
+  const sessionId = active && (active.kind === 'session' || active.kind === 'acp-chat') ? (active.state as { sessionId: string }).sessionId : undefined;
+  return <WindowTabPaneContent windowId={windowId} paneId={paneId} paneLayout={paneLayout} status={<><SessionMachineStatus /><DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} /></>} />;
 });
 
 /** The window's strip and its one tab, from whichever strip it came out of (a task's, a chat's). */

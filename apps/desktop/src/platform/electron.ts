@@ -270,11 +270,4 @@ export const electronPlatform: AppPlatform = {
     if (!api?.getAgentCreationTools) throw unavailable('Agent creation tools')
     return api.getAgentCreationTools()
   },
-  // @@@share-card-rename 缺桥就是装配错误:静默 return 会让云端改了名、会话页还叫旧名,
-  // 而那个「两页两个名字」正是这一半存在的理由。
-  async renameOwnedAgentLocalFootprint(agentUserId: string, name: string): Promise<void> {
-    const api = electronApi()
-    if (!api?.renameOwnedAgentLocalFootprint) throw unavailable('Owned agent local footprint rename')
-    await api.renameOwnedAgentLocalFootprint(agentUserId, name)
-  },
 }

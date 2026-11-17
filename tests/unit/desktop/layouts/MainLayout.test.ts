@@ -1281,7 +1281,33 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
     expect(sessionPageViewRequests.openChat).toHaveBeenCalledExactlyOnceWith(chatId, false, 'resource')
     expect(openNativeConversation).not.toHaveBeenCalled()
   }
-  expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: fileAnswer('F1', chatId), message: source })
+  // Its waiting page was asked of the message's chat first: the answer turns that page into the file.
+  expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: { ...fileAnswer('F1', chatId), wait: expect.any(String) }, message: source })
+})
+
+// An agent's file goes up beside its task (which may take a while): the host refusing it before that leaves no waiting
+// ask behind for the task page to open later.
+it.each(['owned', 'group'] as const)('a %s file the host refuses: nothing is left waiting in its chat', async kind => {
+  const chatId = 'refused-file-chat'
+  const source = message({ id: 'receipt-refused', chat_id: chatId, file_item_id: 'F9', file_version: 1 })
+  chatStoreMock.chats = [{ id: chatId, kind: kind === 'owned' ? 'dm' : 'group', peer_user_id: kind === 'owned' ? 'agent' : null }] as never
+  if (kind === 'owned') { taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]; taskRoute.remote = true }
+  fileOwner.mockResolvedValue({ data: null, error: null })
+  await renderMainLayoutWithToast()
+  await act(async () => { await expect(openLinkTarget({ kind: 'file', itemId: 'F9', version: 1 }, { message: source })).rejects.toThrow() })
+  expect(takeChatAsk(chatId)).toBeNull()
+})
+
+// A link with no message of its own (one in a task page's text): no chat to wait in, nothing asked before the answer.
+it('a file link clicked outside any message: nothing waits; the answer opens the file\'s chat', async () => {
+  chatStoreMock.chats = [{ id: 'file-group', kind: 'group' }] as never
+  fileOwner.mockResolvedValue({ data: { chat_id: 'file-group' }, error: null })
+  await renderMainLayoutWithToast()
+  let opened!: Promise<unknown>
+  act(() => { opened = openLinkTarget({ kind: 'file', itemId: 'F7' }); void opened.catch(() => undefined) })
+  expect(takeChatAsk('file-group')).toBeNull()
+  await act(async () => { await opened })
+  expect(takeChatAsk('file-group')).toEqual({ itemId: 'F7', opener: fileAnswer('F7', 'file-group') })
 })
 
 it('opens an owned agent\'s file beside its task on the phone, as on a computer', async () => {

@@ -358,7 +358,7 @@ export interface OwnerSendArgs {
   caption?: string
 }
 
-/** An agent sends a file to its owner's friend as the owner (message_send_file_as_owner): the send, as the server answers it. */
+/** An agent sends a file to its owner's friend as the owner (message_send_as_owner with file_path): the send, as the server answers it. */
 export async function sendFileAsOwner(endpoint: AttachmentsEndpoint, args: OwnerSendArgs): Promise<{ chat_id: string; message_id: string; sender_user_id: string; sent_by_agent: boolean }> {
   const answer = await call(endpoint, 'commit', { ...args }) as { message: { chat_id: string; message_id: string; sender_user_id: string; sent_by_agent: boolean } | null }
   if (!answer.message) throw new AttachmentsError('commit', 500, 'failed', `no send came back for ${args.request_id}`)
@@ -405,7 +405,10 @@ export interface ShareArgs {
   chat_id: string
   sender_user_id: string
   to_user_ids?: string[]
+  reply_to_message_id?: string | null
   thread_root_id?: string | null
+  /** The message's text under the file card (首尾空白去掉;空的就没有). */
+  caption?: string
 }
 
 /** Sends a file of a chat's folder by reference — no bytes from here; the one way a folder file becomes a file card: the new message row. */

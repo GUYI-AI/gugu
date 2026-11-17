@@ -31,7 +31,7 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useInnerSidebarFrame: () => 260,
-  useWorkspaceLayoutContext: () => ({ isLeftOpen: true, leftRail: 0 }),
+  useWorkspaceLayoutContext: () => ({ isLeftOpen: true }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live.navigation; } },

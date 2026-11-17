@@ -42,6 +42,7 @@ import {
   createSignal,
   on,
   onCleanup,
+  mapArray,
   onMount,
   untrack,
   useContext,
@@ -1207,14 +1208,20 @@ export function ChatRoot(props: ChatRootProps) {
    * Each anchor's stuck summary (PinnedUserSummary): its height, one or two lines whatever the message's length, and
    * where it rests below the lane's top: behind the last `height` px of the message's bubble (@@@pin-cover).
    */
-  const pinGeometry = createMemo(() => {
-    const ctx = measureContext();
-    return new Map(pinAnchors().map(index => {
-      const unit = untrack(() => units().at(index)!);
-      const s = pinSummary(unit.data as ChatMessage, ctx, UNIT_REGISTRY.message!.vars as MessageVars);
-      return [index, { height: s.height + PIN_SUMMARY_GAP, rest: (unit.gapBefore ?? 0) + s.rest }];
-    }));
+  // Each anchor follows its own message: when that message changes (its attachments arrive, its text is edited) its summary
+  // moves with the bubble in the same frame, instead of staying where the bubble was and covering what took its place.
+  // A streaming patch rebuilds `units()` but not these messages, so it re-lays out no summary.
+  const pinAnchorGeometry = mapArray(pinAnchors, index => {
+    const message = createMemo(() => units().at(index)?.data);
+    return [index, createMemo<{ height: number; rest: number }>(previous => {
+      // Rows and anchors change in one batch; an anchor about to be dropped keeps its place until it is.
+      const data = message();
+      if (!data) return previous;
+      const s = pinSummary(data as ChatMessage, measureContext(), UNIT_REGISTRY.message!.vars as MessageVars);
+      return { height: s.height + PIN_SUMMARY_GAP, rest: (untrack(() => units().at(index)?.gapBefore) ?? 0) + s.rest };
+    }, { height: 0, rest: 0 }, { equals: (a, b) => a.height === b.height && a.rest === b.rest })] as const;
   });
+  const pinGeometry = createMemo(() => new Map(pinAnchorGeometry().map(([index, geometry]) => [index, geometry()])));
   const pinHeight = (idx: number) => pinGeometry().get(idx)?.height ?? 0;
   const pinRest = (idx: number) => pinGeometry().get(idx)?.rest ?? 0;
 

@@ -16,7 +16,7 @@ import { lineNumberSelection, previewSelectionLines, previewSelectionText } from
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -708,6 +708,8 @@ async function applyContext(ctx) {
   state.t = stringsFor(ctx.locale)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
   renderChrome()
+  // The list is drawn now; a handed file once it is shown or has failed (`showDoc`, `showDocMessage`).
+  if (!ctx.file) reveal()
   const roots = rootsOf(ctx)
   const inGroup = roots.length > 0
   // A page the host opened for one file (F3: its own page, bound to that file for life) shows that file only.
@@ -765,7 +767,8 @@ function renderChrome() {
   const title = state.ctx?.file?.id && state.ctx.file.id === state.shown?.id ? state.shown.name : t.title
   document.title = title
   // The slot's header says this App's name in the person's language (it would show the manifest's 文件夹 otherwise).
-  if (state.titled !== title) {
+  // Until a handed file is shown, no title: the host's tab keeps the file's name.
+  if (state.titled !== title && (!state.ctx?.file || state.ctx.file.id === state.shown?.id)) {
     state.titled = title
     Promise.resolve(gugu.setTabTitle(title)).catch(() => {})
   }
@@ -1822,8 +1825,8 @@ function shownName(entry) {
 }
 
 // A file's mark: the icon the App that opens it declared for its kind (entry.claimedBy.icon, worked out by the host) —
-// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else its suffix on a square coloured by its
-// family (list.js), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
+// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else the host's file tile (<gugu-file-mark>,
+// the same as on its output cards), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
 function fileMark(entry) {
   const icon = entry.claimedBy?.icon
   if (icon) {
@@ -1831,12 +1834,11 @@ function fileMark(entry) {
     mark.title = entry.claimedBy.name
     return mark
   }
-  const { label, family } = markOf(entry)
-  const mark = document.createElement('span')
-  mark.className = 'file-mark file-badge'
-  mark.dataset.family = family
-  mark.textContent = label
-  mark.setAttribute('aria-hidden', 'true')
+  // The full name (not displayName): its last suffix says the family.
+  const mark = Object.assign(document.createElement('gugu-file-mark'), { className: 'file-mark' })
+  mark.setAttribute('name', entry.name ?? '')
+  if (entry.contentType) mark.setAttribute('mime', entry.contentType)
+  mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
   if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
@@ -1868,7 +1870,6 @@ function thumbInto(el, entry) {
     if (!url) return
     el.style.backgroundImage = `url("${url}")`
     el.classList.add('has-thumb')
-    el.textContent = ''
   }
   el.thumbWanted = () => {
     if (!thumbs.has(key)) thumbs.set(key, new Promise((done) => {
@@ -2444,10 +2445,21 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
-    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
+    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// An image opens in the host's image viewer (API 57): the images on screen with it, in the order drawn, to page through,
+// and where its picture is, to open from and close back to.
+function viewedWith(entry) {
+  if (!/^image\//i.test(entry.contentType || '')) return {}
+  const byId = new Map(state.entries.map((e) => [e.id, e]))
+  const among = state.order.map((id) => byId.get(id)).filter((e) => e && !isFolder(e) && /^image\//i.test(e.contentType || '') && !fileUnavailable(e))
+  const mark = [...$('file-list').querySelectorAll('li[data-id]')].find((li) => li.dataset.id === entry.id)?.querySelector('.file-mark')
+  const box = mark?.getBoundingClientRect()
+  return { ...(among.length > 1 ? { among } : {}), ...(box && box.width > 0 ? { origin: { x: box.x, y: box.y, width: box.width, height: box.height } } : {}) }
 }
 
 function startRename(li, entry) {
@@ -2849,6 +2861,11 @@ async function openHanded(maxBytes) {
   } finally {
     if (state.opening === token) state.opening = null
   }
+}
+
+/** Draw the page (index.html starts it `reading`): what it shows is ready. */
+function reveal() {
+  document.body.classList.remove('reading')
 }
 
 // A file that could not be opened (its machine out of reach, say): a way to try again, and again by itself when its machine is back.
@@ -4029,6 +4046,7 @@ function watchPresence(current) {
 // ─── panes and messages ─────────────────────────────────────────────────────
 
 function showDoc(entry) {
+  reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
   $('doc-title').textContent = entry.name
@@ -4079,6 +4097,7 @@ async function showDocPath(entry) {
 }
 
 function showDocMessage(message) {
+  reveal()
   document.body.dataset.state = 'message'
   $('doc-path').hidden = true
   document.body.classList.remove('json-dirty')

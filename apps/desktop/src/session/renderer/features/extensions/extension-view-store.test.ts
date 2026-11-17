@@ -18,12 +18,12 @@ describe('each App navigation context owns its resident pages', () => {
     const widget = { id: 'stable-widget', originMessageId: 'origin', messageId: 'first', senderId: 'author', data: {} };
     const first = bind(take('counter.widget', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget }));
     const page = key('counter.widget', { chatId: 'widget-chat', widget });
-    store.widgetPainted(page);
+    store.pagePainted(page);
     store.release('counter.widget', first);
     take('counter.widget', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget: { ...widget, messageId: 'second' } });
     expect(pages('counter.widget').map((p) => p.key)).toEqual([page]);
     expect(store.paintedPages.has(page)).toBe(true);
-    store.widgetPainted(page, false);
+    store.pagePainted(page, false);
     expect(store.paintedPages.has(page)).toBe(false);
   });
   it('a task timeline showing the same widget has a page of its own (its own tab), the chat keeps one', () => {

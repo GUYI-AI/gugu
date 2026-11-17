@@ -145,3 +145,17 @@ it('does not accept a prepared authorization supplied in the App request itself'
   await files.open(page, args);
   expect(rpc.mock.calls.map(([name]) => name)).toEqual(['workspace_get_as']);
 });
+
+it('one gate for naming a file to open: without files:read, another file is refused before anything is read; its own is not', async () => {
+  const gated = createAppFiles({
+    account: async () => ({ token: 'token', userId: PERSON }), hasCapability: () => false,
+    sync: { ensureFor, pageFor: () => ({}), grant, ungrant: vi.fn(), revoke: vi.fn() } as never,
+    claimant, identities, faces: async () => ({}), filesUrl: () => 'http://files.invalid', warn,
+  });
+  const other = { ...page, itemId: 'its-own-file' };
+  await expect(gated.openTarget(other, { ref: { id: ITEM } })).rejects.toMatchObject({ code: 'denied' });
+  rpc.mockClear();
+  expect(() => gated.mayName(other, ITEM, 'opening')).toThrow(expect.objectContaining({ code: 'denied' }));
+  expect(rpc).not.toHaveBeenCalled();
+  expect(() => gated.mayName(page, ITEM, 'opening')).not.toThrow();
+});

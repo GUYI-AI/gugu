@@ -852,6 +852,19 @@ async function startApp(servers) {
   return appStarting
 }
 
+/**
+ * @@@codex-account-gate — signed out, Codex still opens threads and lists its models; the first turn 401s.
+ * So a session needing an OpenAI login (`requiresOpenaiAuth`) with no account is refused with ACP
+ * `authRequired` (-32000). Custom providers (gugu's route, API-key connections) report `false` and pass;
+ * `session/list` is not gated. Shapes measured on codex 0.163 / 0.169 are in codexAccountGate.test.ts.
+ */
+async function requireCodexAccount() {
+  const read = await appRequest('account/read', {})
+  if (read?.requiresOpenaiAuth === true && !read.account) {
+    throw Object.assign(new Error('Authentication required: sign in to Codex (codex login) first.'), { code: -32000 })
+  }
+}
+
 async function startAppOnce(servers) {
   const mcp = mcpConfig(servers)
   appServerThreadConfig = mcp.config
@@ -2274,6 +2287,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/fork') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 运行时分叉(侧边聊天)不许在 codex 的线程台账里留痕 ⇒ `ephemeral: true`(缺省)。
     // 持久分叉(spec session-fork-share 的「Fork 会话」)正好相反:它就是要落成一条能重开的
@@ -2365,6 +2379,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/new') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     const started = await startThread({
       cwd: params.cwd,
@@ -2416,6 +2431,7 @@ async function handleAcpRequest(message) {
     const generation = ++loadGeneration
     const loadStartedAt = Date.now()
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 见 @@@resume-provider:resume 要用**这个进程**的 provider,❌ 不是 rollout 里记的那个。
     const resumeProvider = await processModelProviderOnce(params.cwd)

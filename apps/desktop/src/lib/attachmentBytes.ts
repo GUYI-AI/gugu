@@ -6,6 +6,7 @@ import { queryClient, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, type ImageViewerItem } from './imageViewer'
+import type { ViewBox, ViewedImage } from '@/session/shared/extensions/app-runtime-protocol'
 import { rendererLogger } from './log'
 import { sentFileCopy, sentFileOf } from './sentFileCopies'
 import { resumingCopy } from './attachmentUploads'
@@ -228,8 +229,8 @@ function decodedImage(url: string): Promise<void> {
   return image.decode().catch(() => undefined) // An undecodable image still shows what the <img> itself makes of it.
 }
 
-/** Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. */
-export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): void {
+/** One file in the shared viewer: the bubble's thumbnail cache first, then the verified original, each read when shown. */
+function attachmentImageItem(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): ImageViewerItem {
   const file: NonNullable<ImageViewerItem['file']> = { name: fileName }
   const urls: string[] = []
   let released = false, preview: Promise<string> | undefined, full: Promise<string> | undefined
@@ -250,7 +251,56 @@ export function openAttachmentImage(source: AttachmentSource, fileName: string, 
     release: () => { released = true; urls.splice(0).forEach(url => URL.revokeObjectURL(url)) },
     resource: source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: source.itemId, version: source.version } } : undefined,
   }
-  openImageViewer([item])
+  return item
+}
+
+/** Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. */
+export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): void {
+  openImageViewer([attachmentImageItem(source, fileName, origin)])
+}
+
+/** How long the viewer waits for the clicked image's thumbnail (and so its size), to open from it rather than empty. */
+export const VIEWER_THUMB_WAIT_MS = 120
+
+/**
+ * Chat images opened from a page that shows several (an App's `among`): the viewer pages through them from `index`. The
+ * clicked one's thumbnail is waited for a moment, so the viewer opens from `box` (its picture on the window) with its
+ * pixels and size; without them it fades in, and they follow.
+ */
+export function openAttachmentImages(images: readonly ViewedImage[], index: number, origin?: ImageViewerItem['source'], box?: ViewBox): Promise<void> {
+  return openViewerFromClick(images.map((image) => attachmentImageItem({ kind: 'item', itemId: image.itemId, version: image.version }, image.name, origin)), index, box)
+}
+
+/** Images a page showed, opened from the clicked one's picture (`box`, on the window) once its first pixels are here — or soon. */
+export async function openViewerFromClick(items: ImageViewerItem[], index: number, box?: ViewBox): Promise<void> {
+  const clicked = items[index]
+  if (!clicked?.preview) throw new Error('The clicked image is not among the images to open')
+  if (box) clicked.thumbRect = box
+  const thumb = await Promise.race([clicked.preview().catch(() => null), new Promise<null>((done) => setTimeout(done, VIEWER_THUMB_WAIT_MS, null))])
+  if (thumb) clicked.url = thumb
+  // Its first pixels are the original (a working copy's): their size is the one to open at.
+  if (thumb && !clicked.size && !clicked.full) {
+    const image = new Image()
+    image.src = thumb
+    await image.decode().catch(() => undefined)
+    if (image.naturalWidth && image.naturalHeight) clicked.size = { width: image.naturalWidth, height: image.naturalHeight }
+  }
+  openImageViewer(items, index)
+}
+
+/** A working copy's image in the shared viewer: its bytes read when shown (`read`), its size from them. */
+export function workingCopyImageItem(name: string, read: () => Promise<Blob>): ImageViewerItem {
+  const urls: string[] = []
+  let released = false, bytes: Promise<string> | undefined
+  return {
+    url: '', alt: name, file: { name },
+    preview: () => bytes ??= read().then((blob) => {
+      const url = URL.createObjectURL(blob)
+      if (released) URL.revokeObjectURL(url); else urls.push(url)
+      return url
+    }),
+    release: () => { released = true; urls.splice(0).forEach(url => URL.revokeObjectURL(url)) },
+  }
 }
 
 /** 下载一个附件(同一份缓存);条目删了就抛。 */

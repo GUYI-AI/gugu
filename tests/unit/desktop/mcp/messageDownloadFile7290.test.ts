@@ -155,7 +155,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(asked).toEqual([[{ message_id: 'm1' }]])
     expect(fetched).toEqual(['verified original'])
     expect(receipt).toMatchObject({ file: 'gugu-file://item-1?v=3' })
-    expect(receipt.next).toContain('message_send_file {file: "gugu-file://item-1?v=3", file_path}')
+    expect(receipt.next).toContain('message_send {file: "gugu-file://item-1?v=3", file_path}')
   })
 
   // Preserve X2: the host receives the exact message and agent identity, never the token's owner or a body URL.
