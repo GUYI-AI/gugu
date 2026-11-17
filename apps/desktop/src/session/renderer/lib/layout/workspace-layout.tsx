@@ -93,7 +93,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     const content = contentRef.current;
     if (!content) return;
     const move = (shift: number) => {
-      const transform = shift ? `translateX(${shift}px)` : '';
+      // A place without this list has no list edge to follow, including while a fold is still running.
+      const transform = !sidebarHidden && shift ? `translateX(${shift}px)` : '';
       content.style.transform = transform;
       // The inner sidebar is the page's previous sibling (WorkspaceLayout renders it there; InnerSidebar owns the element).
       const inner = content.previousElementSibling;
@@ -101,7 +102,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     };
     move(pageShift.get());
     return pageShift.on('change', move);
-  }, [pageShift]);
+  }, [pageShift, sidebarHidden]);
   const showInnerHandle = innerSidebarShown && !sidebarHidden;
 
   // GUYI-AI/gugu#2548 the rail is the expanded list itself, only narrow: the avatars' left edges stay put and the text fades

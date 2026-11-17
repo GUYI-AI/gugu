@@ -5,9 +5,10 @@
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
+import { useState } from 'react';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
-import { SIDEBAR_LANDED_PX, WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { SIDEBAR_LANDED_PX, SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { writeInterface } from '@/lib/viewStateTable';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -68,6 +69,36 @@ it('a fold lays the page out at most twice and keeps it on the list\'s edge, bot
     const relaid = frames.findIndex((frame) => frame.width === end.width);
     if (direction === 'collapse') expect(relaid, 'collapse: laid out at the rail at once').toBeLessThanOrEqual(1);
     else expect(relaid - landed, `expand: re-laid out ${relaid - landed} frames after the edge landed`).toBeLessThanOrEqual(1);
+  }
+});
+
+it('leaving a folding list gives a place without that list the whole width, and returning preserves the fold', async () => {
+  writeInterface('gugu.taskpage.sidebarWidth', 320);
+  function Places() {
+    const [sidebarHidden, setSidebarHidden] = useState(false);
+    return <>
+      <button style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 100 }} onClick={() => setSidebarHidden(!sidebarHidden)}>switch place</button>
+      <WorkspaceLayout sidebarHidden={sidebarHidden} leftSidebar={<div>project list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
+    </>;
+  }
+  harness = createReactHarness();
+  await harness.render(<div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
+    <SessionLocalizationProvider><WorkspaceLayoutContextProvider><Places /></WorkspaceLayoutContextProvider></SessionLocalizationProvider>
+  </div>);
+  const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
+  const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
+  const list = shell.querySelector<HTMLElement>('aside')!;
+  const button = (label: string) => [...harness.container.querySelectorAll('button')].find(button => button.textContent === label)!;
+  for (const landedWidth of [SIDEBAR_RAIL_PX, 320]) {
+    await userEvent.click(button('toggle list'));
+    await userEvent.click(button('switch place'));
+    await new Promise(requestAnimationFrame);
+    expect(surface.getBoundingClientRect().left - shell.getBoundingClientRect().left, 'the hidden list must not shift the new page while it is still moving').toBeCloseTo(0);
+    expect(surface.getBoundingClientRect().right + parseFloat(getComputedStyle(surface).marginRight), 'the existing surface inset is the only space at the other edge').toBeCloseTo(shell.getBoundingClientRect().right);
+    await userEvent.click(button('switch place'));
+    await expect.poll(() => list.getBoundingClientRect().width).toBe(landedWidth);
+    await expect.poll(() => surface.getBoundingClientRect().left - shell.getBoundingClientRect().left).toBeCloseTo(landedWidth);
+    expect(shell.querySelector('aside'), 'returning keeps the same list').toBe(list);
   }
 });
 
