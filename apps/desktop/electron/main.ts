@@ -3349,6 +3349,9 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
     if (value) updateQuit.noteShutdownStarted()
   },
   exit: (code) => {
+    // The hard exit below skips will-quit, so the owned-process reap runs here too: whatever the bounded stop left
+    // running (a worker past its grace, with the agent CLIs under it) goes now instead of outliving the app.
+    killEnginesOnCrash('quit')
     const hardExit = (): never =>
       (process as NodeJS.Process & { reallyExit: (exitCode: number) => never }).reallyExit(code)
     squirrelHandoff.exit(updateQuit.forUpdate, hardExit)

@@ -35,3 +35,12 @@ describe('the desktop process works in its userData directory', () => {
     expect(main).not.toMatch(/process\.cwd\(\)/)
   })
 })
+
+describe('the graceful exit reaps owned processes too', () => {
+  it('runs the owned-process reap before the hard exit that skips will-quit', () => {
+    const exit = at('exit: (code) => {')
+    const reap = at("killEnginesOnCrash('quit')")
+    expect(exit).toBeLessThan(reap)
+    expect(reap).toBeLessThan(at('squirrelHandoff.exit(updateQuit.forUpdate, hardExit)'))
+  })
+})
