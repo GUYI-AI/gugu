@@ -48,6 +48,10 @@ class OpencodeSqliteSource extends SqlitePollSource<SessionRecordLocator> {
   private roles = new Map<string, 'user' | 'assistant'>();
   private parts = new Map<string, PartState>();
   private watermark = 0;
+  /** The session's `revert` marker as last read (raw JSON text); a change means the visible conversation changed. */
+  private revertMarker: string | null = null;
+  /** What that marker hides: the reverted messages, and the reverted parts of the message it cuts inside. */
+  private hidden = { messages: new Set<string>(), parts: new Set<string>() };
   /** 「这一批读完之后要整份重来」。❌ 别在遍历中途直接重来：那会在自己的循环里再跑一遍自己。 */
   private pendingRestart: 'source_replaced' | 'source_unreadable' | null = null;
   private restarting = false;
@@ -80,6 +84,12 @@ class OpencodeSqliteSource extends SqlitePollSource<SessionRecordLocator> {
   protected read(first: boolean): void {
     if (first) {
       this.readAll();
+      return;
+    }
+    // A revert (`POST /session/{id}/revert`, TUI `/undo`) only sets the marker; its rows go on the next prompt.
+    // Either change alters what the conversation is, so the whole reading starts over (#2970).
+    if (this.readRevertMarker() !== this.revertMarker) {
+      this.restart('source_replaced');
       return;
     }
     // `>=` 而不是 `>`:同一毫秒里写进来的行会被 `>` 整批漏掉，而「漏掉的那条正好是最后一条」
@@ -124,11 +134,24 @@ class OpencodeSqliteSource extends SqlitePollSource<SessionRecordLocator> {
       'select id, message_id, time_created, time_updated, data from part ' +
         `where session_id = ?${this.partFilter} order by time_created, id`
     ).all(this.locator.providerSessionId, ...this.filterArgs) as PartRow[];
+    this.revertMarker = this.readRevertMarker();
+    this.hidden = hiddenByRevert(this.revertMarker, messages, parts);
     this.absorb(messages, parts);
   }
 
-  private absorb(messages: MessageRow[], parts: PartRow[]): void {
+  private readRevertMarker(): string | null {
+    // The column is the one opencode itself writes; a database without it has never been reverted.
+    this.hasRevertColumn ??= (this.db!.prepare('pragma table_info(session)').all() as Array<{ name: string }>).some(column => column.name === 'revert');
+    if (!this.hasRevertColumn) return null;
+    const row = this.db!.prepare('select revert from session where id = ?').get(this.locator.providerSessionId) as { revert?: string | null } | undefined;
+    return row?.revert ?? null;
+  }
+  private hasRevertColumn: boolean | undefined;
+
+  private absorb(allMessages: MessageRow[], allParts: PartRow[]): void {
     if (!this.events) return;
+    const messages = allMessages.filter(row => !this.hidden.messages.has(row.id));
+    const parts = allParts.filter(row => !this.hidden.parts.has(row.id) && !this.hidden.messages.has(row.message_id));
     let bad = 0;
     /** 这一批里了结了的 assistant 消息：messageId → 它的边界。 */
     const completed = new Map<string, Settled>();
@@ -380,3 +403,25 @@ function mapToolStatus(status: unknown): NormalizedToolStatus {
 
 /** opencode 的工具名是小写动词。名单外一律 'other'，理由同 claude 侧。 */
 const opencodeToolKind = toolKindTable({ read: ['read'], edit: ['edit', 'write', 'patch'], execute: ['bash'], search: ['grep', 'glob', 'list'], fetch: ['webfetch'] });
+
+/**
+ * What opencode's revert marker takes out of the conversation, the way its own `SessionRevert.cleanup` will delete it
+ * (1.19.5): every message from `messageID` on, or with `partID` every message after it plus that message's parts from
+ * `partID` on. Until that cleanup runs on the next prompt the rows are still there; they are not the conversation.
+ */
+function hiddenByRevert(marker: string | null, messages: MessageRow[], parts: PartRow[]) {
+  const hidden = { messages: new Set<string>(), parts: new Set<string>() };
+  const revert = marker ? asRecord(parseJson(marker)) : null;
+  const messageId = typeof revert?.messageID === 'string' ? revert.messageID : null;
+  if (!messageId) return hidden;
+  const at = messages.findIndex(row => row.id === messageId);
+  if (at < 0) return hidden;
+  const partId = typeof revert?.partID === 'string' ? revert.partID : null;
+  for (const row of messages.slice(at + (partId ? 1 : 0))) hidden.messages.add(row.id);
+  if (partId) {
+    const own = parts.filter(row => row.message_id === messageId);
+    const cut = own.findIndex(row => row.id === partId);
+    if (cut >= 0) for (const row of own.slice(cut)) hidden.parts.add(row.id);
+  }
+  return hidden;
+}

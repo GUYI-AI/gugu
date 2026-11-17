@@ -142,3 +142,25 @@ describe('codebuddy jsonl 记录源', () => {
     ).rejects.toBeInstanceOf(SessionRecordNotFoundError);
   });
 });
+
+describe("codebuddy rollback (#2970)", () => {
+  const userTexts = (entries: RecordEntry[]) => entries.flatMap((entry) =>
+    entry.event?.kind === "message" && entry.event.role === "user" && typeof entry.event.text === "string" ? [entry.event.text] : []);
+
+  it("drops the rolled-back turns as soon as the fork notice is written", async () => {
+    const { root, file, id } = await stage();
+    const before = collect(createCodebuddyJsonlSource({ harness: "codebuddy", providerSessionId: id, roots: [root] }));
+    await before.started;
+    const all = userTexts(before.entries);
+    expect(all.length).toBeGreaterThan(1);
+    // `_codebuddy.ai/session/rollback` to before the second user message: the notice hangs off the first answer.
+    const lines = (await readFile(file, "utf8")).trim().split("\n");
+    const firstAnswer = lines.map((line) => JSON.parse(line) as { type: string; id?: string; role?: string })
+      .find((row) => row.type === "message" && row.role === "assistant")!.id!;
+    await appendFile(file, JSON.stringify({ type: "resend-fork-notice", id: "01a1a66e-0000-7000-8000-0000000000f0",
+      parentId: firstAnswer, timestamp: 1793793700000, providerData: { skipRun: true, resendForkNotice: true } }) + "\n");
+    const after = collect(createCodebuddyJsonlSource({ harness: "codebuddy", providerSessionId: id, roots: [root] }));
+    await after.started;
+    expect(userTexts(after.entries)).toEqual(all.slice(0, 1));
+  });
+});
