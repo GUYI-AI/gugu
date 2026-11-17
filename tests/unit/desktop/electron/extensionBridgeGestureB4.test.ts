@@ -87,22 +87,17 @@ function bound() {
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })
 
 describe('a verb that needs a gesture is judged by one rule, on what the preload read (L11 B4)', () => {
-  it('only registers a non-passive wheel listener while the trusted context names a message view', () => {
+  it('never takes the wheel: a message view\'s page lets its list scroll natively', () => {
     const receive = electron.on.mock.calls.find(([channel]) => channel === EXTENSION_BRIDGE_EVENT_CHANNEL)![1] as (event: unknown, payload: unknown) => void
-    const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener')
+    const add = vi.spyOn(window, 'addEventListener')
     try {
       expect(initialWheelListeners).toBe(0)
       receive(null, { type: 'context', context: {} })
-      expect(add).not.toHaveBeenCalled()
       receive(null, { type: 'context', context: { widget: { messageId: 'message-1' } } })
-      expect(add).toHaveBeenCalledExactlyOnceWith('wheel', expect.any(Function), { capture: true, passive: false })
-      const listener = add.mock.calls[0]![1]
-      receive(null, { type: 'context', context: { widget: { messageId: 'message-1' } } })
-      expect(add).toHaveBeenCalledTimes(1)
       receive(null, { type: 'context', context: { widget: {}, modal: { data: null } } })
-      expect(remove).toHaveBeenCalledExactlyOnceWith('wheel', listener, true)
+      expect(add.mock.calls.filter(([type]) => type === 'wheel')).toEqual([])
     } finally {
-      add.mockRestore(); remove.mockRestore()
+      add.mockRestore()
     }
   })
 

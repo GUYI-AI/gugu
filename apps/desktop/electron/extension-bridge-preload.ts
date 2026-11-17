@@ -85,25 +85,13 @@ const widgetInput = (event: Event) => {
 };
 window.addEventListener('input', widgetInput, true);
 window.addEventListener('pointerup', widgetInput, true);
-const relayWidgetWheel = (event: WheelEvent) => {
-  if (!event.isTrusted || event.ctrlKey) return;
-  event.preventDefault();
-  const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? innerHeight : 1;
-  ipcRenderer.sendToHost('gugu-widget-wheel', { x: event.deltaX * unit, y: event.deltaY * unit });
-};
 // Esc pressed in this page never reaches the host window. What the page or a field here used is not for the host.
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && escapeIsFree(event.target)) ipcRenderer.sendToHost('gugu-guest-escape');
 });
 ipcRenderer.on(EXTENSION_BRIDGE_EVENT_CHANNEL, (_event: unknown, payload: ExtensionHostEvent) => {
-  if (payload.type === 'context') {
-    const next = payload.context.widget !== undefined && !payload.context.modal;
-    if (next !== messageView) {
-      if (next) window.addEventListener('wheel', relayWidgetWheel, { capture: true, passive: false });
-      else window.removeEventListener('wheel', relayWidgetWheel, true);
-      messageView = next;
-    }
-  }
+  // A message's widget page sits in its list's scroller: a wheel it does not use scrolls the list natively.
+  if (payload.type === 'context') messageView = payload.context.widget !== undefined && !payload.context.modal;
   events.deliver(payload);
 });
 
