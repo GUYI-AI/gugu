@@ -123,6 +123,16 @@ describe('files.openWith(file, { peek: true }): beside the page that asked (G1)'
     expect(actions()).toEqual([{ kind: 'openChatFile', itemId: 'item-1', intent: 'navigate' }]);
   });
 
+  it('the window not answering within the relay\'s time limit (the host slow): the page is told of no failure', async () => {
+    deliver.mockRejectedValueOnce(Object.assign(new Error('IPC timeout: extensions:cmd/extensions.hostAction'), { code: 'timeout' }));
+    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toEqual({ ok: true, value: undefined });
+  });
+
+  it('the window answering with a failure: the page is told it, its code and its words', async () => {
+    deliver.mockRejectedValueOnce(Object.assign(new Error('No such file in this chat'), { code: 'not-found' }));
+    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toMatchObject({ ok: false, code: 'not-found', message: 'No such file in this chat' });
+  });
+
   it('a file the page may not read (no files:read, not its own): refused before the window hears anything', async () => {
     vi.mocked(mayOpen).mockImplementationOnce(() => { throw new AppFileError('denied', 'Not permitted'); });
     expect(await openWith({ ref: { chat: CHAT, id: 'item-2' } })).toMatchObject({ ok: false, code: 'denied' });

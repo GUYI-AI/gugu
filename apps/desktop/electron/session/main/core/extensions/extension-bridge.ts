@@ -2538,11 +2538,12 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           files.mayOpen(page, ref.id);
           const named = openingNameOf(args);
           const at = (args as { at?: unknown }).at;
+          // The window still at it past the relay's time limit (the host slow to answer) has not failed: only logged.
           return void (await deliver(shown, {
             kind: 'openChatFile', itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
             ...(at && typeof at === 'object' ? { at: at as Record<string, string> } : {}),
             ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}),
-          }));
+          }).catch((error: unknown) => { if ((error as { code?: unknown }).code !== 'timeout') throw error; log.warn('The window is still opening a file a page asked for', { itemId: ref.id }); }));
         }
         let target: Awaited<ReturnType<typeof files.openWithTarget>>;
         try {
