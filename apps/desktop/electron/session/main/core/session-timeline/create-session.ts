@@ -1,3 +1,4 @@
+import { createFailureLogFields } from './create-failure-log-fields';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -78,7 +79,7 @@ function fail(code: string, message: string): CreateSessionResult<never> {
 /**
  * 起这家 agent 的路上失败。原文是「模块解析不到」时(这台机器上的咕咕缺适配器,#6264),
  * 发起方拿到的是一句能照做的人话和它自己的错误码,❌ 不是 `Cannot find module …` 加一整段 require 栈;
- * 原文进这台机器的日志。其余原因照旧逐字回传。
+ * 日志仅保留固定原因码。其余原因照旧逐字回传。
  */
 function failStart(code: string, detail: string, provider: string, platformModel = false): CreateSessionResult<never> {
   const classified = classifyCreateFailure(code, detail, { platformModel });
@@ -88,10 +89,10 @@ function failStart(code: string, detail: string, provider: string, platformModel
   return fail(classified, detail);
 }
 
-/** 原文进这台机器的日志(发起方只拿原因码,按它自己的界面语言说人话)。 */
-function logCreateFailure(fields: Record<string, unknown>, detail: string): void {
+/** Keep host prose and request data out of the common creation log boundary. */
+function logCreateFailure(code: string, retry = false): void {
   void import('@main/lib/logger').then(({ log }) =>
-    log.warn({ scope: 'session-timeline/create', ...fields, detail }, '在这台机器上建会话/起会话失败'),
+    log.warn(createFailureLogFields(code, retry), '在这台机器上建会话/起会话失败'),
   );
 }
 
@@ -394,7 +395,7 @@ export async function createSession(
   deps: CreateSessionDeps = defaultCreateSessionDeps
 ): Promise<CreateSessionResult<SessionpageSessionCreateResult>> {
   const result = await createSessionSteps(request, deps);
-  if (!result.ok) logCreateFailure({ provider: request.harness, code: result.error.code }, result.error.message);
+  if (!result.ok) logCreateFailure(result.error.code);
   return result;
 }
 
@@ -553,7 +554,7 @@ async function createSessionSteps(
   // ── 从这里起会话行已经写下了:再失败也 ❌ 回一个错误让发起方留在新建页 —— 那会留下一条点不开的死行
   //    (#6264 走查实测:侧栏一行灰字、红点,点不动)。改为照常进这条会话:第一句话在转录里,
   //    失败原因是其后的一行、可以再试一次(spec session-always-openable)。原因码记在这台机器上,
-  //    另一台桌面、另一天打开它也看得到;原文进日志。
+  //    另一台桌面、另一天打开它也看得到;日志只记固定原因码。
   if (staged) return { ok: true, value };
 
   const launched = await launchCreatedSession({
@@ -564,7 +565,7 @@ async function createSessionSteps(
   });
   if (!launched.ok) {
     const code = classifyCreateFailure(launched.code, launched.detail, { platformModel: requestedPlatform });
-    logCreateFailure({ provider, sessionId, code }, launched.detail);
+    logCreateFailure(code);
     recordStartFailure(sessionId, code);
     return { ok: true, value: { ...value, startFailure: code } };
   }
@@ -605,7 +606,7 @@ export async function startSession(sessionId: string): Promise<CreateSessionResu
   });
   if (!launched.ok) {
     const code = classifyCreateFailure(launched.code, launched.detail, { platformModel });
-    logCreateFailure({ provider: row.provider, sessionId, code, retry: true }, launched.detail);
+    logCreateFailure(code, true);
     recordStartFailure(sessionId, code);
     return fail(code, launched.detail);
   }
