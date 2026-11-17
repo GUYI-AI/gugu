@@ -366,6 +366,7 @@ jobs:
           name: phone-owner-regression-${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
             apps/desktop/src/session/renderer/tests/browser/**/owner-phone-regression/**/*.png
+            apps/desktop/src/session/renderer/tests/browser/__screenshots__/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/mobile-create-model-copy.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-create-thinking-fast-real-page.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-work-model-copy.test.tsx/**/*.png
