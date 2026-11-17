@@ -359,7 +359,7 @@ jobs:
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-work-model-copy.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-composer-two-line-height.test.tsx/**/*.png
             apps/desktop/src/session/renderer/tests/browser/__screenshots__/phone-composer-height-real-entries.test.tsx/**/*.png
-            capture-tools/native-skills/__screenshots__/**/*.png
+            tests/integration/desktop/__screenshots__/**/*.png
           if-no-files-found: ignore
           retention-days: 14
   web-smoke:
@@ -437,7 +437,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phone-native-skills-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-          path: capture-tools/native-skills/__screenshots__/**/*.png
+          path: tests/integration/desktop/__screenshots__/**/*.png
           if-no-files-found: error
           retention-days: 14
       - name: Remove only this job's private capture directory

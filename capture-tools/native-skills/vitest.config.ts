@@ -19,7 +19,7 @@ export default {
         ...browser.test,
         maxWorkers: 1,
         fileParallelism: false,
-        include: ['capture-tools/native-skills/phone-native-skills.capture.tsx'],
+        include: ['tests/integration/desktop/phoneNativeSkills.capture.tsx'],
         globalSetup: [...(Array.isArray(inheritedSetup) ? inheritedSetup : inheritedSetup ? [inheritedSetup] : []), 'capture-tools/native-skills/native-files-server.ts'],
       },
     }],
