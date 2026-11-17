@@ -62,7 +62,7 @@ describe('personal assistant file preview', () => {
     const restore = vi.fn()
     await harness.render(createElement(Conversation, { restore }))
     await act(async () => { harness.container.querySelector('button')!.click() })
-    expect(openResource).toHaveBeenCalledWith({ kind: 'file', itemId: 'budget' }, { message: undefined, restore })
+    expect(openResource).toHaveBeenCalledWith({ kind: 'file', itemId: 'budget' }, { message: undefined, restore, fileName: 'budget.md' })
     expect(readBytes).not.toHaveBeenCalled()
   })
 })

@@ -228,7 +228,8 @@ export function createGugu(
             typeof (file as { folder?: unknown } | null)?.folder === 'string'
               ? openWith({ ref: file as never })
               : withRef(file, (ref) =>
-              openWith({ ref, ...(options?.viewState ? { viewState: options.viewState } : {}), ...(options?.ask === true ? { ask: true } : {}), ...(options?.at ? { at: options.at } : {}), ...(options?.peek === true ? { peek: true } : {}), ...(Object.hasOwn(options ?? {}, 'tab') ? { tab: options?.tab } : {}), ...(Object.hasOwn(options ?? {}, 'intent') ? { intent: options?.intent } : {}) })),
+              // The entry's own name beside the ref: the host titles the file's waiting tab with it.
+              openWith({ ref, ...(typeof (file as { name?: unknown } | null)?.name === 'string' && (file as { name: string }).name ? { fileName: (file as { name: string }).name } : {}), ...(options?.viewState ? { viewState: options.viewState } : {}), ...(options?.ask === true ? { ask: true } : {}), ...(options?.at ? { at: options.at } : {}), ...(options?.peek === true ? { peek: true } : {}), ...(Object.hasOwn(options ?? {}, 'tab') ? { tab: options?.tab } : {}), ...(Object.hasOwn(options ?? {}, 'intent') ? { intent: options?.intent } : {}) })),
         }
       : {}),
     // API 23: 「转发」 — one file or several, the host's forward page; resolves once it is up (what is sent is the person's).

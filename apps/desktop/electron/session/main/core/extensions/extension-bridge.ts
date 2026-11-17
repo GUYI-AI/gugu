@@ -61,7 +61,7 @@ import {
 } from '@shared/extensions/host-actions';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { fileRefOf, folderOf, isWorkspace, openingNameOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -2532,6 +2532,19 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           onlyIfOpen: `${current[1].extensionId}.${current[1].tabName}`, intent,
         }) : undefined;
         let resumed = tab === undefined ? await present() : undefined;
+        // A person's page opening one of its chat files plainly: a link to it, opened as one (its tab waiting meanwhile),
+        // and named only if the page may read it. The page's own state goes with it, kept on the page.
+        if (shown.operator.kind === 'person' && !resumed && opensAsLink(ref, { ask, peek, tab })) {
+          files.mayOpen(page, ref.id);
+          const named = openingNameOf(args);
+          const at = (args as { at?: unknown }).at;
+          // The window still at it past the relay's time limit (the host slow to answer) has not failed: only logged.
+          return void (await deliver(shown, {
+            kind: 'openChatFile', itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+            ...(at && typeof at === 'object' ? { at: at as Record<string, string> } : {}),
+            ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}),
+          }).catch((error: unknown) => { if ((error as { code?: unknown }).code !== 'timeout') throw error; log.warn('The window is still opening a file a page asked for', { itemId: ref.id }); }));
+        }
         let target: Awaited<ReturnType<typeof files.openWithTarget>>;
         try {
           target = await files.openWithTarget(page, { ref, ask, peek });
