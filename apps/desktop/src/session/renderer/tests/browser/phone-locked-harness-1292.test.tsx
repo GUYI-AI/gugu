@@ -274,7 +274,7 @@ it('1292 phone project attachment menu uses the real new-task action lightning',
   document.documentElement.dataset.theme = 'light'
   harness = createReactHarness()
   function Fixture() {
-    const task = usePhoneNewTask({ chatId: 'project-group', enabled: true, clear: () => {} })
+    const task = usePhoneNewTask({ chatId: 'project-group', enabled: true, clear: () => {}, insertSkill: () => {} })
     return (
       <div data-phone-shell="" style={{ padding: 16, marginTop: 600 }}>
         <span hidden data-zap-control>

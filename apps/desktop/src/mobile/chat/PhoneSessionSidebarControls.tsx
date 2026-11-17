@@ -9,14 +9,14 @@ import { PhoneComposerControl, PhoneComposerSheet } from '../composer/PhoneCompo
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { openPhoneSidebarSession } from './phone-sidebar-navigation'
 import { CreateTarget, type ExistingSessionModel } from '../agent-watch/CreateTarget'
-import type { useCreationSkillDraft } from '../agent-watch/create-skill-draft'
+import type { creationSkillInput } from '../agent-watch/create-skill-draft'
 import { engineLabel } from '@/lib/usage/engineLabel'
 import type { PhoneSessionSidebarModel } from './usePhoneSessionSidebar'
 import './room-composer-catalog'
 import './phone-room-composer.css'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
 
-export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof useCreationSkillDraft>; nativeSkills?: ReactNode }) {
+export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof creationSkillInput>; nativeSkills?: ReactNode }) {
   const { t } = useTranslation('mobileRoomControls')
   const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
   const agentsButton = useRef<HTMLButtonElement>(null)

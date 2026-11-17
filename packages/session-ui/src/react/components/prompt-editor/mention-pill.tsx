@@ -18,7 +18,7 @@
 import { fileLabelParts } from '@gugu/session-shared/markdown';
 import { cx } from '@session-ui/styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { X } from '../../../icons'
+import { X, Sparkles } from '../../../icons'
 import { FileMark } from '../../../file-mark';
 import type { MentionKind, MentionRole } from './types';
 import * as styles from './mention-pill.css';
@@ -42,6 +42,7 @@ export function MentionPill({
   // 参与者身份优先。provider 偶发返回过期或错误的 file 类型时，不能把群成员变成文件 pill，
   // 否则悬停删除按钮会盖住可见的 `@name` 文字。
   const isFile = !isParticipant && kind === 'file';
+  const isSkill = isFile && /[\\/]SKILL\.md$/.test(label);
   const title = isAgent || isFile
     ? ((node.attrs.title as string | null)?.trim() || name)
     : null;
@@ -72,8 +73,10 @@ export function MentionPill({
         className={cx(
           styles.pill,
           isFile ? undefined : styles.pillPlain,
+          isSkill && styles.skillPill,
           pending && styles.pillPending,
         )}
+        data-skill-reference={isSkill ? label : undefined}
         data-mention-id={node.attrs.id as string}
         data-mention-kind={kind}
         data-mention-role={role ?? undefined}
@@ -86,7 +89,7 @@ export function MentionPill({
             like Slack / Discord they are one token, removed whole by Backspace / Delete. */}
         {isFile && (
           <span className={styles.pillIconArea}>
-            <FileMark name={pillName} size={12} />
+            {isSkill ? <Sparkles style={{ width: 12, height: 12 }} /> : <FileMark name={pillName} size={12} />}
             {removeBtn}
           </span>
         )}

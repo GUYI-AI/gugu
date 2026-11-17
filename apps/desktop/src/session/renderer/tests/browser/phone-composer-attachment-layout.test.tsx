@@ -54,14 +54,15 @@ it('keeps empty attachments left, hides them at exactly two lines, and shows the
   expect(lines()).toBe(2)
   expect(composer.hasAttribute('data-phone-attachment-row')).toBe(false)
   const twoLineHeight = input.getBoundingClientRect().height
-  expect(twoLineHeight).toBe(128)
+  // Owner 2026-11-17: two lines stay compact; the three-control stack is reserved only from the third line.
+  expect(twoLineHeight).toBe(80)
   const twoLineExpand = composer.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
   expect(twoLineExpand.getBoundingClientRect().height).toBe(32)
   await page.getByTestId('chat-composer').fill('第一行\n第二行\n第三行')
   await until('third line reveals the right attachment', () => composer.hasAttribute('data-phone-attachment-row') && getComputedStyle(attach).display !== 'none')
   expect(lines()).toBe(3)
   expect(composer.hasAttribute('data-phone-multiline')).toBe(true)
-  expect(input.getBoundingClientRect().height).toBe(twoLineHeight)
+  expect(input.getBoundingClientRect().height).toBe(128)
   const send = composer.querySelector<HTMLElement>('[data-phone-send]')!, expand = composer.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
   const a = attach.getBoundingClientRect(), s = send.getBoundingClientRect(), x = expand.getBoundingClientRect()
   expect(Math.abs(a.x + a.width / 2 - s.x - s.width / 2)).toBeLessThan(1)
