@@ -25,7 +25,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -436,11 +436,7 @@ function rpcErrorDetail(raw) {
   return String(raw).slice(0, 600)
 }
 
-// The attachments function (core's one client, packages/core/src/cloud/attachmentsApi.ts): this session's server and token.
-async function attachmentsEndpoint(context, fetchImpl = fetch) {
-  // A main process: signed part PUTs go straight to the store, so large files upload in parts and resume.
-  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
-}
+const attachmentsEndpoint = accountAttachmentsEndpoint
 // 鉴权失效只允许读取一次 host fresh token；transport/5xx 在 post helper 内按稳定 row 有界重试。
 function isRefreshableAuthError(err) {
   return err instanceof RpcHttpError && err.status === 401 && !err.authRetryAttempted
@@ -2541,7 +2537,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       throw new Error(newerVersionRefusal(args.file, folderFile.version))
     })
     if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
-      { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}).catch((error) => {
+      { id: message.id, chat_id: chatId, as: deps.context.agentId }).catch((error) => {
       throw new Error(`message_send: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
     })
   }
