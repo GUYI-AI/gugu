@@ -70,7 +70,9 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 /* The grid (images and videos): square pictures, the name under them; sections and folders across the whole width. */
 .file-list.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--em-spacing-sm); align-content: start; }
 .file-list.as-grid > .list-section, .file-list.as-grid > .file:not(.cell) { grid-column: 1 / -1; }
-.file.cell { position: relative; display: block; padding: 0; }
+/* `min-height: auto`, not a row's 56px: the grid's rows are `auto`, so once there are more of them than the pane holds
+   each shrinks to its cells' minimum, and a picture taller than that runs over the row below. */
+.file.cell { position: relative; display: block; padding: 0; min-height: auto; }
 .file.cell .file-open { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 0; grid-template-columns: none; }
 .file.cell .cell-picture { position: relative; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--em-radius-control); }
 .file.cell .file-name { flex: none; max-width: 100%; font-size: var(--em-font-caption); font-weight: 400; color: var(--em-foreground-muted); }
