@@ -15,6 +15,7 @@ docker run --rm --init --ipc=host --network=host \
   --env GUGU_SUPABASE_URL --env VITE_SUPABASE_URL \
   --env GUGU_SUPABASE_ANON_KEY --env VITE_SUPABASE_ANON_KEY \
   --env GUGU_DB_TARGET --env GUGU_E2E_CI_PROJECT --env GUGU_E2E_PORT --env GUGU_E2E_RUN_ID \
+  --env GUGU_SKILLS_CAPTURE_ROOT --env GUGU_HOME --env GUGU_USER_DATA_DIR \
   --env NODE_OPTIONS \
   "$PLAYWRIGHT_IMAGE" bash --noprofile --norc -e -o pipefail -c '
     git config --global --add safe.directory "$PWD"

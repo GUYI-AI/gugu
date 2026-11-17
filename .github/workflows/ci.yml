@@ -346,19 +346,6 @@ jobs:
           container-image: ${{ env.PLAYWRIGHT_IMAGE }}
       - run: node scripts/test-infra/vitest-browser-shards.mjs --project session-browser --shard-group=${{ matrix.shard }}/3 --shards-per-group=4
         shell: bash .github/actions/setup-playwright/run-in-container.sh {0}
-      - name: Capture native skill files through the real creation page
-        if: ${{ always() && !cancelled() && matrix.shard == 3 }}
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          skills_capture_root="$(mktemp -d "${TMPDIR:-/tmp}/gugu-skills-capture.XXXXXX")"
-          trap 'rm -rf -- "$skills_capture_root"' EXIT
-          mkdir -p "$skills_capture_root/gugu-home" "$skills_capture_root/user-data"
-          export GUGU_SKILLS_CAPTURE_ROOT="$skills_capture_root"
-          export GUGU_HOME="$skills_capture_root/gugu-home"
-          export GUGU_USER_DATA_DIR="$skills_capture_root/user-data"
-          pnpm exec vitest run --config capture-tools/native-skills/vitest.config.ts --project=session-browser --maxWorkers=1
-        shell: bash .github/actions/setup-playwright/run-in-container.sh {0}
       - name: Upload phone regression screenshots
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -375,6 +362,51 @@ jobs:
             capture-tools/native-skills/__screenshots__/**/*.png
           if-no-files-found: ignore
           retention-days: 14
+  native-skills-capture:
+    name: Native skill creation-page capture
+    needs: changes
+    if: needs.changes.outputs.tests == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-community
+      - uses: ./.github/actions/setup-playwright
+        with:
+          container-image: ${{ env.PLAYWRIGHT_IMAGE }}
+      - name: Prepare this job's private capture paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          skills_capture_root="$(mktemp -d "$RUNNER_TEMP/gugu-skills-capture.XXXXXX")"
+          mkdir -p "$skills_capture_root/gugu-home" "$skills_capture_root/user-data"
+          {
+            echo "GUGU_SKILLS_CAPTURE_ROOT=$skills_capture_root"
+            echo "GUGU_HOME=$skills_capture_root/gugu-home"
+            echo "GUGU_USER_DATA_DIR=$skills_capture_root/user-data"
+          } >> "$GITHUB_ENV"
+      - name: Capture real skill files through the creation page
+        run: pnpm exec vitest run --config capture-tools/native-skills/vitest.config.ts --project=session-browser --maxWorkers=1
+        shell: bash .github/actions/setup-playwright/run-in-container.sh {0}
+      - name: Upload skill capture and failure screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-native-skills-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: capture-tools/native-skills/__screenshots__/**/*.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove only this job's private capture directory
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GUGU_SKILLS_CAPTURE_ROOT:-}" ]; then
+            case "$GUGU_SKILLS_CAPTURE_ROOT" in
+              "$RUNNER_TEMP"/gugu-skills-capture.*) rm -rf -- "$GUGU_SKILLS_CAPTURE_ROOT" ;;
+              *) exit 1 ;;
+            esac
+          fi
   web-smoke:
     name: Web E2E (${{ matrix.id }})
     needs: changes
@@ -483,7 +515,7 @@ jobs:
   gate:
     name: Typecheck, lint, and test
     if: ${{ always() }}
-    needs: [changes, policy, unit, renderer-build, desktop-build-linux, desktop-build-mac, android-build, session-db, session-browser, projection-media, web-smoke, supabase-contract]
+    needs: [changes, policy, unit, renderer-build, desktop-build-linux, desktop-build-mac, android-build, session-db, session-browser, native-skills-capture, projection-media, web-smoke, supabase-contract]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every due test job to have passed
@@ -495,6 +527,7 @@ jobs:
               if [ "${{ needs.unit.result }}" != "success" ] ||
                  [ "${{ needs.session-db.result }}" != "success" ] ||
                  [ "${{ needs.session-browser.result }}" != "success" ] ||
+                 [ "${{ needs.native-skills-capture.result }}" != "success" ] ||
                  [ "${{ needs.projection-media.result }}" != "success" ] ||
                  [ "${{ needs.web-smoke.result }}" != "success" ] || \
                  [ "${{ needs.supabase-contract.result }}" != "success" ]; then
@@ -502,7 +535,7 @@ jobs:
               fi
               ;;
             false)
-              for result in "${{ needs.unit.result }}" "${{ needs.session-db.result }}" "${{ needs.session-browser.result }}" "${{ needs.projection-media.result }}" "${{ needs.web-smoke.result }}" "${{ needs.supabase-contract.result }}"; do
+              for result in "${{ needs.unit.result }}" "${{ needs.session-db.result }}" "${{ needs.session-browser.result }}" "${{ needs.native-skills-capture.result }}" "${{ needs.projection-media.result }}" "${{ needs.web-smoke.result }}" "${{ needs.supabase-contract.result }}"; do
                 # Only a successful classifier may exempt docs-only test payloads.
                 case "$result" in success|skipped) ;; *) exit 1 ;; esac
               done

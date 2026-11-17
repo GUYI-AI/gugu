@@ -20,7 +20,7 @@ const profiles = deriveCheckProfiles([{
   changedPaths: ['README.md'], inventoryRef: 'fixture',
   workflows: [{ path: '.github/workflows/ci.yml', source, reusableWorkflows }],
 }])
-const dueTests = ['unit', 'session-db', 'session-browser', 'projection-media', 'web-smoke', 'supabase-contract']
+const dueTests = ['unit', 'session-db', 'session-browser', 'native-skills-capture', 'projection-media', 'web-smoke', 'supabase-contract']
 function gate(tests: string, overrides: Record<string, string> = {}) {
   const step = ci.jobs.gate.steps[0].run.replace(/\$\{\{\s*needs\.([\w-]+)\.(result|outputs\.tests)\s*\}\}/g,
     (_: string, id: string, property: string) => property === 'result' ? (overrides[id] ?? 'success') : tests)
