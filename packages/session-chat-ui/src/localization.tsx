@@ -312,6 +312,7 @@ const fallbackMessages = {
   'transcript.condition.machineUnreachable': "Can't reach the machine this task runs on",
   'transcript.condition.machineAttention': 'The machine this task runs on needs attention',
   'transcript.condition.membershipRequired': 'This Gugu model needs a membership',
+  'transcript.condition.groupJoinFailed': 'This agent could not join the group chat it was started from',
   'transcript.hookNoticeFrom': 'from the {hook} hook',
   'transcript.hookNoticeLevel.notice': 'Notice',
   'transcript.hookNoticeLevel.suggestion': 'Suggestion',

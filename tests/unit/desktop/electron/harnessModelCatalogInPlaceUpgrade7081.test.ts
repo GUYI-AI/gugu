@@ -66,6 +66,8 @@ process.stdin.on('data', (c) => {
 });
 `
 
+// The spawn command: the host test below points `process.execPath` at a fake gugu executable.
+const node = process.execPath
 let dir: string
 let link: string
 let probes = 0
@@ -92,7 +94,7 @@ beforeEach(async () => {
   setSpawnIdentityResolver(resolveHarnessSpawnIdentity)
   setAcpSpawnResolver(async () => {
     probes += 1
-    return { command: process.execPath, args: [bridge, spawnContext.cli], env: {} }
+    return { command: node, args: [bridge, spawnContext.cli], env: {} }
   })
   spawnContext.cli = link
 })
@@ -153,22 +155,31 @@ describe.skipIf(process.platform === 'win32')('#7081 原生安装器改软链接
   })
 })
 
-describe('#7081 npm / brew 原地覆盖', () => {
-  it('同一条路径上的文件被覆盖 → 下一次读目录就是新清单', async () => {
+describe('#7081 npm / brew 原地覆盖, and gugu itself updated', () => {
+  it.each([
+    ['the harness CLI', 'cli.js', 'Haiku 5.5'],
+    ['the gugu executable', 'gugu.exe', 'Haiku 4.5'],
+  ])('overwriting %s at the same path ⇒ the next read probes again', async (_, overwritten, haiku) => {
     const cli = join(dir, 'cli.js')
+    const host = join(dir, 'gugu.exe')
     await writeFile(cli, 'Haiku 4.5')
+    await writeFile(host, 'build 1')
     const yesterday = new Date(Date.now() - 24 * 60 * 60_000)
-    await utimes(cli, yesterday, yesterday)
+    await utimes(join(dir, overwritten), yesterday, yesterday)
     spawnContext.cli = cli
     const harnessVersion = '2.1.280'
+    Object.defineProperty(process, 'execPath', { value: host, configurable: true, writable: true })
+    try {
+      expect(haikuOf(await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion }))).toBe('Haiku 4.5')
+      await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion })
+      expect(probes).toBe(1)
 
-    expect(haikuOf(await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion }))).toBe('Haiku 4.5')
-    await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion })
-    expect(probes).toBe(1)
+      await writeFile(join(dir, overwritten), 'Haiku 5.5')
 
-    await writeFile(cli, 'Haiku 5.5')
-
-    expect(haikuOf(await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion }))).toBe('Haiku 5.5')
-    expect(probes).toBe(2)
+      expect(haikuOf(await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion }))).toBe(haiku)
+      expect(probes).toBe(2)
+    } finally {
+      Object.defineProperty(process, 'execPath', { value: node, configurable: true, writable: true })
+    }
   })
 })

@@ -311,8 +311,9 @@ import {
 } from './sessionpage/local-session-source'
 import { resolveSessionpageAgentCard } from './sessionpage/sessionpage-agent-card'
 import { loadSessionpageCanonicalAgentIdentities } from './sessionpage/sessionpage-agent-identity'
-import { SESSION_SHELL_CHANNELS, agentNamesFromPeers, type SessionShellAgentName } from '../src/session/shared/lib/ipc/shell-port'
-import { sessionpageAgentProvisionedEvent } from '../src/session/shared/lib/ipc/sessionpage-identity-contract'
+import { SESSION_SHELL_CHANNELS, agentNamesFromPeers } from '../src/session/shared/lib/ipc/shell-port'
+import { sessionpageAgentProvisionedEvent, sessionpageBirthGroupJoinEvent } from '../src/session/shared/lib/ipc/sessionpage-identity-contract'
+import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpageBirthGroupJoin } from './sessionpage/sessionpage-birth-group-join'
 import type { EventDefinition } from '../src/session/shared/lib/ipc/events'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
@@ -3961,6 +3962,17 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentCard, async (_event, sessionId: u
     (agentUserIds) => loadSessionpageCanonicalAgentIdentities(auth, agentUserIds),
   )
 })
+handleShellChannel(SESSION_SHELL_CHANNELS.birthGroupJoin, async (_event, sessionId: unknown) => {
+  const auth = await authProvider?.getAuth()
+  if (!auth?.accessToken || !auth.userId) return null
+  return sessionpageBirthGroupJoin(String(sessionId ?? ''), process.env, auth.userId)
+})
+handleShellChannel(SESSION_SHELL_CHANNELS.retryBirthGroupJoin, async (_event, sessionId: unknown) => {
+  const auth = await authProvider?.getAuth()
+  if (!auth?.accessToken || !auth.userId) throw new Error('Sign in to retry joining the group')
+  return retrySessionpageBirthGroupJoin(String(sessionId ?? ''), process.env,
+    { accessToken: auth.accessToken, userId: auth.userId }, createLogger('sessionpage/provision'))
+})
 // 侧栏逐行 hover 要说「这一行是谁」(#5818):就是本机名册(session_peers)那一份的投影,名字同样取自
 // identity.users.display_name。
 handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
@@ -4189,8 +4201,8 @@ function sendUiEvent<T>(event: EventDefinition<T>, ...payload: T extends void ? 
 // 身份是会话启动后**才**到位的(云端 provision + roster 落盘),任务一创建就已渲染 → 分享入口第一次查必然是 null,
 // 所以一落地就播一次(❌ 轮询)。播给本机窗口,也播给经设备连接看着这台机器的别的电脑(#6264:server 上只有后者)。
 // 载荷形状由事件定义钉住(会话页按 conversationId 认领),❌ 原样转主进程自己那份事件(那边叫 sessionId)。
-function sendSessionpageIdentityEvent(event: EventDefinition<SessionShellAgentName>, payload: SessionShellAgentName): void {
-  sendUiEvent(event, payload)
+function sendSessionpageIdentityEvent<T extends object>(event: EventDefinition<T>, payload: T): void {
+  mainWindow?.webContents.send(event.name, payload)
   emdashBridge?.broadcastDeviceSessionHostEvent(event.name, payload)
 }
 // #7337 咕咕给新会话起名:建会话时记下,这条会话拿到 agent 身份(签票要挂在它名下)时以它的名义找设置里的模型要一个短名。
@@ -4224,6 +4236,11 @@ onSessionpageAgentProvisioned((event) => {
   // S2b 读者触发③(身份就绪):可投递 = 身份就绪 + 各腿登记好,两个边界各踢一次,后到的那一次投得出去。
   // 各腿的登记点另踢(ACP:运行时启动成功;PTY:registerLive;codex:threadId;claude:tools/list)。
   onSessionpageSessionLive(event.agentUserId, event.sessionId)
+})
+
+// A born-in-chat join that failed (or a retry that settled it): the session page shows it as a condition with a retry.
+onSessionpageBirthGroupJoin(({ sessionId, join }) => {
+  sendSessionpageIdentityEvent(sessionpageBirthGroupJoinEvent, { conversationId: sessionId, join })
 })
 
 /** #6396 在这条会话的对话里画「名字已被占用」那一行(见 sessionpage-rename-announcement.ts)。递不到只记一笔:名字本身已经换好了。 */
