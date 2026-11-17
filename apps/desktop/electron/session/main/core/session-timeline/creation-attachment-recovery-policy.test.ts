@@ -29,9 +29,16 @@ describe('creation recovery policy (not a provider or journal integration test)'
   it('reconciles a lost ACK from matching actual custody without requesting a second claim', () => {
     expect(decide(expected, facts({ admitting: claim }), inspect(input, row()))).toBe('confirm-custody');
   });
-  it.each([null, { version: 1 }])('does not retroactively send a legacy prepared record (protocol=%j)', admissionProtocol => {
-    expect(decide(expected, facts({ admissionProtocol }), 'absent')).toBe('unknown');
-    expect(decide(expected, facts({ admissionProtocol }), inspect(input, row()))).toBe('confirm-custody');
+  it('does not retroactively send a legacy prepared record without the protocol marker', () => {
+    expect(decide(expected, facts({ admissionProtocol: null }), 'absent')).toBe('unknown');
+    expect(decide(expected, facts({ admissionProtocol: null }), inspect(input, row()))).toBe('confirm-custody');
+  });
+  it.each([
+    { admissionProtocol: { version: 1 } },
+    { admissionProtocol: null, admitting: claim },
+    { prepared: null, admitting: claim },
+  ])('refuses invalid protocol or orphaned claims even with a matching row (%j)', patch => {
+    expect(decide(expected, facts(patch), 'custody')).toBe('conflict');
   });
   it('retains the exact durable admitted marker if the canonical receipt was cleaned up', () => {
     expect(decide(expected, facts({ admitted: { initialMessageId: 'message-a' } }), 'absent')).toBe('confirm-custody');

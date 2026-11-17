@@ -148,6 +148,7 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
       // Never erase a claim after an exception: bytes may already be consumed.
       if (!await journal.append('admitting', { initialMessageId: input.initialMessageId, placementKey: key })) {
         const prior = deps.prior(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files);
+        if (prior === 'uncertain') throw unverified('The original first-input receipt conflicts');
         if (prior === 'accepted' || confirmed(await journal.read('admitted'), input.initialMessageId)) {
           await current(context);
           await journal.append('admitted', { initialMessageId: input.initialMessageId });

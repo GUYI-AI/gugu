@@ -99,4 +99,22 @@ describe.skipIf(process.platform === 'win32')('attachment input crash recovery w
       expect(f.deps.send).toHaveBeenCalledTimes(1);
     } finally { release(); await first; }
   });
+  it('rejects a losing claim with an uncertain prior even when an admitted marker exists', async () => {
+    const f = await fixture();
+    f.deps.prior = () => 'uncertain';
+    f.deps.journal = async (...args) => {
+      const actual = await openCreationAttachmentJournal(...args);
+      return { ...actual, append: async (stage, value) => {
+        if (stage === 'admitting') {
+          await actual.append(stage, value);
+          await actual.append('admitted', { initialMessageId: 'first' });
+          return false;
+        }
+        return actual.append(stage, value);
+      } };
+    };
+    await expect(createAttachmentCreationHost(f.deps).admit(f.input)).rejects.toThrow('receipt conflicts');
+    expect(await f.journal.read('admitted')).toEqual({ initialMessageId: 'first' });
+    expect(f.deps.send).not.toHaveBeenCalled();
+  });
 });

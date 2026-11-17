@@ -49,6 +49,8 @@ export function creationRecoveryDecision(
   expected: { initialMessageId: string; placementKey: string }, facts: CreationRecoveryFacts, evidence: CreationCustodyEvidence,
 ): CreationRecoveryDecision {
   if (!expected.initialMessageId.trim() || !expected.placementKey) return 'conflict';
+  if (facts.admissionProtocol !== null && facts.admissionProtocol.version !== 2) return 'conflict';
+  if (facts.admitting && (!facts.prepared || facts.admissionProtocol === null)) return 'conflict';
   if (facts.prepared && facts.prepared.placementKey !== expected.placementKey) return 'conflict';
   if (facts.admitting && (facts.admitting.initialMessageId !== expected.initialMessageId
     || facts.admitting.placementKey !== expected.placementKey)) return 'conflict';
