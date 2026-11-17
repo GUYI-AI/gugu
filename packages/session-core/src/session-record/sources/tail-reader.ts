@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import { createZstdDecompress } from 'node:zlib';
 import { zstdFrames } from './zstd-frames';
 import { ELIDED_PICTURE, PictureElider, elidedBytes } from './picture-elider';
+import { openWindowByteSource } from '../window-cache/file-source';
 
 import type { RecordSourceWarn } from './shared';
 
@@ -90,6 +91,33 @@ export class TailReader {
   /** Bytes delivered as complete lines, including a restored prefix; no I/O or string scan. */
   get consumedBytes(): number {
     return this.lineOffset;
+  }
+
+  /** A sealed ancestor prefix: the caller supplies an exclusive byte bound, never an ordinal or EOF scan. */
+  async readPrefix(endByteOffset: number, sink: LineSink): Promise<void> {
+    if (!Number.isSafeInteger(endByteOffset) || endByteOffset < 0) throw new RangeError('Invalid JSONL prefix bound');
+    const source = await openWindowByteSource(this.path);
+    try {
+      const before = await source.snapshot();
+      if (endByteOffset > before.size) throw new Error('JSONL prefix extends beyond its source');
+      const last = new Uint8Array(1);
+      if (endByteOffset > 0 && (await source.read(last, 0, 1, endByteOffset - 1) !== 1 || last[0] !== 10)) {
+        throw new Error('JSONL prefix does not end at a record boundary');
+      }
+      const buffer = new Uint8Array(Math.min(64 * 1024, endByteOffset));
+      for (let position = 0; position < endByteOffset;) {
+        if (this.stopped) return;
+        const got = await source.read(buffer, 0, Math.min(buffer.length, endByteOffset - position), position);
+        if (!got) throw new Error('JSONL prefix ended before its bound');
+        position += got;
+        this.acceptText(this.decoder.write(buffer.subarray(0, got)), sink);
+      }
+      this.acceptText(this.decoder.end(), sink);
+      const after = await source.snapshot();
+      if (after.sourceInstance !== before.sourceInstance || after.size < endByteOffset || this.partial.length) {
+        throw new Error('JSONL prefix changed while being read');
+      }
+    } finally { await source.close(); }
   }
 
   /** 换一份文件（claude 的分叉串联会把尾读交接到链条最后一份上）。 */
