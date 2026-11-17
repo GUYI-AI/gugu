@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, lstat, open } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftResult } from '@gugu/session-core/session-record/creation-attachment-protocol';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
@@ -37,15 +37,75 @@ export function creationRecordText(value: unknown): string {
   return text;
 }
 
+type DirectoryHandle = Awaited<ReturnType<typeof open>>;
+type DirectoryEntry = { path: string; handle: DirectoryHandle; private: boolean };
+async function verifyDirectory(entry: DirectoryEntry) {
+  const [pathInfo, held] = await Promise.all([lstat(entry.path), entry.handle.stat()]);
+  if (!pathInfo.isDirectory() || pathInfo.isSymbolicLink() || !held.isDirectory()
+    || pathInfo.dev !== held.dev || pathInfo.ino !== held.ino
+    || held.uid !== process.getuid?.() || (held.mode & (entry.private ? 0o077 : 0o022)) !== 0) {
+    throw attachmentCreationUnverified('Attachment creation storage must be a stable private directory');
+  }
+}
+async function holdDirectory(path: string, privateDirectory: boolean): Promise<DirectoryEntry> {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK
+    | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0));
+  const entry = { path, handle, private: privateDirectory };
+  try { await verifyDirectory(entry); return entry; }
+  catch (error) { await handle.close(); throw error; }
+}
+
+/** The caller supplies an already durable host-owned anchor, never a request path or an exists() claim. */
+async function preparePosixDirectory(root: string, directory: string, durabilityRoot: string | undefined) {
+  if (typeof durabilityRoot !== 'string' || !isAbsolute(durabilityRoot) || !isAbsolute(root)
+    || durabilityRoot !== resolve(durabilityRoot) || root !== resolve(root)) {
+    throw attachmentCreationUnverified('A trusted durable attachment storage boundary is required');
+  }
+  const suffix = relative(durabilityRoot, root);
+  const parts = suffix ? suffix.split(sep) : [];
+  if (isAbsolute(suffix) || parts.includes('..') || parts.length > 32) {
+    throw attachmentCreationUnverified('Attachment creation storage is outside its durable boundary');
+  }
+  const held: DirectoryEntry[] = []; let failed = false;
+  try {
+    held.push(await holdDirectory(durabilityRoot, durabilityRoot === root));
+    for (const part of [...parts, relative(root, directory)]) {
+      const parent = held[held.length - 1];
+      await verifyDirectory(parent);
+      const path = join(parent.path, part);
+      await mkdir(path, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+      const child = await holdDirectory(path, path === root || path === directory);
+      held.push(child);
+      // Repeat both barriers even after EEXIST. A previous failed fsync can
+      // leave visible directories whose containing entries are not durable.
+      await child.handle.sync();
+      await parent.handle.sync();
+      await verifyDirectory(child); await verifyDirectory(parent);
+    }
+    for (const entry of held) await verifyDirectory(entry);
+  } catch (error) { failed = true; throw error; }
+  finally {
+    let closeError: unknown;
+    for (const entry of held.reverse()) {
+      try { await entry.handle.close(); } catch (error) { closeError ??= error; }
+    }
+    if (!failed && closeError) throw closeError;
+  }
+}
+
 /** Append-only facts: a crash cannot turn an uncertain creation or admission back into a fresh request. */
 export async function openCreationAttachmentJournal(root: string, ownerId: string, deviceId: string, requestId: string,
-  options: { platform?: NodeJS.Platform; windowsProtection?: WindowsJournalProtection } = {},
+  options: { platform?: NodeJS.Platform; windowsProtection?: WindowsJournalProtection; durabilityRoot?: string } = {},
 ): Promise<CreationAttachmentJournal> {
   const platform = options.platform ?? process.platform;
   const key = createHash('sha256').update(JSON.stringify([ownerId, deviceId, requestId])).digest('hex');
-  await mkdir(root, { recursive: true, mode: 0o700 });
   const directory = join(root, key);
-  await mkdir(directory, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+  if (platform === 'win32') {
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    await mkdir(directory, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+  } else {
+    await preparePosixDirectory(root, directory, options.durabilityRoot);
+  }
   for (const path of [root, directory]) {
     const info = await lstat(path);
     // Windows mode bits are synthesized, not a DACL. That branch requires OS-bound encryption below.
@@ -88,8 +148,8 @@ export async function openCreationAttachmentJournal(root: string, ownerId: strin
     catch { throw attachmentCreationUnverified('The original attachment creation record cannot be read'); }
   }
   async function syncDirectory() {
-    const parent = await open(directory, 'r');
-    try { await parent.sync(); } finally { await parent.close(); }
+    const parent = await holdDirectory(directory, true);
+    try { await parent.handle.sync(); await verifyDirectory(parent); } finally { await parent.handle.close(); }
   }
   async function append<K extends keyof CreationStages>(stage: K, value: CreationStages[K]): Promise<boolean> {
     const text = creationRecordText(value), path = join(directory, `${stage}.json`);

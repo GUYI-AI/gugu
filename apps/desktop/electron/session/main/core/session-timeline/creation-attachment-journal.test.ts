@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { MAX_CREATION_RECORD_BYTES, openCreationAttachmentJournal as openJournal } from './creation-attachment-journal';
 
 const openCreationAttachmentJournal: typeof openJournal = (root, owner, device, request, options) =>
-  openJournal(root, owner, device, request, { durabilityRoot: realpathSync(tmpdir()), ...options });
+  openJournal(root, owner, device, request, { durabilityRoot: realpathSync(root), ...options });
 
 const roots: string[] = [];
 const fresh = async () => { const root = realpathSync(await mkdtemp(join(tmpdir(), 'creation-journal-'))); roots.push(root); return root; };
@@ -23,7 +23,7 @@ describe('POSIX bounded private creation facts', () => {
     const [key] = await readdir(root), path = join(root, key, 'creating.json');
     await promisify(execFile)('mkfifo', ['-m', '600', path]);
     const module = fileURLToPath(new URL('./creation-attachment-journal.ts', import.meta.url));
-    const script = `const {openCreationAttachmentJournal}=await import(${JSON.stringify(`file://${module}`)});\nconst j=await openCreationAttachmentJournal(${JSON.stringify(root)},'owner','device','request',{durabilityRoot:${JSON.stringify(realpathSync(tmpdir()))}});\ntry {await j.read('creating');process.exitCode=2} catch(e) {if(!String(e.message).includes('private regular file')) throw e;console.log('FIFO_REJECTED')}`;
+    const script = `const {openCreationAttachmentJournal}=await import(${JSON.stringify(`file://${module}`)});\nconst j=await openCreationAttachmentJournal(${JSON.stringify(root)},'owner','device','request',{durabilityRoot:${JSON.stringify(root)}});\ntry {await j.read('creating');process.exitCode=2} catch(e) {if(!String(e.message).includes('private regular file')) throw e;console.log('FIFO_REJECTED')}`;
     const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_OPTIONS: '' } });
     let output = '', error = '', expired = false;
     child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { error += bytes; });

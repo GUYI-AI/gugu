@@ -15,7 +15,7 @@ async function fixture() {
   const request: SessionCreateAttachmentDraftRequest = { harness: 'codex', prompt: 'original', clientRequestId: 'creation',
     initialMessageId: 'first', projectId: 'project', attachments: [{ id: 'a', name: 'a.txt', mimeType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) }] };
   const deps: AttachmentCreationHostDeps = {
-    root: () => root, context: async () => ({ ownerId: 'owner', deviceId: 'device' }),
+    root: () => root, durabilityRoot: () => root, context: async () => ({ ownerId: 'owner', deviceId: 'device' }),
     create: vi.fn(async (_request, id, beforeCommit) => { await beforeCommit(); tasks.set(id, { projectId: 'project', title: 'Task' }); }),
     task: async id => tasks.get(id) ?? null,
     address: async () => ({ agentUserId: 'agent', chatId: 'dm' }),
@@ -26,7 +26,7 @@ async function fixture() {
   const host = createAttachmentCreationHost(deps), result = await host.create(request);
   const input: SessionAdmitCreatedAttachmentsRequest = { conversationId: result.conversationId, clientRequestId: 'creation', initialMessageId: 'first',
     placements: [{ attachmentId: 'a', file: { itemId: 'item', version: 2, name: 'a.txt', mimeType: 'text/plain', sizeBytes: 3 } }] };
-  const journal = await openCreationAttachmentJournal(root, 'owner', 'device', 'creation');
+  const journal = await openCreationAttachmentJournal(root, 'owner', 'device', 'creation', { durabilityRoot: root });
   return { root, request, input, deps, host, journal, result, accepted, tasks };
 }
 

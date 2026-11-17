@@ -12,6 +12,8 @@ import { openCreationAttachmentJournal, attachmentCreationUnverified as unverifi
 type Context = { ownerId: string; deviceId: string };
 export type AttachmentCreationHostDeps = {
   root: () => string;
+  /** Existing durable host-owned boundary; do not derive it from a creation request. */
+  durabilityRoot: () => string;
   journal?: typeof openCreationAttachmentJournal;
   context: () => Promise<Context>;
   create: (request: SessionCreateAttachmentDraftRequest, sessionId: string, beforeCommit: () => Promise<void>) => Promise<void>;
@@ -45,7 +47,8 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
     const context = await deps.context();
     const fingerprint = creationAttachmentIntentIdentity(context.ownerId, context.deviceId, request);
     return serial(fingerprint, async () => {
-      const journal = await (deps.journal ?? openCreationAttachmentJournal)(deps.root(), context.ownerId, context.deviceId, request.clientRequestId);
+      const journal = await (deps.journal ?? openCreationAttachmentJournal)(deps.root(), context.ownerId, context.deviceId, request.clientRequestId,
+        { durabilityRoot: deps.durabilityRoot() });
       let intent = await journal.read('intent');
       if (!intent) {
         intent = { version: 1, ...context, fingerprint, conversationId: randomUUID(), request };
@@ -94,7 +97,8 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
   async function admit(original: SessionAdmitCreatedAttachmentsRequest) {
     const input = structuredClone(original), context = await deps.context();
     return serial(JSON.stringify([context, input?.clientRequestId]), async () => {
-      const journal = await (deps.journal ?? openCreationAttachmentJournal)(deps.root(), context.ownerId, context.deviceId, input.clientRequestId);
+      const journal = await (deps.journal ?? openCreationAttachmentJournal)(deps.root(), context.ownerId, context.deviceId, input.clientRequestId,
+        { durabilityRoot: deps.durabilityRoot() });
       const intent = await journal.read('intent'), result = await journal.read('created');
       if (!intent || !result || intent.ownerId !== context.ownerId || intent.deviceId !== context.deviceId
         || intent.request.clientRequestId !== input.clientRequestId || intent.request.initialMessageId !== input.initialMessageId

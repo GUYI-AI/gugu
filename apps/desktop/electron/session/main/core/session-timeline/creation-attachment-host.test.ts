@@ -8,7 +8,7 @@ import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachment
 import { openCreationAttachmentJournal as openJournal } from './creation-attachment-journal';
 
 const openCreationAttachmentJournal: typeof openJournal = (root, owner, device, request, options) =>
-  openJournal(root, owner, device, request, { durabilityRoot: realpathSync(tmpdir()), ...options });
+  openJournal(root, owner, device, request, { durabilityRoot: realpathSync(root), ...options });
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
@@ -21,7 +21,7 @@ async function fixture() {
   const tasks = new Map<string, { projectId: string; title: string }>();
   const accepted = new Map<string, string>();
   const deps: AttachmentCreationHostDeps = {
-    root: () => root, durabilityRoot: () => realpathSync(tmpdir()), context: async () => context,
+    root: () => root, durabilityRoot: () => root, context: async () => context,
     create: vi.fn(async (_request, sessionId, beforeCommit) => { await beforeCommit(); tasks.set(sessionId, { projectId: 'project', title: 'Task' }); }),
     task: async sessionId => tasks.get(sessionId) ?? null,
     address: vi.fn(async () => ({ agentUserId: 'agent', chatId: 'dm' })),
