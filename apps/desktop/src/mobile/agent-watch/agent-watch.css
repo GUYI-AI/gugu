@@ -467,6 +467,8 @@
 
 
 /* Entity and actual state occupy one compact shared header, with no second title/hero above the thread. */
+.gg-aw [data-centered] .gg-aw-title-with-watch { vertical-align: top; }
+.gg-aw [data-centered] .gg-aw-header-context { justify-content: center; }
 .gg-aw .gg-aw-title-avatar {
   display: inline-flex;
   width: var(--avatar-sm);

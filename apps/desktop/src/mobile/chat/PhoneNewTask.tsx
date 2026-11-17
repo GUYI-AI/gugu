@@ -85,8 +85,15 @@ export function usePhoneNewTask({ chatId, enabled, clear, insertSkill }: {
   const [optionsRead, setOptionsRead] = useState(0)
   useEffect(() => { setStage({ kind: 'off' }) }, [chatId])
   useEffect(() => {
-    if (!enabled || !project) return
-    const start = (event: Event) => { if ((event as CustomEvent<{ chatId: string }>).detail?.chatId === chatId) setStage({ kind: 'on', folder: null, picking: true }) }
+    if (!enabled || !chatId) return
+    const start = (event: Event) => {
+      if ((event as CustomEvent<{ chatId: string }>).detail?.chatId !== chatId) return
+      if (!project) {
+        window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
+        return
+      }
+      setStage(current => current.kind === 'on' ? { ...current, picking: true } : { kind: 'on', folder: null, picking: true })
+    }
     window.addEventListener(START, start)
     return () => window.removeEventListener(START, start)
   }, [enabled, project, chatId])
@@ -253,9 +260,7 @@ export function usePhoneNewTask({ chatId, enabled, clear, insertSkill }: {
   return {
     // 项目群:浮起文件夹卡;别的群:同桌面输入框「新任务」那一个事件(MainLayout 在手机上进会话页选机器,任务卡落回这个群)。
     action: enabled && chatId && stage.kind === 'off'
-      ? { id: 'phone-new-task', label: t('composer.phoneTask.action'), icon: <Zap size={16} />, onSelect: project
-        ? () => setStage({ kind: 'on', folder: null, picking: true })
-        : () => window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } })) }
+      ? { id: 'phone-new-task', label: t('composer.phoneTask.action'), icon: <Zap size={16} />, onSelect: () => startPhoneNewTask(chatId) }
       : null,
     active: stage.kind !== 'off',
     picking: folderPickerOpen,

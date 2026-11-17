@@ -2,6 +2,7 @@ import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type Database from 'better-sqlite3';
+import { safeStorage } from 'electron';
 import { attachmentCreationUnverified as unverified, creationRecordText, MAX_CREATION_RECORD_BYTES,
   type CreationAttachmentJournal, type CreationStages } from './creation-attachment-journal';
 
@@ -11,16 +12,16 @@ export type WindowsJournalProtection = {
   decryptString(bytes: Buffer): string;
 };
 
-/** DPAPI is the existing Windows private-storage primitive. Never silently write plaintext if it is unavailable. */
-async function protection(provided?: WindowsJournalProtection): Promise<WindowsJournalProtection> {
-  const store = provided ?? (await import('electron')).safeStorage;
+/** This journal requires Windows DPAPI. The headless safeStorage shim is file-key based. */
+function protection(provided?: WindowsJournalProtection): WindowsJournalProtection {
+  const store = provided ?? (process.versions.electron ? safeStorage : undefined);
   if (!store?.isEncryptionAvailable()) throw unverified('Windows private attachment storage is unavailable');
   return store;
 }
 
 /** Windows SQLite's VFS owns writable flush handles and transaction recovery; no POSIX directory fsync is attempted. */
 export async function openWindowsCreationJournal(directory: string, binding: string, provided?: WindowsJournalProtection): Promise<CreationAttachmentJournal> {
-  const secure = await protection(provided);
+  const secure = protection(provided);
   const path = join(directory, 'facts.sqlite');
   const { openPhysicalDatabase } = await import('../../db/physical-connection');
   function decode<K extends keyof CreationStages>(stage: K, payload: Buffer): CreationStages[K] {
