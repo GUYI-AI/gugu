@@ -134,24 +134,22 @@
 
 /* Shared phone capsule and editor colors live with ChatComposer. */
 
-/* 手机输入那一行要有实底(owner 10-28「输入框完全透明，后面滚过的消息和字叠在一起」):
-   输入框本身用实色卡面;它所在那一行(底部那一摞的最后一格,不含上面的运行条)垫一条九成不透明的磨砂底,
-   横向铺满屏宽、往下盖到安全区。电脑上那一摞照旧透明(owner 10-25),只在手机壳里垫。
-   最后一条消息不被挡:消息流末尾按 --chat-dock-h 让位(ChatBottomDock),这条底在那一摞里面,不另占高。 */
+/* 手机输入框后面要有实底(owner 10-28「输入框完全透明，后面滚过的消息和字叠在一起」):
+   输入框本身用实色卡面;从它的上沿往下垫一条实底,横向铺满屏宽、往下盖过屏幕底边和安全区。
+   实底而不是半透明:消息从这一摞后面滚过,半透明的底会让下一条消息的字从输入框下面透出来。
+   它上面那几行(运行条、话题/智能体那排按钮)和电脑一样透明(owner 10-25、11-17):消息从它们后面滚过去。
+   最后一条消息不被挡:消息流末尾按 --chat-dock-h 让位(ChatBottomDock)。展开的编辑器自带满屏底,不垫。 */
 /* Agent 私聊的共享转录使用自己的输入槽,沿用同一条手机底色。 */
-[data-phone-shell] :is([data-chat-bottom-dock], [data-agent-conversation] [data-chat-composer-placement='bottom']) > :last-child { position: relative; }
-[data-phone-shell] :is([data-chat-bottom-dock], [data-agent-conversation] [data-chat-composer-placement='bottom']) > :last-child::before {
+[data-phone-shell] :is([data-chat-bottom-dock], [data-agent-conversation] [data-chat-composer-placement='bottom']) [data-slot='composer']:not([data-phone-expanded]) > [data-slot='composer-bar']::before {
   content: '';
   position: absolute;
   z-index: -1;
   top: 0;
-  bottom: 0;
   left: 50%;
   width: 100vw;
+  height: 100vh;
   transform: translateX(-50%);
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
-  -webkit-backdrop-filter: blur(var(--ta-glass-blur));
-  backdrop-filter: blur(var(--ta-glass-blur));
+  background: var(--bg);
   pointer-events: none;
 }
 
