@@ -225,6 +225,32 @@ describe('palette search reading', () => {
     expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
   });
 
+  it('keeps a completed empty reading while typing instead of inserting unknown task rows', async () => {
+    const answers: ((items: SearchItem[]) => void)[] = [];
+    fixture.search.mockReset().mockImplementation(() => new Promise<SearchItem[]>((resolve) => { answers.push(resolve); }));
+    await typed('w');
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    expect(host.querySelector('[data-testid="palette-search-pending"] [data-unknown]')).not.toBeNull();
+    await act(async () => answers[0]!([]));
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull());
+    const rows = () => host.querySelector('[cmdk-list]')!.childElementCount;
+    const emptyReadingRows = rows();
+
+    const input = host.querySelector('input')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    for (const [index, words] of ['we', 'wee'].entries()) {
+      await act(async () => { setValue.call(input, words); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      expect(rows()).toBe(emptyReadingRows);
+      expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
+      expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
+      expect(host.textContent).not.toContain('palette.noResults');
+      await vi.waitFor(() => expect(answers).toHaveLength(index + 2));
+      await act(async () => answers[index + 1]!([]));
+      await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
+      expect(rows()).toBe(emptyReadingRows);
+    }
+  });
+
   it('says a failed search and reads again on retry, ❌ an empty list', async () => {
     fixture.search.mockReset().mockRejectedValueOnce(new Error('index gone')).mockImplementation(async () => fixture.results.slice(2, 3));
     await typed('fresh-2');
