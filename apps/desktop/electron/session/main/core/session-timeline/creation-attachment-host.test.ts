@@ -1,10 +1,14 @@
+import { realpathSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAttachmentCreationHost, type AttachmentCreationHostDeps } from './creation-attachment-host';
 import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
-import { openCreationAttachmentJournal } from './creation-attachment-journal';
+import { openCreationAttachmentJournal as openJournal } from './creation-attachment-journal';
+
+const openCreationAttachmentJournal: typeof openJournal = (root, owner, device, request, options) =>
+  openJournal(root, owner, device, request, { durabilityRoot: realpathSync(tmpdir()), ...options });
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
@@ -12,12 +16,12 @@ const request = (): SessionCreateAttachmentDraftRequest => ({ harness: 'codex', 
   clientRequestId: 'creation-1', initialMessageId: 'first-1', projectId: 'project',
   attachments: [{ id: 'a', name: 'a.txt', mimeType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) }] });
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'creation-host-')); roots.push(root);
+  const root = realpathSync(await mkdtemp(join(tmpdir(), 'creation-host-'))); roots.push(root);
   let context = { ownerId: 'owner', deviceId: 'device' };
   const tasks = new Map<string, { projectId: string; title: string }>();
   const accepted = new Map<string, string>();
   const deps: AttachmentCreationHostDeps = {
-    root: () => root, context: async () => context,
+    root: () => root, durabilityRoot: () => realpathSync(tmpdir()), context: async () => context,
     create: vi.fn(async (_request, sessionId, beforeCommit) => { await beforeCommit(); tasks.set(sessionId, { projectId: 'project', title: 'Task' }); }),
     task: async sessionId => tasks.get(sessionId) ?? null,
     address: vi.fn(async () => ({ agentUserId: 'agent', chatId: 'dm' })),

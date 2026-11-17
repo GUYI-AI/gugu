@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
 import { privateCreationAttachmentDirectory } from '@gugu/core/local/state/protectedPrivateStorage';
 import { resolveGuguHome } from '@gugu/core/local/state/paths';
@@ -14,6 +16,8 @@ import { handoffCreationAttachmentInput } from './creation-attachment-handoff';
 
 const host = createAttachmentCreationHost({
   root: privateCreationAttachmentDirectory,
+  // OS account data is the existing durability boundary; HOME/GUGU_HOME are not proof.
+  durabilityRoot: () => realpathSync(userInfo().homedir),
   context: async () => {
     const identity = sessionIdentityHost();
     if (!identity.attachmentCreationContext || !identity.ensureAgentAddress) throw unverified('This host does not support attachment-first creation');
