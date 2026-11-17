@@ -1,4 +1,6 @@
-import { OWNER_PROFILE_MEMORY_FILE } from './assistantPolicy';
+import { fencedLineMask } from './markdownFences';
+
+export const OWNER_PROFILE_MEMORY_FILE = 'owner-profile.md';
 /** 文件开头 `---` 之间那几行里的简单键值(name / description / type,也认 metadata 下缩进的 type)。 */
 export function readFrontmatter(text: string): { fields: Record<string, string>; body: string } {
   const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
@@ -43,18 +45,10 @@ export function isOwnerProfileNote(note: { file: string }): boolean {
   return note.file === OWNER_PROFILE_MEMORY_FILE;
 }
 
-/** 代码围栏内的示例不是记忆标题或索引条目。 */
+/** Code examples do not supply memory headings or index entries. */
 function visibleMemoryLines(text: string): string[] {
-  let fence: { marker: string; length: number } | null = null;
-  return text.split('\n').map(line => {
-    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    if (fence) {
-      if (match && match[1][0] === fence.marker && match[1].length >= fence.length && !match[2].trim()) fence = null;
-      return '';
-    }
-    if (match) { fence = { marker: match[1][0], length: match[1].length }; return ''; }
-    return line;
-  });
+  const mask = fencedLineMask(text);
+  return text.split('\n').map((line, index) => mask[index] ? '' : line);
 }
 
 const MEMORY_KINDS: readonly MemoryKind[] = ['user', 'feedback', 'project', 'reference'];

@@ -126,3 +126,19 @@ describe('主人的称呼和基本信息', () => {
     expect(withOwnerProfileIndex(once, rules)).toBe(once)
   })
 })
+
+it('keeps existing relative owner profile index', () => {
+  const index = '- [Profile](./owner-profile.md)\n'
+  expect(withOwnerProfileIndex(index, rules)).toBe(index)
+  expect(withOwnerProfileIndex(null, rules)).toContain('](owner-profile.md)')
+})
+
+it('keeps titled and angle owner profile index entries during home restore', () => {
+  for (const index of [
+    '- [Profile](owner-profile.md "About you")\n',
+    '- [Profile](<./owner-profile.md>)\n',
+    '- [Profile](<owner-profile.md> "About you")\n'
+  ]) {
+    expect(withOwnerProfileIndex(index, rules)).toBe(index)
+  }
+})
