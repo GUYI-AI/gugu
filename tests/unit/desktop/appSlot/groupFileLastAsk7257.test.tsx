@@ -7,6 +7,7 @@ import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHe
 import { APP_OPEN_WITH_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { OpenSuperseded } from '../../../../apps/desktop/src/lib/guguLinks'
 import { askChat } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { isWaitingItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { ask, chatTabs, linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
@@ -59,10 +60,10 @@ function holdAnswers() {
   return gates
 }
 const pills = new Map<string, Promise<unknown>>()
-async function clickPill(chatId: string, itemId: string, gates: Map<string, unknown>) {
+async function clickPill(chatId: string, itemId: string, gates: Map<string, unknown>, inMessage = false) {
   fileChat = chatId
   await harness.render(linkShell({ chatId }))
-  pills.set(itemId, pill(itemId, { slide: '1' }))
+  pills.set(itemId, pill(itemId, { slide: '1' }, inMessage ? { id: `m-${itemId}`, chat_id: chatId } as never : undefined))
   await until(`${itemId} is asked of the host`, () => gates.has(itemId))
 }
 const outcomeOf = (itemId: string) => pills.get(itemId)!.then(() => 'opened', (error: unknown) => error instanceof OpenSuperseded ? 'superseded' : `failed: ${String(error)}`)
@@ -170,5 +171,18 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await letGo(gates, 'A')
     expect(on('race-8')).toBe('A')
     expect(await outcomeOf('A')).toBe('opened')
+  }, 30_000)
+
+  // A pill in a message: its tab is up with the click, its page waiting with the loading mark, then the real page.
+  it('a pill\'s tab waits with the loading mark, then shows the file', async () => {
+    const gates = holdAnswers()
+    await clickPill('race-9', 'A', gates, true)
+    const loading = () => harness.container.querySelector('[data-testid="group-app-slot-opening"] [data-testid="page-loading"]')
+    expect(loading()).not.toBeNull()
+    expect(isWaitingItem(shownItem('race-9'))).toBe(true)
+    await letGo(gates, 'A')
+    expect(loading()).toBeNull()
+    expect(on('race-9')).toBe('A')
+    expect(isWaitingItem(shownItem('race-9'))).toBe(false)
   }, 30_000)
 })

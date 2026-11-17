@@ -331,6 +331,16 @@ export function sessionIdOf(value: unknown): string {
   return value;
 }
 
+/** The name a page's `files.openWith` came with (the entry's own), for the waiting tab's title only: its last segment. */
+export function openingNameOf(args: { fileName?: unknown }): string | undefined {
+  return (typeof args.fileName === 'string' ? args.fileName.split('/').filter(Boolean).at(-1) : undefined) || undefined;
+}
+
+/** A page's `files.openWith` that is a plain open of a chat file by id (no pick, not beside it, not its own tab): a link to it. */
+export function opensAsLink(ref: AppFileRef, call: { ask: boolean; peek: boolean; tab: string | undefined }): ref is { chat?: string; id: string } {
+  return !call.ask && !call.peek && call.tab === undefined && !isWorkspace(ref) && 'id' in ref;
+}
+
 /**
  * A file as a page passed it: an entry from `files.list(place)`, `ctx.file`, `{ workspace, id | name }`, a chat file's
  * `{ id }`, or `{ chat, name }`.
@@ -555,7 +565,7 @@ export type FrameToHost =
   | { m: typeof APP_FRAME_MARKER; t: 'hello' }
   /** The runtime listens for its sync port now: the outer page hands it over (摩擦单 F28). */
   | { m: typeof APP_FRAME_MARKER; t: 'sync-port' }
-  /** The document's first contentful paint: a widget's placeholder gives way to it, as the desktop preload's `gugu-widget-painted`. */
+  /** The document's first contentful paint, sent for every page (not only widgets): its placeholder gives way to it, as the desktop preload's `gugu-page-painted`. */
   | { m: typeof APP_FRAME_MARKER; t: 'painted' }
   /**
    * `call`: a program's request made inside one tool call — that call's id, as main minted it (program-call.ts).
@@ -586,6 +596,8 @@ export interface AppOpenWithDetail {
   background?: boolean;
   /** Host-only, one-shot authorization carried to the file's binding. Contains no document content. */
   opening?: PreparedChatFile;
+  /** Window-only: the waiting page this answer turns into the file (`beginWait`). */
+  wait?: string;
   chatId: string;
   itemId: string;
   name: string;

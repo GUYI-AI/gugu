@@ -1001,12 +1001,16 @@ export function createAppFiles(platform: FilesPlatform) {
 
   /** A file the page may read: the one handed to it, or any other with `files:read`/`:write`. */
   async function readable(surface: FileSurface, account: { token: string; userId: string }, ref: ChatFileRef, what: 'saving' | 'opening' | 'forwarding'): Promise<ItemRow> {
-    const { row, handedOver } = await resolve(surface, account, ref);
+    const { row } = await resolve(surface, account, ref);
     if (row.kind === 'folder') throw notAFile(row);
-    if (!handedOver && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
+    mayName(surface, row.id, what);
+    return row;
+  }
+  /** The check `readable` makes, before anything is read: a file other than the page's own needs `files:read`/`:write`. */
+  function mayName(surface: FileSurface, itemId: string, what: 'saving' | 'opening' | 'forwarding'): void {
+    if (itemId !== surface.itemId && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
       throw new AppFileError('denied', `Not permitted: ${what} a file other than the one this page was opened for needs "files:read" or "files:write"`);
     }
-    return row;
   }
 
   /**
@@ -1072,6 +1076,7 @@ export function createAppFiles(platform: FilesPlatform) {
     open,
     self,
     read,
+    mayName,
     /** Host-only metadata for a separately authorized, bounded file payload read. */
     async payloadMetadata(surface: FileSurface, args: { ref: ChatFileRef }) {
       surface.signal?.throwIfAborted();

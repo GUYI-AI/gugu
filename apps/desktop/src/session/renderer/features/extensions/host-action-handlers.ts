@@ -1,7 +1,7 @@
 import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view-kinds';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
-import { followLink, openLinkTarget } from '@/lib/guguLinks';
+import { followLink, openLinkTarget, OpenSuperseded } from '@/lib/guguLinks';
 import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -128,7 +128,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       if (action.chatId) return openLinkTarget({ kind: 'app', extensionId: action.extensionId, tab: action.tab ?? installedExtensionsStore.mainTabOf(action.extensionId)?.kind.slice(action.extensionId.length + 1) ?? '', path: '', query: {}, place: { chat: action.chatId } });
       { const opened = openApp(action.extensionId, action.tab); revealSessionpage(); return opened; }
     case 'openChatFile':
-      if (action.onlyIfOpen) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
+      if ('onlyIfOpen' in action) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
         const tabs = panelTabsOf(action.chatId);
         if (!tabs.some((entry) => entry.shown && !entry.inWindow && groupPageSlot(action.chatId, entry.tabId) === fromTab)) return;
         if (action.intent && action.intent !== 'navigate') return;
@@ -138,9 +138,18 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
         // The body is already there. The original metadata validation starts after presenting it.
         return new Promise<{ chat: string }>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve({ chat: action.chatId }))));
       });
-      return openLinkTarget({ kind: 'file', itemId: action.itemId });
+      // A page's own open (`fromTab`): its tab waits beside that page, the page's state kept on it for the way back.
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin, chatPaneOf }) => {
+        const origin = fromTab ? chatPageOrigin(fromTab) : null;
+        if (origin && action.viewState) chatPaneOf(origin.chatId, origin.tabId)?.setPageViewState(origin.tabId, action.viewState);
+        return openLinkTarget({ kind: 'file', itemId: action.itemId, ...(action.at ? { at: action.at } : {}) }, {
+          ...(action.chatId ? { chatId: action.chatId } : {}), ...(action.fileName ? { fileName: action.fileName } : {}),
+          ...(origin ? { from: { chatId: origin.chatId, tabId: origin.tabId } } : {}), ...(action.intent ? { intent: action.intent } : {}),
+        // Superseded (the person moved on) is no failure; one is told as the host said it (its code, its words).
+        }).catch((error: unknown) => { if (!(error instanceof OpenSuperseded)) throw (error as { cause?: unknown }).cause ?? error; });
+      });
     case 'openLinkTarget':
-      return openLinkTarget(action.target);
+      return openLinkTarget(action.target, action.source);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
       const app = installedExtensionsStore.manifests.find((manifest) => manifest.id === action.extensionId)?.name ?? action.extensionId;

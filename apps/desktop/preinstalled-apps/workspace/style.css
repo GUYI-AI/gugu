@@ -3,6 +3,7 @@ html, body { height: 100%; }
 :root { --em-icon-xl: 36px; }
 body { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; overflow: hidden; }
 body.no-list .files, body.show-doc .files { display: none; }
+body.reading > * { visibility: hidden; }
 body:not(.show-doc):not(.no-list) .doc { display: none; }
 
 /* One two-line list at every width. */

@@ -5,7 +5,7 @@ import { appContextMenuOf } from '../../session/shared/extensions/app-context-me
 import { fileBlob } from '@gugu/core/shared/fileResolver'
 import { guguLink, guguLinkScheme, linkTargetOf, type OpenTarget } from '@gugu/core/shared/ui/guguLink'
 import { openLinkWith } from '../../session/shared/extensions/open-link'
-import { openLinkTarget } from '../../lib/guguLinks'
+import { openLinkTarget, type LinkSource } from '../../lib/guguLinks'
 import { resourceChatIdOf } from '../../session/shared/extensions/app-files-core'
 import { readCachedDevices } from '../../store/devicesCache'
 import { directoryRows, listedSession, liveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
@@ -28,6 +28,8 @@ import {
   APP_FRAME_MARKER,
   SYNC_PORT_WINDOW_MESSAGE,
   fileRefOf,
+  openingNameOf,
+  opensAsLink,
   openWithTabOf,
   openWithIntentOf,
   fileSearchOf,
@@ -781,6 +783,17 @@ export function hostAppFrame(
             ref, hooks.openWorkingCopy,
           )
         }
+        // A plain open of a chat file: a link to it, opened as main has the desktop window open it (its tab waiting meanwhile).
+        if (opensAsLink(ref, { ask: args.ask === true, peek: args.peek === true, tab })) {
+          files.mayName(surface(), ref.id, 'opening')
+          const named = openingNameOf(args)
+          const action = { kind: 'openChatFile' as const, itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+            ...(args.at && typeof args.at === 'object' ? { at: args.at as Record<string, string> } : {}),
+            ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}) }
+          return import('../../session/renderer/features/extensions/host-action-handlers')
+            .then(({ applyExtensionHostAction }) => applyExtensionHostAction({ origin: { pageId: null, extensionId: hosted.binding.extensionId, sessionId: null, tabId: hosted.binding.tabId }, action }))
+            .then(() => undefined)
+        }
         return files.openTarget(surface(), { ref: chatRef(args.ref) }).then((target) => {
           const choice = tab === undefined
             ? openerChoice(target.typedName, appsHereNow(), 'chat', phoneApps.remembered, args.ask === true)
@@ -1050,7 +1063,7 @@ declare const __GUGU_TIER__: string
 export const phoneLinkScheme = () => guguLinkScheme({ tier: typeof __GUGU_TIER__ === 'undefined' ? undefined : __GUGU_TIER__, devLaunch: false })
 
 /** Host facts and transports only; target parsing and opening order are shared with main. */
-export async function openPhoneLink(target: string | OpenTarget) {
+export async function openPhoneLink(target: string | OpenTarget, source?: Pick<LinkSource, 'message'>) {
   if (platform.capabilities.mobileApps) await phoneApps.ready()
   return openLinkWith({
     installed: () => installedExtensionsStore.manifests.map((manifest) => ({ manifest })),
@@ -1074,7 +1087,7 @@ export async function openPhoneLink(target: string | OpenTarget) {
       if (!opened) throw new Error('The App did not open')
       return opened
     },
-    openResource: (resource) => openLinkTarget(resource),
+    openResource: (resource) => openLinkTarget(resource, source),
     bringUp: async ({ sessionId }) => {
       const listed = listedSession(readCachedDevices(), liveDeviceSessions(), sessionId)
       if (!('row' in listed)) throw new Error('Session is not in your task list')

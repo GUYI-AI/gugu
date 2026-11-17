@@ -136,8 +136,8 @@ export const extensionsController = createRPCController({
     try { return { success: true as const, data: await switchExtensionVariant(id, name, consent) }; }
     catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
-  openLink: async (args: { target: import('@gugu/core/shared/ui/guguLink').OpenTarget; groupParticipantRequestId?: string }) =>
-    (await import('./gugu-links')).openLink(args.target, args.groupParticipantRequestId),
+  openLink: async (args: { target: import('@gugu/core/shared/ui/guguLink').OpenTarget; groupParticipantRequestId?: string; source?: { message?: import('@gugu/core/shared/types/chat').MessageItem } }) =>
+    (await import('./gugu-links')).openLink(args.target, args.groupParticipantRequestId, args.source),
   resourceLink: async (target: Exclude<import('@gugu/core/shared/ui/guguLink').GuguLinkTarget, { kind: 'server-login' }>) =>
     (await import('./gugu-links')).linkTo(target),
   list: async () => {
@@ -343,7 +343,7 @@ export const extensionsController = createRPCController({
       return { success: true as const, data: { ...target, choice } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), ...(error instanceof (await import('@main/core/extensions/app-files')).AppFileError ? { code: error.code } : {}) };
     }
   },
 
