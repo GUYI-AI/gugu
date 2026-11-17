@@ -125,8 +125,13 @@ export function onPlanChange(listener: () => void): () => void {
     } else if (seen === null) planLog.info({ plan }, 'the account plan is known (followed from here)')
     seen = plan
   })
-  // Marked stale, then read (or joined: a surface showing the credits reads them on the same return).
-  const readNow = () => { void creditAccount.refresh(); void creditAccount.fetch().catch(() => undefined) }
+  // Marked stale, then read. A surface showing the credits reads them on the same return: that read on its way is joined,
+  // ❌ restarted (a second request in the same millisecond).
+  const readNow = () => {
+    if (creditAccount.isFetching()) return
+    void creditAccount.refresh()
+    void creditAccount.fetch().catch(() => undefined)
+  }
   if (seen === null) readNow()
   const stopReturns = onReturn(readNow)
   return () => { stopReturns(); stopChanges() }

@@ -405,6 +405,26 @@ describe('#2503 用量与订阅积分的诚实性', () => {
     } finally { shown.mockRestore(); stop() }
   })
 
+  it('a return with the credits shown and the plan followed twice (the account catalog and a session\'s selection) reads them once', async () => {
+    vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ planId: 'default', tier: 'free', expiresAt: null }) }))
+    const harness = await renderMembership()
+    const stops = [onPlanChange(vi.fn()), onPlanChange(vi.fn())]
+    const stop = () => stops.forEach((each) => each())
+    const shown = vi.spyOn(document, 'visibilityState', 'get')
+    try {
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      vi.mocked(readCreditV2Account).mockClear()
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      expect(readCreditV2Account).toHaveBeenCalledTimes(1)
+    } finally { shown.mockRestore(); stop(); harness.cleanup() }
+  })
+
   it('会员行读取失败不能冒充免费档', async () => {
     vi.mocked(readCreditV2Account).mockResolvedValue(account({ balanceError: new Error('membership down') }))
     const harness = await renderMembership()
