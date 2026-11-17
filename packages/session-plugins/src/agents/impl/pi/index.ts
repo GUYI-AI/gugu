@@ -56,6 +56,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): RPC `fork {entryId}` / `/tree` (1.5.2); pi-acp forks whole sessions only.
+      revert: { kind: 'unsupported', reason: 'fork-only' },
       // Pi repeats thinking levels in stable `modes` and thought_level config; only the latter is effort.
       sessionModes: 'none',
       /**

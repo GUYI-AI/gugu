@@ -2275,6 +2275,8 @@ async function handleAcpRequest(message) {
       throw new Error('Invalid conversation revert target')
     }
     if (!historyCanRevert) throw new Error('Conversation revert requires persisted paginated Codex history')
+    // `thread/revert` "does not revert local file changes": its anchors never offer files, so a restore is a client bug.
+    if (params.files !== undefined && params.files !== 'keep') throw new Error('Codex cannot restore files on revert')
     if (revertingHistory || activeCycle || runningCommands.size) {
       throw new Error('Wait for current work to finish before reverting')
     }
@@ -2283,7 +2285,7 @@ async function handleAcpRequest(message) {
       const result = await appRequest('thread/revert', { threadId: sessionId, beforeTurnId: params.before })
       if (result?.thread?.id !== sessionId) throw new Error('Codex revert changed the thread ID')
       loadGeneration += 1
-      respond(id, { sessionId })
+      respond(id, { sessionId, files: 'kept' })
     } finally { revertingHistory = false }
     return
   }

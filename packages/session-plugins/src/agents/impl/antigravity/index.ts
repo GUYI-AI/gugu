@@ -179,6 +179,8 @@ export const plugin = definePlugin(
      */
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): `agy` terminal `/rewind` (RevertToCascadeStep, 1.5.9); agy_acp_server 1.5.0 has none.
+      revert: { kind: 'unsupported', reason: 'tui-only' },
       // 冷启动实测(2026-09-24,MBP,负载 65):装好后头一次 `initialize` 20.7s,之后 2.4s。
       // 400MB 的 par + 本地内核头一次被系统读进来、过一遍扫描;没有自解压缓存可预热。
       // 启动只等事实、不设墙钟(#6183),这里只亮「首次较慢」让等待看得见。

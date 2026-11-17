@@ -36,6 +36,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): terminal `/rewind` (2026.11.13); not sent over ACP.
+      revert: { kind: 'unsupported', reason: 'tui-only' },
     },
     autoApprove: {
       kind: 'supported',

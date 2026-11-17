@@ -57,6 +57,8 @@ export const plugin = definePlugin(
     subscription: { kind: 'supported', usageRefresh: 'on-open' },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): rewind is the serve HTTP route `POST /session/{id}/revert` (1.19.5); `opencode acp` has none.
+      revert: { kind: 'unsupported', reason: 'off-acp' },
       startup: { noticeKey: 'chat.opencodePreparing' },
       /**
        * 三维**全部是热的** —— 这一格曾整块声明成 `reload-session`,而那是**声明出来的,不是量出来的**,

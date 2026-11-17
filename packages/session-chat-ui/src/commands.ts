@@ -169,7 +169,7 @@ export type ChatCommands = {
    *
    * # ⚠️ 这**不是** retry，也**不是** continue —— 名字必须说实话
    *
-   * 上游 `elements-error-state` 的 retry 只在 agent 能退回时存在（`_session/revert`，那时失败行给的是
+   * 上游 `elements-error-state` 的 retry 只在 agent 能退回时存在（`_session/revert` 或插件的 `acp.revert` 钩子，那时失败行给的是
    * `onEditMessage` 的「退回重新编辑」，见 `turn-outcome.def.tsx` 顶部）；不能退回时没有 rewind / truncate。所以这个回调的语义被刻意收窄成一件**能被证实**的事：
    * **把那条指令还给输入框**。要不要真的再跑一次，由用户看过之后自己按发送 ——
    * 副作用的风险归判断得了它的那个人。

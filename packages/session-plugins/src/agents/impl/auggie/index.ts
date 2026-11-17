@@ -31,6 +31,8 @@ export const plugin = definePlugin(
     sessionBundle,
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): `/fork`, `/tree` (1.2.1), not on ACP.
+      revert: { kind: 'unsupported', reason: 'fork-only' },
     },
     hooks: {
       kind: 'config',

@@ -82,6 +82,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): zcode-acp 1.3.1 removed rewind (app-server 0.16+); only `session/fork {checkpointId}`.
+      revert: { kind: 'unsupported', reason: 'fork-only' },
       /**
        * 三维都走 `session/set_config_option`(桥报 `model` / `mode` / `thought` 三个 configOption),
        * 应答带回新的 `currentValue`(实测 `mode=build` → 读回 `build`)⇒ `ack-read-back`。

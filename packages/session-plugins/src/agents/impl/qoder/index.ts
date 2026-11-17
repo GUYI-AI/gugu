@@ -79,6 +79,10 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): over ACP only as a prompt `/rewind <userMessageId>` (1.1.90 `executeRewind`,
+      // scope fixed to "both"): it always restores files and is refused when file checkpointing is off, so "keep files"
+      // cannot be honoured, and it would run as a turn of its own. Not wired.
+      revert: { kind: 'unsupported', reason: 'unmeasured' },
     },
     /**
      * 怎么登 —— 出处与两个分支的理由见 `./auth.ts`。

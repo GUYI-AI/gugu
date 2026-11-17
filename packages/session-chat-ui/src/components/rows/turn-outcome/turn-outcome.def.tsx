@@ -16,7 +16,7 @@
  * discard 也画了 —— 见 ⑤。只有 retry 依旧不画，理由在下面 ①–④，是查出来的证据链，
  * 不是「handler 的名字看着不像」：
  *
- * ① **协议层没有**（标准 ACP；咕咕自己的扩展 `_session/revert` 见下面 #3529 那段）。ACP 客户端接口的方法全集是
+ * ① **协议层没有**（标准 ACP 至今没有，SDK 2.7.0 亦然；咕咕的 `_session/revert` 与各家扩展见下面 #3529 那段）。ACP 客户端接口的方法全集是
  *    `initialize / newSession / loadSession / prompt / cancel / setSessionConfigOption /
  *    setSessionMode / closeSession`（`session-core/src/agents/plugins/capabilities/acp.ts:52-67`）。
  *    没有 retry、没有 rewind、没有 truncate、没有 resume-turn。
@@ -45,8 +45,9 @@
  *    from your own list」）⇒ 不是降级，是这个动作在本仓的真实落点。
  *    ⚠️ 差的那一格写在按钮的无障碍名字里（「agent 那边仍然记得」），❌ 不许让用户以为自己撤销了什么。
  *
- * ⇒ 缺的是 turn 级的 rewind（#3529）。它后来有了，但**只在 agent 自己支持的地方**有：宿主的
- * `_session/revert` 把 agent 那边的上下文截到这一轮之前（#7304）。⇒ 失败行上，这一轮的用户消息
+ * ⇒ 缺的是 turn 级的 rewind（#3529）。它后来有了，但**只在 agent 自己支持的地方**有：宿主经咕咕桥的
+ * `_session/revert`、或插件的 `acp.revert` 钩子（厂商自己的 ACP 扩展），把 agent 那边的上下文截到这一轮之前
+ * （#7304、#2970；哪几家能、为什么，见各插件的 `capabilities.acp.revert`）。⇒ 失败行上，这一轮的用户消息
  * 能退回时（`canRevertMessage`），动作换成「退回重新编辑」：打开那条消息的编辑框，发送时先退回、
  * 再发改过的话 —— 那才是真的重试，因为模型已经看不到失败的那一轮。不能退回时仍是「取回指令」。
  * ①–④ 说的是不能退回的那些 agent，对它们依旧成立。

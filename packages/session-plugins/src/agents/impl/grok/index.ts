@@ -62,6 +62,8 @@ export const plugin = definePlugin(
     sessionBundle,
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): ACP ext `x.ai/rewind/points` / `x.ai/rewind/execute` exist (1.0.13 strings); not measured in Gugu.
+      revert: { kind: 'unsupported', reason: 'unmeasured' },
     },
     autoApprove: {
       kind: 'supported',
