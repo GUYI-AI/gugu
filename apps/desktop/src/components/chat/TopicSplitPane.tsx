@@ -46,7 +46,6 @@ import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
-import { SearchTrailBar } from './SearchTrailBar'
 import type { Reading } from '../../lib/replica'
 import type { TopicSourceState } from '../../lib/topics'
 

@@ -55,7 +55,8 @@ export const SessionActionsProvider = observer(function SessionActionsProvider({
   const { translate } = useSessionMessages();
   const { projectId, sessionId: pageSessionId } = useSessionViewContext();
   const showConfirm = useShowModal('confirmActionModal');
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : null;
   const { navigate } = useNavigate();
 
   /**

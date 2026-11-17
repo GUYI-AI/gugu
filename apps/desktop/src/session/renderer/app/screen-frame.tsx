@@ -260,7 +260,6 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
  */
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const { contribution, label, tooltip, unknown, failed } = useAppPageTab(extensionSurfaceStore.said(null, `screen:${blockId}`), tabKind);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;

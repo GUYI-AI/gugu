@@ -6,7 +6,7 @@ import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } 
 import { CreateSessionPage } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
-import { createNode, createReactHarness, deferred } from '../../support/testHarness'
+import { clickElement, createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 import { freshReplicaAccount } from '../../support/replicaAccount'
 
@@ -247,7 +247,8 @@ describe('phone first-send host readiness', () => {
     })
     expect(harness.container.querySelector('[data-testid="agent-watch-create-options-error"]')?.textContent).toContain('host request timed out')
     expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="pick-codex"]')).not.toBeNull()
+    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')?.disabled).toBe(false)
     expect(send().disabled).toBe(false)
   })
 

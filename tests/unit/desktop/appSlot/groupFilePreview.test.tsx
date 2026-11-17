@@ -112,7 +112,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     // A chat of its own per run: the chat's tabs (module state) of the other run are not this one's.
     const chatId = `preview-group-${mobile ? 'phone' : 'desktop'}`
     const folder = openPanelItem(chatId, folderItem())
-    const file = detail('png')
+    const file = { ...detail('png'), chatId }
     const among = [{ itemId: 'file-a', version: 1, name: 'a.png', contentType: 'image/png' }, { itemId: file.itemId, version: 3, name: file.name, contentType: 'image/png' }]
     const origin = { x: 40, y: 60, width: 120, height: 120 }
     await slot({ ...file, among, origin } as never, true, { from: shownPanelTab(chatId)!.tabId })
@@ -136,7 +136,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(harness.container.querySelector('[data-testid="message-file-preview-panel"]')!.textContent).toContain('无法渲染此文件')
   })
   it.each(['preview-group', 'another-chat'])('an image link retains its originating message in %s', async (chatId) => {
-    const file = detail('png')
+    const file = { ...detail('png'), chatId }
     const message = { id: 'image-reference', chat_id: chatId } as MessageItem
     await slot(file, true, { message })
     expect(boundary.image).toHaveBeenCalledWith([{ itemId: file.itemId, version: 3, name: file.name, contentType: file.file.contentType }], 0, { chatId, messageId: message.id }, undefined)

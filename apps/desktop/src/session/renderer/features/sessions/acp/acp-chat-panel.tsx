@@ -1808,13 +1808,12 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     }
     if (!error && birthGroup.join && !signInExpired && !signInMissing) {
       // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
-      setCondition({
+      return {
         code: 'group-join-failed',
         label: translate('transcript.condition.groupJoinFailed'),
         detail: birthGroup.join.reason,
         actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
-      });
-      return;
+      };
     }
     if (!error) {
       return (

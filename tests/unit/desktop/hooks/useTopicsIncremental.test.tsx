@@ -38,10 +38,12 @@ const changed = async (...keys: { chat_id: string; entity_id?: string }[]) => {
 }
 let seen: TopicSummary[] = []
 let seenError: string | null = null
+let reload = () => {}
 function Probe() {
   const state = useTopicsOfChat('line', subscribe)
   seen = state.topics ?? []
   seenError = state.error
+  reload = state.reload
   return null
 }
 let harness: ReturnType<typeof createReactHarness>
@@ -110,20 +112,20 @@ describe('useTopicsOfChat follows topic changes, not line messages', () => {
     try {
       await open([topic('t1', null)])
       if (order === 'failure then recovery') {
-        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure'))
+        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure')).mockRejectedValueOnce(new Error('same-clock failure'))
         await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBe('same-clock failure')
+        await vi.waitFor(() => expect(seenError).toBe('same-clock failure'))
         // Even an unchanged payload is a successful recovery and must clear the preceding error.
         listTopicsOfChat.mockResolvedValueOnce([topic('t1', null)])
-        await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBeNull()
+        await act(async () => reload())
+        await vi.waitFor(() => expect(seenError).toBeNull())
       } else {
         listTopicsOfChat.mockResolvedValueOnce([topic('t1', null, { name: 'fresh' })])
         await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBeNull()
-        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure'))
+        await vi.waitFor(() => expect(seenError).toBeNull())
+        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure')).mockRejectedValueOnce(new Error('same-clock failure'))
         await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBe('same-clock failure')
+        await vi.waitFor(() => expect(seenError).toBe('same-clock failure'))
         expect(seen.map(row => row.name)).toEqual(['fresh'])
       }
     } finally { clock.mockRestore() }
