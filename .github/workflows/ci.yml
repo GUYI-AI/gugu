@@ -374,6 +374,8 @@ jobs:
       - uses: ./.github/actions/setup-playwright
         with:
           container-image: ${{ env.PLAYWRIGHT_IMAGE }}
+      - name: Check native reply infrastructure and scan-error boundaries
+        run: node --test capture-tools/native-skills/native-reply.test.mjs
       - name: Prepare this job's private capture paths
         shell: bash
         run: |

@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { TestProject } from 'vitest/node'
 import { readNativeCreationSkills } from '../../apps/desktop/electron/session/main/core/agents/create-skills'
+import { checkedNativeSkillReply } from './native-reply'
 
 declare module 'vitest' {
   export interface ProvidedContext { nativeSkillsBase: string }
@@ -20,7 +21,7 @@ export default async function setup(project: TestProject) {
   const nativeReceiptPath = process.env.GUGU_SKILLS_NATIVE_RECEIPT
   if (nativeReceiptPath && (!isAbsolute(nativeReceiptPath) || dirname(await fs.realpath(nativeReceiptPath)) !== join(parent, 'results'))) throw new Error('Receipt must physically belong to this private results directory before it is read')
   const nativeReceipt = nativeReceiptPath ? JSON.parse(await fs.readFile(nativeReceiptPath, 'utf8')) as {
-    isolationRoot: string; codexHome: string; sourceSha: string; appVersion: string; pid: number
+    isolationRoot: string; codexHome: string; sourceSha: string; appVersion: string; pid: number; expectedSkillNames: string[]
   } : null
   if (nativeReceipt && (await fs.realpath(nativeReceipt.isolationRoot) !== parent || !nativeReceiptPath || await fs.realpath(dirname(nativeReceiptPath)) !== join(parent, 'results'))) {
     throw new Error('Native receipt/capture root must belong to the same owned isolation')
@@ -41,14 +42,14 @@ export default async function setup(project: TestProject) {
     } catch (error) { exit = typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : -1 }
     // Missing output/identity refusal is an infrastructure failure, never a made-up skills error.
     const result = JSON.parse(await fs.readFile(output, 'utf8'))
-    if (result.sourceSha !== nativeReceipt.sourceSha || result.pid !== nativeReceipt.pid) throw new Error('Native reader lost fixed source/owner binding')
+    if (result.sourceSha !== nativeReceipt.sourceSha || result.pid !== nativeReceipt.pid || result.appVersion !== nativeReceipt.appVersion) throw new Error('Native reader lost fixed source/version/owner binding')
     if (operation === 'verify') {
       if (exit !== 0 || result.actualSkillRpcCalls !== 0 || result.verifiedOwnedHost !== true) throw new Error('Owned native host verification failed')
       return null
     }
-    if (result.actualSkillRpcCalls !== 1 || result.result?.transport !== 'returned' || ![0, 1].includes(exit)) throw new Error('Native transport did not return a real skill reply')
+    const reply = checkedNativeSkillReply(result, exit, nativeReceipt)
     actualNativeCalls++
-    return result.result.reply as Awaited<ReturnType<typeof import('../../apps/desktop/electron/session/main/core/agents/create-skills').createSkills>>
+    return reply
   }
   const calls: { harness: string; projectId: string | null; ok: boolean; code?: string }[] = []
   const writeSkill = async (path: string, name: string, description: string) => {

@@ -10,7 +10,7 @@ const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
 const root = await realpath(receipt.isolationRoot)
 const inside = path => isAbsolute(path) && relative(root, path) !== '' && !relative(root, path).startsWith('..')
 for (const path of [receipt.executable, receipt.guguHome, receipt.userData, receipt.osHome, receipt.codexHome, outputPath]) {
-  if (typeof path !== 'string' || /\s/.test(path) || !inside(path)) throw new Error('Every input/output must be inside this owned isolation root, without whitespace')
+  if (typeof path !== 'string' || (path !== receipt.executable && /\s/.test(path)) || !inside(path)) throw new Error('Every input/output must be inside this owned isolation root; data paths must not contain whitespace')
 }
 for (const path of [receipt.executable, receipt.guguHome, receipt.userData, receipt.osHome, receipt.codexHome, dirname(outputPath)]) {
   const resolved = await realpath(path)
