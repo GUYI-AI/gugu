@@ -66,7 +66,10 @@ function Get-TreeHolders([string]$dir) {
   # installer's handle was first missed.) Handles are duplicated into this process only to read their names.
   try {
     if (-not ('GuguTreeHolders' -as [type])) {
-      Add-Type -TypeDefinition @"
+      # @@@add-type-cwd - the installer runs this script from its plugin directory, which holds NSIS's own 32-bit
+      # System.dll; Add-Type's compiler resolves the System reference from the working directory first and fails on it.
+      $cwd = [Environment]::CurrentDirectory; [Environment]::CurrentDirectory = $env:SystemRoot
+      try { Add-Type -TypeDefinition @"
 using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text; using System.Threading;
 public static class GuguTreeHolders {
   [StructLayout(LayoutKind.Sequential)] struct Entry { public IntPtr Object; public IntPtr Pid; public IntPtr Handle; public uint Access; public ushort Backtrace; public ushort Type; public uint Attributes; public uint Reserved; }
@@ -108,7 +111,7 @@ public static class GuguTreeHolders {
     return found;
   }
 }
-"@
+"@ } finally { [Environment]::CurrentDirectory = $cwd }
     }
     $processes = @{}; Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object { $processes[[int]$_.ProcessId] = $_ }
     return @([GuguTreeHolders]::Under($dir) | ForEach-Object {

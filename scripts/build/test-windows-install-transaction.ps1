@@ -15,6 +15,8 @@ $powershell = (Get-Process -Id $PID).Path
 $results = @()
 $links = Join-Path $root 'links.ini'
 $failLog = Join-Path $root 'installer\fixture.log'
+# The installer runs the helper from its plugin directory, next to NSIS's 32-bit System.dll; run it from such a directory.
+$plugins = Join-Path $root 'plugins'
 $oldLink = Join-Path $root 'old.lnk'
 $newLink = Join-Path $root 'new-menu\new.lnk'
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
@@ -22,9 +24,10 @@ function Invoke-Phase($phase, [int]$expected = 0) {
   $prior=$ErrorActionPreference
   try {
     $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
+    Push-Location $plugins
     & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links -FailureLog $failLog
     $code=$LASTEXITCODE
-  } finally { $ErrorActionPreference=$prior }
+  } finally { Pop-Location; $ErrorActionPreference=$prior }
   Assert ($code -eq $expected) "$phase returned $code, expected $expected"
 }
 function Payload($dir, $text) {
@@ -40,6 +43,8 @@ function Registration($version) {
 }
 try {
   New-Item -ItemType Directory -Path $root | Out-Null
+  New-Item -ItemType Directory -Path $plugins | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $plugins 'System.dll'), [byte[]](@(0x4D, 0x5A) + @(0) * 126)) # not a .NET assembly
   [IO.File]::WriteAllText($links, "[links]`r`nold=$oldLink`r`nnew=$newLink`r`n", [Text.Encoding]::Unicode)
   $data = Join-Path $root 'user-data-must-survive'
   [IO.File]::WriteAllText($data, 'preserved')
