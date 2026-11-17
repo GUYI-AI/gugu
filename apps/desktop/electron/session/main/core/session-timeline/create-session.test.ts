@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   createParams: [] as Array<{ projectId: string; sessionType?: string }>,
   acpStart: { success: true } as { success: boolean; error?: unknown },
   warnings: [] as Array<Record<string, unknown>>,
+  warningCalls: [] as unknown[][],
   /** 固定原因码进日志走一次动态 import(见 create-session.ts logCreateFailure):写进来的那一刻告诉用例。 */
   warned: Promise.withResolvers<void>(),
   failures: new Map<string, string>(),
@@ -44,8 +45,9 @@ vi.mock('./start-failures', () => ({
 
 vi.mock('@main/lib/logger', () => ({
   log: {
-    warn: (fields: Record<string, unknown>) => {
-      state.warnings.push(fields);
+    warn: (...args: unknown[]) => {
+      state.warnings.push(args[0] as Record<string, unknown>);
+      state.warningCalls.push(args);
       state.warned.resolve();
     },
   },
@@ -447,6 +449,8 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
     expect(state.warnings).toHaveLength(1);
     expect(state.warnings[0]).toEqual({ scope: 'session-timeline/create', code: 'harness_runtime_missing', retry: false });
     expect(JSON.stringify(state.warnings)).not.toMatch(/Cannot find module|Require stack|dist-electron|\/home\//);
+    expect(state.warningCalls.at(-1)).toEqual([state.warnings[0], '在这台机器上建会话/起会话失败']);
+    expect(JSON.stringify(state.warningCalls.at(-1))).not.toMatch(/Cannot find module|Require stack|dist-electron|\/home\//);
   });
 
   it('选了咕咕提供的模型、签平台额度那一趟连不上:原因码 platform_model_unreachable,❌ 把网关那句原文回给发起方', async () => {
@@ -480,6 +484,8 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
     expect(state.warnings).toHaveLength(1);
     expect(state.warnings[0]).toEqual({ scope: 'session-timeline/create', code: 'harness_not_found', retry: false });
     expect(JSON.stringify(state.warnings)).not.toMatch(/synthetic@example|Users|private/);
+    expect(state.warningCalls.at(-1)).toEqual([state.warnings[0], '在这台机器上建会话/起会话失败']);
+    expect(JSON.stringify(state.warningCalls.at(-1))).not.toMatch(/synthetic@example|Users|private/);
   });
 });
 
@@ -503,6 +509,25 @@ describe('startSession:再试一次', () => {
     state.hydrateError = new Error('Not logged in · Please run /login');
     await expect(startSession('proj-1')).resolves.toMatchObject({ ok: false, error: { code: 'agent_signed_out' } });
     expect(state.failures.get('proj-1')).toBe('agent_signed_out');
+  });
+
+  it('keeps retry diagnostics out of every actual logger argument while preserving the original failure', async () => {
+    const raw = 'Not logged in · Please run /login; /private/edge-log-sentinel/receipt.json; retry.owner@example.invalid';
+    state.warningCalls = [];
+    state.hydrateError = new Error(raw);
+
+    await expect(startSession('proj-1')).resolves.toMatchObject({
+      ok: false, error: { code: 'agent_signed_out', message: raw },
+    });
+    await state.warned.promise;
+
+    expect(state.calls).toContain('hydrateSession');
+    expect(state.failures.get('proj-1')).toBe('agent_signed_out');
+    expect(state.warningCalls).toEqual([[
+      { scope: 'session-timeline/create', code: 'agent_signed_out', retry: true },
+      '在这台机器上建会话/起会话失败',
+    ]]);
+    expect(JSON.stringify(state.warningCalls)).not.toMatch(/edge-log-sentinel|retry\.owner@example\.invalid|receipt\.json|Not logged in/);
   });
 });
 

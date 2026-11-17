@@ -67,10 +67,12 @@ afterEach(() => {
   composerDrafts.discard(mobileCreationDraftKey(fixture.owner))
   document.documentElement.removeAttribute('data-theme')
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 function render(theme: 'light' | 'dark') {
   root!.render(<ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
     <CreateSessionPage onCreated={fixture.created} />
+    <span hidden data-creation-fixture-owner={fixture.owner} />
   </MessageProvider></SessionUiTheme></LocalizationProvider></ThemeProvider>)
 }
 async function mount(theme: 'light' | 'dark') {
@@ -125,6 +127,104 @@ it('retains the original File after placement fails, then retries the same task 
   expect(fixture.ports.create).toHaveBeenCalledTimes(1); expect(fixture.ports.admit).toHaveBeenCalledTimes(1)
   expect(fixture.ports.create.mock.calls[0]![0].prompt).toBe('')
   expect(fixture.legacyCreate).not.toHaveBeenCalled()
+})
+
+// Observe the real Page catch -> rendererLogger -> console sink for a phone/web target.
+// No logging helper, Page, Thread, ModelChoices or creation coordinator is replaced.
+function creationLogCapture() {
+  vi.stubGlobal('electronAPI', undefined)
+  const sink = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  return { sink, rows: () => sink.mock.calls.filter(args => args[0] === '[mobile/agent-watch] create session failed') }
+}
+
+it('logs only a fixed code from the actual Page catch and retries the original File and creation identities', async () => {
+  const logs = creationLogCapture()
+  await mount('dark')
+  const file = new File(['original private bytes'], 'page.owner@example.invalid.txt', { type: 'text/plain' })
+  const failure = Object.assign(new Error('/private/edge-page-sentinel/receipt.json; page.owner@example.invalid'), {
+    code: 'attachment_creation_unverified',
+  })
+  fixture.ports.place.mockRejectedValueOnce(failure)
+  await choose(file); await send()
+  await until('real Page failure is logged and the File is restored', () => logs.rows().length === 1
+    && !!host?.querySelector('[role="alert"]') && !!host?.querySelector('[data-slot="composer-attachment"]'))
+
+  expect(logs.rows()).toEqual([['[mobile/agent-watch] create session failed', { code: 'attachment_creation_unverified' }]])
+  expect(JSON.stringify(logs.sink.mock.calls)).not.toMatch(/edge-page-sentinel|page\.owner@example\.invalid|receipt\.json/)
+  expect(fixture.ports.create).toHaveBeenCalledTimes(1)
+  expect(fixture.ports.admit).not.toHaveBeenCalled()
+  expect(composerDrafts.forKey(mobileCreationDraftKey(fixture.owner)).pending[0]!.file).toBe(file)
+  const original = fixture.ports.create.mock.calls[0]![0] as SessionCreateAttachmentDraftRequest
+
+  await send()
+  await until('the same task first input is admitted after retry', () => fixture.created.mock.calls.length === 1)
+  expect(fixture.ports.create).toHaveBeenCalledTimes(1)
+  expect(fixture.ports.place).toHaveBeenCalledTimes(2)
+  for (const [placed] of fixture.ports.place.mock.calls) expect(placed).toBe(file)
+  expect(fixture.ports.admit).toHaveBeenCalledExactlyOnceWith({
+    conversationId: receipt.conversationId, clientRequestId: original.clientRequestId,
+    initialMessageId: original.initialMessageId,
+    placements: [{ attachmentId: original.attachments[0]!.id, file: {
+      itemId: file.name, version: 1, name: file.name, mimeType: file.type, sizeBytes: file.size,
+    } }],
+  })
+  expect(fixture.legacyCreate).not.toHaveBeenCalled()
+  expect(logs.rows()).toHaveLength(1)
+})
+
+it('keeps a late A failure out of logs and B draft, then retries only the original A task', async () => {
+  const logs = creationLogCapture()
+  await mount('dark')
+  const ownerA = fixture.owner, ownerB = `${ownerA}-next`
+  const fileA = new File(['account A original bytes'], 'late.owner@example.invalid.txt', { type: 'text/plain' })
+  const fileB = new File(['account B draft bytes'], 'account-b-draft.txt', { type: 'text/plain' })
+  const pending = Promise.withResolvers<never>()
+  let placementStarted = false
+  fixture.ports.place.mockImplementationOnce(() => { placementStarted = true; return pending.promise })
+  try {
+    await choose(fileA); await send()
+    await until('A placement is in flight', () => fixture.ports.place.mock.calls.length === 1)
+    const original = fixture.ports.create.mock.calls[0]![0] as SessionCreateAttachmentDraftRequest
+
+    fixture.owner = ownerB
+    followRendererSession('SIGNED_IN', ownerB); render('dark')
+    await until('B owns an empty editor', () => !!host?.querySelector(`[data-creation-fixture-owner="${ownerB}"]`)
+      && !!host?.querySelector('[contenteditable]')
+      && !host?.querySelector('[data-slot="composer-attachment"]'))
+    await choose(fileB)
+    pending.reject(Object.assign(new Error('/private/edge-late-sentinel/receipt.json; late.owner@example.invalid'), { code: 'EACCES' }))
+    await until('A late failure reaches the actual Page log boundary', () => logs.rows().length === 1)
+
+    expect(logs.rows()).toEqual([['[mobile/agent-watch] create session failed', { code: 'EACCES' }]])
+    expect(JSON.stringify(logs.sink.mock.calls)).not.toMatch(/edge-late-sentinel|late\.owner@example\.invalid|receipt\.json/)
+    expect(fixture.created).not.toHaveBeenCalled()
+    expect(fixture.ports.admit).not.toHaveBeenCalled()
+    expect(host!.querySelector('[role="alert"]')).toBeNull()
+    expect(composerDrafts.forKey(mobileCreationDraftKey(ownerB)).pending).toHaveLength(1)
+    expect(composerDrafts.forKey(mobileCreationDraftKey(ownerB)).pending[0]!.file).toBe(fileB)
+
+    fixture.owner = ownerA
+    followRendererSession('SIGNED_IN', ownerA); render('dark')
+    await until('the original A File is hydrated into its editor', () => !!host?.querySelector(`[data-creation-fixture-owner="${ownerA}"]`)
+      && !!host?.querySelector('[data-slot="composer-attachment"]')
+      && !!host?.textContent?.includes(fileA.name))
+    expect(composerDrafts.forKey(mobileCreationDraftKey(ownerA)).pending[0]!.file).toBe(fileA)
+    await send()
+    await until('only original A creation is handed over', () => fixture.created.mock.calls.length === 1)
+    expect(fixture.ports.create).toHaveBeenCalledTimes(1)
+    expect(fixture.ports.admit).toHaveBeenCalledTimes(1)
+    expect(fixture.ports.admit.mock.calls[0]![0]).toMatchObject({
+      conversationId: receipt.conversationId, clientRequestId: original.clientRequestId, initialMessageId: original.initialMessageId,
+    })
+    expect(fixture.ports.place).toHaveBeenCalledTimes(2)
+    for (const [placed] of fixture.ports.place.mock.calls) expect(placed).toBe(fileA)
+    expect(composerDrafts.forKey(mobileCreationDraftKey(ownerB)).pending[0]!.file).toBe(fileB)
+    expect(fixture.legacyCreate).not.toHaveBeenCalled()
+  } finally {
+    if (placementStarted) pending.reject(new Error('fixture cleanup'))
+    composerDrafts.discard(mobileCreationDraftKey(ownerA))
+    composerDrafts.discard(mobileCreationDraftKey(ownerB))
+  }
 })
 
 it('keeps a missing skill method distinct from empty skills and retries the same selected target', async () => {
