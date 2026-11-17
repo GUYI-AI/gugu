@@ -12,11 +12,12 @@ const { AppGivenSection } = await import('../../../../apps/desktop/src/session/r
 let harness: ReturnType<typeof createReactHarness>
 // Which agents an App is given to are the signed-in account's (account scope): read for a signed-in account, as in the product.
 const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
-beforeEach(() => { followRendererSession('SIGNED_IN', 'owner'); harness = createReactHarness() })
+beforeEach(() => { answer.fail = false; followRendererSession('SIGNED_IN', 'owner'); harness = createReactHarness() })
 afterEach(() => harness.cleanup())
 
+const answer = vi.hoisted(() => ({ fail: false }))
 const api = vi.hoisted(() => ({
-  appPlaces: async () => ({ success: true as const, data: [{ id: 'here:all', kind: 'here' as const, enabled: true }] }),
+  appPlaces: async () => (answer.fail ? { success: false as const, error: 'machine unreachable' } : { success: true as const, data: [{ id: 'here:all', kind: 'here' as const, enabled: true }] }),
   changeAppPlaces: async () => ({ success: true as const }),
 }))
 let hosts = 0
@@ -42,4 +43,15 @@ describe('I5 — the 「给了…」 summary says what the runtime does', () => 
     expect(root.querySelector('[data-testid="extension-given-blocked"]')).toBeNull()
     expect(root.querySelector('[data-testid="extension-given-searcher"]')).not.toBeNull()
   })
+})
+
+it('a refresh that fails over places read before says it failed with a retry; the places stay drawn', async () => {
+  const root = await section()
+  expect(root.querySelector('[data-testid="extension-given-searcher"]')).not.toBeNull()
+  answer.fail = true
+  const { appPlaces } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/market-replicas')
+  await act(async () => { await appPlaces.refresh(`remote:given-${hosts}`, 'searcher').catch(() => undefined) })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  expect(root.querySelector('[role="alert"]')).not.toBeNull()
+  expect(root.querySelector('[data-testid="extension-given-searcher"]')).not.toBeNull()
 })

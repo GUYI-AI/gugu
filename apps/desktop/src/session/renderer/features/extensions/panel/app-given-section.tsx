@@ -41,7 +41,9 @@ export function AppGivenSection({
   const places = reading.state === 'value' ? reading.value : null;
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState('');
-  const shownFailure = failed || (reading.state === 'error' ? messageForUser(reading.error) : '');
+  // A refresh that failed over places read before is said too, the places staying drawn (❌ them shown as current).
+  const readFailure = reading.state === 'error' || (reading.state === 'value' && reading.error) ? reading.error : null;
+  const shownFailure = failed || (readFailure ? messageForUser(readFailure) : '');
   const load = () => {
     setFailed('');
     void appPlaces.refresh(hostKey, extensionId);
