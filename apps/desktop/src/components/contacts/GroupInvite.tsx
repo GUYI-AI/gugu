@@ -255,7 +255,7 @@ export function GroupInviteJoinModal({
           <>
             <PublicGroupInviteSearchResult lookup={reading.value} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
             {/* Looked up before, its lookup again failing: what was read stays, the failure said with a retry (❌ drawn as current). */}
-            {reading.error ? <div style={{ padding: '0 16px 16px' }}><RefreshFailed error={reading.error} onRetry={() => void publicGroupInvite.refresh(publicId)} /></div> : null}
+            {reading.error ? <div className="px-4 pb-4"><RefreshFailed error={reading.error} onRetry={() => void publicGroupInvite.refresh(publicId)} /></div> : null}
           </>
         )}
       </div>

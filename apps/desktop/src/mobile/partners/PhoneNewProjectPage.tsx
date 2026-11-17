@@ -130,9 +130,10 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       <Pane paneRole="detail" mobile className="gg-partners" data-testid="phone-new-project-folder">
         <PaneHeader mobile leading={<PaneBackButton label={t('shell.back')} onBack={closePicker} />} title={t('partners.newProject.pickFolder')} />
         <div className="gg-partners-picker">
+          {/* The picker owns its home starting point; an unread project setting supplies no starting path. */}
           <RemoteFolderPicker
             deviceId={device.device_id}
-            initialPath={shownDirectory?.path ?? '~'}
+            initialPath={shownDirectory?.path ?? undefined}
             onSelect={(path) => navigateMobile(() => { setExistingFolder({ deviceId: device.device_id, path }); setPicking(false) }, 'pop')}
             onCancel={closePicker}
           />

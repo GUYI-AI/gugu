@@ -156,7 +156,7 @@ export const AutomationRow = observer(function AutomationRow({
             <RefreshFailed error={latest.error} />
           ) : (
             // Read before, its refresh failed: said under what was read (❌ drawn as current).
-            <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-col gap-1">
               {latest.value ? (
                 ((run) => {
                   const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
