@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import { archiveSessionNow } from '@renderer/features/sessions/archive-session-flow';
+import { archiveSessionNow, confirmArchive } from '@renderer/features/sessions/archive-session-flow';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
@@ -283,7 +283,7 @@ class SessionKeyboardNavStore {
 
   /**
    * ⌃X. Archiving stops the agent running in that conversation and takes the row out of the list,
-   * so the first press only arms it — the second press within the window is the confirmation.
+   * so the first press only arms it; the second press within the window opens the archive confirmation.
    * Archive, not delete (#6949): the person's side only ever archives, same as the agent's
    * `session_archive`; the undo toast and Session history bring it back.
    */
@@ -321,12 +321,18 @@ class SessionKeyboardNavStore {
 
   private _archiveCursorSession(node: SidebarNavNode & { kind: 'conversation' }): void {
     withMountedSession(node.projectId, node.sessionId, () => {
-      // The two key presses ARE this path's confirmation (behavior session-page「键盘导航」), so no
-      // dialog; the scope is this one session, as before.
-      archiveSessionNow({ projectId: node.projectId, sessionId: node.sessionId, withChildren: false });
-      // Then on to the next item of the list the user sees, as the old sidebar did. #2548 that is the one list's next row
-      // (the one before it at the end), which the chat list opens as ⌘↓ does; no other row = the New task page.
-      if (!openOneListNeighbour()) runInAction(() => this._applyNow({ kind: 'new-session' }));
+      // The second press asks the one archive confirmation (archive-session-flow `confirmArchive`), like every other
+      // archive entry: it is the dialog that says whether the agent also leaves its groups and contacts. Scope stays
+      // this one session.
+      confirmArchive({
+        childCount: 0,
+        proceed: (_withChildren, removeSocialIdentity) => {
+          archiveSessionNow({ projectId: node.projectId, sessionId: node.sessionId, withChildren: false, removeSocialIdentity });
+          // Then on to the next item of the list the user sees, as the old sidebar did. #2548 that is the one list's next row
+          // (the one before it at the end), which the chat list opens as ⌘↓ does; no other row = the New task page.
+          if (!openOneListNeighbour()) runInAction(() => this._applyNow({ kind: 'new-session' }));
+        },
+      });
     });
   }
 

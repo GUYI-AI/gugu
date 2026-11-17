@@ -98,6 +98,7 @@ import { hydrateSidebarTint } from '../lib/sidebarTint'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
+import { PhoneSessionModalHost } from '../components/PhoneSessionModalHost'
 import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
@@ -1315,6 +1316,7 @@ function InnerLayout({
       {!mobile && sessionHostAvailable && <AppHostLayerHost visible={activeTab === 'tasks'} />}
       {/* Entry switch: the trusted assistant App bound to the assistant's chat by the host; every entry asks lib/assistantEntry.ts. */}
       {!mobile && sessionHostAvailable && <AssistantAppEntryHost />}
+      {!sessionHostAvailable && <PhoneSessionModalHost />}
 
     </PhoneViewportShell>
   )

@@ -302,8 +302,7 @@ export default {
     "pin": "置顶",
     "scan": "扫一扫",
     "search": "搜索",
-    "unpin": "取消置顶",
-    "unpinFromSidebar": "取消固定到左侧栏"
+    "unpin": "取消置顶"
   },
   "chatService": {
     "errors": {
@@ -505,6 +504,7 @@ export default {
     "forwarding": "转发中…",
     "noResults": "未找到对话",
     "noTargets": "暂无可转发的对话",
+    "people": "联系人",
     "note": "留言",
     "preview": {
       "attachment": "[附件]",

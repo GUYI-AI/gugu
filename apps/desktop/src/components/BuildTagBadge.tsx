@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { buildTagWindowName } from '../session/shared/aux-window'
+import { useMobileShell } from '../hooks/useMobileShell'
 
 declare const __GUGU_BUILD_TAG__: string
 declare const __GUGU_TEST_NOTES__: string
@@ -17,6 +18,10 @@ declare const __GUGU_TEST_NOTES__: string
  * 位置是右下角,但收起态是贴角的一条矮条(≈19px 高、离边 2px):composer 的发送按钮下沿离窗口底
  * 还有 ~23px,矮条整个落在那段空里,不盖按钮、不截点击。❌ 把它加高/离边更远 —— 那就回到 #6044。
  * 展开的说明向上长、盖在 app 上。
+ *
+ * @@@phone-top-strip — 手机上没有那段空:composer 贴着底,右下角正好压住发送键(11-16 实测 1.0 字号下也压)。
+ * 手机壳里它是顶部居中的一条矮条(固定 12px 高、10px 字,不随系统字号变),落在页头上沿的空白里,
+ * 让开状态栏/刘海(safe-area-inset-top),pointer-events: none —— 只给人看,不挡任何点击,也不展开。
  */
 const badgeStyle: CSSProperties = {
   position: 'fixed',
@@ -36,6 +41,30 @@ const badgeStyle: CSSProperties = {
   lineHeight: 1.2,
   letterSpacing: '.02em',
   boxShadow: 'var(--shadow-lift)',
+  userSelect: 'none',
+}
+
+const phoneStripStyle: CSSProperties = {
+  position: 'fixed',
+  top: 'env(safe-area-inset-top, 0px)',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 2147483647,
+  maxWidth: '60vw',
+  padding: '0 6px',
+  borderBottomLeftRadius: 'var(--radius-sm)',
+  borderBottomRightRadius: 'var(--radius-sm)',
+  background: 'var(--danger-solid)',
+  color: 'var(--danger-solid-fg)',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  // 计数徽标那一档(10px),不乘系统字号 —— 角标是骨架,不是正文。
+  fontSize: 'var(--text-micro, 10px)',
+  fontWeight: 700,
+  lineHeight: '12px',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  pointerEvents: 'none',
   userSelect: 'none',
 }
 
@@ -60,6 +89,7 @@ export function BuildTagBadge() {
   const { t } = useTranslation('main')
   const tag = __GUGU_BUILD_TAG__.trim()
   const native = typeof window.electronAPI !== 'undefined'
+  const phone = useMobileShell()
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const owned = useRef<{ popup: Window; mount: HTMLElement } | null>(null)
   const lease = useRef({ generation: 0 })
@@ -118,6 +148,7 @@ export function BuildTagBadge() {
     }
   }, [tag, native])
   if (!tag) return null
+  if (phone) return <div aria-label={`Build ${tag}`} data-build-tag-strip style={phoneStripStyle}>{tag}</div>
   if (native && !root) return null
   const notes = __GUGU_TEST_NOTES__.trim() || t('buildArtifact.testNotesMissing')
   const badge = (

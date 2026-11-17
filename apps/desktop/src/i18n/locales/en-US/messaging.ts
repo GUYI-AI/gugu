@@ -303,8 +303,7 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin",
-    "unpinFromSidebar": "Unpin from sidebar"
+    "unpin": "Unpin"
   },
   "chatService": {
     "errors": {
@@ -507,6 +506,7 @@ export default {
     "forwarding": "Forwarding…",
     "noResults": "No chats found",
     "noTargets": "No chats available for forwarding",
+    "people": "Contacts",
     "note": "Add a note",
     "preview": {
       "attachment": "[Attachment]",

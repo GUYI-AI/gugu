@@ -321,11 +321,14 @@
   /* @@@type-ladder-7333 — 视觉规范的字级组合(用户 2026-10-17 批准,角色裁决见 #7333):
      12/18 标注 · 14/20 紧凑界面 · 16/24 消息与长段正文、面板标题 · 20/28 页内标题 · 24/32 页级标题。
      紧凑界面的 14/20 只给导航、菜单、设置行、工具条这类短文本;长段落一律 16/24(行高 ≥1.5)。 */
-  --font-size-xs: 12px;
-  --font-size-sm: 14px;
-  --font-size-md: 16px;
-  --font-size-lg: 20px;
-  --font-size-xl: 24px;
+  /* @@@text-scale — the phone's system font size reaches text only through these two factors (mobile/textScale.ts writes
+     them on <html>; 1 everywhere else). Body sizes take --text-scale, title sizes the smaller --title-scale. Boxes,
+     icons and spacing stay in plain px; a box that holds text sizes itself with min-height from these line heights. */
+  --font-size-xs: calc(12px * var(--text-scale, 1));
+  --font-size-sm: calc(14px * var(--text-scale, 1));
+  --font-size-md: calc(16px * var(--text-scale, 1));
+  --font-size-lg: calc(20px * var(--title-scale, 1));
+  --font-size-xl: calc(24px * var(--title-scale, 1));
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -334,12 +337,12 @@
      Aliases the raw size scale so components express ROLE (title/body/caption)
      instead of magic px. Apply via these tokens, not hardcoded fontSize. */
   --font-heading: var(--font-size-lg);    /* 20/28 — 页内大标题 */
-  --font-title: var(--font-size-md);       /* 16/24 — 面板头、对话框标题 */
+  --font-title: calc(16px * var(--title-scale, 1)); /* 16/24 — 面板头、对话框标题;标题那一档系数(@@@text-scale) */
   --font-body: var(--font-size-sm);        /* 14/20 — 紧凑界面:导航、菜单、设置行、列表、工具条 */
   --font-caption: var(--font-size-xs);     /* 12/18 — 时间、计数、辅助说明 */
   /* 消息与长段正文(IM 人聊 / IM agent 的气泡正文、文档预览):16/24。与 --font-title 同号不同角色。 */
   --font-prose: var(--font-size-md);
-  --text-code: 13px; /* 等宽诊断与代码；与会话页代码角色13/20一致，冷启动时也可独立消费。 */
+  --text-code: calc(13px * var(--text-scale, 1)); /* 等宽诊断与代码；与会话页代码角色13/20一致，冷启动时也可独立消费。 */
 
   /* Semantic spacing is intentionally outside @theme / theme.extend.spacing: Tailwind v4
      would otherwise resolve max-w-lg against spacing.lg instead of container.lg. */
@@ -669,40 +672,28 @@
   --page:     #0a0a0a; /* 窗口底层:rail、会话列表 */
   --card:     #191919; /* 局部表面:分组卡、浮层 */
   /* Default group/project avatars: the twelve shared identity hue families. */
-  --avatar-group-fill-1: #342a16;
   --avatar-group-stroke-1: #a48c5d;
   --avatar-group-text-1: #d7c198;
-  --avatar-group-fill-2: #2b2d19;
   --avatar-group-stroke-2: #8f9462;
   --avatar-group-text-2: #c4c99c;
-  --avatar-group-fill-3: #213020;
   --avatar-group-stroke-3: #769b74;
   --avatar-group-text-3: #aecfac;
-  --avatar-group-fill-4: #17312a;
   --avatar-group-stroke-4: #609d8b;
   --avatar-group-text-4: #9cd1c1;
-  --avatar-group-fill-5: #133033;
   --avatar-group-stroke-5: #579ca2;
   --avatar-group-text-5: #96d0d6;
-  --avatar-group-fill-6: #192e3a;
   --avatar-group-stroke-6: #6397b3;
   --avatar-group-text-6: #9ecbe5;
-  --avatar-group-fill-7: #222b3d;
   --avatar-group-stroke-7: #798fbb;
   --avatar-group-text-7: #b0c5ec;
-  --avatar-group-fill-8: #2c283b;
   --avatar-group-stroke-8: #9187b6;
   --avatar-group-text-8: #c5bde8;
-  --avatar-group-fill-9: #342535;
   --avatar-group-stroke-9: #a481a8;
   --avatar-group-text-9: #d8b8db;
-  --avatar-group-fill-10: #39242d;
   --avatar-group-stroke-10: #b27e93;
   --avatar-group-text-10: #e4b5c7;
-  --avatar-group-fill-11: #3b2423;
   --avatar-group-stroke-11: #b67f7b;
   --avatar-group-text-11: #e9b6b2;
-  --avatar-group-fill-12: #39271b;
   --avatar-group-stroke-12: #b28467;
   --avatar-group-text-12: #e4baa0;
   --popover:  #191919;
@@ -926,40 +917,28 @@
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
   /* Default group/project avatars: the twelve shared identity hue families. */
-  --avatar-group-fill-1: #ecdab9;
   --avatar-group-stroke-1: #907644;
   --avatar-group-text-1: #4f3d16;
-  --avatar-group-fill-2: #dce0bc;
   --avatar-group-stroke-2: #7a7f4a;
   --avatar-group-text-2: #40431b;
-  --avatar-group-fill-3: #cae5c8;
   --avatar-group-stroke-3: #5f865d;
   --avatar-group-text-3: #2c482a;
-  --avatar-group-fill-4: #bce7d9;
   --avatar-group-stroke-4: #468976;
   --avatar-group-text-4: #154a3d;
-  --avatar-group-fill-5: #b8e6eb;
   --avatar-group-stroke-5: #3b878e;
   --avatar-group-text-5: #07494e;
-  --avatar-group-fill-6: #bee3f8;
   --avatar-group-stroke-6: #4a82a0;
   --avatar-group-text-6: #19455a;
-  --avatar-group-fill-7: #ccddfe;
   --avatar-group-stroke-7: #637aa7;
   --avatar-group-text-7: #2f3f60;
-  --avatar-group-fill-8: #ddd7fa;
   --avatar-group-stroke-8: #7c72a3;
   --avatar-group-text-8: #41395d;
-  --avatar-group-fill-9: #edd2ef;
   --avatar-group-stroke-9: #906b94;
   --avatar-group-text-9: #4f3552;
-  --avatar-group-fill-10: #f8d0df;
   --avatar-group-stroke-10: #9d687e;
   --avatar-group-text-10: #583242;
-  --avatar-group-fill-11: #fbd1cd;
   --avatar-group-stroke-11: #a26865;
   --avatar-group-text-11: #5c3230;
-  --avatar-group-fill-12: #f7d4bf;
   --avatar-group-stroke-12: #9e6e4f;
   --avatar-group-text-12: #583620;
   --popover:  #ffffff;
@@ -1939,12 +1918,12 @@ body.barcode-scanner-active #root {
   --avatar-lg: 64px;
   --avatar-xl: 96px;
   /* 行高与字号配对——之前 Tailwind 算出来的 14.67/18.57/26.44 都是没人定过的数 */
-  --lh-caption: 18px;
-  --lh-body: 20px;
-  --lh-title: 24px;
-  --lh-heading: 28px;
-  --lh-page: 32px;
-  --lh-prose: 24px; /* --font-prose 的行高:16/24 */
+  --lh-caption: calc(18px * var(--text-scale, 1));
+  --lh-body: calc(20px * var(--text-scale, 1));
+  --lh-title: calc(24px * var(--text-scale, 1));
+  --lh-heading: calc(28px * var(--title-scale, 1));
+  --lh-page: calc(32px * var(--title-scale, 1));
+  --lh-prose: calc(24px * var(--text-scale, 1)); /* --font-prose 的行高:16/24 */
   /* @@@type-12 这里曾有过一个 12px 的「副标题」档 —— 字阶外偷偷长出来的第六档(主 renderer 174 处)。
      owner 2026-09-03 拍板消灭它:11、12、13 相邻各差 1px,人眼分辨不出,三档在干一档的事。
      分流规则(已执行完):要读的内容 → --font-body(13) 配次级色;只是标记(时间戳/计数/徽标/归属小字)
@@ -2278,13 +2257,13 @@ body.barcode-scanner-active #root {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 18px;
+  min-height: var(--lh-caption);
   padding: 0 6px;
   border-radius: var(--radius-capsule);
   background: var(--muted);
   color: var(--muted-fg);
   font-size: var(--font-caption);
-  line-height: 18px;
+  line-height: var(--lh-caption);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
   max-width: 100%;

@@ -77,7 +77,7 @@ export function remotePaneQueuedNote(outcome: { queued: true; unconfirmed?: true
 
 /** 咕咕 server 上的文件格只读会话工作目录里的东西(远端工作区的边界,见 remote-workspace.ts)。 */
 export function describeOutsideWorkspace(root: string): string {
-  return `cannot open this file here: on a Gugu server the workspace pane only shows files inside this session's working directory (${root}). Copy the file into it and open that copy, or send it with message_send_file.`;
+  return `cannot open this file here: on a Gugu server the workspace pane only shows files inside this session's working directory (${root}). Copy the file into it and open that copy, or send it with message_send (file_path).`;
 }
 
 /**

@@ -867,6 +867,11 @@ export const settingRow = style({
  * 又不至于变成一块自创配色的彩片。❌ 不加边框/底色 —— 菜单项自己有 hover 态。
  */
 export const settingRowUnlock = style({
+  // Its own line under the group label: beside a short label (「你的 Codex 模型」) the two-line row read as one sentence.
+  flexBasis: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
   color: vars.surfaceInfoForeground,
   whiteSpace: 'nowrap',
 });

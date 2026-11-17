@@ -1,9 +1,11 @@
 import Capacitor
 import UIKit
+import WebKit
 
 final class GuguViewController: CAPBridgeViewController {
     private var imageViewerActive = false
     private var normalBackground: UIColor?
+    private var textScaleScript: WKUserScript?
     override var preferredStatusBarStyle: UIStatusBarStyle {
         imageViewerActive ? .lightContent : super.preferredStatusBarStyle
     }
@@ -29,6 +31,28 @@ final class GuguViewController: CAPBridgeViewController {
         }
         bridge?.registerPluginInstance(GuguSharePlugin())
         bridge?.registerPluginInstance(GuguImageViewerChromePlugin())
+        installTextScale()
+        NotificationCenter.default.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.installTextScale()
+        }
+    }
+
+    // @@@text-scale - Dynamic Type reaches the page the way Android's font scale does (GuguPageScale.java): a number set
+    // before the page's first script, which mobile/textScale.ts turns into text sizes. Body text at the default size is
+    // 17 pt, so the scale is the body style's size over 17. A change while the app runs replaces the script for later
+    // loads and tells the live page, which reloads itself.
+    private func installTextScale() {
+        guard let controller = webView?.configuration.userContentController else { return }
+        let assign = "window.__guguFontScale=\(UIFontMetrics(forTextStyle: .body).scaledValue(for: 17) / 17);"
+        if let old = textScaleScript {
+            let others = controller.userScripts.filter { $0 !== old }
+            controller.removeAllUserScripts()
+            others.forEach(controller.addUserScript)
+        }
+        let script = WKUserScript(source: assign, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        controller.addUserScript(script)
+        textScaleScript = script
+        webView?.evaluateJavaScript(assign + "window.dispatchEvent(new Event('gugu:font-scale'))")
     }
 
     override func viewDidLoad() {

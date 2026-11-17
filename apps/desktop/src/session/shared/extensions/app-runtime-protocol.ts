@@ -663,7 +663,7 @@ export interface AppComposeImage {
   type: string;
   bytes: ArrayBuffer;
 }
-/** At most this many, each at most the size a chat attachment may be (message_send_file's 10 MiB). */
+/** At most this many, each at most the size a chat attachment may be (message_send's 10 MiB). */
 export const APP_COMPOSE_MAX_IMAGES = 9;
 export const APP_COMPOSE_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
