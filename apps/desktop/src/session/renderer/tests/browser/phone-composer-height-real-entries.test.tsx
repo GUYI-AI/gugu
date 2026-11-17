@@ -33,6 +33,7 @@ import '@/mobile/phone-look.css'
 // creation/model/upload requests; a draft toggle is not a native provider ACK.
 const fixture = vi.hoisted(() => ({
   owner: 'FGH-owner', fast: true, models: vi.fn(),
+  unexpectedRpc: vi.fn((name: string): never => { throw new Error(`Unexpected H transport call: ${name}`) }),
   device: { device_id: 'FGH-device', label: '隔离验收设备', hostname: 'fixture', platform: 'darwin',
     status: 'online', is_online: true, last_seen_at: '2026-11-17T00:00:00Z',
     capabilities: { terminals: [], runtimes: ['codex'] } },
@@ -45,22 +46,31 @@ vi.mock('@/hooks/useWakeCloudComputer', () => ({ useCloudComputerWake: () => ({ 
 vi.mock('@renderer/features/projects/components/main-panel/project-run-machine', () => ({
   rememberRunMachine: vi.fn(), useProjectRunMachine: () => ({ machine: fixture.device.device_id, pick: vi.fn() }),
 }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
-  SessionpageRpcError: class extends Error { code = 'fixture' },
-  machineRpc: () => { throw new Error('Unrelated skills RPC forbidden') },
-  readOpenedFileChunk: async () => { throw new Error('Unrelated file preview RPC forbidden') },
-  fetchCreateOptions: async () => ({ projects: [],
-    lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: 'native:sol', effort: 'medium' },
-    harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
-  fetchCreateModels: fixture.models, createSession: fixture.create,
-  fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.create,
-}))
+vi.mock('@/mobile/agent-watch/sessionpage-rpc', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/mobile/agent-watch/sessionpage-rpc')>()
+  // Preserve the complete production export surface for the real Thread import
+  // graph. Every unused RPC remains closed: import compatibility is not permission
+  // to open a native connection, fetch a file/image, or start a background task.
+  const closed = Object.fromEntries(Object.entries(actual).map(([name, value]) => [name,
+    typeof value === 'function' && name !== 'SessionpageRpcError' ? () => fixture.unexpectedRpc(name) : value,
+  ]))
+  return {
+    ...actual,
+    ...closed,
+    SessionpageRpcError: class extends Error { code = 'fixture' },
+    fetchCreateOptions: async () => ({ projects: [],
+      lastUsed: { projectId: 'workspace', harness: 'codex', sessionView: 'general', permissionMode: null, model: 'native:sol', effort: 'medium' },
+      harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
+    fetchCreateModels: fixture.models, createSession: fixture.create,
+    fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.create,
+  }
+})
 let harness: ReturnType<typeof createReactHarness> | undefined
 let root: Root | null = null, host: HTMLDivElement | null = null, sequence = 0
 let oldBodyStyle: string | null = null
 beforeEach(() => {
   fixture.owner = `FGH-owner-${++sequence}`; fixture.fast = true
-  fixture.models.mockReset(); fixture.create.mockClear()
+  fixture.models.mockReset(); fixture.create.mockClear(); fixture.unexpectedRpc.mockClear()
   fixture.models.mockImplementation(async (_device: string, _harness: string, _leg: unknown, selected: string | null) => ({
     harness: 'codex', transport: 'acp', selected: selected ?? 'native:sol', selectedEffort: 'medium',
     harnessState: 'ready', harnessReason: null, guguReason: null, harnessAuth: 'signed-in', selectedCredential: 'credentialed',
@@ -129,6 +139,7 @@ for (const entry of ['new-page', 'existing-thread'] as const)
     it(`${entry}/${width}/${theme}: two lines retain natural height and separate touch targets in the actual Thread`, async () => {
       if (entry === 'new-page') await mount(width, theme)
       else await mountExisting(width, theme)
+      await until(`${entry} actual Thread editor engine ready`, () => !!(editor() as HTMLElement & { editor?: unknown })?.editor)
       const original = editor()
       const engine = (original as HTMLElement & { editor: { commands: { setContent(html: string): void } } }).editor
       const capsule = host!.querySelector<HTMLElement>('[data-phone-capsule]')!
@@ -162,5 +173,6 @@ for (const entry of ['new-page', 'existing-thread'] as const)
       await vi.waitFor(() => expect(Math.abs(input.getBoundingClientRect().height - one)).toBeLessThanOrEqual(1))
       expect(editor()).toBe(original)
       expect(fixture.create).not.toHaveBeenCalled()
+      expect(fixture.unexpectedRpc).not.toHaveBeenCalled()
     })
   }
