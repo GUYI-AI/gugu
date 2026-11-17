@@ -18,6 +18,7 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
+const locator=(unread:number,addressed:number)=>({stream_id:'s',stream_kind:'main' as const,thread_root_id:null,message_id:null,message_seq:null,unread_count:unread,addressed_count:addressed,cursor_seq:0,version:1,is_marked_unread:false})
 const topics: TopicSummary[]=['设计讨论','一个用于检验窄屏与长名称的完整话题名称'].map((name,i)=>({chat_id:'topic-'+i,name,source_message_id:'anchor-'+i,creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}))
 const member: MemberProfileCardModel={id:'peer-agent',displayName:'协作智能体',avatar:null,email:null,type:'agent',ownerUserId:'another-owner',role:'member',membership:'current',profileScope:'group',agentStatus:'offline'}
 let harness: ReturnType<typeof createReactHarness> | null=null
@@ -36,7 +37,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
 async function mount(theme:'light'|'dark'='dark',state:'ready'|'loading'|'failed'='ready',selected:TopicSummary|null=null,locale:'zh-CN'|'en-US'='zh-CN'){
  await page.viewport(360,780);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference(locale)
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'8px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3}),chat({id:'topic-1',kind:'topic',unread_count:1})]},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3,unread_locator:locator(3,1)}),chat({id:'topic-1',kind:'topic',unread_count:1,unread_locator:locator(1,0)})]},contacts:{contacts:[]}})
  await until('real composer',()=>!!harness?.container.querySelector('[contenteditable]'))
  return harness.container.querySelector<HTMLElement>('[contenteditable]')!
 }
@@ -56,11 +57,14 @@ it.each(['light','dark'] as const)('%s: topic and Agent sheets dismiss keyboard 
  expect(blur).toHaveBeenCalledTimes(1);expect(end).not.toHaveBeenCalled()
 })
 
-it('lists the main room and every topic with real unread values and dispatches the selected topic',async()=>{
- await mount();await page.getByTestId('phone-room-topics').click()
+it('marks a topic that calls you in red and other unread with the grey dot, then dispatches the selected topic',async()=>{
+ await mount();expect(document.querySelector('.gg-phone-composer-control-dot')?.getAttribute('data-tone')).toBe('call')
+ await page.getByTestId('phone-room-topics').click()
  await expect.element(page.getByRole('radio',{name:'群聊',exact:true})).toBeVisible()
- await expect.element(page.getByLabelText('3 条未读',{exact:true})).toBeVisible()
- await expect.element(page.getByLabelText('1 条未读',{exact:true})).toBeVisible()
+ const called=document.querySelector('[data-topic-id="topic-0"] .gg-chip')!,news=document.querySelector('[data-topic-id="topic-1"] .gg-chip')!
+ expect([called.getAttribute('data-tone'),called.textContent]).toEqual(['danger','@1'])
+ expect([news.getAttribute('data-shape'),news.getAttribute('aria-label')]).toEqual(['dot','有新消息，但没有叫到你'])
+ expect(document.querySelector('[data-testid="phone-room-main"] .gg-chip')).toBeNull()
  await page.getByRole('radio',{name:/设计讨论/}).click()
  expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(topics[0]!));await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
 })

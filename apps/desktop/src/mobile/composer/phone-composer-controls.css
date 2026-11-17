@@ -14,7 +14,8 @@
 .gg-phone-composer-control[data-active]::before { border-color: var(--live-light); }
 .gg-phone-composer-control > svg { width: 16px; height: 16px; }
 .gg-phone-composer-control-label { max-width: 156px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gg-phone-composer-control-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--live-light); }
+.gg-phone-composer-control-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint-fg); }
+.gg-phone-composer-control-dot[data-tone='call'] { background: var(--danger-solid); }
 .gg-phone-composer-shade { position: fixed; z-index: var(--z-modal); background: var(--bg-overlay-soft); left: var(--phone-control-left, 0px); top: var(--phone-control-top, 0px); width: var(--phone-control-width, 100dvw); height: var(--phone-control-height, 100dvh); }
 .gg-phone-composer-sheet { position: fixed; z-index: var(--z-modal); display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding: 0; border: 0; border-radius: 20px; background: var(--muted); color: var(--text-primary); box-shadow: var(--shadow-menu); outline: none; animation: gg-phone-composer-sheet-in 180ms ease-out; left: var(--phone-control-left, 12px); top: var(--phone-control-top, calc(100dvh - 8px)); width: var(--phone-control-width, calc(100dvw - 24px)); max-height: var(--phone-control-max-height, 500px); transform: translateY(-100%); }
 .gg-phone-composer-sheet-handle { flex: 0 0 4px; width: 34px; margin: 8px auto 0; border-radius: 2px; background: var(--border-strong); }

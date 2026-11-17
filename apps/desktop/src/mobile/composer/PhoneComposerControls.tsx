@@ -58,7 +58,9 @@ function ComposerControlRow({ children }: { children: ReactNode }) {
 }
 
 export function PhoneComposerControl({ label, icon, active, dot, disabled, onClick, testId, buttonRef, menuExpanded }: {
-  label: string; icon?: ReactNode; active?: boolean; dot?: boolean; disabled?: boolean
+  label: string; icon?: ReactNode; active?: boolean; disabled?: boolean
+  /** Unread behind this control, chat-list rule: 'call' (calls you) is red, 'news' is grey. */
+  dot?: 'call' | 'news'
   onClick: () => void; testId: string; buttonRef?: RefObject<HTMLButtonElement | null>; menuExpanded?: boolean
 }) {
   return <Button ref={buttonRef} variant="ghost" className="gg-phone-composer-control gap-1" disabled={disabled}
@@ -68,7 +70,7 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
     {menuExpanded !== undefined && (menuExpanded
       ? <ChevronDown data-phone-menu-direction="down" aria-hidden />
       : <ChevronUp data-phone-menu-direction="up" aria-hidden />)}
-    {dot && <span className="gg-phone-composer-control-dot" />}
+    {dot && <span className="gg-phone-composer-control-dot" data-tone={dot} />}
   </Button>
 }
 
