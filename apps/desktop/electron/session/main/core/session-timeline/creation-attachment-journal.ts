@@ -15,7 +15,9 @@ export type CreationStages = {
   intent: CreationIntent;
   creating: { conversationId: string };
   created: SessionCreateAttachmentDraftResult;
+  admissionProtocol: { version: 2 };
   prepared: { placementKey: string; files: TurnFileRef[] };
+  admitting: { initialMessageId: string; placementKey: string };
   admitted: { initialMessageId: string };
 };
 export type CreationAttachmentJournal = {

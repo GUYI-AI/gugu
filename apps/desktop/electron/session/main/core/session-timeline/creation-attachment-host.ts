@@ -109,6 +109,13 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
         return [a.id, file.itemId, file.version];
       }));
       let prepared = await journal.read('prepared');
+      const protocol = await journal.read('admissionProtocol');
+      const claiming = await journal.read('admitting');
+      if (protocol !== null && protocol.version !== 2) throw unverified('The original input admission protocol is invalid');
+      if (claiming !== null && (!prepared || protocol === null || claiming.initialMessageId !== input.initialMessageId
+        || claiming.placementKey !== key || claiming.placementKey !== prepared.placementKey)) {
+        throw unverified('The original first-input claim cannot be verified');
+      }
       if (prepared && prepared.placementKey !== key) throw unverified('The original placement identities cannot be changed');
       if (prepared) {
         const prior = deps.prior(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files);
@@ -118,7 +125,15 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
           await journal.append('admitted', { initialMessageId: input.initialMessageId });
           return receipt(result, true);
         }
+        // Legacy prepared facts may already have crossed the native boundary.
+        // A missing local receipt does not prove that those bytes were not sent.
+        if (claiming !== null || protocol === null) {
+          throw unverified('The original first-input outcome is unknown; it cannot be sent again');
+        }
       }
+      // This fact predates prepared in the new protocol. Never retrofit it onto
+      // an old ambiguous prepared record to authorize a fresh first input.
+      if (protocol === null) await journal.append('admissionProtocol', { version: 2 });
       const files = await verifyCreatedAttachmentPlacements({ ...context, conversationId: result.conversationId,
         request: intent.request, target: result.attachmentTarget }, context, input,
       file => deps.resolve(file, result.attachmentTarget, context.ownerId));
@@ -128,6 +143,18 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
       await current(context);
       prepared = { placementKey: key, files: strict };
       await journal.append('prepared', prepared);
+      await current(context);
+      // Only the exclusive durable-claim winner may cross the native boundary.
+      // Never erase a claim after an exception: bytes may already be consumed.
+      if (!await journal.append('admitting', { initialMessageId: input.initialMessageId, placementKey: key })) {
+        const prior = deps.prior(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files);
+        if (prior === 'accepted' || confirmed(await journal.read('admitted'), input.initialMessageId)) {
+          await current(context);
+          await journal.append('admitted', { initialMessageId: input.initialMessageId });
+          return receipt(result, true);
+        }
+        throw unverified('The original first-input outcome is unknown; it cannot be sent again');
+      }
       await current(context);
       await deps.send(result.conversationId, intent.request.prompt, input.initialMessageId, prepared.files, context);
       await current(context);
