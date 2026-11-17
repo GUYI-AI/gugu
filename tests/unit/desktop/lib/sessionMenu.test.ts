@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { SESSION_MENU_EXCLUDES, sessionMenu, type SessionMenuAction, type SessionMenuEntry, type SessionMenuState } from '../../../../apps/desktop/src/session/shared/session-menu'
 
-const ALL: SessionMenuAction[] = ['mark-read', 'pin', 'sidebar-pin', 'rename', 'notifications', 'archive', 'fork', 'copy-id', 'reload', 'legacy-history', 'mark-all-read', 'delete-chat']
+/** The table's one order (menu-table.ts @@@menu-order): top level by frequency, then 更多, destructive last. */
+const ALL: SessionMenuAction[] = ['open-chat', 'mark-read', 'mark-unread', 'pin', 'rename', 'archive', 'sidebar-pin', 'notifications', 'fork', 'mark-all-read', 'reload', 'copy-id', 'legacy-history', 'delete-chat']
 const live: SessionMenuState = { pinned: false, sidebarPin: 'pin', canFork: true, hasLegacyHistory: true, hasUnread: true, hasAnyUnread: true }
 /** Every action the entry does not exclude: what a correctly wired entry can run. */
 const handledBy = (entry: SessionMenuEntry) => new Set(ALL.filter((id) => SESSION_MENU_EXCLUDES[entry][id] === undefined))
@@ -13,10 +14,13 @@ describe('one session menu table', () => {
   })
 
   it('my agent row in the chat list offers archive and rename, as its tab does (the reported cell)', () => {
-    expect(ids('chat-row')).toEqual(['mark-read', 'pin', 'sidebar-pin', 'rename', 'notifications', 'archive', 'mark-all-read'])
-    expect(ids('tab')).toEqual(['pin', 'sidebar-pin', 'rename', 'archive', 'fork', 'copy-id', 'reload', 'legacy-history'])
-    expect(ids('sidebar-row')).toEqual(['pin', 'sidebar-pin', 'rename', 'archive', 'fork', 'copy-id'])
+    expect(ids('chat-row')).toEqual(['mark-read', 'pin', 'rename', 'archive', 'sidebar-pin', 'notifications', 'mark-all-read'])
+    expect(ids('tab')).toEqual(['pin', 'rename', 'archive', 'sidebar-pin', 'fork', 'reload', 'copy-id', 'legacy-history'])
+    expect(ids('sidebar-row')).toEqual(['pin', 'rename', 'archive', 'sidebar-pin', 'fork', 'copy-id'])
     expect(ids('phone')).toEqual(['pin', 'rename', 'archive'])
+    // Contacts: my agent's contact row is its task too (rename, archive), plus opening its chat.
+    expect(ids('contacts')).toEqual(['open-chat', 'mark-read', 'pin', 'rename', 'archive', 'notifications'])
+    expect(ids('contacts', { ...live, hasUnread: false })).toEqual(['open-chat', 'mark-unread', 'pin', 'rename', 'archive', 'notifications'])
   })
 
   it('every entry is a subsequence of the one order, with the same label for the same action', () => {
@@ -49,6 +53,6 @@ describe('one session menu table', () => {
   it('names the pin by its state, and folds the low-frequency rows', () => {
     const items = sessionMenu('tab', { ...live, pinned: true }, handledBy('tab'))
     expect(items.find((item) => item.id === 'pin')?.label.key).toBe('task.unpin')
-    expect(items.filter((item) => item.fold).map((item) => item.id)).toEqual(['fork', 'copy-id', 'reload', 'legacy-history'])
+    expect(items.filter((item) => item.fold).map((item) => item.id)).toEqual(['sidebar-pin', 'fork', 'reload', 'copy-id', 'legacy-history'])
   })
 })

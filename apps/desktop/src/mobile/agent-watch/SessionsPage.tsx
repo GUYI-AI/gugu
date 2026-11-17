@@ -11,7 +11,7 @@ import { ChevronDown, ChevronUp, MoreHorizontal } from '@/lib/icons'
 import { Sheet } from '@/components/ui/Sheet'
 import { confirmArchive } from '@/session/renderer/features/sessions/archive-session-flow'
 import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu'
-import { SessionMenuItems } from '@/components/SessionMenuItems'
+import { MenuTableItems } from '@/components/MenuTableItems'
 
 const PHONE_MENU_ACTIONS: ReadonlySet<SessionMenuAction> = new Set(['pin', 'rename', 'archive'])
 import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
@@ -97,7 +97,7 @@ export function SessionActions({
               <MenuItem data-testid="agent-watch-session-stop" onClick={() => { void cancelPhoneSessionTurn(target.deviceId, target.session.conversationId).catch(failed) }}>
                 {t('agentWatch.sessions.stop')}
               </MenuItem>
-            ) : <SessionMenuItems testIdPrefix="agent-watch-session" onAction={(id) => phoneMenuRun(target)[id]!()}
+            ) : <MenuTableItems testIdPrefix="agent-watch-session" onAction={(id) => phoneMenuRun(target)[id]!()}
               items={sessionMenu('phone', { pinned: target.session.isPinned === true, sidebarPin: null }, PHONE_MENU_ACTIONS)} />}
           </DropdownMenu.Content>
         ) : null}

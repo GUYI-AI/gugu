@@ -10,7 +10,7 @@ import { useNavigate } from '@renderer/lib/layout/navigation-actions';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu';
-import { sessionMenuIcon, sessionMenuLabel } from '@/components/sessionMenuPresentation';
+import { menuTableIcon, menuTableLabel } from '@/components/menuTablePresentation';
 import { useChatSummaries } from '@/lib/chatSummariesBridge';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
@@ -119,8 +119,8 @@ export const SessionActionsProvider = observer(function SessionActionsProvider({
         }, new Set(Object.keys(run) as SessionMenuAction[]));
         return items.map((item): TabCommand => ({
           id: `session:${item.id}`,
-          label: sessionMenuLabel(item.label),
-          icon: sessionMenuIcon(item.icon),
+          label: menuTableLabel(item.label),
+          icon: menuTableIcon(item.icon),
           group: 'edit',
           ...(item.fold ? { fold: true as const } : {}),
           ...(item.id === 'rename' ? { shortcut: 'session.tabRename' as const } : {}),

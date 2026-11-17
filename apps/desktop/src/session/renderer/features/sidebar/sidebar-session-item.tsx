@@ -15,7 +15,7 @@ import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent
 import { forkTask } from '@renderer/features/sessions/fork-task';
 import { copySessionId } from '@renderer/features/sessions/copy-session-id';
 import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu';
-import { SessionMenuItems } from '@/components/SessionMenuItems';
+import { MenuTableItems } from '@/components/MenuTableItems';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
@@ -410,7 +410,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
         <MenuSeparator />
       </>
     ) : null}
-    <SessionMenuItems items={menuItems} onAction={(id) => menuRun[id]!()} testIdPrefix="sidebar-session-menu" foldExtra={grouped ? (
+    <MenuTableItems items={menuItems} onAction={(id) => menuRun[id]!()} testIdPrefix="sidebar-session-menu" foldExtra={grouped ? (
       // 拆开的是这一屏的组,不是这条会话 —— 不在会话动作表里。
       <MenuItem onClick={() => dissolveScreenGroup(sessionId)} icon={<Scissors />}>
         {translate('sidebar.dissolveGroup')}

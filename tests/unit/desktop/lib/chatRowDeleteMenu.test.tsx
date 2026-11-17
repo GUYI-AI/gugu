@@ -9,6 +9,8 @@ vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ us
 vi.mock('../../../../apps/desktop/src/hooks/useMarkChatsRead', () => ({ useMarkChatsRead: () => vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 const archive = vi.hoisted(() => ({ confirm: vi.fn(async (_agentUserId: string) => false) }))
+const danger = vi.hoisted(() => ({ answer: true, confirm: vi.fn(async (_action: string, _kind: string | null, _name: string) => danger.answer) }))
+vi.mock('../../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmConversationAction: danger.confirm }))
 vi.mock('../../../../apps/desktop/src/lib/archiveOwnedAgent', () => ({ confirmOwnedAgentArchive: archive.confirm }))
 vi.mock('../../../../apps/desktop/src/components/chat/useGroupChatSettings', () => ({ useGroupChatSettings: () => ({ settings: scope.settings, error: null }) }))
 
@@ -43,9 +45,10 @@ it('omits Delete for an active owned Agent and follows the projected archive/res
 
 it.each(['session_archived_at', 'removed_at'] as const)('keeps the existing delete action for %s owned Agent DMs', async (field) => {
   scope.identitiesById.agent[field] = '2026-11-06T10:00:00Z'
+  danger.answer = true
   await render()
   await clickElement((await deletion())!)
-  expect(onDelete).toHaveBeenCalledOnce()
+  await vi.waitFor(() => expect(onDelete).toHaveBeenCalledOnce())
 })
 
 it.each([
@@ -57,14 +60,22 @@ it.each([
   expect(await deletion()).toBeNull()
 })
 
-it.each([[true, 1], [false, 0]])('dissolving a group asks first: confirmed %s runs the delete %i time', async (answer, runs) => {
-  scope.settings = { can_dissolve: true }
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(answer)
-  await harness.render(<ChatRowContextMenu chat={chat({ id: 'g', kind: 'group' })} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onDelete={onDelete} />)
+it.each([[true, 1], [false, 0]])('deleting my archived agent\'s conversation asks first: confirmed %s runs the delete %i time', async (answer, runs) => {
+  scope.identitiesById.agent.session_archived_at = '2026-11-06T10:00:00Z'
+  danger.answer = answer
+  danger.confirm.mockClear()
+  await render()
   await clickElement((await deletion())!)
-  expect(confirm).toHaveBeenCalledOnce()
-  expect(onDelete).toHaveBeenCalledTimes(runs)
-  confirm.mockRestore()
+  expect(danger.confirm).toHaveBeenCalledOnce()
+  expect(danger.confirm.mock.calls[0]?.slice(0, 2)).toEqual(['delete-chat', 'dm'])
+  await vi.waitFor(() => expect(onDelete).toHaveBeenCalledTimes(runs))
+})
+
+// @@@menu-order rule 4: dissolving is on the group's settings page only, never in its row menu.
+it('a group I own has no dissolve in its row menu', async () => {
+  scope.settings = { can_dissolve: true }
+  await harness.render(<ChatRowContextMenu chat={chat({ id: 'g', kind: 'group', my_role: 'owner' })} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onDelete={onDelete} />)
+  expect(await deletion()).toBeNull()
 })
 
 // The reported cell: my agent's chat-list row is its task, so it offers what the task's tab offers (session/shared/session-menu.ts).
