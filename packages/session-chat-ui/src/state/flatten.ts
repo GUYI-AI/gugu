@@ -217,6 +217,14 @@ export function flattenTier(
     if (call !== undefined) sentReplyCalls.add(call);
   }
   else turns = turns.map(withoutSentRepliesOfAgentSends);
+  // #7304 The rewound mark is drawn once, after everything its turn drew; no other pass sees it as a turn item.
+  const rewoundMarks = new Map<string, ChatItem>();
+  turns = turns.map((turn) => {
+    const mark = (turn.items as readonly ChatItem[]).find(isRewoundMark);
+    if (!mark) return turn;
+    rewoundMarks.set(turn.id, mark);
+    return { ...turn, items: turn.items.filter(item => item !== mark) };
+  });
   const out: RenderUnit[] = [];
 
   // Hoist stable per-call values so processItem allocates nothing per seam.
@@ -411,7 +419,7 @@ export function flattenTier(
   const latestTurnId = ctx.latestTurnId ?? turns.at(-1)?.id;
   const hidden = turns.map(turn => !ctx.active && turn.id !== latestTurnId && isEmptyAgentTurn(turn));
   const turnItems: ChatItem[][] = turns.map((turn, index) => hidden[index]
-    ? (turn.items as readonly ChatItem[]).filter(itemIsUser) : (turn.items as readonly ChatItem[]).filter(item => !isRewoundMark(item)));
+    ? (turn.items as readonly ChatItem[]).filter(itemIsUser) : [...(turn.items as readonly ChatItem[])]);
 
   // 连续折叠回合合并成一条(#4981),判据在 `planTurnFoldRuns`。
   const { folds: foldPlans, runs: foldRuns, absorbed } = planTurnFoldRuns(
@@ -663,7 +671,7 @@ export function flattenTier(
     }
 
     // #7304 Where the conversation was rewound: after everything the kept turn drew (its cards and outcome too).
-    const rewound = (turn.items as readonly ChatItem[]).find(isRewoundMark);
+    const rewound = rewoundMarks.get(turn.id);
     if (rewound) processItem(rewound);
   }
 
