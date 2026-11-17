@@ -4,8 +4,8 @@ import { dirname, isAbsolute, relative } from 'node:path'
 
 // Read one real RPC from an ALREADY launched, owned, isolated Electron. Never launches,
 // authenticates, creates work, restarts, closes, or attaches to the owner's desktop.
-const [receiptPath, outputPath] = process.argv.slice(2)
-if (!receiptPath || !outputPath) throw new Error('Usage: node isolated-host-read.mjs <owned-launch-receipt.json> <result.json>')
+const [receiptPath, outputPath, operation = 'read'] = process.argv.slice(2)
+if (!receiptPath || !outputPath || !['read', 'verify'].includes(operation)) throw new Error('Usage: node isolated-host-read.mjs <owned-launch-receipt.json> <result.json> [read|verify]')
 const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
 const root = await realpath(receipt.isolationRoot)
 const inside = path => isAbsolute(path) && relative(root, path) !== '' && !relative(root, path).startsWith('..')
@@ -61,15 +61,19 @@ await new Promise((resolve, reject) => {
 try {
   const version = await command('Runtime.evaluate', { expression: 'window.electronAPI.getAppVersion()', awaitPromise: true, returnByValue: true })
   if (version.exceptionDetails || version.result?.value !== receipt.appVersion) throw new Error('Loaded application version differs from fixed receipt')
-  const result = await command('Runtime.evaluate', {
-    expression: `(async()=>{try{return {transport:'returned',reply:await window.electronAPI.invoke('sessionTimeline.sessionCreateSkills',{harness:'codex'})}}catch(error){return {transport:'rejected',error:{name:error?.name,code:error?.code,message:String(error?.message??error)}}}})()`,
-    awaitPromise: true, returnByValue: true,
-  })
-  if (result.exceptionDetails) throw new Error('Isolated renderer evaluation failed before returning a skill RPC result')
-  const value = result.result.value
-  const skills = value.reply?.value?.skills
-  if (Array.isArray(skills) && skills.some(skill => typeof skill.id !== 'string' || !inside(skill.id))) throw new Error('Native catalog escaped private isolation; no catalog data saved')
-  const expectedSkillsPresent = Array.isArray(skills) && receipt.expectedSkillNames.every(name => skills.some(skill => skill.name === name))
-  await writeFile(outputPath, JSON.stringify({ sourceSha: receipt.sourceSha, appVersion: receipt.appVersion, pid: receipt.pid, startTime: receipt.startTime, isolation: required, context: { harness: 'codex', projectId: null }, actualSkillRpcCalls: 1, expectedSkillsPresent, result: value }, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
-  if (value.transport !== 'returned' || !value.reply?.ok || !expectedSkillsPresent) process.exitCode = 1
+  if (operation === 'verify') {
+    await writeFile(outputPath, JSON.stringify({ sourceSha: receipt.sourceSha, appVersion: receipt.appVersion, pid: receipt.pid, startTime: receipt.startTime, isolation: required, actualSkillRpcCalls: 0, verifiedOwnedHost: true }, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
+  } else {
+    const result = await command('Runtime.evaluate', {
+      expression: `(async()=>{try{return {transport:'returned',reply:await window.electronAPI.invoke('sessionTimeline.sessionCreateSkills',{harness:'codex'})}}catch(error){return {transport:'rejected',error:{name:error?.name,code:error?.code,message:String(error?.message??error)}}}})()`,
+      awaitPromise: true, returnByValue: true,
+    })
+    if (result.exceptionDetails) throw new Error('Isolated renderer evaluation failed before returning a skill RPC result')
+    const value = result.result.value
+    const skills = value.reply?.value?.skills
+    if (Array.isArray(skills) && skills.some(skill => typeof skill.id !== 'string' || !inside(skill.id))) throw new Error('Native catalog escaped private isolation; no catalog data saved')
+    const expectedSkillsPresent = Array.isArray(skills) && receipt.expectedSkillNames.every(name => skills.some(skill => skill.name === name))
+    await writeFile(outputPath, JSON.stringify({ sourceSha: receipt.sourceSha, appVersion: receipt.appVersion, pid: receipt.pid, startTime: receipt.startTime, isolation: required, context: { harness: 'codex', projectId: null }, actualSkillRpcCalls: 1, expectedSkillsPresent, result: value }, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
+    if (value.transport !== 'returned' || !value.reply?.ok || !expectedSkillsPresent) process.exitCode = 1
+  }
 } finally { socket.close() }
