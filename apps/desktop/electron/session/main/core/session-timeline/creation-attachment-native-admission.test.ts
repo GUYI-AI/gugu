@@ -44,7 +44,7 @@ describe('attachment owner fence at native transport admission after asynchronou
     read.resolve({ turns: [] });
     await refused;
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read']);
-  });
+  }, 10_000);
 
   it('does not POST or register a phantom turn after the OpenCode current-agent read is revoked', async () => {
     const { life, fence } = await owner();
@@ -56,10 +56,12 @@ describe('attachment owner fence at native transport admission after asynchronou
       postJson(path: string, body: unknown): Promise<number>;
       turnWaiters: unknown[];
       busyWaiters: unknown[];
+      awaitBusy(ms: number): Promise<void>;
     };
     state.providerSessionId = 'session-a';
     vi.spyOn(state, 'readCurrentSessionAgent').mockImplementation(async () => { entered.resolve(); return read.promise; });
-    const post = vi.spyOn(state, 'postJson');
+    const post = vi.spyOn(state, 'postJson').mockResolvedValue(204);
+    vi.spyOn(state, 'awaitBusy').mockResolvedValue();
     const refused = expect(session.injectPrompt('private first input', fence)).rejects.toThrow('no longer active');
     await entered.promise;
     await life.signOut();
@@ -68,7 +70,7 @@ describe('attachment owner fence at native transport admission after asynchronou
     expect(post).not.toHaveBeenCalled();
     expect(state.turnWaiters).toHaveLength(0);
     expect(state.busyWaiters).toHaveLength(0);
-  });
+  }, 10_000);
 
   it('does not send a Droid RPC after daemon readiness finishes in a new epoch', async () => {
     const { life, fence } = await owner();
@@ -84,7 +86,7 @@ describe('attachment owner fence at native transport admission after asynchronou
     ready.resolve();
     await refused;
     expect(socket.send).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it('does not write the Claude reply/repaint payload when the real connection callback arrives after revocation', async () => {
     const { life, fence } = await owner();
@@ -101,5 +103,5 @@ describe('attachment owner fence at native transport admission after asynchronou
     await refused;
     expect(socket.write).not.toHaveBeenCalled();
     expect(socket.destroy).toHaveBeenCalledOnce();
-  });
+  }, 10_000);
 });

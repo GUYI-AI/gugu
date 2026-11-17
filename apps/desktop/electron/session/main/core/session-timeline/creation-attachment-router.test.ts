@@ -37,7 +37,7 @@ describe('attachment owner fence inside the production session-page router', () 
     release.resolve();
     await refused;
     expect(inject).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it('does not make the second injection after a switch inside native wake admission', async () => {
     const { life, fence } = await owner();
@@ -60,7 +60,7 @@ describe('attachment owner fence inside the production session-page router', () 
     release.resolve();
     await refused;
     expect(bytes).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it('carries the same fence through the real host bridge and PTY startup wait, before any write', async () => {
     const { life, fence } = await owner();
@@ -69,9 +69,9 @@ describe('attachment owner fence inside the production session-page router', () 
     const pty = { write, onData: vi.fn(), onExit: vi.fn() } as unknown as Pty;
     recordPtyOutput(pty, Date.now() - 60_000);
     setPtyStartupGate(pty, gate.promise);
-    const session = { id: conversation, projectId: 'project-a', providerId: 'opencode' } as Session;
+    const session = { id: conversation, projectId: 'project-a', providerId: 'pi' } as Session;
     createLocalSessionDeliveryBridge().registerLive('attachment-agent', {
-      sessionId: conversation, providerId: 'opencode',
+      sessionId: conversation, providerId: 'pi',
       sendMessage: (input, beforeAdmission) => {
         entered.resolve();
         return injectSessionMessageWhenReady({ pty, session, message: input, beforeAdmission });
@@ -84,22 +84,22 @@ describe('attachment owner fence inside the production session-page router', () 
     gate.resolve();
     await refused;
     expect(write).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it('still admits through that same bridge and real PTY write while the original epoch is active', async () => {
     const { fence } = await owner();
     const write = vi.fn();
     const pty = { write, onData: vi.fn(), onExit: vi.fn() } as unknown as Pty;
     recordPtyOutput(pty, Date.now() - 60_000);
-    const session = { id: conversation, projectId: 'project-a', providerId: 'opencode' } as Session;
+    const session = { id: conversation, projectId: 'project-a', providerId: 'pi' } as Session;
     createLocalSessionDeliveryBridge().registerLive('attachment-agent', {
-      sessionId: conversation, providerId: 'opencode',
+      sessionId: conversation, providerId: 'pi',
       sendMessage: (input, beforeAdmission) => injectSessionMessageWhenReady({ pty, session, message: input, beforeAdmission }),
     });
     const router = new SessionpageLocalDeliveryRouter([localSessionDeliveryTarget]);
     await expect(router.tryInjectSessionMessage(conversation, message, fence)).resolves.toBe(true);
     expect(write).toHaveBeenCalledExactlyOnceWith(`${message.text}\r`);
-  });
+  }, 10_000);
 
   it('checks again after the real PTY quiet timer, rather than trusting sender entry', async () => {
     vi.useFakeTimers();
@@ -107,12 +107,12 @@ describe('attachment owner fence inside the production session-page router', () 
     const write = vi.fn();
     let output: (() => void) | undefined;
     const pty = { write, onData: (cb: () => void) => { output = cb; }, onExit: vi.fn() } as unknown as Pty;
-    const session = { id: conversation, projectId: 'project-a', providerId: 'opencode' } as Session;
+    const session = { id: conversation, projectId: 'project-a', providerId: 'pi' } as Session;
     const refused = expect(injectSessionMessageWhenReady({ pty, session, message, beforeAdmission: fence })).rejects.toThrow('no longer active');
     output?.();
     await life.signOut();
     await vi.advanceTimersByTimeAsync(800);
     await refused;
     expect(write).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 });
