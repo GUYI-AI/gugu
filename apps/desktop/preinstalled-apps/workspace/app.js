@@ -2445,10 +2445,21 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
-    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
+    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// An image opens in the host's image viewer (API 57): the images on screen with it, in the order drawn, to page through,
+// and where its picture is, to open from and close back to.
+function viewedWith(entry) {
+  if (!/^image\//i.test(entry.contentType || '')) return {}
+  const byId = new Map(state.entries.map((e) => [e.id, e]))
+  const among = state.order.map((id) => byId.get(id)).filter((e) => e && !isFolder(e) && /^image\//i.test(e.contentType || '') && !fileUnavailable(e))
+  const mark = [...$('file-list').querySelectorAll('li[data-id]')].find((li) => li.dataset.id === entry.id)?.querySelector('.file-mark')
+  const box = mark?.getBoundingClientRect()
+  return { ...(among.length > 1 ? { among } : {}), ...(box && box.width > 0 ? { origin: { x: box.x, y: box.y, width: box.width, height: box.height } } : {}) }
 }
 
 function startRename(li, entry) {

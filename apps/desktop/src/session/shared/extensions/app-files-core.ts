@@ -6,7 +6,7 @@ import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
 import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
-import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
+import { isRenderableImage, mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
 import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
 import type { Grant, PageSync } from './file-sync-core';
@@ -31,6 +31,7 @@ import {
   type AppFileVersionContent,
   type AppForwardFilesDetail,
   type AppOpenWithDetail,
+  type ViewedImage,
   type AppShowMessageDetail,
   type ChatPeekFile,
   type WorkspacePlace,
@@ -195,6 +196,29 @@ interface ItemRow {
   child_count?: number | string | null;
   /** `workspace_list_as` only: the device that keeps its current version, when that is not in the cloud. */
   host_device_id?: string | null;
+}
+
+/**
+ * API 57 `among` for a file being opened (`groupFileOpener`, main's and the phone's): the chat's listing read while the
+ * file itself is, when the asker named the chat — read again for the file's own chat when that is another (a topic's
+ * folder is its source's). Only an image nothing claims pages; a listing that fails opens it alone, said in the log.
+ */
+export function viewedAmongOf(
+  viewedAmong: (chatId: string, itemId: string, ids: readonly string[]) => Promise<ViewedImage[]>,
+  args: { chatId?: string; itemId: string; among?: unknown },
+): (target: { chatId: string; itemId: string }, choice: { kind: string }) => Promise<ViewedImage[]> {
+  const ids = Array.isArray(args.among) ? args.among.map(String) : null;
+  const early = ids && args.chatId !== undefined ? viewedAmong(String(args.chatId), String(args.itemId), ids) : null;
+  early?.catch(() => undefined);
+  return async (target, choice) => {
+    if (!ids || choice.kind !== 'none') return [];
+    try {
+      return await (early && String(args.chatId) === target.chatId ? early : viewedAmong(target.chatId, target.itemId, ids));
+    } catch (error) {
+      coreLogger('app-files').warn({ itemId: target.itemId, error: String(error) }, 'The images shown with a file could not be read: it opens alone');
+      return [];
+    }
+  };
 }
 
 /** A row `workspace_search` / `workspace_recent` answers (gugu-supabase 20261017002319): with its chat, and when opened. */
@@ -1191,6 +1215,24 @@ export function createAppFiles(platform: FilesPlatform) {
       if (row && chatId !== undefined && row.chat_id !== chatId) chatId = await resourceChatIdOf(token, chatId, userId);
       if (!row || (chatId !== undefined && row.chat_id !== chatId)) throw new AppFileError('not-found', 'No such file in this chat');
       return { chatId: row.chat_id, itemId: row.id, name: row.filename, typedName: typedFileName({ name: row.filename, contentType: row.content_type }), file: { document: row.kind === 'document', contentType: row.content_type, version: row.version, size: row.size_bytes ?? 0 }, ...openingOf(row, userId) };
+    },
+
+    /**
+     * API 57 `among`: of the files a page showed with the one it opened, those the image viewer pages to — images of that
+     * file's chat with a cloud copy to read, in the page's order — from one listing of the chat. None when the opened one
+     * is not such an image itself: it opens alone.
+     */
+    async viewedAmong(chatId: string, itemId: string, ids: readonly string[]): Promise<ViewedImage[]> {
+      if (!ids.includes(itemId)) return [];
+      const { token, userId } = await platform.account();
+      const rows = new Map((await rowsOfChat(token, chatId, userId)).map((row) => [row.id, row]));
+      const viewed = ids.flatMap((id) => {
+        const row = rows.get(id);
+        const readable = row && row.kind === 'file' && !row.host_device_id && (row.availability ? row.availability === 'available' : !row.copy_expired_at)
+          && isRenderableImage(row.filename, row.content_type);
+        return readable ? [{ itemId: row.id, version: row.version, name: row.filename, contentType: row.content_type }] : [];
+      });
+      return viewed.some((image) => image.itemId === itemId) && viewed.length > 1 ? viewed : [];
     },
 
     /**

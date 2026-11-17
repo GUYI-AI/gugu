@@ -19,6 +19,9 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ localFileRevisio
 const noted = vi.hoisted(() => vi.fn(async () => ({ error: null })))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: noted } }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({ appsHere: { groupFileOpener: vi.fn(), runs: () => true } }))
+/** The shared image viewer, as the opener asks it (its own reads are attachmentImageOpen.test.ts's). */
+const viewed = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', async (original) => ({ ...await original<object>(), openAttachmentImages: viewed }))
 
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers')
 const { askChatFile, chatLayoutOf, closeChatTab, openPanelItem, panelTabsOf, takeChatAsk, chatPaneOf } = await import('@renderer/features/chats/chat-tabs/chat-layouts')
@@ -64,7 +67,7 @@ const history = () => chatPaneOf(chat, folder)!.navigationOf(folder)!
 beforeEach(async () => {
   harness = createReactHarness()
   chat = `app-opening-${++serial}`; other = `app-opening-other-${serial}`
-  held.clear(); outcomes.clear(); noted.mockClear()
+  held.clear(); outcomes.clear(); noted.mockClear(); viewed.mockClear()
   vi.mocked(appsHere!.groupFileOpener).mockReset().mockImplementation(({ itemId }) => new Promise((resolve) => held.set(itemId, (how) => resolve(('error' in how ? { success: false, ...how } : { success: true, data: how }) as never))))
   folder = openPanelItem(chat, folderItem())!
   await harness.render(createElement(Shell))
@@ -75,6 +78,29 @@ afterEach(() => {
 })
 
 describe('a file clicked in the chat\'s folder', () => {
+  it('an image nothing claims: no waiting page; the viewer over the folder, paging through the images the page showed', async () => {
+    const image = (itemId: string) => ({ itemId, version: 1, name: `${itemId}.png`, contentType: 'image/png' })
+    const origin = { x: 10, y: 20, width: 96, height: 96 }
+    await opening('B', { fileName: 'B.png', among: ['A', 'B', 'C'], origin })
+    expect(isFolderItem(page()), 'the folder stays on screen while the host answers').toBe(true)
+    expect(history().pages).toHaveLength(1)
+    expect(vi.mocked(appsHere!.groupFileOpener)).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'B', among: ['A', 'B', 'C'] }))
+    await answer('B', { chatId: chat, itemId: 'B', name: 'B.png', typedName: 'B.png', file: { document: false, contentType: 'image/png', version: 1, size: 3 }, choice: { kind: 'none' }, among: [image('A'), image('B'), image('C')] } as Detail)
+    expect(viewed).toHaveBeenCalledWith([image('A'), image('B'), image('C')], 1, { chatId: chat }, origin)
+    expect(isFolderItem(page())).toBe(true)
+    expect(panelTabsOf(chat)).toHaveLength(1)
+    expect(history().pages).toHaveLength(1)
+    expect(await outcomes.get('B')).toBe('opened')
+  })
+
+  it('an image opened in a new tab (its menu, Ctrl-click) is a tab: it waits as any file does', async () => {
+    await opening('B', { fileName: 'B.png', intent: 'newTab' })
+    expect(panelTabsOf(chat).some((tab) => isWaitingItem(tab.item))).toBe(true)
+    await answer('B', { chatId: chat, itemId: 'B', name: 'B.png', typedName: 'B.png', file: { document: false, contentType: 'image/png', version: 1, size: 3 }, choice: { kind: 'none' } } as Detail)
+    expect(viewed).not.toHaveBeenCalled()
+    expect(panelTabsOf(chat).find((tab) => tab.item.itemId === 'B')?.item).toMatchObject({ kind: null, itemId: 'B' })
+  })
+
   it('waits as the folder tab\'s next page, titled by the page\'s name, then is that file in place: Back to the folder', async () => {
     await opening('A', { fileName: 'A.md' })
     expect(panelTabsOf(chat)).toHaveLength(1)

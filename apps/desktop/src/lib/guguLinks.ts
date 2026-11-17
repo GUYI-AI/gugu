@@ -2,6 +2,7 @@ import { getSupabaseUrl } from '@gugu/core/cloud/config'
 import { parseGuguLink, type FilePlace, type GuguLinkTarget, type LinkPlace, type OpenTarget } from '@gugu/core/shared/ui/guguLink'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { TabOpenIntent } from '@shared/view-state'
+import type { ViewBox } from '@shared/extensions/app-runtime-protocol'
 import { platform } from '../platform'
 import { notify } from './notices'
 import { readMobileShell } from '../hooks/useMobileShell'
@@ -22,6 +23,9 @@ export type LinkNavigation = {
   intent?: TabOpenIntent
   /** The chat the asker named the file in: it must be there. */
   chatId?: string
+  /** API 57 (`openingViewOf`): the files an App page showed with it, and the clicked picture's box on the window. */
+  among?: string[]
+  origin?: ViewBox
   resolve(opened?: LinkPlace | 'own'): void
   reject(error: unknown): void
 }
@@ -29,7 +33,7 @@ export type LinkNavigation = {
 /** The person asked for something else before this open arrived: nothing failed, and no notice is owed for it. */
 export class OpenSuperseded extends Error { constructor() { super('The file opening was superseded') } }
 
-export type LinkSource = Pick<LinkNavigation, 'message' | 'restore' | 'fileName' | 'from' | 'intent' | 'chatId'>
+export type LinkSource = Pick<LinkNavigation, 'message' | 'restore' | 'fileName' | 'from' | 'intent' | 'chatId' | 'among' | 'origin'>
 export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source: LinkSource = {}): Promise<LinkPlace | 'own' | void> {
   return new Promise((resolve, reject) => {
     const detail: LinkNavigation = { target, ...source, resolve, reject }

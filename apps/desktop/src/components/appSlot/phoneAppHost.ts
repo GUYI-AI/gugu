@@ -12,7 +12,7 @@ import { directoryRows, listedSession, liveDeviceSessions } from '../../session/
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
-import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
+import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, viewedAmongOf, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
 import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
@@ -29,6 +29,8 @@ import {
   SYNC_PORT_WINDOW_MESSAGE,
   fileRefOf,
   openingNameOf,
+  openingViewOf,
+  boxOnWindow,
   opensAsLink,
   openWithTabOf,
   openWithIntentOf,
@@ -342,14 +344,17 @@ function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
  * a tap in an App decides it (`openerChoice`; `none`: the panel offers an App that would) — main's `groupFileOpener` on
  * the desktop, this page's on the phone.
  */
-export async function groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string> }): Promise<Result<AppOpenWithDetail>> {
+export async function groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Result<AppOpenWithDetail>> {
   try {
+    // API 57: the images an App page showed with it, read while the file is — main's `groupFileOpener` too.
+    const among = viewedAmongOf(files.viewedAmong, args)
     const target = await files.groupFile(args.chatId, args.itemId)
     const choice = openerChoice(target.typedName, appsHereNow(), 'chat', phoneApps.remembered)
     // App 引用 pill: the place, for the page about to open the file — main's `deliverToOpeningPage` on the desktop.
     const place = placeFor(choice, args.at)
     if (place) holdPlaceForOpeningPage(target.chatId, target.itemId, place.candidate, place.at)
-    return { success: true, data: { ...target, choice } }
+    const images = await among(target, choice)
+    return { success: true, data: { ...target, choice, ...(images.length ? { among: images } : {}) } }
   } catch (error) {
     return failure(error)
   }
@@ -787,7 +792,10 @@ export function hostAppFrame(
         if (opensAsLink(ref, { ask: args.ask === true, peek: args.peek === true, tab })) {
           files.mayName(surface(), ref.id, 'opening')
           const named = openingNameOf(args)
-          const action = { kind: 'openChatFile' as const, itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+          // The clicked picture's box, from the page's to the window's: this host draws the page's frame.
+          const { among, origin } = openingViewOf(ref, args)
+          const onWindow = origin ? boxOnWindow(origin, hosted.frame.getBoundingClientRect()) : undefined
+          const action = { kind: 'openChatFile' as const, ...(among ? { among } : {}), ...(onWindow ? { origin: onWindow } : {}), itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
             ...(args.at && typeof args.at === 'object' ? { at: args.at as Record<string, string> } : {}),
             ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}) }
           return import('../../session/renderer/features/extensions/host-action-handlers')

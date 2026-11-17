@@ -333,14 +333,17 @@ export const extensionsController = createRPCController({
    * pill): when one App opens it, that App gets the place as the `link` event a gugu link brings — opened and placed here,
    * as `openExtensionLinkWith` opens and places (148 17:21). Several to choose from: the person picks, and no App is told.
    */
-  groupFileOpener: async (args: { chatId?: string; itemId: string; at?: Record<string, string> }) => {
+  groupFileOpener: async (args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }) => {
     try {
-      const files = await import('@main/core/extensions/app-files');
+      const [files, { viewedAmongOf }] = await Promise.all([import('@main/core/extensions/app-files'), import('@shared/extensions/app-files-core')]);
+      // API 57: the images an App page showed with it, read while the file is (`viewedAmong`, the phone's too).
+      const among = viewedAmongOf(files.viewedAmong, args);
       const target = await files.groupFile(args?.chatId === undefined ? undefined : String(args.chatId), String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
       if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), target.chatId, target.itemId);
-      return { success: true as const, data: { ...target, choice } };
+      const images = await among(target, choice);
+      return { success: true as const, data: { ...target, choice, ...(images.length ? { among: images } : {}) } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
       return { success: false as const, error: error instanceof Error ? error.message : String(error), ...(error instanceof (await import('@main/core/extensions/app-files')).AppFileError ? { code: error.code } : {}) };
