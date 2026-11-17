@@ -1,9 +1,10 @@
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ExtensionPage } from '@renderer/features/extensions/extension-view-layer'
-import { extensionViewStore, residentPageKey, residentPlace } from '@renderer/features/extensions/extension-view-store'
 import { createReactHarness } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import '@/styles/tokens.css'
+import '@renderer/index.css'
 
 const saved = vi.hoisted(() => ({ put: vi.fn(async () => true), capture: vi.fn(async () => ({ success: true, data: 'data:image/png;base64,fixture' })) }))
 vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()),
@@ -16,17 +17,16 @@ vi.mock('@renderer/features/extensions/installed-extensions-store', async origin
 let harness: ReturnType<typeof createReactHarness>, slot: HTMLElement
 afterEach(() => {
   harness?.cleanup()
-  act(() => extensionViewStore.forgetOpened('snapshot.main'))
   slot?.remove()
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
-it('saves the trailing input after the two-second capture interval and refuses a now-hidden slot', async () => {
+it('draws a widget page in its bubble, clear until painted, and saves its picture at most every two seconds', async () => {
   harness = createReactHarness()
-  slot = document.createElement('div')
+  slot = harness.container
   Object.assign(slot.style, { position: 'fixed', top: '20px', left: '20px', width: '400px', height: '200px' })
-  document.body.append(slot)
+  const painted = vi.fn()
   const bind = vi.fn(async () => ({ success: true }))
   vi.stubGlobal('electronAPI', { eventOn: () => () => {}, invoke: async (channel: string) => {
     if (channel === 'extensions.activate') return { success: true, data: { partition: 'snapshot', entryUrl: 'about:blank' } }
@@ -36,10 +36,13 @@ it('saves the trailing input after the two-second capture interval and refuses a
     throw new Error(`Unexpected bridge call: ${channel}`)
   } })
   const widget = { id: 'widget', originMessageId: 'origin', messageId: 'reference', data: {}, senderId: 'sender' }
-  act(() => extensionViewStore.claim('snapshot.main', { chatId: 'chat', accountId: 'reader', tabId: 'widget:widget', widget, element: slot }))
-  const key = residentPageKey('snapshot.main', residentPlace({ chatId: 'chat', widget }))
-  await harness.render(<ExtensionPage extensionId="snapshot" kind="snapshot.main" pageKey={key} layerRef={{ current: harness.container }} />)
-  await until('the resident guest host is mounted', () => !!harness.container.querySelector('webview'))
+  const target = { workspace: null, conversation: 'chat', tabId: 'widget:widget', widget }
+  await harness.render(<ExtensionPage extensionId="snapshot" kind="snapshot.main" inline={target} accountId="reader" onPainted={painted} />)
+  await until('the guest is mounted in the bubble\'s own box', () => !!harness.container.querySelector('webview'))
+  // In the document flow, inside the slot: the list moves it with the bubble, no layer copies its position.
+  const box = harness.container.querySelector<HTMLElement>('[data-extension-view]')!
+  expect(box.parentElement).toBe(slot)
+  expect(box.className).not.toContain('bg-background')
   const guest = harness.container.querySelector('webview')!
   Object.assign(guest, { getWebContentsId: () => 123 })
   act(() => guest.dispatchEvent(new Event('dom-ready')))
@@ -49,6 +52,8 @@ it('saves the trailing input after the two-second capture interval and refuses a
   const send = (channel: string) => guest.dispatchEvent(Object.assign(new Event('ipc-message'), { channel, args: [] }))
   act(() => send('gugu-page-painted'))
   await vi.advanceTimersByTimeAsync(0)
+  expect(painted).toHaveBeenLastCalledWith(true)
+  expect(box.className).toContain('bg-background')
   expect(saved.capture).toHaveBeenCalledTimes(1)
   await vi.advanceTimersByTimeAsync(250)
   send('gugu-widget-changed')
