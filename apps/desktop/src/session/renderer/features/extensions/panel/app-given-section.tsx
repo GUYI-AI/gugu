@@ -1,7 +1,7 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react';
-import { useReplica } from '@/lib/replica';
+import { useReplica, refreshFailure } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { appPlaces } from '../market-replicas';
 import { ChevronRight } from '@/lib/icons';
@@ -42,7 +42,7 @@ export function AppGivenSection({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState('');
   // A refresh that failed over places read before is said too, the places staying drawn (❌ them shown as current).
-  const readFailure = reading.state === 'error' || (reading.state === 'value' && reading.error) ? reading.error : null;
+  const readFailure = refreshFailure(reading);
   const shownFailure = failed || (readFailure ? messageForUser(readFailure) : '');
   const load = () => {
     setFailed('');

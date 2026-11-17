@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { rendererLogger } from './log'
-import { replica, useReplicas } from './replica'
+import { replica, useReplicas, refreshFailure } from './replica'
 import { platform } from '../platform'
 import type { SystemPermission, SystemPermissionState } from '../platform/types'
 
@@ -98,7 +98,7 @@ export function useSystemPermissionStates(permissions: readonly SystemPermission
     await Promise.all(wanted.map((permission) => systemPermission.refresh(permission)))
   }, [wanted])
   // 读不到就明说读不到(调用方渲染提示):一次重读失败也是读不到,这时不交上一次的值。
-  const failed = readings.some((reading) => reading.state === 'error' || (reading.state === 'value' && !!reading.error))
+  const failed = readings.some((reading) => refreshFailure(reading) !== null)
   const states: SystemPermissionStates = {}
   if (!failed) {
     wanted.forEach((permission, index) => {

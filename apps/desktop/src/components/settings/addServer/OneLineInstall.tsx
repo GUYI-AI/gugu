@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { replica, useReplica } from '../../../lib/replica'
+import { refreshFailure, replica, useReplica } from '../../../lib/replica'
 import { useTranslation } from 'react-i18next'
 
 import { SERVER_SSH_INSTALL_CHANNELS, type ServerSshInstallInfo } from '../../../lib/serverSshInstall'
@@ -65,7 +65,7 @@ export function OneLineInstall({
   const check = useReplica(recentMachineLimitRefusals, appeared ? null : [since.current])
   const refusal = check.state === 'value' ? check.value : null
   // 问不到不打断添加流程:接着等、下一拍再问,只在等待那行下面说一句。
-  const checkFailed = check.state === 'error' || (check.state === 'value' && !!check.error)
+  const checkFailed = refreshFailure(check) !== null
 
   const command = info ? (useWget ? info.installCommandWget : info.installCommand) : null
 

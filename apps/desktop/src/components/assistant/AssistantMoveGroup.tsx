@@ -8,7 +8,7 @@ import { membershipSettingsSection } from '../../lib/billing/settingsDestination
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import { moveRecovery, type MoveEnv } from '@renderer/features/assistant/assistant-move-wire'
-import { useReplica, type Reading } from '../../lib/replica'
+import { useReplica, type Reading, refreshFailure } from '../../lib/replica'
 import { canSetUpCloudAssistant, cloudComputer, type CloudComputerState } from '../../lib/cloudComputer'
 import { Unknown } from '../ui/Unknown'
 import '../../i18n/registerAssistantCatalog'
@@ -37,7 +37,7 @@ function openMembership() {
  */
 export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, home, localDeviceId, cloud }: AssistantMoveGroupProps) {
   const cloudAvailable = canSetUpCloudAssistant(cloud)
-  const cloudFailed = cloud.state === 'error' || (cloud.state === 'value' && !!cloud.error)
+  const cloudFailed = refreshFailure(cloud) !== null
   const { t, i18n } = useTranslation('assistant')
   // 会员档(账号额度那一份 replica):没读到 = null(不当成非会员),读不到如实说并给重试。管家那扇门没开 = 不问。
   const spending = useSpendingPower(cloudAvailable ? { id: ownerUserId } : null)

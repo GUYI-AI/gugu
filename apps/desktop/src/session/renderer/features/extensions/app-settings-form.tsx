@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { extensionSettings } from './market-replicas';
 import { Button } from '@renderer/lib/ui/button';
@@ -33,7 +33,7 @@ export function AppSettingsForm({ manifest, active, hostKey, save: write, id, hi
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const values = draft ?? stored;
   const [saveError, setSaveError] = useState<string | null>(null);
-  const error = saveError ?? (reading.state === 'error' || (reading.state === 'value' && reading.error) ? t('appSettings.readFailed') : null);
+  const error = saveError ?? (refreshFailure(reading) ? t('appSettings.readFailed') : null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(stored);

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { replica, useReplica } from '@/lib/replica';
+import { replica, useReplica, refreshFailure } from '@/lib/replica';
 import { catalogDetailed, followCatalogChanges, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
 import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -265,7 +265,7 @@ export function usePlatformModelCatalog(
     if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
   };
   // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).
-  const failed = catalog.state === 'error' || (catalog.state === 'value' && catalog.error !== null) || selection.state === 'error' || harness.state === 'error';
+  const failed = refreshFailure(catalog) !== null || selection.state === 'error' || harness.state === 'error';
   const known = !providerId || (catalog.state !== 'unknown' && harness.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
   const catalogError = gate ?? (failed ? PLATFORM_CATALOG_RETRY_ERROR : null);
   const agentDefault = selection.state === 'value' && selection.value.agentDefault

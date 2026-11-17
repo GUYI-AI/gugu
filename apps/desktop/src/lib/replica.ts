@@ -31,6 +31,14 @@ export type Reading<V> =
 
 export const UNKNOWN: Reading<never> = { state: 'unknown' }
 
+/**
+ * The failure a surface says for a reading (with components/ui/RefreshFailed): an error reading's, or a refresh that failed
+ * over a value it still shows. null = nothing to say. ❌ only `state === 'error'`: the old value would read as current.
+ */
+export function refreshFailure(reading: Reading<unknown>): Error | null {
+  return reading.state === 'unknown' ? null : reading.error
+}
+
 type Scope = 'account' | 'device'
 
 type Later<A extends unknown[]> = A extends unknown[] ? A : never

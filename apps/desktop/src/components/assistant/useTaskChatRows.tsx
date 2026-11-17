@@ -3,7 +3,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { useTranslation } from 'react-i18next'
 import { readAssistantTaskChat, subscribeAssistantTaskChats } from '../../lib/assistantTaskChat'
 import type { TaskExchange } from '../../session/shared/core/sessions/task-collaboration'
-import { useReplicas } from '../../lib/replica'
+import { refreshFailure, useReplicas } from '../../lib/replica'
 import { assistantWorkExchanges } from './assistant-work-projection'
 import { taskChatRows, taskChatWindow } from './taskChatRows'
 import { Button } from '../ui/Button'
@@ -35,7 +35,7 @@ export function useTaskChatRows(messages: readonly MessageItem[], ownerId: strin
     // @@@reading-default(paired) - a work whose read failed adds no exchanges; its failure is said by the collaboration-unavailable notice (`unavailable`)
     return works.flatMap((reading, index) => reading.state === 'value' ? assistantWorkExchanges(reading.value.events, workIds[index]!) : [])
   }, [task, workIds, works])
-  const unavailable = ledger.state === 'error' || works.some(reading => reading.state === 'error' || (reading.state === 'value' && reading.error))
+  const unavailable = ledger.state === 'error' || works.some(reading => refreshFailure(reading) !== null)
   // @@@reading-default(paired) - the chat's own messages are drawn while the exchanges are not read yet; the row-high placeholder in `notice` says more are coming
   const allRows = useMemo(() => taskChatRows(messages, exchanges ?? [], task), [messages, exchanges, task])
   const count = history.key === key ? history.count : 80

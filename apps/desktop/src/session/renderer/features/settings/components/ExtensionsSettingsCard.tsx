@@ -23,7 +23,7 @@ import {
   useInstalledApps,
   type ExtensionDisclosureLevel,
 } from '@renderer/features/extensions/installed-extensions';
-import { useReplica, type Reading } from '@/lib/replica';
+import { useReplica, type Reading, refreshFailure } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { Unknown } from '@/components/ui/Unknown';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
@@ -166,8 +166,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // #6387
   const agentStatusReading = useReplica(extensionAgentStatus, [host.key], { read: !machineOffline });
   const agentStatus = agentStatusReading.state === 'value' ? agentStatusReading.value : null;
-  const failureOf = (reading: Reading<unknown>): Error | null => (reading.state === 'unknown' ? null : reading.error);
-  const inventoryError = failureOf(installed) ?? failureOf(revokedReading) ?? failureOf(agentStatusReading);
+  const inventoryError = refreshFailure(installed) ?? refreshFailure(revokedReading) ?? refreshFailure(agentStatusReading);
   const notice = deviceScopeNotice(
     { remote, error: inventoryError, hasData: installed.state === 'value', now: Date.now(), cloud: remoteHostsStore.cloudScope(remote?.deviceId) },
     translate
