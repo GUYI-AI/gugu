@@ -383,7 +383,7 @@ function CreateOnMachine({
       binding.dispose()
       if (draft.current === binding) draft.current = null
     }
-  }, [ownerId, runtime.thread.composer])
+  }, [ownerId, runtime.thread.composer, page])
 
   useEffect(() => {
     if (phoneAttempt && pendingText === null && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt.prompt)

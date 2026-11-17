@@ -51,7 +51,7 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
 let root: Root | null = null, host: HTMLDivElement | null = null
 let previousTheme = readThemePreference()
 afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; fixture.create.mockClear(); writeThemePreference(previousTheme); document.documentElement.removeAttribute('data-theme') })
-function CapturePage() {
+export function CapturePage() {
   const { theme } = useTheme()
   return <PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" data-capture-shell-theme={theme}
     style={{ display: 'flex', width: '100vw', position: 'fixed', left: 0, overflow: 'hidden', background: 'var(--ta-panel-bg)', paddingTop: 'env(safe-area-inset-top)' }}>

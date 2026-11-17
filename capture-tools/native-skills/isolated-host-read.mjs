@@ -1,5 +1,5 @@
 import { readFile, writeFile, realpath } from 'node:fs/promises'
-import { execFileSync } from 'node:child_process'
+import { execFileSync } from '../../packages/core/src/local/childProcess.ts'
 import { dirname, isAbsolute, relative } from 'node:path'
 
 // Read one real RPC from an ALREADY launched, owned, isolated Electron. Never launches,
