@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   createParams: [] as Array<{ projectId: string; sessionType?: string }>,
   acpStart: { success: true } as { success: boolean; error?: unknown },
   warnings: [] as Array<Record<string, unknown>>,
-  /** 失败原文进日志走一次动态 import(见 create-session.ts logCreateFailure):写进来的那一刻告诉用例。 */
+  /** 固定原因码进日志走一次动态 import(见 create-session.ts logCreateFailure):写进来的那一刻告诉用例。 */
   warned: Promise.withResolvers<void>(),
   failures: new Map<string, string>(),
   startInputs: [] as Array<Record<string, unknown>>,
@@ -433,7 +433,7 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
 
   // Retargeted to the terminal leg (sessionView code → hydrate): an ACP startup failure is now session-life's failed
   // state and never comes back through createSession; the classification still applies where the start is synchronous.
-  it('适配器模块解析不到:照常返回会话(带原因码 harness_runtime_missing),原因码记在这台机器上,原文只进日志', async () => {
+  it('适配器模块解析不到:照常返回会话(带原因码 harness_runtime_missing),原因码记在这台机器上,原文不进日志', async () => {
     const raw = "Cannot find module '@agentclientprotocol/claude-agent-acp/dist/index.js'\nRequire stack:\n- /home/a/.gugu-server/versions/0.2.113/app/dist-electron/registry-x.js";
     state.hydrateError = new Error(raw);
     const result = await createSession(
@@ -445,7 +445,8 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
     expect(state.failures.get(currentSessionId())).toBe('harness_runtime_missing');
     await state.warned.promise;
     expect(state.warnings).toHaveLength(1);
-    expect(state.warnings[0]).toMatchObject({ code: 'harness_runtime_missing', detail: expect.stringContaining(raw.split('\n')[0]) });
+    expect(state.warnings[0]).toEqual({ scope: 'session-timeline/create', code: 'harness_runtime_missing', retry: false });
+    expect(JSON.stringify(state.warnings)).not.toMatch(/Cannot find module|Require stack|dist-electron|\/home\//);
   });
 
   it('选了咕咕提供的模型、签平台额度那一趟连不上:原因码 platform_model_unreachable,❌ 把网关那句原文回给发起方', async () => {
@@ -469,14 +470,16 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
     expect(result).toMatchObject({ ok: true, value: { startFailure: 'session_start_failed' } });
   });
 
-  it('会话行写下之前的失败仍然留在新建页:原文进日志', async () => {
+  it('会话行写下之前的失败仍然留在新建页:合成邮箱和路径不进实际logger', async () => {
     const result = await createSession(
-      { projectId: 'proj-1', harness: 'nope', prompt: 'hi' },
+      { projectId: 'proj-1', harness: 'synthetic@example.test/Users/private', prompt: 'hi' },
       { ensureAgentInstalled: async () => {} }
     );
     expect(result).toMatchObject({ ok: false, error: { code: 'harness_not_found' } });
     await state.warned.promise;
     expect(state.warnings).toHaveLength(1);
+    expect(state.warnings[0]).toEqual({ scope: 'session-timeline/create', code: 'harness_not_found', retry: false });
+    expect(JSON.stringify(state.warnings)).not.toMatch(/synthetic@example|Users|private/);
   });
 });
 
