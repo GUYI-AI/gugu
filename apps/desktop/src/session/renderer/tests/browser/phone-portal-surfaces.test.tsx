@@ -34,7 +34,7 @@ it.each(['light', 'dark'] as const)('%s: an actual portalled menu keeps phone sp
   probe.dataset.taMenu = ''; probe.dataset.portalProbe = ''; probe.style.background = 'var(--ta-panel-bg)'
   document.body.append(probe)
   expect(getComputedStyle(probe).backgroundImage).toBe('none')
-  expect(getComputedStyle(probe).backgroundColor).toBe(theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(24, 24, 24)')
+  expect(getComputedStyle(probe).backgroundColor).toBe(theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(15, 15, 15)')
 })
 
 it('desktop portalled menus preserve their original density', async () => {

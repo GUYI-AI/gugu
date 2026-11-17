@@ -202,12 +202,12 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   await page.screenshot({ path: `__screenshots__/assistant-task-layer-look/panel-layer-${theme}.png` });
 });
 
-it('the same task page elsewhere keeps its view switcher and its model and permission controls', async () => {
+it('the same desktop task page elsewhere keeps its view switcher and its model and permission controls', async () => {
   await i18n.changeLanguage('zh-CN');
-  await page.viewport(600, 860);
+  await page.viewport(900, 860);
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
-  harness.container.style.cssText = 'height:860px;width:600px;display:flex;flex-direction:column';
+  harness.container.style.cssText = 'height:860px;width:900px;display:flex;flex-direction:column';
   await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local cleanedRecord onBack={() => undefined} />, { contacts: {} });
   await until('the session page composer', () => !!harness!.container.querySelector('[data-testid="composer-model-trigger"]'));
   const host = harness.container;

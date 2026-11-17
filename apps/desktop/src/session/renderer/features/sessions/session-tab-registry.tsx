@@ -29,6 +29,7 @@ import { createSessionTabPersistor } from './stores/session-tab-view-persistor';
 import { terminalTabProvider } from './terminals/terminal-tab-provider';
 import { remotePortsTabProvider } from '../remote-hosts/workspace/remote-ports-tab';
 import { taskPageTabProvider } from '@renderer/features/browser/task-page-tab';
+import { liveWindowTabProvider } from '../live-window/live-window-tab';
 
 export const sessionTabView = createTabView(
   [
@@ -44,7 +45,8 @@ export const sessionTabView = createTabView(
     // #6264 别的机器上的会话才有的「端口」(照 VS Code Ports 视图);本机会话的清单里没有这一项。
     remotePortsTabProvider,
     // #1607 node 5 别的机器上的任务网页(咕咕 server 的无头浏览器)在这台的画面与接管。
-    taskPageTabProvider
+    taskPageTabProvider,
+    liveWindowTabProvider
   ] as const,
   { makePersistor: (ctx) => createSessionTabPersistor(ctx as SessionTabContext) }
 );

@@ -102,9 +102,10 @@ describe('task-TUI capability launch contract', () => {
       'const startCodexAppServer: HostStart',
     );
     const claudeConsumesNativeOutput =
-      /args:\s*\[\s*\.\.\.info\.baseArgs,\s*\.\.\.\(capabilities\.extraArgs \?\? \[\]\),/.test(
-        claudeHook,
-      ) &&
+      // The settings composer retains the native adapter's prompt-file arguments.
+      /await claudeTuiSessionArgs\(\{[\s\S]*?baseArgs: info\.baseArgs,[\s\S]*?extraArgs: \[\.\.\.\(capabilities\.extraArgs \?\? \[\]\), \.\.\.platform\.clientArgs\]/.test(claudeHook) &&
+      readFileSync(join(process.cwd(), 'apps/desktop/electron/sessionpage/claude-tui-settings.ts'), 'utf8')
+        .includes("return [...base.args, ...extra.args, '--settings', path]") &&
       /env:\s*\{\s*\.\.\.\(capabilities\.spawnEnv \?\? \{\}\),/.test(claudeHook) &&
       claudeHook.includes('await materialize(info, bundle.env.GUGU_HOME, capabilities');
     const providerConsumesNativeOutput =

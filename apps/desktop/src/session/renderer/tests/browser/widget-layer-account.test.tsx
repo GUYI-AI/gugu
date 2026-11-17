@@ -47,7 +47,7 @@ it('mounts a widget page claimed by the signed-in account, clear until painted, 
   // Until its page has painted, the box is clear: the slot's snapshot below shows, not a blank box.
   const box = () => harness.container.querySelector<HTMLElement>('[data-extension-view]')!
   expect(box().className).not.toContain('bg-background')
-  act(() => extensionViewStore.widgetPainted(residentPageKey(kind, residentPlace({ chatId: 'chat', widget }))))
+  act(() => extensionViewStore.pagePainted(residentPageKey(kind, residentPlace({ chatId: 'chat', widget }))))
   expect(box().className).toContain('bg-background')
   await act(async () => publishSelfIdentity({ userId: 'other', displayName: null, guguNumber: null }))
   await until('the previous account\'s widget page is gone', () => !harness.container.querySelector('webview'))

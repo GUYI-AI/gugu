@@ -1,5 +1,8 @@
 /* Approved phone reference: 136px / 943px single line, 295px / 943px four lines,
    and a 60px / 943px visible send circle. Existing 16/24 typography is retained. */
+/* Reserve the 44px action target, a 4px outer allowance and 16px of text clearance. */
+[data-slot='composer'][data-phone-capsule] { --phone-composer-empty-gutter: 48px; --phone-composer-actions-gutter: 64px; }
+[data-slot='composer'][data-phone-capsule]:not(:has([data-phone-attachment])) { --phone-composer-empty-gutter: 16px; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-bar'] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -18,7 +21,7 @@
   min-width: 0;
   min-height: 56px;
   max-height: 128px;
-  padding: 16px 48px;
+  padding: 16px var(--phone-composer-actions-gutter) 16px var(--phone-composer-empty-gutter);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -28,7 +31,7 @@
 }
 [data-slot='composer'][data-phone-capsule][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; }
 [data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 128px; border-radius: 20px; }
-[data-slot='composer'][data-phone-capsule][data-phone-has-text]:not([data-phone-multiline]) [data-phone-attachment] { display: none; }
+[data-slot='composer'][data-phone-capsule][data-phone-has-text]:not([data-phone-attachment-row]) [data-phone-attachment] { display: none; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
 /* Compact height follows content, not the extra room reserved for the two buttons.
    Keeping flex-grow here would hold an emptied multiline editor at 72px forever. */
@@ -36,7 +39,7 @@
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-attachments'] {
   grid-column: 1 / -1;
   grid-row: 2;
-  padding: 4px 8px 4px 48px;
+  padding: 4px 8px 4px var(--phone-composer-empty-gutter);
 }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])) {
   grid-column: 1;
@@ -130,11 +133,11 @@
 [data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-editor-toggle] {
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-right: 8px; margin-top: 8px;
 }
-[data-slot='composer'][data-phone-capsule][data-phone-multiline] button[data-phone-attachment] {
+[data-slot='composer'][data-phone-capsule][data-phone-attachment-row] button[data-phone-attachment] {
   grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 52px;
 }
 [data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-send] { margin-bottom: 4px; }
-[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; padding-right: 48px; }
-[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-multiline] button[data-phone-attachment] { margin-bottom: 56px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; padding-right: var(--phone-composer-actions-gutter); }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-attachment-row] button[data-phone-attachment] { margin-bottom: 56px; }
 [data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }

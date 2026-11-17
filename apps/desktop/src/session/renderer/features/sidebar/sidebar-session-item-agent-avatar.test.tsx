@@ -58,6 +58,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { navigation: { currentViewId: 'chat', viewParamsStore: {} } },
   sidebarStore: {
     remoteSession: () => undefined,
+    rowOfSession: () => 'project-row',
     agentNameOnHoverEnabled: false,
     launchedByAssistant: () => false,
     nestedProjectLabel: () => null,

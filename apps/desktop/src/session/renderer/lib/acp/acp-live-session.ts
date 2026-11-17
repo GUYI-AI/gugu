@@ -212,7 +212,7 @@ export class AcpLiveSession {
     return this.client.setPromptDraft({ sessionId: this.sessionId, draft });
   }
 
-  setModelOption(dimension: 'model' | 'effort', value: string): Promise<Result<LiveSettingResult, unknown>> {
+  setModelOption(dimension: 'model' | 'effort' | 'fast', value: string): Promise<Result<LiveSettingResult, unknown>> {
     return this.client.setModelOption({ sessionId: this.sessionId, dimension, value });
   }
 

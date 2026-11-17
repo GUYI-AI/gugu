@@ -52,7 +52,7 @@ describe('an App browser open keeps the host-stamped source', () => {
       projects.set('project', { mountedProject: { sessionManager: { sessions: new Map([['task', { viewModel: view }]]) } } });
       // The bridge delivers the original page identity after the person has focused B.
       await Promise.resolve();
-      await applyExtensionHostAction({ origin: { extensionId: 'app', sessionId: 'task', tabId }, action: { kind: 'openBrowserTab', url: 'https://example.com/from-a' } });
+      await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'app', sessionId: 'task', tabId }, action: { kind: 'openBrowserTab', url: 'https://example.com/from-a' } });
       expect(source.entries.get(tabId)).toMatchObject({ kind: 'browser', state: { initialUrl: 'https://example.com/from-a' } });
       expect(source.navigationOf(tabId)?.pages).toHaveLength(2);
       expect(other.snapshot).toEqual(otherBefore);
@@ -60,7 +60,7 @@ describe('an App browser open keeps the host-stamped source', () => {
   });
 
   it('preserves the no-session shell refusal', () => {
-    expect(() => applyExtensionHostAction({ origin: { extensionId: 'app', sessionId: null, tabId: 'shell' }, action: { kind: 'openBrowserTab', url: 'https://example.com/' } })).toThrow('This session is no longer open');
+    expect(() => applyExtensionHostAction({ origin: { pageId: null, extensionId: 'app', sessionId: null, tabId: 'shell' }, action: { kind: 'openBrowserTab', url: 'https://example.com/' } })).toThrow('This session is no longer open');
   });
 });
 
@@ -83,7 +83,7 @@ describe("a click that opens the App's own page brings the task page forward", (
 });
 
 describe('showing an already-open file while its metadata is checked', () => {
-  const origin = { extensionId: 'workspace', sessionId: null, tabId: groupPageSlot('chat', 'folder') };
+  const origin = { extensionId: 'workspace', sessionId: null, tabId: groupPageSlot('chat', 'folder'), pageId: null };
   beforeEach(() => { tabs.push({ tabId: 'folder', inWindow: false, shown: true, item: { kind: 'workspace.main', title: 'Group folder' } }); });
   it('activates the existing file in a background window without resolving its link again', async () => {
     tabs[0]!.item = { kind: 'workspace.main', itemId: 'file', title: 'old' };

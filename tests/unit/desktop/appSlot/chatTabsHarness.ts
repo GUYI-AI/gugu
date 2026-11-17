@@ -4,7 +4,9 @@ import { act, createElement, Fragment } from 'react'
 import { expect } from 'vitest'
 import { GroupTabContent } from '../../../../apps/desktop/src/components/appSlot/GroupTabContent'
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
-import { askChat, openPanelItem, shownPanelTab, type ChatOpenAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile, openPanelItem, shownPanelTab, type ChatOpenAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
+import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
 import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
@@ -16,14 +18,17 @@ export interface ChatTabsProps {
   mobile?: boolean
   visible?: boolean
   onForward?: (message: MessageItem) => void
+  /** The chat's `openWith`, as an App's page beside it calls it (its list's click). */
+  exposeOpenWith?: (openWith: ReturnType<typeof useChatOpener>['openWith']) => void
 }
 
 /**
  * What ChatAreaPanel draws of a chat's tabs, without the rest of it: the chat's opener (its overlay — the open-with pick,
  * an App's files, a file that cannot open) and the panel tab on screen, as one tab of the strip shows it.
  */
-export const ChatTabs = observer(function ChatTabs({ chatId, tabbed = false, mobile = false, visible, onForward }: ChatTabsProps) {
+export const ChatTabs = observer(function ChatTabs({ chatId, tabbed = false, mobile = false, visible, onForward, exposeOpenWith }: ChatTabsProps) {
   const opener = useChatOpener(chatId)
+  exposeOpenWith?.(opener.openWith)
   const tab = shownPanelTab(chatId)
   return createElement(Fragment, null, opener.overlay, tab
     ? createElement(GroupTabContent, { key: tab.tabId, chatId, tabId: tab.tabId, item: tab.item, tabbed, inWindow: tab.inWindow, mobile, visible, onForward, onOpenWith: opener.openWith })
@@ -70,4 +75,22 @@ export async function expectSharedPackagesLive(render: (node: ReturnType<typeof 
   } finally {
     sharedCards.answer = async () => []
   }
+}
+
+/** The shell's link handling as MainLayout wires it, over the chat's tabs: a file link asks the host once, then the chat. */
+const LinkShell = observer(function LinkShell(props: ChatTabsProps) {
+  useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: props.chatId, kind: 'group' }] as never, contacts: () => [],
+    openChat() {}, openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
+    openFile: (chatId, target, source, opener) => askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...source }),
+  })
+  return createElement(ChatTabs, props)
+})
+export const linkShell = (props: ChatTabsProps, userId = 'user-1') =>
+  createElement(AuthContext.Provider, { value: { user: { id: userId } } as never }, createElement(LinkShell, props))
+
+/** A pill (a file link, at a place) clicked — in a message (`message`: its waiting tab opens there at once) or not. */
+export function pill(itemId: string, at?: Record<string, string>, message?: MessageItem): Promise<unknown> {
+  const opened = openLinkTarget({ kind: 'file', itemId, ...(at ? { at } : {}) }, message ? { message } : {})
+  void opened.catch(() => undefined)
+  return opened
 }

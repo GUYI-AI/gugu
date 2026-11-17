@@ -184,8 +184,8 @@ describe('Topics menu row actions', () => {
   it('marks the right-clicked topic read through the shared row menu', async () => {
     save([])
     await openRowMenu('new')
-    expect([...document.querySelectorAll('[data-testid^="conversation-row-"], [data-testid="chat-row-mark-all-read"]')].map((item) => item.getAttribute('data-testid')))
-      .toEqual(['conversation-row-mark-read', 'chat-row-mark-all-read'])
+    expect([...document.querySelectorAll('[data-testid^="conversation-row-"], [data-testid="conversation-row-mark-topics-read"]')].map((item) => item.getAttribute('data-testid')))
+      .toEqual(['conversation-row-mark-read', 'conversation-row-mark-topics-read'])
     await clickElement(document.querySelector<HTMLElement>('[data-testid="conversation-row-mark-read"]')!)
     await vi.waitFor(() => expect(marked.scopes).toEqual([['new']]))
   })
@@ -193,7 +193,7 @@ describe('Topics menu row actions', () => {
   it('marks every topic of this group read, not the group line or other groups', async () => {
     save([])
     await openRowMenu('new')
-    await clickElement(document.querySelector<HTMLElement>('[data-testid="chat-row-mark-all-read"]')!)
+    await clickElement(document.querySelector<HTMLElement>('[data-testid="conversation-row-mark-topics-read"]')!)
     await vi.waitFor(() => expect(marked.scopes.map((ids) => [...ids].sort())).toEqual([['new', 'old']]))
   })
 })

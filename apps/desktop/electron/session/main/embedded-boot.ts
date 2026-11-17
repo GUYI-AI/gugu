@@ -1895,7 +1895,7 @@ export async function openAllEmdashProjects(): Promise<void> {
       sessionBootTasks.record('project-open', project.id, result.reason)
     } else if (!result.value.success) {
       sessionBootTasks.record('project-open', project.id, result.value.error)
-    } else sessionBootTasks.clear('project-open', project.id)
+    }
   })
 }
 

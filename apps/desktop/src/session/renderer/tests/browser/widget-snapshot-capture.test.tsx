@@ -51,7 +51,7 @@ it('saves the trailing input after the two-second capture interval and refuses a
   await Promise.resolve()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const send = (channel: string) => guest.dispatchEvent(Object.assign(new Event('ipc-message'), { channel, args: [] }))
-  act(() => send('gugu-widget-painted'))
+  act(() => send('gugu-page-painted'))
   await vi.advanceTimersByTimeAsync(0)
   expect(saved.capture).toHaveBeenCalledTimes(1)
   await vi.advanceTimersByTimeAsync(250)

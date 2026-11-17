@@ -113,6 +113,8 @@ export const REMOTE_SHELL_CHANNELS: ReadonlySet<string> = new Set([
   SESSION_SHELL_CHANNELS.agentNames,
   SESSION_SHELL_CHANNELS.ensureAgentAddress,
   SESSION_SHELL_CHANNELS.sessionPeers,
+  SESSION_SHELL_CHANNELS.birthGroupJoin,
+  SESSION_SHELL_CHANNELS.retryBirthGroupJoin,
 ]);
 
 let shellLookup: ((channel: string) => HostHandler | undefined) | null = null;

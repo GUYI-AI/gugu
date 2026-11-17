@@ -24,6 +24,10 @@ export const SESSION_SHELL_CHANNELS = {
   /** 会话页资产没载入 = 应用级顶级错误,交给壳 fail loud。 */
   fatalBoot: 'sessionpage:fatal-boot',
   sessionPeers: 'sessionpage:session-peers',
+  /** The birth chat this session's agent has not joined (null = none pending). */
+  birthGroupJoin: 'sessionpage:birth-group-join',
+  /** Try that join again; answers what is still pending (null = joined, or the group queued it for approval). */
+  retryBirthGroupJoin: 'sessionpage:retry-birth-group-join',
 } as const
 
 export type SessionShellChannel = (typeof SESSION_SHELL_CHANNELS)[keyof typeof SESSION_SHELL_CHANNELS]
@@ -88,6 +92,12 @@ export interface SessionShellAgentAddressInput {
   sessionId: string
 }
 
+/** An agent born in a chat that could not join it: which chat, and the database's answer. */
+export interface SessionShellBirthGroupJoin {
+  chatId: string
+  reason: string
+}
+
 export interface SessionShellAgentAddress {
   chatId: string
   agentUserId: string
@@ -108,6 +118,8 @@ export interface SessionShellPort {
   fatalBoot(message: string): Promise<void>
   /** 这台机器上有咕咕身份的会话(名册那一份);别的机器上的从会话目录读,❌ 经这一口逐台去问。 */
   sessionPeers(sessionId?: string): Promise<SessionShellPeer[]>
+  birthGroupJoin(sessionId: string): Promise<SessionShellBirthGroupJoin | null>
+  retryBirthGroupJoin(sessionId: string): Promise<SessionShellBirthGroupJoin | null>
 }
 
 export type SessionShellInvoke = (channel: string, ...args: unknown[]) => Promise<unknown>
@@ -152,6 +164,12 @@ function agentNames(value: unknown): SessionShellAgentName[] {
   })
 }
 
+function birthGroupJoinOrNull(value: unknown): SessionShellBirthGroupJoin | null {
+  const join = value as Partial<SessionShellBirthGroupJoin> | null | undefined
+  if (!join?.chatId) return null
+  return { chatId: join.chatId, reason: join.reason ?? '' }
+}
+
 function cardOrNull(value: unknown): SessionShellAgentCard | null {
   const card = value as Partial<SessionShellAgentCard> | null | undefined
   if (!card?.agentUserId) return null
@@ -174,6 +192,9 @@ export function createSessionShellPort(invoke: SessionShellInvoke): SessionShell
     },
     // 只答本机(同一个构建的主进程);那边对不一致的名册已经响亮地抛错,❌ 这里再定一条悄悄丢行的规矩。
     sessionPeers: async (...args) => (await invoke(SESSION_SHELL_CHANNELS.sessionPeers, ...args)) as SessionShellPeer[],
+    birthGroupJoin: async (sessionId) => birthGroupJoinOrNull(await invoke(SESSION_SHELL_CHANNELS.birthGroupJoin, sessionId)),
+    retryBirthGroupJoin: async (sessionId) =>
+      birthGroupJoinOrNull(await invoke(SESSION_SHELL_CHANNELS.retryBirthGroupJoin, sessionId)),
   }
 }
 
@@ -188,6 +209,8 @@ const ANSWER_BY_CHANNEL: Record<SessionShellChannel, keyof SessionShellPort> = {
   [SESSION_SHELL_CHANNELS.ensureAgentAddress]: 'ensureAgentAddress',
   [SESSION_SHELL_CHANNELS.fatalBoot]: 'fatalBoot',
   [SESSION_SHELL_CHANNELS.sessionPeers]: 'sessionPeers',
+  [SESSION_SHELL_CHANNELS.birthGroupJoin]: 'birthGroupJoin',
+  [SESSION_SHELL_CHANNELS.retryBirthGroupJoin]: 'retryBirthGroupJoin',
 }
 
 /**

@@ -1,4 +1,4 @@
-// message_send_file { file }:群文件夹里已有的文件按引用发成附件卡片(不传字节、不建条目);{ file, file_path }:改过的文件发成
+// message_send { file }:群文件夹里已有的文件按引用发成附件卡片(不传字节、不建条目);{ file, file_path }:改过的文件发成
 // 它的下一版(?v= 是起点版本,服务端用它判冲突)。agent 在投递、历史和下载回执里读到的是同一个 gugu-file 链接。
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,6 +32,7 @@ function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response) {
   const fetch = (async (url: string, init?: RequestInit) => {
     if (url.endsWith('/attachments/upload')) return new Response(JSON.stringify({ staging_key: 'staging/o/1', url: 'https://oss.test/', fields: {}, max_bytes: 25 * 1024 * 1024 }))
     if (url === 'https://oss.test/') { uploads.push(((init?.body as FormData).get('file') as File).name); return new Response(null, { status: 204 }) }
+    if (url.endsWith('/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     const args = JSON.parse(String(init?.body)) as Record<string, unknown>
     if (url.endsWith('/attachments/share')) {
       shares.push(args)
@@ -56,10 +57,10 @@ function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response) {
   return { deps, rpcs, commits, uploads, shares }
 }
 
-describe('message_send_file by reference', () => {
+describe('message_send with a file, by reference', () => {
   test('file alone: one attachments/share call pinned to that version, no upload, no commit; the receipt names the pinned file', async () => {
     const { deps, shares, commits, uploads } = makeDeps()
-    const receipt = JSON.parse(await callTool('message_send_file', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=1` }, deps))
+    const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=1` }, deps))
     expect(shares).toHaveLength(1)
     expect(shares[0]).toMatchObject({ item_id: ITEM, version: 1, chat_id: CHAT, sender_user_id: 'agent-1', to_user_ids: [] })
     expect(String(shares[0]!.message_id)).toMatch(/^[0-9a-f-]{36}$/)
@@ -71,7 +72,7 @@ describe('message_send_file by reference', () => {
   test('file without a version (or a bare item id) sends its current version', async () => {
     for (const file of [`gugu-file://${ITEM}`, ITEM]) {
       const { deps, shares } = makeDeps()
-      const receipt = JSON.parse(await callTool('message_send_file', { chat_id: CHAT, file }, deps))
+      const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file }, deps))
       expect(shares[0]).toMatchObject({ item_id: ITEM, version: null })
       expect(receipt.file).toBe(`gugu-file://${ITEM}?v=2`)
     }
@@ -79,7 +80,7 @@ describe('message_send_file by reference', () => {
 
   test('file + file_path: the upload is committed as that file\'s next version from ?v=, the receipt pins the new version', async () => {
     const { deps, shares, commits, uploads } = makeDeps()
-    const receipt = JSON.parse(await callTool('message_send_file', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=2`, file_path: localFile }, deps))
+    const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=2`, file_path: localFile }, deps))
     expect(uploads).toEqual(['GLM_Agent.pptx'])
     expect(commits).toHaveLength(1)
     expect(commits[0]).toMatchObject({ chat_id: CHAT, sender_user_id: 'agent-1', item_id: ITEM, expected_version: 2 })
@@ -89,16 +90,40 @@ describe('message_send_file by reference', () => {
 
   test('keep: the commit carries how long the uploaded copy stays; not given, no keep is sent', async () => {
     const temporary = makeDeps()
-    await callTool('message_send_file', { chat_id: CHAT, file_path: localFile, temporary: true }, temporary.deps)
+    await callTool('message_send', { chat_id: CHAT, file_path: localFile, temporary: true }, temporary.deps)
     expect(temporary.commits[0]).toMatchObject({ keep: 'temporary' })
     const plain = makeDeps()
-    await callTool('message_send_file', { chat_id: CHAT, file_path: localFile }, plain.deps)
+    await callTool('message_send', { chat_id: CHAT, file_path: localFile }, plain.deps)
     expect(plain.commits[0]).not.toHaveProperty('keep')
+  })
+
+  // MCP surface review 11-16: one send for text and files — the text goes with the file as its caption, in one message,
+  // through the same gates (members, rules, addressing) as a text message.
+  test('file with text: one message, the text as its caption, the reply and its addressing carried by the file message', async () => {
+    const { deps, shares, commits } = makeDeps()
+    deps.restRpc = (async (name: string) => {
+      if (name === 'message_history_as') return [{ id: 'source-message', seq: 5, sender_user_id: 'peer-1', is_whisper: false }]
+      if (name === 'chat_facts') return [{ id: CHAT, kind: 'group', source_chat_id: null, group_prompt: null }]
+      if (name === 'list_member_ids') return [{ user_id: 'agent-1', role: 'member' }, { user_id: 'peer-1', role: 'member' }]
+      return null
+    }) as never
+    const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=1`, text: 'the deck, updated', reply_to_message_id: 'msg:source-message' }, deps))
+    expect(commits).toEqual([])
+    expect(shares).toHaveLength(1)
+    expect(shares[0]).toMatchObject({ item_id: ITEM, caption: 'the deck, updated', reply_to_message_id: 'source-message', to_user_ids: ['peer-1'] })
+    expect(receipt).toMatchObject({ status: 'sent', file_name: 'GLM_Agent.pptx' })
+  })
+
+  test('file_path with text: the commit carries the caption', async () => {
+    const { deps, commits } = makeDeps()
+    await callTool('message_send', { chat_id: CHAT, file_path: localFile, text: 'here it is' }, deps)
+    expect(commits).toHaveLength(1)
+    expect(commits[0]).toMatchObject({ caption: 'here it is', file_name: 'GLM_Agent.pptx' })
   })
 
   test('file_path alone: as before — a new file, no item_id in the commit', async () => {
     const { deps, commits } = makeDeps()
-    await callTool('message_send_file', { chat_id: CHAT, file_path: localFile }, deps)
+    await callTool('message_send', { chat_id: CHAT, file_path: localFile }, deps)
     expect(commits).toHaveLength(1)
     expect(commits[0]).not.toHaveProperty('item_id')
     expect(commits[0]).not.toHaveProperty('expected_version')
@@ -106,10 +131,10 @@ describe('message_send_file by reference', () => {
 
   test('refused before any upload: a next version without the version it starts from; neither file nor file_path; a file that is not a folder link', async () => {
     const { deps, commits, uploads, shares } = makeDeps()
-    await expect(callTool('message_send_file', { chat_id: CHAT, file: `gugu-file://${ITEM}`, file_path: localFile }, deps))
+    await expect(callTool('message_send', { chat_id: CHAT, file: `gugu-file://${ITEM}`, file_path: localFile }, deps))
       .rejects.toThrow(`gugu-file://${ITEM}?v=<n>`)
-    await expect(callTool('message_send_file', { chat_id: CHAT }, deps)).rejects.toThrow(/give file .*file_path/)
-    await expect(callTool('message_send_file', { chat_id: CHAT, file: 'https://example.test/deck.pptx' }, deps)).rejects.toThrow(/gugu-file:\/\/<item_id>\?v=<n>/)
+    await expect(callTool('message_send', { chat_id: CHAT }, deps)).rejects.toThrow(/give text, a file \(file \/ file_path\), or both/)
+    await expect(callTool('message_send', { chat_id: CHAT, file: 'https://example.test/deck.pptx' }, deps)).rejects.toThrow(/gugu-file:\/\/<item_id>\?v=<n>/)
     expect(uploads).toEqual([])
     expect(commits).toEqual([])
     expect(shares).toEqual([])
@@ -117,7 +142,7 @@ describe('message_send_file by reference', () => {
 
   test('a newer version stored since: says what to do and that nothing was sent', async () => {
     const { deps } = makeDeps(() => new Response(JSON.stringify({ error: 'version_conflict', message: 'workspace item x version conflict: expected 2, got 3' }), { status: 409 }))
-    await expect(callTool('message_send_file', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=2`, file_path: localFile }, deps))
+    await expect(callTool('message_send', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=2`, file_path: localFile }, deps))
       .rejects.toThrow(/newer version .* since version 2, and nothing was sent/)
   })
 })
@@ -140,8 +165,8 @@ describe('the folder file an agent reads', () => {
 
   test('the line names the file, the call that shows it again and the call that sends a change as its next version', () => {
     const line = attachmentFolderLine(ITEM, 2)
-    expect(line).toContain(`message_send_file {file: "gugu-file://${ITEM}?v=2"}`)
-    expect(line).toContain(`message_send_file {file: "gugu-file://${ITEM}?v=2", file_path}`)
+    expect(line).toContain(`message_send {file: "gugu-file://${ITEM}?v=2"}`)
+    expect(line).toContain(`message_send {file: "gugu-file://${ITEM}?v=2", file_path}`)
     expect(line).toMatch(/next version, never as a new attachment/)
   })
 })

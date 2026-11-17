@@ -16,9 +16,11 @@ import { assertIdentityClosure } from './identityClosure'
 import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { rendererLogger } from './log'
 import { initializeMessages, ingestMessages } from './messageIngest'
+import { messageWindow } from './messageWindows'
 import { platform } from '../platform'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
+import { captureMessagePosition, inferMessagePosition, orderMessages } from '@gugu/core/shared/ui/messageTimeline'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
 import {
   IM_STORE_NAMES,
@@ -66,7 +68,7 @@ export type OutboxOperation =
 export interface OutboxRecord {
   /** Missing on older durable text records. */
   operation?: OutboxOperation
-  preview?: Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'file_metadata' | 'image_dimensions' | 'send_group_id' | 'send_group_size'>
+  preview?: Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'file_metadata' | 'image_dimensions' | 'send_group_id' | 'send_group_size' | 'local_timeline'>
   clientMessageId: string
   chatId: string
   senderUserId: string
@@ -154,14 +156,10 @@ export const imSelectors = {
   chatRowsById: fromTable('chat', (rows) => new Map(rows.map(row => [row.id, row.value]))),
   membershipsForChat: (chatId: string) => fromTable('membership', (rows) =>
     rows.filter((row) => row.chatId === chatId)),
-  messagesForChat: (chatId: string) => fromTable('message', (rows) => rows
-    .filter((row) => row.chatId === chatId)
-    .sort((a, b) => a.seq - b.seq || a.id.localeCompare(b.id))
-    .map((row) => row.value)),
-  messagesForStream: (streamId: string) => fromTable('message', (rows) => rows
-    .filter((row) => row.streamId === streamId)
-    .sort((a, b) => a.seq - b.seq || a.id.localeCompare(b.id))
-    .map((row) => row.value)),
+  messagesForChat: (chatId: string) => fromTable('message', (rows) => orderMessages(rows
+    .filter((row) => row.chatId === chatId).map((row) => row.value))),
+  messagesForStream: (streamId: string) => fromTable('message', (rows) => orderMessages(rows
+    .filter((row) => row.streamId === streamId).map((row) => row.value))),
   presence: (snapshot: ImRepositorySnapshot) => snapshot.presence,
   outbox: (snapshot: ImRepositorySnapshot) => snapshot.outbox
     .map((row) => row.value)
@@ -374,6 +372,8 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
       const chatId = nonEmpty(value.chat_id, 'message.chatId')
       const root = value.thread_root_id ?? null
       const streamId = messageStreamId(value)
+      const position = stored.message.find(row => row.id === value.id && row.chatId === chatId)?.value.local_timeline
+      if (position) value = { ...value, local_timeline: position }
       put('stream', { accountId, id: streamId, chatId, kind: root ? 'thread' : 'main', rootMessageId: root })
       put('message', { accountId, id: nonEmpty(value.id, 'message.id'), chatId, streamId, seq: value.seq, value })
     },
@@ -655,6 +655,14 @@ export function readOutboxRecords(repository: AccountImRepository): OutboxRecord
 }
 
 export async function putOutboxRecord(repository: AccountImRepository, record: OutboxRecord): Promise<void> {
+  const snapshot = repository.snapshot()
+  const previous = snapshot.outbox.find(row => row.id === record.clientMessageId)?.value
+  const held = previous?.preview?.local_timeline ?? record.preview?.local_timeline
+  const root = record.payload.threadRootId ?? null
+  const rows = messageWindow(repository.accountId, record.chatId, root)
+    ?? imSelectors.messagesForStream(root ? `thread:${record.chatId}:${root}` : `main:${record.chatId}`)(snapshot)
+  record.preview = { ...record.preview, local_timeline: held ?? (previous
+    ? inferMessagePosition(rows, record.enqueuedAt) : captureMessagePosition(rows, record.enqueuedAt)) }
   await repository.transaction((transaction) => transaction.putOutbox(record))
 }
 
@@ -666,14 +674,17 @@ export async function ackOutboxRecord(
   repository: AccountImRepository,
   clientMessageId: string,
   message: MessageItem,
-): Promise<void> {
+): Promise<MessageItem> {
   if (message.id !== clientMessageId) throw new Error(`outbox ack id mismatch: ${clientMessageId} != ${message.id}`)
+  const position = repository.snapshot().outbox.find(row => row.id === clientMessageId)?.value.preview?.local_timeline
+  if (position) message = { ...message, local_timeline: position }
   await ingestMessages(repository.accountId, { writes: [{ type: 'put', message }], revisions: [] })
   // applyOperations re-derives the cached window bounds from the committed main stream.
   await repository.transaction((transaction) => {
     if (platform.localMessages !== 'sqlite') transaction.putMessage(message)
     transaction.delete('outbox', [repository.accountId, clientMessageId])
   })
+  return message
 }
 
 function emptyScheduler(chatId: string): GroupSchedulerState {

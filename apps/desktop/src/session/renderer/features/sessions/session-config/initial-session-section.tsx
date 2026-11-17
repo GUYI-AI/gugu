@@ -1,5 +1,5 @@
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
+import { agentAccessMethods, agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@shared/core/sessions/new-session-defaults';
 import {
@@ -75,8 +75,11 @@ import {
   harnessCatalogToOptions,
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
+import { agentOffersFastMode, draftFastMode } from './fast-mode';
+import { renderFastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
+import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
@@ -230,7 +233,7 @@ export type InitialSessionState = {
    * 而它又必须**排在清单最前**:owner 2026-08-28 实测放末尾时它躺在咕咕那十几个模型下面,
    * 「我翻了半天才找到」。
    */
-  harnessModelUnlock: { groupLabel: string; label: string; title: string } | null;
+  harnessModelUnlock: { groupLabel: string; label: string; title: string; detail?: string } | null;
   /**
    * 选中的平台模型 id,null = 用 harness 自家模型(纯 BYOK)。
    * composer 是会话的唯一决策点:这里为 null 就不注入平台环境,即使 agent 级 model_access
@@ -247,6 +250,8 @@ export type InitialSessionState = {
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
+  fastMode?: boolean;
+  setFastMode?: (enabled: boolean) => void;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
@@ -545,6 +550,7 @@ export function useInitialSessionState(
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>(
     () => (handed?.model ? { [handed.provider]: handed.model } : {})
   );
+  const [fastModeDraft, setFastModeDraft] = useState(false);
   // 每个 provider 一格三态:平台模型 id / null(明确选了 harness)/ 缺席(还没表过态)。
   // 缺席与 null 必须分得开 —— 前者才轮得到 agent 级默认值说话。
   const [platformModelOverrides, setPlatformModelOverrides] = useState<
@@ -1004,6 +1010,9 @@ export function useInitialSessionState(
   // 按这条腿的程序判(#6335,`resolveLegLoginGate`):主程序那一路仍是「目录 auth-required 且声明了登录」。
   const harnessSignIn = legLoginGate.signIn ? openAgentAccount : null;
   // 同一个判据算两次没有意义:能去登录才给入口,不能去就一个字都不画(控件要么真生效要么不渲染)。
+  const accessMethodsLine = agentAccessMethods(agents?.find((agent) => agent.id === providerId))
+    .map((method) => translate(`harnessCatalog.access.${method}`))
+    .join(' / ');
   const harnessModelUnlock = harnessSignIn
     ? {
         // 这三格构成模型清单**里**的一组(组头 + 一条可点的动作),用户点开清单挑模型时才看见。
@@ -1020,6 +1029,8 @@ export function useInitialSessionState(
               label: translate('harnessCatalog.unlockModels', { name: agentDisplayName }),
               title: translate('harnessCatalog.unlockModelsHint', { name: agentDisplayName }),
             }),
+        // Second line: the connection panel's own ways in.
+        detail: accessMethodsLine,
       }
     : null;
   // 一行说明,不是弹窗也不是阻断:分组为什么不在,用户有权知道 —— 主进程给原因码,这里翻成人话。
@@ -1103,6 +1114,11 @@ export function useInitialSessionState(
     : modelOverride && modelOptions?.[modelOverride]
       ? modelOverride
       : resolvedDefaultModel;
+  const targetFastCatalog = useTargetModelCatalog(
+    !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
+    sessionpageSurface,
+    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== model ? model : null,
+  );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
   const modelEfforts = resolveCreateEfforts({
@@ -1210,6 +1226,7 @@ export function useInitialSessionState(
     modelKnown,
     provider: providerId,
     setProvider: (next) => {
+      setFastModeDraft(false);
       setProviderOverride(next);
       // 点一下就记住 —— ❌ 不等到「发送成功」:用户点完换个页面是常态,而那时还没有会话可记。
       if (next && !editingStoredRecord) updateMemory({ lastPicked: next });
@@ -1228,6 +1245,7 @@ export function useInitialSessionState(
     setIssueContextEditorOpen,
     model,
     setModel: (nextModel) => {
+      setFastModeDraft(false);
       if (!providerId) return;
       // 选 harness 模型同时就是「这条会话不上平台」的表态,agent 级默认值不再回来顶掉它。
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: null }));
@@ -1254,12 +1272,15 @@ export function useInitialSessionState(
     connectionPanel: connections.panel,
     harnessModelUnlock,
     setPlatformModel: (nextModel) => {
+      setFastModeDraft(false);
       if (!providerId) return;
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: nextModel }));
     },
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
       if (!effortKey) return;
@@ -1803,6 +1824,9 @@ export function InitialSessionField({
           effortOptions={state.effortOptions}
           selectedEffort={state.effort ?? undefined}
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
+          fastMode={state.fastMode}
+          onFastModeChange={state.setFastMode}
+          renderFastModeHint={renderFastModeHint}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={permissionModeOptions}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}

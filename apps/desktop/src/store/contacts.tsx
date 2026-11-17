@@ -11,7 +11,6 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { ContactsContext, ContactsHandleContext, type ContactsContextValue, type ContactsLoadStatus } from './contactsContext'
 import { createSelectStore } from '../lib/selectStore'
 import type { ContactGroup, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
-import { platform } from '../platform'
 import { readRequiredDisplayIdentities } from '../lib/identityReadAdapter'
 import type { DisplayIdentity } from '../lib/displayIdentity'
 import { managedGroupChats, type ManagedGroupJoinRequest } from '../lib/groupJoinRequests'
@@ -22,6 +21,8 @@ import { recordContactsRender } from '../lib/perfCounters'
 import { myAssistant } from '../lib/myAssistant'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
+import { renameOwnedAgent } from '../lib/archiveOwnedAgent'
+import { i18n } from '../i18n'
 
 const NO_RELATIONS: ContactRelation[] = []
 const NO_GROUPS: ContactGroup[] = []
@@ -226,46 +227,51 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const applyAgentProfileUpdate = useCallback(async (updated: ContactUser) => (await getImRepository()).putIdentities([updated]), [getImRepository])
 
   // #1228: update an owned agent's name + bio together (真接 bio — was dropped before).
+  // The name is the agent's task name. A task on this device is renamed on its host (renameOwnedAgent, the same rename the
+  // tab and the sidebar make), which publishes it and tells the agent; a task elsewhere (maybe off) or none is renamed on
+  // the identity here, and the device running the task adopts it. Bio and avatar are the identity's own.
   const updateAgentProfile = useCallback(async (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => {
     const ownerId = userId
-    const updated = await contactsService.updateOwnedAgentProfile(agentId, {
-      ...(fields.name !== undefined ? { display_name: fields.name } : {}),
+    const name = fields.name?.trim()
+    if (fields.name !== undefined && !name) throw new Error(i18n.t('errors.nameRequired', { ns: 'contacts' }))
+    const renamedOn = name !== undefined ? await renameOwnedAgent(agentId, name) : null
+    const renamedOnHost = renamedOn !== null
+    const identityFields = {
+      ...(name !== undefined && !renamedOnHost ? { display_name: name } : {}),
       ...(fields.bio !== undefined ? { bio: fields.bio } : {}),
       ...(fields.avatar !== undefined ? { avatar: fields.avatar } : {}),
-    })
+    }
+    const updated = Object.keys(identityFields).length > 0 ? await contactsService.updateOwnedAgentProfile(agentId, identityFields) : null
+    const deviceId = updated?.device_id ?? renamedOn?.deviceId
     // Decided after the write (a failed assistant read never blocks a profile edit), ❌ guessed from what may not be read yet.
     const personal = !!ownerId && await myAssistant.fetch().then((mine) => mine.agentId === agentId, (error: unknown) => {
       rendererLogger('contacts/profile').error({ error: String(error), agentId }, 'Profile saved; whether it is the assistant could not be read, so the assistant App is not told')
       // @@@reading-default(moment) - a one-moment decision after the write: an assistant identity that cannot be read sends no App note (said in the log)
       return false
     })
-    if (personal) await reportAssistantAppChange(updated.device_id ? { rpc: machineRpc(updated.device_id) } : null, agentId, {
+    if (personal) await reportAssistantAppChange(deviceId ? { rpc: machineRpc(deviceId) } : null, agentId, {
       resource: 'assistant', operation: 'edited', id: agentId, section: fields.avatar !== undefined ? 'appearance' : 'profile',
-      ...(fields.name !== undefined ? { after: { name: updated.display_name } } : {}),
+      ...(name !== undefined ? { after: { name } } : {}),
     }, ownerId)
-    await applyAgentProfileUpdate(updated)
-    // @@@share-card-rename 云端 identity.users.display_name 是所有显示面的真源。本机花名册仍同步运行时
-    // 所需的 agent 元数据，但会话页分享/身份卡按 agentUserId 回读云端名字，不从这格渲染。
-    // 只在名字真的改了时才动本机(改 bio / 头像不该碰花名册)。
-    if (fields.name !== undefined) await platform.renameOwnedAgentLocalFootprint?.(agentId, updated.display_name)
+    if (updated) await applyAgentProfileUpdate(updated)
+    else await contactRelations.refresh()
     await refreshChats()
   }, [applyAgentProfileUpdate, refreshChats, userId])
 
-  // Every name entry uses the profile path, including its canonical identity and local roster publication.
+  // Every name entry uses the profile path (renameOwnedAgent decides where the rename is written).
   const renameAgent = useCallback(async (agentId: string, name: string) => {
     await updateAgentProfile(agentId, { name })
   }, [updateAgentProfile])
 
   const uploadAgentAvatar = useCallback(async (agentId: string, file: File, profile?: { name?: string; bio?: string }) => {
+    // The name (if any) goes the one rename way (updateAgentProfile → renameOwnedAgent); the upload carries the rest.
+    if (profile?.name !== undefined) await updateAgentProfile(agentId, { name: profile.name })
     const updated = await contactsService.uploadOwnedAgentAvatar(agentId, file, {
-      ...(profile?.name !== undefined ? { display_name: profile.name } : {}),
       ...(profile?.bio !== undefined ? { bio: profile.bio } : {}),
     })
     await applyAgentProfileUpdate(updated)
-    // 换头像这条路同样能带着新名字过来(资料页有待上传头像时走的就是它)——运行时元数据一视同仁。
-    if (profile?.name !== undefined) await platform.renameOwnedAgentLocalFootprint?.(agentId, updated.display_name)
     await refreshChats()
-  }, [applyAgentProfileUpdate, refreshChats])
+  }, [applyAgentProfileUpdate, refreshChats, updateAgentProfile])
 
   const setAgentLook = useCallback(async (agentId: string, look: AgentLook) => {
     await updateAgentProfile(agentId, { avatar: contactsService.agentLookAvatarUrl(look) })

@@ -114,7 +114,7 @@ async function runBootstrap(api: AndroidStartupMotionApi): Promise<void> {
     const handle = api.start({
       initialPhase: 'assemble', hold: true, attemptId: native.attemptId,
       palette: native.tone === 'dark'
-        ? { background: '#181818', foregroundRgb: '255,255,255' }
+        ? { background: '#0f0f0f', foregroundRgb: '255,255,255' }
         : { background: '#FFFFFF', foregroundRgb: '24,24,24' },
     })
     if (!handle) { contentReady = true; reportContent(); return }

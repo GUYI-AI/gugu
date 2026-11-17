@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { peekInstalledApps, tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
-import { ask, chatTabs, shownItem } from './chatTabsHarness'
+import { linkShell, pill, shownItem } from './chatTabsHarness'
 import { openerChoice } from '../../../../apps/desktop/src/session/shared/extensions/file-openers'
 import type { ExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
@@ -87,8 +87,8 @@ afterEach(() => {
 
 /** The panel with a link to the file asked for (摩擦单 F10): who opens it is the host's answer. */
 async function openFile() {
-  await harness.render(chatTabs({ chatId: 'group-1' }))
-  ask('group-1', { itemId: 'item-1' })
+  await harness.render(linkShell({ chatId: 'group-1' }))
+  await act(async () => { void pill('item-1') })
 }
 const offer = () => harness.container.querySelector<HTMLElement>('[data-testid="group-app-slot-offer"]')
 /** React and the pending answers flushed until `fact` holds — a bounded number of turns, never a clock; red names the step. */

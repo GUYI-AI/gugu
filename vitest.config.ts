@@ -10,6 +10,7 @@ import { emdashAliasEntries } from './apps/desktop/electron/sessionpage/emdash-a
 import { WorkerAttributionReporter } from './scripts/test-infra/vitest-worker-attribution-reporter'
 import { lockfileScopedModuleCacheDir } from './scripts/test-infra/vitest-module-cache-dir'
 import { LAZY_LANG_MODULES } from './packages/session-chat-ui/src/core/highlight/lazy-langs'
+import { pdfjsResources } from './scripts/build/pdfjs-resources.mts'
 
 // The Mac Studio CI slots all share one 32-core host, and vitest sizes its worker pool from the
 // core count of the *machine*, not of the slot. Eight slots left uncapped therefore ask for roughly
@@ -361,7 +362,7 @@ export default defineConfig({
         extends: true,
         // 这个 project 的用例会引到 chat-ui(终端/会话视图),所以同样要 Solid 的编译。
         // 它本来就跑在浏览器里,不受「solid 插件把 transformMode 设成 web」的影响。
-        plugins: [solidPlugin()],
+        plugins: [solidPlugin(), pdfjsResources()],
         // 这些依赖必须预先声明。Vite 只在启动时扫一遍依赖,跑到一半才第一次遇见的
         // 会触发重新预构建 + **整页重载** —— 页面一刷,正在跑的测试连同已挂载的 React 树
         // 一起没了,报出来的却是「找不到元素」这类离根因十万八千里的错。

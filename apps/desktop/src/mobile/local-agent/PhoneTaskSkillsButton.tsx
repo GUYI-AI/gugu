@@ -16,18 +16,22 @@ import { PhoneSheetHandle } from '../PhoneSheetHandle'
 import { useReplica, useReplicaFetching } from '@/lib/replica'
 import { importPhoneTaskSkill, phoneTaskSkills, savePhoneTaskSkills, validatePhoneTaskSkills, type PhoneTaskSkill, type PhoneTaskSkillsSnapshot } from './phoneTaskSkills'
 import './phone-task-skills.css'
+import { PhoneComposerControl } from '../composer/PhoneComposerControls'
+import { useTranslation } from 'react-i18next'
 
 const NO_SKILLS: PhoneTaskSkill[] = []
 
 /** The phone's owner configures this task through the existing trusted native UI bridge. */
-export function PhoneTaskSkills({ deviceId, sessionId, online, busy = false }: { deviceId: string; sessionId: string; online: boolean; busy?: boolean }) {
+export function PhoneTaskSkills({ deviceId, sessionId, online, busy = false, menuBar = false }: { deviceId: string; sessionId: string; online: boolean; busy?: boolean; menuBar?: boolean }) {
+  const { t } = useTranslation('mobileCreateControls')
   const ownerId = useAuth().user?.id ?? null
   const [open, setOpen] = useState(false)
   useEffect(() => setOpen(false), [ownerId, deviceId, sessionId])
   if (!ownerId || !phoneAgentAvailable() || thisPhoneDeviceId(ownerId) !== deviceId) return null
   return (
     <>
-      <IconButton size="md" aria-label="配置 Skill" title={online ? '配置 Skill' : '连接这台手机后配置 Skill'} disabled={!online} onClick={() => setOpen(true)} data-testid="phone-task-skills-open"><BookOpen /></IconButton>
+      {menuBar ? <PhoneComposerControl label={t('skills')} icon={<BookOpen />} disabled={!online} onClick={() => setOpen(true)} testId="phone-task-skills-open" />
+        : <IconButton size="md" aria-label="配置 Skill" title={online ? '配置 Skill' : '连接这台手机后配置 Skill'} disabled={!online} onClick={() => setOpen(true)} data-testid="phone-task-skills-open"><BookOpen /></IconButton>}
       {open && <PhoneSkillsManager key={`${ownerId}:${deviceId}:${sessionId}`} deviceId={deviceId} sessionId={sessionId} busy={busy || !online} onClose={() => setOpen(false)} />}
     </>
   )

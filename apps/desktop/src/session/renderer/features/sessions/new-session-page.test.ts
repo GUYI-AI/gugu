@@ -178,10 +178,9 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({
   // 会在 useTransform 里炸,而炸出来的是「读不到 .get()」这种和布局毫不相干的报错。
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
-    isLeftPeeking: false,
     leftAnimatedWidth: motionValue(260),
+    leftLayoutWidth: motionValue(260),
     setCollapsed: vi.fn(),
-    setTriggerHovered: vi.fn()
   })
 }));
 

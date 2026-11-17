@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, Folder, FolderPlus, FileText, Home, Link as LinkIcon, RefreshCw } from '@/lib/icons'
+import { ChevronRight, Folder, FolderPlus, Home, Link as LinkIcon, RefreshCw } from '@/lib/icons'
 import { deviceFsMakeDirectory } from '../lib/deviceFs'
 import type { DeviceFsEntry } from '@gugu/core/cloud/deviceFsProtocol'
 import { remoteDirectory, RemoteDirectoryError, UNREACHABLE_PATH_CODES, type RemoteDirectory } from '../lib/remoteDirectory'
 import { refreshFailure, useReplica, useReplicaFetching } from '../lib/replica'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import type { DeviceRpcError } from '../lib/deviceRpc'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
@@ -76,10 +77,10 @@ function navErrorMessage(error: NavError, t: (key: string, options?: Record<stri
   }
 }
 
-function entryIcon(kind: DeviceFsEntry['kind']) {
+function entryIcon({ kind, name }: DeviceFsEntry) {
   if (kind === 'dir') return <Folder size={14} />
   if (kind === 'symlink') return <LinkIcon size={14} />
-  return <FileText size={14} />
+  return <FileMark name={name} size={14} />
 }
 
 export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCancel }: Props) {
@@ -429,7 +430,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                   index === highlight ? 'bg-[var(--selected)]' : 'hover:bg-[var(--hover)]',
                 )}
               >
-                <span className="inline-flex text-[var(--accent)]">{entryIcon(entry.kind)}</span>
+                <span className="inline-flex text-[var(--accent)]">{entryIcon(entry)}</span>
                 <span className="truncate font-mono">{entry.name}</span>
               </li>
             ))}
@@ -540,7 +541,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                     )}
                   >
                     <span className={cn('inline-flex items-center', enterable ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]')}>
-                      {entryIcon(entry.kind)}
+                      {entryIcon(entry)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-left">{entry.name}</span>
                   </Button>

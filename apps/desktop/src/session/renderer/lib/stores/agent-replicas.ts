@@ -76,6 +76,18 @@ export const harnessModelCatalog = replica({
   refreshEvery: (lookup) => (lookup?.refreshing ? 700 : false),
 });
 
+/** Native facts for one explicitly selected model; never written into the default harness catalog. */
+export const targetModelCatalog = replica({
+  name: 'targetModelCatalog',
+  scope: 'account',
+  networkMode: 'always',
+  read: (_owner, machine: Machine, providerId: string, leg: SessionpageLeg, model: string) =>
+    rpcOn(machine).agents.targetModelCatalog(providerId, leg, model),
+  // A mounted target asks again, as the former query's refetchOnMount: 'always' did.
+  fresh: 0,
+  refreshOnFocus: false,
+});
+
 // #4956
 const credentialLog = rendererLogger('harness-model-credential');
 
@@ -135,6 +147,7 @@ export function refreshAgentReadings(machine: Machine, options: { keepStatus?: b
     managementAgent.refresh(machine),
     harnessModelCatalog.refresh(undefined, undefined, machine),
     harnessModelCredential.refresh(undefined, undefined, machine),
+    targetModelCatalog.refresh(machine),
     installSourceVersions.refresh(machine),
     agentSettings.refresh(machine),
     ...(options.keepStatus ? [] : [agentInstallationStatus.refresh(machine)]),

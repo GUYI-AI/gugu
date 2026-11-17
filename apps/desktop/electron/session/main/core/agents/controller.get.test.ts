@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   manager: { platform: 'macos', get: vi.fn(), probe: vi.fn(), isPathResolutionConsistent: vi.fn(), getHostDependency: vi.fn(), install: vi.fn() },
   ensureProbed: vi.fn(),
   buildPayload: vi.fn(),
+  targetCatalog: vi.fn(),
+  defaultCatalog: vi.fn(),
+  wireCatalog: vi.fn(),
 }));
 
 vi.mock('../dependencies/dependency-managers', () => ({
@@ -25,8 +28,8 @@ vi.mock('./session-runtime-compatibility', () => ({ clearRuntimeVersionProbeCach
 vi.mock('../dependencies/agent-update-service', () => ({ agentUpdateService: { installSourceOrder: () => [] } }));
 vi.mock('../dependencies/host-dependency-store', () => ({ hostDependencyStore: { setSelection: vi.fn() } }));
 vi.mock('../settings/provider-settings-service', () => ({ providerOverrideSettings: {} }));
-vi.mock('./harness-model-catalog', () => ({ lookupHarnessModelCatalog: vi.fn() }));
-vi.mock('./harness-model-catalog-wiring', () => ({ wireHarnessModelCatalog: vi.fn() }));
+vi.mock('./harness-model-catalog', () => ({ lookupHarnessModelCatalog: mocks.defaultCatalog, probeHarnessModelCatalog: mocks.targetCatalog }));
+vi.mock('./harness-model-catalog-wiring', () => ({ wireHarnessModelCatalog: mocks.wireCatalog }));
 
 import { agentsController } from './controller';
 import { hasAgentInstallsInProgress } from './install-progress-ledger';
@@ -36,9 +39,23 @@ import { setPlatformModelGate } from './platform-model-catalog-hook';
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.manager.isPathResolutionConsistent.mockResolvedValue(false);
+  mocks.ensureProbed.mockResolvedValue(undefined);
 });
 
 describe('single registered harness queries', () => {
+  it('reads the exact selected model without replacing the default catalog', async () => {
+    const catalog = { kind: 'ready', selected: 'other-native-model', models: [], efforts: [], selectedEffort: null };
+    mocks.targetCatalog.mockResolvedValue(catalog);
+    await expect(agentsController.targetModelCatalog('codex', 'acp', 'other-native-model')).resolves.toBe(catalog);
+    expect(mocks.targetCatalog).toHaveBeenCalledExactlyOnceWith('codex', 'acp', 'other-native-model');
+    expect(mocks.defaultCatalog).not.toHaveBeenCalled();
+    expect(mocks.wireCatalog).toHaveBeenCalledOnce();
+    expect(mocks.ensureProbed).toHaveBeenCalledWith(mocks.manager);
+  });
+  it('rejects an empty target instead of probing the default model', async () => {
+    await expect(agentsController.targetModelCatalog('codex', 'acp', '')).rejects.toThrow('A target model is required');
+    expect(mocks.targetCatalog).not.toHaveBeenCalled();
+  });
   it.each(['success', 'failure', 'throw', 'cancel'] as const)('releases installation activity on %s', async outcome => {
     const pending = Promise.withResolvers<{ success: boolean; error?: { type: 'cancelled' } }>();
     mocks.manager.install.mockReturnValue(pending.promise);

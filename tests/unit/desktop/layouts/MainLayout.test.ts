@@ -73,16 +73,24 @@ function acceptMockFilePanel(event: Event) {
 }
 beforeEach(() => window.addEventListener(UI_EVENTS.chatAsked, acceptMockFilePanel))
 afterEach(() => window.removeEventListener(UI_EVENTS.chatAsked, acceptMockFilePanel))
+/** The chat a file is in, as the host answers a file link (`groupFileOpener`): the one resolution a link makes. */
 const fileOwner = vi.hoisted(() => vi.fn())
+const fileAnswer = (itemId: string, chatId: string) => ({ chatId, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, choice: { kind: 'none' } })
+vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', async (original) => {
+  const actual = await original<typeof import('../../../../apps/desktop/src/components/appSlot/appsHere')>()
+  return { ...actual, appsHere: { ...actual.appsHere, groupFileOpener: async ({ itemId }: { itemId: string }) => {
+    const { data } = await fileOwner(itemId)
+    return data ? { success: true, data: fileAnswer(itemId, data.chat_id) } : { success: false, error: 'No such file in this chat' }
+  } } }
+})
+// A link's file is the host's to find: the renderer does not read workspace_items for it.
 vi.mock('../../../../apps/desktop/src/lib/supabase', async (original) => {
   const actual = await original<typeof import('../../../../apps/desktop/src/lib/supabase')>()
   return { ...actual, chatDb: new Proxy(actual.chatDb, { get(client, key) {
     if (key !== 'from') return Reflect.get(client, key)
     return (table: string) => {
-      if (table !== 'workspace_items') return client.from(table)
-      let id = ''
-      const query = { select: () => query, eq: (_key: string, value: string) => { id = value; return query }, maybeSingle: () => fileOwner(id) }
-      return query
+      if (table === 'workspace_items') throw new Error('a file link read workspace_items in the renderer')
+      return client.from(table)
     }
   } }) }
 })
@@ -1221,7 +1229,7 @@ describe('MainLayout: files.openWith', () => {
     if (blocks) expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('source', false, 'resource')
     else expect(chatStoreMock.setActiveChatId).toHaveBeenCalledWith('source')
     expect(drainTopicSplitRequest('source')).toBeNull()
-    expect(takeChatAsk('source')).toEqual({ itemId: 'F1', restore })
+    expect(takeChatAsk('source')).toEqual({ itemId: 'F1', opener: fileAnswer('F1', 'topic-file'), restore })
     expect(takeChatAsk('topic-file')).toBeNull()
   })
 
@@ -1241,7 +1249,7 @@ describe('MainLayout: files.openWith', () => {
     const restore = vi.fn()
     fileOwner.mockResolvedValue({ data: { chat_id: 'g-open' }, error: null })
     await act(async () => { await openLinkTarget({ kind: 'file', itemId: 'F1' }, { message: message as never, restore }) })
-    expect(takeChatAsk('g-open')).toEqual({ itemId: 'F1', message, restore })
+    expect(takeChatAsk('g-open')).toEqual({ itemId: 'F1', opener: fileAnswer('F1', 'g-open'), message, restore })
   })
 
   it('a chat the person is not in: said, and nothing asked of any panel', async () => {
@@ -1273,7 +1281,33 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
     expect(sessionPageViewRequests.openChat).toHaveBeenCalledExactlyOnceWith(chatId, false, 'resource')
     expect(openNativeConversation).not.toHaveBeenCalled()
   }
-  expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', message: source })
+  // Its waiting page was asked of the message's chat first: the answer turns that page into the file.
+  expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: { ...fileAnswer('F1', chatId), wait: expect.any(String) }, message: source })
+})
+
+// An agent's file goes up beside its task (which may take a while): the host refusing it before that leaves no waiting
+// ask behind for the task page to open later.
+it.each(['owned', 'group'] as const)('a %s file the host refuses: nothing is left waiting in its chat', async kind => {
+  const chatId = 'refused-file-chat'
+  const source = message({ id: 'receipt-refused', chat_id: chatId, file_item_id: 'F9', file_version: 1 })
+  chatStoreMock.chats = [{ id: chatId, kind: kind === 'owned' ? 'dm' : 'group', peer_user_id: kind === 'owned' ? 'agent' : null }] as never
+  if (kind === 'owned') { taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]; taskRoute.remote = true }
+  fileOwner.mockResolvedValue({ data: null, error: null })
+  await renderMainLayoutWithToast()
+  await act(async () => { await expect(openLinkTarget({ kind: 'file', itemId: 'F9', version: 1 }, { message: source })).rejects.toThrow() })
+  expect(takeChatAsk(chatId)).toBeNull()
+})
+
+// A link with no message of its own (one in a task page's text): no chat to wait in, nothing asked before the answer.
+it('a file link clicked outside any message: nothing waits; the answer opens the file\'s chat', async () => {
+  chatStoreMock.chats = [{ id: 'file-group', kind: 'group' }] as never
+  fileOwner.mockResolvedValue({ data: { chat_id: 'file-group' }, error: null })
+  await renderMainLayoutWithToast()
+  let opened!: Promise<unknown>
+  act(() => { opened = openLinkTarget({ kind: 'file', itemId: 'F7' }); void opened.catch(() => undefined) })
+  expect(takeChatAsk('file-group')).toBeNull()
+  await act(async () => { await opened })
+  expect(takeChatAsk('file-group')).toEqual({ itemId: 'F7', opener: fileAnswer('F7', 'file-group') })
 })
 
 it('opens an owned agent\'s file beside its task on the phone, as on a computer', async () => {

@@ -21,18 +21,17 @@ import { sessionRegistry } from './stores/session-registry';
 const ARCHIVE_UNDO_DWELL_MS = 8000;
 
 /**
- * 「归档任务」的唯一路径 —— spec session-graph。
+ * 「归档会话」的唯一路径 —— spec session-graph。
  *
- * **一个动作,这几处入口**:会话列表行尾 hover 浮出的按钮、会话列表的右键那一格、会话页标题行 ⋯ 菜单、
- * 命令面板(Mod+Shift+E)、键盘导航连按两次 ⌃X、引擎丢失页的那颗按钮,以及手机(经会话页路由 `sessionTimeline.sessionUpdate`
- * 到主进程同一个 `archiveSession`)。owner 2026-09-11:「不管是右边的按钮还是右键里面的那个按钮,都是归档任务」。
+ * **一个动作,这几处入口**:会话列表行尾 hover 浮出的按钮、各处会话菜单(session/shared/session-menu.ts:页签、侧栏行、
+ * 聊天列表里我的 agent 那一行、手机会话菜单)、命令面板(Mod+Shift+E)、键盘导航连按两次 ⌃X、引擎丢失页的那颗按钮;
+ * 通讯录与 agent 设置经 lib/archiveOwnedAgent 走同一个确认框(`confirmArchive`)。
  * 人这一侧收起会话只有归档(#6949,owner 2026-10-06「那就改」):删除入口已经全部换成这一条,与 agent 的
  * `session_archive` 同一个动作。
  * ❌ 各写一份脾气 —— 那一份迟早比别人少带一样东西(实测:侧栏那两个忘了带「离开视图」,于是归档掉当前
  * 打开的会话之后,右边永久停在「正在准备文件…」)。
  *
- * 入口的标签说「任务」,归属键是**会话**:用户心智里会话列表的一行就是一项任务,而产品动的是这条
- * conversation(#5413 的修法)。❌ 把标签改成「归档会话」—— 那是把实现的词汇端到用户面前。
+ * 标签一律是「归档会话」/ Archive session(owner 2026-11-16:五种叫法收成这一种)。
  *
  * 范围由确认框里**一个勾选**说:「连同 N 条子会话一起归档」。子会话只有 spawn 出来的那种
  * ([[session-descendants]]);fork 与它的来源是平行同级,不在其中。
@@ -138,26 +137,35 @@ export function requestArchiveSession(args: { projectId: string; sessionId: stri
 }
 
 /**
- * 归档前的那一问(含「不再询问」与子会话勾选)。本机会话与别的机器上的会话(#6264)共用这一问 ——
- * 同一个动作、同一条确认,只是「真的归档」那一步落在不同的地方。
+ * 归档前的那一问 —— 归档的**唯一**确认框(含「不再询问」、子会话勾选、「同时移出群和通讯录」勾选)。
+ * 本机会话、别的机器上的会话(#6264)、通讯录 / agent 设置 / 消息列表按 agent 归档(lib/archiveOwnedAgent)、
+ * 手机会话菜单都走这一问 —— 同一个动作、同一条确认,只是「真的归档」那一步落在不同的地方。
+ *
+ * 「移出群和通讯录」只有用户在这个框里亲手勾着才做:确认被「不再询问」关掉时按**保留身份**走 ——
+ * 一个不弹的确认不能替用户把 agent 从群和通讯录里移走。没有会话可归档的孤儿身份(`identity: 'only'`)
+ * 归档就等于移走身份,所以它永远要问。
  */
 export function confirmArchive(args: {
   childCount: number;
+  /** 说的是谁;缺省是通用的那一句。 */
+  description?: string;
+  /** `'choice'`(默认):用户勾选;`'only'`:没有会话,只剩身份可归档 —— 勾选摆着、勾上、不可改。 */
+  identity?: 'choice' | 'only';
   proceed: (withChildren: boolean, removeSocialIdentity: boolean) => void;
+  onCancel?: () => void;
 }): void {
-  const { childCount, proceed } = args;
-  // 确认被「不再询问」关掉时按**默认范围**走:一个不弹的确认不能替用户勾上递归。
-  if (!shouldConfirm()) {
-    proceed(false, true);
+  const { childCount, description, identity = 'choice', proceed, onCancel } = args;
+  if (identity === 'choice' && !shouldConfirm()) {
+    proceed(false, false);
     return;
   }
 
   showModal('confirmActionModal', {
     title: translateSessionMessage('task.archiveTaskTitle'),
-    description: translateSessionMessage('task.archiveSessionDescription'),
+    description: description ?? translateSessionMessage('task.archiveSessionDescription'),
     confirmLabel: translateSessionMessage('task.archiveTaskConfirm'),
     variant: 'default',
-    option: { label: translateSessionMessage('task.archiveRemoveSocialIdentity'), defaultChecked: true },
+    option: { label: translateSessionMessage('task.archiveRemoveSocialIdentity'), defaultChecked: true, disabled: identity === 'only' },
     // 名下没有子会话时不摆这个勾选 —— 勾了也不改变结果的开关比没有更坏。
     scopeLabel:
       childCount > 1
@@ -165,7 +173,7 @@ export function confirmArchive(args: {
         : childCount === 1
           ? translateSessionMessage('task.archiveSessionWithChildrenOne')
           : undefined,
-    dontAskAgainLabel: canOfferDontAskAgain()
+    dontAskAgainLabel: identity === 'choice' && canOfferDontAskAgain()
       ? translateSessionMessage('task.archiveDontAskAgain')
       : undefined,
     onSuccess: ({ dontAskAgain, scopeChecked, optionChecked }) => {
@@ -174,5 +182,6 @@ export function confirmArchive(args: {
       if (dontAskAgain) stopAskingBeforeArchive();
       proceed(childCount > 0 && scopeChecked, optionChecked);
     },
+    onClose: onCancel,
   });
 }

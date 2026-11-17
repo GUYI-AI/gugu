@@ -106,11 +106,12 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
     return { ...extensionTabTitle(said, said.title ?? ''), unknown: said.title === null };
   }
   const apps = installed.state === 'value' ? installed.value : null;
+  const file = item.itemId && !apps?.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
   return {
     ...extensionTabTitle(
       said,
-      isFolderItem(item) ? folderName : item.kind && apps ? (apps.tabTitle(item.kind) ?? item.title) : item.title,
-      item.itemId && !apps?.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined,
+      isFolderItem(item) ? folderName : item.kind && apps && !file ? (apps.tabTitle(item.kind) ?? item.title) : item.title,
+      file,
     ),
     unknown: false,
   };

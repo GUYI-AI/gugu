@@ -609,7 +609,7 @@ function report(
     units: {
       mcp: loaded(),
       env: loaded(),
-      model: bundle.model
+      model: bundle.model?.model
         ? loaded()
         : { status: 'degraded', reason: { code: 'unverified', reason: 'No model was declared.' } },
       autonomy: { status: 'degraded', reason: degradedAutonomy },
@@ -694,6 +694,11 @@ export function materializeClaudeSessionBundle(
   }
 
   const options = {
+    // ❌ No inline `settings` here: on the ACP wire `options.settings` is a settings-file path
+    // (acpSessionMetaSchema), and only the host that owns such a file sets it (platform sessions).
+    // A native session's Fast reaches Claude through the ACP `fast` config option at startup
+    // (SessionManager.applyInitialFastMode), so an inline copy would be a second path that the
+    // wire rejects before the adapter is ever spawned.
     ...(plugin ? { plugins: [{ type: 'local', path: plugin.root }, ...(library ? [{ type: 'local', path: library.root }] : [])] } : {}),
     // #5117 咕咕在子智能体卡上有「停止」按钮(适配器 `_session/async_task/stop` → SDK `stop_task`)。
     // 向 SDK 声明这一点(0.3.257 起认):按「停止」中断这一轮时**放过**还在跑的后台子智能体,

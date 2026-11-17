@@ -43,7 +43,7 @@ it('a chosen pack out-ranks tokens.css on the root, in both modes', () => {
   expect(read('--bg')).toBe(resolvePalette(pack.modes.dark!, 'dark').bg)
   expect(read('--muted-fg')).toBe(resolvePalette(pack.modes.dark!, 'dark').mutedFg)
   resetThemePacks()
-  expect(read('--bg')).toBe('#181818')
+  expect(read('--bg')).toBe('#0f0f0f')
 })
 
 it('App pages get the palette in the theme\'s values; no theme, nothing, and the build\'s palette stands', () => {

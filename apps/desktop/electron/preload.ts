@@ -179,9 +179,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('device:self-identified', listener)
   },
   getLocalDeviceSelfSnapshot: (): Promise<unknown> => ipcRenderer.invoke('device:get-self-snapshot'),
-  // @@@share-card-rename 改名的本机那半:花名册上的 name(会话页读它)。云端改完再调,详见 main 侧同名注释。
-  renameOwnedAgentLocalFootprint: (agentUserId: string, name: string): Promise<boolean> =>
-    ipcRenderer.invoke('owned-agent:rename-local-footprint', { agentUserId, name }),
 })
 
 // @@@host-system-languages — 宿主真实系统语言。同步取值:renderer 的 i18n runtime 是模块副作用,在第一帧

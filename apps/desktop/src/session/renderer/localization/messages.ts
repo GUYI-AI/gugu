@@ -794,6 +794,8 @@ const enUSCoreMessages = {
   'composer.effort': 'Thinking',
   'composer.effortReset': 'Reset to the model default',
   'composer.effortUnset': 'Default',
+  'composer.fastModeHint': 'Faster, uses more quota',
+  'composer.fastModeLabel': 'Fast',
   'composer.effortLocked': "This task can't change the thinking level right now.",
   // @@@session-options-disabled —— 置灰的那一条必须说明为什么
   // (owner 2026-08-21:选不了的那一头要留在原地并说明原因)。
@@ -1143,6 +1145,7 @@ const enUSCoreMessages = {
   'transcript.condition.machineLinkLost': 'Lost the connection to {device}. The session reopens once it reconnects.',
   'transcript.condition.turnAwaitsLink': 'Connection lost. This reply completes once it reconnects.',
   'transcript.condition.membershipRequired': 'This Gugu model needs a membership',
+  'transcript.condition.groupJoinFailed': 'This agent could not join the group chat it was started from',
   'transcript.condition.turnInterruptedUpdate': 'Gugu updated on this machine and interrupted the reply in progress',
   'transcript.condition.turnInterruptedRestart': 'Gugu restarted and interrupted the reply in progress',
   'transcript.condition.turnInterruptedUnclean': "Gugu didn't shut down cleanly (crash or reboot) and interrupted the reply in progress",
@@ -1965,6 +1968,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.effort': '思考',
   'composer.effortReset': '恢复到模型默认档',
   'composer.effortUnset': '默认',
+  'composer.fastModeHint': '更快，消耗更多额度',
+  'composer.fastModeLabel': '快速',
   'composer.effortLocked': '这个会话现在改不了思考档位。',
   'composer.modelNotInCatalog':
     '咕咕目录里这家 agent 已经没有这一条了，所以这个会话到不了它。换一条。',
@@ -2306,6 +2311,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.condition.turnInterruptedUpdate': '这台机器上的咕咕更新，打断了正在进行的回复',
   'transcript.condition.turnInterruptedRestart': '咕咕重启，打断了正在进行的回复',
   'transcript.condition.turnInterruptedUnclean': '咕咕上次没有正常退出（崩溃或机器重启），打断了正在进行的回复',
+  'transcript.condition.groupJoinFailed': '这个 agent 没能加入发起它的群聊',
   'transcript.condition.cancel': '取消',
   'transcript.condition.install': '去安装',
   'transcript.condition.signIn': '去登录',

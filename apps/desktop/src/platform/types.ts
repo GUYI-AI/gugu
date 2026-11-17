@@ -223,9 +223,4 @@ export interface AppPlatform {
   getLocalUsageSnapshot?: (request: LocalUsageRequest) => Promise<LocalUsageSnapshot>
   /** Electron main-process reachable agent creation tools; unavailable on web/mobile. */
   getAgentCreationTools?: () => Promise<unknown>
-  /**
-   * @@@share-card-rename 改名的本机那半:把新名字写回花名册(会话页读它)。云端改名成功后调。
-   * 与上面那条同理,只有拥有本机足迹的宿主实现它;web 上没有这一半,所以是可选的。
-   */
-  renameOwnedAgentLocalFootprint?: (agentUserId: string, name: string) => Promise<void>
 }

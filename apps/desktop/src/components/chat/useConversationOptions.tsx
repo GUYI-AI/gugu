@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
 import type { SessionOptionDimension } from '@gugu/session-core/session-record/contract'
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
@@ -11,6 +11,8 @@ import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { messageForUser } from '@/lib/userFacingError'
 import { refreshFailure, replica, useReplica } from '@/lib/replica'
+import { fastModeValue } from '@renderer/features/sessions/session-config/fast-mode'
+import { renderFastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
 
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
 
@@ -30,8 +32,14 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   // While that machine is away there is nothing to ask: unknown, read once it is back.
   const args: [string, string, boolean, boolean] | null = deviceId && sessionId && local !== undefined && reachable ? [deviceId, sessionId, local, phoneHost === true] : null
   const reading = useReplica(conversationOptions, args)
-  const [writeError, setWriteError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+  const key = target ? `${deviceId}/${sessionId}/${local}/${phoneHost}` : ''
+  const scopeRef = useRef({ key })
+  if (scopeRef.current.key !== key) scopeRef.current = { key }
+  const scope = scopeRef.current
+  const [writeFailure, setWriteFailure] = useState<{ scope: typeof scope; message: string } | null>(null)
+  const writeError = writeFailure?.scope === scope ? writeFailure.message : null
+  const [pendingScope, setPendingScope] = useState<typeof scope | null>(null)
+  const pending = pendingScope === scope
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
   const options = reading.state === 'value' ? reading.value : null
   // Unread, or read before and its read again failing (the options read before stay drawn): said in the composer notice.
@@ -40,10 +48,16 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   const write = async (send: () => Promise<SessionpageSessionOptionsWithMenu>) => {
     if (!args) return false
     const entry = conversationOptions.at(...args)
-    setPending(true)
-    try { entry.set(await send()); setWriteError(null); return true }
-    catch (cause) { setWriteError(messageForUser(cause)); return false }
-    finally { setPending(false) }
+    setPendingScope(scope)
+    try {
+      entry.set(await send())
+      if (scopeRef.current !== scope) return false
+      setWriteFailure(null)
+      return true
+    } catch (cause) {
+      if (scopeRef.current === scope) setWriteFailure({ scope, message: messageForUser(cause) })
+      return false
+    } finally { setPendingScope(current => current === scope ? null : current) }
   }
   const pick = async (dimension: SessionOptionDimension, value: string) => {
     if (!target || options?.[dimension]?.selected === value) return
@@ -62,10 +76,14 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage),
     selectedEffort: options?.effort?.selected ?? undefined,
     onEffortChange: id => { void pick('effort', id) },
+    // The host filters this group by native capability, current model and explicit own billing.
+    fastMode: fastModeValue(options?.fast),
+    onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
+    renderFastModeHint,
     permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
-    ...(writeError ? { notice: { variant: 'error', message: writeError, onDismiss: () => setWriteError(null) } }
+    ...(writeError ? { notice: { variant: 'error', message: writeError, onDismiss: () => setWriteFailure(null) } }
       : readError && args ? { notice: { variant: 'error', message: readError, onDismiss: () => { void conversationOptions.refresh(...args) } } } : {}),
   }
   const confirmation = <SessionReloadConfirm open={!!restart} onOpenChange={open => { if (!open) setRestart(null) }}

@@ -1,4 +1,5 @@
-import { selectionComment, annotationLineNumbers, previewSelectionLines } from './comments.js'
+import { codeQuote } from './code-quote.js'
+import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
 // markdown source editor with a preview, and JSON files as editable text. Several people and agents edit the same
@@ -12,10 +13,10 @@ import { selectionComment, annotationLineNumbers, previewSelectionLines } from '
 // Where it runs is read from the context, never assumed: with a chat it shows that chat's
 // workspace; with a file (ctx.file) it opens the file it was handed; with neither there is nothing to show.
 
-import { findIn, linesText, placeOf, plainWords, relocate, spanOf } from './lines.js'
+import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -107,6 +108,7 @@ const STRINGS = {
     saveFailed: '{name} 没有保存：{e}',
     saveHeld: '{name} 在连不上的时候被别处改过，这次没有自动保存。两边的改动都合在这里，看过后再保存。',
     machineUnreachable: '此刻连不上「{machine}」。',
+    notNow: '咕咕暂时没能完成这一步，请稍后再试。',
     machineOutdated: '「{machine}」上的咕咕版本太旧，升级后才能用。',
     tooLarge: '这个文件有 {size}，打开可能很慢。',
     grewTooLarge: '这个文件在外面变大了（{size}），这里没有读进来；现在保存会盖掉外面的内容。',
@@ -153,7 +155,7 @@ const STRINGS = {
     copy: '复制',
     copied: '已复制',
     cite: '引用',
-    addToChat: '添加到对话', comment: '评论', commentPlaceholder: '添加可选评论…', commentFailed: '未能保存评论，请重试',
+    send: '发送',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -352,6 +354,7 @@ const STRINGS = {
     saveFailed: '{name} was not saved: {e}',
     saveHeld: '{name} changed elsewhere while it could not be reached, so it was not saved automatically. Both changes are merged here: look them over, then save.',
     machineUnreachable: "{machine} can't be reached right now.",
+    notNow: "Gugu couldn't take this step just now. Try again in a moment.",
     machineOutdated: 'Gugu on {machine} is too old. Update it to use this file.',
     tooLarge: 'This file is {size}: opening it may be slow.',
     grewTooLarge: 'This file grew to {size} outside and was not read in. Saving now writes over what is there.',
@@ -398,7 +401,7 @@ const STRINGS = {
     copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
-    addToChat: 'Add to chat', comment: 'Comment', commentPlaceholder: 'Add an optional comment…', commentFailed: 'Could not save the comment. Try again.',
+    send: 'Send',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -705,6 +708,8 @@ async function applyContext(ctx) {
   state.t = stringsFor(ctx.locale)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
   renderChrome()
+  // The list is drawn now; a handed file once it is shown or has failed (`showDoc`, `showDocMessage`).
+  if (!ctx.file) reveal()
   const roots = rootsOf(ctx)
   const inGroup = roots.length > 0
   // A page the host opened for one file (F3: its own page, bound to that file for life) shows that file only.
@@ -764,7 +769,8 @@ function renderChrome() {
   const title = state.ctx?.file?.id && state.ctx.file.id === state.shown?.id ? state.shown.name : t.title
   document.title = title
   // The slot's header says this App's name in the person's language (it would show the manifest's 文件夹 otherwise).
-  if (state.titled !== title) {
+  // Until a handed file is shown, no title: the host's tab keeps the file's name.
+  if (state.titled !== title && (!state.ctx?.file || state.ctx.file.id === state.shown?.id)) {
     state.titled = title
     Promise.resolve(gugu.setTabTitle(title)).catch(() => {})
   }
@@ -810,7 +816,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
-  $('annotate-sel').textContent = t.addToChat
+  $('send-sel').textContent = t.send
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -1845,8 +1851,8 @@ function shownName(entry) {
 }
 
 // A file's mark: the icon the App that opens it declared for its kind (entry.claimedBy.icon, worked out by the host) —
-// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else its suffix on a square coloured by its
-// family (list.js), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
+// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else the host's file tile (<gugu-file-mark>,
+// the same as on its output cards), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
 function fileMark(entry) {
   const icon = entry.claimedBy?.icon
   if (icon) {
@@ -1854,12 +1860,11 @@ function fileMark(entry) {
     mark.title = entry.claimedBy.name
     return mark
   }
-  const { label, family } = markOf(entry)
-  const mark = document.createElement('span')
-  mark.className = 'file-mark file-badge'
-  mark.dataset.family = family
-  mark.textContent = label
-  mark.setAttribute('aria-hidden', 'true')
+  // The full name (not displayName): its last suffix says the family.
+  const mark = Object.assign(document.createElement('gugu-file-mark'), { className: 'file-mark' })
+  mark.setAttribute('name', entry.name ?? '')
+  if (entry.contentType) mark.setAttribute('mime', entry.contentType)
+  mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
   if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
@@ -1891,7 +1896,6 @@ function thumbInto(el, entry) {
     if (!url) return
     el.style.backgroundImage = `url("${url}")`
     el.classList.add('has-thumb')
-    el.textContent = ''
   }
   el.thumbWanted = () => {
     if (!thumbs.has(key)) thumbs.set(key, new Promise((done) => {
@@ -2467,10 +2471,21 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
-    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
+    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// An image opens in the host's image viewer (API 57): the images on screen with it, in the order drawn, to page through,
+// and where its picture is, to open from and close back to.
+function viewedWith(entry) {
+  if (!/^image\//i.test(entry.contentType || '')) return {}
+  const byId = new Map(state.entries.map((e) => [e.id, e]))
+  const among = state.order.map((id) => byId.get(id)).filter((e) => e && !isFolder(e) && /^image\//i.test(e.contentType || '') && !fileUnavailable(e))
+  const mark = [...$('file-list').querySelectorAll('li[data-id]')].find((li) => li.dataset.id === entry.id)?.querySelector('.file-mark')
+  const box = mark?.getBoundingClientRect()
+  return { ...(among.length > 1 ? { among } : {}), ...(box && box.width > 0 ? { origin: { x: box.x, y: box.y, width: box.width, height: box.height } } : {}) }
 }
 
 function startRename(li, entry) {
@@ -2799,7 +2814,6 @@ function closeCurrent() {
 }
 
 function clearShownFile() {
-  comment.close()
   syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
@@ -2873,6 +2887,11 @@ async function openHanded(maxBytes) {
   } finally {
     if (state.opening === token) state.opening = null
   }
+}
+
+/** Draw the page (index.html starts it `reading`): what it shows is ready. */
+function reveal() {
+  document.body.classList.remove('reading')
 }
 
 // A file that could not be opened (its machine out of reach, say): a way to try again, and again by itself when its machine is back.
@@ -3091,7 +3110,7 @@ async function showWhole(current) {
       extensions: [
         cm.EditorView.editorAttributes.of({ class: 'code-view' }),
         cm.view.highlightActiveLine(),
-        annotationLineNumbers(cm),
+        lineNumberSelection(cm),
         cm.commands.history(),
         cm.keymap.of(cm.commands.historyKeymap),
         cm.code.editing({ language, dark: state.ctx.themeMode === 'dark', editable: !file.readOnly }),
@@ -3271,16 +3290,15 @@ async function mountPlain(current) {
 // (gugu.clipboard.writeText). Read at click time from here, because pressing a button may already have collapsed it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
-const comment = selectionComment({ document, labels: () => state.t, save: (file, selection) => gugu.files.annotateSelection(file, selection) })
 
 function showSelection(picks, end, inPreview = false) {
   state.picks = picks
-  $('annotate-sel').hidden = !state.ctx?.workspace?.sessionId || !state.current?.entry?.workspace
-  $('annotate-sel').disabled = picks.length !== 1 || !picks[0]?.lines
   selectionEnd = picks.length ? end : null
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
+  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
+  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3311,14 +3329,13 @@ function selectionWatch(cm) {
   })
 }
 
-// The preview's selection is the page's own; its lines are the ones its first and last block were written on.
+// The preview's selection is the page's own; its lines are the source lines its ends fall on (`previewSelectionLines`),
+// its words a formula's TeX once (`previewSelectionText`).
 document.addEventListener('selectionchange', () => {
   const picked = document.getSelection()
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) {
     const range = picked.getRangeAt(picked.rangeCount - 1)
-    const spanAt = (node) => spanOf((node.nodeType === 1 ? node : node.parentElement)?.closest('[data-line]')?.dataset.line)
-    const [start, end] = [spanAt(range.startContainer), spanAt(range.endContainer)]
-    const pick = { text: picked.toString(), lines: start && end ? [start[0], end[1]] : null }
+    const pick = { text: previewSelectionText(range), lines: previewSelectionLines(range) }
     showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true)
   } else if (picksInPreview) {
     showSelection([], null)
@@ -3336,19 +3353,51 @@ function refOf(current, { lines }) {
 
 // Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs), the words picked
 // quoted above them as a reader sees them (a block cited whole has none) — the person says what to do with them, @s whom
-// they like and sends it. A JSON file's view is not its text: its cite stays as it was, each range quoted with the lines
-// it is shown on, and a pill to the file. Called inside the click, as a draft needs.
+// they like and sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was,
+// each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
 async function cite(current = state.current, picks = state.picks, whole = false) {
-  if (!current || (!whole && !picks.length)) return
-  const quoted = ({ text, lines: [first, last] }) =>
-    `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
+  const cited = citeOf(current, picks, whole)
+  if (!cited) return
   try {
-    if (whole) await gugu.dispatch('', { draft: true, refs: [{ file: current.entry }] })
-    else if (current.file.type === 'text') await gugu.dispatch(picks.flatMap(({ text }) => (text ? [`> ${plainWords(text)}`] : [])).join('\n\n'), { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
-    else await gugu.dispatch(picks.map(quoted).join('\n\n'), { draft: true, refs: [{ file: current.entry }] })
+    await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
+    // Words picked go with the selection; a block cited from its menu had none on screen to drop.
+    if (!whole && picks.some((pick) => pick.text)) dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
+// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Called inside the click, as the host requires.
+async function send(current = state.current, picks = state.picks) {
+  const cited = citeOf(current, picks)
+  const at = selectionEnd?.()
+  if (!cited || !at) return
+  try {
+    const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
+    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') dropSelection()
+  } catch (error) {
+    showBanner(failureText(error), 'error')
+  }
+}
+
+// Cited or sent, the words are on their way: the selection and its bar go, as after a copy into somewhere else.
+function dropSelection() {
+  document.getSelection()?.removeAllRanges()
+  showSelection([], null)
+}
+
+// What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
+// fenced so indentation and marks stay) and a pill per place.
+function citeOf(current, picks, whole = false) {
+  if (!current || (!whole && !picks.length)) return null
+  if (whole) return { text: '', refs: [{ file: current.entry }] }
+  const quote = (text) => (current.file.type === 'text' ? `> ${plainWords(text)}` : codeQuote(text))
+  const quoted = ({ text, lines: [first, last] }) =>
+    `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
+  if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }
+  return { text: picks.map(quoted).join('\n\n'), refs: [{ file: current.entry }] }
 }
 
 // The shared content menu keeps the App's existing refs/line fingerprints and editor history.
@@ -4038,6 +4087,7 @@ function watchPresence(current) {
 // ─── panes and messages ─────────────────────────────────────────────────────
 
 function showDoc(entry) {
+  reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
   $('doc-title').textContent = entry.name
@@ -4088,6 +4138,7 @@ async function showDocPath(entry) {
 }
 
 function showDocMessage(message) {
+  reveal()
   document.body.dataset.state = 'message'
   $('doc-path').hidden = true
   document.body.classList.remove('json-dirty')
@@ -4146,7 +4197,8 @@ function machineSays(error) {
   return error.code === 'unavailable' && machine ? fmt(state.t.machineUnreachable, { machine }) : null
 }
 
-const failureText = (error) => machineSays(error) ?? fmt(state.t.failed, { e: error.message })
+// `unavailable` with no machine named: gugu could not take it just now (its window was not ready) — said in words, not the host's English.
+const failureText = (error) => machineSays(error) ?? (error.code === 'unavailable' ? state.t.notNow : fmt(state.t.failed, { e: error.message }))
 
 function showBanner(message, tone, sticky = false) {
   const banner = document.body.classList.contains('show-doc') || document.body.classList.contains('no-list') ? $('banner') : $('list-banner')
@@ -4594,14 +4646,8 @@ function start() {
   $('copy-sel').onclick = () => copySelection()
   $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('cite-sel').onclick = () => cite()
-  $('annotate-sel').addEventListener('pointerdown', event => event.preventDefault())
-  $('annotate-sel').onclick = () => {
-    const pick = state.picks[0]
-    if (!state.current || state.picks.length !== 1 || !pick?.lines) return
-    const selected = document.getSelection()
-    const lines = picksInPreview && selected?.rangeCount ? previewSelectionLines(selected.getRangeAt(0)) ?? pick.lines : pick.lines
-    comment.open({ file: state.current.entry, pick: { ...pick, text: state.current.file.type === 'source' ? linesText(state.current.file.text, ...lines) : pick.text, lines: [...lines] }, anchor: selectionEnd })
-  }
+  $('send-sel').addEventListener('pointerdown', (event) => event.preventDefault())
+  $('send-sel').onclick = () => send()
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)

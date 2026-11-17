@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { layOutRailDock } from '../../../support/railDockLayout'
 
 const capability = vi.hoisted(() => ({ agentRuntime: true }))
 vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
@@ -52,7 +53,9 @@ async function renderRail(chats: { id: string; unread_count: number }[] = [], on
   return harness
 }
 
+let undoLayout: () => void
 beforeEach(() => {
+  undoLayout = layOutRailDock()
   installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge()
   publishAssistantShell(shell())
   publishAssistantAppWord({ ownerId: OWNER, trusted: true })
@@ -61,6 +64,7 @@ beforeEach(() => {
   appState.navigation.navigate('home')
 })
 afterEach(() => {
+  undoLayout()
   capability.agentRuntime = true
   publishAssistantAppWord(null)
   publishAppConversationSurfaces({})

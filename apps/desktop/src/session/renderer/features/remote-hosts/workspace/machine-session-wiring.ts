@@ -96,12 +96,12 @@ function openRequested(session: ViewedMachineSession, request: SessionpagePaneOp
     );
   }
   if (request.target.kind === 'task-page') {
-    // #1607 node 5 that machine's page for this task: its live picture in the browser cell, beside the conversation.
     const view = sessionView(session.projectId, session.sessionId);
     if (!view) return { ok: false, failure: 'open_failed' };
-    const from = sessionConversationTabId(view.paneLayout, session.sessionId);
-    view.paneLayout.open('task-page', { deviceId: session.deviceId, sessionId: session.sessionId }, { from, intent: 'navigate', activate: false });
-    return { ok: true, tabs: sessionPaneTabs(view.paneLayout) };
+    return import('../../live-window/reveal-live-window').then(({ revealLiveWindow }) => revealLiveWindow(session.projectId, session.sessionId, 'browser')).then(
+      () => ({ ok: true, tabs: sessionPaneTabs(view.paneLayout) }),
+      (error: unknown) => ({ ok: false, failure: 'open_failed', error: error instanceof Error ? error.message : String(error) }),
+    );
   }
   if (request.target.kind === 'app-tab') {
     // #1607 An App's per-task page, asked for by its program on that machine: drawn here from this computer's copy of

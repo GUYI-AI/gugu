@@ -6,7 +6,7 @@ import { createSessionChatContext } from '@renderer/lib/chat/shared-chat-context
 type Subscribe = (listener: () => void) => () => void
 const captured = vi.hoisted(() => ({ subscribe: null as Subscribe | null }))
 vi.mock('@gugu/session-chat-ui', () => ({
-  DEFAULT_CONFIG: {},
+  DEFAULT_CONFIG: { roles: {} },
   createChatContext: (options: { subscribeChatNames: Subscribe }) => {
     captured.subscribe = options.subscribeChatNames
     return {}

@@ -24,7 +24,7 @@ import {
 } from './lib/window-chrome'
 import { LocalizationProvider } from './i18n'
 import { startShellChromeTone } from './platform/capacitorShellChrome'
-import { installPageScale } from './mobile/pageScale'
+import { installTextScale } from './mobile/textScale'
 import { BuildTagBadge } from './components/BuildTagBadge'
 import { startFirstRunApps } from './components/appSlot/firstRunApps'
 import './i18n/registerMainCatalog'
@@ -48,8 +48,8 @@ import { installReadOnReturn } from './lib/foregroundReturn'
 
 const shellLog = rendererLogger('shell/boot')
 
-// Before the first render: the phone's system font size decides the width everything is laid out in.
-installPageScale()
+// Before the first render: the phone's system font size decides how large text is drawn (textScale.ts).
+installTextScale()
 installPerfCounterResponder(window.electronAPI)
 installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.

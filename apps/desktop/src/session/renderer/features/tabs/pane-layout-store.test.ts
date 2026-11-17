@@ -483,11 +483,11 @@ describe('PaneLayoutStore: side by side is a pair in the one strip', () => {
     layout.open('persistent-test', { id: 'b' }, { from: null, intent: 'newTab' });
     const paneId = layout.activePaneId;
     const b = tabIdOf(layout, 'b');
-    layout.setPaneSizer(() => ({ width: 400, height: 600 }));
+    layout.setDimensions(400, 600);
     expect(layout.splitBlocked(paneId, b, 'right')).toBe('too-small');
     layout.handleDragEnd(b, paneEdgeDropId('right', paneId));
     expect(layout.groups).toHaveLength(1);
-    layout.setPaneSizer(() => null);
+    layout.dimensions = null;
     expect(layout.splitBlocked(paneId, b, 'right')).toBeNull();
     layout.dispose();
   });

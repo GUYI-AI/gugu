@@ -10,6 +10,9 @@ import { until } from '../../../../tests/support/awaitCondition'
 import { fileChangeSummaryUnitDef } from '../components/rows/file-change-summary/file-change-summary.def'
 import type { FileChangeSummaryItem } from '../model'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
+import { FILE_MARKS } from '@gugu/session-shared/file-marks'
+/** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
+const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 const item: FileChangeSummaryItem = {
   kind: 'file-change-summary',
   id: 't:file-changes',
@@ -53,6 +56,21 @@ describe('an Edited row has the output card\'s Open with', () => {
     expect(reading.dom).toBe(reading.computed)
     expect(reading.inspected).toEqual({ inside: 1, menu: 1, opened: 0 })
     expect(onOutputMenu.mock.calls[0]![0].output).toEqual({ kind: 'file', path: single.files[0].path })
+  })
+})
+
+// The output card's file tile, by each file's family: a sheet and a script, ❌ the same grey document twice.
+describe('an Edited row draws its file as a tile of its family', () => {
+  it('a sheet and a script each get their own family\'s glyph and colour', async () => {
+    const files = ['/w/预算.xlsx', '/w/run.py'].map((path, i) => ({ ...item.files[i]!, path }))
+    const reading = await renderAndMeasureUnit(fileChangeSummaryUnitDef, { ...item, files }, makeContractCtx({ width: 420, isCollapsed: () => true }), (host) => {
+      const tiles = [...host.querySelectorAll<HTMLElement>('.gg-file-tile')]
+      const sheet = tiles[0]?.style.getPropertyValue('--gg-file-tile') === FILE_MARKS.sheet.color && tiles[0].querySelector('svg')!.innerHTML === drawn(FILE_MARKS.sheet.glyph)
+      const code = tiles[1]?.style.getPropertyValue('--gg-file-tile') === FILE_MARKS.code.color && tiles[1].querySelector('svg')!.innerHTML === drawn(FILE_MARKS.code.glyph)
+      return { tiles: tiles.length, sheet: sheet ? 1 : 0, code: code ? 1 : 0 }
+    })
+    expect(reading.dom).toBe(reading.computed)
+    expect(reading.inspected).toEqual({ tiles: 2, sheet: 1, code: 1 })
   })
 })
 

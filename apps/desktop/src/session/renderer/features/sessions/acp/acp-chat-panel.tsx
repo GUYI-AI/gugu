@@ -122,6 +122,7 @@ import { SessionHostQuestion } from '@renderer/features/extensions/session-host-
 import { registerPastedScreenshot } from '@/lib/pastedScreenshot';
 import { useComposerFileUploads } from './use-composer-file-uploads';
 import { shellPort } from '@renderer/lib/shell-port';
+import { useBirthGroupJoin } from './use-birth-group-join';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
@@ -185,6 +186,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { sessionFastMode } from '../session-config/fast-mode';
+import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
@@ -204,6 +207,7 @@ import {
 import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
 import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
 import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
+import { offerSessionSend } from '../session-send';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -730,6 +734,8 @@ const ComposerForStore = observer(function ComposerForStore({
     agentCreationToolsByEngine,
     localSessionMentionProvider,
   ]);
+  // A selection's Send (`SelectionSend`) sends through this composer: typed words' path, this composer's @.
+  useEffect(() => offerSessionSend(store.sessionId, { send: text => store.submitPrompt(text), mentionProvider }), [store, mentionProvider]);
 
   const agentsReading = useAgents();
   const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
@@ -1472,6 +1478,9 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
+        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
+        renderFastModeHint={renderFastModeHint}
         permissionModeOptions={localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
@@ -1757,6 +1766,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   // 「正在打开引擎会话」一类的启动步骤对用户不存在。要人做的事(登录、会员)照常在下面说。
   // 「重来」在途:按钮停下,❌ 连点各投一遍首轮。
   const [restarting, setRestarting] = useState(false);
+  const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
@@ -1795,6 +1805,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
       });
+    }
+    if (!error && birthGroup.join && !signInExpired && !signInMissing) {
+      // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
+      setCondition({
+        code: 'group-join-failed',
+        label: translate('transcript.condition.groupJoinFailed'),
+        detail: birthGroup.join.reason,
+        actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
+      });
+      return;
     }
     if (!error) {
       return (
@@ -1946,7 +1966,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     return condition;
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
   useEffect(() => {
     if (!store) return;
     conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];

@@ -381,7 +381,7 @@ function useShallowShared<T>(next: T): T {
 /** The row element and its flash; only these re-render it, not the list (its place in the list is written by the list). */
 const MessageListSlot = memo(function MessageListSlot({ id, flash, seenRows }: { id: string; flash: boolean; seenRows: SeenRows }) {
   return (
-    <MessageRow messageId={id} className={flash ? 'msg-src-flash' : undefined} style={ROW_STYLE}>
+    <MessageRow messageId={id} flash={flash} style={ROW_STYLE}>
       <MessageListRow id={id} seenRows={seenRows} />
     </MessageRow>
   )

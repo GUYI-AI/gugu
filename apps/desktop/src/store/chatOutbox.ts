@@ -28,6 +28,14 @@ export const OUTBOX_DELIVER_TIMEOUT_MS = 15_000
 // 3 次尝试(拍板 a):真实故障是分钟级网关中断,更长退避只会推迟 fail-loud 暴露;
 // 快退避(~10s 总预算)兜秒级瞬断,之后立刻亮 failed 交手动 + 后端恢复 kick。
 export const OUTBOX_RETRY_BACKOFF_MS = [2_000, 8_000] as const
+/**
+ * Thrown by `deliver` when the row's uploaded bytes can no longer be sent (their upload permit lapsed): retrying the same
+ * request cannot help, so the row fails at once as one whose file must be uploaded again.
+ */
+export class UploadAgainError extends Error {
+  /** `held`: this run still holds the file, so the person can resend it; otherwise it must be selected again. */
+  constructor(readonly held: boolean) { super('The upload permit lapsed; the file must be uploaded again') }
+}
 
 export interface OutboxDeps {
   load(): Promise<OutboxRecord[]>
@@ -189,8 +197,10 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
     drainingLanes.add(chatId)
     try {
       for (;;) {
-        const next = [...records.values()].find((r) => r.chatId === chatId && r.state === 'pending')
-        if (!next || !isActive(operationEpoch)) return
+        // A file still being declared (hashed, planned: its bytes go up after its message) keeps its place: what was sent
+        // after it waits for its commit, which kicks the lane again.
+        const next = [...records.values()].find((r) => r.chatId === chatId && (r.state === 'pending' || r.state === 'uploading' && r.operation?.kind === 'upload'))
+        if (!next || next.state !== 'pending' || !isActive(operationEpoch)) return
         // Keep creation order. Uploading sources are skipped, but a dependency
         // waiting on one must not claim the lane: its earlier source may become
         // ready there. Source settlement kicks the same drainer again.
@@ -230,6 +240,12 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
             if (!isActive(operationEpoch)) return
             // 投递在途期间被手动丢弃 → 不得 persist 复活(discard 已删行删库);直接停
             if (!records.has(record.clientMessageId)) break
+            if (err instanceof UploadAgainError) {
+              record = await persist(record, 'sending', { operation: { kind: 'upload' }, attempts: record.attempts + 1,
+                lastError: err.held ? i18n.t('composer.failureReason.timeout', { ns: 'messaging' }) : i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) }, operationEpoch)
+              if (!isActive(operationEpoch)) return
+              break
+            }
             record = await persist(record, 'sending', {
               attempts: record.attempts + 1,
               lastError: err instanceof Error ? err.message : String(err),

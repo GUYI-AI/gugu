@@ -9,7 +9,7 @@ import { messageForUser } from '../../lib/userFacingError'
 import { platform } from '../../platform'
 import { Sheet } from '../ui/Sheet'
 import { useBackLayer } from '../ui/sheetStack'
-import { openLinkTarget } from '../../lib/guguLinks'
+import { openLinkTarget, OpenSuperseded } from '../../lib/guguLinks'
 import { MessageFilePreview, type PreviewFile } from './MessageFilePreview'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { openAttachmentImage } from '../../lib/attachmentBytes'
@@ -46,7 +46,8 @@ export function useMessageFilePreview({ mobile, visible, closeRightSurfaces, toa
     }
     // App-capable hosts use App-first; iOS keeps the built-in preview without a native App host.
     if (!readOnly && !hosted && file.source.kind === 'item' && (platform.kind === 'electron' || platform.capabilities.mobileApps)) {
-      void openLinkTarget({ kind: 'file', itemId: file.source.itemId }, { message, restore }).catch((error) => {
+      void openLinkTarget({ kind: 'file', itemId: file.source.itemId }, { message, restore, fileName: file.fileName }).catch((error) => {
+        if (error instanceof OpenSuperseded) return
         fileOpenLog.error({ error }, 'opening the group file failed')
         toast(downloadFailed, 'error', messageForUser(error))
       })

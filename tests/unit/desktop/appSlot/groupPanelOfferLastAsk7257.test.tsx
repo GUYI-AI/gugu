@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { peekInstalledApps, tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
-import { ask, chatTabs, shownItem } from './chatTabsHarness'
+import { linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
  * #7257 (review 5): the panel offers the App for a JSON file open in Workspace (F, deck.deck.json); 「安装」 is pressed, and while it
@@ -50,6 +50,8 @@ let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
 /** Held answers: G's open, and the install. */
 let gates: Map<string, () => void>
+/** The chat the pills' files are in: the host names it in its answer (a link names only the file). */
+let fileChat = ''
 beforeEach(() => {
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
@@ -58,15 +60,16 @@ beforeEach(() => {
   vi.mocked(appsHere!.groupFileOpener).mockReset()
   vi.mocked(appsHere!.installFromMarket).mockReset()
   // F (item-f, deck.pptx): nobody opens it until Slides is in — answered at once. G (item-g): Notes opens it — held.
-  vi.mocked(appsHere!.groupFileOpener).mockImplementation((args: { chatId: string; itemId: string }) => {
+  vi.mocked(appsHere!.groupFileOpener).mockImplementation((args: { chatId?: string; itemId: string }) => {
+    const chatId = args.chatId ?? fileChat
     if (args.itemId === 'item-g') {
       const candidate = { extensionId: 'notes', app: { name: 'Notes' }, tabKind: 'notes.main', tabTitle: 'Notes', suffix: '.md', onlyTab: true }
-      return new Promise((resolve) => gates.set('G', () => resolve({ success: true, data: { chatId: args.chatId, itemId: 'item-g', name: 'g.md', typedName: 'g.md', choice: { kind: 'one', candidate } } } as never)))
+      return new Promise((resolve) => gates.set('G', () => resolve({ success: true, data: { chatId, itemId: 'item-g', name: 'g.md', typedName: 'g.md', choice: { kind: 'one', candidate } } } as never)))
     }
     const installed = peekInstalledApps('local')!.manifests.some((manifest) => manifest.id === 'slides')
     const candidate = { extensionId: 'slides', app: { name: 'Slides' }, tabKind: 'slides.main', tabTitle: 'Slides', suffix: '.deck.json', onlyTab: true }
     const opener = installed ? candidate : { ...candidate, extensionId: 'workspace', app: { name: 'Workspace' }, tabKind: 'workspace.main', tabTitle: 'Workspace', suffix: '.json' }
-    return Promise.resolve({ success: true, data: { chatId: args.chatId, itemId: 'item-f', name: 'deck.deck.json', typedName: 'deck.deck.json', file: { document: false, contentType: 'application/json', version: 1, size: 10 }, choice: { kind: 'one', candidate: opener } } } as never)
+    return Promise.resolve({ success: true, data: { chatId, itemId: 'item-f', name: 'deck.deck.json', typedName: 'deck.deck.json', file: { document: false, contentType: 'application/json', version: 1, size: 10 }, choice: { kind: 'one', candidate: opener } } } as never)
   })
   vi.mocked(appsHere!.installFromMarket).mockImplementation(
     () =>
@@ -87,9 +90,11 @@ afterEach(() => {
 const settled = () => new Promise<void>((done) => setTimeout(done, 0))
 const offer = () => harness.container.querySelector<HTMLElement>('[data-testid="group-app-slot-offer"]')
 const on = (chatId: string) => shownItem(chatId)?.itemId ?? null
+/** The pill to the file clicked: the shell asks the host once and hands the chat its answer. */
 async function panel(chatId: string, itemId: string) {
-  await harness.render(chatTabs({ chatId }))
-  ask(chatId, { itemId })
+  fileChat = chatId
+  await harness.render(linkShell({ chatId }))
+  await act(async () => { void pill(itemId) })
 }
 /** F asked for, the panel offers Slides for it, 「安装」 pressed: the install on its way. */
 async function offeredAndPressed(chatId: string) {

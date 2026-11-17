@@ -20,7 +20,8 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { HelpCircle, Library, Settings } from '@/lib/icons'
+import { HelpCircle, Library, MoreHorizontal, Settings } from '@/lib/icons'
+import { SidebarAppDock } from './sidebar/SidebarAppDock'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest } from '../lib/productTour'
 import { useAuth } from '../store/auth'
@@ -332,15 +333,17 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
       {apps && docked && (assistantApp || docked.length > 0) && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder}>
           <SortableContext items={docked.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
-            <div className="gg-sidebar-dock" data-testid={AUTOMATION_TEST_IDS.sidebarDock}>
-              {assistantApp && target.kind === 'app' ? (
+            <SidebarAppDock apps={assistantApp ? [assistantApp, ...docked] : docked}
+              moreButton={<RailItem icon={<MoreHorizontal size={22} />} title={t('shell.moreApps')} testId={AUTOMATION_TEST_IDS.sidebarMoreApps} />}
+              onOpen={appId => {
+                if (assistantApp && appId === ASSISTANT_APP_ID) { showSessions(); openAssistantEntry() }
+                else open(appId)
+              }}>
+              {app => assistantApp && app.extensionId === ASSISTANT_APP_ID && target.kind === 'app' ? (
                 <AssistantAppItem apps={apps} app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
                   onOpen={() => { showSessions(); openAssistantEntry() }} />
-              ) : null}
-              {docked.map((app) => (
-                <DockItem
-                  key={app.extensionId}
-                  apps={apps}
+              ) : (
+                <DockItem apps={apps}
                   app={app}
                   active={typeof place === 'object' && place?.app === app.extensionId}
                   onOpen={() => open(app.extensionId)}
@@ -348,8 +351,8 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
                   onUnpin={() => void unpinFromDock(app.extensionId).catch(dockFailed)}
                   onQuit={() => void quitApp(app.extensionId).catch((error) => { rendererLogger('actions/Sidebar').error({ error: error }, 'action failed'); return toast(t('shell.appQuitFailed'), 'error', messageForUser(error)); })}
                 />
-              ))}
-            </div>
+              )}
+            </SidebarAppDock>
           </SortableContext>
         </DndContext>
       )}

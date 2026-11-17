@@ -3,7 +3,7 @@ import { act, createElement, Fragment, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Markdown } from '../../../../apps/desktop/src/components/markdown/Markdown'
-import { openLink, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
+import { followLink, openLink, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { classifyFileLink, type GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import { openLinkWith } from '../../../../apps/desktop/src/session/shared/extensions/open-link'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
@@ -12,10 +12,18 @@ import { putInstalled, tellInstalled } from '../../../../apps/desktop/src/sessio
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /**
- * The files this person can read, and the chat each is in (F112): answered where the chat client's read of
- * `workspace_items` leaves the page, the way the database answers under RLS — no row for a file of a chat they are not in.
+ * The files this person can read, and the chat each is in (F112): answered by the host a link asks (`groupFileOpener`),
+ * the way it answers under RLS — no file of a chat they are not in. `host.here` false: a platform with no App host.
  */
 const notice = vi.hoisted(() => vi.fn())
+const host = vi.hoisted(() => ({ here: true, readable: new Map<string, string>(), metadata: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({ get appsHere() {
+  return host.here ? { groupFileOpener: async ({ itemId }: { itemId: string }) => {
+    const chatId = host.readable.get(itemId)
+    return chatId ? { success: true, data: { chatId, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, choice: { kind: 'none' } } } : { success: false, error: 'No such file in this chat' }
+  } } : null
+} }))
+vi.mock('../../../../apps/desktop/src/lib/fileAccess', async (original) => ({ ...await original<object>(), fileMetadata: host.metadata }))
 vi.mock('../../../../apps/desktop/src/lib/notices', async (original) => ({ ...await original<object>(), notify: notice }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'web', capabilities: {} } }))
 // This device's Apps are the desktop's (the links below are read by the Apps installed here).
@@ -28,7 +36,7 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/phoneAppHost', () => ({
     openResource: async (resource) => { await openLinkTarget(resource) }, bringUp: async () => {}, deliver: () => {},
   }, target),
 }))
-const readable = new Map<string, string>()
+const readable = host.readable
 const asked: unknown[] = []
 const noop = () => undefined
 function Shell() {
@@ -38,7 +46,8 @@ function Shell() {
 }
 function Document(props: ComponentProps<typeof Markdown>) { return createElement(Fragment, null, createElement(Shell), createElement(Markdown, props)) }
 beforeEach(() => {
-  readable.clear(); asked.length = 0; notice.mockClear()
+  readable.clear(); asked.length = 0; notice.mockClear(); host.here = true
+  host.metadata.mockReset(); host.metadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object' } })
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
     const id = url.searchParams.get('id')?.replace(/^eq\./, '') ?? ''
@@ -201,5 +210,25 @@ describe('Markdown local file links in chat', () => {
     await act(async () => root.render(createElement(Document, { trust: 'chat', content: '' })))
     await expect(openLink(link)).resolves.toBe(true)
     expect(asked).toEqual([{ chatId: '44444444-4444-4444-8444-444444444444', kind: 'file', itemId }])
+  })
+
+  // No App host here (the web build, iOS): a file link fails at once and says so — it does not hang with only the chat
+  // up. The words are the file's: it could not be opened now, not that it is gone.
+  it('a platform with no App host: the link is refused, nothing is asked to open, and the notice is the file-open one', async () => {
+    const itemId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    readable.set(itemId, '44444444-4444-4444-8444-444444444444')
+    host.here = false
+    const { i18n } = await import('../../../../apps/desktop/src/i18n')
+    await import('../../../../apps/desktop/src/i18n/registerAssistantCatalog')
+    await i18n.changeLanguage('zh-CN')
+    await act(async () => root.render(createElement(Document, { trust: 'chat', content: '' })))
+    expect(followLink(`gugu-file://${itemId}`)).toBe(true)
+    await vi.waitFor(() => expect(notice).toHaveBeenCalledOnce())
+    const title = notice.mock.calls[0]![0].title
+    expect(title).toBe('暂时打不开这个文件，请稍后重试')
+    expect(title).toBe(i18n.t('assistant:links.fileOpenFailed'))
+    expect(title).not.toBe(i18n.t('assistant:links.fileMissing'))
+    expect(title).not.toBe(i18n.t('assistant:links.unavailable'))
+    expect(asked).toEqual([])
   })
 })

@@ -38,6 +38,7 @@ export interface GenericTabItemProps {
   renameValue?: string;
   /** Max character length enforced on the rename input. */
   renameMaxLength?: number;
+  closeDisabled?: boolean;
 }
 
 /**
@@ -64,6 +65,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   kindCommands,
   renameValue,
   renameMaxLength,
+  closeDisabled,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
   const { isFocusedPane, pane } = usePaneContext();
@@ -176,7 +178,7 @@ export const GenericTabItem = observer(function GenericTabItem({
           statusSlot={statusSlot}
           actionSlot={fillButton}
           closeLabel={translate('task.closeTab', { label })}
-          onClose={() => host.requestCloseTab(tab.tabId)}
+          onClose={closeDisabled ? undefined : () => host.requestCloseTab(tab.tabId)}
           onMouseEnter={() => host.signalActivateIntent(tab.tabId)}
           onClick={handleSelect}
           onDoubleClick={() => fill?.toggle()}

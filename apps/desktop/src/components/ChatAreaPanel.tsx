@@ -1,4 +1,4 @@
-import { useShownAgentName } from '@/hooks/useShownAgentName'
+import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
@@ -48,7 +48,7 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { MessageList, type MessageListRowProps } from './chat/MessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneChatTabs } from '../mobile/chat/PhoneChatTabs'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
+import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
@@ -70,7 +70,6 @@ import { useMessageSelectMode } from './chat/useMessageSelectMode'
 import { IconButton } from './ui/IconButton'
 import { ChatTailNotice } from './chat/ChatTailNotice'
 import { useChatSearch } from './chat/useChatSearch'
-import { SearchTrailBar } from './chat/SearchTrailBar'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 export { ChatNotificationLevelControl } from './chat/ChatNotificationLevelControl'
 import { ChatSettingsPanel } from './chat/ChatSettingsPanel'
@@ -531,6 +530,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
+  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
       viewportKey={`${viewportKey}:topic`} navigationTarget={navigationTarget}
@@ -547,7 +547,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       onSendAttachments={topicSurface.sendAttachmentsInSplit}
       agentStatuses={groupAgentStatuses}
       runningTokens={mobile ? groupRunTokens : undefined}
-      runningPreviewChatId={activeChatId}
+      runningPreviewChatId={activeChatId} composerControls={phoneRoomControls}
       memberProfileOpener={Object.keys(messageMemberProfiles).length > 0 ? messageProfile.asideOpener : undefined}
       onOpenAttachment={(file, message) => { const split = topicSurface.splitTopic; openFilePreview(file, message, split ? () => topicSurface.openSplit(split) : undefined) }}
       onClose={topicSurface.closeSplit}
@@ -582,8 +582,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider={!(mobile && topicSurface.topics.length > 0)} data-chat-area-header=""
-        mobile={mobile}
+        divider data-chat-area-header="" mobile={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
@@ -629,8 +628,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           </div>
         )}
         actions={headerActions}
-      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : mobile && !chrome && !blockHost ? <PhoneChatTabs topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
-      <SearchTrailBar chatId={activeChatId} surface={surfaceElement} enabled={surfaceVisible} />
+      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
 
       <div
         style={{
@@ -711,7 +709,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* @@@1506 - Agent 运行状态：输入框上方的轻量浮动文字（owner #1506：无重白板，打字时也能瞥见）。群聊列出在跑的 agent（可点 → @mention）；
           单聊是运行中/思考中（流式正文仍留消息流）。运行条那一行是固定高的一行(群、agent 私聊才有),没有底,消息从它后面滚过;运行条出现、消失不改变布局。 */}
-      <ChatBottomDock reserve={chatListRows.length === 0} above={isRoomChatSurface && !chrome?.hideRunningStatus && <RunningBarSlot>
+      <ChatBottomDock reserve={chatListRows.length === 0} running={isRoomChatSurface && !chrome?.hideRunningStatus && groupRunTokens.length > 0} above={isRoomChatSurface && !chrome?.hideRunningStatus && <RunningBarSlot>
       {!chrome?.hideRunningStatus && (
         // @@@1696 群聊运行态：横排单行「运行 token」(流光动词) + cap +N。数据 = 在跑(transient)的 agent，
         // stateKey 由 presence recentActions 的最新 kind 派生，展示文案由 RunningTokenBar 翻译；
@@ -763,8 +761,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         </div>
       )}
       {/* 多选态只把输入框藏起来(和切走的面同一个 hidden),不卸载:卸载 = 编辑器拆掉再建,点「多选」/「取消」都卡一下。 */}
-        <div data-chat-composer="" hidden={selectMode} className={mobile && blockHost ? `${sessionComposerDockBandClassName} pt-3` : undefined} style={{ padding: mobile ? (blockHost ? undefined : '8px var(--phone-composer-inline-pad, 8px) max(8px, env(safe-area-inset-bottom))') : 0, flexShrink: 0 }}>
-        {chrome?.composerHeader}
+        <div data-chat-composer="" hidden={selectMode} className={mobile && blockHost ? `${sessionComposerDockBandClassName} pt-3` : undefined} style={{ padding: mobile ? (blockHost ? undefined : '8px var(--phone-composer-inline-pad, 16px) max(8px, env(safe-area-inset-bottom))') : 0, flexShrink: 0 }}>
+        {chrome?.composerHeader}{phoneRoomControls}
         <ChatMessageComposer
           onSend={async (content, opts) => {
             await sendMessage(content, opts)

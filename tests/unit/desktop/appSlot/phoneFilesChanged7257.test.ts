@@ -26,6 +26,8 @@ const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '
 const db = vi.hoisted(() => ({ reads: [] as string[][], lists: 0, hold: null as Promise<void> | null, fail: 0, openingName: 'a.md', factsHold: null as Promise<void> | null, factsEntered: null as (() => void) | null }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => [] }))
+const linked = vi.hoisted(() => vi.fn())
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/host-action-handlers', () => ({ applyExtensionHostAction: linked }))
 vi.mock('@gugu/core/cloud/supabase', () => {
   let open: { ids: string[]; fail: boolean } | null = null
   const read = () => {
@@ -220,17 +222,18 @@ describe('a watched chat\'s files changed: the page hears those files (#7257)', 
 
 
 describe('the phone openWith bridge hands unclaimed files to the host preview (#7663)', () => {
-  it.each([false, true])('ordinary and peek openings carry the same file metadata (peek=%s)', async (peek) => {
+  it('beside the page: the file\'s metadata, for the host\'s preview there', async () => {
     db.openingName = 'clip.mp4'
-    const result = await call('filesOpenWith', { ref: { id: A }, ...(peek ? { peek: true } : {}) })
-    expect(result).toMatchObject({ ok: true })
+    expect(await call('filesOpenWith', { ref: { id: A }, peek: true })).toMatchObject({ ok: true })
     const detail = { chatId: CHAT, itemId: A, name: 'clip.mp4', choice: { kind: 'none' }, file: { document: false, contentType: 'video/mp4', version: 5, size: 3276 } }
-    if (peek) {
-      expect(peeked).toHaveBeenCalledWith(expect.objectContaining({ kind: 'chat', detail: expect.objectContaining(detail) }))
-      expect(opened).not.toHaveBeenCalled()
-    } else {
-      expect(opened).toHaveBeenCalledWith(expect.objectContaining(detail))
-      expect(peeked).not.toHaveBeenCalled()
-    }
+    expect(peeked).toHaveBeenCalledWith(expect.objectContaining({ kind: 'chat', detail: expect.objectContaining(detail) }))
+    expect(opened).not.toHaveBeenCalled()
+  })
+
+  it('a plain open: a link to it, the window\'s to resolve (the same host preview when nobody claims it)', async () => {
+    linked.mockClear()
+    expect(await call('filesOpenWith', { ref: { id: A } })).toMatchObject({ ok: true })
+    expect(linked).toHaveBeenCalledWith({ origin: expect.objectContaining({ tabId: 'tab-1' }), action: { kind: 'openChatFile', itemId: A, intent: 'navigate' } })
+    expect(opened).not.toHaveBeenCalled()
   })
 })
