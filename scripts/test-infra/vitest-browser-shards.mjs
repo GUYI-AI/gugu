@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process'
 import { availableParallelism } from 'node:os'
 import { createInterface } from 'node:readline'
 import { browserShardPlan } from './vitest-browser-shard-plan.mjs'
+import { readHFirstErrorFrame } from './phone-composer-first-error.mjs'
 
 const slots = Number(process.env.GUGU_CI_SLOT_COUNT)
 const cores = Math.floor(availableParallelism() / (process.env.GUGU_CI_SLOT_ID && slots >= 1 ? slots : 1))
@@ -27,15 +28,30 @@ const children = []
 const run = ({ index, total: globalTotal }) => new Promise(resolve => {
   const shardArgs = globalTotal > 1 ? [`--shard=${index}/${globalTotal}`] : []
   const child = spawn(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', ...args, ...shardArgs], {
-    stdio: total > 1 ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
   children.push(child)
-  if (total > 1) {
-    const tag = `[${index}/${globalTotal}] `
-    createInterface({ input: child.stdout }).on('line', line => process.stdout.write(tag + line + '\n'))
-    createInterface({ input: child.stderr }).on('line', line => process.stderr.write(tag + line + '\n'))
+  let firstError = false
+  let hardStop
+  const forward = (output, line) => {
+    const tag = total > 1 ? `[${index}/${globalTotal}] ` : ''
+    // Forward the complete original line/frame before stopping its emitting child.
+    output.write(tag + line + '\n')
+    if (firstError || !readHFirstErrorFrame(line)) return
+    firstError = true
+    process.stderr.write(tag + 'H first error recorded; this shard fails, remaining cases are unverified.\n')
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGTERM')
+      hardStop = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      }, 2000)
+    }
   }
-  child.on('exit', (code, signal) => resolve({ index, total: globalTotal, code: code ?? 1, signal }))
+  createInterface({ input: child.stdout }).on('line', line => forward(process.stdout, line))
+  createInterface({ input: child.stderr }).on('line', line => forward(process.stderr, line))
+  child.on('exit', () => clearTimeout(hardStop))
+  // Wait for stdio as well as process exit, so a final frame cannot be lost.
+  child.on('close', (code, signal) => resolve({ index, total: globalTotal, code: firstError ? 1 : code ?? 1, signal }))
 })
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => children.forEach(child => child.kill(signal)))
@@ -46,4 +62,4 @@ if (total > 1) {
   console.log(`\nbrowser shards: ${total - failed.length}/${total} passed` +
     (failed.length ? ` — failed: ${failed.map(r => `${r.index}/${r.total}${r.signal ? ` (${r.signal})` : ''}`).join(', ')}` : ''))
 }
-process.exit(failed.length ? 1 : 0)
+process.exitCode = failed.length ? 1 : 0

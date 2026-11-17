@@ -16,6 +16,7 @@ import { followRendererSession } from '@/lib/replica'
 import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { installPhoneComposerFirstErrorDiagnostic } from '../../../../../../../tests/support/phoneComposerFirstErrorDiagnostic'
 import '@/i18n/registerMainCatalog'
 import '@/mobile/agent-watch/agent-watch.css'
 import '@/i18n/registerMessagingCatalog'
@@ -68,7 +69,9 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', async importOriginal => {
 let harness: ReturnType<typeof createReactHarness> | undefined
 let root: Root | null = null, host: HTMLDivElement | null = null, sequence = 0
 let oldBodyStyle: string | null = null
+let diagnostic: ReturnType<typeof installPhoneComposerFirstErrorDiagnostic> | undefined
 beforeEach(() => {
+  diagnostic = installPhoneComposerFirstErrorDiagnostic(expect.getState().currentTestName ?? '')
   fixture.owner = `FGH-owner-${++sequence}`; fixture.fast = true
   fixture.models.mockReset(); fixture.create.mockClear(); fixture.unexpectedRpc.mockClear()
   fixture.models.mockImplementation(async (_device: string, _harness: string, _leg: unknown, selected: string | null) => ({
@@ -80,11 +83,18 @@ beforeEach(() => {
   }))
 })
 afterEach(() => {
-  root?.unmount(); harness?.cleanup(); harness = undefined; host?.remove(); root = null; host = null
-  composerDrafts.discard(mobileCreationDraftKey(fixture.owner))
-  document.documentElement.removeAttribute('data-theme')
-  if (oldBodyStyle === null) document.body.removeAttribute('style')
-  else document.body.setAttribute('style', oldBodyStyle)
+  try {
+    diagnostic?.phase('before-root-unmount')
+    root?.unmount()
+    diagnostic?.phase('after-root-unmount-before-harness-cleanup')
+    harness?.cleanup(); harness = undefined; host?.remove(); root = null; host = null
+    diagnostic?.phase('after-harness-cleanup-before-draft-discard')
+    composerDrafts.discard(mobileCreationDraftKey(fixture.owner))
+    diagnostic?.phase('after-draft-discard')
+    document.documentElement.removeAttribute('data-theme')
+    if (oldBodyStyle === null) document.body.removeAttribute('style')
+    else document.body.setAttribute('style', oldBodyStyle)
+  } finally { diagnostic?.restore(); diagnostic = undefined }
 })
 const editor = () => host!.querySelector<HTMLElement>('[contenteditable]')!
 async function mount(width: number, theme: 'light' | 'dark') {
@@ -96,6 +106,7 @@ async function mount(width: number, theme: 'light' | 'dark') {
   host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''; host.dataset.taScope = ''
   host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;background:var(--ta-panel-bg)'
   root = createRoot(host)
+  diagnostic?.phase('before-real-page-render')
   root.render(<ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}>
     <CreateSessionPage onCreated={fixture.create} />
   </MessageProvider></SessionUiTheme></LocalizationProvider></ThemeProvider>)
@@ -148,7 +159,9 @@ for (const entry of ['new-page', 'existing-thread'] as const)
       const padding = Number.parseFloat(getComputedStyle(input).paddingTop) + Number.parseFloat(getComputedStyle(input).paddingBottom)
       expect(line).toBeGreaterThan(0)
       const lines = async (count: number) => {
+        diagnostic?.phase('before-setContent', count, original.innerText)
         engine.commands.setContent(Array.from({ length: count }, (_, i) => `<p>第${i + 1}行</p>`).join(''))
+        diagnostic?.phase('after-setContent', count, original.innerText)
         await until(`${entry} ${count} line state`, () => original.children.length === count
           && capsule.hasAttribute('data-phone-multiline') === (count > 1)
           && capsule.hasAttribute('data-phone-attachment-row') === (count > 2))
