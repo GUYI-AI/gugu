@@ -1388,6 +1388,12 @@ html[data-gugu-dragging] :is(webview, iframe) {
   display: none;
 }
 
+/* 页签全屏时页签条上那颗「退出全屏」(tab-bar.tsx):页签条窄了(同上 data-strip-narrow)只留图标,字给读屏和悬停 ——
+   ❌ 让它把页签挤没。 */
+.session-tab-bar[data-strip-narrow] [data-testid="tab-exit-fullscreen"] [data-slot="tab-exit-fullscreen-label"] {
+  display: none;
+}
+
 /* 一块自己那条页签条右端的机器状态(session-machine-status.tsx,#2301 Q3):状态字永远完整;机器名、最后在线各最多 8rem,
    页签条窄了(同上 data-strip-narrow)两者让位,只留圆点和状态字。❌ 截掉状态字、❌ 把页签挤没。 */
 [data-slot="session-machine-status"] :is(.gg-conn-subject, .gg-conn-detail) {
