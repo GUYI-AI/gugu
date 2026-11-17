@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chatFileRpc } from './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
@@ -62,6 +63,7 @@ afterEach(() => followRendererSession('SIGNED_OUT', null))
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
 beforeEach(() => {
+  chatFileRpc.mockClear()
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
   install([])
@@ -88,7 +90,9 @@ afterEach(() => {
 /** The panel with a link to the file asked for (摩擦单 F10): who opens it is the host's answer. */
 async function openFile() {
   await harness.render(linkShell({ chatId: 'group-1' }))
-  await act(async () => { void pill('item-1') })
+  await act(async () => { await pill('item-1') })
+  await until('the opened file was recorded before teardown', () => chatFileRpc.mock.calls.length === 1)
+  expect(chatFileRpc).toHaveBeenCalledExactlyOnceWith('workspace_note_open', { p_item_id: 'item-1' })
 }
 const offer = () => harness.container.querySelector<HTMLElement>('[data-testid="group-app-slot-offer"]')
 /** React and the pending answers flushed until `fact` holds — a bounded number of turns, never a clock; red names the step. */

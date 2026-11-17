@@ -464,11 +464,11 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     return pickDispatchTarget(params as DispatchAsk);
   },
   /**
-   * API 54 Send, over the page that asked, at its selection: the page's CSS px scaled to its guest's box here (its zoom
+   * API 54/55 Send, over the page that asked, at its selection (into its session, or its chat): the page's CSS px scaled to its guest's box here (its zoom
    * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
    */
   [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
-    const { sessionId, webContentsId, open } = params as SelectionSendAsk;
+    const { to, webContentsId, open } = params as SelectionSendAsk;
     const guest = pageElement(webContentsId);
     if (!guest) return 'cancelled';
     const box = guest.getBoundingClientRect(), { rect, viewport } = open, scale = box.width / viewport.width;
@@ -476,7 +476,7 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     if (anchor.right < box.left || anchor.left > box.right || anchor.bottom < box.top || anchor.top > box.bottom) return 'cancelled';
     const { openSelectionSend } = await import('@/components/chat/selectionSendAsk');
     const { draft, quote, pills } = open;
-    return openSelectionSend({ cite: { draft, quote, pills }, sessionId, anchor, cover: box, container: auxWindows.layerOf(guest.ownerDocument), closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
+    return openSelectionSend({ cite: { draft, quote, pills }, to, anchor, cover: box, container: auxWindows.layerOf(guest.ownerDocument), closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
   },
   /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {

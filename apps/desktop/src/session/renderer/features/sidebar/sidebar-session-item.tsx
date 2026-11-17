@@ -76,7 +76,6 @@ export type SidebarSessionItemProps = {
   parentProjectId?: string;
   hasChildren?: boolean;
   expanded?: boolean;
-  needsAttention?: boolean;
   treeSummary?: SessionBranchSummary;
   onToggle?: () => void;
   /** 拼在一屏的一组里:这一行是框的哪一段。 */
@@ -114,7 +113,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   parentProjectId,
   hasChildren = false,
   expanded = false,
-  needsAttention = false,
   treeSummary,
   onToggle,
   join,
@@ -352,7 +350,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       depth={depth}
       hasChildren={hasChildren}
       expanded={expanded}
-      needsAttention={needsAttention}
       treeSummary={treeSummary}
       onToggle={onToggle}
       title={title}

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
 import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'

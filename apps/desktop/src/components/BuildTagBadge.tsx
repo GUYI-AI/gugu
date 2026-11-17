@@ -148,7 +148,7 @@ export function BuildTagBadge() {
     }
   }, [tag, native])
   if (!tag) return null
-  if (phone) return <div aria-label={`Build ${tag}`} data-build-tag-strip style={phoneStripStyle}>{tag}</div>
+  if (phone) return <div data-build-tag-strip style={phoneStripStyle}>{tag}</div>
   if (native && !root) return null
   const notes = __GUGU_TEST_NOTES__.trim() || t('buildArtifact.testNotesMissing')
   const badge = (

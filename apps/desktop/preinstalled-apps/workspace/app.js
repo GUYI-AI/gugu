@@ -16,6 +16,7 @@ import { lineNumberSelection, previewSelectionLines, previewSelectionText } from
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
+import { mountOutline } from './outline.js'
 import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
@@ -120,6 +121,7 @@ const STRINGS = {
     edit: '编辑',
     split: '对照',
     preview: '阅读',
+    outline: '提纲',
     bold: '加粗',
     italic: '斜体',
     code: '代码',
@@ -366,6 +368,7 @@ const STRINGS = {
     edit: 'Edit',
     split: 'Side by side',
     preview: 'Read',
+    outline: 'Outline',
     bold: 'Bold',
     italic: 'Italic',
     code: 'Code',
@@ -644,6 +647,8 @@ async function previewKit() {
 
 // A Workspace page starts when its folder or file is opened. Prepare its existing reader while it awaits context.
 const previewReady = previewKit().then((md) => ({ md }), (error) => ({ error }))
+// The headings of the document being read, beside it (outline.js).
+mountOutline($('outline'), $('preview'))
 
 // A leading `---` block is the file's front matter, as the preview reads it: one quiet block, not the setext heading
 // lezer's markdown makes of `key: value` above the closing `---`.
@@ -807,6 +812,7 @@ function renderChrome() {
     $(`fmt-${fmt}`).title = t[fmt]
   }
   $('block-handle').setAttribute('aria-label', t.blockActions)
+  $('outline').setAttribute('aria-label', t.outline)
   $('doc-empty-title').textContent = t.emptyTitle
   $('preview-cut').textContent = fmt(t.previewCut, { size: sizeOf(LONG_TEXT) })
   $('doc-empty-hint').textContent = t.emptyHint
@@ -3297,8 +3303,11 @@ function showSelection(picks, end, inPreview = false) {
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
-  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
-  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
+  // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
+  // whose folder the file is in, its members to @ (55).
+  const entry = state.current?.entry
+  $('send-sel').hidden = !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
+    : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3367,8 +3376,8 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   }
 }
 
-// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
-// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Send (a task's working copy, API 54; a chat's folder, 55): the same words and pills, in the host's box beside the selection,
+// with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
 // Called inside the click, as the host requires.
 async function send(current = state.current, picks = state.picks) {
   const cited = citeOf(current, picks)

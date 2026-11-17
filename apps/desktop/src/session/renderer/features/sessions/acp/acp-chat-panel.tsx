@@ -143,6 +143,7 @@ import {
   selectedPermissionModeId,
 } from './permission-mode-options';
 import { useOpenedOutputMenu } from './opened-output-menu';
+import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
 import {
@@ -1293,13 +1294,13 @@ const ComposerForStore = observer(function ComposerForStore({
       platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
     );
     if (!resolved) return null;
-    if (live || !declared) return resolved.options;
-    return Object.fromEntries(
+    const options = live || !declared ? resolved.options : Object.fromEntries(
       Object.entries(resolved.options).map(([id, option]) => [
         id,
         { ...option, disabled: true, disabledReason: translate('composer.effortLockedToSession') },
       ])
     );
+    return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
   }, [store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。

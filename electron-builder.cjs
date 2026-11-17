@@ -249,6 +249,8 @@ module.exports = {
   extraMetadata: {
     name: t.artifactPrefix,
     productName: t.productName,
+    // @@@linux-window-identity - Electron's app_id / WM_CLASS must match the packaged desktop filename.
+    desktopName: `${t.artifactPrefix}.desktop`,
     guguBuildDistribution: buildDistribution,
     ...(buildVersion ? { version: buildVersion } : {}),
   },
@@ -552,6 +554,7 @@ module.exports = {
   // would bundle the macOS tmux into the Linux artifact. Linux needs a PNG icon (icns is rejected).
   linux: {
     icon: 'public/assets/app/gugu-icon-512.png',
+    syncDesktopName: true,
     category: 'Network',
     target: [{ target: 'AppImage', arch: ['x64'] }]
   },

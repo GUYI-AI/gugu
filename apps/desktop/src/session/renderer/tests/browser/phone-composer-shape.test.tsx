@@ -74,7 +74,8 @@ function alphaOf(css: string): number {
 }
 
 // owner 10-28 手机试用:输入框完全透明,后面滚过的消息和输入的字叠在一起。
-it.each(['dark', 'light'] as const)('%s: the phone composer has a solid backing and its own space below messages', async (theme) => {
+// owner 11-17: the rows above the input float like desktop; only the input itself is backed.
+it.each(['dark', 'light'] as const)('%s: the phone composer floats over messages and only the input is backed', async (theme) => {
   await page.viewport(390, 844)
   if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
   host = document.body.appendChild(document.createElement('div'))
@@ -96,13 +97,16 @@ it.each(['dark', 'light'] as const)('%s: the phone composer has a solid backing 
   const dock = host.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
   const input = host.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   expect(alphaOf(getComputedStyle(input).backgroundColor), 'the input itself is opaque').toBe(1)
-  const band = getComputedStyle(dock.lastElementChild!, '::before')
-  expect(alphaOf(band.backgroundColor), 'the composer row is backed').toBeGreaterThanOrEqual(0.85)
-  const bandBox = dock.lastElementChild!.getBoundingClientRect()
-  expect(bandBox.height).toBeGreaterThan(input.getBoundingClientRect().height)
+  const bar = host.querySelector<HTMLElement>('[data-slot="composer-bar"]')!
+  const band = getComputedStyle(bar, '::before')
+  expect(alphaOf(band.backgroundColor), 'the input is backed').toBeGreaterThanOrEqual(0.85)
+  expect(Number.parseFloat(band.top), 'the backing starts at the input, not at the rows above it').toBe(0)
+  expect(Number.parseFloat(band.height)).toBeGreaterThan(input.getBoundingClientRect().height)
+  expect(alphaOf(getComputedStyle(dock.lastElementChild!, '::before').backgroundColor), 'the dock row itself is not backed').toBe(0)
   const list = host.querySelector<HTMLElement>('[data-test-messages]')!
-  expect(Number.parseFloat(getComputedStyle(list).getPropertyValue('--chat-dock-h')), 'normal-flow phone footer needs no duplicate list reservation').toBe(0)
-  expect(list.getBoundingClientRect().bottom, 'the message viewport ends above the phone footer').toBe(dock.getBoundingClientRect().top)
+  expect(getComputedStyle(dock).position, 'the phone dock floats like desktop').toBe('absolute')
+  await until('the list reserves the measured dock height', () => Number.parseFloat(getComputedStyle(list).getPropertyValue('--chat-dock-h')) === dock.offsetHeight)
+  expect(list.getBoundingClientRect().bottom, 'messages run under the floating dock').toBe(host.getBoundingClientRect().bottom)
   await page.getByTestId('chat-composer').fill('Typed text stays readable')
   const editor = host.querySelector<HTMLElement>('[contenteditable]')!
   expect(contrast(rgbOf(getComputedStyle(editor).color), rgbOf(getComputedStyle(input).backgroundColor)), 'the typed text reads on the input').toBeGreaterThanOrEqual(4.5)
@@ -133,10 +137,11 @@ it.each(['dark', 'light'] as const)('%s: the shared agent composer keeps phone g
     await until('the shared phone composer has mounted', () => !!host?.querySelector('[data-chat-composer-placement="bottom"] [contenteditable]'))
     const layer = host.querySelector<HTMLElement>('[data-chat-composer-placement="bottom"]')!
     const row = layer.lastElementChild!
-    const band = getComputedStyle(row, '::before')
-    expect(band.content, 'the shared slot receives the phone backing').toBe('""')
-    expect(alphaOf(band.backgroundColor)).toBeGreaterThanOrEqual(0.85)
+    const band = getComputedStyle(row.querySelector('[data-slot="composer-bar"]')!, '::before')
+    expect(band.content, 'the shared slot backs its input').toBe('""')
+    expect(alphaOf(band.backgroundColor)).toBe(1)
     expect(Number.parseFloat(band.width), 'the backing covers the whole phone width').toBe(390)
+    expect(getComputedStyle(row, '::before').content, 'the rows above the input stay see-through').toBe('none')
     expect(row.getBoundingClientRect().height).toBeGreaterThan(0)
     host.removeAttribute('data-phone-shell')
     const desktopFade = getComputedStyle(row, '::before')

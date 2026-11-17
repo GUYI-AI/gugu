@@ -152,6 +152,7 @@ it('a page of the pair in full screen keeps the one strip over it, and nothing u
   await until('the strip is drawn', () => strip()?.getBoundingClientRect().width ?? 0, (width) => width === 1000);
   const row = harness.container.querySelector<HTMLElement>('[data-pane-strip]')!.getBoundingClientRect().height;
   const sidePane = layout.groups.find(({ pane }) => pane.entries.has(side))!.pane;
+  expect(strip().querySelector('[data-testid="tab-exit-fullscreen"]')).toBeNull();
   await act(() => sidePane.tabFill(side)!.toggle());
   const cover = harness.container.querySelector<HTMLElement>('[data-tab-fullscreen]')!;
   await until('the page covers the workspace under the strip', () => cover.getBoundingClientRect().width, (width) => width === 1000);
@@ -161,5 +162,11 @@ it('a page of the pair in full screen keeps the one strip over it, and nothing u
   expect(strip().contains(document.elementFromPoint(500, 20))).toBe(true);
   expect(harness.container.querySelectorAll('.session-tab-bar')).toHaveLength(1);
   expect(harness.container.querySelector<HTMLElement>('[data-pane-strip]')!.getBoundingClientRect().height).toBe(row);
-  await act(() => tabFullscreen.exit());
+  // The strip over a full-screen page offers a worded way out; it is the same exit as the tab's own toggle and Esc.
+  const exit = strip().querySelector<HTMLButtonElement>('[data-tabbar-actions] [data-testid="tab-exit-fullscreen"]')!;
+  expect(exit.textContent).not.toBe('');
+  expect(exit.getAttribute('aria-label')).toBe(exit.textContent);
+  await act(() => exit.click());
+  expect(tabFullscreen.isOn(sidePane)).toBe(false);
+  expect(strip().querySelector('[data-testid="tab-exit-fullscreen"]')).toBeNull();
 });
