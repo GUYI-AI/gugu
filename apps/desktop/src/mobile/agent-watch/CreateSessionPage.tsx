@@ -48,6 +48,7 @@ import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draf
 import { createAttachmentDraftAdapter } from './create-attachment-adapter'
 import { creationThinking } from './creation-thinking'
 import { creationAttachmentPorts } from './create-attachment-rpc'
+import { creationFailureDiagnostic } from './create-failure-diagnostic'
 import { completeAttachmentCreation, readAttachmentCreation, readAttachmentCreationDevice, submitAttachmentCreation } from './create-attachment-submission'
 import './task-flow-catalog'
 import {
@@ -340,10 +341,10 @@ function CreateOnMachine({
         if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
         if (attachmentReceipt) completeAttachmentCreation(mobileCreationDraftKey(ownerId!), attachmentReceipt.request)
       } catch (err) {
-        // 机器那边装 agent 没装成:原因进日志,人看到的是能照做的下一步(按本端语言,❌ 机器那边拼的双语原文)。
-        // 其余原因同理:按原因码归类说人话(remoteFailureKind),原文只进日志。
-        createLog.warn({ error: String(err) }, 'create session failed')
         const code = err instanceof SessionpageRpcError ? err.code : err instanceof Error && 'code' in err && typeof err.code === 'string' ? err.code : null
+        // Host errors may include private paths. Log only a locally declared code;
+        // preserve the original error for the existing retry and user-error contract.
+        createLog.warn(creationFailureDiagnostic(code), 'create session failed')
         if (phone && ownerId && submittedPhoneRequest && code === 'phone_create_rejected') {
           // The host explicitly proved it rejected before any durable provision was admitted.
           forgetPhoneSessionCreate(ownerId, device.device_id, submittedPhoneRequest)
