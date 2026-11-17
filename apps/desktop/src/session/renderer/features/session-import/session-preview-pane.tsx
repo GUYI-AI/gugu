@@ -1,4 +1,4 @@
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { Spinner } from '@renderer/lib/ui/spinner';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -41,6 +41,8 @@ export function SessionPreviewPane({
   const { translate } = useSessionMessages();
   const reading = useReplica(sessionImportPreview, session ? [source.deviceId, session.filePath, session.engine] : null);
   const preview = reading.state === 'value' ? reading.value : null;
+  // Also a read again (the session picked again) failing over the preview read before: the file may be gone since.
+  const failure = refreshFailure(reading);
 
   if (!session) {
     return (
@@ -73,11 +75,11 @@ export function SessionPreviewPane({
         </div>
       ) : null}
 
-      {reading.state === 'error' ? (
+      {failure ? (
         // 文件可能已被删/移走（清单来自索引缓存）——直说，别给一个空白的预览。
         <p className="text-xs leading-relaxed text-foreground-destructive">
           {/* 已是整句(describeImportFailure):本机的诊断原样穿过外壳,别的机器按原因说人话。 */}
-          {describeError(reading.error)}
+          {describeError(failure)}
         </p>
       ) : null}
 

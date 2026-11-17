@@ -187,6 +187,14 @@ describe('直接展开的连接列表', () => {
     expect(page.go).toHaveBeenLastCalledWith('connector:qq-mail')
   })
 
+  it('列表读过、再读失败:照旧列着,上面说没刷新并给重试', async () => {
+    const page = pageProps('qq-mail')
+    await render(PhoneConnectorsPage, { ...page.props, integrations: { ...(page.props.integrations as object), error: new Error('link closed') } })
+    expect(q('assistant-connector-qq-mail')).not.toBeNull()
+    await clickElement(q('assistant-connectors')!.querySelector<HTMLButtonElement>('[data-refresh-failed] button')!)
+    expect(page.retry).toHaveBeenCalledOnce()
+  })
+
   it('有凭据但尚未检查、授权已过期、检查失败分别显示真实状态', async () => {
     const page = pageProps('qq-mail', { configured: { 'qq-mail': true } })
     await render(PhoneConnectorsPage, page.props)
@@ -309,6 +317,18 @@ describe('详情页', () => {
     await waitForCondition(() => document.querySelector('[role="alert"]') !== null, 'read failure shown')
     expect(q('assistant-connector-accounts-retry')).toBeNull()
     expect(q('assistant-connector-disconnect')).toBeNull()
+  })
+
+  it('邮箱:账号清单读过、再读失败:列着上一次的,下面说没读到并给重试', async () => {
+    rpc.integrations.accounts.mockResolvedValue([{ accountId: 'imap.qq.com:a@qq.com', displayName: 'a@qq.com', connectedAt: null, isDefault: true, fields: {} }])
+    const page = pageProps('qq-mail', { configured: { 'qq-mail': true } })
+    await render(PhoneConnectorDetail, page.props)
+    await waitForCondition(() => qa('assistant-connector-account').length === 1, 'account listed')
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    rpc.integrations.accounts.mockRejectedValue(new Error('link closed'))
+    await act(async () => { await assistantPanel.refresh(assistant.id).catch(() => undefined) })
+    await waitForCondition(() => document.querySelector('[role="alert"]') !== null, 'failed refresh not said')
+    expect(qa('assistant-connector-account')).toHaveLength(1)
   })
 
   it('邮箱:那台机器比多账号老(unknown_method)= 按单账号画,有整家「断开连接」', async () => {

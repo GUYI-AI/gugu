@@ -4,7 +4,7 @@ import { deviceMachines } from '@gugu/core/shared/deviceMachines'
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections'
 import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
 import { chatChannels } from '@/components/connections/connection-replicas'
-import { useReplica } from '@/lib/replica'
+import { refreshFailure, useReplica } from '@/lib/replica'
 import { withoutAssistantHome } from '@/lib/assistantHome'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { appAssistantCountsOf } from '@/session/shared/extensions/assistant-binding'
@@ -39,7 +39,9 @@ export const PhoneAssistantCountsSource = observer(function PhoneAssistantCounts
   const counts = appAssistantCountsOf({
     devices: devices.error ? UNREADABLE : devices.loading ? LOADING
       : ready(deviceMachines(withoutAssistantHome([...devices.devices, ...(devices.phones ?? [])], cloudDeviceId)).length),
-    connectedApps: integrations.error || chats.state === 'error' ? UNREADABLE
+    // A refresh that failed over what was read is unreadable too, as on the computer (assistant-app-counts.tsx): the contract
+    // has no "last read" state (❌ the old count handed over as current).
+    connectedApps: integrations.error || refreshFailure(chats) ? UNREADABLE
       : integrations.data && chats.state === 'value'
         ? ready(assistantApplicationCounts(integrations.data.items, integrations.data.configured, integrations.data.statuses, chats.value)) : LOADING,
     projects: projectCount !== null ? ready(projectCount) : status === 'error' ? UNREADABLE : LOADING,

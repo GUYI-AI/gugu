@@ -23,6 +23,7 @@ import { GuguToolGroups } from './gugu-tool-groups';
 import { McpLibraryRow } from './mcp-library-row';
 import { harnessMcpServers, useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
 import { Unknown } from '@/components/ui/Unknown';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 
@@ -50,6 +51,8 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
     translate
   );
   const disabled = library.isBusy || !!notice?.readOnly;
+  // A failed read over what is still drawn: another machine's page says it once in `notice`; this machine's in its section.
+  const failed = (error: Error | null) => (notice ? null : <RefreshFailed error={error} onRetry={library.reload} />);
   const fail = (failure: unknown) => {
     log.error('library MCP action failed', { error: String(failure) });
     toast({ title: translate('mcpLibrary.saveFailed'), description: messageForUser(failure), variant: 'destructive' });
@@ -98,6 +101,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
                 <ReadFailedLine message={messageForUser(library.provided.error)} onRetry={library.reload} className="my-2" />
               ) : (
                 <>
+                  {failed(library.provided.error)}
                   {library.provided.value.builtIn.map((name) => (
                     <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
                   ))}
@@ -143,6 +147,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
               >
                 {translate('mcpLibrary.ownServers')}
               </SectionLabel>
+              {failed(library.failures.servers)}
               {library.servers === null ? (
                 <Unknown className="my-2 h-8 w-full" />
               ) : library.servers.length === 0 ? (
@@ -166,6 +171,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
                 ))
               )}
             </section>
+            {failed(library.failures.agents)}
             {library.installed.length > 0 && (
               <section data-slot="mcp-library-harnesses" className="flex flex-col">
                 <SectionLabel className="!px-0">{translate('mcpLibrary.harnessesGroup')}</SectionLabel>
@@ -225,20 +231,23 @@ function HarnessGroup({
             {translate('common.retry')}
           </Button>
         </div>
-      ) : servers.value.length === 0 ? (
-        <div className={QUIET}>{translate('mcpLibrary.harnessEmpty', { agent: agent.name })}</div>
       ) : (
-        servers.value.map((server) => (
-          <McpLibraryRow
-            key={server.name}
-            server={server}
-            check={library.harnessChecks[`${agent.id}:${server.name}`]}
-            checking={library.checking.has(`${agent.id}:${server.name}`)}
-            disabled={disabled}
-            harnessName={agent.name}
-            onCheck={() => void library.checkHarness(agent.id, server.name).catch(onFail)}
-          />
-        ))
+        <>
+          <RefreshFailed error={servers.error} onRetry={() => void harnessMcpServers.refresh(host.key, agent.id)} />
+          {servers.value.length === 0 ? (
+            <div className={QUIET}>{translate('mcpLibrary.harnessEmpty', { agent: agent.name })}</div>
+          ) : servers.value.map((server) => (
+            <McpLibraryRow
+              key={server.name}
+              server={server}
+              check={library.harnessChecks[`${agent.id}:${server.name}`]}
+              checking={library.checking.has(`${agent.id}:${server.name}`)}
+              disabled={disabled}
+              harnessName={agent.name}
+              onCheck={() => void library.checkHarness(agent.id, server.name).catch(onFail)}
+            />
+          ))}
+        </>
       )}
     </FoldGroup>
   );

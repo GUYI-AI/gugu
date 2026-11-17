@@ -229,6 +229,26 @@ describe('phone first-send host readiness', () => {
     expect(send().disabled).toBe(false)
   })
 
+  it('options and models read before, a read again that fails is said with a retry; the options stay and the draft still sends', async () => {
+    const { sessionCreateModels, sessionCreateOptions } = await import('../../../apps/desktop/src/lib/agentModelReplicas')
+    rpc.options.mockResolvedValue(options)
+    await harness.render(pageOn(device, { onCreated: vi.fn() }))
+    await write('照旧能发')
+    await act(async () => { await Promise.resolve() })
+    expect(send().disabled).toBe(false)
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-options-error"]')).toBeNull()
+    expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+    rpc.options.mockRejectedValue(new Error('host request timed out'))
+    rpc.models.mockRejectedValue(new Error('catalogue unavailable'))
+    await act(async () => {
+      await Promise.all([sessionCreateOptions.refresh(device.device_id), sessionCreateModels.refresh(device.device_id)].map((read) => read.catch(() => undefined)))
+    })
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-options-error"]')?.textContent).toContain('host request timed out')
+    expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
+    expect(harness.container.querySelector('[data-testid="pick-codex"]')).not.toBeNull()
+    expect(send().disabled).toBe(false)
+  })
+
   it('blocks a host without a usable harness and an offline phone without disabling or removing the draft', async () => {
     rpc.options.mockResolvedValue({ ...options, harnesses: [{ ...options.harnesses[0]!, status: 'missing' }] })
     const props = { device, onCreated: vi.fn() }

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { MachineLimitRefusal } from '@gugu/core/cloud/machineLimit'
 import { Button } from '../../components/ui/Button'
 import { Sheet } from '../../components/ui/Sheet'
+import { RefreshFailed } from '../../components/ui/RefreshFailed'
 import { MachineLimitNotice } from '../../components/settings/addServer/MachineLimitNotice'
 import { PLATFORM_NAMES } from '../../lib/deviceRowModel'
 import { rendererLogger } from '../../lib/log'
@@ -76,6 +77,9 @@ export function ServerLoginApproveSheet({ code, onDone }: { code: string | null;
             <Button variant="secondary" size="lg" onClick={onDone}>{t('devices.approveServer.close')}</Button>
           </>
         )}
+        {/* Read before (an earlier open), read again failed: what was read stays, said with a retry (❌ shown as current). */}
+        {reading.state === 'value' && code !== null && !decided?.final
+          ? <RefreshFailed error={reading.error} onRetry={() => void serverLoginRequest.refresh(code)} /> : null}
         {view.kind === 'request' && <RequestBody view={view} onDecide={(approve) => decide(view.request, approve)} />}
         {view.kind === 'final' && (
           <>

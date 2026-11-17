@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { Cloud } from '@/lib/icons'
 import { platform } from '@/platform'
 import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
@@ -57,9 +58,10 @@ export function CloudGate({
 }) {
   const { t } = useTranslation('assistant')
   const body = (() => {
-    if (integrations.error) return <ReadFailed title={t('connectors.loadFailed')} error={integrations.error} onRetry={integrations.retry} />
-    if (!integrations.data) return <AppConnectionListPlaceholder />
-    return children(integrations.data)
+    if (!integrations.data) return integrations.error
+      ? <ReadFailed title={t('connectors.loadFailed')} error={integrations.error} onRetry={integrations.retry} /> : <AppConnectionListPlaceholder />
+    // Read before, read again failed: the list stays, said with a retry (❌ shown as current).
+    return <>{integrations.error ? <RefreshFailed error={integrations.error as Error} onRetry={integrations.retry} /> : null}{children(integrations.data)}</>
   })()
   return body
 }
@@ -138,6 +140,8 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
                 onConnect={() => go(connectSub(view.item.id))}
                 actionNote={plan?.kind === 'unavailable' ? <span className="ta-phone-connect-note" data-testid="assistant-connector-connect-note">{t(plan.reason === 'needs-app' ? 'connectors.connectInApp' : 'connectors.connectOnDesktop', { name: view.item.name })}</span> : undefined}
                 disabled={state === 'checking'} />
+              {integrations.error || detail.error
+                ? <RefreshFailed error={(integrations.error ?? detail.error) as Error} onRetry={integrations.error ? integrations.retry : detail.reload} /> : null}
               {view.connected ? <AssistantSection testId="assistant-connector-connection">
                 <AssistantRow
                   title={t('connectors.status')}

@@ -23,7 +23,8 @@ vi.mock('@/store/chatContext', () => ({
 }))
 // Whose assistant is which agent (the myAssistant replica's reading): read, and none of these agents (or not read yet).
 const mine = vi.hoisted(() => ({ reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } as unknown }))
-vi.mock('@/lib/myAssistant', () => ({ useMyAssistant: () => mine.reading }))
+const refreshMyAssistant = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@/lib/myAssistant', () => ({ useMyAssistant: () => mine.reading, refreshMyAssistant }))
 vi.mock('@/store/contactsContext', () => ({
   useContactsStore: () => ({
     contacts: [{ id: 'agent-a', display_name: 'Coder', avatar: null, bio: null, type: 'agent', owner_user_id: 'me' }],
@@ -78,6 +79,18 @@ describe('phone project contacts', () => {
       mine.reading = { state: 'value', value: { agentId: 'agent-a', provisionDeviceId: null }, stale: false, error: null }
       await harness.render(createElement(PhoneProjectContacts, { project, sessions, active: true, onBack: vi.fn(), onOpenGroup: vi.fn() }))
       expect(row.isConnected ? row.textContent : '').toContain('partners.assistant')
+    } finally {
+      mine.reading = { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }
+    }
+  })
+
+  it('who the assistant is, read before and read again failed: the 「助理」 line stays, the failure said with a retry', async () => {
+    mine.reading = { state: 'value', value: { agentId: 'agent-a', provisionDeviceId: null }, stale: false, error: new Error('cloud unreachable') }
+    try {
+      await harness.render(createElement(PhoneProjectContacts, { project, sessions, active: true, onBack: vi.fn(), onOpenGroup: vi.fn() }))
+      expect(harness.container.textContent).toContain('partners.assistant')
+      await act(async () => { (harness.container.querySelector('[data-refresh-failed] button') as HTMLButtonElement).click() })
+      expect(refreshMyAssistant).toHaveBeenCalledOnce()
     } finally {
       mine.reading = { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }
     }

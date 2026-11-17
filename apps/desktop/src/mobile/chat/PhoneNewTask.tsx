@@ -6,6 +6,7 @@ import type { ComposerAttachAction } from '@/components/chat/ComposerAttachButto
 import { useToast } from '@/components/toastContext'
 import { IconButton } from '@/components/ui/IconButton'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
 import { Check, ChevronDown, Folder, X, Zap } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
@@ -103,6 +104,8 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   const initial = optionsValue && selectedHarness ? selectHarness(initialSelection(optionsValue), selectedHarness, optionsValue) : null
   const modelsReading = useReplica(sessionCreateModels, deviceId && online && initial ? [deviceId, initial.harness!, null, initial.model, 'machine'] : null)
   const read = initial ? { models: modelsReading.state === 'value' ? modelsReading.value : null, failed: modelsReading.state === 'error' } : null
+  // What the machine offered, read before, its read again failed: still offered, said with a retry (❌ shown as current).
+  const staleFailure = (optionsReading.state === 'value' ? optionsReading.error : null) ?? (initial && modelsReading.state === 'value' ? modelsReading.error : null)
   const selection = optionsValue && initial
     ? reconcileModel(initial, read?.models ?? null, false, optionsValue.lastUsed)
     : null
@@ -188,6 +191,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         </Button>
       ) : null}
       <IconButton size="sm" aria-label={t('composer.phoneTask.cancel')} onClick={() => setStage({ kind: 'off' })}><X size={14} /></IconButton>
+      {deviceId ? <RefreshFailed error={staleFailure} onRetry={() => { void sessionCreateOptions.refresh(deviceId); void sessionCreateModels.refresh(deviceId) }} /> : null}
     </div>
   ) : null
 

@@ -5,6 +5,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import {
   chooseThemePack,
+  importedThemePacksModel,
   removeImportedThemePack,
   resetThemePacks,
   restoreThemePackChoice,
@@ -12,6 +13,7 @@ import {
   type ThemePackSlots,
 } from '@renderer/lib/theme/theme-pack-store';
 import { Unknown } from '@/components/ui/Unknown';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import {
   BUILTIN_THEME_PACKS,
   GUGU_DEFAULT_SWATCH,
@@ -151,7 +153,10 @@ export function ThemesLibraryPage() {
         )}
       />
       {reading.state === 'value' ? (
-        <ThemeCards packs={reading.value.packs} slots={reading.value.slots} effective={effective} translate={translate} />
+        <>
+          <RefreshFailed error={reading.error} onRetry={() => void importedThemePacksModel.refresh()} />
+          <ThemeCards packs={reading.value.packs} slots={reading.value.slots} effective={effective} translate={translate} />
+        </>
       ) : reading.state === 'error' ? (
         <p role="alert" className="py-4 text-sm text-muted-foreground">{translate('themes.loadFailed')}</p>
       ) : (

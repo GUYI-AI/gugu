@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
+import { queryClient, refreshFailure, replica, useReplica, type Reading } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { keepLibraryHost, libraryHostOf, useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
@@ -46,7 +46,7 @@ export function useMcpLibrary() {
   const list = useReplica(mcpLibraryServers, [host.key], { read: reachable });
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
   const provided = useReplica(mcpProvided, [host.key], { read: reachable });
-  const agents = useManagementAgents().reading;
+  const { reading: agents, refetch: refetchAgents } = useManagementAgents();
   // @@@reading-default(paired) - while the agent list is not known `isLoading` is true and the view draws no groups (nor offers "add", where `harnessNames` reads it)
   const installed = useMemo(
     () => (agents.state === 'value' ? agents.value : []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
@@ -84,8 +84,11 @@ export function useMcpLibrary() {
     }
   };
 
+  const failures = { servers: refreshFailure(list), agents: refreshFailure(agents), provided: refreshFailure(provided) };
   return {
     servers: list.state === 'value' ? list.value : null,
+    /** A failed read of 咕咕's own list / the installed agents, also over what is still drawn (❌ the kept copy shown as current). */
+    failures,
     provided,
     /** 装了的那几家,各一个折叠的段头;配置等展开才读。 */
     installed,
@@ -109,12 +112,13 @@ export function useMcpLibrary() {
     },
     // 各家那几组只等「装了哪几家」(段头要画出来);各家的配置等展开才读。
     isLoading: (reachable && (list.state === 'unknown' || provided.state === 'unknown')) || agents.state === 'unknown',
-    error: (list.state === 'error' ? list.error : null) ?? (agents.state === 'error' || agents.state === 'value' ? agents.error : null) ?? (provided.state === 'error' ? provided.error : null),
+    error: failures.servers ?? failures.agents ?? failures.provided,
     hasData: list.state === 'value',
     reload: () => {
       void mcpLibraryServers.refresh(host.key);
       void mcpProvided.refresh(host.key);
       void harnessMcpServers.refresh(host.key);
+      void refetchAgents();
     },
     isBusy: add.isPending || update.isPending || remove.isPending,
     add: add.mutateAsync,

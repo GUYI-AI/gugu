@@ -2,11 +2,13 @@ import { useTranslation } from 'react-i18next'
 import { AssistantOnboarding } from '@/components/assistant/AssistantOnboarding'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { PaneHeader } from '@/components/ui/Pane'
 import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar'
 import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look'
 import { canSetUpCloudAssistant, cloudComputer, useCloudComputer } from '@/lib/cloudComputer'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { refreshFailure } from '@/lib/replica'
 import { refreshMyAssistant } from '@/lib/myAssistant'
 import { ChevronLeft } from '@/lib/icons'
 import { useAuth } from '@/store/auth'
@@ -79,6 +81,8 @@ export function MobileAssistantGate({ stage, name, ownerName, onExit }: { stage:
       <div className="ta-phone" data-testid="mobile-assistant-gate-onboarding">
         <PaneHeader mobile leading={back} title={who} titleLevel="page" />
         <main className="ta-phone-gate ta-phone-onboarding">
+          {/* A kept snapshot whose read again failed: the guide stays (❌ unmounted), the failure is said with a retry. */}
+          <RefreshFailed error={refreshFailure(cloud)} onRetry={() => void cloudComputer.refresh()} />
           <AssistantOnboarding ownerUserId={user.id} ownerName={ownerName} snapshot={snapshot} device={device} cloudAvailable={canSetUpCloudAssistant(cloud)} localDeviceId={null} />
         </main>
       </div>

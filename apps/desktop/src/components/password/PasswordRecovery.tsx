@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
-import { usePasswordSnapshot } from '@/lib/passwordBetaNotifications'
+import { passwordVault, usePasswordVault } from '@/lib/passwordBetaNotifications'
 import { Button } from '../ui/Button'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { Sheet } from '../ui/Sheet'
 import { SettingsGroup, SettingsNote, SettingsRow } from '../settings/SettingsPrimitives'
 import { Confirm, RecoveryCodeSheet } from './passwordSheets'
@@ -31,7 +32,7 @@ export function RecoveryOffer({ snapshot }: { snapshot?: PasswordSnapshot }) {
 
 /** Settings → 账户: the recovery code belongs to the account, not to one device. Shown once a password is synced here. */
 export function PasswordRecoveryGroup() {
-  const snapshot = usePasswordSnapshot()
+  const { snapshot, failure } = usePasswordVault()
   const { busy, error, run } = usePasswordCommand()
   const [asking, setAsking] = useState<'regenerate' | 'drop'>()
   const [shown, setShown] = useState<{ code: string; fresh: boolean }>()
@@ -40,7 +41,10 @@ export function PasswordRecoveryGroup() {
   const create = async (fresh: boolean) => { const reply = await run({ type: 'sync-recovery-create' }); setAsking(undefined); if (reply?.recoveryCode) setShown({ code: reply.recoveryCode, fresh }) }
   const set = sync.recovery === 'set'
   return <>
-    <SettingsGroup title="密码恢复码" footer={error ? <SettingsNote tone="danger" role="alert">{error}</SettingsNote> : undefined}>
+    <SettingsGroup title="密码恢复码" footer={error || failure ? <>
+      {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+      <RefreshFailed error={failure} onRetry={() => { void passwordVault.refresh() }} />
+    </> : undefined}>
       <SettingsRow title="恢复码" description={set ? '所有设备都丢了时，在新设备上登录并输入它，就能找回密码。' : '未设置。所有设备都丢了时，就找不回密码。'}
         control={set
           ? <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking('regenerate')}>重新生成</Button>

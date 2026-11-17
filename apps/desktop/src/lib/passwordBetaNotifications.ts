@@ -35,16 +35,18 @@ export const passwordSaveDraft = replica({
   read: async (_owner: string, requestId: string): Promise<PasswordSaveDraft | null> => (await ask({ type: 'save-draft', requestId })).draft ?? null,
 })
 
-/** The vault's reading where only a value matters (notifications, the device prompt): undefined until it is read. */
-export function usePasswordSnapshot(): PasswordSnapshot | undefined {
+/**
+ * The vault as the surfaces that show part of it read it (notifications, the device prompt, the recovery row): `snapshot`
+ * undefined until it is read; `failure` a refresh that failed over the snapshot still shown, which they say beside it
+ * (❌ a kept snapshot drawn as current). With nothing read they draw nothing; Settings → 密码 says a vault that cannot be read.
+ */
+export function usePasswordVault(): { snapshot: PasswordSnapshot | undefined; failure: Error | null } {
   const reading = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
-  return reading.state === 'value' ? reading.value : undefined
+  return reading.state === 'value' ? { snapshot: reading.value, failure: reading.error } : { snapshot: undefined, failure: null }
 }
 
-export function usePasswordNotifications(): PasswordRequestView[] {
-  const value = usePasswordSnapshot()
-  return value ? [...value.approvals, ...value.saves] : []
-}
+export const passwordNotifications = (snapshot: PasswordSnapshot | undefined): PasswordRequestView[] =>
+  snapshot ? [...snapshot.approvals, ...snapshot.saves] : []
 
 /** The device prompt can be put aside; the notification list brings it back. */
 const promptListeners = new Set<(deviceId: string | null) => void>()

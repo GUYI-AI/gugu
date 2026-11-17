@@ -2,10 +2,11 @@ import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordSyncRequest } from '@gugu/core/shared/passwordBetaProtocol'
-import { usePasswordSnapshot, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
+import { passwordVault, usePasswordVault, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { X } from '@/lib/icons'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from '../settings/SettingsPrimitives'
 import { promptedRequests, usePasswordCommand } from './passwordModel'
@@ -19,7 +20,7 @@ const name = (request: PasswordSyncRequest) => request.label || '新设备'
  * nothing. Either can be put aside; the notification list brings it back. Mounted once, above the whole signed-in app.
  */
 export function PasswordDeviceHost() {
-  const snapshot = usePasswordSnapshot()
+  const { snapshot, failure } = usePasswordVault()
   const { busy, error, run, clear } = usePasswordCommand()
   const [aside, setAside] = useState<ReadonlySet<string>>(new Set())
   const [cardClosed, setCardClosed] = useState(false)
@@ -34,6 +35,7 @@ export function PasswordDeviceHost() {
   const request = promptedRequests(sync).find(entry => !aside.has(entry.deviceId))
   const joining = sync?.state === 'joining' || sync?.state === 'blocked' || sync?.state === 'refused' ? sync : undefined
   const putAside = (deviceId: string) => { clear(); setAside(previous => new Set([...previous, deviceId])) }
+  const stale = <RefreshFailed error={failure} onRetry={() => { void passwordVault.refresh() }} />
   return <>
     {request && <Sheet onClose={() => putAside(request.deviceId)} desktopWidth="380px" mobileFitContent ariaLabel="新设备请求使用密码" testId="password-device-prompt" zIndex="var(--z-settings-modal)">
       <div className="flex flex-col gap-3 px-5 pb-5 pt-6" data-stage={request.stage}>
@@ -46,6 +48,7 @@ export function PasswordDeviceHost() {
               {request.code ? <Code value={request.code} /> : <span className="font-mono text-[length:var(--font-title)] tracking-[0.2em] text-[var(--muted-fg)]" aria-label="验证码生成中">··· ···</span>}
             </div>
           </>}
+        {stale}
         {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
         {request.stage !== 'mismatch' && <Button variant="primary" size="lg" disabled={busy || request.stage !== 'compare'} data-testid="password-device-allow"
           onClick={() => { void run({ type: 'sync-approve', deviceId: request.deviceId }) }}>允许</Button>}
@@ -68,6 +71,7 @@ export function PasswordDeviceHost() {
         : joining.state === 'joining' && joining.code
           ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">两边数字一致，就在那台设备上点允许。</div></>
           : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">打开你另一台设备上的咕咕，那里会弹出提示。</div>}
+      {stale}
       {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>另一台设备都不在了？用恢复码</Button>}
     </div>, document.body)}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}

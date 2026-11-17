@@ -241,6 +241,8 @@ export function useThemePackReading(): Reading<{ packs: ThemePack[]; slots: Them
     if (imported.state !== 'value') return imported;
     if (slots.state !== 'value') return slots;
     const packs = [...BUILTIN_THEME_PACKS, ...imported.value];
-    return { ...slots, value: { packs, slots: validThemePackSlots(slots.value, packs) as Partial<Record<ThemeMode, string>> } };
+    // Either half's failed refresh is the whole's: the pack list read before stays, said as not refreshed (❌ shown as current).
+    return { state: 'value', stale: imported.stale || slots.stale, error: imported.error ?? slots.error,
+      value: { packs, slots: validThemePackSlots(slots.value, packs) as Partial<Record<ThemeMode, string>> } };
   }, [imported, slots]);
 }

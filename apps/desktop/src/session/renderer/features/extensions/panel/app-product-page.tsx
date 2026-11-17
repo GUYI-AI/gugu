@@ -51,6 +51,7 @@ import { describeCapability, programDetails, type SessionTranslate } from '../ex
 import type { ExtensionsApi } from '../extensions-host';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { useReplica } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { LOCAL_HOST } from '../extensions-api';
 import { marketListing, marketVersionHistory } from '../market-replicas';
 import { ResourceMenu } from '@/components/ResourceMenu';
@@ -292,6 +293,8 @@ export function AppProductPage({
           // 没装时可以挑一版装;装着的换版本在它的设置页,这里只读。那台机器做不了事时跟头上那颗一起灰。
           <fieldset disabled={readOnly} className="contents">
             <div className="mk-vers">
+              {/* Read before, its refresh failed: said with a retry, the versions read before staying (❌ shown as current). */}
+              <RefreshFailed error={historyReading.state === 'value' ? historyReading.error : null} onRetry={() => void marketVersionHistory.refresh(hostKey, manifest.id)} />
               <VersionHistorySection
                 state={history}
                 extensionId={manifest.id}

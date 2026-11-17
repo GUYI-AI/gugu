@@ -121,6 +121,24 @@ describe('App 的产品页 (#7059)', () => {
     });
   });
 
+  it('history read before, a refresh that fails is said with a retry, the versions read staying', async () => {
+    let fail = false;
+    const entry = { publishedAt: '2026-10-24T00:00:00Z', releaseNotes: 'A release', compat: null, yanked: null, version: '2.0.0' };
+    const api = { ...listingOf(null), marketHistory: vi.fn(async () => (fail ? { success: false, error: 'machine unreachable' } : { success: true, data: [entry] })) };
+    const { marketVersionHistory } = await import('../market-replicas');
+    apis.set('product-refresh', api);
+    await render({ api, hostKey: 'remote:product-refresh' }, async (document) => {
+      const toggle = document.querySelector('[data-testid="app-product-news"] button[aria-expanded]')!;
+      await act(async () => void toggle.dispatchEvent(new document.defaultView!.MouseEvent('click', { bubbles: true })));
+      expect(document.querySelectorAll('[data-refresh-failed]')).toHaveLength(0);
+      fail = true;
+      await act(async () => { await marketVersionHistory.refresh('remote:product-refresh', 'pomodoro-log').catch(() => undefined); });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(document.querySelectorAll('[data-refresh-failed]')).toHaveLength(1);
+      expect(document.querySelector('[data-testid="extension-history-pomodoro-log-2.0.0"]')).not.toBeNull();
+    });
+  });
+
   it('「给 agent 工具」那句带上要跑的命令,与同意框同一句', async () => {
     expect((await render({})).text).toContain('node mcp/server.mjs');
   });

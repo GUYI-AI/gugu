@@ -114,3 +114,17 @@ it('does not dispatch an engine default when the catalogue read fails', async ()
   expect(readComposer(input())).toBe('Keep this task draft')
   expect(harness.container.querySelector('[data-testid="phone-task-tag"]')?.textContent).toContain('读不到')
 })
+
+it('what the machine offered, read before, a read again that fails is said with a retry; the agent stays offered', async () => {
+  const { sessionCreateOptions } = await import('@/lib/agentModelReplicas')
+  await mount()
+  const tag = () => harness.container.querySelector('[data-testid="phone-task-tag"]')!
+  expect(tag().querySelector('[data-refresh-failed]')).toBeNull()
+  vi.mocked(rpc.fetchCreateOptions).mockRejectedValue(new Error('machine unreachable'))
+  await act(async () => { await sessionCreateOptions.refresh('machine').catch(() => undefined) })
+  expect(tag().querySelector('[data-refresh-failed]')).not.toBeNull()
+  expect(tag().textContent).toContain('Codex')
+  vi.mocked(rpc.fetchCreateOptions).mockResolvedValue(options)
+  await clickElement(tag().querySelector<HTMLButtonElement>('[data-refresh-failed] button')!)
+  expect(tag().querySelector('[data-refresh-failed]')).toBeNull()
+})

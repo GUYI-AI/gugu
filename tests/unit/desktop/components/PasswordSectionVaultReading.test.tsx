@@ -70,13 +70,47 @@ describe('Settings → 密码 reads the vault as a reading fed by its push', () 
   })
 
   it('shares one read and one feed with the other surfaces that show the vault', async () => {
-    const { usePasswordSnapshot } = await import('../../../../apps/desktop/src/lib/passwordBetaNotifications')
-    function Count() { return <span data-testid="count">{usePasswordSnapshot()?.items.length}</span> }
+    const { usePasswordVault } = await import('../../../../apps/desktop/src/lib/passwordBetaNotifications')
+    function Count() { return <span data-testid="count">{usePasswordVault().snapshot?.items.length}</span> }
     const vault = fakeVault(async () => ({ ok: true, snapshot: snapshotOf(item('a', 'GitHub')) }))
     await render(createNode('div', null, createNode(PasswordSection), createNode(Count)))
     await waitForCondition(() => text().includes('GitHub') && harness.container.querySelector('[data-testid="count"]')?.textContent === '1', 'not drawn')
     expect(snapshotReads(vault.invoke)).toBe(1)
     expect(vault.listeners.size).toBe(1)
+  })
+})
+
+describe('the surfaces that show part of the vault', () => {
+  it('a refresh that fails over the snapshot shown is said with a retry, what was read staying (recovery row)', async () => {
+    const { PasswordRecoveryGroup } = await import('../../../../apps/desktop/src/components/password/PasswordRecovery')
+    const ready: PasswordSnapshot = { ...snapshotOf(item('a', 'GitHub')), sync: { state: 'ready', devices: [], requests: [], recovery: 'set' } }
+    let fail = false
+    const vault = fakeVault(async () => (fail ? { ok: false, code: 'SYSTEM_STORAGE_UNAVAILABLE' } : { ok: true, snapshot: ready }))
+    await render(createNode(PasswordRecoveryGroup))
+    await waitForCondition(() => text().includes('恢复码'), 'recovery row not drawn')
+    expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+    fail = true
+    await vault.push()
+    await waitForCondition(() => harness.container.querySelector('[data-refresh-failed]') !== null, 'failed refresh not said')
+    expect(text()).toContain('重新生成')
+    fail = false
+    await act(async () => { (harness.container.querySelector('[data-refresh-failed] button') as HTMLButtonElement).click() })
+    await waitForCondition(() => harness.container.querySelector('[data-refresh-failed]') === null, 'retry did not read again')
+  })
+})
+
+describe('the device prompt over a kept vault', () => {
+  it('the join card stays when the vault read again fails, the failure said with a retry', async () => {
+    const { PasswordDeviceHost } = await import('../../../../apps/desktop/src/components/password/PasswordDeviceHost')
+    const joining: PasswordSnapshot = { ...snapshotOf(), sync: { state: 'joining', code: '123456' } }
+    let fail = false
+    const vault = fakeVault(async () => (fail ? { ok: false, code: 'SYSTEM_STORAGE_UNAVAILABLE' } : { ok: true, snapshot: joining }))
+    await render(createNode(PasswordDeviceHost))
+    await waitForCondition(() => document.querySelector('[data-testid="password-join-card"]') !== null, 'join card not drawn')
+    expect(document.querySelector('[data-testid="password-join-card"] [data-refresh-failed]')).toBeNull()
+    fail = true
+    await vault.push()
+    await waitForCondition(() => document.querySelector('[data-testid="password-join-card"] [data-refresh-failed]') !== null, 'failed refresh not said')
   })
 })
 

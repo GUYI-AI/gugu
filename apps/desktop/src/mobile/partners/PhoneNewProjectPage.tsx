@@ -16,7 +16,8 @@ import { newProjectPath, projectNameProblem } from './partnersModel'
 import { Avatar } from '@/components/Avatar'
 import { projectRpcOn } from './projectRpc'
 import { Unknown } from '@/components/ui/Unknown'
-import { useReplica } from '@/lib/replica'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
+import { refreshFailure, useReplica } from '@/lib/replica'
 import { LOCAL_SETTINGS_HOST_KEY, settingsModelOf } from '@/session/renderer/features/settings/app-settings-client'
 import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
 
@@ -68,8 +69,9 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const host = device ? (device.is_current_device ? LOCAL_SETTINGS_HOST_KEY : device.device_id) : null
   const settings = useReplica(settingsModelOf(host ?? LOCAL_SETTINGS_HOST_KEY), host ? ['localProject', host] : null)
   const shownDirectory = settings.state === 'value'
-    ? { path: (settings.value.value as { defaultProjectsDirectory?: string }).defaultProjectsDirectory?.trim() || null, failed: false }
-    : settings.state === 'error' ? { path: null, failed: true } : null
+    ? { path: (settings.value.value as { defaultProjectsDirectory?: string }).defaultProjectsDirectory?.trim() || null } : null
+  // Not read, or read before and read again failed: said under the rows with a retry (❌ 「没有默认目录」, ❌ the kept one as current).
+  const directoryFailure = host && !folderPath ? refreshFailure(settings) : null
 
   const trimmed = name.trim()
   const placeholder = t('partners.newProject.title')
@@ -79,7 +81,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       ? shortHome(newProjectPath(shownDirectory.path, trimmed || placeholder))
       : shownDirectory
         ? t('partners.newProject.noDefaultDirectory')
-        : device ? <Unknown className="w-32" /> : ''
+        : device && settings.state !== 'error' ? <Unknown className="w-32" /> : ''
 
   const create = async () => {
     if (!device || creating) return
@@ -200,6 +202,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </div>
+        {host ? <RefreshFailed error={directoryFailure} onRetry={() => void settingsModelOf(host).refresh('localProject', host)} /> : null}
         {error ? <p className="gg-partners-error" role="alert">{error}</p> : null}
       </div>
     </Pane>

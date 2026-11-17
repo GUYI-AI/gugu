@@ -13,6 +13,7 @@ import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { IconButton } from '../ui/IconButton'
 import { SectionLabel } from '../ui/SectionLabel'
 import { Hint } from '../ui/Tooltip'
@@ -21,7 +22,7 @@ import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from '
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
 import { isAssistantAgent } from '@/session/renderer/features/assistant/assistant-lineage'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
-import { usePasswordNotifications, usePasswordSnapshot, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
+import { passwordNotifications, passwordVault, usePasswordVault, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { promptedRequests, waitingToJoin } from '../password/passwordModel'
 
 installShellSlots()
@@ -33,8 +34,9 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   const { t } = useTranslation()
   const mobile = useMobileShell()
   const { tasks, count, attention, error } = useNeedsYouTasks()
-  const passwords = usePasswordNotifications()
-  const sync = usePasswordSnapshot()?.sync
+  const vault = usePasswordVault()
+  const passwords = passwordNotifications(vault.snapshot)
+  const sync = vault.snapshot?.sync
   const devices = promptedRequests(sync), joining = waitingToJoin(sync)
   const notificationCount = count + passwords.length + devices.length + (joining ? 1 : 0)
   const open = useSidebarNotificationsOpen()
@@ -75,6 +77,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
       <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
+        <RefreshFailed error={vault.failure} onRetry={() => { void passwordVault.refresh() }} />
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
           onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} : {request.origin}</Button>)}
         {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}

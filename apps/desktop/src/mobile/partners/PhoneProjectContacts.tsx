@@ -8,8 +8,10 @@ import { HeaderSearch } from '@/components/ui/HeaderSearch'
 import { ListRow } from '@/components/ui/ListRow'
 import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { SectionLabel } from '@/components/ui/SectionLabel'
-import { useMyAssistant } from '@/lib/myAssistant'
+import { refreshMyAssistant, useMyAssistant } from '@/lib/myAssistant'
+import { refreshFailure } from '@/lib/replica'
 import { Unknown } from '@/components/ui/Unknown'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { useAuth } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { followLink } from '@/lib/guguLinks'
@@ -84,6 +86,8 @@ export function PhoneProjectContacts({
             <ListRow mobile role="button" tabIndex={0} leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
           ) : null}
           {shownAgents.length ? <SectionLabel>{t('partners.agents', { count: shownAgents.length })}</SectionLabel> : null}
+          {/* Which one is my assistant: its read failed, the 「助理」 line said with a retry (❌ the kept one as current). */}
+          {shownAgents.length ? <RefreshFailed error={refreshFailure(assistant)} onRetry={() => void refreshMyAssistant()} /> : null}
           {shownAgents.map((agent) => {
             const name = agentName(agent)
             return (

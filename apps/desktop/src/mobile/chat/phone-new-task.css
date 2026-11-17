@@ -45,6 +45,8 @@
   font-size: var(--font-body);
   cursor: pointer;
 }
+/* A refresh that failed over the agents offered (RefreshFailed): its own row under the folder line. */
+.gg-phone-task-tag > [data-refresh-failed] { grid-column: 1 / -1; }
 .gg-phone-task-where {
   grid-column: 1 / -1;
   grid-row: 2;

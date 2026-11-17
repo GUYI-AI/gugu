@@ -4,7 +4,7 @@
 // ❌ 别接到旧的 AddProjectModal(Pick/New/Clone 页签 + 名称输入):那套已删。
 import { useState } from 'react';
 import { messageForUser } from '@/lib/userFacingError';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { homeDirectory, projectPathInspection } from '@renderer/lib/machine-paths';
 import { Button } from '@renderer/lib/ui/button';
 import { DirectoryTree } from '@renderer/features/projects/components/add-project-modal/directory-browser/directory-tree';
@@ -28,6 +28,8 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
   const [path, setPath] = useState('');
   // 选中的目录不是 git 仓库:放行,给一句提示,❌ 替用户 init。
   const inspection = useReplica(projectPathInspection, path ? ['local', path] : null);
+  // Also a read again (the path picked again) failing over the hint read before: said, ❌ the old hint shown as current.
+  const inspectionFailure = refreshFailure(inspection);
   const [submitState, setSubmitState] = useState<'idle' | 'creating'>('idle');
   const name = basenameFromAnyPath(path);
   const canSubmit = path.trim().length > 0 && !!name && submitState === 'idle';
@@ -95,8 +97,8 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
         {inspection.state === 'value' && inspection.value.isDirectory && !inspection.value.isGitRepo && (
           <p className="text-xs text-foreground-muted">{translate('projects.dirTree.notAGitRepo')}</p>
         )}
-        {inspection.state === 'error' && (
-          <p className="text-xs text-foreground-destructive">{messageForUser(inspection.error)}</p>
+        {inspectionFailure && (
+          <p className="text-xs text-foreground-destructive">{messageForUser(inspectionFailure)}</p>
         )}
       </DialogContentArea>
     </ModalLayout>

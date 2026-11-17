@@ -5,7 +5,7 @@ import { copyExternalLink } from '@renderer/lib/open-external-link';
 import { Copy, Globe, RefreshCw, Unplug, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import type { TabContentProps } from '@renderer/features/tabs/core/tab-provider';
 import { rpc } from '@renderer/lib/ipc';
@@ -75,6 +75,9 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
     void machineListeningPorts.refresh(ctx.deviceId);
   };
   const checking = listening.state === 'unknown';
+  // Also a refresh failing over the rows read before (they stay): said, ❌ the old rows shown as current.
+  const forwardsFailure = refreshFailure(forwards);
+  const listeningFailure = refreshFailure(listening);
   const rows = forwards.state === 'value'
     ? mergePortRows(forwards.value, listening.state === 'value' ? listening.value.ports : undefined)
     : null;
@@ -145,8 +148,8 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {header}
       {draftError && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-destructive">{draftError}</div>}
-      {forwards.state === 'error' && <ReadFailed error={forwards.error} onRetry={refresh} />}
-      {listening.state === 'error' && <ReadFailed error={listening.error} onRetry={refresh} />}
+      {forwardsFailure && <ReadFailed error={forwardsFailure} onRetry={refresh} />}
+      {listeningFailure && <ReadFailed error={listeningFailure} onRetry={refresh} />}
       {listening.state === 'value' && !listening.value.supported && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-passive">{translate('remotePorts.notLinux', { device })}</div>}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows === null ? (

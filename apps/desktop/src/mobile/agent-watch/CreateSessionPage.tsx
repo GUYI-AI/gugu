@@ -19,6 +19,7 @@ import type {
 import { Thread } from '@/components/assistant-ui/thread.aui'
 import { ComposerExtrasProvider } from '@/components/assistant-ui/composer-extras'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
 import { useAuth } from '@/store/auth'
 import { useDevicesStore } from '@/store/devicesContext'
@@ -42,7 +43,7 @@ import { guguReasonInText, remoteFailureKind } from '@gugu/session-core/session-
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { SessionpageRpcError, createSession, createPhoneSession } from './sessionpage-rpc'
-import { useReplica } from '@/lib/replica'
+import { refreshFailure, useReplica } from '@/lib/replica'
 import { sessionCreateModels, sessionCreateOptions } from '@/lib/agentModelReplicas'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
 import './task-flow-catalog'
@@ -182,6 +183,8 @@ function CreateOnMachine({
   const optionsReading = useReplica(sessionCreateOptions, online ? [device.device_id, via] : null)
   const options = optionsReading.state === 'value' ? optionsReading.value : null
   const optionsError = optionsReading.state === 'error' ? describe(optionsReading.error) : null
+  // Read before, read again failed: the options stay offered, the failure is said with the same retry (❌ shown as current).
+  const optionsFailure = refreshFailure(optionsReading)
   /** 手机上没确认完的那次创建(本机发件记录,同步读):沿用它的 harness / 模型,发的也只能是它。 */
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(() => (phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null))
   const [chosen, setChosen] = useState<CreateSelection | null>(null)
@@ -355,10 +358,10 @@ function CreateOnMachine({
       </details>
     </div>
   ) : null
-  const optionsNotice = online && (!options || optionsError) ? (
-    <div className={optionsError ? 'gg-aw-action-error' : 'gg-aw-create-blocker gg-aw-create-birth-group'} role={optionsError ? 'alert' : 'status'} data-testid={optionsError ? 'agent-watch-create-options-error' : 'agent-watch-create-options-loading'}>
-      <span>{optionsError ? t('agentWatch.create.optionsFailed') : t('agentWatch.create.loadingOptions')}</span>
-      {optionsError ? <span className="gg-aw-action-error-detail">{optionsError}</span> : null}
+  const optionsNotice = online && (!options || optionsFailure) ? (
+    <div className={optionsFailure ? 'gg-aw-action-error' : 'gg-aw-create-blocker gg-aw-create-birth-group'} role={optionsFailure ? 'alert' : 'status'} data-testid={optionsFailure ? 'agent-watch-create-options-error' : 'agent-watch-create-options-loading'}>
+      <span>{optionsFailure ? t('agentWatch.create.optionsFailed') : t('agentWatch.create.loadingOptions')}</span>
+      {optionsFailure ? <span className="gg-aw-action-error-detail">{describe(optionsFailure)}</span> : null}
       <Button variant="ghost" size="sm" onClick={reloadOptions} data-testid="agent-watch-create-options-retry">{t('agentWatch.timeline.reload')}</Button>
     </div>
   ) : null
@@ -449,6 +452,8 @@ function CreateOnMachine({
                 <div className="gg-aw-thread-extras">
                   {errorNotice}
                   {optionsNotice}
+                  {online && harness && modelsReading.state === 'value'
+                    ? <RefreshFailed error={modelsReading.error} onRetry={() => void sessionCreateModels.refresh(device.device_id, harness)} /> : null}
                   {blockerNotice}
                   {pendingCreationNotice}
                   {lastUsedNotice}
