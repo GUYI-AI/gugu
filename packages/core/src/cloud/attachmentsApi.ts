@@ -320,10 +320,12 @@ export interface CommitArgs {
   expected_version?: number
   /** How long this copy stays (temporary | permanent); not given, the chat's rule. Needs a backend with file_storage_mark_as. */
   keep?: FileKeep
-  /** #2581 Files sent at once: one id for the send and how many files it holds (2–10). Not given, a file sent on its own. */
+  /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string
   send_group_size?: number
 }
+/** The most files one send holds (the backend refuses a larger send_group_size); more files at once go as consecutive sends. */
+export const SEND_GROUP_MAX_FILES = 10
 
 /** Sends the upload as an attachment message: the message row as `messages_view` has it. */
 export async function commitAttachment(endpoint: AttachmentsEndpoint, args: CommitArgs): Promise<Record<string, unknown>> {
