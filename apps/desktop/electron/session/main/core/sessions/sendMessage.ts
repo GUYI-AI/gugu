@@ -638,12 +638,15 @@ async function sendMessageOnce(
     }
     params.signal?.throwIfAborted();
     params.beforeAdmission?.();
-    const receipt = await router(params.sessionId, {
+    const routedMessage = {
       id: clientMessageId,
       text,
-      kind: 'session-direct',
+      kind: 'session-direct' as const,
       ...(params.delivery ? { delivery: params.delivery } : {}),
-    }, params.signal);
+    };
+    const receipt = await (params.beforeAdmission
+      ? router(params.sessionId, routedMessage, params.signal, params.beforeAdmission)
+      : router(params.sessionId, routedMessage, params.signal));
     if (receipt.status === 'not-ready') {
       // The outbox keeps text only: a kept message with `delivery` would later go out the default way — into the
       // current turn, its key lost. So it is not kept; the sender is told now and sends it again.

@@ -4709,10 +4709,12 @@ app.whenReady().then(async () => {
             : (invokeRendererAuth('getSessionOwner', { waitMs }) as Promise<BootOwnerAnswer>),
         ms,
       )
-    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal) => {
+    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal, beforeAdmission?: () => void) => {
       signal?.throwIfAborted()
+      beforeAdmission?.()
       const ready = await sessionpagePlatformRecovery?.ensureReady(sessionId, `session-message:${message.kind ?? 'ordinary'}`)
       signal?.throwIfAborted()
+      beforeAdmission?.()
       if (ready?.status === 'failed') {
         createLogger('session-message').error({ sessionId, messageId: message.id, error: ready.error }, 'platform credential recovery failed; message remains pending')
         return {
@@ -4723,20 +4725,21 @@ app.whenReady().then(async () => {
       }
       const attempt = async () => {
         signal?.throwIfAborted()
-        const result = await localDelivery.tryInjectSessionMessage(sessionId, message)
+        beforeAdmission?.()
+        const result = await localDelivery.tryInjectSessionMessage(sessionId, message, beforeAdmission)
         return result === false ? 'not-live' as const : result
       }
       let accepted: Exclude<Awaited<ReturnType<typeof attempt>>, 'not-live'>
       if (message.kind === 'session-direct') {
         // #6546 冷目标:与收件箱同一个唤醒入口,等准入后再投一次;叫不醒带着原因报回发送方。
         try {
-          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal)
+          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal, beforeAdmission)
         } catch (error) {
           if (!(error instanceof SessionWakeError)) throw error
           return { status: 'not-ready' as const, reason: `target session not live — ${error.message}` }
         }
       } else {
-        const first = await localDelivery.tryInjectOrWake(sessionId, message)
+        const first = await localDelivery.tryInjectOrWake(sessionId, message, beforeAdmission)
         if (first === false) return { status: 'not-ready' as const }
         accepted = first
       }

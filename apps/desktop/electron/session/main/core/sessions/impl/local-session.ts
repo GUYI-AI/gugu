@@ -201,11 +201,12 @@ export class LocalSessionProvider implements SessionProvider {
   async sendMessage(
     session: Session,
     message: SessionMessage,
+    beforeAdmission?: () => void,
   ): Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }> {
     const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
     const pty = this.ptysBySession.get(ptySessionId);
     if (!pty) return { status: 'not-ready' };
-    return injectSessionMessageWhenReady({ pty, session, message });
+    return injectSessionMessageWhenReady({ pty, session, message, beforeAdmission });
   }
 
   async startSession(
@@ -1133,11 +1134,11 @@ export class LocalSessionProvider implements SessionProvider {
           providerId: session.providerId,
           waitUntilReady: () => admission.waitUntilReady(),
           isTurnInFlight: () => admission.isTurnInFlight(),
-          sendMessage: (message) => this.sendMessage(session, {
+          sendMessage: (message, beforeAdmission) => this.sendMessage(session, {
             id: message.id,
             text: message.text,
             kind: message.kind,
-          }),
+          }, beforeAdmission),
         });
         return;
       }
