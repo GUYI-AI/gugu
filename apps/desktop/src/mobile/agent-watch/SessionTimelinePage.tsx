@@ -3,7 +3,7 @@ import { usePhoneSessionSidebar } from '../chat/usePhoneSessionSidebar'
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
 import { PhoneLiveWindowConversation, PhoneLiveWindowSurface } from './PhoneLiveWindowConversation'
 import { PhoneLiveWindowTitle } from './PhoneLiveWindowTitle'
-import { useLiveWindowLabels } from '@/session/renderer/features/live-window/desktop-labels'
+import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -104,7 +104,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 }) {
   const { t } = useTranslation('main')
   const { t: tc } = useTranslation('common')
-  const liveLabel = useLiveWindowLabels()
+  const chatSummaries = useChatSummaries()
   const mobile = useMobileShell()
   const sidebar = usePhoneSessionSidebar({ sessionId: session.conversationId, entry: innerSidebarEntry ?? null })
   const { label: machineLabel } = useMachineLabel()
@@ -207,6 +207,9 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const statusColor = presentation ? agentStatusColorVar(presentation.tone) : null
   const statusStyle: CSSProperties | undefined = statusColor ? { color: statusColor } : undefined
   // The task's one name is its agent's name: the header says it once.
+  const entryGroupId = innerSidebarEntry?.startsWith('chat:') ? innerSidebarEntry.slice(5) : null
+  const sourceGroup = chatSummaries.get(entryGroupId ?? sidebar.source ?? session.bornInChatId ?? '')
+  const sourceGroupName = sourceGroup?.kind === 'group' ? sourceGroup.name : null
   const taskHeader = {
     title: shownName,
     titleLeading: (
@@ -230,6 +233,10 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     ) : undefined,
     headerTestId: 'agent-watch-hero',
   }
+  const headerSubtitle = sourceGroupName ? <span className="flex min-w-0 items-center gap-2">
+    <span data-phone-header-source="" className="truncate">{sourceGroupName}</span>
+    {taskHeader.subtitle}
+  </span> : taskHeader.subtitle
   // Keep the same task composer even before a cold offline phone has any timeline.
   // Its durable input queue waits for the host's stable acknowledgement contract.
   // 动作失败贴着**动作发生的地方**显示(输入框正上方),❌ 不跑到页顶去冒充「打不开时间线」——
@@ -281,7 +288,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 
   if (appKind && appKind !== PHONE_TASK_BROWSER) {
     return (
-      <AgentWatchScreen {...taskHeader} onBack={() => setAppKind(null)} testId="agent-watch-session-app" actions={headerActions} bodyFill>
+      <AgentWatchScreen {...taskHeader} subtitle={headerSubtitle} onBack={() => setAppKind(null)} testId="agent-watch-session-app" actions={headerActions} bodyFill>
         <SessionAppFrame kind={appKind} device={device} session={{ id: session.conversationId, ...(session.projectId ? { projectId: session.projectId } : {}) }} />
       </AgentWatchScreen>
     )
@@ -295,7 +302,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     <AgentWatchScreen
       {...taskHeader}
       title={<PhoneLiveWindowTitle name={shownName} live={live} />}
-      subtitle={live?.operating && live.headerSource ? liveLabel(live.headerSource.kind === 'browser' ? 'usingBrowser' : 'usingComputer') : taskHeader.subtitle}
+      subtitle={headerSubtitle}
       onBack={appKind === PHONE_TASK_BROWSER ? () => setAppKind(null) : onBack}
       testId="agent-watch-timeline-page"
       actions={headerActions}
