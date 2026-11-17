@@ -403,7 +403,16 @@ jobs:
           set -euo pipefail
           if [ -n "${GUGU_SKILLS_CAPTURE_ROOT:-}" ]; then
             case "$GUGU_SKILLS_CAPTURE_ROOT" in
-              "$RUNNER_TEMP"/gugu-skills-capture.*) rm -rf -- "$GUGU_SKILLS_CAPTURE_ROOT" ;;
+              "$RUNNER_TEMP"/gugu-skills-capture.*)
+                docker run --rm --volume "$RUNNER_TEMP:$RUNNER_TEMP" \
+                  --env RUNNER_TEMP --env GUGU_SKILLS_CAPTURE_ROOT \
+                  "$PLAYWRIGHT_IMAGE" bash --noprofile --norc -e -o pipefail -c '
+                    case "$GUGU_SKILLS_CAPTURE_ROOT" in
+                      "$RUNNER_TEMP"/gugu-skills-capture.*) rm -rf -- "$GUGU_SKILLS_CAPTURE_ROOT" ;;
+                      *) exit 1 ;;
+                    esac
+                  '
+                ;;
               *) exit 1 ;;
             esac
           fi
