@@ -36,6 +36,11 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
   return { supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), token }
 }
 
+/** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
+export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof fetch = fetch): Promise<AttachmentsEndpoint> {
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
+}
+
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
 export class AttachmentsError extends Error {
   /** `details`: only on recipient_not_member — the refused ids, comma-separated in to_user_ids order (gugu-supabase#242). */
@@ -241,7 +246,6 @@ export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { b
 
 /** How a sender follows its declared bytes up (all optional: an agent just waits for them). */
 export type DeclaredUploadHooks = {
-  keep?: FileKeep
   /** Runs each upload attempt, e.g. inside a timed stage with its own endpoint and signal; by default it just runs. */
   attempt?: (attempt: number, run: (endpoint: AttachmentsEndpoint, signal?: AbortSignal) => Promise<void>) => Promise<void>
   /** The plan an attempt uploads under, once it has one. */
@@ -285,7 +289,7 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
     if (hooks.stopped?.()) return false
     try {
       await finishAttachment(endpoint, { staging_key: declared.staging_key, ...(uploadKey !== declared.staging_key ? { upload_key: uploadKey! } : {}),
-        file_name: file.name, content_type: file.contentType, message_id: message.id, ...(hooks.keep ? { keep: hooks.keep } : {}) })
+        file_name: file.name, content_type: file.contentType, message_id: message.id })
       return true
     } catch (error) {
       if (!(error instanceof AttachmentsError && error.code === 'upload_not_found') || Date.now() + wait > until) throw error
@@ -318,7 +322,7 @@ export interface CommitArgs {
   /** The upload is this folder file's next version, from expected_version (a newer one stored since ⇒ refused, version_conflict). */
   item_id?: string
   expected_version?: number
-  /** How long this copy stays (temporary | permanent); not given, the chat's rule. Needs a backend with file_storage_mark_as. */
+  /** How long this copy stays: part of its declaration (temporary | permanent); not given, the chat's rule. */
   keep?: FileKeep
   /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string

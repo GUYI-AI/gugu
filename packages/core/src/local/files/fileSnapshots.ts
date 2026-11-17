@@ -240,3 +240,27 @@ export async function writeFileHandle(file: FileHandle, path: string) {
   }
   finally { await file.dispose() }
 }
+
+/** A verified original already held by this device; partial or changed files cannot resume an upload. */
+export async function storedCopy(guguHome: string, sha256: string): Promise<Blob | null> {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
+  const directory = await requireAgentFileAccess(join(fileStoreDirectory(guguHome), sha256))
+  for (const name of await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })) {
+    if (name.endsWith('.part')) continue
+    const path = await requireAgentFileAccess(join(directory, name))
+    if (!(await stat(path)).isFile()) continue
+    const blob = await openAsBlob(path), hash = createHash('sha256')
+    for await (const chunk of blob.stream()) hash.update(chunk)
+    if (hash.digest('hex') === sha256) return blob
+  }
+  return null
+}
+
+/** Keep outgoing bytes through the same verified, atomic, read-only store used for downloaded originals. */
+export async function storeBytes(guguHome: string, sha256: string, name: string, bytes: Blob): Promise<void> {
+  if (await storedCopy(guguHome, sha256)) return
+  const revision = { source: 'managed-object' as const, file_name: name, content_type: bytes.type || 'application/octet-stream', size_bytes: bytes.size, sha256 }
+  const source = async () => ({ size: bytes.size, read: async (offset: number, length: number) => new Uint8Array(await bytes.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+  const save = createFileSaver({ local: async () => null, metadata: async () => ({ status: 'ready', revision }), managed: source, ssh: async () => null, temporary: source })
+  await save(revision, { ref: { message_id: sha256 }, actor: { accountId: 'local', actorId: 'local' } }, fileStoreDirectory(guguHome), name, true)
+}
