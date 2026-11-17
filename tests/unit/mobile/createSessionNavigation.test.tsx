@@ -9,7 +9,6 @@ import { composerDrafts } from '../../../apps/desktop/src/session/renderer/featu
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { accountProjectsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
-import { followRendererSession } from '../../../apps/desktop/src/lib/replica'
 import { runInAction } from 'mobx'
 import { freshReplicaAccount } from '../../support/replicaAccount'
 

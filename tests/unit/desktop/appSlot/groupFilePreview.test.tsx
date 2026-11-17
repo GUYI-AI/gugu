@@ -106,8 +106,6 @@ async function closeFromTab(chatId: string) {
 describe('unclaimed group files use the message preview from every entry', () => {
   it.each([false, true])('an image opened from the folder opens in the image viewer over it, the folder left as it is (mobile=%s)', async (mobile) => {
     boundary.mobile = mobile
-    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report-png')
-    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     boundary.read.mockResolvedValue({ status: 'ready', blob: new Blob(['png'], { type: 'image/png' }) })
     // A chat of its own per run: the chat's tabs (module state) of the other run are not this one's.
     const chatId = `preview-group-${mobile ? 'phone' : 'desktop'}`

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { Sidebar } from '@/components/Sidebar'
+import { tellInstalled } from '@renderer/features/extensions/installed-extensions'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -11,14 +12,6 @@ import '@renderer/index.css'
 const state = vi.hoisted(() => ({
   apps: [] as { extensionId: string; kind: string; name: string; iconDataUrl: null }[],
   open: vi.fn(),
-}))
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({
-  InstalledExtensionsStore: class {}, WORKSPACE_APP_ID: 'workspace',
-  installedExtensionsStore: {
-    get dockedApps() { return state.apps }, get openableApps() { return state.apps },
-    get dock() { return state.apps.map(app => app.extensionId) },
-    manifestFor: () => undefined, updateCount: 0,
-  },
 }))
 vi.mock('@/session/renderer/features/extensions/app-dock', () => ({
   pinToDock: vi.fn(), wireAppQuit: vi.fn(),
@@ -58,6 +51,7 @@ async function mount(count: number, height: number, host = 'mac') {
   document.documentElement.dataset.theme = 'dark'
   document.body.style.margin = '0'
   state.apps = Array.from({ length: count }, (_, index) => ({ extensionId: `app-${index + 1}`, kind: `app-kind-${index + 1}`, name: `App ${index + 1}`, iconDataUrl: null }))
+  tellInstalled('local', { extensions: state.apps.map(app => ({ id: app.extensionId, name: app.name, version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'main', title: app.name }] } })), invalid: [], dock: state.apps.map(app => app.extensionId) } as never)
   harness = createReactHarness()
   harness.container.style.cssText = 'display:flex;width:100vw;height:100vh'
   const navigate = vi.fn()

@@ -374,6 +374,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
       agentMetadata.key('claude'),
       harnessModelCatalog.key('claude', 'acp', null),
       harnessModelCredential.key('claude', 'opus', null),
+      agentReplicas.targetModelCatalog.key(null, 'claude', 'acp', 'opus'),
       installSourceVersions.key(null, 'claude'),
       agentSettings.key(null, 'claude'),
     ];

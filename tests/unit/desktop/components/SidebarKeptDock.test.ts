@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { layOutRailDock } from '../../../support/railDockLayout'
 
 vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../apps/desktop/src/platform')>()
@@ -32,11 +33,13 @@ const real = (root: ParentNode) => Array.from(dock(root)?.querySelectorAll('[dat
 
 describe('the dock on a cold start', () => {
   let harness: ReturnType<typeof createReactHarness>
+  let restoreLayout: () => void
   beforeEach(() => {
+    restoreLayout = layOutRailDock()
     queryClient.removeQueries({ queryKey: installedExtensions.key('local')!, exact: true })
     harness = createReactHarness()
   })
-  afterEach(() => harness.cleanup())
+  afterEach(() => { harness.cleanup(); restoreLayout() })
 
   it('draws the kept places before the list is read, and the real Apps take them in the same order', async () => {
     // As restored from the snapshot: two Apps kept whole, one left out (its name too long), one past the kept slots.
