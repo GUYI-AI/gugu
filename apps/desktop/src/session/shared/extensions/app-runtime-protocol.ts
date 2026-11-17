@@ -336,6 +336,48 @@ export function openingNameOf(args: { fileName?: unknown }): string | undefined 
   return (typeof args.fileName === 'string' ? args.fileName.split('/').filter(Boolean).at(-1) : undefined) || undefined;
 }
 
+/** API 57: the most files `files.openWith(file, { among })` names; past it, the ones nearest the clicked file are kept. */
+export const OPEN_AMONG_MAX = 500;
+
+/** A box in a page, in its own CSS px; or, once the host has placed the page, on the window. */
+export interface ViewBox { x: number; y: number; width: number; height: number }
+
+/**
+ * API 57 `files.openWith(file, { among, origin })`, for the host's image viewer only (an older host shows the one image):
+ * `among`, the files shown with it in the page's view in the page's order, the clicked one among them — kept only as ids
+ * of the clicked file's own place (a chat's ids; a working copy's paths), the rest dropped; `origin`, where the clicked
+ * picture is in the page, which the viewer opens from and closes back to.
+ */
+export function openingViewOf(ref: AppFileRef, args: { among?: unknown; origin?: unknown }): { among?: string[]; origin?: ViewBox } {
+  const clicked = 'id' in ref ? ref.id : null;
+  const ofPlace = (entry: unknown): string | null => {
+    const file = (entry ?? {}) as { id?: unknown; chat?: unknown; workspace?: unknown };
+    if (typeof file.id !== 'string' || !file.id) return null;
+    if (isWorkspace(ref)) return file.workspace === ref.workspace ? file.id : null;
+    return file.workspace === undefined && (file.chat === undefined || ref.chat === undefined || file.chat === ref.chat) ? file.id : null;
+  };
+  let among = Array.isArray(args.among) ? [...new Set(args.among.map(ofPlace).filter((id): id is string => id !== null))] : [];
+  const at = clicked === null ? -1 : among.indexOf(clicked);
+  if (at >= 0 && among.length > OPEN_AMONG_MAX) {
+    const start = Math.max(0, Math.min(at - Math.floor(OPEN_AMONG_MAX / 2), among.length - OPEN_AMONG_MAX));
+    among = among.slice(start, start + OPEN_AMONG_MAX);
+  }
+  const box = (args.origin ?? {}) as Partial<Record<keyof ViewBox, unknown>>;
+  const numbers = [box.x, box.y, box.width, box.height];
+  const origin = numbers.every((n) => typeof n === 'number' && Number.isFinite(n)) && (box.width as number) > 0 && (box.height as number) > 0
+    ? { x: box.x as number, y: box.y as number, width: box.width as number, height: box.height as number }
+    : undefined;
+  return { ...(at >= 0 && among.length > 1 ? { among } : {}), ...(origin ? { origin } : {}) };
+}
+
+/** A page's box (`openingViewOf`) on the window, its frame at `frame` there; none when it is not inside the frame. */
+export function boxOnWindow(box: ViewBox, frame: { left: number; top: number; width: number; height: number }): ViewBox | undefined {
+  const x = Math.max(box.x, 0), y = Math.max(box.y, 0);
+  const right = Math.min(box.x + box.width, frame.width), bottom = Math.min(box.y + box.height, frame.height);
+  if (right <= x || bottom <= y) return undefined;
+  return { x: frame.left + box.x, y: frame.top + box.y, width: box.width, height: box.height };
+}
+
 /** A page's `files.openWith` that is a plain open of a chat file by id (no pick, not beside it, not its own tab): a link to it. */
 export function opensAsLink(ref: AppFileRef, call: { ask: boolean; peek: boolean; tab: string | undefined }): ref is { chat?: string; id: string } {
   return !call.ask && !call.peek && call.tab === undefined && !isWorkspace(ref) && 'id' in ref;
@@ -598,6 +640,12 @@ export interface AppOpenWithDetail {
   opening?: PreparedChatFile;
   /** Window-only: the waiting page this answer turns into the file (`beginWait`). */
   wait?: string;
+  /**
+   * API 57 (`openingViewOf`): the images shown with it in the asking page, in its order, this one among them — only this
+   * chat's renderable images (`viewedAmong`) — and, window-only, the clicked picture's box on the window.
+   */
+  among?: ViewedImage[];
+  origin?: ViewBox;
   chatId: string;
   itemId: string;
   name: string;
@@ -610,6 +658,9 @@ export interface AppOpenWithDetail {
     /** No App claims it: the host's existing file preview, including details and download for unsupported formats. */
     | { kind: 'none' };
 }
+
+/** One image of a chat the viewer can page to: the version its bytes are read at. */
+export interface ViewedImage { itemId: string; version: number; name: string; contentType: string }
 
 /** A chat file as the host's preview reads it (its bytes are its version's). */
 export interface ChatPeekFile {

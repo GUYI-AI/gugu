@@ -153,7 +153,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
 // 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
 // only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
-export const EXTENSION_API_VERSION = 56;
+// 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
+// viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
+// box in the page). Presentation only, as 51: an older host opens the one image.
+export const EXTENSION_API_VERSION = 57;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

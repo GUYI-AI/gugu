@@ -864,6 +864,7 @@ export const resourceChatOf = files.resourceChat;
 export const chatOfItem = files.chatOf;
 export const groupFiles = files.groupFiles;
 export const groupFile = files.groupFile;
+export const viewedAmong = files.viewedAmong;
 /** A page naming a chat file to open: refused, as `openWithTarget` would, before anything is read. */
 export const mayOpen = (page: DesktopFilePage, itemId: string): void => files.mayName(chatSurface(page), itemId, 'opening');
 

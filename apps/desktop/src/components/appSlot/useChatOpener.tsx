@@ -8,8 +8,8 @@ import { chatDb } from '../../lib/supabase'
 import { rendererLogger } from '../../lib/log'
 import { OpenSuperseded } from '../../lib/guguLinks'
 import { UI_EVENTS } from '../../lib/uiEvents'
-import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
-import { openAttachmentImage } from '../../lib/attachmentBytes'
+import { opensInImageViewer } from '../../lib/imageViewer'
+import { openAttachmentImages } from '../../lib/attachmentBytes'
 import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
@@ -84,8 +84,12 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent, ...(detail.wait ? { wait: detail.wait } : {}) }
       if (from.from && detail.viewState) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
       if (detail.choice.kind === 'none') {
-        if (!from.from && isRenderableImage(detail.name, detail.file.contentType)) {
-          await openAttachmentImage({ kind: 'item', itemId: detail.itemId, version: detail.file.version }, detail.name, from.message ? { chatId: from.message.chat_id, messageId: from.message.id } : { chatId: detail.chatId })
+        // An image opens over the chat in the shared viewer, whoever asked — a link, a card, an App's page (whose images
+        // it pages through, `among`); the page under it stays as it was. A tab only when one was asked for.
+        if (opensInImageViewer(detail.name, detail.file.contentType, from.intent)) {
+          const clicked = { itemId: detail.itemId, version: detail.file.version, name: detail.name, contentType: detail.file.contentType }
+          const images = detail.among?.length ? detail.among : [clicked]
+          await openAttachmentImages(images, Math.max(0, images.findIndex((image) => image.itemId === detail.itemId)), from.message ? { chatId: from.message.chat_id, messageId: from.message.id } : { chatId: detail.chatId }, detail.origin)
           noteOpened(detail.itemId)
           return
         }

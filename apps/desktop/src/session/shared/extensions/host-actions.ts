@@ -1,7 +1,7 @@
 import type { TabOpenIntent } from '@shared/view-state';
 import type { GuguLinkTarget, LinkPlace } from '@gugu/core/shared/ui/guguLink';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
-import type { AppComposeDetail, AppForwardFilesDetail, AppOpenWithDetail, AppShowMessageDetail, PeekTarget } from './app-runtime-protocol';
+import type { AppComposeDetail, AppForwardFilesDetail, AppOpenWithDetail, AppShowMessageDetail, PeekTarget, ViewBox } from './app-runtime-protocol';
 import type { ExtensionManifest } from './manifest';
 import type { MarketCodeSource } from './market';
 import type { ExtensionOrigin } from './upgrade';
@@ -72,7 +72,8 @@ export type ExtensionHostAction =
   | { kind: 'openWith'; detail: AppOpenWithDetail }
   /** A session's working-copy file (`files.openWith`): opened in that session's pane as a click there opens it. */
   | { kind: 'openSessionFolder'; folder: string }
-  | { kind: 'openSessionFile'; sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
+  /** `among`, `origin` (API 57, `openingViewOf`): the working copy's images shown with it, and the clicked picture's box in the page. */
+  | { kind: 'openSessionFile'; sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean; intent?: TabOpenIntent; viewState?: Record<string, unknown>; among?: string[]; origin?: ViewBox }
   /** `files.forward`: the window's forward page for chat files (ChatFileForwardHost). */
   | { kind: 'forwardFiles'; detail: AppForwardFilesDetail }
   /** G1 Beside the page that asked, in its own slot (the origin's): the page stays as it is. */
@@ -84,8 +85,12 @@ export type ExtensionHostAction =
   | { kind: 'notGivenAt'; extensionId: string; chat: { id: string; name: string } }
   /** A banner's click naming a chat's file: opened in its chat, as a link to it is. */
   | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen: string; intent?: TabOpenIntent }
-  /** A chat file opened as a link to it is (`chatId`: only where the asker named it); `fileName` titles its waiting tab. */
-  | { kind: 'openChatFile'; chatId?: string; itemId: string; intent?: TabOpenIntent; viewState?: Record<string, unknown>; fileName?: string; at?: Record<string, string> }
+  /**
+   * A chat file opened as a link to it is (`chatId`: only where the asker named it); `fileName` titles its waiting tab.
+   * `among`, `origin` (API 57, `openingViewOf`): the chat's files shown with it, and the clicked picture's box in the page
+   * (the phone host, which draws the page's frame itself, gives it already on the window).
+   */
+  | { kind: 'openChatFile'; chatId?: string; itemId: string; intent?: TabOpenIntent; viewState?: Record<string, unknown>; fileName?: string; at?: Record<string, string>; among?: string[]; origin?: ViewBox }
   /**
    * #1925 One of the host's own screens for the person's assistant (`gugu.assistant.open`): its own pages over the App's
    * panel (`ASSISTANT_LAYER_SCREENS`, app-host-layer.tsx), the rest by their existing entry (lib/assistantAppHost.ts); and
