@@ -68,7 +68,7 @@ export function AgentWatchScreen({
         titleLeading={titleLeading}
         titleLevel={onBack ? 'panel' : 'page'}
         data-testid={headerTestId}
-        className={centeredHeader ? 'gg-aw-centered-header' : undefined}
+        centered={centeredHeader}
         actions={actions}
         leading={onBack && panelLayer ? (
           <IconButton className="ta-circle gg-aw-panel-back" aria-label={t('settings.back')} title={t('settings.back')} onClick={onBack}>

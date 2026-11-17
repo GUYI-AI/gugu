@@ -1,13 +1,18 @@
 import { Button } from '@/components/ui/Button'
+import { Hash } from '@/lib/icons'
+import { cn } from '@/lib/cn'
 
 /** The phone keeps the source room's route; its selected topic owns the displayed identity. */
-export function PhoneConversationHeading({ name, sourceName, label, onOpen }: {
-  name: string; sourceName?: string; label: string; onOpen: () => void
+export function PhoneConversationHeading({ name, topic = false, centered = false, label, onOpen }: {
+  name: string; topic?: boolean; centered?: boolean; label: string; onOpen: () => void
 }) {
-  return <div className="flex min-w-0 flex-1 flex-col">
-    <Button variant="ghost" className="window-no-drag-region !min-h-0 !min-w-0 !w-full !text-[var(--fg)] !justify-start !p-0 !text-[length:var(--font-title)] !font-semibold" aria-label={label} onClick={onOpen}>
-      <span className="truncate">{name}</span>
-    </Button>
-    {sourceName ? <span data-phone-header-source="" className="truncate text-[length:var(--font-caption)] text-[var(--text-secondary)]">{sourceName}</span> : null}
-  </div>
+  return <Button
+    variant="ghost"
+    className={cn('window-no-drag-region flex-1 !min-h-0 !min-w-0 !w-full !p-0 !text-[var(--fg)] !text-[length:var(--font-title)] !font-semibold', centered ? '!justify-center' : '!justify-start')}
+    aria-label={label}
+    onClick={onOpen}
+  >
+    {topic && !/^[#＃]/.test(name.trimStart()) ? <Hash className="size-4 shrink-0" aria-hidden /> : null}
+    <span className="truncate">{name}</span>
+  </Button>
 }

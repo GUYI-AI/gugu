@@ -97,7 +97,7 @@ it.each(['browser', 'computer'] as const)('keeps the centered phone %s toggle hi
   }
   await act(async () => root.render(<View />));
   cleanups.push(() => { act(() => root.unmount()); host.remove(); });
-  const header = host.querySelector<HTMLElement>('.gg-aw-centered-header')!;
+  const header = host.querySelector<HTMLElement>('.gg-pane-header[data-centered]')!;
   const title = header.querySelector<HTMLElement>('.gg-pane-heading')!;
   const center = (node: HTMLElement) => node.getBoundingClientRect().left + node.getBoundingClientRect().width / 2;
   expect(Math.abs(center(title) - center(header))).toBeLessThan(1);

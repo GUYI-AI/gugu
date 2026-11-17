@@ -1,4 +1,5 @@
 import { PhoneConversationHeading } from '../mobile/chat/PhoneConversationHeading'
+import { startPhoneNewTask } from '../mobile/chat/PhoneNewTask'
 import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
@@ -507,14 +508,20 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   // 块的页签条最后那枚之后的「+」(gugu-dev#181 第 ⑥ 步);页签本身由会话页的页签引擎画(chat-tabs)。
   const blockTabs = blockHost?.tabs && activeChatId ? createPortal(<TabBarAddMenu chatId={activeChatId} />, blockHost.tabs) : null
+  const split = mobile ? topicSurface.splitTopic : null
+  const memberTopic = split ? { topicChatId: split.chatId, name: split.name } : tabs.memberTopic
+  const phoneTopic = mobile ? memberTopic : null
+  const phoneTopicMeta = phoneTopic ? topicSurface.topics.find(topic => topic.chat_id === phoneTopic.topicChatId) : undefined
+  const phoneTopicName = phoneTopicMeta?.name ?? phoneTopic?.name
   const headerActions = (
     <>
       <ChatHeaderActions
         isGroupChat={isGroupChat}
-        isRoomChat={isRoomChatSurface} memberTopic={tabs.memberTopic} memberTopicCount={topicSurface.topics.find((topic) => topic.chat_id === tabs.memberTopic?.topicChatId)?.participant_count}
+        isRoomChat={isRoomChatSurface} memberTopic={memberTopic} memberTopicCount={(phoneTopicMeta ?? topicSurface.topics.find(topic => topic.chat_id === memberTopic?.topicChatId))?.participant_count}
         infoShown={tabs.infoShown}
         showHeaderMenu={showHeaderMenu}
         mobile={mobile}
+        membersInMenu={mobile && !chrome && !blockHost}
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
@@ -523,8 +530,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         } : undefined}
         moreButtonRef={moreButtonRef}
         onSearch={() => { if (activeChatId) searchInChat(activeChatId) }}
+        onCreateAgent={mobile && !phoneTopic && isGroupChat ? () => startPhoneNewTask(activeChat.id) : undefined}
         onOpenFolder={handleOpenFolder}
-        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? tabs.memberTopic : null) }}
+        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? memberTopic : null) }}
         onCloseInfo={() => { if (activeChatId) closeInfoTab(activeChatId) }}
         onToggleHeaderMenu={() => setShowHeaderMenu((v) => !v)}
         onCloseHeaderMenu={() => setShowHeaderMenu(false)}
@@ -558,8 +566,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
-  const phoneTopic = mobile ? topicSurface.splitTopic ?? (tabs.memberTopic ? { chatId: tabs.memberTopic.topicChatId, name: tabs.memberTopic.name } : null) : null
-  const phoneTopicName = phoneTopic ? topicSurface.topics.find(topic => topic.chat_id === phoneTopic.chatId)?.name ?? phoneTopic.name : null
   const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
@@ -612,7 +618,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider data-chat-area-header="" data-chat-context-id={phoneTopic?.chatId ?? activeChat.id} mobile={mobile}
+        divider data-chat-area-header="" data-chat-context-id={phoneTopic?.topicChatId ?? activeChat.id} mobile={mobile} centered={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
@@ -631,10 +637,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         ) : null}
         title={<PhoneConversationHeading
           name={phoneTopicName ?? shownActiveChatName}
-          sourceName={phoneTopicName ? shownActiveChatName : undefined}
+          topic={mobile && (Boolean(phoneTopic) || activeChat.kind === 'topic')}
+          centered={mobile}
           label={t('chatArea.conversationProfile')}
-          onOpen={() => phoneTopic ? openInfoTab(activeChatId, 'main', { topicChatId: phoneTopic.chatId, name: phoneTopicName ?? phoneTopic.name }) : openConversationOrAgentSettings()}
+          onOpen={() => phoneTopic ? openInfoTab(activeChatId, 'main', { ...phoneTopic, name: phoneTopicName ?? phoneTopic.name }) : openConversationOrAgentSettings()}
         />}
+        subtitle={phoneTopic ? <span data-phone-header-source="">{shownActiveChatName}</span> : undefined}
         actions={headerActions}
       />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
 
