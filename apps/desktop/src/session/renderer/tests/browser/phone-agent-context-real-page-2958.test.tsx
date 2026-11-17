@@ -12,7 +12,7 @@ import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge'
 import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { device, displayIdentity, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
-import { until } from '../../../../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMobileWorkspaceCatalog'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMessagingCatalog'
@@ -61,16 +61,56 @@ for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) 
     await until('actual Agent A route', () => header()?.dataset.sessionId === 'session-a' && header()?.dataset.agentId === 'agent-a')
     expect(header()?.textContent).toContain('同名智能体')
     expect(harness!.container.textContent).not.toMatch(/agentWatch\.|shell\./)
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/K-agent-a-offline-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/K-agent-a-offline-${width}-${theme}.png` })
     await draw(sessions[1]!)
     await until('actual Agent B route', () => header()?.dataset.sessionId === 'session-b' && header()?.dataset.agentId === 'agent-b')
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/K-agent-b-offline-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/K-agent-b-offline-${width}-${theme}.png` })
     await act(async () => publishIdentityDirectory({ ...identities, 'agent-b': { ...identities['agent-b']!, display_name: '改名后的智能体 B' } }, null))
     await until('current identity rename', () => header()?.textContent?.includes('改名后的智能体 B') === true)
     expect(header()?.dataset.sessionId).toBe('session-b')
     expect(header()?.dataset.agentId).toBe('agent-b')
-    await page.screenshot({ path: `__screenshots__/owner-phone-regression/K-agent-b-renamed-offline-${width}-${theme}.png` })
+    await page.screenshot({ path: `__screenshots__/internal-pressure/K-agent-b-renamed-offline-${width}-${theme}.png` })
     await page.elementLocator(header()!.querySelector<HTMLButtonElement>('button')!).click()
+    expect(exit).toHaveBeenCalledExactlyOnceWith()
+  })
+}
+
+// A separate normal display baseline, not a renamed duplicate-ID negative case.
+// These are synthetic, readable names and an explicitly offline controlled host.
+for (const width of [360, 390]) for (const theme of ['light', 'dark'] as const) {
+  it(`${width}/${theme}: normal Agent headings follow their actual identities and Back entry`, async () => {
+    await page.viewport(width, 844); setLocalePreference('zh-CN')
+    writeThemePreference(theme); document.documentElement.setAttribute('data-phone-shell', '')
+    installIdentityDirectoryBridge()
+    const normalMachine = { ...machine, label: '工作电脑', last_seen_at: null }
+    const normalSessions = sessions.map((session, index) => ({ ...session, title: index === 0 ? '资料助手' : '代码助手', lastInteractedAt: null }))
+    const identities = Object.fromEntries(normalSessions.map(session => [session.agent!.userId, displayIdentity(session.agent!.userId, {
+      type: 'agent', owner_user_id: 'owner', display_name: session.title, avatar: null,
+    })]))
+    publishIdentityDirectory(identities, null)
+    publishDirectoryDevices([normalMachine])
+    updateDeviceSessions(normalMachine.device_id, { projects: [], sessions: normalSessions, cached: false, loading: false, error: null })
+    harness = createReactHarness(); Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
+    const exit = vi.fn()
+    const draw = (session: SessionpageSessionSummary | null) => renderWithAppProviders(harness!, <ThemeProvider><LocalizationProvider><SessionUiTheme theme={theme}><DevicesContext.Provider value={{ ...devices, devices: [normalMachine] }}>
+      <PhoneViewportShell mobile data-phone-shell="" data-ta-scope="" className="h-full flex flex-col bg-background">
+        <AgentWatchPage active onExit={exit} openRequest={session ? { deviceId: normalMachine.device_id, session } : null} />
+      </PhoneViewportShell>
+    </DevicesContext.Provider></SessionUiTheme></LocalizationProvider></ThemeProvider>, { auth: { id: 'owner' }, chat: { identitiesById: identities } })
+    await draw(null)
+    const header = () => harness!.container.querySelector<HTMLElement>('[data-testid="agent-watch-hero"]')!
+    for (const [index, session] of normalSessions.entries()) {
+      await draw(session)
+      await until('normal heading keeps its actual Agent and session IDs', () => header()?.dataset.sessionId === session.conversationId && header()?.dataset.agentId === session.agent!.userId && header()?.textContent?.includes(session.title) === true)
+      await untilStable('normal Agent heading geometry is stable', () => {
+        const box = header().getBoundingClientRect()
+        return [box.left, box.top, box.width, box.height, header().textContent]
+      })
+      expect(header().textContent).not.toMatch(/同名|改名|Session [AB]|agentWatch\.|shell\./)
+      expect(document.documentElement.dataset.theme).toBe(theme)
+      await page.screenshot({ path: `__screenshots__/owner-phone-regression/K-normal-agent-${index === 0 ? 'a' : 'b'}-offline-${width}-${theme}.png` })
+    }
+    await page.elementLocator(header().querySelector<HTMLButtonElement>('button')!).click()
     expect(exit).toHaveBeenCalledExactlyOnceWith()
   })
 }
