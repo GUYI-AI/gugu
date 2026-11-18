@@ -8,7 +8,7 @@ export function PhoneConversationHeading({ name, topic = false, centered = false
 }) {
   return <Button
     variant="ghost"
-    className={cn('window-no-drag-region flex-1 !min-h-0 !min-w-0 !w-full !p-0 !text-[var(--fg)] !text-[length:var(--font-title)] !font-semibold', centered ? '!justify-center' : '!justify-start')}
+    className={cn('gg-phone-conversation-heading window-no-drag-region flex-1 !min-h-0 !min-w-0 !w-full !p-0 !text-[var(--fg)] !text-[length:var(--font-title)] !font-semibold', centered ? '!justify-center' : '!justify-start')}
     aria-label={label}
     onClick={onOpen}
   >
