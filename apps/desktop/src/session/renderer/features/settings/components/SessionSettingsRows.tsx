@@ -50,7 +50,7 @@ const sessionTitleModels = replica({
  * #7337 用哪个平台模型给新会话起名(按积分计费);「不起名」= 标题留在 harness 起的名或第一句话上。
  * 档位不够的列出来但不能选。
  */
-export const SessionTitleModelRow: React.FC = () => {
+export const SessionTitleModelRow: React.FC<{ auxiliary?: boolean }> = ({ auxiliary = false }) => {
   const sessions = useAppSettingsKey('sessions');
   const catalog = useReplica(sessionTitleModels, []);
   const { translate } = useSessionMessages();
@@ -69,8 +69,8 @@ export const SessionTitleModelRow: React.FC = () => {
 
   return (
     <SettingsRow
-      title={translate('taskDefaults.titleModel')}
-      description={translate('taskDefaults.titleModelDescription')}
+      title={auxiliary ? <span className="flex items-center gap-2">{translate('customModels.sessionNaming')}<InfoTooltip label={translate('customModels.sessionNaming')} content={translate('customModels.auxiliaryFallback')} /></span> : translate('taskDefaults.titleModel')}
+      description={auxiliary ? undefined : translate('taskDefaults.titleModelDescription')}
       control={
         <SettingValue reading={sessions.settings} placeholder="h-8 w-[252px]">
           {({ value }) => {
@@ -84,20 +84,21 @@ export const SessionTitleModelRow: React.FC = () => {
             return (
               <>
                 <ResetToDefaultButton
-                  visible={sessions.isFieldOverridden('titleModel')}
+                  visible={!auxiliary && sessions.isFieldOverridden('titleModel')}
                   defaultLabel={ordered !== null ? ordered.find((option) => option.id === defaultLabel)?.displayName ?? defaultLabel : catalog.state === 'error' ? defaultLabel : undefined}
                   onReset={() => sessions.resetField('titleModel')}
                   disabled={sessions.isSaving}
                 />
                 <Select
-                  value={current ?? TITLE_MODEL_OFF}
-                  onValueChange={(next) => sessions.update({ titleModel: next === TITLE_MODEL_OFF ? null : String(next) })}
+                  value={auxiliary && current === SESSION_TITLE_DEFAULT_MODEL ? '__recommended__' : current ?? TITLE_MODEL_OFF}
+                  onValueChange={next => { if (next === '__recommended__') sessions.resetField('titleModel'); else sessions.update({ titleModel: next === TITLE_MODEL_OFF ? null : String(next) }) }}
                   disabled={sessions.isSaving}
                 >
-                  <SelectTrigger className="w-[220px] shrink-0 gap-2">
-                    <SelectValue>{labelOf(current ?? TITLE_MODEL_OFF)}</SelectValue>
+                  <SelectTrigger className={auxiliary ? "gg-auxiliary-model-select" : "w-[220px] shrink-0 gap-2"}>
+                    <SelectValue>{auxiliary && current === SESSION_TITLE_DEFAULT_MODEL ? translate('customModels.defaultRecommended') : labelOf(current ?? TITLE_MODEL_OFF)}</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-max">
+                    {auxiliary && <SelectItem value="__recommended__">{translate('customModels.defaultRecommended')}</SelectItem>}
                     {listed.map((option) => (
                       <SelectItem key={option.id} value={option.id} disabled={option.requiresMembership}>
                         <span className="flex items-center gap-2">

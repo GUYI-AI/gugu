@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { useExternalMenuTrigger } from '@/components/ui/externalMenuTrigger';
 import { SubscriptionConnections } from './SubscriptionConnections';
@@ -9,6 +9,7 @@ import { SubscriptionConnections } from './SubscriptionConnections';
  * `useExternalMenuTrigger`: pressing the same button again closes it, and the menu stays attached to that button.
  */
 export function useConnectionPanel() {
+  const [signIn, setSignIn] = useState<{ agent: AgentPayload; machine: string | null } | null>(null);
   const trigger = useExternalMenuTrigger<{ agent: AgentPayload; machine: string | null }>();
   const { press } = trigger;
   const show = useCallback((agent: AgentPayload, machine: string | null, anchor?: HTMLElement) => {
@@ -19,14 +20,16 @@ export function useConnectionPanel() {
   const request = trigger.last;
   return {
     show,
+    signIn: useCallback((agent: AgentPayload, machine: string | null) => setSignIn({ agent, machine }), []),
     // The last request stays mounted after the menu closes, while its add/login dialog finishes.
-    panel: request && (
+    panel: <>{request && (
       <SubscriptionConnections
         key={`${request.value.machine ?? 'local'}:${request.value.agent.id}`}
         agent={request.value.agent} machine={request.value.machine} trigger={null}
         open={request.open} onOpenChange={trigger.onOpenChange}
         anchor={request.anchor}
       />
-    ),
+    )}{signIn && <SubscriptionConnections key={`sign-in:${signIn.machine ?? 'local'}:${signIn.agent.id}`}
+      agent={signIn.agent} machine={signIn.machine} trigger={null} signInRequested={signIn} />}</>,
   };
 }

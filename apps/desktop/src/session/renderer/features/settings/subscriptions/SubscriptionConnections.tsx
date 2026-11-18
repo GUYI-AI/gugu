@@ -1,3 +1,4 @@
+import { SubscriptionModelRows, SubscriptionAccountField } from '@/components/settings/SubscriptionModelRows'
 import { metadataSeparator } from '@/i18n/format'
 import { Unknown } from '@/components/ui/Unknown';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
@@ -91,8 +92,15 @@ export function SubscriptionConnections({
   anchor,
   settingsRows = false,
   embedded = false,
+  modelRows = false,
+  modelAccount,
+  signInRequested,
   description
 }: {
+  modelRows?: boolean
+  modelAccount?: { onClose: () => void; onBusyChange?: (busy: boolean) => void }
+  /** A fresh object is created only by an explicit press on the transcript's expired-login action. */
+  signInRequested?: object
   settingsRows?: boolean
   /** 嵌在订阅页那一行里:只画这几行，不另起「连接」一组(资源库详情里才有组头)。 */
   embedded?: boolean
@@ -117,6 +125,7 @@ export function SubscriptionConnections({
     [onOpenChange]
   )
   const [adding, setAdding] = useState(false)
+  const [modelAccountId, setModelAccountId] = useState<string>()
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
@@ -270,7 +279,8 @@ export function SubscriptionConnections({
   const dropIfUnsigned = async (connectionId: string) => {
     try {
       const client = await getAgentConfigRuntimeClient(machine)
-      await dropIfNeverSignedIn(client, { providerId: agent.id, connectionId })
+      const outcome = await dropIfNeverSignedIn(client, { providerId: agent.id, connectionId })
+      if (outcome === 'removed') setModelAccountId(current => current === connectionId ? undefined : current)
     } catch (error) {
       rendererLogger('settings/subscriptions').warn({ error, providerId: agent.id }, 'unsigned connection not removed')
     } finally {
@@ -322,6 +332,20 @@ export function SubscriptionConnections({
     setOpen(false)
     cli.openSignIn()
   }
+  const signInAttempt = useRef<object | null>(null)
+  useEffect(() => {
+    if (!signInRequested || signInAttempt.current === signInRequested) return
+    if (connections.error || native.error) {
+      signInAttempt.current = signInRequested
+      setOpen(true)
+      return
+    }
+    if (!listedRead) return
+    signInAttempt.current = signInRequested
+    if (canSignIn) signIn(listed?.find(connection => connection.current)?.id ?? 'native')
+    else if (cliSignIn) signInCli()
+    else setOpen(true)
+  }, [signInRequested, listedRead, listed, connections.error, native.error, canSignIn, cliSignIn, signIn, signInCli, setOpen])
   const onCreated = (connection: HarnessConnection) => {
     refresh()
     setAdding(false)
@@ -383,7 +407,13 @@ export function SubscriptionConnections({
     ))
   return (
     <>
-      {settingsRows ? (
+      {modelRows ? <>{failure && <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} />}<SubscriptionModelRows agent={agent} machine={machine} connections={listed} busy={action.isPending}
+        onSignIn={id => signIn(id)} onTest={id => action.mutate({ kind: 'refresh', id })} onRemove={id => action.mutate({ kind: 'remove', id })}
+        error={connections.error ? errorText(connections.error) : native.error ? errorText(native.error) : null} /></> : modelAccount ? <ConnectionForm
+          agent={agent} machine={machine} account={accountMethod} vendorKey={false}
+          onCreated={connection => { setModelAccountId(connection.id); onCreated(connection) }} onCliSignIn={signInCli}
+          modelAccount={{ connectionId: modelAccountId, onLogin: () => { if (modelAccountId) signIn(modelAccountId) }, onClose: modelAccount.onClose, onBusyChange: modelAccount.onBusyChange }}
+        /> : settingsRows ? (
         <ConnectionSettingsRows
           signIn={currentSignIn || undefined}
           connections={listed}
@@ -662,7 +692,7 @@ function remainingLine(
     .join(metadataSeparator())
 }
 
-function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSignIn, onCancel }: {
+function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSignIn, onCancel, modelAccount }: {
   agent: AgentPayload
   machine: string | null
   account: AccountMethod
@@ -670,23 +700,30 @@ function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSi
   onCreated: (connection: HarnessConnection) => void
   onCliSignIn: () => void
   onCancel?: () => void
+  modelAccount?: { connectionId?: string; onLogin: () => void; onClose: () => void; onBusyChange?: (busy: boolean) => void }
 }) {
   const { translate } = useSessionMessages()
   const cliAccount = account === 'cli' && !vendorKey
   const create = useMutation({
-    mutationFn: async (element: HTMLFormElement) => {
-      const data = new FormData(element)
+    mutationFn: async (element?: HTMLFormElement) => {
+      const data = element ? new FormData(element) : new FormData()
       const result = await (await getAgentConfigRuntimeClient(machine)).createConnection({
         providerId: agent.id, kind: 'account',
         name: String(data.get('name') ?? '').trim() || undefined,
         ...(vendorKey ? { apiKey: String(data.get('apiKey') ?? '').trim() } : {}),
       })
       if (!result.success) throw new Error(errorText(result.error))
-      element.reset()
+      element?.reset()
       return result.data
     },
     onSuccess: onCreated,
   })
+  const onBusyChange = modelAccount?.onBusyChange
+  useEffect(() => { onBusyChange?.(create.isPending); return () => onBusyChange?.(false) }, [create.isPending, onBusyChange])
+  if (modelAccount) return <SubscriptionAccountField agent={agent} machine={machine} connectionId={modelAccount.connectionId}
+    creating={create.isPending} failure={create.error ? errorText(create.error) : null}
+    onLogin={() => { if (modelAccount.connectionId) modelAccount.onLogin(); else create.mutate(undefined) }}
+    onSave={modelAccount.onClose} onCancel={modelAccount.onClose} />
   return <form className="subscription-connection-form" onSubmit={(event) => {
     event.preventDefault()
     if (cliAccount) onCliSignIn()
