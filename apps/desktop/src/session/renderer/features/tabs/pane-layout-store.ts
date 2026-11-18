@@ -1,6 +1,6 @@
 import { action, computed, makeObservable, observable, reaction } from 'mobx';
 import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, PaneStore } from '@renderer/features/tabs/pane-store';
-import type { DisplacedTab, TabGroupsSnapshot, TabManagerSnapshot } from '@shared/view-state';
+import type { ChatToolLayoutMode, DisplacedTab, TabGroupsSnapshot, TabManagerSnapshot } from '@shared/view-state';
 import type { TabEntry, TabViewContext } from './core/tab-provider';
 import type {
   AnyTabProvider,
@@ -35,6 +35,15 @@ export { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX };
 export type SplitBlock = 'only-tab' | 'too-small';
 /** 并排里另一页摆在哪一边(只有左右:「向下分」owner 11-05 拿掉了)。 */
 export type PairEdge = 'left' | 'right';
+
+export interface PaneLayoutStoreOptions {
+  onActiveTabChange?: (tabId: string | undefined) => void;
+  placementMemory?: TabPlacementMemory;
+  /** Match only the owning conversation, even if other conversations are open as tabs. */
+  isPrimaryChatTab?: (entry: TabEntry) => boolean;
+}
+
+type PopulatedChatToolLayout = Exclude<ChatToolLayoutMode, 'empty'>;
 
 export interface Pane<R extends TabRegistry = TabRegistry> {
   paneId: string;
@@ -138,6 +147,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private readonly _onActiveTabChange: ((tabId: string | undefined) => void) | undefined;
   private readonly _placementMemory: TabPlacementMemory;
   private readonly _activeTabDisposer: () => void;
+  private readonly _isPrimaryChatTab: PaneLayoutStoreOptions['isPrimaryChatTab'];
+  private readonly _chatToolLayout = observable.box<PopulatedChatToolLayout | undefined>(undefined);
+  private readonly _chatToolDisposer?: () => void;
   private _lastPersistentActivePaneId: string;
   private readonly _lastPersistentActiveTabIds = new Map<string, string | undefined>();
 
@@ -145,15 +157,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     registry: R,
     ctx: TabViewContext,
     persistor?: TabPersistenceAdapter,
-    opts?: {
-      onActiveTabChange?: (tabId: string | undefined) => void;
-      placementMemory?: TabPlacementMemory;
-    }
+    opts?: PaneLayoutStoreOptions
   ) {
     this._registry = registry;
     this._ctx = ctx;
     this._persistor = persistor;
     this._onActiveTabChange = opts?.onActiveTabChange;
+    this._isPrimaryChatTab = opts?.isPrimaryChatTab;
     this._placementMemory = opts?.placementMemory ?? accountTabPlacementMemory();
 
     const initial = this._createPane();
@@ -182,6 +192,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       pair: computed,
       isPairVisible: computed,
       stripTabIds: computed,
+      primaryChatTabId: computed,
+      chatToolLayout: computed,
+      setChatToolLayout: action,
       splitRight: action,
       splitPane: action,
       pairWith: action,
@@ -202,6 +215,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       setWindowOpener: action,
     });
 
+    if (this._isPrimaryChatTab) {
+      this._chatToolDisposer = reaction(() => this._hasToolTabs(), (hasTools) => {
+        if (!hasTools) this._chatToolLayout.set(undefined);
+      });
+    }
+
     // Runtime-only tabs may take live focus, but must not replace persisted navigation state.
     this._activeTabDisposer = reaction(
       () => {
@@ -221,6 +240,45 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       },
       { fireImmediately: true }
     );
+  }
+
+  get primaryChatTabId(): string | undefined {
+    const matches = this._isPrimaryChatTab;
+    if (!matches) return undefined;
+    for (const { pane } of this.groups) {
+      for (const entry of pane.entries.values()) {
+        if (matches(entry)) return entry.tabId;
+      }
+    }
+    return undefined;
+  }
+
+  private _hasToolTabs(): boolean {
+    const matches = this._isPrimaryChatTab;
+    return !!matches && this.groups.some(({ pane }) => [...pane.entries.values()].some((entry) => !matches(entry)));
+  }
+
+  /** The user can change visibility without changing pane ownership, geometry or the two-tool pair. */
+  get chatToolLayout(): ChatToolLayoutMode | undefined {
+    if (!this.primaryChatTabId) return undefined;
+    return this._hasToolTabs() ? this._chatToolLayout.get() ?? 'split' : 'empty';
+  }
+
+  setChatToolLayout(mode: PopulatedChatToolLayout): void {
+    if (this.primaryChatTabId && this._hasToolTabs()) this._chatToolLayout.set(mode);
+  }
+
+  private _restoreChatToolLayout(saved: TabGroupsSnapshot['chatToolLayout']): void {
+    const primary = this.primaryChatTabId;
+    if (!primary || !this._hasToolTabs()) {
+      this._chatToolLayout.set(undefined);
+    } else if (saved === 'split' || saved === 'full' || saved === 'hidden') {
+      this._chatToolLayout.set(saved);
+    } else if (this.sidePaneId !== null) {
+      this._chatToolLayout.set('split');
+    } else {
+      this._chatToolLayout.set(this.focusedPane.resolvedActiveTabId === primary ? 'hidden' : 'full');
+    }
   }
 
   setViewActive(active: boolean): void {
@@ -819,7 +877,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const layout = layoutFor(retainedIds, snapshotOf(this.layout));
     const retainedTabs = new Set(retained.flatMap(({ tabManager }) => tabManager.tabs.map((tab) => tab.tabId)));
     const pair = this._pair;
+    const primary = this.primaryChatTabId;
+    const chatToolLayout = this.chatToolLayout;
     return {
+      ...(primary && retainedTabs.has(primary) && retainedTabs.size > 1 && chatToolLayout && chatToolLayout !== 'empty'
+        ? { chatToolLayout } : {}),
       groups: retained.map(({ group, tabManager }) => ({
         groupId: group.paneId,
         tabManager,
@@ -875,6 +937,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const open = new Set(this.groups.flatMap(({ pane }) => pane.tabOrder));
     this._displaced.replace(Object.entries(snapshot.displaced ?? {}).filter(([tabId, record]) => open.has(tabId) && open.has(record.tabId)));
     this._sideShares.replace(Object.entries(snapshot.sideShares ?? {}).filter(([tabId, share]) => open.has(tabId) && Number.isFinite(share)));
+    this._restoreChatToolLayout(snapshot.chatToolLayout);
   }
 
   /**
@@ -931,6 +994,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   dispose(): void {
     this._activeTabDisposer();
+    this._chatToolDisposer?.();
     this.stopPersistence();
     for (const disposer of this._autoCloseDisposers.values()) {
       disposer();

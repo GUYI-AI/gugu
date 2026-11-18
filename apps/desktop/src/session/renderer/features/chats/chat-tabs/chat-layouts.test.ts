@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { folderItem, type PanelItem } from './chat-panel-item';
 import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
 import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
@@ -233,5 +234,50 @@ describe('pages beside the chat start at one declared width (side-width.ts, owne
     expect(infoTabOf(id)).toBeNull();
     openInfoTab(id, 'members');
     expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
+  });
+});
+
+describe('chat tool state is scoped to the conversation ID', () => {
+  it('uses the same empty, split and hidden transitions in private and group chats', () => {
+    for (const id of ['layout-private-chat', 'layout-group-chat']) {
+      const layout = chatLayoutOf(id);
+      expect(layout.chatToolLayout).toBe('empty');
+      const tab = openPanelItem(id, folderItem())!;
+      expect(layout.chatToolLayout).toBe('split');
+      layout.setChatToolLayout('hidden');
+      const extra = openPanelItem(id, file('extra'), { intent: 'newTab' })!;
+      expect(layout.chatToolLayout).toBe('hidden');
+      closeChatTab(id, extra);
+      closeChatTab(id, tab);
+      expect(layout.chatToolLayout).toBe('empty');
+    }
+  });
+
+  it('keeps the group, current topic slot and each topic’s own tools independent', () => {
+    const sourceId = 'chat-tool-topic-source';
+    const topicId = 'chat-tool-topic-1';
+    const otherTopicId = 'chat-tool-topic-2';
+    openTopicTab(sourceId, { topicChatId: topicId, name: '话题一' });
+    const source = chatLayoutOf(sourceId);
+    const sourceRoot = source.primaryChatTabId;
+    const topicSlot = topicTabOf(sourceId)?.tabId;
+    openPanelItem(sourceId, file('source-tool'), { intent: 'newTab' });
+    source.setChatToolLayout('full');
+    expect(sourceRoot).toBeDefined();
+    expect(sourceRoot).not.toBe(topicSlot);
+
+    const topic = chatLayoutOf(topicId);
+    expect(topic.chatToolLayout).toBe('empty');
+    const topicTool = openPanelItem(topicId, file('topic-tool'))!;
+    topic.setChatToolLayout('hidden');
+    openTopicTab(sourceId, { topicChatId: otherTopicId, name: '话题二' });
+    expect(topicTabOf(sourceId)?.tabId).toBe(topicSlot);
+    expect(chatLayoutOf(otherTopicId).chatToolLayout).toBe('empty');
+    expect(panelTabsOf(sourceId).map(({ tabId }) => tabId)).not.toContain(topicTool);
+    expect(chatLayoutOf(topicId).chatToolLayout).toBe('hidden');
+    expect(panelTabsOf(topicId).map(({ tabId }) => tabId)).toEqual([topicTool]);
+    expect(viewStateCache.read(`chat:${topicId}:tabs`)).toMatchObject({ chatToolLayout: 'hidden' });
+    expect(viewStateCache.read(`chat:${sourceId}:tabs`)).toMatchObject({ chatToolLayout: 'full' });
+    expect(JSON.stringify(source.snapshot)).not.toContain(topicTool);
   });
 });
