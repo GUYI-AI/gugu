@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // owner 10-16「只有一个设置:咕咕的设置是全局设置里的一组,咕咕页里的齿轮直接开到这一组」:
 // 资料(AssistantSection)与连接应用(ConnectorsSection)两页。
-import { createElement, type ReactNode } from 'react'
+import { act, createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
@@ -248,7 +248,7 @@ describe('Settings has nothing of the assistant', () => {
 })
 
 describe('the person\'s own connected apps on the phone', () => {
-  it('lists Marketplace after Devices and accepts existing connector routes', async () => {
+  it('lists Marketplace after Devices', async () => {
     authority.mode = 'owner'
     await render(createNode(SettingsPanel, { inline: true, mobile: true, pane: 'nav' }), awake)
     const row = q('settings-nav-apps')!
@@ -261,11 +261,15 @@ describe('the person\'s own connected apps on the phone', () => {
     expect(q('settings-nav-connectors')).toBeNull()
     expect(q('settings-nav-assistant')).toBeNull()
     expect(harness.container.textContent).not.toMatch(/资料/)
-    for (const section of ['connectors', 'channels'] as const) {
-      harness.cleanup(); harness = createReactHarness(); sessionSection.props = null
-      await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile: true, pane: 'detail' }), awake)
-      await vi.waitFor(() => expect(q('phone-market')?.querySelector('[role="tabpanel"][aria-label="连接器"]')).toBeTruthy())
-      expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
-    }
+  })
+
+  it.each(['connectors', 'channels'] as const)('opens Marketplace Connectors from the existing %s route', async section => {
+    authority.mode = 'owner'
+    await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile: true, pane: 'detail' }), awake)
+    expect(harness.container.querySelector('[data-settings-section="apps"]')).not.toBeNull()
+    // Settings lazy-loads Marketplace. Wait for the import and let React commit the resolved panel.
+    await act(async () => { await vi.dynamicImportSettled() })
+    expect(q('phone-market')?.querySelector('[role="tabpanel"][aria-label="连接器"]')).toBeTruthy()
+    expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
   })
 })
