@@ -9,7 +9,7 @@ import { messageForUser } from '@/lib/userFacingError'
 import { showModal } from '@renderer/lib/modal/modal-provider'
 import './first-run-import.css'
 
-/** Shared by onboarding, the upgrade gate and the per-harness session-start modal. */
+/** Shared by onboarding and the per-harness session-start modal. */
 export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
   homes: AgentHomeScan[]
   machine?: string | null
@@ -32,7 +32,7 @@ export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
       const skipped: AgentHomeScan['issues'] = []
       const notes: typeof notices = []
       for (const home of homes) {
-        const result = await client.importAgentHome({ providerId: home.providerId, groups: skip ? [] : [...picked[home.providerId]!] })
+        const result = await client.importAgentHome({ providerId: home.providerId, groups: skip ? [] : [...picked[home.providerId]!], ...(skip ? { skip: true } : {}) })
         if (!result.success) throw new Error(result.error.type === 'unknown-provider' ? t('agentHome.failed') : result.error.message)
         skipped.push(...result.data.issues)
         if (result.data.terminalNeedsSignIn || result.data.relogin?.length || result.data.oldSessionsSkipped) notes.push({

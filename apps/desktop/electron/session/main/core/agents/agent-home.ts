@@ -25,8 +25,13 @@ import { getPlugin } from '@main/core/agents/plugin-registry';
  * ❌ 不硬编码任何一家:只认 descriptor 上的 `configRoot` 声明。没声明的家返回空对象。
  */
 const cache = new Map<string, Promise<Resolved>>();
+let prepareUpgrade: ((providerId: string) => Promise<void>) | undefined;
 
 type Resolved = { env: Record<string, string>; root: string };
+
+export function setAgentHomeUpgradePreparation(prepare: (providerId: string) => Promise<void>): void {
+  prepareUpgrade = prepare;
+}
 
 export async function resolveAgentHomeEnv(providerId: string, purpose?: 'version-probe'): Promise<Record<string, string>> {
   return (await (purpose ? compute(providerId, purpose) : resolveOnce(providerId))).env;
@@ -62,6 +67,7 @@ export async function prepareAgentFirstRunState(
     sourceEnv: process.env,
   });
   if (!home) return null;
+  await prepareUpgrade?.(providerId);
   await ensureAgentHome(home);
   if (home.firstRunState && home.firstRunState.length > 0) {
     await applyAgentFirstRunState(home, createLocalPluginFs(home.configRoot), workspacePath);
@@ -102,7 +108,10 @@ async function compute(providerId: string, purpose?: 'version-probe'): Promise<R
   if (!home) return { env: {}, root: osHomeDir };
   // Version probes discover installed CLIs before the import screen opens. Keep their environment
   // pointed at Gugu's root while deferring provisioning until import or skip.
-  if (!purpose) await ensureAgentHome(home);
+  if (!purpose) {
+    await prepareUpgrade?.(providerId);
+    await ensureAgentHome(home);
+  }
   const spec = configRoot;
   return {
     env: spec?.injectEnv === false ? {} : { [home.envVar]: home.configRoot },

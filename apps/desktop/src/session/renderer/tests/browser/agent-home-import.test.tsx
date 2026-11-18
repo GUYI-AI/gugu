@@ -39,5 +39,5 @@ it('skip still makes an explicit empty import and continues only after it comple
   await harness.render(<FirstRunImport homes={[home]} onDone={done} />)
   await clickElement(harness.container.querySelector('[data-testid="first-run-import-skip"]')!)
   await expect.poll(() => done.mock.calls.length).toBe(1)
-  expect(calls.importHome).toHaveBeenCalledWith({ providerId: 'claude', groups: [] })
+  expect(calls.importHome).toHaveBeenCalledWith({ providerId: 'claude', groups: [], skip: true })
 })

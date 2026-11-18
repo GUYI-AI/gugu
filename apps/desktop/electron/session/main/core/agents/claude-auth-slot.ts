@@ -456,3 +456,21 @@ export async function restoreClaudeTerminalForMigration(paths: ClaudeAuthSlotPat
   await cleanRestoredClaudeVault(paths, restored);
   return { terminalNeedsSignIn: restored.identity === '', relogin: null };
 }
+
+/** Copy only the CLI account in use, leaving MCP credentials in their original store. */
+export async function copyClaudeUpgradeSignIn(previous: ClaudeAuthSlotPaths, managed: ClaudeAuthSlotPaths, connectionId: string): Promise<boolean> {
+  const account = await readAccount(previous.nativeGlobalConfig);
+  if (!account) return false;
+  const state = await readLiveState(previous.liveStateFile);
+  if (connectionId !== NATIVE && (state?.connectionId !== connectionId || state.identity !== account.identity)) return false;
+  const oauth = oauthOf(await previous.store.read(native(previous)));
+  if (!oauth || (await readAccount(previous.nativeGlobalConfig))?.identity !== account.identity) return false;
+  const target = await managed.store.read(native(managed));
+  const targetOauth = oauthOf(target);
+  const targetAccount = await readAccount(managed.nativeGlobalConfig);
+  if (targetAccount ? targetAccount.identity !== account.identity : targetOauth && JSON.stringify(targetOauth) !== JSON.stringify(oauth)) return false;
+  if (!targetOauth) await managed.store.write(native(managed), withOauth(target, oauth));
+  await mergeAccount(managed.nativeGlobalConfig, account.fields, managed.lockRetries ?? DEFAULT_LOCK_RETRIES);
+  await recordLiveState(managed, { connectionId, identity: account.identity });
+  return true;
+}

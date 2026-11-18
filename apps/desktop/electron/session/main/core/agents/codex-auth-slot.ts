@@ -285,6 +285,24 @@ export async function restoreCodexTerminalForMigration(paths: CodexAuthSlotPaths
   return { terminalNeedsSignIn: restored.identity === '', relogin: null };
 }
 
+/** A one-time snapshot of the sign-in used before an upgrade. It never changes the source slot. */
+export async function copyCodexUpgradeSignIn(previous: CodexAuthSlotPaths, managed: CodexAuthSlotPaths, connectionId: string): Promise<boolean> {
+  await assertCodexFileCredentialStore(previous.nativeRoot);
+  await assertCodexFileCredentialStore(managed.nativeRoot);
+  const state = await readLiveState(previous.liveStateFile);
+  const live = await readAuth(previous.nativeRoot);
+  if (!live?.identity?.startsWith('chatgpt:')) return false;
+  if (connectionId !== 'native' && (state?.connectionId !== connectionId || state.identity !== live.identity)) return false;
+  const target = await readAuth(managed.nativeRoot);
+  if (target && target.identity !== live.identity) return false;
+  if (!target) {
+    const credentials = JSON.parse(live.text) as Record<string, unknown>;
+    await writeAuth(managed.nativeRoot, JSON.stringify({ ...credentials, OPENAI_API_KEY: null }));
+  }
+  await recordLiveState(managed.liveStateFile, { connectionId, identity: live.identity });
+  return true;
+}
+
 /** 这个连接的保管目录里有没有一份能换进来的登录(切换前先问,免得白白停掉在跑的会话)。 */
 export async function codexSignInSaved(paths: CodexAuthSlotPaths, connectionId: string): Promise<boolean> {
   return (await readAuth(paths.vaultRoot(connectionId))) !== null;

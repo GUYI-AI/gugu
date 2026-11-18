@@ -12,6 +12,11 @@ export const FIRST_RUN_RECORD_FILE = 'first-run-apps.json';
 
 const fileOf = (userData: string) => path.join(userData, FIRST_RUN_RECORD_FILE);
 
+/** Call before noteFirstRunProfile writes this launch's record. */
+export function hasPriorProfile(userData: string): boolean {
+  return fs.existsSync(fileOf(userData)) || fs.existsSync(path.join(userData, EXTENSIONS_DIR_NAME));
+}
+
 /**
  * 启动最先调一次(embedded-boot.ts,早于任何东西建出 `task-extensions/`):还没有记录时,有 App 的记录目录 = 这个 profile
  * 早就用着(老 profile 升级上来,`existing`,永远不跑);没有 = 新 profile 的第一次启动(`pending`)。有记录就不动它。

@@ -1,6 +1,7 @@
 import { platform } from '@/platform'
 import { WireError } from '@gugu/session-wire'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
+import { showAgentHomeUpgradeNotice } from './agent-home-upgrade-notice'
 import { errorText } from './subscription-queries'
 import { showModal } from '@renderer/lib/modal/modal-provider'
 
@@ -8,8 +9,10 @@ import { showModal } from '@renderer/lib/modal/modal-provider'
 export async function ensureAgentHomeImported(providerId: string, machine: string | null): Promise<void> {
   if (platform.kind !== 'electron' && !machine) return
   const home = await readAgentHome(providerId, machine)
-  if (!home?.needsImport) return
-  if (!home.sourceReadable && !home.migration) {
+  if (!home) return
+  showAgentHomeUpgradeNotice(home, machine)
+  if (!home.needsImport) return
+  if (!machine && !home.sourceReadable && !home.migration) {
     const client = await getAgentConfigRuntimeClient(machine)
     const initialized = await client.importAgentHome({ providerId, groups: [] })
     if (!initialized.success) throw new Error(errorText(initialized.error))

@@ -24,6 +24,7 @@ import type { ProductTourRequest, TourStepId } from '../../lib/productTour'
 import { FirstRunImport } from './FirstRunImport'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
+import { showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { FirstRunHarness } from './FirstRunHarness'
 import { FirstRunTerminal } from './FirstRunTerminal'
 import { FirstRunInstallProvider } from './FirstRunInstallProvider'
@@ -87,11 +88,11 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   const done = useCallback(() => { rememberFirstRunDone(user.id); setState({ kind: 'done' }) }, [user.id])
   const [importHomes, setImportHomes] = useState<AgentHomeScan[]>([])
   const [hasImport, setHasImport] = useState(false)
-  const afterImport = useRef<'terminal' | 'tourChoice' | 'done'>('terminal')
-  const prepareImport = useCallback(async (ids: readonly string[] | null, next: 'terminal' | 'tourChoice' | 'done') => {
+  const afterImport = useRef<'terminal' | 'tourChoice'>('terminal')
+  const prepareImport = useCallback(async (ids: readonly string[], next: 'terminal' | 'tourChoice') => {
     if (platform.kind !== 'electron') { setState({ kind: next }); return }
     const client = await getAgentConfigRuntimeClient()
-    const result = await client.scanAgentHomes({ ...(ids ? { providerIds: [...ids] } : {}) })
+    const result = await client.scanAgentHomes({ providerIds: [...ids] })
     if (!result.success) throw new Error('Cannot read local harness configuration')
     for (const home of result.data.filter((home) => home.needsImport && !home.sourceReadable && !home.migration)) {
       const initialized = await client.importAgentHome({ providerId: home.providerId, groups: [] })
@@ -115,11 +116,11 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   // ❌ 等 identityPending 落定再读:身份行在注册那一刻就在(auth.users 的插入触发器),pending 只是「客户端还没补全」;
   // 补全一直落不了地时,等它 = 门口永远转圈,而主界面本来照样能用。补全晚到的称呼 / 头像由 FirstRunProfile 跟上。
   const load = useCallback(() => {
-    if (firstRunDoneHere(user.id)) { if (platform.kind !== 'electron') { done(); return } void prepareImport(null, 'done').catch((error: unknown) => setState({ kind: 'unreadable', message: messageForUser(error) })); return }
+    if (firstRunDoneHere(user.id)) { done(); return }
     setState({ kind: 'loading' })
     readFirstRunProgress(user.id)
       .then(async (progress) => {
-        if (progress.stage === 'done') { if (platform.kind === 'electron') { rememberFirstRunDone(user.id); await prepareImport(null, 'done') } else done() }
+        if (progress.stage === 'done') done()
         // 资料已填、还没走完(进度里这一段仍叫 `intro`,旧版本在这里停在「认识咕咕」):接着走下一个真有的步骤。
         // 手机只有资料那一页:回到它(已填好),「继续」即走完。
         else if (progress.stage === 'intro' && platform.kind === 'electron') {
@@ -136,6 +137,15 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   }, [user.id, done, prepareImport])
 
   useEffect(load, [load])
+
+  useEffect(() => {
+    if (state.kind !== 'done' || platform.kind !== 'electron') return
+    let active = true
+    void getAgentConfigRuntimeClient().then((client) => client.scanAgentHomes({})).then((result) => {
+      if (active && result.success) result.data.forEach((home) => showAgentHomeUpgradeNotice(home, null))
+    }).catch((error: unknown) => log.error({ error: String(error) }, 'read configuration upgrade notices failed'))
+    return () => { active = false }
+  }, [state.kind])
 
   const startTour = useCallback((from: TourStepId | null) => {
     const steps = availableTourSteps()
@@ -186,7 +196,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
         ) : state.kind === 'import' ? (
           <>
             <StepCount withImport={hasImport} step="import" />
-            <FirstRunImport homes={importHomes} onBack={afterImport.current === 'done' ? undefined : () => setState({ kind: 'harness' })} onDone={() => setState({ kind: afterImport.current })} />
+            <FirstRunImport homes={importHomes} onBack={() => setState({ kind: 'harness' })} onDone={() => setState({ kind: afterImport.current })} />
           </>
         ) : state.kind === 'terminal' ? (
           // 选完 Agent 之后(owner 10-27)。开关即时写本机设置;「继续」记下看过这一页,中途退出再进回到这里。

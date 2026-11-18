@@ -24,6 +24,7 @@ import { sessions } from '@main/db/schema';
 import { log } from '@main/lib/logger';
 import {
   activateClaudeAccount,
+  copyClaudeUpgradeSignIn,
   restoreClaudeTerminalForMigration,
   claudeCredentialRoot,
   claudeSignInSaved,
@@ -34,6 +35,7 @@ import { createClaudeCredentialStore, type ClaudeCredentialStore } from './claud
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import {
   activateCodexAccount,
+  copyCodexUpgradeSignIn,
   restoreCodexTerminalForMigration,
   assertCodexFileCredentialStore,
   codexCredentialRoot,
@@ -598,37 +600,63 @@ export async function sessionHarnessConnectionId(sessionId: string | undefined):
   return 'native';
 }
 
-/** Explicit import is the only upgrade entry; no credential alignment runs at startup. */
-export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Record<string, string | undefined>) {
-  const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch');
-  await prepareSubscriptionMigration(providerId);
+type RestoredTerminal = { relogin: string | null; terminalNeedsSignIn: boolean; legacyVaultUnverified?: boolean };
+
+/** Split the old shared slot and use the compatibility copy only for an existing installation. */
+export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Record<string, string | undefined>, automatic = false) {
   const ids = await accountConnectionIds(providerId);
   const selected = await defaultConnectionId(providerId);
+  const account = await registry.getAccount(namespace(providerId), selected);
+  const owned = account?.meta?.harnessConnection?.kind === 'account';
   const formerRoot = nativeConfigRoot(providerId, env);
   const stateDir = join(app.getPath('userData'), 'harness-connections', providerId);
   const oldNativeVault = join(stateDir, 'native', requireNativeHome(providerId).userPath);
   const previousVaultRoot = (id: string) => id === 'native' ? oldNativeVault : vaultRoot(providerId, id);
+  const liveStateFile = join(stateDir, 'live-account.json');
+  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: () => Promise<boolean>) => {
+    let result: RestoredTerminal = { relogin: null, terminalNeedsSignIn: false };
+    try {
+      const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch');
+      await prepareSubscriptionMigration(providerId);
+      result = await restore();
+      if (owned && result.relogin !== selected) {
+        await activate();
+        return migrationNotice(providerId, result);
+      }
+    } catch (error) {
+      if (!automatic) throw error;
+      log.warn('Could not split the previous account slot during upgrade', { providerId });
+    }
+    let upgradeSignIn: 'copied' | 'relogin' | undefined;
+    if (automatic && (owned || selected === 'native')) {
+      try { upgradeSignIn = await copy() ? 'copied' : 'relogin'; }
+      catch {
+        log.warn('Could not transfer the previous sign-in during upgrade', { providerId });
+        upgradeSignIn = 'relogin';
+      }
+    }
+    const notice = await migrationNotice(providerId, result);
+    return upgradeSignIn ? { ...notice, upgradeSignIn } : notice;
+  };
   if (providerId === 'codex') {
     const managed = codexSlotPaths();
-    const previous = { ...managed, nativeRoot: formerRoot, vaultRoot: previousVaultRoot, liveStateFile: join(stateDir, 'live-account.json') };
-    const result = await restoreCodexTerminalForMigration(previous, ids);
-    const account = await registry.getAccount(namespace(providerId), selected);
-    if (account?.meta?.harnessConnection?.kind === 'account' && result.relogin !== selected) await activateCodexAccount(managed, ids, selected, 'native');
-    return migrationNotice(providerId, result);
+    const previous = { ...managed, nativeRoot: formerRoot, vaultRoot: previousVaultRoot, liveStateFile };
+    return finish(() => restoreCodexTerminalForMigration(previous, ids),
+      () => activateCodexAccount(managed, ids, selected, 'native'),
+      () => copyCodexUpgradeSignIn(previous, managed, selected));
   } else {
     const managed = claudeSlotPaths();
     const exported = Boolean(env.CLAUDE_CONFIG_DIR?.trim());
     const previous = { ...managed, nativeRoot: formerRoot, nativeSuffixed: exported, vaultRoot: previousVaultRoot,
       nativeGlobalConfig: exported ? join(formerRoot, '.claude.json') : join(homedir(), '.claude.json'),
-      liveStateFile: join(stateDir, 'live-account.json') };
-    const result = await restoreClaudeTerminalForMigration(previous, ids);
-    const account = await registry.getAccount(namespace(providerId), selected);
-    if (account?.meta?.harnessConnection?.kind === 'account' && result.relogin !== selected) await activateClaudeAccount(managed, ids, selected, 'native');
-    return migrationNotice(providerId, result);
+      liveStateFile };
+    return finish(() => restoreClaudeTerminalForMigration(previous, ids),
+      () => activateClaudeAccount(managed, ids, selected, 'native'),
+      () => copyClaudeUpgradeSignIn(previous, managed, selected));
   }
 }
 
-async function migrationNotice(providerId: Provider, result: { relogin: string | null; terminalNeedsSignIn: boolean; legacyVaultUnverified?: boolean }) {
+async function migrationNotice(providerId: Provider, result: RestoredTerminal) {
   if (result.legacyVaultUnverified) log.warn('Skipped legacy native vault cleanup because the terminal identity could not be verified', { providerId });
   const account = result.relogin ? await registry.getAccount(namespace(providerId), result.relogin) : null;
   const auth = pluginRegistry.get(providerId)?.capabilities.auth;

@@ -9,6 +9,8 @@ export const agentHomeScanSchema = z.object({
   providerId: z.string(), name: z.string(), userRoot: z.string(), sourceReadable: z.boolean(),
   importedAt: z.string().nullable(), needsImport: z.boolean(), sourceUpdated: z.boolean(),
   migration: z.boolean(),
+  upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin']).optional(),
+  terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(),
   groups: z.array(z.object({ id: agentHomeGroupIdSchema, count: z.number(), mcpCount: z.number().optional() })),
   issues: z.array(agentHomeIssueSchema),
   mcpSecrets: z.array(z.string()), projectMcpCount: z.number(), unmarkedMcp: z.array(z.string()).optional(),
@@ -28,3 +30,9 @@ export const agentHomeDiffSchema = z.object({
 });
 export type AgentHomeScan = z.infer<typeof agentHomeScanSchema>;
 export type AgentHomeDiff = z.infer<typeof agentHomeDiffSchema>;
+
+export const agentHomeOperationSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('status') }),
+  z.object({ action: z.literal('import'), providerId: z.string(), groups: z.array(agentHomeGroupIdSchema).optional() }),
+  z.object({ action: z.literal('skip'), providerId: z.string() }),
+]);

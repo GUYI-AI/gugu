@@ -146,8 +146,8 @@ export async function getAgentConfigRuntimeClient(): Promise<AgentConfigRuntimeC
 }
 
 /** The account row's sign-in reading (the CLI and config root a session runs); `null` when the worker cannot read it. */
-export async function readAgentAuthStatus(providerId: string): Promise<AgentAuthStatus | null> {
-  const result = await (await getAgentConfigRuntimeClient()).refreshAuthStatus({ providerId });
+export async function readAgentAuthStatus(providerId: string, connectionId?: string): Promise<AgentAuthStatus | null> {
+  const result = await (await getAgentConfigRuntimeClient()).refreshAuthStatus({ providerId, connectionId });
   return result.success ? result.data : null;
 }
 
@@ -211,7 +211,7 @@ export function withHostResolvedCli(
   return {
     ...client,
     scanAgentHomes: ({ providerIds }) => connectionOperation(() => scanAgentHomes(providerIds)),
-    importAgentHome: ({ providerId, groups }) => connectionOperation(() => importHarnessHome(providerId, groups)),
+    importAgentHome: ({ providerId, groups, skip }) => connectionOperation(() => importHarnessHome(providerId, groups, skip)),
     diffAgentHome: ({ providerId }) => connectionOperation(() => diffHarnessHome(providerId)),
     reimportAgentHome: ({ providerId, decisions }) => connectionOperation(() => reimportHarnessHome(providerId, decisions)),
     refreshAgents: async (input) => {

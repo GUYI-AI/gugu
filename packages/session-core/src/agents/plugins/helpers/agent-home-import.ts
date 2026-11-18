@@ -19,8 +19,8 @@ const DATABASE_NAME = /(?:\.sqlite(?:-\w+)?|\.db|-(?:wal|shm))$/i;
 
 export class AgentHomeNotImported extends Error {
   readonly code = 'AGENT_HOME_NOT_IMPORTED';
-  constructor(readonly providerId: string) {
-    super(`Import or skip local configuration for ${providerId} before continuing`);
+  constructor(readonly providerId: string, options?: ErrorOptions) {
+    super(`In Settings → Subscriptions, import local configuration or sign in to ${providerId}. On a server, run gugu-server agent-home import ${providerId} to import, or use its sign-in flow if you chose Skip.`, options);
     this.name = 'AgentHomeNotImported';
   }
 }
@@ -34,6 +34,10 @@ export type AgentHomeMarker = {
   groups: AgentHomeGroupId[];
   files: Record<string, string>;
   migratedFrom?: 'shared';
+  skipped?: true;
+  terminalNeedsSignIn?: boolean;
+  oldSessionsSkipped?: number;
+  upgradeSignIn?: 'copied' | 'relogin';
   legacyBaseline?: boolean;
 };
 type PathSpec = Exclude<AgentHomeImportPath, string>;
@@ -323,10 +327,11 @@ export async function scanAgentHome(home: ResolvedAgentHome) {
 export async function importAgentHome(home: ResolvedAgentHome, options: {
   groups: ReadonlySet<AgentHomeGroupId>; now?: Date; migratedFrom?: 'shared';
   historyPaths?: readonly string[];
-  beforeCommit?: () => Promise<void>;
+  skip?: boolean;
+  beforeCommit?: (issues: readonly AgentHomeImportIssue[]) => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn' | 'oldSessionsSkipped'> | void>;
 }): Promise<{ marker: AgentHomeMarker; issues: AgentHomeImportIssue[] }> {
   const existing = await readAgentHomeMarker(home);
-  if (existing) return { marker: existing, issues: [] };
+  if (existing && (!existing.skipped || !options.groups.size)) return { marker: existing, issues: [] };
   await makeDirectory(home, home.configRoot);
   let copied = 0;
   const { items, issues } = options.groups.size ? await collect(home, async (snapshots) => {
@@ -337,11 +342,13 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
   }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
   const selected = items.filter((item) => options.groups.has(item.group));
   if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(home, options.historyPaths, copied));
-  await options.beforeCommit?.();
+  const upgrade = await options.beforeCommit?.(issues);
   const marker: AgentHomeMarker = {
     importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
     groups: [...options.groups], files: Object.fromEntries(selected.map((item) => [item.id, item.hash])),
+    ...(options.skip ? { skipped: true as const } : {}),
     ...(options.migratedFrom ? { migratedFrom: options.migratedFrom } : {}),
+    ...(upgrade ?? {}),
   };
   await writeMarker(home, marker);
   return { marker, issues };

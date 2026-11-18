@@ -44,8 +44,9 @@ export function AgentHomeRow({ providerId, machine }: { providerId: string; mach
   return <>
     <SettingsRow title={<>{t('agentHome.local')}{home?.sourceUpdated && <span className="ml-2 text-xs text-foreground-muted">● {t('agentHome.updated')}</span>}</>}
       description={<>{home?.importedAt ? t('agentHome.row', { date: new Date(home.importedAt).toLocaleString(i18n.language), path: home.userRoot }) : t('agentHome.notImported')}
+        {home?.upgraded && <span className="block">{t('agentHome.upgradeKept', { name: home.name })}</span>}
         {error && <span role="alert" className="block text-destructive">{error}</span>}</>}
-      control={<Button variant="secondary" size="sm" onClick={() => void open()} disabled={busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
+      control={<Button variant="secondary" size="sm" onClick={() => void open()} disabled={busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t(home?.needsImport ? 'agentHome.importAction' : 'agentHome.reimport')}</Button>} />
     {diff && <ReimportDialog providerId={providerId} machine={machine} diff={diff} onClose={() => setDiff(null)} onDone={() => { setDiff(null); void agentHome.refresh(machine, providerId) }} />}
   </>
 }
