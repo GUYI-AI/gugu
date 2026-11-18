@@ -238,7 +238,8 @@ describe('Settings has nothing of the assistant', () => {
     if (mobile) expect(q('settings-nav-connectors')).toBeNull()
   })
 
-  it('mounts the machine-scoped connections for desktop, including in legacy mode', async () => {
+  it.each(['legacy', 'owner'] as const)('mounts the machine-scoped desktop connections in %s mode', async mode => {
+    authority.mode = mode
     await render(createNode(SettingsPanel, { initialSection: 'connectors', inline: true }), awake)
     expect(q('settings-nav-connectors')).not.toBeNull()
     expect(sessionSection.props).toEqual({ section: 'connectors', context: { desktopConnections: true } })
@@ -264,13 +265,5 @@ describe('the person\'s own connected apps on the phone', () => {
       expect(q('settings-connectors')).not.toBeNull()
       expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
     }
-  })
-
-  it('never on a computer: its home there is the Library\'s 集成', async () => {
-    authority.mode = 'owner'
-    await render(createNode(SettingsPanel, { initialSection: 'connectors', inline: true, mobile: false, pane: 'detail' }), awake)
-    expect(q('settings-nav-connectors')).toBeNull()
-    expect(q('settings-connectors')).toBeNull()
-    expect(harness.container.querySelector('[data-settings-section="account"]')).not.toBeNull()
   })
 })
