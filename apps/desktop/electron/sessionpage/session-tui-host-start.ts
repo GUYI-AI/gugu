@@ -39,19 +39,23 @@ import { opencodeServeAttachSessionDelivery } from './opencode-serve-attach-deli
 import { buildOpencodeServeEnv } from './opencode-serve-attach-transport'
 import { promoteSessionpageDeliveryOwner, restoreSessionpageOfflineDeliveryOwner } from './sessionpage-delivery-owner-registry'
 import {
-  claudeTuiSettingsArgs,
   sessionBundleModelFor,
   withPlatformDeclaration,
   type SessionpagePlatformModel,
 } from './sessionpage-platform-model'
 import type { SessionpagePlatformRecoveryCoordinator } from './sessionpage-platform-recovery'
 import { edgeEndsTurn, type TurnLifecycleEdge } from './turn-lifecycle-relay'
+import { claudeTuiSessionArgs, releaseClaudeTuiSettings } from './claude-tui-settings'
+import { codexStartupFastTier } from './codex-startup-fast-tier'
+import { platformCreationFastGroup } from '@main/core/agents/platform-fast-mode'
+import { probeHarnessModelCatalog } from '@main/core/agents/harness-model-catalog'
+import { wireHarnessModelCatalog } from '@main/core/agents/harness-model-catalog-wiring'
 
 // @@@sessionpage TASKPAGE-FUSION — the PTY-divert hook shapes (mirror emdash-pty-sessionpage-hook.ts across
 // the module boundary; the host returns a command override to run `codex --remote … resume <tid>`).
 // @@@2503 platformModel:composer 记在这个会话上的模型来源({modelId} = 平台;null = harness 自家模型;
 // 字段缺失 = 本决定出现之前建的存量会话 → 回退 agent 级配置)。
-export type SessionTuiStartInfo = { sessionId: string; start: 'fresh' | 'reattach'; providerId: string; cwd: string; projectId: string; workspaceId: string; sourceSessionId?: string; initialPrompt?: string; forkFromProviderSessionId?: string; resumeProviderSessionId?: string; isResuming?: boolean; onProviderSessionId?: (providerSessionId: string) => Promise<void>; onProviderSessionEndpoint?: (endpoint: string) => Promise<void>; onHarnessTitle?: (title: string) => void; baseCommand: string; baseArgs: string[]; model?: string; effort?: string; permissionMode?: GuguPermissionMode; platformModel?: { modelId: string } | null; agentDisplayName?: string; mcpDisabledServers?: readonly string[]; tmuxSessionName?: string }
+export type SessionTuiStartInfo = { sessionId: string; start: 'fresh' | 'reattach'; providerId: string; cwd: string; projectId: string; workspaceId: string; sourceSessionId?: string; initialPrompt?: string; forkFromProviderSessionId?: string; resumeProviderSessionId?: string; isResuming?: boolean; onProviderSessionId?: (providerSessionId: string) => Promise<void>; onProviderSessionEndpoint?: (endpoint: string) => Promise<void>; onHarnessTitle?: (title: string) => void; baseCommand: string; baseArgs: string[]; model?: string; effort?: string; fastMode?: boolean; userSettingsProvided?: boolean; permissionMode?: GuguPermissionMode; platformModel?: { modelId: string } | null; agentDisplayName?: string; mcpDisabledServers?: readonly string[]; tmuxSessionName?: string }
 
 export type SessionTuiHostOverride = CodexPtyOverride & { startupGate?: ReturnType<typeof guguMcpToolsListedGate> }
 
@@ -185,12 +189,16 @@ const startClaudeRendezvous: HostStart = async (ctx, info, platformPromise, { st
     const platform = await platformPromise
     const override = {
       command: info.baseCommand,
-      args: [
-        ...info.baseArgs,
-        ...(capabilities.extraArgs ?? []),
-        ...platform.clientArgs,
-        ...await claudeTuiSettingsArgs(platform, [...info.baseArgs, ...(capabilities.extraArgs ?? [])]),
-      ],
+      // Reattaching a live tmux keeps the settings owned by its original process.
+      args: info.start === 'reattach'
+        ? [...info.baseArgs, ...(capabilities.extraArgs ?? []), ...platform.clientArgs]
+        : await claudeTuiSessionArgs({
+        sessionId: info.sessionId, cwd: info.cwd, baseArgs: info.baseArgs,
+        extraArgs: [...(capabilities.extraArgs ?? []), ...platform.clientArgs],
+        userSettingsProvided: info.userSettingsProvided === true,
+        platformSettingsPath: platform.settingsDocumentPath,
+        fastMode: info.fastMode === true, effort: info.effort,
+      }),
       env: {
         ...(capabilities.spawnEnv ?? {}),
         ...claudeRendezvousEnv(info.sessionId),
@@ -222,6 +230,7 @@ const startClaudeRendezvous: HostStart = async (ctx, info, platformPromise, { st
     }, 'SESSIONPAGE-FUSION: injected the gugu MCP into claude TUI via session plugin')
     return override
   } catch (error) {
+    await releaseClaudeTuiSettings(info.sessionId)
     // Provisioning installs the native identity's offline blocker before this hook starts. If any
     // capability/materialization step fails before native promotion, restore that exact blocker and
     // remove compatibility claimants immediately; outer PTY lifecycle cleanup may not run on startup
@@ -515,8 +524,22 @@ const startCodexAppServer: HostStart = async (ctx, info, platformPromise, { step
   // codex 这条腿把令牌烤进 app-server 的 argv 与环境,整段都要它 ⇒ 在这里一次落地。
   const platformForCodex = await platformPromise
   step('platform-landed')
+  const credits = Boolean(platformForCodex.accessSessionId)
+  let catalog: Awaited<ReturnType<typeof probeHarnessModelCatalog>> | null = null
+  if (info.fastMode === true && !credits && info.start === 'fresh') {
+    wireHarnessModelCatalog()
+    catalog = await probeHarnessModelCatalog('codex', 'tui', info.model ?? undefined)
+  }
+  let serviceTier = codexStartupFastTier({ enabled: info.fastMode === true, model: info.model, credits, catalog })
+  if (credits && info.fastMode === true) {
+    const modelId = info.platformModel?.modelId
+    if (!modelId || !await platformCreationFastGroup('codex', `platform:${modelId}`)) {
+      throw new Error('Cannot verify Fast for the selected platform model')
+    }
+    serviceTier = 'priority'
+  }
   return codexPtyProvisioning.provisionAndOverride(
-    platformForCodex.model ? { ...info, model: platformForCodex.model } : info,
+    { ...info, ...(platformForCodex.model ? { model: platformForCodex.model } : {}), serviceTier },
     {
       ...ctx.provisionDeps,
       loadCapabilities: async (agentUserId, chatId, model, autonomy, includePromptBlocks, projectContext, identityFacts) => {

@@ -467,6 +467,8 @@
 
 
 /* Entity and actual state occupy one compact shared header, with no second title/hero above the thread. */
+.gg-aw [data-centered] .gg-aw-title-with-watch { vertical-align: top; }
+.gg-aw [data-centered] .gg-aw-header-context { justify-content: center; }
 .gg-aw .gg-aw-title-avatar {
   display: inline-flex;
   width: var(--avatar-sm);
@@ -571,7 +573,8 @@
    放不下时整张抽屉一起滚(Sheet 的 @@@sheet-scroll),❌ 组内各自滚:组一旦是滚动容器,抽屉的 flex 列
    就能把它压扁 —— 实测 12 个项目在 360×640 上被压成两行半、在半截处切开,在下面的设置行上划不动,
    360×400 时压成 0 行(owner 10-07「超出竖直长度又没有滚动条」)。圆角用 clip 裁:它不是滚动容器,不会被压。 */
-.gg-aw .gg-aw-choice-group,
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-group,
+.gg-aw-model-choices,
 .gg-aw .gg-aw-summary-group {
   overflow: clip;
   border-radius: var(--radius-xl);
@@ -579,7 +582,7 @@
 }
 .gg-aw .gg-aw-summary-group { margin-top: var(--spacing-md); }
 
-.gg-aw .gg-aw-choice {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -594,10 +597,10 @@
   color: var(--fg);
   cursor: pointer;
 }
-.gg-aw .gg-aw-choice:last-child { border-bottom: 0; }
-.gg-aw .gg-aw-choice:disabled { opacity: 0.5; cursor: default; }
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice:last-child { border-bottom: 0; }
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice:disabled { opacity: 0.5; cursor: default; }
 /* 选中态 = 填满的圆点打勾,❌ 不是行尾挂一个勾(orca ChoiceRow 的 radio)。 */
-.gg-aw .gg-aw-choice-radio {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-radio {
   flex: none;
   width: 18px;
   height: 18px;
@@ -611,37 +614,44 @@
 /* @@@live-accent 「当前选中」是 design.md 里 live 的第四种(currently selected)。
    ⚠️ 原来是绿(--ok) —— 而同一个 app 里「我发出的 / 主操作」用的是黑白 --primary,
    同一件事两套颜色语言。 */
-.gg-aw .gg-aw-choice-radio[data-on] {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-radio[data-on] {
   border-color: var(--live);
   background: var(--live);
 }
-.gg-aw .gg-aw-choice-radio svg { width: 12px; height: 12px; }
-.gg-aw .gg-aw-choice-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.gg-aw .gg-aw-choice-label {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-radio svg { width: 12px; height: 12px; }
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-label {
   font-size: var(--font-body);
   font-weight: 600;
   color: var(--fg);
 }
-.gg-aw .gg-aw-choice-desc {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-desc {
   font-size: var(--font-caption);
   color: var(--text-secondary);
 }
 /* 模型页的两组(harness 自家 / 咕咕平台):组名一行 + 组内行;组空时一行说明,与行同一内距。 */
-.gg-aw .gg-aw-choice-section { border-top: 1px solid var(--border); }
-.gg-aw .gg-aw-choice-section-title {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-section { border-top: 1px solid var(--border); }
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-section-title {
   padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
   font-size: var(--font-caption);
   font-weight: 600;
   color: var(--text-muted);
 }
-.gg-aw .gg-aw-choice-note { padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm); }
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-choice-note { padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm); }
 /* 模型清单底下那一段(#7056):管理模型 / 升级解锁更多模型,两端各一枚;免费档下面再一行写开会员能用哪几个。 */
-.gg-aw .gg-aw-model-footer-actions {
+:is(.gg-aw, .gg-aw-model-choices) .gg-aw-model-footer-actions {
   display: flex;
   justify-content: space-between;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-xs) 0;
 }
+/* The Work sheet is portalled outside the page's .gg-aw ancestor. */
+.gg-aw-model-choices .gg-aw-choice { white-space: normal; }
+.gg-aw-model-choices .gg-aw-choice-body { overflow-wrap: anywhere; }
+.gg-aw-model-choices .gg-aw-choice-body { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.gg-aw-model-choices .gg-aw-choice-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-aw-model-choices .gg-aw-choice-desc { flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-aw-model-search { position: sticky; top: 0; z-index: 1; padding: 8px; background: var(--muted); }
 
 .gg-aw .gg-aw-summary {
   display: flex;

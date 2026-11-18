@@ -44,6 +44,7 @@ import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount
 import { observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
 import { useChatTranslator } from '@session-chat/localization';
 import type { ChatToolCall } from '@session-chat/model';
+import { activateToolRow } from '@session-chat/lib/tool-activation';
 import { chevron, chevronExpanded } from '@session-chat/components/primitives/collapse-header.css';
 import type { ToolPayloadGeometry } from './tool.layout';
 import type { ToolThumbStrip } from './tool-images';
@@ -124,6 +125,7 @@ export function Tool(props: ToolProps) {
         class={toolRow}
         classList={{ [toolRowCollapsible]: props.collapsible }}
         data-slot="tool-call-trigger"
+        onClick={event => activateToolRow(event, props.item.toolNames)}
         // Only payload-bearing rows are wired to the ChatRoot click delegation,
         // so a plain row cannot toggle a collapse state nothing would read.
         // Written as three attributes rather than one conditional spread: each

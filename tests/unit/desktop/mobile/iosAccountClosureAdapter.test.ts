@@ -4,10 +4,10 @@ import { composePhoneAccountClosure, type AccountClosureRequestActions } from '.
 import { createAccountClosureJournal } from '../../../../apps/desktop/src/components/settings/accountDeletion/accountClosureJournal'
 import type { PhoneCloseAcknowledgement } from '../../../../apps/desktop/src/components/settings/accountDeletion/phoneAccountClosureFlow'
 import { createIOSAccountClosureFlow } from '../../../../apps/desktop/src/mobile/ios-runtime/iosAccountClosureAdapter'
-const ios = vi.hoisted(() => ({ owner: null as string | null, prepare: vi.fn(), retire: vi.fn(), native: { receipt: { put: vi.fn(), get: vi.fn(), remove: vi.fn() }, eraseLocal: vi.fn() } }))
+const ios = vi.hoisted(() => ({ owner: null as string | null, prepare: vi.fn(), retire: vi.fn(), cancel: vi.fn(), native: { receipt: { put: vi.fn(), get: vi.fn(), remove: vi.fn() }, eraseLocal: vi.fn() } }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ios.owner ? { user: { id: ios.owner } } : null }))
 vi.mock('../../../../apps/desktop/src/platform/iosAccountClosure', () => ({ nativeIOSAccountClosure: ios.native }))
-vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient', () => ({ prepareIOSSignOut: ios.prepare, iosOwnerClient: { retire: ios.retire } }))
+vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient', () => ({ prepareIOSSignOut: ios.prepare, cancelIOSSignOut: ios.cancel, iosOwnerClient: { retire: ios.retire } }))
 const A = '00000000-0000-4000-8000-000000000001', B = '00000000-0000-4000-8000-000000000002'
 type CloseInput = Parameters<AccountClosureRequestActions['closeAccount']>[0]
 const proof = 'synthetic-private-receipt-A'

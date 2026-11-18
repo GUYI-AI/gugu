@@ -44,6 +44,7 @@ const LinkPill = lazy(() => import('./LinkPill').then(module => ({ default: modu
 import { GroupFileName } from './GroupFileName'
 import { revealMarkdownAnchor } from './revealAnchor'
 import { followLink } from '../../lib/guguLinks'
+import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { rehypeSourceLines } from './sourceLines'
 import type { PluggableList } from 'unified'
 
@@ -64,6 +65,8 @@ export interface MarkdownProps {
   onAccent?: boolean
   /** Return true when the click was handled here; otherwise the link opens in the system browser. */
   onOpenLink?: (href: string) => boolean
+  /** The message it is drawn in: a file link opens its waiting tab in that message's chat. */
+  message?: MessageItem
   /** `document` trust: draws an image (a workspace-relative source must be resolved by the host). */
   renderImage?: (image: { src?: string; alt: string }) => ReactNode
   className?: string
@@ -160,6 +163,7 @@ export const Markdown = memo(function Markdown({
   mentionMarker,
   onAccent = false,
   onOpenLink,
+  message,
   renderImage,
   className,
   sourceLines = false,
@@ -168,6 +172,8 @@ export const Markdown = memo(function Markdown({
   // that changes the element mapping is part of the key below.
   const openLinkRef = useRef(onOpenLink)
   openLinkRef.current = onOpenLink
+  const messageRef = useRef(message)
+  messageRef.current = message
   const renderImageRef = useRef(renderImage)
   renderImageRef.current = renderImage
   const hasImageRenderer = !!renderImage
@@ -208,7 +214,7 @@ export const Markdown = memo(function Markdown({
         }
         const onClick = (event: { preventDefault(): void }) => {
           // A link the host did not claim goes to the system browser only if it is a web, mail or phone link.
-          if ((href && (followLink(href) || openLinkRef.current?.(href))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
+          if ((href && ((messageRef.current ? followLink(href, { message: messageRef.current }) : followLink(href)) || openLinkRef.current?.(href))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
         }
         const groupFile = href ? parseGroupFileLink(href) : null
         const classes = typeof rest.className === 'string' ? rest.className.split(/\s+/) : []
@@ -218,7 +224,7 @@ export const Markdown = memo(function Markdown({
         if (href && groupFile && classes.includes(FILE_PILL_CLASS)) {
           const label = onlyText(children) ?? ''
           const picked = groupFile.version === undefined ? null : tRef.current('filePill.picked', { version: groupFile.version })
-          return <MentionPill href={href} file mention title={picked ? `${label} (${picked})` : label} onClick={onClick} rest={attributes}>{children}</MentionPill>
+          return <MentionPill href={href} file={label} mention title={picked ? `${label} (${picked})` : label} onClick={onClick} rest={attributes}>{label || children}</MentionPill>
         }
         // A group file's link written as its name reads as the file list reads it (摩擦单 F39).
         const fileName = groupFile ? onlyText(children) : null

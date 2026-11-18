@@ -15,34 +15,31 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { useTheme } from '@session-chat/components/contexts/ThemeContext';
 import { BlockFrame } from '@session-chat/components/engine/block-frame';
-import { MentionAtIcon, MentionFileIcon, MentionIssueIcon, MentionSymbolIcon } from '@session-chat/components/primitives/icons';
-import { glyphIcon } from '@session-chat/components/primitives/icons.css';
+import { FileMark, MentionAtIcon, MentionIssueIcon, MentionSymbolIcon } from '@session-chat/components/primitives/icons';
 import { defineBlock } from '@session-chat/components/rows/markdown/block-def';
 import type { ChatCaches } from '@session-chat/core/caches';
 import { paintHighlight } from '@session-chat/core/highlight/highlighter';
 import type { Measured, MeasureCtx } from '@session-chat/core/define';
 import type { HtmlLeafLayout } from '@session-chat/core/layout/layout-types';
 import type { HtmlBlock } from '@session-chat/core/markdown/document';
-import { onCleanup, onMount } from 'solid-js';
+import { createEffect, createMemo, on, onCleanup, untrack } from 'solid-js';
 import { render } from 'solid-js/web';
 import { applyBodyType, htmlBlockClass, measureHtml } from './layout';
 
-const KIND_ICONS = { file: MentionFileIcon, issue: MentionIssueIcon, symbol: MentionSymbolIcon } as const;
+const KIND_ICONS = { issue: MentionIssueIcon, symbol: MentionSymbolIcon } as const;
 type MentionKind = 'file' | 'issue' | 'symbol' | 'custom';
 
 function hydrateMentionIcons(root: HTMLElement): () => void {
   const disposers: (() => void)[] = [];
   for (const slot of root.querySelectorAll<HTMLElement>('.gg-md-mention-icon')) {
-    const { icon, iconUrl, iconClass } = slot.dataset;
+    const { icon, iconUrl, iconName } = slot.dataset;
     if (icon === 'url' && iconUrl) {
       const img = document.createElement('img');
       img.src = iconUrl;
       img.alt = '';
       slot.appendChild(img);
-    } else if (icon === 'class' && iconClass) {
-      const glyph = document.createElement('i');
-      glyph.className = `${iconClass} ${glyphIcon}`;
-      slot.appendChild(glyph);
+    } else if (icon === 'file') {
+      disposers.push(render(() => <FileMark name={iconName ?? ''} size={12} />, slot));
     } else {
       const Icon = KIND_ICONS[icon as keyof typeof KIND_ICONS] ?? MentionAtIcon;
       disposers.push(render(() => <Icon />, slot));
@@ -92,14 +89,23 @@ function HtmlBlockView(props: { node: Measured<HtmlLeafLayout> }) {
   const theme = useTheme();
   let root!: HTMLDivElement;
 
-  onMount(() => {
-    const layout = props.node.layout;
-    applyBodyType(root, theme());
-    root.innerHTML = layout.html;
-    onCleanup(hydrateMentionIcons(root));
-    highlightNestedCode(root, caches);
-    if (stream) stream.frontier.set(layout.id, fadeFreshText(root, stream.frontier.get(layout.id) ?? 0));
-  });
+  // The block stays mounted across re-measures of the same source block (domFromContentOnly): a width change only
+  // moves and resizes its frame. What is painted follows the html (a collapsed block's is empty) and the theme's type.
+  createEffect(() => applyBodyType(root, theme()));
+  // A memo, so a re-measure that hands over the same html notifies nothing.
+  const html = createMemo(() => props.node.layout.html);
+  createEffect(
+    on(
+      html,
+      (html) => {
+        const id = untrack(() => props.node.layout.id);
+        root.innerHTML = html;
+        onCleanup(hydrateMentionIcons(root));
+        highlightNestedCode(root, caches);
+        if (stream) stream.frontier.set(id, fadeFreshText(root, stream.frontier.get(id) ?? 0));
+      },
+    ),
+  );
 
   const onClick = (event: MouseEvent) => {
     const target = event.target as Element;
@@ -157,5 +163,6 @@ export const htmlBlockDef = defineBlock<HtmlBlock, HtmlLeafLayout>({
     return { height: metrics.height, width: metrics.width, layout };
   },
 
+  domFromContentOnly: true,
   Render: HtmlBlockView,
 });

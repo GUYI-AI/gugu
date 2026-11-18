@@ -69,9 +69,9 @@ describe('a file kept in a task\'s session', () => {
     expect(io.put).not.toHaveBeenCalled()
   })
 
-  it('is missing when the machine cannot read it, and says so loudly when no timeline lends a reader', async () => {
+  it('reports an unreadable host as a failure rather than a missing file, including when no reader is lent', async () => {
     const giveBack = lendSessionFileReader('session-1', async () => null)
-    expect(await attachmentBytes(session, 'thumb')).toEqual({ status: 'missing' })
+    await expect(attachmentBytes(session, 'thumb')).rejects.toThrow('Could not read the file from its session host')
     giveBack()
     await expect(attachmentBytes(session, 'thumb')).rejects.toThrow()
     await expect(attachmentBytes({ ...session, sessionId: null }, 'thumb')).rejects.toThrow()

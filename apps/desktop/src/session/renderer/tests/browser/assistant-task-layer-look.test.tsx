@@ -62,7 +62,10 @@ vi.mock('@/mobile/agent-watch/useAgentWatchSession', async (original) => ({
   }),
 }));
 // The view switcher (对话 ▾ and the session's App tabs), as offered when there are App tabs: the page decides where it goes.
-vi.mock('@/mobile/agent-watch/SessionAppMenu', () => ({ SessionAppMenu: () => <button type="button" data-testid="session-app-menu">对话</button> }));
+vi.mock('@/mobile/agent-watch/SessionAppMenu', async importOriginal => ({
+  ...await importOriginal<typeof import('@/mobile/agent-watch/SessionAppMenu')>(),
+  SessionAppMenu: () => <button type="button" data-testid="session-app-menu">对话</button>,
+}));
 vi.mock('@/session/shared/remote-sessions/session-directory', async (original) => ({
   ...(await original<object>()),
   listedSession: () => ({ row: { deviceId: 'mbp', session: fixture.summary } }),
@@ -202,12 +205,12 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   await page.screenshot({ path: `__screenshots__/assistant-task-layer-look/panel-layer-${theme}.png` });
 });
 
-it('the same task page elsewhere keeps its view switcher and its model and permission controls', async () => {
+it('the same desktop task page elsewhere keeps its view switcher and its model and permission controls', async () => {
   await i18n.changeLanguage('zh-CN');
-  await page.viewport(600, 860);
+  await page.viewport(900, 860);
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
-  harness.container.style.cssText = 'height:860px;width:600px;display:flex;flex-direction:column';
+  harness.container.style.cssText = 'height:860px;width:900px;display:flex;flex-direction:column';
   await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local cleanedRecord onBack={() => undefined} />, { contacts: {} });
   await until('the session page composer', () => !!harness!.container.querySelector('[data-testid="composer-model-trigger"]'));
   const host = harness.container;

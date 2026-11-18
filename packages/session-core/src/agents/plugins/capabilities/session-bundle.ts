@@ -1131,6 +1131,8 @@ export interface SessionModelCapability {
   model?: string
   reasoningEffort?: string
   serviceTier?: string
+  /** Per-session Fast intent, independently gated by the current native model. */
+  fastMode?: boolean
   /**
    * The platform relay this session was issued, when it is running on Gugu quota.
    *

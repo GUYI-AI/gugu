@@ -15,9 +15,11 @@
  * entire atom at once.
  */
 
+import { fileLabelParts } from '@gugu/session-shared/markdown';
 import { cx } from '@session-ui/styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { File, X } from '../../../icons'
+import { X, Sparkles } from '../../../icons'
+import { FileMark } from '../../../file-mark';
 import type { MentionKind, MentionRole } from './types';
 import * as styles from './mention-pill.css';
 
@@ -40,10 +42,13 @@ export function MentionPill({
   // 参与者身份优先。provider 偶发返回过期或错误的 file 类型时，不能把群成员变成文件 pill，
   // 否则悬停删除按钮会盖住可见的 `@name` 文字。
   const isFile = !isParticipant && kind === 'file';
+  const isSkill = isFile && /[\\/]SKILL\.md$/.test(label);
   const title = isAgent || isFile
     ? ((node.attrs.title as string | null)?.trim() || name)
     : null;
   const pending = node.attrs.pending === true;
+  // A file's place stays whole and the name gives way, as in the sent message (`fileLabelParts`).
+  const { name: pillName, place } = isFile ? fileLabelParts(name) : { name, place: '' };
 
   // Hover-x: overlaid over the icon area on pill-hover
   const removeBtn = (
@@ -68,8 +73,10 @@ export function MentionPill({
         className={cx(
           styles.pill,
           isFile ? undefined : styles.pillPlain,
+          isSkill && styles.skillPill,
           pending && styles.pillPending,
         )}
+        data-skill-reference={isSkill ? label : undefined}
         data-mention-id={node.attrs.id as string}
         data-mention-kind={kind}
         data-mention-role={role ?? undefined}
@@ -82,12 +89,13 @@ export function MentionPill({
             like Slack / Discord they are one token, removed whole by Backspace / Delete. */}
         {isFile && (
           <span className={styles.pillIconArea}>
-            <File aria-hidden style={{ width: '0.75rem', height: '0.75rem' }} />
+            {isSkill ? <Sparkles style={{ width: 12, height: 12 }} /> : <FileMark name={pillName} size={12} />}
             {removeBtn}
           </span>
         )}
         {/* Display name */}
-        <span className={styles.pillName}>{isParticipant || kind === 'custom' ? '@' : ''}{name}</span>
+        <span className={styles.pillName}>{isParticipant || kind === 'custom' ? '@' : ''}{pillName}</span>
+        {place && <span className={styles.pillPlace}>{place}</span>}
         {node.attrs.annotation && <small data-mention-annotation="" className={styles.pillAnnotation}>{String(node.attrs.annotation)}</small>}
       </span>
     </NodeViewWrapper>

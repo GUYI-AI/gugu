@@ -2,11 +2,11 @@ import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { buildExtensionEnvelope, formatDeliveryTimestamp } from '@gugu/core/local/agent/deliveryEnvelope';
 import { extensionsService } from '@main/core/extensions/extensions-root';
 import { currentAccountAccessToken } from '@main/core/extensions/account-token';
-import { AppSendError, dispatchFromApp, type DispatchHere } from '@shared/extensions/app-send-core';
+import { AppSendError, chatSelectionPills, dispatchFromApp, type DispatchHere } from '@shared/extensions/app-send-core';
 import { createAppMessages } from '@shared/extensions/app-messages-core';
 import { createAppCloud, type CloudChannel } from '@shared/extensions/app-cloud-core';
 import { subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol';
-import { draftWithPills, stringifyMention } from '@gugu/session-shared/markdown';
+import { fileCiteDraft } from '@gugu/session-shared/markdown';
 import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
 import { log } from '@main/lib/logger';
 import { supabase } from '../../../../supabase';
@@ -34,6 +34,9 @@ async function account(): Promise<{ token: string; userId: string }> {
   if (!token || !userId) throw new AppSendError('failed', 'Not signed in');
   return { token, userId };
 }
+
+/** API 55 Send from a chat's folder: its pills, read as the person (`chatSelectionPills`, the phone's too). */
+export const chatSelectionPillsForApp = (chatId: string, refs: unknown) => chatSelectionPills({ account }, chatId, refs);
 
 /** `gugu.messages`: a chat's messages, read with the same account (the shared answer, `app-messages-core.ts`, the phone's too). */
 export const messagesForApp = createAppMessages({ account });
@@ -100,12 +103,7 @@ async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ 
   const { sessionMachine } = await import('./app-programs-elsewhere');
   const projectId = (await agentSessionContext(id).catch(() => null))?.projectId ?? (await sessionMachine(id).catch(() => null))?.projectId;
   if (!projectId) throw new AppSendError('not-found', 'The session of this file is in no project here');
-  const mentions = refs.map(({ file, label }) => {
-    const target = file!.id as string;
-    const name = target.replace(/\\/g, '/').split('/').pop() ?? target;
-    return stringifyMention({ label: typeof label === 'string' && label ? `${name} (${label})` : name, target, kind: 'file' });
-  });
-  return { session: { id, projectId }, text: `${draftWithPills(typeof args.text === 'string' ? args.text.trim() : '', mentions.join(' '))}\n` };
+  return { session: { id, projectId }, text: `${fileCiteDraft(typeof args.text === 'string' ? args.text : '', refs as { file: { id: string }; label?: unknown }[])}\n` };
 }
 
 export async function dispatchForApp(

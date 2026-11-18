@@ -74,17 +74,18 @@ function alphaOf(css: string): number {
 }
 
 // owner 10-28 手机试用:输入框完全透明,后面滚过的消息和输入的字叠在一起。
-it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid backing over the messages behind it', async (theme) => {
+// owner 11-17: the rows above the input float like desktop; only the input itself is backed.
+it.each(['dark', 'light'] as const)('%s: the phone composer floats over messages and only the input is backed', async (theme) => {
   await page.viewport(390, 844)
   if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
   host = document.body.appendChild(document.createElement('div'))
   host.setAttribute('data-phone-shell', '')
   host.setAttribute('data-ta-scope', '')
-  host.style.cssText = 'position:relative;width:390px;height:600px;overflow:hidden;background:var(--ta-app-bg);color:var(--text-primary)'
+  host.style.cssText = 'position:relative;width:390px;height:600px;display:flex;flex-direction:column;overflow:hidden;background:var(--ta-app-bg);color:var(--text-primary)'
   root = createRoot(host)
   root.render(
     <LocalizationProvider>
-      <div data-test-messages="" data-chat-dock-reads="" style={{ fontSize: 40, lineHeight: '48px' }}>{Array.from({ length: 14 }, (_, index) => <p key={index}>消息 message {index}</p>)}</div>
+      <div data-test-messages="" data-chat-dock-reads="" style={{ flex: 1, minHeight: 0, overflow: 'auto', fontSize: 40, lineHeight: '48px' }}>{Array.from({ length: 14 }, (_, index) => <p key={index}>消息 message {index}</p>)}</div>
       <ChatBottomDock reserve={false}>
         <div data-chat-composer="" style={{ padding: '8px 8px max(8px, env(safe-area-inset-bottom))' }}>
           <ChatMessageComposer onSend={vi.fn(async () => {})} isGroupChat />
@@ -96,18 +97,20 @@ it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid back
   const dock = host.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
   const input = host.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   expect(alphaOf(getComputedStyle(input).backgroundColor), 'the input itself is opaque').toBe(1)
-  const band = getComputedStyle(dock.lastElementChild!, '::before')
-  expect(alphaOf(band.backgroundColor), 'the composer row is backed').toBeGreaterThanOrEqual(0.85)
-  const bandBox = dock.lastElementChild!.getBoundingClientRect()
-  expect(bandBox.height).toBeGreaterThan(input.getBoundingClientRect().height)
-  expect(Number.parseFloat(getComputedStyle(host.querySelector('[data-test-messages]')!).getPropertyValue('--chat-dock-h')), 'the message list reserves the dock height').toBeGreaterThanOrEqual(dock.getBoundingClientRect().height - 1)
+  const bar = host.querySelector<HTMLElement>('[data-slot="composer-bar"]')!
+  const band = getComputedStyle(bar, '::before')
+  expect(alphaOf(band.backgroundColor), 'the input is backed').toBeGreaterThanOrEqual(0.85)
+  expect(Number.parseFloat(band.top), 'the backing starts at the input, not at the rows above it').toBe(0)
+  expect(Number.parseFloat(band.height)).toBeGreaterThan(input.getBoundingClientRect().height)
+  expect(alphaOf(getComputedStyle(dock.lastElementChild!, '::before').backgroundColor), 'the dock row itself is not backed').toBe(0)
+  const list = host.querySelector<HTMLElement>('[data-test-messages]')!
+  expect(getComputedStyle(dock).position, 'the phone dock floats like desktop').toBe('absolute')
+  await until('the list reserves the measured dock height', () => Number.parseFloat(getComputedStyle(list).getPropertyValue('--chat-dock-h')) === dock.offsetHeight)
+  expect(list.getBoundingClientRect().bottom, 'messages run under the floating dock').toBe(host.getBoundingClientRect().bottom)
   await page.getByTestId('chat-composer').fill('Typed text stays readable')
   const editor = host.querySelector<HTMLElement>('[contenteditable]')!
   expect(contrast(rgbOf(getComputedStyle(editor).color), rgbOf(getComputedStyle(input).backgroundColor)), 'the typed text reads on the input').toBeGreaterThanOrEqual(4.5)
-  // 让一条消息正好一半压在输入那一行的底下,截图里看得出遮挡。
-  const list = host.querySelector<HTMLElement>('[data-test-messages]')!
-  const bandTop = dock.lastElementChild!.getBoundingClientRect().top - host.getBoundingClientRect().top
-  list.style.marginTop = `${((bandTop - 24) % 48 + 48) % 48}px`
+  list.scrollTop = list.scrollHeight
   await page.screenshot({ path: `phone-composer-backing-${theme}.png` })
 })
 
@@ -134,10 +137,11 @@ it.each(['dark', 'light'] as const)('%s: the shared agent composer keeps phone g
     await until('the shared phone composer has mounted', () => !!host?.querySelector('[data-chat-composer-placement="bottom"] [contenteditable]'))
     const layer = host.querySelector<HTMLElement>('[data-chat-composer-placement="bottom"]')!
     const row = layer.lastElementChild!
-    const band = getComputedStyle(row, '::before')
-    expect(band.content, 'the shared slot receives the phone backing').toBe('""')
-    expect(alphaOf(band.backgroundColor)).toBeGreaterThanOrEqual(0.85)
+    const band = getComputedStyle(row.querySelector('[data-slot="composer-bar"]')!, '::before')
+    expect(band.content, 'the shared slot backs its input').toBe('""')
+    expect(alphaOf(band.backgroundColor)).toBe(1)
     expect(Number.parseFloat(band.width), 'the backing covers the whole phone width').toBe(390)
+    expect(getComputedStyle(row, '::before').content, 'the rows above the input stay see-through').toBe('none')
     expect(row.getBoundingClientRect().height).toBeGreaterThan(0)
     host.removeAttribute('data-phone-shell')
     const desktopFade = getComputedStyle(row, '::before')
@@ -172,6 +176,9 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
   const attach = [...host.querySelectorAll<HTMLButtonElement>('[data-slot="composer-actions-start"] > button')].find(button => button !== permission)!
   const input = host.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   const model = host.querySelector<HTMLElement>('[data-testid="composer-model-trigger"]')!
+  const inputEditor = input.querySelector<HTMLElement>('[contenteditable]')!
+  ;(inputEditor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
+  await until('two-line attachment is visible', () => getComputedStyle(attach).display !== 'none')
   const controls = [permission, attach, model]
   for (const [index, control] of controls.entries()) {
     const box = control.getBoundingClientRect()
@@ -186,6 +193,6 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
     }
   }
   const editor = input.querySelector<HTMLElement>('[contenteditable]')!.getBoundingClientRect()
-  expect(editor.left).toBeGreaterThanOrEqual(attach.getBoundingClientRect().right)
+  expect(editor.right).toBeLessThanOrEqual(attach.getBoundingClientRect().left)
   expect(editor.right).toBeLessThanOrEqual(input.getBoundingClientRect().right - 44)
 })

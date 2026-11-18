@@ -44,7 +44,7 @@ describe('the App palette, from tokens.css', () => {
     // Ink = the foreground (#7333 Codex master): near-white on dark, near-black on light; never the jade display-p3(0 .63 .46).
     expect(dark.get('--em-accent-9')).toBe(dark.get('--em-foreground'));
     expect(light.get('--em-accent-9')).toBe(light.get('--em-foreground'));
-    expect(light.get('--em-accent-9')).toBe('#1a1c1f');
+    expect(light.get('--em-accent-9')).toBe('#0a0a0a');
     // The red button's label is white in both themes (the host's ui/Button danger); the ink's inverse stays theme-bound.
     expect(dark.get('--em-color-white')).toBe('#fff');
     expect(light.get('--em-color-white')).toBe('#fff');

@@ -199,7 +199,14 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     expect(reopened.scrollHeight).toBe(reopened.clientHeight);
   });
 
-  it('keeps the reader at the same part of a long reply when the width changes', async () => {
+  // `scrollFirst`: a scroll is pending when the width changes (a wheel, or the idle prefetch keeping the read phase busy, as
+  // under CI load). The read phase then reads scrollTop before the column's ResizeObserver: the browser lays out the
+  // rewrapped reply on that read, and its own scroll anchoring would move scrollTop there, which reads as the reader
+  // scrolling and re-anchors them in the old geometry (a round trip landed 14 sections off).
+  it.each([
+    ['', false],
+    [', also when a scroll is pending as it changes', true],
+  ])('keeps the reader at the same part of a long reply when the width changes%s', async (_when, scrollFirst) => {
     const paragraphs = Array.from({ length: 60 }, (_, i) => `Section ${i}. ${'A line of reading that wraps as the column narrows. '.repeat(6)}`);
     const turns: TranscriptTurn[] = [{ id: 'long', seq: 0, initiator: 'agent', items: [
       { kind: 'message', id: 'long-reply', seq: 0, role: 'assistant', text: paragraphs.join('\n\n') },
@@ -215,10 +222,14 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     expect(m.state.scroll.get().kind).toBe('anchor');
     const start = section();
     expect(start).toBeGreaterThan(20);
-    m.host.style.width = '500px';
+    const resize = (width: string) => {
+      m.host.style.width = width;
+      if (scrollFirst) m.scrollEl.dispatchEvent(new Event('scroll'));
+    };
+    resize('500px');
     await settled(m.scrollEl);
     expect(Math.abs(section() - start)).toBeLessThanOrEqual(1);
-    m.host.style.width = '800px';
+    resize('800px');
     await settled(m.scrollEl);
     expect(section()).toBe(start);
     expect(m.state.scroll.get().kind).toBe('anchor');
@@ -479,43 +490,40 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     await nextFrame();
     state.viewState.setCollapsed(grower, true);
 
-    // 「落定」= 动过之后连续 3 帧 scrollTop 不变(动画开始前、以及动画途中都会有单帧不动)。
-    let last = scrollEl.scrollTop;
-    let moved = false;
-    let still = 0;
-    let landedFrame = -1;
-    let heightAtLanding = heightBefore;
-    let worst = { frame: -1, deviation: 0 };
+    // 「落定」= 读者那一行在位(±1px)且 scrollTop 连续 3 帧不动的第一帧,循环之后才认。只看「连续 3 帧不动」不够:
+    // 改目标时(上方长高,shiftScrollBy 写 scrollTop 再重起平滑滚动)新动画在负载下会停 2–4 帧,那是途中,行还在几百
+    // 像素外。落定之后每一帧都要在位:之后再挪开读者(哪怕又挪回来)照样红。
+    const tops: number[] = [];
+    const offsets: (number | null)[] = [];
+    const heights: number[] = [];
     for (let frame = 0; frame < 120; frame++) {
       await nextFrame();
-      const top = scrollEl.scrollTop;
-      if (top !== last) {
-        moved = true;
-        still = 0;
-      } else if (moved) {
-        still += 1;
-      }
-      last = top;
-      if (landedFrame < 0 && still >= 3) {
-        landedFrame = frame;
-        heightAtLanding = scrollEl.scrollHeight;
-      }
-      if (landedFrame >= 0) {
-        const offset = rowOffset(scrollEl, target);
-        const deviation = offset === null ? Infinity : Math.abs(offset);
-        if (deviation > worst.deviation) worst = { frame, deviation };
-      }
+      tops.push(scrollEl.scrollTop);
+      offsets.push(rowOffset(scrollEl, target));
+      heights.push(scrollEl.scrollHeight);
+    }
+    const inPlace = (frame: number) => offsets[frame] !== null && Math.abs(offsets[frame]!) <= 1;
+    const moved = tops.some((top) => top !== tops[0]);
+    let landedFrame = -1;
+    for (let frame = 0; frame + 3 < tops.length && landedFrame < 0; frame++) {
+      if (inPlace(frame) && tops.slice(frame, frame + 4).every((top) => top === tops[frame])) landedFrame = frame;
     }
 
     expect(moved, 'the smooth scroll never moved the container — this asserts nothing').toBe(true);
-    expect(landedFrame, 'the smooth scroll never came to rest within 120 frames').toBeGreaterThanOrEqual(0);
+    expect(landedFrame, `the smooth scroll never came to rest on ${target} within 120 frames`).toBeGreaterThanOrEqual(0);
     expect(
-      heightAtLanding,
+      heights[landedFrame],
       `the row ${grower} above the target had not grown by the time the scroll landed — the trigger did not fire in flight`
     ).toBeGreaterThan(heightBefore);
+    let worst = { frame: -1, deviation: 0 };
+    for (let frame = landedFrame; frame < tops.length; frame++) {
+      const offset = offsets[frame];
+      const deviation = offset === null ? Infinity : Math.abs(offset);
+      if (deviation > worst.deviation) worst = { frame, deviation };
+    }
     expect(
       worst.deviation,
-      `after landing, ${target} was ${worst.deviation}px off the viewport top on frame ${worst.frame}`
+      `after landing (frame ${landedFrame}), ${target} was ${worst.deviation}px off the viewport top on frame ${worst.frame}`
     ).toBeLessThanOrEqual(1);
   });
 });

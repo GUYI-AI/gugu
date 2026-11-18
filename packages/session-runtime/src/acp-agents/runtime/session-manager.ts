@@ -116,9 +116,10 @@ import {
   type SessionsListModel,
 } from '../state/live-models';
 import type { AcpRuntimeDeps, AcpStartInput, SendPromptInput } from './types';
-import { IdleCompaction } from './idle-compaction';
+import { ASSISTANT_IDLE_COMPACTION, CLAUDE_PROMPT_CACHE_TTL_MS, IdleCompaction, claudeCacheIdleCompaction, type IdleCompactionPolicy } from './idle-compaction';
+import { readPromptCache, resolveClaudeIdleCompaction } from './claude-idle-compaction';
 
-type StartupSettingDimension = 'model' | 'effort';
+type StartupSettingDimension = 'model' | 'effort' | 'fast';
 
 /** 流式正文的显示节拍(毫秒):一拍里的改动合成一次推送。 */
 const TRANSCRIPT_TICK_MS = 100;
@@ -867,6 +868,12 @@ export class SessionManager implements InboundRouter {
           return forkEffortResult;
         }
         if (forkEffortResult.data) startupNotices.push(forkEffortResult.data);
+        const fastResult = await this.applyInitialFastMode(record, input);
+        if (!fastResult.success) {
+          this.removeRecord(input.sessionId, false);
+          await acquired.release();
+          return fastResult;
+        }
         await this.applyConfiguredPermissionMode(record, input);
         record.cell.applySessionReady();
         Object.assign(record, { phase: 'ready' });
@@ -921,6 +928,12 @@ export class SessionManager implements InboundRouter {
             return effortResult;
           }
           if (effortResult.data) startupNotices.push(effortResult.data);
+          const fastResult = await this.applyInitialFastMode(record, input);
+          if (!fastResult.success) {
+            this.removeRecord(input.sessionId, false);
+            await acquired.release();
+            return fastResult;
+          }
           await this.applyConfiguredPermissionMode(record, input);
           if (!initialQueueAdmitted) {
             const queueResult = this.queueInitialPrompts(record);
@@ -1098,6 +1111,12 @@ export class SessionManager implements InboundRouter {
           return effortResult;
         }
         if (effortResult.data) startupNotices.push(effortResult.data);
+        const fastResult = await this.applyInitialFastMode(record, input);
+        if (!fastResult.success) {
+          this.removeRecord(input.sessionId, false);
+          await acquired.release();
+          return fastResult;
+        }
         await this.applyConfiguredPermissionMode(record, input);
         if (loadProviderSessionId && !initialQueueAdmitted) {
           const queueResult = this.queueInitialPrompts(record);
@@ -1722,6 +1741,25 @@ export class SessionManager implements InboundRouter {
     });
   }
 
+  /** Arm the accepted preference after selecting the model and before any user turn. */
+  private async applyInitialFastMode(
+    record: SessionRecord,
+    input: AcpStartInput
+  ): Promise<Result<null, InvalidStateError | SetConfigFailedError>> {
+    record.startupSettingsSealed.add('fast');
+    const chosen = record.startupSettings.fast;
+    if (!record.cell.config.fastMode) return ok(null);
+    const value = chosen ?? (input.fastMode === true ? 'on' : 'off');
+    const result = await record.cell.setConfigOption('fast', value, { startupOnly: true });
+    if (chosen !== undefined) record.startupSettingOutcomes.fast = result;
+    if (result.success && result.data.status === 'applied') return ok(null);
+    if (!result.success && result.error.type === 'invalid_state') return result as Result<never, InvalidStateError>;
+    return acpErr.setConfigFailed({
+      name: 'FastModeNotApplied',
+      message: `Provider did not confirm startup Fast '${value}'`,
+    });
+  }
+
   async setMode(
     sessionId: string,
     modeId: string
@@ -1733,7 +1771,7 @@ export class SessionManager implements InboundRouter {
 
   async setConfigOption(
     sessionId: string,
-    dimension: 'model' | 'effort',
+    dimension: 'model' | 'effort' | 'fast',
     value: string
   ): Promise<Result<LiveSettingApplyResult, AcpSetModelOptionError>> {
     const starting = this.startingSessions.get(sessionId);
@@ -2355,22 +2393,70 @@ export class SessionManager implements InboundRouter {
     });
     this.cells.set(input.sessionId, record);
     if (isRecord(assistant) && assistant.idleCompaction === true) {
-      record.idleCompaction = new IdleCompaction(
-        () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
-        async () => {
-          const before = cell.usage?.contextUsed ?? null;
-          const result = await cell.compactIfIdle();
-          if (!result.success) throw new Error(JSON.stringify(result.error));
-          if (result.data.compacted) this.deps.logger.info('SessionManager: compacted idle assistant', {
-            sessionId: input.sessionId, contextTokensBefore: before,
-          });
-        },
-        error => this.deps.logger.warn('SessionManager: idle assistant compaction failed', {
-          sessionId: input.sessionId, error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      record.idleCompaction = this.idleCompactionFor(record, cell, 'assistant', ASSISTANT_IDLE_COMPACTION);
+    } else if (input.providerId === 'claude') {
+      this.armClaudeIdleCompaction(record, cell);
     }
     return record;
+  }
+
+  private idleCompactionFor(
+    record: SessionRecord,
+    cell: SessionCell,
+    kind: 'assistant' | 'claude',
+    policy: IdleCompactionPolicy,
+    beforeCompact: () => Promise<string | null> = async () => null,
+  ): IdleCompaction {
+    const sessionId = record.input.sessionId;
+    return new IdleCompaction(
+      () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
+      async () => {
+        const skipped = await beforeCompact();
+        if (skipped) {
+          this.deps.logger.info('SessionManager: idle compaction skipped', { sessionId, kind, reason: skipped });
+          return;
+        }
+        const before = cell.usage?.contextUsed ?? null;
+        const result = await cell.compactIfIdle();
+        if (!result.success) throw new Error(JSON.stringify(result.error));
+        if (result.data.compacted) this.deps.logger.info('SessionManager: compacted idle session', {
+          sessionId, kind, contextTokensBefore: before,
+        });
+      },
+      error => this.deps.logger.warn('SessionManager: idle compaction failed', {
+        sessionId, kind, error: error instanceof Error ? error.message : String(error),
+      }),
+      policy,
+    );
+  }
+
+  /**
+   * #3005 Claude Code's own idle compaction does not run under ACP: run it here, before the one-hour prompt
+   * cache expires. Settings are re-read when the timer fires, so turning it off applies to a live session.
+   */
+  private armClaudeIdleCompaction(record: SessionRecord, cell: SessionCell): void {
+    const input = record.input;
+    const resolve = () => resolveClaudeIdleCompaction({ env: this.providerEnv(input), cwd: input.cwd, homeDir: os.homedir() });
+    void resolve().then((config) => {
+      if (!config.enabled || this.cells.get(input.sessionId) !== record || record.idleCompaction) return;
+      record.idleCompaction = this.idleCompactionFor(record, cell, 'claude', claudeCacheIdleCompaction(config.minTokens), async () => {
+        const current = await resolve();
+        if (!current.enabled) return current.reason;
+        if ((cell.usage?.contextUsed ?? 0) < current.minTokens) return 'below-threshold';
+        const transcript = cell.transcriptPath;
+        if (!transcript) return 'no-transcript';
+        const cache = await readPromptCache(transcript);
+        if (cache?.ttl !== '1h') return `cache-ttl-${cache?.ttl ?? 'unknown'}`;
+        // Turns that never reached the model (a usage-limit note) end work without refreshing the cache.
+        if (cache.lastRequestAt !== null && Date.now() - cache.lastRequestAt > CLAUDE_PROMPT_CACHE_TTL_MS - 60_000) return 'cache-expired';
+        return null;
+      });
+      record.idleCompaction.update();
+    }, (error: unknown) => {
+      this.deps.logger.warn('SessionManager: idle compaction settings unreadable', {
+        sessionId: input.sessionId, error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private disposeLostRecord(record: Extract<SessionRecord, { phase: 'lost' }>): void {

@@ -628,11 +628,12 @@ export function buildAcpModelCapability(input: {
    * 「没选」和「选了某一档」必须是两件事,否则引擎自己的默认档永远没机会生效。
    */
   reasoningEffort?: string | null
+  fastMode?: boolean
 }): SessionModelCapability | null {
   if (input.dialect === null) return null
   const platformModel = platformModelForDialect(input.dialect, input.engineId)
   const { platformAccess } = input
-  return platformModel.declare({
+  const declaration = platformModel.declare({
     explicitModel: input.model?.trim() || undefined,
     // composer 为这条会话选的起始档;没选 = undefined(各家自己决定要不要叠调试开关)。
     requestedEffort: input.reasoningEffort?.trim() || undefined,
@@ -655,6 +656,9 @@ export function buildAcpModelCapability(input: {
       return platformModelAccessEnv(protocol, relayUrl, platformAccess.token, contextWindow)
     },
   })
+  return input.engineId === 'claude'
+    ? { ...declaration, fastMode: input.platformAccess ? false : input.fastMode === true }
+    : declaration
 }
 
 /** 声明了这个方言的那一家。方言是引擎级属性,一家一个、一个只属于一家(声明在各家 `platform.ts`)。 */
@@ -1030,8 +1034,7 @@ export function providerUsesSessionAcpSessionAdapter(providerId: string): boolea
 // distinction matters because several harnesses expose their own Task/Agent worker and the generic
 // platform routing rule otherwise classifies "start an agent" as ordinary work.
 const SESSION_SPAWN_ROUTING_RULE = `For a persistent Gugu agent/session/child (「起一个 agent」「创建一个小弟」), use \`session_spawn\`. Only use a harness-internal worker when explicitly requested; it is not a session agent and cannot receive Gugu messages. Never substitute one for a requested Gugu session; report inability to start it and why.
-On a turn a person typed straight into this panel, when you create or materially change a file for them to
-inspect, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
+When a person typing straight into this panel will inspect a file you create or materially change, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
 
 function guguSessionSurfaceBody(surface: HarnessSessionSurface): string {
   switch (surface) {

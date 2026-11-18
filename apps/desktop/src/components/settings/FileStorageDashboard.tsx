@@ -3,7 +3,8 @@ import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@gugu/core/cloud/serverMachineHealth'
-import { Archive, File, FileCode, FileImage, FileText, Monitor } from '@/lib/icons'
+import { Monitor } from '@/lib/icons'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import { messageForUser } from '@/lib/userFacingError'
 import { markFileStorage, readFileStorageOverview, type FileStorageClass, type FileStorageOverview } from '../../lib/fileStorage'
 import { Button } from '../ui/Button'
@@ -21,15 +22,6 @@ const FILL: Record<FileStorageClass, string> = { temporary: 'fill-[var(--warn)]'
 const DAY = 86_400_000
 type Expiring = FileStorageOverview['expiring'][number]
 type SortKey = 'name' | 'group' | 'size' | 'expires'
-
-function fileIcon(name: string | null, kind: FileStorageClass) {
-  const suffix = name?.split('.').pop()?.toLowerCase() ?? ''
-  if (kind === 'image' || /^(png|jpe?g|gif|webp|heic|svg)$/.test(suffix)) return FileImage
-  if (/^(zip|rar|7z|tar|gz|tgz)$/.test(suffix)) return Archive
-  if (/^(ts|tsx|js|py|go|rs|java|c|cpp|sh|json|ya?ml)$/.test(suffix)) return FileCode
-  if (/^(pdf|docx?|txt|md|pptx?|key|xlsx?|csv)$/.test(suffix)) return FileText
-  return File
-}
 
 /**
  * 「文件存储与读取」上半(owner 10-28 批的设计稿 evidence/file-storage-design):一条按类着色的用量条 + 一行数字;
@@ -204,13 +196,12 @@ export function FileStorageDashboard() {
           </thead>
           <tbody>
             {shown.map((file, index) => {
-              const Icon = fileIcon(file.file_name, file.class)
               const left = days(file.expires_at)
               return (
                 <tr key={`${file.item_id ?? file.chat_id}-${file.expires_at}-${index}`} data-testid="file-storage-file"
                   className="hover:bg-[var(--hover)] [&>td]:truncate [&>td]:border-b [&>td]:border-[var(--border-color)] [&>td]:px-2 [&>td]:py-[7px]">
                   <td data-field="name"><span className="flex min-w-0 items-center gap-2 text-[var(--fg)]">
-                    <Icon size={16} className="shrink-0 text-[var(--muted-fg)]" />
+                    <FileMark name={file.file_name ?? ''} mime={file.class === 'image' ? 'image/*' : undefined} size={16} className="shrink-0 text-[var(--muted-fg)]" />
                     <span className="truncate">{file.file_name ?? classLabel(file.class)}</span>
                   </span></td>
                   <td data-field="group" className="text-[var(--muted-fg)]">{groupName(file.chat_id)}</td>

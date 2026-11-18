@@ -4,18 +4,20 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
-import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
+import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import type { GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import { until } from '../../../support/awaitCondition'
 import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 
-const mocked = vi.hoisted(() => ({ lookup: vi.fn(), file: vi.fn(), local: vi.fn(), reveal: vi.fn(), work: vi.fn(), task: null as unknown }))
+const mocked = vi.hoisted(() => ({ lookup: vi.fn(), file: vi.fn(), local: vi.fn(), reveal: vi.fn(), work: vi.fn(), opener: vi.fn(), host: true, task: null as unknown }))
 vi.mock('react-i18next', async (original) => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/fileAccess')>(), localFileRevision: mocked.local }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocked.lookup } }))
 vi.mock('../../../../apps/desktop/src/hooks/useSourceMessageReveal', () => ({ askReveal: mocked.reveal }))
 vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: 'assistant' }, assistantState: 'found', ownerId: 'owner', chatId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }), subscribe: () => () => undefined }) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantTaskChat', () => ({ OPEN_ASSISTANT_TASK_CHAT: '__open_assistant_task_chat', readAssistantTaskChat: () => mocked.task }))
+// The host that answers a file link (main on the desktop, the phone's own there); `host: false` is a platform without one.
+vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({ get appsHere() { return mocked.host ? { groupFileOpener: mocked.opener } : null } }))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork', () => ({ assistantWorkCloud: { listAll: mocked.work } }))
 
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => {
@@ -40,10 +42,13 @@ function request(target: GuguLinkTarget) {
   void opened.catch(() => undefined)
   return opened
 }
+const answer = (itemId: string, chatId = assistantChat) => ({ chatId, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, choice: { kind: 'none' } })
 const click = (chatId: string) => request({ kind: 'chat', chatId, messageId })
 beforeEach(async () => {
   vi.resetAllMocks()
   mocked.local.mockResolvedValue(null)
+  mocked.host = true
+  mocked.opener.mockImplementation(async ({ itemId }: { itemId: string }) => ({ success: true, data: answer(itemId) }))
   mocked.work.mockRejectedValue(Object.assign(new Error('Account task reader is unavailable'), { code: 'unprepared' }))
   openAssistant.mockImplementation((tasks: boolean) => tasks ? 'assistant:task-chat' : 'assistant:chat')
   mocked.task = { assistantId: 'assistant', taskAgentId: 'task', task: { deviceId: 'device', sessionId: 'session' }, assistants: [] }
@@ -161,12 +166,18 @@ describe('conversation source navigation', () => {
   })
 })
 
-// The same shell generation orders file lookups and chat lookups; there is no second opener to race it.
+// The same shell generation orders file lookups and chat lookups; there is no second opener to race it. A file link asks
+// the host once (`groupFileOpener`, no chat named): the answer names the file's chat and goes on as the opener.
 describe('file links use the same shell request', () => {
   const a = 'aaaaaaaa-bbbb-4ccc-8ddd-00000000000a', b = 'aaaaaaaa-bbbb-4ccc-8ddd-00000000000b'
-  it.each([[a, b], [b, a]])('keeps the latest click when file lookups finish in order %j', async (first, second) => {
+  /** The host's answers held until the test lets each go. */
+  const hold = () => {
     const held = new Map<string, () => void>()
-    mocked.file.mockImplementation((id: string) => new Promise((resolve) => held.set(id, () => resolve({ data: { chat_id: assistantChat } }))))
+    mocked.opener.mockImplementation(({ itemId }: { itemId: string }) => new Promise((resolve) => held.set(itemId, () => resolve({ success: true, data: answer(itemId) }))))
+    return held
+  }
+  it.each([[a, b], [b, a]])('keeps the latest click when file lookups finish in order %j; the earlier is superseded, not a failure', async (first, second) => {
+    const held = hold()
     let openedA!: ReturnType<typeof request>, openedB!: ReturnType<typeof request>
     await act(async () => { openedA = request({ kind: 'file', itemId: a }) })
     await until('first file lookup started', () => held.has(a))
@@ -174,46 +185,72 @@ describe('file links use the same shell request', () => {
     await until('second file lookup started', () => held.has(b))
     const complete = async (id: string) => {
       held.get(id)!()
-      if (id === a) await expect(openedA).rejects.toThrow('links.unavailable')
-      else await openedB
+      if (id === a) {
+        const error = await openedA.then(() => null, (reason: unknown) => reason)
+        expect(error).toBeInstanceOf(OpenSuperseded)
+        expect((error as Error).message).not.toBe('links.unavailable')
+      } else await openedB
     }
     await act(async () => { await complete(first) })
     await act(async () => { await complete(second) })
     expect(openFile).toHaveBeenCalledOnce()
-    expect(openFile).toHaveBeenCalledWith(assistantChat, { kind: 'file', itemId: b }, expect.anything())
+    expect(openFile).toHaveBeenCalledWith(assistantChat, { kind: 'file', itemId: b }, expect.anything(), answer(b))
   })
-  it('routes a real local revision without a cloud workspace lookup', async () => {
-    mocked.local.mockResolvedValueOnce({ source: 'local', chat_id: assistantChat })
+  it('asks the host once, naming no chat, and reads neither the local revision nor workspace_items', async () => {
     const target = { kind: 'file' as const, itemId: a, version: 1 }
     await act(async () => { await request(target) })
-    expect(mocked.local).toHaveBeenCalledWith(a)
+    expect(mocked.opener).toHaveBeenCalledExactlyOnceWith({ itemId: a })
+    expect(mocked.local).not.toHaveBeenCalled()
     expect(mocked.file).not.toHaveBeenCalled()
-    expect(openFile).toHaveBeenCalledWith(assistantChat, target, expect.anything())
+    expect(openFile).toHaveBeenCalledExactlyOnceWith(assistantChat, target, expect.anything(), answer(a))
   })
-  it('refuses a local revision whose group is unavailable without a cloud fallback', async () => {
-    mocked.local.mockResolvedValueOnce({ source: 'local', chat_id: 'not-in-chat-list' })
+  it('refuses an answer whose chat is not one of this person\'s', async () => {
+    mocked.opener.mockResolvedValueOnce({ success: true, data: answer(a, 'not-in-chat-list') })
     await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.unavailable') })
-    expect(mocked.file).not.toHaveBeenCalled(); expect(openFile).not.toHaveBeenCalled()
+    expect(openFile).not.toHaveBeenCalled()
   })
-  it('preserves the file position, version and caller restore callback', async () => {
-    mocked.file.mockResolvedValue({ data: { chat_id: assistantChat } })
+  it('returns the host\'s refusal as the link\'s failure', async () => {
+    mocked.opener.mockResolvedValueOnce({ success: false, error: 'No such file in this chat' })
+    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.unavailable') })
+    expect(openFile).not.toHaveBeenCalled()
+  })
+  it('a platform with no host to answer: the link fails, it does not hang, and nothing is asked to open', async () => {
+    mocked.host = false
+    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.unavailable') })
+    expect(openFile).not.toHaveBeenCalled()
+    expect(mocked.opener).not.toHaveBeenCalled()
+  })
+  it('preserves the file position, version and caller restore callback; the place goes to the host', async () => {
     const target = { kind: 'file' as const, itemId: a, version: 7, at: { range: '销售!B2:D4' } }, restore = vi.fn()
     await act(async () => { await openLinkTarget(target, { restore }) })
-    expect(openFile).toHaveBeenCalledWith(assistantChat, target, expect.objectContaining({ restore }))
+    expect(mocked.opener).toHaveBeenCalledExactlyOnceWith({ itemId: a, at: { range: '销售!B2:D4' } })
+    expect(openFile).toHaveBeenCalledWith(assistantChat, target, expect.objectContaining({ restore }), answer(a))
     expect(restore).not.toHaveBeenCalled()
   })
-  it('cancels a pending file lookup when a chat is selected next', async () => {
-    let finish!: () => void
-    mocked.file.mockReturnValue(new Promise((resolve) => { finish = () => resolve({ data: { chat_id: assistantChat } }) }))
+  it('the same file asked again before its first open is up joins it: one host answer, both callers resolved', async () => {
+    const held = hold()
+    let first!: ReturnType<typeof request>, again!: ReturnType<typeof request>
+    await act(async () => { first = request({ kind: 'file', itemId: a }) })
+    await until('file lookup started', () => held.has(a))
+    await act(async () => { again = request({ kind: 'file', itemId: a }) })
+    const outcomes: string[] = []
+    void first.then(() => outcomes.push('first opened'), () => outcomes.push('first rejected'))
+    void again.then(() => outcomes.push('again opened'), () => outcomes.push('again rejected'))
+    await act(async () => { held.get(a)!(); await first; await again })
+    expect(outcomes.sort()).toEqual(['again opened', 'first opened'])
+    expect(mocked.opener).toHaveBeenCalledOnce()
+    expect(openFile).toHaveBeenCalledOnce()
+  })
+  it('cancels a pending file lookup when a chat is selected next: superseded, not a failure', async () => {
+    const held = hold()
     let opened!: ReturnType<typeof request>
     await act(async () => { opened = request({ kind: 'file', itemId: a }) })
-    await until('file lookup started', () => mocked.file.mock.calls.length > 0)
-    await act(async () => { await click(assistantChat); finish(); await expect(opened).rejects.toThrow('links.unavailable') })
+    await until('file lookup started', () => held.has(a))
+    await act(async () => { await click(assistantChat); held.get(a)!(); await expect(opened).rejects.toBeInstanceOf(OpenSuperseded) })
     expect(openFile).not.toHaveBeenCalled()
     expect(mocked.reveal).toHaveBeenCalledWith(assistantChat, messageId, 'assistant:chat')
   })
   it('waits for the file destination receipt before acknowledging the link', async () => {
-    mocked.file.mockResolvedValue({ data: { chat_id: assistantChat } })
     let accept!: () => void
     openFile.mockImplementation(() => new Promise<void>(resolve => { accept = resolve }))
     let result = 'pending'
@@ -224,7 +261,6 @@ describe('file links use the same shell request', () => {
     expect(result).toBe('opened')
   })
   it('returns the destination failure instead of acknowledging a queued file', async () => {
-    mocked.file.mockResolvedValue({ data: { chat_id: assistantChat } })
     let refuse!: (error: Error) => void
     openFile.mockImplementation(() => new Promise<void>((_resolve, reject) => { refuse = reject }))
     const opened = request({ kind: 'file', itemId: a })

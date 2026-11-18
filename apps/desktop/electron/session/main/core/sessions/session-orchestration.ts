@@ -1616,7 +1616,7 @@ export async function openTaskBrowserPane(
       sessionId: target.sessionId,
       url: normalized,
       intent: 'pinned',
-      acquire: { browserId, createIfMissing: url !== undefined, deadline: Date.now() + 9_000 },
+      acquire: { browserId, createIfMissing: url !== undefined, deadline: Date.now() + 9_000, mapped: true },
     });
   }, signal).catch((error: unknown) => {
     if (acquisitionId) events.emit(sessionCancelBrowserAcquireChannel, { requestId: acquisitionId });

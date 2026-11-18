@@ -1,7 +1,7 @@
-// workspace/list.js (pure): which kind a file is, its mark, its size in words, the time section, the time a cloud copy has left.
+// workspace/list.js (pure): which kind a file is, its size in words, the time section, the time a cloud copy has left.
 import { describe, expect, test } from 'vitest'
 // @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
-import { comparer, defaultView, keptAs, kindOf, markOf, matches, sectionOf, sizeOf, timeLeft, wantsThumb, whereOf } from '../../../../apps/desktop/preinstalled-apps/workspace/list.js'
+import { comparer, defaultView, keptAs, kindOf, matches, sectionOf, sizeOf, timeLeft, wantsThumb, whereOf } from '../../../../apps/desktop/preinstalled-apps/workspace/list.js'
 
 const f = (name: string, contentType: string, more: Record<string, unknown> = {}) => ({ name, contentType, type: 'binary', ...more })
 
@@ -15,14 +15,6 @@ describe('workspace list helpers', () => {
     expect(kindOf(f('clip.mov', 'video/quicktime'))).toBe('media')
     expect(kindOf(f('pack.zip', 'application/zip'))).toBe('other')
     expect(kindOf({ ...f('dir', 'inode/directory'), type: 'folder' })).toBe(null)
-  })
-
-  test('a mark is the suffix, coloured by family; a name without one goes by its type', () => {
-    expect(markOf(f('Q3 report.PDF', 'application/pdf'))).toEqual({ label: 'PDF', family: 'pdf' })
-    expect(markOf(f('model.tar.gz', 'application/gzip'))).toEqual({ label: 'GZ', family: 'archive' })
-    expect(markOf(f('a.vote.json', 'application/json', { suffix: '.vote.json' }))).toEqual({ label: 'JSON', family: 'text' })
-    expect(markOf(f('README', 'image/png'))).toEqual({ label: 'IMAG', family: 'image' })
-    expect(markOf(f('blob', 'application/octet-stream'))).toEqual({ label: '', family: 'other' })
   })
 
   test('sizes in words', () => {

@@ -87,7 +87,7 @@ describe('renderer command readiness handshake', () => {
     vi.useFakeTimers()
     const { bridge, window } = await loadBridge()
     const result = bridge.invokeRendererAuth('getSessionTokens', {})
-    const rejection = expect(result).rejects.toThrow('Renderer readiness timeout: auth:cmd')
+    const rejection = expect(result).rejects.toMatchObject({ message: 'Renderer readiness timeout: auth:cmd', code: 'timeout' })
 
     await vi.advanceTimersByTimeAsync(30_000)
 

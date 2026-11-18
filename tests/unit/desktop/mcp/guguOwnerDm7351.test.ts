@@ -21,6 +21,7 @@ function attachmentsFake(uploads: string[], commits: Array<Record<string, unknow
       return new Response(JSON.stringify({ staging_key: `staging/o/${uploads.length + 1}`, url: 'https://oss.test/', fields: {}, max_bytes: 25 * 1024 * 1024 }))
     }
     if (url === 'https://oss.test/') { uploads.push(((init?.body as FormData).get('file') as File).name); return new Response(null, { status: 204 }) }
+    if (url.endsWith('/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     const args = JSON.parse(String(init?.body)) as Record<string, unknown>
     commits.push(args)
     return new Response(JSON.stringify({ message: { id: args.message_id, chat_id: args.chat_id } }))
@@ -67,7 +68,7 @@ describe('chat_id = the owner\'s address (#7351)', () => {
     const d = deps()
     const file = join(root, 'report.html')
     writeFileSync(file, '<p>report</p>')
-    const result = await callTool(context, 'message_send_file', { chat_id: `aid:${owner}`, file_path: file }, d)
+    const result = await callTool(context, 'message_send', { chat_id: `aid:${owner}`, file_path: file }, d)
     expect(JSON.parse(result)).toMatchObject({ status: 'sent', file_name: 'report.html', source_link: expect.stringContaining(`gugu-chat://${dm}/`) })
     expect(d.restRpc).toHaveBeenCalledWith('open_dm', { p_target_user_id: agent })
     expect(d.commits).toEqual([expect.objectContaining({ chat_id: dm })])

@@ -37,6 +37,32 @@ function makeCell() {
 }
 
 describe('setting recovery preserves the permission boundary and prompt delivery', () => {
+  it('rejects missing Fast without holding prompts and confirms Off after a rejected enable', async () => {
+    const agent = new FakeAcpAgent();
+    const cell = new SessionCell({
+      sessionId: 'fast', projectId: 'fast', providerId: 'claude', acpSessionId: 'fast',
+      agent: createRequestActivity(agent.observed() as never, ({ event }) => cell.push(event)).agent,
+      logger: noopLogger, resolveAttachment: async () => { throw new Error('No attachments'); },
+      liveSettings: { fast: capability },
+    });
+    cell.applySessionReady();
+    const fastOption = (value: string) => [{ id: 'fast', name: 'Fast', category: 'model_config', type: 'select' as const,
+      currentValue: value, options: [{ value: 'on', name: 'On' }, { value: 'off', name: 'Off' }] }];
+    try {
+      expect((await cell.setConfigOption('fast', 'on')).success).toBe(false);
+      expect(cell.liveSettingBlock).toBeNull();
+      cell.applySessionMeta({ configOptions: fastOption('off') });
+      agent.setSessionConfigOption.mockImplementation(async ({ value }: { value: string }) => {
+        if (value === 'on') throw new Error('Fast unavailable');
+        return { configOptions: fastOption('off') };
+      });
+      expect((await cell.setConfigOption('fast', 'on')).success).toBe(false);
+      expect(agent.setSessionConfigOption.mock.calls.map(([request]) => (request as { value: string }).value)).toEqual(['on', 'off']);
+      expect(cell.config.fastMode?.selected).toBe('off');
+      expect(cell.liveSettingBlock).toBeNull();
+    } finally { cell.dispose(); }
+  });
+
   it('saves permission independently without clearing a rejected model barrier', async () => {
     const { cell, agent } = makeCell();
     cell.applySessionMeta({ configOptions: [...modes('bypassPermissions'), ...modelOptions] });

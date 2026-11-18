@@ -14,18 +14,16 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.Collections;
 
 /**
- * @@@page-scale - The system font size is the page's zoom, never a text-only zoom.
+ * @@@text-scale - The system font size reaches the page as a number, never as the WebView's own text zoom.
  *
  * Left alone, the WebView follows the system font size by enlarging text and px line heights while every box keeps its
- * size (measured at font_scale 1.3: text ×1.3, root font 20.8px, canvas measureText unchanged): toolbars and one-line
- * boxes overflow, and the transcript, which lays rows out from canvas measurements, cuts what it measured short.
- * So text zoom stays at 100% and the page gets the scale instead (`window.__guguFontScale`), which it turns into the
- * width of its viewport (pageScale.ts): a 412 px screen at 1.3 lays out as 317 px and is drawn 1.3 times larger, text
- * and boxes alike.
+ * size, and the transcript, which lays rows out from canvas measurements, cuts what it measured short. So text zoom
+ * stays at 100% and the page gets the scale instead (`window.__guguFontScale`), which mobile/textScale.ts turns into the
+ * text sizes of its type tokens and of the transcript's measurement config: text grows, boxes, icons and spacing stay.
  *
  * The value is there before the page's first script (a document-start script, added in load(), which runs before the
- * bridge loads the page), and a change of the system setting arrives while the app runs (fontScale is in the
- * activity's configChanges, so the page is not reloaded): the script is replaced for later loads and the live page is told.
+ * bridge loads the page). A change of the system setting arrives while the app runs (fontScale is in the activity's
+ * configChanges): the script is replaced for later loads and the live page is told, which reloads itself.
  */
 @CapacitorPlugin(name = "GuguPageScale")
 public class GuguPageScale extends Plugin {

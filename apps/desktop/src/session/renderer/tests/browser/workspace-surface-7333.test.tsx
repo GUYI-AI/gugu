@@ -5,7 +5,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
-import { WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -76,7 +76,7 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   const localCenter = center(local);
   const draft = harness.container.querySelector<HTMLInputElement>('[aria-label="retained draft"]')!;
   await userEvent.click([...harness.container.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
-  await until('the real list collapse completes', () => shell.querySelector('aside')!.getBoundingClientRect().width < 0.5);
+  await until('the real list collapses to its rail', () => shell.querySelector('aside')!.getBoundingClientRect().width === SIDEBAR_RAIL_PX);
   expect(harness.container.querySelector('[aria-label="retained draft"]')).toBe(draft);
   expect(draft.value).toBe('keep this draft');
   expect(mounted).toHaveBeenCalledTimes(1);

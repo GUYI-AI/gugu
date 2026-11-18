@@ -12,6 +12,8 @@ const state = vi.hoisted(() => {
   let version = 0;
   return {
     open: true,
+    /** The sidebar's open/close progress the following elements are written for (1 = expanded). */
+    progress: 1,
     view: 'home',
     locale: 'zh-CN',
     toggleLeft: (() => {}) as () => void,
@@ -66,13 +68,24 @@ vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
 }));
 vi.mock('@renderer/lib/hooks/useKeyboardShortcuts', () => ({ getEffectiveHotkey: (id: string) => (id === 'app.toggleLeftSidebar' ? 'Mod+Shift+S' : null), useShortcutOverrides: () => ({}) }));
 vi.mock('@renderer/lib/ui/shortcut-format', () => ({ formatHotkeyText: (hotkey: string) => `[${hotkey}]` }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress',
+vi.mock('@renderer/lib/layout/layout-provider', async () => {
+  const { useLayoutEffect, useRef } = await import('react');
+  return {
+  sidebarRailTextOpacity: (progress: number) => Math.min(1, Math.max(0, 2 * progress - 1)),
+  useSidebarProgressFollow: (follow: (element: HTMLElement, progress: number) => void) => {
+    const ref = useRef<HTMLElement | null>(null);
+    useSyncExternalStore(state.subscribe, state.version);
+    useLayoutEffect(() => {
+      if (ref.current) follow(ref.current, state.progress);
+    });
+    return ref;
+  },
   useWorkspaceLayoutContext: () => {
     useSyncExternalStore(state.subscribe, state.version);
     return { isLeftOpen: state.open, toggleLeft: state.toggleLeft };
   },
-}));
+};
+});
 // The task page's own back (the back button, Mod+[, the window's ←).
 vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: state.back }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { get canGoBack() { return state.canGoBack; } } } }));
@@ -134,6 +147,7 @@ let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   state.open = true;
+  state.progress = 1;
   state.view = 'home';
   state.locale = 'zh-CN';
   state.canGoBack = true;
@@ -197,8 +211,13 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     await render(<SidebarOneListTop collapsed={false} onCreateAgent={vi.fn()} />);
     const top = document.querySelector<HTMLElement>('[data-sidebar-one-list-top]')!;
     // 12px gutter and a 4px gap expanded (progress 1), 20px and no gap on the rail (progress 0): the 「+」 lands on x = 36.
-    expect(top.style.paddingInline).toBe('calc(20px - 8px * var(--gg-sidebar-progress, 1))');
-    expect(top.style.gap).toBe('calc(4px * var(--gg-sidebar-progress, 1))');
+    expect(top.style.paddingInline).toBe('12px');
+    expect(top.style.gap).toBe('4px');
+    expect(q('sidebar-create-agent')!.style.opacity).toBe('1');
+    await change(() => (state.progress = 0.5));
+    expect(top.style.paddingInline).toBe('16px');
+    expect(top.style.gap).toBe('2px');
+    expect(q('sidebar-create-agent')!.style.opacity).toBe('0');
     expect(top.className).not.toMatch(/\b(px-3|pl-5|gap-1)\b/);
     const button = q('sidebar-create-agent')!;
     expect(button.className).toMatch(/\bflex-1\b/);
@@ -226,7 +245,11 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
 });
 
 describe('the head: the collapse button, the bell, the search box and 会话历史', () => {
-  const hiddenWithTheNames = (element: Element) => element.closest('[class~="opacity-(--gg-sidebar-text)"]') !== null;
+  // Written the names' opacity on its own element (followNames), or inside one that is.
+  const hiddenWithTheNames = (element: Element) => {
+    for (let node: Element | null = element; node; node = node.parentElement) if ((node as HTMLElement).style?.opacity) return true;
+    return false;
+  };
 
   it('collapse: chevrons only, the tooltip says what it does with the shortcut, and it runs the collapse action', async () => {
     await render(<SidebarOneListHead />);

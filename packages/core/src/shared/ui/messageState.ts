@@ -41,6 +41,7 @@ export function mergeMessageState(existing: MessageItem | undefined, incoming: M
     delivery_status: deliveryStatus,
     readers: mergedReaders,
     local_send_state: localSendState,
+    local_timeline: existing.local_timeline ?? incoming.local_timeline,
   }
 }
 

@@ -32,7 +32,7 @@ describe('owner sends commit into the bound native session', () => {
   })
   it.each([`user:${owner}`, dm, '218799'])('commits an HTML snapshot using the same destination rule (%s)', async chatId => {
     const { context, deps, runHostAction } = setup()
-    const receipt = JSON.parse(await callTool(context, 'message_send_file', { chat_id: chatId, file_path: '/work/report.html' }, deps))
+    const receipt = JSON.parse(await callTool(context, 'message_send', { chat_id: chatId, file_path: '/work/report.html' }, deps))
     expect(runHostAction).toHaveBeenCalledWith(expect.objectContaining({ action: 'owner-notify', text: '', file: { path: '/work/report.html', name: 'report.html', mime_type: 'text/html' } }))
     expect(receipt).toMatchObject({ delivery: 'owner-native', file_name: 'report.html' })
     expect(deps.attachmentsEndpoint).not.toHaveBeenCalled()

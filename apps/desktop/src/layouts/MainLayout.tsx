@@ -98,6 +98,7 @@ import { hydrateSidebarTint } from '../lib/sidebarTint'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
+import { PhoneSessionModalHost } from '../components/PhoneSessionModalHost'
 import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
@@ -323,9 +324,9 @@ function InnerLayout({
       setAppDetail(target)
       openSettingsSection('apps')
     },
-    openFile: async (chatId, target, source) => {
+    openFile: async (chatId, target, source, opener) => {
       if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
-      await askChatFile(chatId, { itemId: target.itemId, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
+      await askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
     openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
@@ -378,19 +379,6 @@ function InnerLayout({
   useEffect(() => {
     if (activeTab !== 'chats' && sessionCreateOpen) setSessionCreateOpen(false)
   }, [activeTab, sessionCreateOpen])
-  const openSessionCreate = useCallback(() => {
-    if (!sessionHostAvailable) return
-    if (mobile) {
-      setWatchTaskGroup(null)
-      setActiveTab('tasks')
-      setWatchCreateRequest(n => n + 1)
-      return
-    }
-    setActiveTab('chats')
-    setSessionCreateOpen(true)
-    shellTab.setChatFrom(null)
-  }, [setActiveTab, shellTab, sessionHostAvailable, mobile])
-
   // 联系人页的「新建 Agent」。手机:去会话页建 agent 的那条路(先选机器),与会话页右上 + 同一条。
   // 桌面:gugu-dev#181 只有一个「新建会话」—— 会话页的新建会话页(不进群)。
   const openAgentCreateDraftFromContacts = useCallback(() => {
@@ -1096,7 +1084,7 @@ function InnerLayout({
                         if (focusTarget === 'composer') focusComposerForUserEntry('chat-entry')
                       }, 'push')}
                       onScan={handleScan}
-                      onOpenSessionCreate={mobile && sessionHostAvailable ? openSessionCreate : undefined}
+                      onOpenSessionCreate={mobile ? openAgentCreateDraftFromContacts : undefined}
                       onNewProject={mobile ? openNewProject : undefined}
                     />
                   </ResizableChatListPane>
@@ -1328,6 +1316,7 @@ function InnerLayout({
       {!mobile && sessionHostAvailable && <AppHostLayerHost visible={activeTab === 'tasks'} />}
       {/* Entry switch: the trusted assistant App bound to the assistant's chat by the host; every entry asks lib/assistantEntry.ts. */}
       {!mobile && sessionHostAvailable && <AssistantAppEntryHost />}
+      {!sessionHostAvailable && <PhoneSessionModalHost />}
 
     </PhoneViewportShell>
   )

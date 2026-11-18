@@ -16,14 +16,14 @@ const {
   INNER_SIDEBAR_WIDTH_STORAGE_KEY,
   sidebarEdgeDrag,
   sidebarEdgeSnapsOpen,
+  SIDEBAR_LANDED_PX,
+  SIDEBAR_RAIL_PX,
   sidebarOccupiedWidth,
-  sidebarRailBadgeOpacity,
   sidebarRailLayout,
   sidebarRailTextOpacity,
   useWorkspaceLayoutService,
   SIDEBAR_DEFAULT_WIDTH_PX,
   SIDEBAR_MIN_WIDTH_PX,
-  SIDEBAR_RAIL_LAYOUT_BELOW,
 } = await import('./layout-provider');
 const { sidebarFolds } = await import('@renderer/features/sidebar/sidebar-folds');
 const { readInterface, writeInterface } = await import('@/lib/viewStateTable');
@@ -49,11 +49,6 @@ afterEach(() => {
   host.remove();
 });
 const mount = () => act(async () => root.render(<Probe />));
-/** Hover the collapse button past the peek delay (PEEK_TRIGGER_HOVER_MS = 100). */
-const hoverToggle = () => act(async () => {
-  layout.setTriggerHovered(true);
-  await new Promise((resolve) => setTimeout(resolve, 150));
-});
 
 describe('the sidebar starts expanded', () => {
   it('opens expanded until the user folds it, and a stored width wins over the default', async () => {
@@ -71,7 +66,7 @@ describe('the sidebar starts expanded', () => {
     root = createRoot(host);
     await mount();
     expect(layout.isLeftOpen).toBe(false);
-    expect(layout.leftAnimatedWidth.get()).toBe(0);
+    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_RAIL_PX);
   });
 
   it('zen mode folds it for the moment only: the next start is expanded', async () => {
@@ -89,23 +84,11 @@ describe('the sidebar starts expanded', () => {
 });
 
 describe('collapsing', () => {
-  it('without a rail the sidebar goes away and peeks out on hover (today)', async () => {
+  it('it collapses to the rail, never away', async () => {
     await mount();
-    await act(async () => layout.setCollapsed('left', true, { suppressPeek: false }));
-    expect(layout.isLeftOpen).toBe(false);
-    expect(layout.leftAnimatedWidth.get()).toBe(0);
-    await hoverToggle();
-    expect(layout.isLeftPeeking).toBe(true);
-  });
-
-  it('with a rail it stays that wide, and there is nothing to peek at', async () => {
-    await mount();
-    await act(async () => layout.setLeftRail(72));
     expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
-    await act(async () => layout.setCollapsed('left', true, { suppressPeek: false }));
-    expect(layout.leftAnimatedWidth.get()).toBe(72);
-    await hoverToggle();
-    expect(layout.isLeftPeeking).toBe(false);
+    await act(async () => layout.setCollapsed('left', true));
+    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_RAIL_PX);
     await act(async () => layout.toggleLeft());
     expect(layout.isLeftOpen).toBe(true);
     expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
@@ -123,21 +106,17 @@ describe('collapsing', () => {
   });
 });
 
-describe('the rail\'s corner badge moves with the same progress', () => {
-  it('fades in near the end of collapsing and out first when expanding', () => {
-    expect([1, 0.5, 0.4].map(sidebarRailBadgeOpacity)).toEqual([0, 0, 0]);
-    expect(sidebarRailBadgeOpacity(0.2)).toBeCloseTo(0.6);
-    expect([0.05, 0].map(sidebarRailBadgeOpacity)).toEqual([1, 1]);
-  });
-
-  it('the count changes place (row end ↔ avatar corner) where neither the text nor the badge can be seen', () => {
-    expect(sidebarRailLayout(1)).toBe(false);
-    expect(sidebarRailLayout(0.5)).toBe(false);
-    expect(sidebarRailLayout(0)).toBe(true);
-    for (const p of [SIDEBAR_RAIL_LAYOUT_BELOW - 0.04, SIDEBAR_RAIL_LAYOUT_BELOW, SIDEBAR_RAIL_LAYOUT_BELOW + 0.04]) {
-      expect(sidebarRailTextOpacity(p)).toBe(0);
-      expect(sidebarRailBadgeOpacity(p)).toBe(0);
-    }
+describe('the rail layout switches where the names cannot be seen', () => {
+  it('the count changes place (row end ↔ avatar corner) only where the edge lands on the rail, outside the motion', () => {
+    const drawn = (progress: number) => sidebarOccupiedWidth(progress, 240, SIDEBAR_RAIL_PX);
+    expect(sidebarRailLayout(drawn(1))).toBe(false);
+    expect(sidebarRailLayout(drawn(0.5))).toBe(false);
+    // the first frame of an expand moves the edge a pixel or more: the rows leave the rail there
+    expect(sidebarRailLayout(drawn(0.01))).toBe(false);
+    // the spring's sub-pixel tail is already the rail, ❌ waiting for its formal rest
+    expect(sidebarRailLayout(SIDEBAR_RAIL_PX + SIDEBAR_LANDED_PX / 2)).toBe(true);
+    expect(sidebarRailLayout(drawn(0))).toBe(true);
+    expect(sidebarRailTextOpacity(0.01)).toBe(0);
   });
 });
 
@@ -174,7 +153,6 @@ describe('dragging the edge of a sidebar that collapses to a rail', () => {
   const railed = async () => {
     writeInterface('gugu.taskpage.sidebarWidth', Number('300'));
     await mount();
-    await act(async () => layout.setLeftRail(72));
   };
 
   it('mid-drag nothing collapses: the edge stays where the pointer is, open until the release', async () => {

@@ -1,3 +1,5 @@
+import { sliceWholeCharacters } from '@gugu/core/shared/unicodeSlice';
+
 /**
  * #7337 咕咕自己给会话起名:拿首轮找一个平台模型要一个短名。这里是纯逻辑(提示词、各家关思考的写法、
  * 回答的清洗),主进程那一半(签票、发请求、落库)在 electron/session-title-namer.ts。
@@ -65,7 +67,7 @@ const CONTRACT_RULES = [
 ];
 
 function systemPrompt(instructions: string): string {
-  const extra = collapse(instructions).slice(0, SESSION_TITLE_INSTRUCTIONS_MAX);
+  const extra = sliceWholeCharacters(collapse(instructions), 0, SESSION_TITLE_INSTRUCTIONS_MAX);
   return [
     ...STYLE_RULES,
     ...(extra ? [`The user's own naming preferences, which take priority over the style rules above: ${extra}`] : []),
@@ -100,8 +102,10 @@ export function shouldGenerateSessionTitle(firstUtterance: string | undefined): 
 function boundedInput(firstUtterance: string): string {
   const text = firstUtterance.trim();
   if (text.length <= INPUT_HEAD + INPUT_TAIL) return text;
-  const omitted = text.length - INPUT_HEAD - INPUT_TAIL;
-  return `${text.slice(0, INPUT_HEAD)}\n[… ${omitted} characters omitted …]\n${text.slice(-INPUT_TAIL)}`;
+  const head = sliceWholeCharacters(text, 0, INPUT_HEAD);
+  const tail = sliceWholeCharacters(text, text.length - INPUT_TAIL, text.length);
+  const omitted = text.length - head.length - tail.length;
+  return `${head}\n[… ${omitted} characters omitted …]\n${tail}`;
 }
 
 /**

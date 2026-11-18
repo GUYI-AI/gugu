@@ -1,6 +1,7 @@
 /**
- * #2548 固定到左侧栏: the existing session row menu offers it right after 置顶, for a top-level session only, and
- * clicking it writes through the row's own session store.
+ * #2548 固定到左侧栏: the session row menu offers it for a top-level session only, and clicking it writes through the
+ * row's own session store. It is set once per agent, so by the shared order (session/shared/menu-table.ts
+ * @@@menu-order) it is the first row of 更多.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot, type Root } from 'react-dom/client'
@@ -109,12 +110,13 @@ async function openMenu(): Promise<HTMLElement[]> {
 const labels = (items: HTMLElement[]) => items.map((item) => item.textContent?.trim() ?? '')
 const sidebarItem = (items: HTMLElement[]) => items.find((item) => /左侧栏|sidebar/i.test(item.textContent ?? ''))
 
-it('固定到左侧栏 sits right after 置顶, and clicking it pins this session', async () => {
+it('固定到左侧栏 comes right after 归档会话, first of the rows folded into 更多, and clicking it pins this session', async () => {
+  // This harness draws the menu flat (the phone shell's layout), in the one order every renderer shares.
   const items = await openMenu()
   const shown = labels(items)
-  const pinAt = shown.findIndex((label) => /取消置顶|^Unpin$/.test(label))
-  expect(pinAt, `menu: ${shown.join(' | ')}`).toBeGreaterThanOrEqual(0)
-  expect(shown[pinAt + 1], `menu: ${shown.join(' | ')}`).toMatch(/^(固定到左侧栏|Pin to sidebar)$/)
+  const archiveAt = shown.findIndex((label) => /^(归档会话|Archive session)$/.test(label))
+  expect(archiveAt, `menu: ${shown.join(' | ')}`).toBeGreaterThanOrEqual(0)
+  expect(shown[archiveAt + 1], `menu: ${shown.join(' | ')}`).toMatch(/^(固定到左侧栏|Pin to sidebar)$/)
   await page.screenshot({ path: '__screenshots__/sidebar-pin-to-sidebar-2548/menu-pin.png' })
 
   await userEvent.click(sidebarItem(items)!)

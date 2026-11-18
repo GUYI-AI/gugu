@@ -157,6 +157,7 @@ export type ChatToolCall = {
   kind: 'tool';
   id: string;
   name: string;
+  toolNames?: readonly string[];
   status: ToolStatus;
   awaitingPermission?: boolean;
   /**
@@ -593,6 +594,7 @@ export type ToolRunItem = {
   label: string;
   /** 折进去的行数。 */
   stepCount: number;
+  toolNames?: readonly string[];
   /** 这一段里还有在跑的调用（活动层）⇒ 头上微光。 */
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */
@@ -665,7 +667,12 @@ export type SessionConditionCode =
    */
   | 'membership-required'
   /** 上一轮被宿主的退出打断了(更新 / 重启 / 没正常退出):开机收残记下的,下一轮开工就没了。宿主总是给 label。 */
-  | 'turn-interrupted';
+  | 'turn-interrupted'
+  /**
+   * This session's agent was started from a group chat and could not join it (the database refused or kept failing).
+   * `detail` is the database's answer; the action retries the join. Gone once the agent is in the group.
+   */
+  | 'group-join-failed';
 
 export type SessionCondition = Omit<SessionConditionItem, 'kind' | 'id' | 'hasVisibleHistory'>;
 

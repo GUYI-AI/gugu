@@ -45,11 +45,14 @@ describe('rows: a count or a 1-based inclusive range, like line numbers', () => 
     expect(parseRows(10)).toEqual({ from: 1, to: 10 })
     expect(parseRows('41-60')).toEqual({ from: 41, to: 60 })
     expect(parseRows(' 41 - 60 ')).toEqual({ from: 41, to: 60 })
+    // MCP surface review 11-16: 20 of 322 rows arguments were "all", each refused.
+    expect(parseRows('all')).toEqual({ from: 1, to: Infinity })
+    expect(parseRows(' ALL ')).toEqual({ from: 1, to: Infinity })
   })
 
   it('refuses what it cannot read, naming the accepted forms', () => {
     for (const bad of ['abc', '0', '0-5', '60-41', '-5', '1-', '1.5']) {
-      expect(() => parseRows(bad), bad).toThrow(/rows must be a count like "20" or a range like "41-60"/)
+      expect(() => parseRows(bad), bad).toThrow(/rows must be a count like "20", a range like "41-60" \(counted from 1\) or "all"/)
     }
   })
 })

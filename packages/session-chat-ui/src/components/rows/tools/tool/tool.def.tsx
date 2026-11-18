@@ -13,6 +13,7 @@ import { deriveToolInputSummary } from '@gugu/session-core/session-record/tool-i
 import { Tool } from './Tool';
 import { toolRoot, toolVars, type ToolStyleVars } from './tool.css';
 import { toolThumbStrip, type ToolThumbStrip } from './tool-images';
+import { toolActivationNames } from '@session-chat/lib/tool-activation';
 import {
   hasToolPayload,
   layoutToolPayload,
@@ -113,11 +114,13 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   // the failure section when the status says the call failed; that is the only
   // reason a red row has anything to show.
   const result = base ? (base.outputText ?? base.rawOutput) : undefined;
+  const toolNames = toolActivationNames(item);
   return {
     kind: 'tool',
     id: item.id,
     ...(base?.trimmedChars ? { transportNote: ctx.translate('transcript.outputTrimmed', { chars: base?.trimmedChars }) } : {}),
     name,
+    ...(toolNames.length ? { toolNames } : {}),
     status: 'status' in item ? item.status : 'done',
     awaitingPermission: base ? ctx.pendingToolCallIds().has(base.toolCallId) : false,
     inputSummary: resolvedSummary,

@@ -97,13 +97,14 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/** A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name. */
+/** A panel tab's name as its strip says it: what its page called itself, else the file's name, else the App's tab title. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
+  const file = item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
-    isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
-    item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined,
+    isFolderItem(item) ? folderName : item.kind && !file ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
+    file,
   );
 }
 

@@ -1,10 +1,14 @@
 import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
-import { chatPickRow, chatPickRows, forwardPreview } from './forwardMessageUtils'
-import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
+import type { ContactUser } from '@gugu/core/shared/types/contacts'
+import { chatPickRow, forwardPreview, PERSON_ROW, personPickRow, sendableConversations, sendablePeople, sendablePickRows } from './forwardMessageUtils'
+import { chatDisplayName, createOptimisticDmChat } from '@gugu/core/shared/ui/chatModels'
 import { ChatPickSheet } from './ChatPickSheet'
 import { useChatStore } from '../../store/chatContext'
+import { useContactList } from '../../store/contactsContext'
+import { useAuth } from '../../store/auth'
+import { useNativeAgentChats } from '../../hooks/useNativeAgentChats'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { ShareToAppsRow } from '../share/ShareToAppsRow'
 import { Avatar } from '../Avatar'
@@ -14,6 +18,7 @@ import { cn } from '@/lib/cn'
 import { MessageSquare } from '@/lib/icons'
 import { ForwardNoteEditor } from './ForwardNoteEditor'
 import type { ForwardNote } from './forwardToChats'
+import { useResolveTargets } from './useResolveTargets'
 
 interface ForwardMessageDialogProps {
   // @@@multi-select (#988) - one or many messages to forward. Single-forward passes [msg];
@@ -24,7 +29,10 @@ interface ForwardMessageDialogProps {
    * line per piece in reading order; the page shows the last line and 「详情」 shows all. */
   preview?: string
   topRow?: ReactNode
-  chats: ChatItem[]
+  chats: readonly ChatItem[]
+  /** Friends and own agents: those with no conversation in the list are offered under 「联系人」. */
+  contacts?: readonly ContactUser[]
+  ownerId?: string
   /** Source chat — excluded from the target list. */
   sourceChatId: string
   /**
@@ -39,13 +47,15 @@ interface ForwardMessageDialogProps {
  * Forwarding in two steps. First whom: a tap on a chat goes straight on; 「多选」 switches to ticking several, then 「下一步」.
  * Then the send: to whom, what (one line, 「详情」 for all of it), the note (its @ is the one chat picked), 取消 / 发送.
  */
-export function ForwardMessageDialog({ messages = [], preview: subject, topRow, chats, sourceChatId, onForward, onClose }: ForwardMessageDialogProps) {
+export function ForwardMessageDialog({ messages = [], preview: subject, topRow, chats, contacts = [], ownerId, sourceChatId, onForward, onClose }: ForwardMessageDialogProps) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const [several, setSeveral] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState(false)
   const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const resolve = useResolveTargets()
 
   const pick = useCallback((id: string) => {
     if (!several) {
@@ -76,10 +86,16 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
     (chat: ChatItem) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name),
     [identitiesById],
   )
-  const rows = useMemo(
-    () => chatPickRows(chats, sourceChatId, query, forwardTargetName, identitiesById),
-    [chats, sourceChatId, query, forwardTargetName, identitiesById],
+  const sendable = useMemo(
+    () => sendableConversations(chats, { ownerId, sourceChatId, query, displayName: forwardTargetName, identitiesById }),
+    [chats, ownerId, sourceChatId, query, forwardTargetName, identitiesById],
   )
+  const rows = useMemo(() => sendablePickRows(sendable, forwardTargetName, identitiesById, { expanded, searching: query.trim() !== '' }),
+    [sendable, forwardTargetName, identitiesById, expanded, query])
+  // Someone with no conversation yet: drawn as the private chat that sending opens (useResolveTargets).
+  const people = useMemo(() => sendablePeople(contacts, sendable.chats, { ownerId, query, source: chats.find((chat) => chat.id === sourceChatId) })
+    .map((contact) => ({ row: personPickRow(contact), chat: { ...createOptimisticDmChat(`${PERSON_ROW}${contact.id}`, contact.id), peer_alias: contact.alias || contact.display_name } })),
+  [contacts, sendable, ownerId, query, chats, sourceChatId])
 
   const labels = { attachment: t('forward.preview.attachment'), card: t('forward.preview.card'), empty: t('forward.preview.empty') }
   const said = (message: MessageItem) => `${identitiesById[message.sender_user_id ?? '']?.display_name ?? ''}：${forwardPreview(message, labels)}`
@@ -91,7 +107,13 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
     setConfirming(false)
     if (!several) setSelected(new Set())
   }
-  const targets = chats.filter((chat) => selected.has(chat.id))
+  const targets = [...chats, ...people.map((person) => person.chat)].filter((chat) => selected.has(chat.id))
+  // A person picked is written to once their private chat is known: `sent` hears its chat id, the pick holds the person.
+  const send = async (note: ForwardNote) => {
+    const chatIds = await resolve(targets.map((chat) => chat.id))
+    const rowOf = new Map(chatIds.map((chatId, index) => [chatId, targets[index]!.id]))
+    await onForward(chatIds, note, (chatId) => untick(rowOf.get(chatId) ?? chatId))
+  }
 
   return <>
     <ChatPickSheet
@@ -99,13 +121,15 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
       onClose={onClose}
       testId="forward-message-dialog"
       rows={rows}
+      sections={[{ id: 'people', title: t('forward.people'), rows: people.map((person) => person.row) }]}
+      onMoreTopics={(id) => setExpanded((open) => new Set([...open, id]))}
       single={!several}
       selected={selected}
       onToggle={pick}
       query={query}
       onQuery={setQuery}
       placeholder={t('forward.searchChats')}
-      empty={chats.length <= 1 ? t('forward.noTargets') : t('forward.noResults')}
+      empty={chats.length + contacts.length <= 1 ? t('forward.noTargets') : t('forward.noResults')}
       top={topRow ?? <ShareToAppsRow messages={messages} onClose={onClose} />}
       headerAction={
         <Button variant={several ? 'primary' : 'secondary'} size="sm" aria-pressed={several} data-testid="forward-several"
@@ -120,7 +144,7 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
     />
     {confirming && targets.length > 0 && (
       <ForwardConfirm targets={targets} name={forwardTargetName} line={line} detail={detail}
-        onBack={back} onSend={(note) => onForward(targets.map((chat) => chat.id), note, untick)} onDone={onClose} />
+        onBack={back} onSend={send} onDone={onClose} />
     )}
   </>
 }
@@ -200,7 +224,11 @@ function ForwardConfirm({ targets, name, line, detail, onBack, onSend, onDone }:
 }
 
 /** The dialog with the live list: subscribes only while it is open. */
-export function LiveForwardMessageDialog(props: Omit<ComponentProps<typeof ForwardMessageDialog>, 'chats'>) {
+export function LiveForwardMessageDialog(props: Omit<ComponentProps<typeof ForwardMessageDialog>, 'chats' | 'contacts' | 'ownerId'>) {
   const { chats } = useChatStore('chats')
-  return <ForwardMessageDialog {...props} chats={chats} />
+  const { user } = useAuth()
+  const contacts = useContactList()
+  // An own agent's conversation is placed by its task's latest turn, as the chat list places it.
+  const placed = useNativeAgentChats(chats)
+  return <ForwardMessageDialog {...props} chats={placed} contacts={contacts} ownerId={user?.id} />
 }
