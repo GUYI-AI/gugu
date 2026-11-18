@@ -55,6 +55,23 @@ describe('findItemById', () => {
 });
 
 describe('history', () => {
+  it('clears the visible history immediately and rejects late old pages while a live reply can continue', () => {
+    const tx = createTranscript();
+    const at = Date.parse('2026-11-14T00:00:00Z');
+    const old = { ...turn('old', 0, { ...msg('before'), at: at - 1 }), startedAt: at - 1 };
+    tx.history.seed([old]);
+    tx.activeTurn.set({ ...turn('live', 1, { ...msg('prompt'), at: at - 1 }), startedAt: at - 1 }, 'generating');
+    tx.setHistoryFloor!('2026-11-14T00:00:00.000500Z');
+    expect(tx.state.committedTurns).toEqual([]);
+    expect(tx.state.activeTurnSnapshot).toBeNull();
+    expect(tx.findItemById('before')).toBeUndefined();
+    tx.history.prepend([{ ...old, id: 'late-old' }]);
+    expect(tx.state.committedTurns).toEqual([]);
+    tx.activeTurn.set({ ...turn('live', 1, { ...msg('reply'), role: 'assistant', at: at + 1 }), startedAt: at - 1 }, 'generating');
+    expect(tx.state.activeTurnSnapshot?.items.map(item => item.id)).toEqual(['reply']);
+    expect(tx.state.turnStatus).toBe('generating');
+    expect(tx.history.get()).toHaveLength(2);
+  });
   it('seed replaces committed turns and clears active turn', () => {
     const tx = createTranscript();
     drive(tx, { type: 'message_chunk', id: 'x', role: 'assistant', text: 'live' });

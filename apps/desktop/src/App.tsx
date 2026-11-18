@@ -24,6 +24,7 @@ import { FirstRunGate } from './components/firstRun/FirstRunGate'
 import { ShellErrorBoundary } from './components/ShellErrorBoundary'
 import { ReleaseNotesOpener } from './components/ReleaseNotesOpener'
 import { AppModalHost } from './components/appModal/AppModalHost'
+import { ConversationDeleteConfirmationHost } from './components/chat/ConversationDeleteConfirmationHost'
 import { ContentContextMenuHost } from './components/ContentContextMenuHost'
 import { ThemeProvider } from './store/theme'
 import { rendererCommandEventName } from './lib/rendererCommandProtocol'
@@ -85,6 +86,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
         <AndroidChatBackgroundWatch active={effectsActive} />
         <ReleaseNotesOpener />
         <AppModalHost />
+        <ConversationDeleteConfirmationHost />
       </ImagePreviewProvider>
     </ChatProvider>
   )
