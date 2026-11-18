@@ -167,7 +167,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
-  expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '文件夹', '技能'] : ['Work', 'Folder', 'Skills'])
+  expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
   expect(host!.querySelector('[data-testid="agent-watch-create-agent"]')).toBeNull()
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)

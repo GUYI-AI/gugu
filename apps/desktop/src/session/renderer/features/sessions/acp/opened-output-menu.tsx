@@ -41,14 +41,14 @@ export function useOpenedOutputMenu({ projectId, sessionId }: { projectId: strin
 } {
   const { translate } = useSessionMessages();
   // 「侧边栏 ▾」在 Solid 画的行里:按同一条 Trigger 规则(再点一次就关,按它不算点外面)。
-  const trigger = useExternalMenuTrigger<OpenedOutput>();
+  const trigger = useExternalMenuTrigger<{ output: OpenedOutput; fromFileChange?: boolean }>();
   const { press } = trigger;
   const local = machineRegistry.machineOf(projectId) === null;
 
   const commands = useMemo<Pick<ChatCommands, 'outputOpenMode' | 'onOutputMenu'>>(
     () => ({
       outputOpenMode: () => translate('transcript.outputMode.choose'),
-      onOutputMenu: ({ output, anchor }) => press(anchor, output),
+      onOutputMenu: ({ output, anchor, fromFileChange }) => press(anchor, { output, fromFileChange }),
     }),
     [translate, press]
   );
@@ -94,7 +94,7 @@ export function useOpenedOutputMenu({ projectId, sessionId }: { projectId: strin
   }, []);
 
   if (!trigger.opened) return { commands, menu: null };
-  const { value: output, anchor } = trigger.opened;
+  const { value: { output, fromFileChange }, anchor } = trigger.opened;
   // An Edited row names its file as the patch did, which may be relative to the working copy.
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
   const namedPath = openedFilePath(output);
@@ -103,8 +103,8 @@ export function useOpenedOutputMenu({ projectId, sessionId }: { projectId: strin
     <DropdownMenu open onOpenChange={trigger.onOpenChange}>
       <DropdownMenuContent anchor={anchor} align="end" className="w-auto" data-testid="opened-output-menu">
         <DropdownMenuItem onClick={() => reopenSessionOutput(projectId, sessionId, output)}>
-          {translate('transcript.outputMenu.side')}
-          <DropdownMenuShortcut>{translate('transcript.outputMenu.default')}</DropdownMenuShortcut>
+          {translate(fromFileChange ? 'transcript.outputMenu.openFile' : 'transcript.outputMenu.side')}
+          {!fromFileChange && <DropdownMenuShortcut>{translate('transcript.outputMenu.default')}</DropdownMenuShortcut>}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {filePath ? (

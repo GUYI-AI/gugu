@@ -1,4 +1,4 @@
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { ExtensionsSettingsCard } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useLibraryHost } from './library-host';
@@ -11,17 +11,20 @@ import { useLibraryHost } from './library-host';
  * 撤下 tab)。咕咕 server 也是(161 10-15:server 照样装 App,agent 在它上面装的,人也要能在这里看到、卸掉);它没有窗口,
  * 装在上面的 App 页面打不开、只有工具和技能给那台上的 agent 用 —— 卡片上头如实说这一句。
  */
-export function ExtensionsLibraryPage({ detail }: { detail?: AppDetailLink }) {
+export function ExtensionsLibraryPage({ detail, onOpenAgentDetail }: {
+  detail?: ExtensionAppDetailLink;
+  onOpenAgentDetail?: (agentId: string) => void;
+}) {
   const { translate } = useSessionMessages();
   const { remote } = useLibraryHost();
   // 页头(名字、一句话、搜索)由那张卡片自己画:点进一个 App 的产品页时整栏换成那一页,页头跟着让开(#7059)。
-  if (remote?.hostKind !== 'server') return <ExtensionsSettingsCard detailLink={detail} />;
+  if (remote?.hostKind !== 'server') return <ExtensionsSettingsCard detailLink={detail} onOpenAgentDetail={onOpenAgentDetail} />;
   return (
     <div className="space-y-3">
       <p className="m-0 px-3 pt-3 text-sm text-foreground-muted" data-testid="extensions-on-server">
         {translate('deviceScope.extensionsOnServer', { device: remote.deviceLabel })}
       </p>
-      <ExtensionsSettingsCard detailLink={detail} />
+      <ExtensionsSettingsCard detailLink={detail} onOpenAgentDetail={onOpenAgentDetail} />
     </div>
   );
 }

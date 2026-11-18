@@ -8,14 +8,8 @@ import { trailingActivity } from './agent-activity';
 import { lastConversationMessage } from './conversation-density';
 import { flattenTier } from './flatten';
 
-/**
- * 对话布局:新来的一轮是**增量**接在上一档后面 flatten 的(ChatRoot 的 incremental append / 活动档),
- * 重启或重建时是**整条**一起 flatten。同一对相邻行,两条路给的 gapBefore 必须一样。
- * owner 截图:回合末尾是「已编辑 N 个文件」卡,最新一轮的用户消息(和它的附件条)贴着卡片 —— 增量那条路
- * 从最后一条**消息**续排,把卡片后面当成气泡后面(气泡底下有操作行垫着,给 0);整条重建给 8。
- */
-
-const KINDS = ['message', 'turn-process', 'tool-run', 'execute-tool-call', 'mcp-tool-call', 'diff', 'file-change-summary', 'opened-output', 'conversation-process-steps'];
+// A full rebuild and the committed-to-live append must measure the same utterance boundary.
+const KINDS = ['message', 'turn-process', 'tool-run', 'execute-tool-call', 'mcp-tool-call', 'diff', 'file-change-summary', 'opened-output', 'conversation-process-steps', 'turn-completion'];
 const SEGMENTERS: Record<string, ItemSegmenter> = Object.fromEntries(KINDS.map(kind => [kind,
   { kind, segment: (item: SegmentItem) => [unit(item.kind, item, item, { key: 'self' })] } satisfies ItemSegmenter]));
 const MARGINS: Record<string, { margin: Margin }> = {
@@ -50,14 +44,15 @@ function seam(first: TranscriptTurn, expandedProcess = false): { rebuilt: number
 
 describe('the user message after a turn has the same gap appended as rebuilt', () => {
   it.each([
-    ['an "edited files" card', turn('t1', [user('u'), edit('e1', '/p/a.txt'), edit('e2', '/p/b.txt'), reply('r')]), false, 'file-change-summary'],
-    ['an opened-output card', turn('t1', [user('u'), open('o', '/p/report.md'), reply('r')]), false, 'opened-output'],
+    ['an "edited files" card', turn('t1', [user('u'), edit('e1', '/p/a.txt'), edit('e2', '/p/b.txt'), reply('r')]), false, 'turn-completion'],
+    ['an opened-output card', turn('t1', [user('u'), open('o', '/p/report.md'), reply('r')]), false, 'turn-completion'],
     ['the agent bubble', turn('t1', [user('u'), bash('b'), reply('r')]), false, 'message'],
-    ['expanded process steps of a turn without a reply', turn('t1', [user('u'), bash('b')]), true, 'conversation-process-steps'],
-    ['a collapsed process row of a turn without a reply', turn('t1', [user('u'), bash('b')]), false, 'turn-process'],
+    ['completion after expanded process steps', turn('t1', [user('u'), bash('b')]), true, 'turn-completion'],
+    ['completion after a collapsed process', turn('t1', [user('u'), bash('b')]), false, 'turn-completion'],
   ])('after %s', (_name, first, expandedProcess, lastKind) => {
     const { rebuilt, appended, lastKind: last } = seam(first, expandedProcess);
     expect(last, 'the fixture does not end the turn on the row it names').toBe(lastKind);
     expect(appended).toBe(rebuilt);
+    expect(rebuilt).toBe(24);
   });
 });

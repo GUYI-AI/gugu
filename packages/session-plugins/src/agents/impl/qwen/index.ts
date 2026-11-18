@@ -30,6 +30,7 @@ export const plugin = definePlugin(
   {
     id: 'qwen',
     name: 'Qwen Code',
+    publisher: '通义千问',
     description:
       "Command-line interface to Alibaba's Qwen Code models for coding assistance and code completion.",
     websiteUrl: 'https://github.com/QwenLM/qwen-code',

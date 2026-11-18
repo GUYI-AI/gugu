@@ -398,7 +398,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               </div>
             </>
           ) : t('group.memberList.title'),
-          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行、内栏头一行),❌ 标题下面一条通栏钮。
+          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行),❌ 标题下面一条通栏钮。
           chatKind === 'group' ? <>{searchButton}<GroupAddMenu chatId={chatId} canAddMembers={group.showInvite} /></> : searchButton,
         )}</HeaderSearch>
 

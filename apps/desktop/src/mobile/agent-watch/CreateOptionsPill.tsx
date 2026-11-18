@@ -22,8 +22,10 @@ import {
 } from './create-session-form'
 import { createModelOptions } from './session-model-menu'
 import { allGuguHidden, offeredInCreateMenu } from '@/lib/createModelDefault'
+import { PhoneComposerChoice } from '../composer/PhoneComposerChoice'
 import { ModelMenuFooter } from './ModelMenuFooter'
-import { composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
+import { phoneModelDescription, phoneModelName } from './phone-model-copy'
+import { composerModelSelection, composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import './task-flow-catalog'
@@ -370,11 +372,22 @@ export function ModelChoices({
   const query = search.trim().toLocaleLowerCase()
   const matches = (id: string, name: string, description?: string) =>
     !query || [id, name, description ?? ''].some((value) => value.toLocaleLowerCase().includes(query))
-  const sessionRows = Object.entries(sessionOptions ?? {}).filter(([id, option]) => matches(id, option.name, option.description))
+  const ownModelCopy = (id: string, name: string, description?: string) => ({
+    name: phoneModelName(id, name, controls),
+    description: phoneModelDescription(id, name, description, controls),
+  })
+  const sessionRows = Object.entries(sessionOptions ?? {}).map(([id, option]) => ({
+    id, ...option, ...(composerModelSelection(id).source === 'platform' ? {} : ownModelCopy(id, option.name, option.description)),
+  })).filter(({ id, name, description }) => matches(id, name, description))
   // 组头、倍率与桌面模型菜单同一份装配(session-model-menu)。
   const options = models ? createModelOptions(models, harnessName) : {}
   const offeredRows = models?.models.filter((model) => (!platformOnly || model.source === 'gugu') && offeredInCreateMenu(model)) ?? []
-  const filteredRows = offeredRows.filter((model) => matches(model.id, options[model.id]?.name ?? model.name, options[model.id]?.description))
+  const filteredRows = offeredRows.map((model) => {
+    const name = options[model.id]?.name ?? model.name
+    return model.source === 'harness'
+      ? { ...model, ...ownModelCopy(model.id, name, options[model.id]?.description) }
+      : { ...model, name, description: options[model.id]?.description }
+  }).filter(({ id, name, description }) => matches(id, name, description))
   const searchField = <div className="gg-aw-model-search"><SearchField value={search}
     placeholder={controls('searchModels')} onValueChange={setSearch}
     clearLabel={controls('clearModelSearch')} onClear={() => setSearch('')} /></div>
@@ -392,36 +405,14 @@ export function ModelChoices({
     { source: 'harness', reason: models ? harnessEmptyText(models) : null },
     { source: 'gugu', reason: guguEmptyText(models?.guguReason) },
   ]
-  const choice = (id: string | null, name: string, desc?: string, extra?: Record<string, string>, disabled = false) => {
-    const selected = selection.model === id
-    return (
-      <Button
-        key={id ?? '__default__'}
-        variant="ghost"
-        size="option"
-        className="gg-aw-choice"
-        disabled={disabled}
-        role="radio"
-        aria-checked={selected}
-        data-testid="agent-watch-create-choice"
-        data-dimension="model"
-        data-option-id={id ?? ''}
-        {...extra}
-        onClick={() => onPick(id)}
-      >
-        <span className="gg-aw-choice-radio" data-on={selected ? 'true' : undefined}>
-          {selected ? <Check /> : null}
-        </span>
-        <span className="gg-aw-choice-body">
-          <span className="gg-aw-choice-label">{name}</span>
-          {desc ? <span className="gg-aw-choice-desc">{desc}</span> : null}
-        </span>
-      </Button>
-    )
-  }
+  const choice = (id: string | null, name: string, description?: string, source?: 'harness' | 'gugu', disabled = false) => (
+    <PhoneComposerChoice key={id ?? '__default__'} id={id ?? ''} dimension="model" name={name}
+      description={description} selected={selection.model === id} disabled={disabled}
+      testId="agent-watch-create-choice" source={source} onClick={() => onPick(id)} />
+  )
   if (sessionOptions) return <div className="gg-aw-model-choices">{searchField}
     <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state="ready">
-      {sessionRows.map(([id, option]) => choice(id, option.name, option.disabledReason ?? option.description, undefined, option.disabled))}
+      {sessionRows.map((option) => choice(option.id, option.name, option.disabledReason ?? option.description, undefined, option.disabled))}
     </div>
     {query && !sessionRows.length && <p role="status" className="gg-aw-choice-note">{controls('noMatchingModels')}</p>}
   </div>
@@ -449,7 +440,7 @@ export function ModelChoices({
                   {composerTierLabel(source === 'gugu' ? 'platform' : 'own', harnessName)}
                 </div>
                 {rows.length > 0
-                  ? rows.map((m) => choice(m.id, options[m.id]?.name ?? m.name, options[m.id]?.description, { 'data-source': m.source }))
+                  ? rows.map((m) => choice(m.id, m.name, m.description, m.source))
                   : (
                     <div className="gg-aw-choice-desc gg-aw-choice-note" data-testid="agent-watch-create-models-empty" data-source={source}>
                       {source === 'gugu' && allGuguHidden(models)

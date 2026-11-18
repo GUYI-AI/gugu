@@ -5,11 +5,12 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
+import { ChatTabPage } from '../../../../apps/desktop/src/components/appSlot/ChatTabHosts'
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
 import { useMessageFilePreview } from '../../../../apps/desktop/src/components/chat/useMessageFilePreview'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
 import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
-import { askChatFile, chatLayoutOf, closeChatTab, focusedChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChatFile, chatLayoutOf, closeChatTab, focusedChatTab, openTopicTab, topicTabOf, showChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { isWaitingItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { translateSessionMessage } from '../../../../apps/desktop/src/session/renderer/localization/locale-store'
@@ -42,7 +43,7 @@ const claimed = (itemId: string): AppOpenWithDetail => ({ ...preview(itemId), ch
 
 /** The chat's panel: drawn or not (`panel`), taking asks or not just now (`canTake`). */
 function Panel({ canTake }: { canTake?: () => boolean }) {
-  return createElement('div', null, useChatOpener(group, undefined, canTake).overlay)
+  return createElement('div', null, useChatOpener(group, undefined, canTake).overlay, state.mobile ? createElement(ChatTabPage, { chatId: group, panel: () => null, topic: () => null, info: () => null }) : null)
 }
 function Shell({ panel = true, canTake }: { panel?: boolean; canTake?: () => boolean }) {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }, { id: other, kind: 'group' }] as never, contacts: () => [],
@@ -93,18 +94,20 @@ describe('a file card clicked: its tab at once, made real in place', () => {
     expect(toast).not.toHaveBeenCalled()
   })
 
-  it('a file already open here, clicked again: that tab in front at once, no tab more; the host still asked', async () => {
+  it('a visible file clicked again stays shown without moving current focus or adding a tab; the host is still asked', async () => {
     await harness.render(createElement(Shell))
     click('A'); await answer('A', preview('A'))
     click('B'); await answer('B', preview('B'))
-    const [a, b] = tabs()
+    const a = tabs().find(tab => tab.item.itemId === 'A')!, b = tabs().find(tab => tab.item.itemId === 'B')!
     expect(shownPanelTab(group)?.tabId).toBe(b!.tabId)
+    const current = focusedChatTab(group)
     click('A')
-    expect(shownPanelTab(group)?.tabId, 'in front in the click\'s own task').toBe(a!.tabId)
+    expect(tabs().find(tab => tab.tabId === a.tabId)?.shown).toBe(true)
+    expect(focusedChatTab(group)).toEqual(current)
     expect(tabs()).toHaveLength(2)
     expect(tabs().some((tab) => isWaitingItem(tab.item))).toBe(false)
     await answer('A', preview('A'))
-    expect(tabs().map((tab) => tab.tabId)).toEqual([a!.tabId, b!.tabId])
+    expect(tabs().map((tab) => tab.tabId).sort()).toEqual([a!.tabId, b!.tabId].sort())
     expect(host()).toHaveBeenCalledTimes(3)
   })
 
@@ -214,6 +217,22 @@ describe('a file link in a message\'s text', () => {
 })
 
 describe('the pair beside the chat', () => {
+  it('resolves a waiting file and reopens an existing file without taking the current topic', async () => {
+    await harness.render(createElement(Shell))
+    openTopicTab(group, { topicChatId: 'current-topic', name: 'Topic' })
+    const topic = topicTabOf(group)!.tabId
+    showChatTab(group, topic)
+    const pane = chatLayoutOf(group).activePaneId
+    click('A')
+    expect(chatLayoutOf(group).activePaneId).toBe(pane)
+    await answer('A', preview('A'))
+    expect(focusedChatTab(group)?.tabId).toBe(topic)
+    click('A')
+    expect(focusedChatTab(group)?.tabId).toBe(topic)
+    await answer('A', preview('A'))
+    expect(focusedChatTab(group)?.tabId).toBe(topic)
+  })
+
   it('the waiting tab comes as a file does, half each; turning real does not move the cut', async () => {
     chatLayoutOf(group).setDimensions(1200, 800)
     await harness.render(createElement(Shell))

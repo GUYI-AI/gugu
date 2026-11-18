@@ -42,6 +42,7 @@ export const plugin = definePlugin(
   {
     id: 'mimocode',
     name: 'MiMo Code',
+    publisher: '小米',
     description:
       "Xiaomi's terminal-native coding agent with persistent cross-session memory and OpenAI-compatible provider support.",
     websiteUrl: 'https://github.com/XiaomiMiMo/MiMo-Code',
