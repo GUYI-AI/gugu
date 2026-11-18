@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { folderItem, type PanelItem } from './chat-panel-item';
 import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
-import { CHAT_INFO_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
+import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
 import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
 
@@ -11,6 +11,39 @@ const board: PanelItem = { kind: 'kanban.board', title: 'Board' };
 const count = (id: string) => chatLayoutOf(id).groups.reduce((sum, { pane }) => sum + pane.tabOrder.length, 0);
 
 describe('chat navigation uses the same page history and real panes as tasks', () => {
+  it('reveals a background file beside the pane current now, keeping the current topic in its pane', () => {
+    const id = 'background-topic-open';
+    const layout = chatLayoutOf(id);
+    const main = layout.mainGroup;
+    const chat = main.pane.resolvedActiveTabId!;
+    openTopicTab(id, { topicChatId: 'background-topic', name: 'Topic' });
+    const topic = topicTabOf(id)!.tabId;
+    showChatTab(id, topic);
+    const output = layout.open(CHAT_PANEL_TAB_KIND, file('background.html'), { from: chat, intent: 'beside', activate: false })!;
+    const side = layout.sideGroup!;
+    showChatTab(id, output);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(main.pane.resolvedActiveTabId).toBe(output);
+  });
+  it('keeps the current topic when a group file opens; choosing another topic only navigates the topic slot', () => {
+    const id = 'current-topic-open';
+    const layout = chatLayoutOf(id);
+    const main = layout.mainGroup;
+    openTopicTab(id, { topicChatId: 'topic-a', name: 'A' });
+    const topic = topicTabOf(id)!.tabId;
+    const side = layout.sideGroup!;
+    showChatTab(id, topic);
+    openTopicTab(id, { topicChatId: 'topic-b', name: 'B' });
+    expect(topicTabOf(id)?.topic.topicChatId).toBe('topic-b');
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(main.pane.activeEntry?.kind).toBe(CHAT_TAB_KIND);
+    expect(layout.activePaneId).toBe(side.paneId);
+    const html = openPanelItem(id, { kind: null, itemId: 'html', title: 'preview.html', fileName: 'preview.html' })!;
+    expect(main.pane.resolvedActiveTabId).toBe(html);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(topicTabOf(id)?.topic.topicChatId).toBe('topic-b');
+    expect(layout.activePaneId).toBe(side.paneId);
+  });
   it.each(['dm', 'group'])('keeps the folder context and real layout while browsing in %s', (kind) => {
     const id = `history-${kind}`;
     const layout = chatLayoutOf(id);
@@ -30,7 +63,8 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   });
   it('repeated ordinary private file cards focus one existing tab in a narrow pane', () => {
     const id = 'private-repeat-card'; const layout = chatLayoutOf(id);
-    layout.focusedPane.setDimensions(390, 620);
+    layout.setDimensions(390, 620);
+    layout.setNarrow(true);
     const conversation = layout.focusedPane.resolvedActiveTabId!;
     const first = openPanelItem(id, file('same-file'))!;
     const order = [...layout.focusedPane.tabOrder];
@@ -109,6 +143,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     const topic = { topicChatId: 'topic-members', name: 'Topic' };
     openTopicTab(id, topic);
     const topicTab = topicTabOf(id)!.tabId;
+    showChatTab(id, topicTab);
     expect(memberTopicOf(id)).toEqual(topic);
     openInfoTab(id, 'members', memberTopicOf(id));
     expect(infoTabOf(id)?.info.topic).toEqual(topic);
@@ -136,6 +171,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     openInfoTab(id, 'members');
     const infoTab = infoTabOf(id)!.tabId;
     openTopicTab(id, { topicChatId: 'topic-members-switch', name: 'Topic' });
+    showChatTab(id, topicTabOf(id)!.tabId);
     openInfoTab(id, 'members', memberTopicOf(id));
     expect(infoTabOf(id)?.tabId).toBe(infoTab);
     expect(infoTabOf(id)?.info.topic?.topicChatId).toBe('topic-members-switch');
@@ -143,7 +179,8 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   });
   it('closing topic members restores the topic on a phone-sized page', () => {
     const id = 'topic-members-phone';
-    chatLayoutOf(id).focusedPane.setDimensions(390, 620);
+    chatLayoutOf(id).setDimensions(390, 620);
+    chatLayoutOf(id).setNarrow(true);
     openTopicTab(id, { topicChatId: 'topic-members-phone', name: 'Topic' });
     const topicTab = topicTabOf(id)!.tabId;
     openInfoTab(id, 'members', memberTopicOf(id));

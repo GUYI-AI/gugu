@@ -1,6 +1,7 @@
 import { OwnedAgentChatBoundary } from '../owned-agent-chat-boundary';
 import { DndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
+import { makesPaneCurrent } from '../../tabs/pane-activation';
 import { useEffect, useMemo, type ReactNode, type ComponentProps } from 'react';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { openChatTabInWindow, placeOnScreen, revealTabWindow } from '@renderer/app/screen-layout-actions';
@@ -80,7 +81,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
             const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.splitBlocked(paneId, dragging, edge) === null);
             return <PaneProvider group={group} isFocusedPane={focused}>
               <SplitPaneHotkey />
-              <div className="h-full min-h-0 min-w-0" data-pane-cell={paneId} data-chat-panes={chatId} onPointerDown={() => layout.setActiveGroup(paneId)}>
+              <div className="h-full min-h-0 min-w-0" data-pane-cell={paneId} data-chat-panes={chatId} onPointerDown={(event) => { if (makesPaneCurrent(event.target)) layout.setActiveGroup(paneId); }}>
                 <PaneContent part={part} {...strip} contentOverlay={edges.length ? <PaneEdgeDropZones paneId={paneId} edges={edges} /> : null} />
               </div>
             </PaneProvider>;

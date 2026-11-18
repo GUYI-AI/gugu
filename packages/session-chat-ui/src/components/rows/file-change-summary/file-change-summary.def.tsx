@@ -105,6 +105,7 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
                   class={css.file}
                   style={{ height: `${fileLayout(file, props.ctx.measureCtx!()).rowHeight}px` }}
                   title={file.path}
+                  data-pane-opener=""
                   role={commands().onOpenFile ? 'button' : undefined}
                   tabIndex={commands().onOpenFile ? 0 : undefined}
                   aria-disabled={commands().onOpenFile ? undefined : true}

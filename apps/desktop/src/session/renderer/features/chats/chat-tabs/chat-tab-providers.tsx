@@ -23,6 +23,7 @@ import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
 import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
+import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation';
 
 /** The chat itself: its messages and composer, first in its strip, never closed. */
 export const CHAT_TAB_KIND = 'chat';
@@ -172,7 +173,7 @@ const ShellTabSlots = observer(function ShellTabSlots({ host, ctx, kind }: TabCo
 function ShellTabSlot({ chatId, tab, host, style }: { chatId: string; tab: ResolvedTab; host: TabHost; style?: CSSProperties }) {
   const { tabId } = tab;
   const ref = useCallback((element: HTMLDivElement | null) => readShellSlots()?.setSlot(chatTabSlotKey(chatId, tabId), element), [chatId, tabId]);
-  const focus = tab.isFocused ? undefined : () => host.setActiveTab(tabId);
+  const focus = tab.isFocused ? undefined : (event: { target: EventTarget }) => { if (makesPaneCurrent(event.target)) host.setActiveTab(tabId); };
   return <RetainedTabContent ref={ref} visible={tab.isActive} style={style} className="absolute inset-0 flex min-h-0 min-w-0 flex-col" data-chat-tab-slot={tabId} data-pane-tab={tabId} onPointerDownCapture={focus} onFocusCapture={focus} />;
 }
 

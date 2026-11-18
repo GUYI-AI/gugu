@@ -84,6 +84,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
         isActive={active}
         allowNativeDrag
         data-topic-row={topic.id}
+        data-pane-opener=""
         aria-label={topic.name ?? ''}
         className="w-full justify-between pr-2"
         onClick={(event) => onOpen(topic, event.metaKey || event.ctrlKey)}

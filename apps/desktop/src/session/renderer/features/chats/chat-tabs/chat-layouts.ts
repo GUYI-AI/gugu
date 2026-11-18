@@ -165,10 +165,7 @@ export const openPanelItem = action(function openPanelItem(
   }
   // Its waiting page is behind or ahead in a tab's history: the person went back from it.
   if (opts?.wait && waitingTabOf(chatId, opts.wait)) throw new OpenSuperseded();
-  // Opened from a message (or a link) of the topic open here: from that topic, so it goes beside the topic (owner 11-05 §6.7).
-  const topic = topicTabOf(chatId);
-  const fromTopic = topic && (item.message?.chat_id ?? item.topicChatId) === topic.topic.topicChatId ? topic.tabId : undefined;
-  return layout.open(CHAT_PANEL_TAB_KIND, item, { from: opts?.from ?? fromTopic ?? chatTabOf(layout) ?? null, intent: opts?.intent ?? 'navigate' });
+  return layout.open(CHAT_PANEL_TAB_KIND, item, { from: opts?.from ?? chatTabOf(layout) ?? null, intent: opts?.intent ?? 'navigate' });
 });
 
 /** The page on screen in a tab, taken over in place (an App installed for its file, a waiting page answered). */
@@ -205,8 +202,6 @@ export const closeChatTab = action(function closeChatTab(chatId: string, tabId: 
 /** A tab clicked or asked for: it is the one shown (beside the chat when the two are a pair). */
 export const showChatTab = action(function showChatTab(chatId: string, tabId: string): void {
   const layout = chatLayoutOf(chatId);
-  const group = layout.groups.find(({ pane }) => pane.entries.has(tabId));
-  if (group) layout.setActiveGroup(group.paneId);
   paneHolding(layout, tabId)?.setActiveTab(tabId);
 });
 
@@ -240,6 +235,7 @@ export function topicTabOf(chatId: string): { tabId: string; topic: ChatTopicSta
 export const openTopicTab = action(function openTopicTab(chatId: string, topic: ChatTopicState): void {
   const layout = chatLayoutOf(chatId);
   const open = topicTabOf(chatId);
+  // @@@topic-slot - choosing another topic navigates the group's one topic slot, even when it is current.
   if (open && open.topic.topicChatId !== topic.topicChatId) paneHolding(layout, open.tabId)?.navigate(open.tabId, CHAT_TOPIC_TAB_KIND, topic);
   if (open?.shown) return;
   layout.open(CHAT_TOPIC_TAB_KIND, topic, { from: chatTabOf(layout) ?? null, intent: 'navigate' });

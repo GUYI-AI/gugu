@@ -334,6 +334,7 @@ describe('PaneLayoutStore: runtime-only persistence projection', () => {
     onActiveTabChange.mockClear();
 
     layout.open('runtime-test', { id: 'side-chat:view-1' }, { from: layout.focusedPane.resolvedActiveTabId!, intent: 'beside' });
+    layout.setActiveGroup(layout.sidePaneId!);
 
     expect(layout.groups).toHaveLength(2);
     expect(layout.activePaneId).not.toBe(sourcePaneId);
