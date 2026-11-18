@@ -546,7 +546,7 @@ export class LocalSessionProvider implements SessionProvider {
 
       // #5331 台账:平台模型这一发从前是 sessionpage hook 的**参数表达式**,无法单独计时。
       const platformModelForSpawn = await sessionPlatformModel(session.id);
-      if (platformModelForSpawn === null && !runContext.credentialEnv && !runContext.apiKeyConnection) {
+      if (platformModelForSpawn === null && !runContext.credentialEnv && !runContext.customModel) {
         const { assertAgentHomeSignIn } = await import('@main/core/agents/agent-homes');
         await assertAgentHomeSignIn(session.providerId, runContext.connectionId);
       }
