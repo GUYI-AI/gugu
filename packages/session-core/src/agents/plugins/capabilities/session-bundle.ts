@@ -618,6 +618,8 @@ export type AgentHomeImportPath = string | {
   keys?: readonly string[];
   omitKeys?: readonly string[];
   target?: string;
+  /** Recognize a former Gugu-generated destination that can be replaced during upgrade. */
+  isLegacyGeneratedTarget?: (existing: string) => boolean;
 };
 
 export type AgentHomeImportGroup = {
@@ -1705,6 +1707,7 @@ const agentConfigRootSchema = z
         keys: z.array(z.string().min(1)).optional(),
         omitKeys: z.array(z.string().min(1)).optional(),
         target: importPathSchema(false).optional(),
+        isLegacyGeneratedTarget: z.custom<(existing: string) => boolean>((value) => typeof value === 'function').optional(),
       }).strict()])),
       evidence: z.string().min(1),
     }).strict()),

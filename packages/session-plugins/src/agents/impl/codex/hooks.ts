@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
-import { parse } from 'smol-toml';
+import { isAbsolute } from 'node:path';
+import { parse, stringify } from 'smol-toml';
 import type { CanonicalHookEvent } from '@gugu/session-core/agents/plugins';
 import { defaultHookEventParser } from '@gugu/session-core/agents/plugins/helpers';
 
@@ -38,6 +39,21 @@ export function codexNotifyConfigValue(): string[] {
 /** `-c notify=…` 形态,供没有 thread-open `config` map 的 prompt/TUI 腿使用。 */
 export function makeCodexNotifyConfigOverride(): string {
   return `notify=${JSON.stringify(codexNotifyConfigValue())}`;
+}
+
+/** The old runtime's managed overlay held only workspace trust, now provided on each invocation. */
+export function isLegacyCodexTrustFile(raw: string): boolean {
+  try {
+    const parsed = parse(raw);
+    const projects = parsed.projects;
+    if (Object.keys(parsed).length !== 1 || !projects || typeof projects !== 'object' || Array.isArray(projects)) return false;
+    const rows = Object.entries(projects);
+    return rows.length > 0 && rows.every(([cwd, entry]) => isAbsolute(cwd)
+      && entry && typeof entry === 'object' && Object.keys(entry).length === 1
+      && 'trust_level' in entry && entry.trust_level === 'trusted') && stringify(parsed) === raw;
+  } catch {
+    return false;
+  }
 }
 
 /** Remove the top-level assignment emitted by the old writer and preserve the rest of the document. */

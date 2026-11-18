@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { mcpToggleDirective } from '@gugu/session-core/mcp';
 import { assertSessionMcpStdioEnv, sessionMcpAuthorization } from '../../helpers/session-mcp';
-import { codexNotifyConfigValue, stripLegacyCodexNotify } from './hooks';
+import { codexNotifyConfigValue, isLegacyCodexTrustFile, stripLegacyCodexNotify } from './hooks';
 import { codexPlatformProviderConfigArgs } from './platform-provider-args';
 import { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './platform-models';
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES, type CodexPermissionMode } from './permission-modes';
@@ -167,7 +167,7 @@ export const codexSessionBundleDescriptor = {
     ...CODEX_NATIVE_HOME,
     credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
     importGroups: [
-      { id: 'settings', paths: ['config.toml'], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
+      { id: 'settings', paths: [{ path: 'config.toml', isLegacyGeneratedTarget: isLegacyCodexTrustFile }], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
       { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
       { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
     ],

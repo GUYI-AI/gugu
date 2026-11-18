@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 import {
   CODEX_GUGU_CAPABILITY_PACKAGE,
   materializeCodexSessionBundle,
+  pluginRegistry,
 } from '@gugu/session-plugins/agents'
+import { diffAgentHome, importAgentHome, resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers'
 import { applySessionMaterialization } from '../../../../apps/desktop/electron/session-materialization'
 
 // 这组判据钉的是 owner 2026-08-14 报的那个 bug 的根因:咕咕曾给每个会话**合成**一个 CODEX_HOME。
@@ -47,6 +49,37 @@ function codexBundle(guguHome: string, userHome: string) {
 }
 
 describe('Codex 会话不再动用户的 home', () => {
+  it('replaces the old generated trust-only overlay during upgrade and preserves edited managed files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gugu-codex-home-upgrade-'))
+    try {
+      const bundle = pluginRegistry.get('codex')!.capabilities.sessionBundle!
+      const guguHome = join(root, 'gugu')
+      const home = resolveAgentHome({ providerId: 'codex', injectionMode: bundle.injectionMode, configRoot: bundle.configRoot,
+        guguHome, osHomeDir: join(root, 'user') })!
+      await mkdir(home.userConfigRoot, { recursive: true })
+      const config = '# terminal comment\nmodel_reasoning_effort  = "medium"\n\n[projects."/existing-user-project"]\ntrust_level = "untrusted"\n'
+      await writeFile(join(home.userConfigRoot, 'config.toml'), config)
+      const target = join(home.configRoot, 'config.toml')
+      const cwd = join(root, 'workspace')
+      await applySessionMaterialization({ cwd, guguHome, materialization: { tomlOverlays: [
+        { path: target, sourcePath: target, conflict: 'gugu-owns', mode: 0o600, patch: { projects: { [cwd]: { trust_level: 'trusted' } } } },
+      ] } })
+      const generated = await readFile(target, 'utf8')
+      const options = { migratedFrom: 'shared' as const, groups: new Set(['settings'] as const) }
+      const edited = `# kept on purpose\n${generated}`
+      await writeFile(target, edited)
+      await expect(importAgentHome(home, options)).rejects.toThrow('Managed configuration already differs')
+      expect(await readFile(target, 'utf8')).toBe(edited)
+
+      await writeFile(target, generated)
+      await importAgentHome(home, options)
+      expect(await readFile(target, 'utf8')).toBe(config)
+      expect((await diffAgentHome(home)).entries).toContainEqual(expect.objectContaining({ path: 'config.toml', state: 'unchanged' }))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('物化并落盘后,用户的 $CODEX_HOME 一个字节都没变', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gugu-codex-home-'))
     try {

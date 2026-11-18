@@ -304,7 +304,7 @@ async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker): Pr
   finally { await disk.rm(temporary, { force: true }); }
 }
 async function writeItem(
-  home: ResolvedAgentHome, items: SnapshotItem[], mode: 'import' | 'repair' | 'reimport',
+  home: ResolvedAgentHome, items: SnapshotItem[], mode: 'import' | 'upgrade' | 'repair' | 'reimport',
   guard?: (current: Buffer | null) => void,
 ): Promise<void> {
   const target = join(home.configRoot, items[0]!.target);
@@ -316,6 +316,7 @@ async function writeItem(
     const conflict = items.find((item) => {
       const managed = project(existing, item.spec, item.group);
       if (hash(managed) === item.hash) return false;
+      if (mode === 'upgrade' && item.spec.isLegacyGeneratedTarget?.(existing.toString('utf8'))) return false;
       if (mode === 'repair' || !projected) return true;
       const incoming = parseDocument(item.bytes, item.spec.path);
       const current = parseDocument(managed, item.spec.path);
@@ -402,7 +403,8 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
     root, groups: options.groups, strict: () => true,
     consume: async (snapshots) => {
       for (const entries of byTarget(snapshots)) {
-        await writeItem(home, entries, existing?.skipped ? 'repair' : 'import');
+        const mode = existing?.skipped ? 'repair' : options.migratedFrom === 'shared' ? 'upgrade' : 'import';
+        await writeItem(home, entries, mode);
         copied += (await disk.stat(join(home.configRoot, entries[0]!.target))).size;
       }
     },
