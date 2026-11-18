@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cloudFileProviders } from '../../../../packages/core/src/cloud/fileProviders'
 import { createFileChunkCache, createFileSaver, createFileSink, nodeFileReadStore, saveToFileStore } from '../../../../packages/core/src/local/files/fileSnapshots'
 import { createFileReads, type FileReadState } from '../../../../packages/core/src/shared/fileReads'
+import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
 import { fileBlob, type FileActor, type FileContext, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 
 const body = new Uint8Array([11, 13, 17])
@@ -136,6 +137,48 @@ describe('device file reads', () => {
     await expect(request.result).rejects.toMatchObject({ code: 'integrity_failed' })
     expect(states[0]).toMatchObject({ status: 'waiting_sender', reason: 'declared' })
     expect(states.at(-1)).toMatchObject({ status: 'failed', code: 'integrity_failed' })
+  })
+
+  it('gives each relay reader a private acknowledgement, including a reader joining verified bytes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'relay-reads-')); roots.push(root)
+    const item: FileRevision = { ...revision, source: 'local', host_account_id: 'sender', host_device_id: 'sender-device',
+      relative_path: 'sample.bin', host_project_id: 'project', temporary_transfer: true }
+    const key = await createFileKey()
+    const encrypted = await transformFile({ direction: 'encrypt', revision: item, key,
+      source: { size: body.length, read: async (at, length) => body.slice(at, at + length), dispose: async () => {} },
+      sink: await createFileSink(root, ciphertextSize(body.length)) })
+    const ciphertext = await encrypted.file.read(0, encrypted.file.size)
+    await encrypted.file.dispose()
+    const acks: { as: string; download_id: string }[] = [], signed: string[] = []
+    const bothSigned = gate(), object = vi.fn(async () => { await bothSigned.promise; return new Response(new Uint8Array(ciphertext)) })
+    const cloud = cloudFileProviders({ fetch: object, cache: createFileChunkCache(root), sink: size => createFileSink(root, size),
+      endpoint: async () => ({ supabaseUrl: 'https://backend.invalid', anonKey: 'test', token: 'test', fetch: async (url, init) => {
+        const op = String(url).split('/').at(-1), request = JSON.parse(String(init?.body))
+        if (op === 'file-resolve') return Response.json({ ...item, status: 'ready' })
+        if (op === 'file-request') {
+          signed.push(request.as)
+          if (signed.length === 2) bothSigned.release()
+          return Response.json({ status: 'ready', transfer_status: 'ready', download: {
+            status: 'ready', url: 'https://store.invalid/file', download_id: 'grant-' + request.as,
+            sha256: digest, codec: 'secretstream-v1', key: Buffer.from(key).toString('base64'),
+            size_bytes: ciphertext.length, ciphertext_bytes: ciphertext.length, ciphertext_sha256: encrypted.ciphertextSha256,
+          } })
+        }
+        if (op !== 'file-read-complete') throw Error(String(op))
+        acks.push({ as: request.as, download_id: request.download_id })
+        if (request.as === 'refused') return Response.json({ error: 'denied' }, { status: 403 })
+        return Response.json({ current: { ...item, status: 'ready' }, acknowledged: true })
+      } }),
+    })
+    const reads = createFileReads({ ...cloud, local: async () => null, ssh: async () => null })
+    const good = reads.request(message, account, { purpose: 'save' })
+    const refused = reads.request({ item_id: 'item', version: 3 }, { ...account, actorId: 'refused' }, { purpose: 'save' })
+    const failed = expect(refused.result).rejects.toMatchObject({ code: 'access_revoked' })
+    expect(await (await fileBlob((await good.result).file)).bytes()).toEqual(body)
+    await failed
+    expect(object).toHaveBeenCalledTimes(1)
+    expect(acks).toEqual(expect.arrayContaining([{ as: 'owner', download_id: 'grant-owner' }, { as: 'refused', download_id: 'grant-refused' }]))
+    key.fill(0)
   })
 
   it('aborts storage I/O when the final reader leaves', async () => {

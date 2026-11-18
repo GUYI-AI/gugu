@@ -1,5 +1,8 @@
+import { coreLogger } from '../log'
 import { FileIntegrityError } from './fileCipher'
 import { createFileResolver, FileReadError, FileReadRevokedError, MissingFileObjectError, type FileActor, type FileBytes, type FileContext, type FileHandle, type FileRef, type FileRevision, type FileProviders } from './fileResolver'
+
+const log = coreLogger('file-reads')
 
 export type FileReadRoute = 'local' | 'ssh' | 'oss'
 export type FileReadReuse = 'verified-local' | 'chunks' | null
@@ -111,7 +114,15 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
   const acquire: FileReadHooks['acquire'] = async (backend, route, revision, context, open) => {
     context.signal?.throwIfAborted()
     context.reads?.state({ status: 'transferring', route })
-    if (revision.sha256 === null) return open(context)
+    const report = (actualRoute: FileReadRoute, reused: FileReadReuse) => {
+      log.info({ route: actualRoute, reused, size_bytes: revision.size_bytes, sha256: revision.sha256,
+        ...(actualRoute === 'oss' ? { oss_source: revision.source === 'managed-object' ? 'object' : 'relay' } : {}) }, 'file snapshot acquired')
+    }
+    if (revision.sha256 === null) {
+      const bytes = await open(context)
+      report(route, null)
+      return bytes
+    }
     // Device-only reads must never acquire a transfer through the cloud.
     const deviceOnly = revision.source === 'local' && !revision.temporary_transfer
     const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly])
@@ -131,9 +142,11 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
       }
       const bytes = Promise.resolve().then(async () => {
         const cached = await store.cachedCopy?.(backend, revision, transfer)
-        if (cached) { reuse('verified-local'); return cached }
+        if (cached) { reuse('verified-local'); report('local', 'verified-local'); return cached }
         controller.signal.throwIfAborted()
-        return open(transfer)
+        const file = await open(transfer)
+        report(route, current.reuse)
+        return file
       })
       const current: Flight = { route, bytes, controller, subscribers, reuse: null }
       flights.set(key, current)
@@ -194,7 +207,8 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
             progress: (done, total) => emit({ status: 'transferring', route, done, total }) })
           if (resolved.status !== 'ready') {
             if (resolved.status === 'missing') throw new MissingFileObjectError()
-            throw new FileReadError(resolved.status === 'failed' || resolved.status === 'pending' ? 'upload_failed' : resolved.status, resolved.status)
+            if (resolved.status === 'failed' || resolved.status === 'pending') throw new FileReadError('upload_failed', "The sender's upload did not complete. Ask them to send the file again.")
+            throw new FileReadError(resolved.status, resolved.status === 'expired' ? 'This file expired. Ask the sender to upload it again.' : 'This file was deleted.')
           }
           file = resolved
           await file.open!()

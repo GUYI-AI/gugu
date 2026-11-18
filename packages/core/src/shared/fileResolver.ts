@@ -65,13 +65,6 @@ export class MissingFileObjectError extends Error {
 export class FileReadRevokedError extends Error {
   constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
 }
-/** How long an agent's read waits for bytes their sender is still uploading before saying so. */
-export const ATTACHMENT_PENDING_WAIT_MS = 8_000
-/** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
-export class AttachmentUploadPendingError extends Error {
-  readonly code = 'upload_pending'
-  constructor(fileName: string) { super(`${fileName}：发送方仍在上传，稍后用 message_download_file 再读`) }
-}
 export interface FileBytes {
   /** An authorized immutable snapshot with exact length; stored digests are verified when present. */
   readonly size: number
@@ -79,6 +72,8 @@ export interface FileBytes {
   dispose(): Promise<void>
   /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
   readonly acknowledged?: Promise<void>
+  /** This caller durably saved the verified snapshot; its provider may release resumable chunks. */
+  saved?(): Promise<void>
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'
@@ -285,7 +280,9 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
           const file = await get()
           await file.acknowledged
           check()
-          return await providers.saveTo!(revision, { ...context, openedBytes: async () => file }, directory, name, store)
+          const saved = await providers.saveTo!(revision, { ...context, openedBytes: async () => file }, directory, name, store)
+          await file.saved?.()
+          return saved
         }
         finally { await dispose() }
       } } : {}),

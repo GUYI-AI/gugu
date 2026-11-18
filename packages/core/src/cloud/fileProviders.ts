@@ -157,6 +157,7 @@ export function cloudFileProviders(deps: {
     }
     function accept(row: Download) {
       if (missingObject(row)) throw new MissingFileObjectError()
+      if (row.status === 'expired' || row.status === 'gone') throw new FileReadRevokedError(row.status)
       if (row.status !== 'ready' || typeof row.url !== 'string' || row.size_bytes !== (encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes) || row.sha256 !== revision.sha256 || !sameLegacyObject(revision, row) ||
         row.origin_available !== undefined && typeof row.origin_available !== 'boolean' ||
         encrypted && (row.ciphertext_bytes !== row.size_bytes || row.codec !== 'secretstream-v1' || !row.key || !/^[0-9a-f]{64}$/.test(row.ciphertext_sha256 ?? '') ||
@@ -196,6 +197,8 @@ export function cloudFileProviders(deps: {
       } finally { dataKey?.fill(0); await source.dispose() }
     }
     const file = context.reads && !destination ? await context.reads.acquire(backendScope, 'oss', revision, context, acquire) : await acquire(context)
+    const afterSave = () => deps.cache.clear(key)
+    const snapshot = { size: file.size, read: (offset: number, length: number) => file.read(offset, length), dispose: () => file.dispose(), saved: afterSave }
     const saved = async (sink: FileSink) => { const bytes = await sink.commit(); await deps.cache.clear(key); return bytes }
     try {
       context.reads?.state({ status: 'verifying' })
@@ -230,7 +233,7 @@ export function cloudFileProviders(deps: {
           throw error
         })
         acknowledged.catch(() => undefined)
-        return { size: file.size, read: (offset, length) => file.read(offset, length), dispose: () => file.dispose(), acknowledged }
+        return { ...snapshot, acknowledged }
       }
       context.signal?.throwIfAborted()
       const current = await metadata({ ...context, ref }) as Download
@@ -238,7 +241,7 @@ export function cloudFileProviders(deps: {
       changed(current)
       if (encrypted) await request(context, 'file-read-complete', { download_id: lease!.download_id, as: context.actor.actorId })
       context.signal?.throwIfAborted()
-      return destination ? await saved(destination) : file
+      return destination ? await saved(destination) : snapshot
     } catch (error) {
       await file.dispose()
       await destination?.abort()
