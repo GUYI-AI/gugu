@@ -5,6 +5,7 @@ import { createReactHarness, renderWithAppProviders } from '../../../../../../..
 import { Button } from '@/components/ui/Button'
 import { Sheet } from '@/components/ui/Sheet'
 import { ExternalHistoryDialog } from '@/components/settings/data-import/ExternalHistoryDialog'
+import { i18n } from '@/i18n'
 import '@/i18n/registerSettingsCatalog'
 import '@/styles/tokens.css'
 
@@ -26,12 +27,13 @@ it('shows imported history above Settings with a clickable close button', async 
   await page.viewport(1000, 750)
   const harness = createReactHarness()
   try {
+    await i18n.changeLanguage('en-US')
     await renderWithAppProviders(harness, <SettingsHistoryFixture />)
     const open = page.getByRole('button', { name: 'Open imported conversation' })
     await open.click()
     const history = page.getByRole('dialog', { name: 'Imported conversation' })
     await expect.element(history.getByText('Saved text')).toBeVisible()
-    await history.locator('footer button').click()
+    await history.getByText('Close', { exact: true }).click()
     await expect.element(history).not.toBeInTheDocument()
     await expect.element(open).toBeVisible()
   } finally {
