@@ -29,3 +29,11 @@
   background: var(--text-secondary);
 }
 .gg-machine-list-dot[data-online] { background: var(--agent-tone-online); }
+
+.gg-machine-list[data-compact] { padding: var(--spacing-sm); }
+.gg-machine-list[data-compact] .gg-machine-list-row {
+  height: 44px;
+  gap: 10px;
+  border-radius: var(--radius-control);
+}
+.gg-machine-list[data-compact] .gg-machine-list-dot { margin-inline-start: auto; }

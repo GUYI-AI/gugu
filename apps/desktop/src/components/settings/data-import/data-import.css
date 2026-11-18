@@ -1,6 +1,7 @@
 .gg-data-import {
   --import-ease: cubic-bezier(.4, 0, .2, 1);
   --settings-col-w: 640px;
+  padding-block-start: var(--spacing-xl);
   display: grid;
   gap: var(--spacing-lg);
 }
@@ -186,11 +187,43 @@
 
 .gg-import-remote-panel {
   display: grid;
-  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
-  min-height: 220px;
+  grid-template-columns: minmax(0, 184px) minmax(0, 1fr);
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
 }
-.gg-import-remote-content { padding: var(--spacing-md); }
+.gg-import-remote-content {
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-sm) var(--spacing-xl);
+}
+.gg-import-remote-content[data-offline] {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+}
+.gg-import-remote-content .gg-import-row { min-height: 48px; padding-inline: 0; }
+.gg-import-remote-content .gg-import-row[data-summary] {
+  min-height: 44px;
+  margin-block-end: var(--spacing-xs);
+  padding-block-end: var(--spacing-xs);
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  font-weight: var(--font-weight-medium);
+}
+.gg-import-remote-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.gg-import-remote-content .gg-import-row-label { gap: var(--spacing-md); }
 .gg-import-remote-content .gg-import-unavailable { text-align: center; }
 .gg-import-row-label { display: flex; align-items: center; gap: var(--spacing-sm); }
+
+.gg-import-sync .gg-settings-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding-inline: var(--spacing-md);
+}

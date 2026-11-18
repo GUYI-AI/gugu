@@ -141,7 +141,7 @@ export const DataImportSection = observer(function DataImportSection({
         ) : (
           <>
             <p className="gg-import-meta">{t('settings.dataImport.remoteDescription')}</p>
-            <RemoteImportSources machines={machines} providers={providers} ownerId={user.id} jobs={ownerJobs} />
+            <RemoteImportSources machines={machines} providers={providers.filter((provider) => !provider.localOnly)} ownerId={user.id} jobs={ownerJobs} />
           </>
         ))}
         {history.length > 0 && (

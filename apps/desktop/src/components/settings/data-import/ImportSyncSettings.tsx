@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { Check, X } from '@/lib/icons'
+import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { notify } from '@/lib/notices'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
@@ -15,7 +16,7 @@ import { syncImports } from './import-sync'
 
 export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
   const { t } = useTranslation('main')
-  const { settings } = useAppSettingsKey('dataImport')
+  const { settings, refresh } = useAppSettingsKey('dataImport')
   const reading = settings.state === 'value' ? settings.value.value.owners[ownerId] ?? EMPTY_IMPORT_SETTINGS : null
   const available = !!reading?.sources.length
   const [customizing, setCustomizing] = useState(false)
@@ -34,11 +35,22 @@ export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
     }
   }
 
+  if (!reading) {
+    return (
+      <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
+        <SettingsRow title={t('settings.dataImport.autoSync')}
+          control={settings.state === 'error' ? (
+            <Button variant="secondary" size="sm" onClick={() => { void refresh() }}>{t('settings.dataImport.refresh')}</Button>
+          ) : <LoadingIndicator size="inline" />} />
+      </SettingsGroup>
+    )
+  }
+
   return (
     <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
       <SettingsRow title={t('settings.dataImport.autoSync')}
         description={available ? t('settings.dataImport.syncDescription') : t('settings.dataImport.syncPrerequisite')}
-        control={<Switch aria-label={t('settings.dataImport.autoSync')} checked={reading?.automatic ?? false}
+        control={<Switch aria-label={t('settings.dataImport.autoSync')} checked={reading.automatic}
           disabled={!available || saving} onCheckedChange={(value) => { void change(value) }} />} />
       <SettingsRow title={t('settings.dataImport.syncScope')} description={t('settings.dataImport.allScopes')}
         control={<Button variant="secondary" size="sm" disabled={!available} onClick={() => { setSessions(true); setCustomizing(true) }}>
