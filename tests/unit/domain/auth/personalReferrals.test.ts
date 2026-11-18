@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { guguLinkScheme } from '../../../../packages/core/src/shared/ui/linkScheme.mjs'
 import { createReferralLink, normalizeReferralCode, parseReferralLink } from '../../../../packages/core/src/shared/referralLink'
 
 const state = vi.hoisted(() => ({ user: 'new-user', rpc: vi.fn() }))
@@ -26,6 +27,17 @@ describe('personal referral transport', () => {
     expect(parseReferralLink('https://evil.test/j/?r=ABCDEF123456')).toBeNull()
     expect(parseReferralLink('https://gugu.nextmind.space/j/?r=ABCDEF123456&r=ABCDEF123456')).toBeNull()
     expect(normalizeReferralCode('5')).toBeNull()
+  })
+  it('marks only Beta personal links and retains the code through the matching app prefix', () => {
+    const stable = 'https://gugu.nextmind.space/j/?r=ABCDEF123456'
+    expect(createReferralLink('abcdef123456')).toBe(stable)
+    expect(createReferralLink('abcdef123456', 'stable')).toBe(stable)
+    const beta = createReferralLink('abcdef123456', 'beta')
+    expect(beta).toBe(stable + '&channel=beta')
+    expect(parseReferralLink(beta)).toBe('ABCDEF123456')
+    const betaScheme = guguLinkScheme({ tier: 'beta', devLaunch: false })
+    expect(betaScheme).toBe('gugu-beta')
+    expect(parseReferralLink(betaScheme + '://gugu.nextmind.space/j/?r=ABCDEF123456')).toBe('ABCDEF123456')
   })
   it('binds a prelogin code to the reviewing account, not a later login', () => {
     rememberPersonalReferral('ABCDEF123456')
