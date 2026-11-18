@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { SquarePen } from '@/lib/icons';
 import { setComposerVerb, takeComposerCarry, type ComposerVerb } from '@/lib/composerVerbBridge';
 import { showBesideOnScreen } from '@renderer/app/screen-layout-actions';
+import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { ProjectTaskComposer } from '@renderer/features/projects/components/main-panel/project-home';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
 import { Button } from '@renderer/lib/ui/button';
@@ -16,17 +17,15 @@ import { log } from '@renderer/utils/logger';
 /** 会话输入框上「新任务」记在哪一格(composerVerbBridge 按字符串记;对话用对话 id)。 */
 export const sessionVerbKey = (sessionId: string) => `session:${sessionId}`;
 
-/**
- * gugu-dev#181 ⑫「在会话里也能派」:每条会话的输入框底排那个「新任务」。选了它,这一框换成新任务的框(SessionVerbDock),
- * 框里写着的话跟过去。
- */
+/** The detached session keeps its own entry because it has no sidebar in that window. */
 export function SessionComposerVerbs({ sessionId, draft, onCarried }: {
   sessionId: string;
   draft: string;
   onCarried: () => void;
 }) {
+  const { windowId } = useScreenBlock();
   const { translate } = useSessionMessages();
-  // #2548 「新智能体」 with 创建智能体's pen, as the one-list sidebar and the chat composers (ComposerVerbs) name it.
+  if (!windowId) return null;
   const label = translate('taskDispatch.agent');
   const pick = (verb: ComposerVerb) => {
     setComposerVerb(sessionVerbKey(sessionId), verb, draft);

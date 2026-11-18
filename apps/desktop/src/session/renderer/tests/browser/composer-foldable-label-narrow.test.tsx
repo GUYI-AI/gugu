@@ -5,6 +5,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 import { i18n } from '@/i18n'
 import { ChatComposer } from '@gugu/session-ui/react/components'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
+import { ScreenBlockContext } from '@renderer/app/screen-block-context'
 import { composerModelOptions } from '@renderer/features/sessions/session-config/platform-model-options'
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon'
 import { icon as codexIcon } from '../../../../../../../packages/session-plugins/src/agents/impl/codex/icon'
@@ -74,7 +75,7 @@ const TOOLBAR = '[data-slot="composer-toolbar"]'
 const settle = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))))
 const shown = (el: Element | null) => !!el && el.getBoundingClientRect().width > 0
 
-async function renderComposer(width: number, { tag }: { tag: boolean }) {
+async function renderComposer(width: number, { tag, detached = true }: { tag: boolean; detached?: boolean }) {
   container!.style.width = `${width}px`
   const models = MODELS()
   const platformId = Object.keys(models ?? {}).find((id) => id.startsWith('platform:'))!
@@ -91,7 +92,11 @@ async function renderComposer(width: number, { tag }: { tag: boolean }) {
         permissionModeOptions={{ full: { name: '完全访问', destructive: true } }}
         selectedPermissionMode="full"
         leading={tag ? composerVerbLook('task', { label: '新任务', onCancel: () => {}, testId: 'tag' }).tag('codex') : undefined}
-        toolbarExtra={tag ? undefined : <SessionComposerVerbs sessionId="s-1" draft="" onCarried={() => {}} />}
+        toolbarExtra={tag ? undefined : (
+          <ScreenBlockContext.Provider value={{ blockId: null, focused: true, topLeft: true, topRight: true, multi: false, windowId: detached ? 'aux-1' : undefined }}>
+            <SessionComposerVerbs sessionId="s-1" draft="" onCarried={() => {}} />
+          </ScreenBlockContext.Provider>
+        )}
         onAttach={() => {}}
         onSubmit={() => {}}
         onStop={() => {}}
@@ -110,6 +115,11 @@ async function renderComposer(width: number, { tag }: { tag: boolean }) {
 }
 
 describe('窄框里宿主塞进来的「新任务」收成标', () => {
+  it('leaves creation to the sidebar when the session is in the main window', async () => {
+    await renderComposer(640, { tag: false, detached: false })
+    expect(document.querySelector('[data-testid="session-verb-task"]')).toBeNull()
+  })
+
   it('会话底排 213px:「新智能体」只剩那枚标,不压模型图形和发送键', async () => {
     await renderComposer(213, { tag: false })
     const verb = document.querySelector('[data-testid="session-verb-task"]')!

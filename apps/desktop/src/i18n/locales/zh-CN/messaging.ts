@@ -480,10 +480,6 @@ export default {
       "timeout": "发送超时，请稍后重新发送",
       "unavailable": "发送未完成，请稍后重新发送"
     },
-    "verb": {
-      "task": "新任务",
-      "agent": "新智能体"
-    },
     "whisperBanner": "给 {{name}} 发悄悄话，仅你与对方可见。",
     "whisperPlaceholder": "悄悄话给 {{name}}…"
   },
