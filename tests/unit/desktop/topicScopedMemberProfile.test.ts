@@ -50,14 +50,14 @@ const groupEdit = { onChangeListenMode: vi.fn(async () => {}), busy: false }
 
 let harness: ReturnType<typeof createReactHarness>
 let result: ReturnType<typeof useTopicScopedMemberProfile>
-function Probe(props: { profile: ActiveMemberProfile | null; asideTopicChatId: string | null; authorityRevision?: number }) {
-  result = useTopicScopedMemberProfile({ ...props, mainTopicChatId: null, currentUserId: 'owner-1', groupEditControlsFor: () => groupEdit })
+function Probe({ mainTopicChatId = null, ...props }: { profile: ActiveMemberProfile | null; mainTopicChatId?: string | null; asideTopicChatId: string | null; authorityRevision?: number }) {
+  result = useTopicScopedMemberProfile({ ...props, mainTopicChatId, currentUserId: 'owner-1', groupEditControlsFor: () => groupEdit })
   return null
 }
 // The roster is a replica: it reads for the signed-in account, through the account's open IM repository.
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-async function render(profile: ActiveMemberProfile | null) {
-  await harness.render(createNode(Probe, { profile, asideTopicChatId: 'topic-1' }))
+async function render(profile: ActiveMemberProfile | null, mainTopicChatId: string | null = null) {
+  await harness.render(createNode(Probe, { profile, mainTopicChatId, asideTopicChatId: 'topic-1' }))
   await settle()
 }
 
@@ -91,9 +91,9 @@ describe('useTopicScopedMemberProfile', () => {
     expect(getGroupCollab).not.toHaveBeenCalled()
   })
 
-  it('agent 不在话题名册里:不画档位,也不拿群的档位顶上', async () => {
+  it.each(['main', 'aside'] as const)('hides listen mode for an agent outside the topic roster (%s)', async (opener) => {
     getGroupCollab.mockResolvedValue({ snapshot: collab([], [humanItem('owner-1', 'owner')]), identities: [] })
-    await render(opened('aside'))
+    await render(opened(opener), opener === 'main' ? 'topic-1' : null)
     expect(result?.profile.member.profileScope).toBe('direct')
     expect(result?.profile.member.listenMode).toBeUndefined()
     expect(result?.editControls).toBeUndefined()
@@ -142,7 +142,7 @@ it('re-reads authority after a rejected mode write even without a revision event
   expect(result?.editControls).toBeUndefined()
 })
 
-it.each([false, true])('changes only the topic membership from the main avatar card (mobile=%s)', async (mobile) => {
+it.each([['desktop', false], ['phone', true]] as const)('changes only the topic membership from the %s main avatar card', async (_surface, mobile) => {
   shell.mobile = mobile
   const rows = new Map<string, ListenMode>([['group-1', 'passive'], ['topic-1', 'active']])
   getGroupCollab.mockImplementation(async (chatId) => {
@@ -175,14 +175,15 @@ it.each([false, true])('changes only the topic membership from the main avatar c
   await clickElement(harness.container.querySelector('button')!)
   await settle()
   const popup = document.body.querySelector('[data-testid="message-avatar-profile-menu"]')
-  expect(popup?.querySelector('.gg-pop-lml')?.textContent).toBe('Topic Test')
   const segment = popup?.querySelectorAll<HTMLButtonElement>('.gg-pop-lm button')
   expect(segment).toHaveLength(2)
-  expect(segment?.[1]?.getAttribute('aria-pressed')).toBe('true')
+  const initiallyActive = segment?.[1]?.getAttribute('aria-pressed')
 
   await clickElement(segment![0]!)
   expect(setAgentListenMode.mock.calls).toEqual([['topic-1', 'a1', 'passive']])
   expect(rows.get('topic-1')).toBe('passive')
   expect(rows.get('group-1')).toBe('passive')
+  expect(initiallyActive).toBe('true')
+  expect(popup?.querySelector('.gg-pop-lml')?.textContent).toBe('Topic Test')
   expect(segment?.[0]?.getAttribute('aria-pressed')).toBe('true')
 })
