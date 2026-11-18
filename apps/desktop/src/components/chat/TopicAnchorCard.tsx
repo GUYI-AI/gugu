@@ -124,6 +124,7 @@ function TopicAnchorRow({ topic, side, sourceContent, disambiguate, onOpen, memb
       variant="ghost"
       size="sm"
       data-testid="topic-anchor-row"
+      data-pane-opener=""
       data-topic-id={topic.chat_id}
       data-topic-participant={topic.is_participant ? 'true' : 'false'}
       aria-label={summary}

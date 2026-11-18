@@ -20,7 +20,7 @@ export function ComposerFastMode({
   phoneActions?: boolean;
 }) {
   const { translate } = useMessages();
-  const label = phoneActions ? 'Fast' : translate('composer.fastModeLabel');
+  const label = translate('composer.fastModeLabel');
   const button = (
     <button
       type="button"

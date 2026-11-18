@@ -147,6 +147,7 @@ export const openedOutputUnitDef = defineUnit<OpenedOutputItem, { rowH: number; 
       >
       <div
         data-slot="opened-output"
+        data-pane-opener=""
         data-output-kind={look().kind}
         class={open() ? cardClickable : card}
         data-first={first() ? '' : undefined}
