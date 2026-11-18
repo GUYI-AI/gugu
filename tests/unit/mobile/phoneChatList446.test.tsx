@@ -145,7 +145,7 @@ it('phone group long-press reuses all row actions and marks only the group and d
   await render(true)
   await hold(row())
   expect([...document.querySelectorAll('[role=menuitem]')].map(item => item.getAttribute('data-testid'))).toEqual([
-    'conversation-row-mark-read', 'conversation-row-pin', 'conversation-row-notifications', 'chat-row-mark-all-read', 'conversation-row-delete-chat',
+    'conversation-row-mark-read', 'conversation-row-pin', 'conversation-row-notifications', 'conversation-row-mark-all-read',
   ])
   expect(state.select).not.toHaveBeenCalled()
   expect(state.open).not.toHaveBeenCalled()
@@ -191,15 +191,16 @@ it('short tap and a cancelled scroll retain ordinary row behavior', async () => 
   expect(state.read).not.toHaveBeenCalled()
 })
 
-it('desktop still opens by right click, with scoped read disabled when only other rows are unread', async () => {
+it('desktop still opens by right click; with only other rows unread its read row offers mark unread', async () => {
   await render(false, [{ ...source, unread_count: 0 }, { ...topic, unread_count: 0 }, orphan])
   vi.useFakeTimers()
   await act(async () => { pointer(row(), 'pointerdown'); vi.advanceTimersByTime(650) })
   expect(document.querySelector('[role=menu]')).toBeNull()
   vi.useRealTimers()
   await act(async () => row().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 40 })))
-  expect(readAction().getAttribute('aria-disabled')).toBe('true')
-  expect(document.querySelector('[data-testid=chat-row-mark-all-read]')?.getAttribute('aria-disabled')).not.toBe('true')
+  expect(document.querySelector('[data-testid=conversation-row-mark-read]')).toBeNull()
+  expect(document.querySelector('[data-testid=conversation-row-mark-unread]')).not.toBeNull()
+  expect(document.querySelector('[data-testid=conversation-row-mark-all-read]')?.getAttribute('aria-disabled')).not.toBe('true')
 })
 
 it.each([false, true])('hides an empty owned agent and uses message time on desktop and phone (mobile: %s)', async mobile => {

@@ -6,32 +6,40 @@ import { roomAgentEntry, roomTopicChoices } from '../../../../apps/desktop/src/m
 const topic = (id: string): TopicSummary => ({ chat_id: id, name: 'Topic '+id, source_message_id: 'anchor-'+id,
   creator_user_id: 'owner', last_message_at: null, message_count: 0, participant_count: 1, is_participant: true })
 
+const locator = (unread: number, addressed: number) => ({ stream_id: 's', stream_kind: 'main' as const, thread_root_id: null, message_id: null,
+  message_seq: null, unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
+const room = (id: string, kind: 'group' | 'topic', unread: number, addressed: number, extra = {}) =>
+  chat({ id, kind, unread_count: unread, unread_locator: unread > 0 ? locator(unread, addressed) : null, ...extra })
+const marks = (r: ReturnType<typeof roomTopicChoices>) => r.topics.map(t => [t.chat_id, t.calls, t.news])
+
 describe('phone room topic choices', () => {
-  it('reads main and topic unread counts from the existing chat projection', () => {
-    const result=roomTopicChoices('room',[topic('a'),topic('b')],[chat({id:'room',kind:'group',unread_count:7}),chat({id:'a',kind:'topic',unread_count:4})])
-    expect(result.mainUnread).toBe(7)
-    expect(result.topics.map(t=>[t.chat_id,t.unread])).toEqual([['a',4],['b',0]])
-    expect(result.hasUnread).toBe(true)
+  it('marks a topic that calls you with its call count and plain unread with the news dot (chat-list rule)', () => {
+    const result = roomTopicChoices('room', [topic('plain'), topic('called'), topic('read')],
+      [room('room', 'group', 7, 0), room('plain', 'topic', 4, 0), room('called', 'topic', 36, 1), room('read', 'topic', 0, 0)])
+    expect(result.main).toEqual({ calls: 0, news: true })
+    expect(marks(result)).toEqual([['called', 1, false], ['plain', 0, true], ['read', 0, false]])
+    expect(result.dot).toBe('call')
+  })
+  it('lights the Topics control grey when nothing calls you, red when the main room calls you', () => {
+    expect(roomTopicChoices('room', [topic('a')], [room('a', 'topic', 3, 0)]).dot).toBe('news')
+    expect(roomTopicChoices('room', [topic('a')], [room('room', 'group', 2, 2), room('a', 'topic', 3, 0)]).dot).toBe('call')
   })
   it('keeps every visible topic even without a personal chat row', () => {
-    const topics=[topic('a'),topic('b')]
-    const result=roomTopicChoices('room',topics,[])
-    expect(result.topics.map(t=>t.chat_id)).toEqual(['a','b'])
-    expect(result.hasUnread).toBe(false)
-    expect(topics).toEqual([topic('a'),topic('b')])
+    const topics = [topic('a'), topic('b')]
+    const result = roomTopicChoices('room', topics, [])
+    expect(marks(result)).toEqual([['a', 0, false], ['b', 0, false]])
+    expect(result.dot).toBeUndefined()
+    expect(topics).toEqual([topic('a'), topic('b')])
   })
-  it('keeps unread counts for muted topics without promoting their calls', () => {
-    const result=roomTopicChoices('room',[topic('muted'),topic('called')],[chat({id:'muted',kind:'topic',unread_count:12,is_muted:true}),chat({id:'called',kind:'topic',unread_count:1})])
-    expect(result.topics.map(t=>[t.chat_id,t.unread])).toEqual([['called',1],['muted',12]])
-    expect(result.hasUnread).toBe(true)
+  it('shows a muted topic\'s calls like the chat list, without sorting it first', () => {
+    const result = roomTopicChoices('room', [topic('muted'), topic('called')],
+      [room('muted', 'topic', 12, 2, { is_muted: true }), room('called', 'topic', 1, 1)])
+    expect(marks(result)).toEqual([['called', 1, false], ['muted', 2, false]])
   })
-  it('removes the dot after the same projection reports the topics read', () => {
-    const topics=[topic('a')]
-    expect(roomTopicChoices('room',topics,[chat({id:'a',kind:'topic',unread_count:3})]).hasUnread).toBe(true)
-    expect(roomTopicChoices('room',topics,[chat({id:'a',kind:'topic',unread_count:0})]).hasUnread).toBe(false)
-  })
-  it('keeps the main-room unread marker when there are no topics', () => {
-    expect(roomTopicChoices('room',[],[chat({id:'room',kind:'group',unread_count:1})])).toEqual({mainUnread:1,topics:[],hasUnread:true})
+  it('removes the mark after the same projection reports the topics read', () => {
+    const topics = [topic('a')]
+    expect(roomTopicChoices('room', topics, [room('a', 'topic', 3, 1)]).dot).toBe('call')
+    expect(roomTopicChoices('room', topics, [room('a', 'topic', 0, 0)]).dot).toBeUndefined()
   })
 })
 

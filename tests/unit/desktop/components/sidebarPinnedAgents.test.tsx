@@ -83,7 +83,7 @@ const rows = () => [...harness.container.querySelectorAll<HTMLElement>('[data-ch
 const row = (id: string) => harness.container.querySelector<HTMLElement>(`[data-chat-row="${id}"]`)!
 const unpinItem = async (id: string) => {
   await fireContextMenu(row(id))
-  return document.querySelector<HTMLElement>('[data-testid="conversation-row-unpin-from-sidebar"]')
+  return document.querySelector<HTMLElement>('[data-testid="conversation-row-sidebar-pin"]')
 }
 
 describe('agents pinned to the one list', () => {

@@ -75,6 +75,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
+import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
 import {
   cpaneActionsClass, cpaneAvatarClass, cpaneCardClass, cpaneNameClass, cpaneStatusClass, ct,
@@ -322,7 +323,7 @@ function ContactsThreeSectionSidebar({
   getContactRemoveLabel,
   onGroupPin,
   onGroupToggleNotif,
-  onGroupLeaveOrDissolve,
+  onGroupLeave,
   groupPinned,
   groupNotifMuted
 }: {
@@ -361,7 +362,7 @@ function ContactsThreeSectionSidebar({
   // #1694 — 群行右键菜单动作（chat-scoped；群本身即 chat，无需 resolveDmId）
   onGroupPin?: (g: ContactGroupChat) => void
   onGroupToggleNotif?: (g: ContactGroupChat) => void
-  onGroupLeaveOrDissolve?: (g: ContactGroupChat) => void
+  onGroupLeave?: (g: ContactGroupChat) => void
   groupPinned?: Map<string, boolean>
   groupNotifMuted?: Map<string, boolean>
 }) {
@@ -382,21 +383,21 @@ function ContactsThreeSectionSidebar({
     },
     [onPin, onMarkUnread, onToggleNotif, onRemove, onStartChat, contactPinned, contactNotifMuted, getContactRemoveLabel]
   )
-  // #1694 — 群行右键菜单：复用 ContactRowContextMenu，仅给 置顶 / 通知 / 退出·解散（不传 onStartChat/onMarkUnread）。
-  // 角色化：owner → 「解散群聊」，member → 「退出群聊」；确认弹窗 + 真正动作在父层 onGroupLeaveOrDissolve。
+  // #1694 — 群行右键菜单：ContactRowContextMenu 按对话动作表(入口 contacts-group)画；这里只给群的置顶 / 通知 / 退出。
+  // 解散群聊不进右键(menu-table.ts @@@menu-order),只在群设置页最底下;成员的「退出群聊」确认 + 动作在父层 onGroupLeave。
   const buildGroupRowMenu = useCallback(
     (g: ContactGroupChat): ContactRowMenuActions | undefined => {
-      if (!onGroupPin || !onGroupToggleNotif || !onGroupLeaveOrDissolve) return undefined
+      if (!onGroupPin || !onGroupToggleNotif || !onGroupLeave) return undefined
       return {
-        removeLabel: g.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'),
+        removeLabel: ct('contextMenu.leaveGroup'), group: { chatId: g.id, role: g.my_role, name: g.name },
         isPinned: groupPinned?.get(g.id) ?? false,
         notifMuted: groupNotifMuted?.get(g.id) ?? g.is_muted,
         onPin: () => onGroupPin(g),
         onToggleNotif: () => onGroupToggleNotif(g),
-        onRemove: () => onGroupLeaveOrDissolve(g)
+        onRemove: () => onGroupLeave(g)
       }
     },
-    [onGroupPin, onGroupToggleNotif, onGroupLeaveOrDissolve, groupPinned, groupNotifMuted]
+    [onGroupPin, onGroupToggleNotif, onGroupLeave, groupPinned, groupNotifMuted]
   )
   const [personCollapsed, setPersonCollapsed] = useState(false)
   const agentRowActions = useAgentRowActions({ onSelect: onSelectContact, onToggleSelection: onToggleContact, onStartChat, onPin, onMarkUnread, onToggleNotif, onRemove })
@@ -866,7 +867,7 @@ function GroupChatsDetail({
   mobile = false,
   onBack,
   onOpenGroupChat,
-  onCreateGroup, onGroupPin, onGroupToggleNotif, onGroupLeaveOrDissolve,
+  onCreateGroup, onGroupPin, onGroupToggleNotif, onGroupLeave,
   groupPinned,
   groupNotifMuted,
 }: {
@@ -877,7 +878,7 @@ function GroupChatsDetail({
   onCreateGroup?: () => void // #2118 — 空群组分区「创建群聊」CTA
   onGroupPin?: (group: ContactGroupChat) => void
   onGroupToggleNotif?: (group: ContactGroupChat) => void
-  onGroupLeaveOrDissolve?: (group: ContactGroupChat) => void
+  onGroupLeave?: (group: ContactGroupChat) => void
   groupPinned?: Map<string, boolean>
   groupNotifMuted?: Map<string, boolean>
 }) {
@@ -892,14 +893,14 @@ function GroupChatsDetail({
   )
 
   const menuForGroup = (group: ContactGroupChat): ContactRowMenuActions | undefined => {
-    if (!onGroupPin || !onGroupToggleNotif || !onGroupLeaveOrDissolve) return undefined
+    if (!onGroupPin || !onGroupToggleNotif || !onGroupLeave) return undefined
     return {
-      removeLabel: group.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'),
+      removeLabel: ct('contextMenu.leaveGroup'), group: { chatId: group.id, role: group.my_role, name: group.name },
       isPinned: groupPinned?.get(group.id) ?? false,
       notifMuted: groupNotifMuted?.get(group.id) ?? group.is_muted,
       onPin: () => onGroupPin(group),
       onToggleNotif: () => onGroupToggleNotif(group),
-      onRemove: () => onGroupLeaveOrDissolve(group),
+      onRemove: () => onGroupLeave(group),
     }
   }
 
@@ -1021,7 +1022,7 @@ export const ContactsPanel = memo(function ContactsPanel({
   } = useContactsStore()
   const { user } = useAuth()
   const { toast } = useToast()
-  const { pinChat, markUnread, setChatNotificationLevel, leaveGroup, deleteChat, refreshChats } = useChatStore('pinChat', 'markUnread', 'setChatNotificationLevel', 'leaveGroup', 'deleteChat', 'refreshChats')
+  const { pinChat, markUnread, setChatNotificationLevel, leaveGroup, refreshChats } = useChatStore('pinChat', 'markUnread', 'setChatNotificationLevel', 'leaveGroup', 'refreshChats')
   const chats = useStoreValueBy((store) => store.chats, (store) => store.chats.map((c) => [c.id, c.kind, c.peer_user_id, c.is_pinned, c.notification_level]))
   const [selectedNav, setSelectedNav] = useState<LeftSel>('contacts')
   const [mobilePane, setMobilePane] = useState<MobileContactsPane>('nav')
@@ -1141,23 +1142,19 @@ export const ContactsPanel = memo(function ContactsPanel({
     },
     [chats, setChatNotificationLevel]
   )
-  // 角色化：owner → 解散群聊（deleteChat persist → chats.status='archived'，全员退出）；
-  // member → 退出群聊（leaveGroup 删自己 chat_members 行）。确认弹窗复用 ChatManagementActions 文案。
-  const handleGroupLeaveOrDissolve = useCallback(
+  // 成员退出群聊（leaveGroup 删自己 chat_members 行）;群主没有这一项,解散只在群设置页。确认走对话动作表那一份
+  // (confirmConversationAction),与聊天列表同一个确认框。#1694-followup:成功/失败都 toast,别静默吞(fail-loud)。
+  const handleGroupLeave = useCallback(
     async (g: ContactGroupChat) => {
-      const isOwner = g.my_role === 'owner'
-      const ok = window.confirm(isOwner ? ct('confirmations.dissolveGroup') : ct('confirmations.leaveGroup'))
-      if (!ok) return
-      // #1694-followup — 对齐 handleRemoveContact:成功/失败都 toast，别静默吞(fail-loud)。
+      if (!(await confirmConversationAction('leave-group', 'group', g.name ?? ''))) return
       try {
-        if (isOwner) await deleteChat(g.id, true)
-        else await leaveGroup(g.id)
-        toast(isOwner ? ct('toast.dissolvedGroup') : ct('toast.leftGroup'), 'success')
+        await leaveGroup(g.id)
+        toast(ct('toast.leftGroup'), 'success')
       } catch (error) {
-        toast(isOwner ? ct('toast.dissolveFailed') : ct('toast.leaveFailed'), 'error', messageForUser(error))
+        toast(ct('toast.leaveFailed'), 'error', messageForUser(error))
       }
     },
-    [deleteChat, leaveGroup, toast]
+    [leaveGroup, toast]
   )
 
   const selectedGroup = selectedNav.startsWith('group:')
@@ -1301,7 +1298,7 @@ export const ContactsPanel = memo(function ContactsPanel({
     const name = displayName(contact)
     const isOwnedAgent = contact.type === 'agent' && contact.owner_user_id === user?.id
     if (isOwnedAgent && closeIfMyAssistant(user?.id, contact.id)) return // #7350 删的是咕咕:换成关闭咕咕那份确认
-    if (!isOwnedAgent && !window.confirm(ct('confirmations.deleteContact', { name }))) return
+    if (!isOwnedAgent && !(await confirmConversationAction('remove-contact', 'dm', name))) return
     try {
       if (isOwnedAgent) { if (!(await confirmOwnedAgentArchive(contact.id, name, removeOwnedAgent))) return }
       else await removeContact(contact.id)
@@ -1481,7 +1478,7 @@ export const ContactsPanel = memo(function ContactsPanel({
           getContactRemoveLabel={getContactRemoveLabel}
           onGroupPin={handleGroupPin}
           onGroupToggleNotif={handleGroupToggleNotif}
-          onGroupLeaveOrDissolve={handleGroupLeaveOrDissolve}
+          onGroupLeave={handleGroupLeave}
           groupPinned={groupPinned}
           groupNotifMuted={groupNotifMuted}
         />
@@ -1534,7 +1531,7 @@ export const ContactsPanel = memo(function ContactsPanel({
             onCreateGroup={() => setShowGroupModal(true)}
             onGroupPin={handleGroupPin}
             onGroupToggleNotif={handleGroupToggleNotif}
-            onGroupLeaveOrDissolve={handleGroupLeaveOrDissolve}
+            onGroupLeave={handleGroupLeave}
             groupPinned={groupPinned} groupNotifMuted={groupNotifMuted}
           />
         ) : null

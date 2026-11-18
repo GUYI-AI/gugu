@@ -122,6 +122,7 @@ import { SessionHostQuestion } from '@renderer/features/extensions/session-host-
 import { registerPastedScreenshot } from '@/lib/pastedScreenshot';
 import { useComposerFileUploads } from './use-composer-file-uploads';
 import { shellPort } from '@renderer/lib/shell-port';
+import { useBirthGroupJoin } from './use-birth-group-join';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
@@ -142,6 +143,7 @@ import {
   selectedPermissionModeId,
 } from './permission-mode-options';
 import { useOpenedOutputMenu } from './opened-output-menu';
+import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
 import {
@@ -856,15 +858,18 @@ const ComposerForStore = observer(function ComposerForStore({
 
   // 「你的 X 模型」那一档的成员,见 @@@own-model-tier —— 平台会话看不见用户自己那条凭据路,
   // 只有这趟 BYOK 探针看得见。主进程按 provider 缓存,新建页读的是同一份(react-query 同 key)。
-  // ⚠️ 只在**需要**时才问:`own` 那条路的成员来自活会话本身,问一趟等于白起一个 harness 进程
-  //    (冷缓存时这趟会 spawn,实测数秒)。明确 BYOK 的会话一次都不问。
+  // 活 BYOK 会话先用自己的清单。打开模型菜单才问宿主，以便发现本次启动后新增的模型。
   // #6552 会话还在起(活会话还没报清单)时 BYOK 那一路也问:那段里探针目录就是唯一看得见这份清单的人。
   // #7342 停下了(宿主停掉进程、起不来)同理 —— 没有活会话就没有活清单,触发器连模型名都对不上。
   //   开销:主进程按 provider 缓存、不等 harness(冷缓存在后台探);远端按会话所在那台机器问(hook 自己选线)。
-  const harnessCatalog = useHarnessModelCatalog(
-    route === 'own' && store.session ? null : providerId,
-    'acp'
-  );
+  const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
+  const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
+  const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const onModelMenuOpen = () => {
+    platformCatalog.refresh();
+    if (readOwnCatalog) harnessCatalog.refresh();
+    else setCatalogMenuSession(store.sessionId);
+  };
 
   /**
    * 这条会话是不是跑在咕咕代付的模型上 —— 判据是它**自己记录的模型**在目录里,
@@ -1291,13 +1296,13 @@ const ComposerForStore = observer(function ComposerForStore({
       platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
     );
     if (!resolved) return null;
-    if (live || !declared) return resolved.options;
-    return Object.fromEntries(
+    const options = live || !declared ? resolved.options : Object.fromEntries(
       Object.entries(resolved.options).map(([id, option]) => [
         id,
         { ...option, disabled: true, disabledReason: translate('composer.effortLockedToSession') },
       ])
     );
+    return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
   }, [store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
@@ -1468,7 +1473,7 @@ const ComposerForStore = observer(function ComposerForStore({
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
-        onModelMenuOpen={platformCatalog.refresh}
+        onModelMenuOpen={onModelMenuOpen}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
@@ -1761,6 +1766,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   // 「正在打开引擎会话」一类的启动步骤对用户不存在。要人做的事(登录、会员)照常在下面说。
   // 「重来」在途:按钮停下,❌ 连点各投一遍首轮。
   const [restarting, setRestarting] = useState(false);
+  const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
@@ -1805,6 +1811,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         code: 'turn-interrupted',
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
+      });
+      return;
+    }
+    if (!error && birthGroup.join && !signInExpired && !signInMissing) {
+      // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
+      setCondition({
+        code: 'group-join-failed',
+        label: translate('transcript.condition.groupJoinFailed'),
+        detail: birthGroup.join.reason,
+        actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
       });
       return;
     }
@@ -1959,7 +1975,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。

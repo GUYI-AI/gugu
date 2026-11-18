@@ -41,13 +41,13 @@ describe('project row menu across the two React roots', () => {
     expect(document.querySelector('[role=menu]')).toBeNull()
   })
 
-  it('disables scoped read when only unrelated conversations have unread messages', async () => {
+  it('offers no read row when only unrelated conversations have unread messages (a project row has no mark unread)', async () => {
     publishChatSummaries([
       { id: 'project-group', kind: 'group', unread_count: 0 },
       { id: 'outside', kind: 'group', unread_count: 8 },
     ])
     await render()
-    expect(document.querySelector('[data-testid=conversation-row-mark-read]')?.getAttribute('aria-disabled')).toBe('true')
+    expect(document.querySelector('[data-testid=conversation-row-mark-read]')).toBeNull()
     expect(document.querySelector('[data-testid=conversation-row-remove-project]')?.getAttribute('aria-disabled')).not.toBe('true')
   })
 

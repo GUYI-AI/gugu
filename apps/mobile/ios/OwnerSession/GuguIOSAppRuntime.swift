@@ -145,7 +145,10 @@ final class GuguIOSAppRuntime {
     @MainActor func plugins() throws -> [CAPPlugin] {
         // Construct on the bridge's App startup thread before publishing plugins.
         // No real model host, cloud Agent or tool execution is created here.
-        [GuguAuthStoragePlugin(ownerSession: ownerSession), GuguIOSOwnerPlugin(ownerSession: ownerSession),
+        [GuguAuthStoragePlugin(ownerSession: ownerSession),
+         GuguIOSOwnerPlugin(ownerSession: ownerSession, cancelPreparation: { [service = accountClosure] scope in
+             try Self.requireForegroundOwnerUI(); try service.cancelSignOut(scope)
+         }),
          GuguAccountClosurePlugin(service: accountClosure, foreground: Self.requireForegroundOwnerUI),
          GuguCalendarPermissionsPlugin(store: calendarStore, ownerAccess: ownerAccess),
          GuguAgentPlugin(service: try nativeHostService()),

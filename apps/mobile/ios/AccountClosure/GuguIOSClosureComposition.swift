@@ -27,7 +27,10 @@ enum GuguIOSClosureComposition {
         }
         return GuguIOSAccountClosure(secrets: GuguIOSClosureKeychain(bundleIdentifier: bundle),
             installation: installation, localAuthBarrier: { body in try ownerSession.withLocalClosureStorage(body) },
-            mainOwner: slot.owner, preparation: preparation, steps: steps, retained: {
+            mainOwner: slot.owner,
+            capturePreparation: { scope in try ownerSession.preparedSignOut(expectedOwnerId: scope.ownerId) },
+            cancelPreparation: { scope, preparation in try ownerSession.cancelSignOut(expectedOwnerId: scope.ownerId, preparation: preparation) },
+            preparation: preparation, steps: steps, retained: {
                 var names = try slot.retainedUnattributed()
                 let staging = FileManager.default.temporaryDirectory.appendingPathComponent("GuguSaveFiles", isDirectory: true)
                 if FileManager.default.fileExists(atPath: staging.path),

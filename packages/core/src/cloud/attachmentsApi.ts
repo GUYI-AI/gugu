@@ -23,11 +23,22 @@ export interface AttachmentsEndpoint {
   token: string
   fetch?: typeof fetch
   upload?: AttachmentUploadTransport
+  /**
+   * This host can send a server-signed PUT straight to the object store, so it asks for multipart uploads. A main process
+   * or the phone host can; a page cannot (the bucket's CORS does not allow signed PUTs from the app origin), so
+   * `configuredEndpoint` leaves it unset and its uploads stay one form request.
+   */
+  signedParts?: boolean
 }
 
 /** This build's server (config), with `token`. */
 export function configuredEndpoint(token: string): AttachmentsEndpoint {
   return { supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), token }
+}
+
+/** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
+export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof fetch = fetch): Promise<AttachmentsEndpoint> {
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
 }
 
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
@@ -69,10 +80,17 @@ export async function planAttachmentUpload(endpoint: AttachmentsEndpoint, file: 
   scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<AttachmentUploadPlan & { staging_key: string }> {
   return await call(endpoint, 'upload', {
     size_bytes: file.size, content_type: file.contentType, as: scope.as, chat_id: scope.chat_id, request_id: scope.request_id ?? crypto.randomUUID(),
+    // A host that can send signed part PUTs asks for parts; the server gives them for a file over one part.
+    ...(endpoint.signedParts ? { parts: true } : {}),
   }, signal) as AttachmentUploadPlan & { staging_key: string }
 }
 
-/** Uploads to the configured object store using the server-issued scoped upload plan. */
+/**
+ * Uploads to the configured object store using the server-issued scoped upload plan. An endpoint with `signedParts` asks
+ * for a multipart upload, which the server gives when its store signs parts and the file is more than one part; the same
+ * `request_id` then resumes it, sending only the parts not yet stored. A given `request_id` whose permit was used or
+ * lapsed starts the upload once more under a fresh id.
+ */
 export async function uploadAttachmentBytes(
   endpoint: AttachmentsEndpoint,
   file: { bytes: Uint8Array | Blob; name: string; contentType: string },
@@ -80,30 +98,112 @@ export async function uploadAttachmentBytes(
   options?: { onPlan?: (plan: AttachmentUploadPlan) => void; retry?: boolean; onProgress?: (progress: AttachmentByteProgress) => void; signal?: AbortSignal },
 ): Promise<string> {
   const size = file.bytes instanceof Blob ? file.bytes.size : file.bytes.byteLength
-  type Plan = { staging_key: string; url: string; fields: Record<string, string>; max_bytes: number; expires_at?: string; method?: 'POST' | 'PUT'; headers?: Record<string, string> }
-  const ask = async (request_id: string) => await call(endpoint, 'upload', {
-    size_bytes: size, content_type: file.contentType, as: scope.as, chat_id: scope.chat_id, request_id,
-  }, options?.signal) as Plan
-  let form: Plan, fresh = false
-  try { form = await ask(scope.request_id ?? crypto.randomUUID()) } catch (error) {
-    // The caller's id was already sent or its permit lapsed (a resend long after the first try): that id can never upload
-    // again, so the upload starts once more under a fresh one.
-    if (!scope.request_id || !(error instanceof AttachmentsError) || error.code !== 'expired') throw error
-    fresh = true
-    form = await ask(crypto.randomUUID())
+  let requestId = scope.request_id ?? crypto.randomUUID(), fresh = false, restarted = false
+  for (;;) {
+    try {
+      const form = await planAttachmentUpload(endpoint, { size, contentType: file.contentType }, { ...scope, request_id: requestId }, options?.signal)
+      options?.onPlan?.(form)
+      await uploadAttachmentPlan(endpoint, form, file, options?.retry === true && !!scope.request_id && !fresh, options?.onProgress, options?.signal)
+      return form.staging_key
+    } catch (error) {
+      if (!(error instanceof AttachmentsError)) throw error
+      // The parts did not make this file, or the server holds no upload for the key any more: start it again, once.
+      if (!restarted && (error.code === 'upload_changed' || error.route === 'upload-parts' && error.code === 'upload_incomplete')) { restarted = true; continue }
+      // The caller's id was already sent or its permit lapsed (a resend long after the first try, or a resumed upload that
+      // stopped reporting): that id can never upload again, so the upload starts once more under a fresh one.
+      if (scope.request_id && !fresh && error.code === 'expired') { fresh = true; restarted = false; requestId = crypto.randomUUID(); continue }
+      throw error
+    }
   }
-  options?.onPlan?.(form)
-  await uploadAttachmentPlan(endpoint, form, file, options?.retry === true && !!scope.request_id && !fresh, options?.onProgress, options?.signal)
-  return form.staging_key
 }
 
-export type AttachmentUploadPlan = { expires_at?: string; url: string; fields: Record<string, string>; max_bytes: number; method?: 'POST' | 'PUT'; headers?: Record<string, string> }
+/** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
+export async function contentRequestId(...identity: string[]): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity.join('\n'))))
+  const hex = Array.from(digest.subarray(0, 16), byte => byte.toString(16).padStart(2, '0')).join('')
+  // A version 8 (name-based, custom hash) UUID: the server only needs the UUID shape.
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${(8 | parseInt(hex[16]!, 16) & 3).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+type SignedPart = { n: number; bytes: number; url: string; headers: Record<string, string> }
+const PART_CONCURRENCY = 3
+
+/**
+ * Sends the parts the server asks for, a few at a time, reporting each batch as it goes, then joins them. State lives on
+ * the server: a part that is stored is never sent again, including by a later call. A part whose signature expired (403)
+ * is signed again; transient failures are retried in the file-read retry window.
+ */
+async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string, plan: { part_bytes: number; count: number },
+  file: { bytes: Uint8Array | Blob; name: string; contentType: string }, onProgress?: (progress: AttachmentByteProgress) => void, signal?: AbortSignal) {
+  const blob = file.bytes instanceof Blob ? file.bytes : new Blob([file.bytes as BlobPart], { type: file.contentType })
+  const partSize = (n: number) => n < plan.count ? plan.part_bytes : blob.size - (plan.count - 1) * plan.part_bytes
+  let report: number[] = [], resigned = false
+  for (let joins = 0; ; joins++) {
+    for (;;) {
+      const answer = await call(endpoint, 'upload-parts', { staging_key: key, done: report }, signal) as { done: number[]; todo: SignedPart[] }
+      report = []
+      if (!answer.todo.length) break
+      const stored = answer.done.reduce((sum, n) => sum + partSize(n), 0), sending = new Map<number, number>()
+      const progress = () => onProgress?.({ loaded: stored + report.reduce((sum, n) => sum + partSize(n), 0) + [...sending.values()].reduce((a, b) => a + b, 0), total: blob.size })
+      const queue = [...answer.todo]
+      let expired = false
+      const failures: unknown[] = []
+      await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, queue.length) }, async () => {
+        for (let part = queue.shift(); part && !expired && !failures.length; part = queue.shift()) {
+          const sent = part
+          const start = (sent.n - 1) * plan.part_bytes
+          try {
+            const status = await retryFileDownload(() => ({ stage: 'oss', url: sent.url }),
+              () => putPart(endpoint, sent, blob.slice(start, start + sent.bytes), loaded => { sending.set(sent.n, loaded); progress() }, signal), signal)
+            if (status === 403) { expired = true; return }
+            report.push(sent.n)
+            progress()
+          } catch (error) { failures.push(error) } finally { sending.delete(sent.n) }
+        }
+      }))
+      if (failures.length) {
+        // The parts that did go up are reported before giving up, so a later attempt does not send them again. That
+        // report failing too changes nothing: the original failure is the one said.
+        if (report.length) await call(endpoint, 'upload-parts', { staging_key: key, done: report }, signal).catch(() => undefined)
+        throw failures[0]
+      }
+      // A signature that expired is signed again; one just signed and still refused is a real refusal.
+      if (expired && resigned && !report.length) throw new AttachmentsError('upload', 403, 'failed', `storing ${file.name} failed: the storage refused a fresh part signature`)
+      resigned = expired
+    }
+    try {
+      await call(endpoint, 'upload-complete', { staging_key: key }, signal)
+      return
+    } catch (error) {
+      // The server says which parts it has not recorded: send those, then join again.
+      if (!(error instanceof AttachmentsError) || error.code !== 'upload_incomplete' || joins >= 2) throw error
+    }
+  }
+}
+
+async function putPart(endpoint: AttachmentsEndpoint, part: SignedPart, body: Blob, onLoaded: (loaded: number) => void, signal?: AbortSignal) {
+  // The runtime sets content-length from the body, which is exactly the signed length; a hand-set one is refused by fetch.
+  const headers = Object.fromEntries(Object.entries(part.headers).filter(([name]) => name.toLowerCase() !== 'content-length'))
+  const init = { method: 'PUT' as const, body, headers, signal }
+  const sent = endpoint.upload ? await endpoint.upload(part.url, init, progress => onLoaded(progress.loaded))
+    : await (endpoint.fetch ?? fetch)(part.url, init).then(async response => { await response.body?.cancel(); return response })
+  if (sent.status === 200 || sent.status === 403) return sent.status
+  throw new AttachmentsError('upload', sent.status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${sent.status}`)
+}
+
+export type AttachmentUploadPlan = { expires_at?: string; url: string; fields: Record<string, string>; max_bytes: number; method?: 'POST' | 'PUT'; headers?: Record<string, string>
+  /** A multipart plan (no url or fields): its staging key and the parts the server asks for. */
+  staging_key?: string; parts?: { part_bytes: number; count: number } }
 
 /** Ordinary and temporary uploads execute the same scoped provider plan; signing remains server-side. */
 export async function uploadAttachmentPlan(endpoint: AttachmentsEndpoint, form: AttachmentUploadPlan, file: { bytes: Uint8Array | Blob; name: string; contentType: string }, allowExisting = false, onProgress?: (progress: AttachmentByteProgress) => void, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()
   const size = file.bytes instanceof Blob ? file.bytes.size : file.bytes.byteLength
   if (size > form.max_bytes) throw new AttachmentsError('upload', 413, 'too_large', `${file.name} is ${size} bytes; a file is at most ${form.max_bytes}`)
+  if (form.parts) {
+    if (!form.staging_key) throw new AttachmentsError('upload', 502, 'invalid', 'a multipart upload plan without its staging key')
+    return uploadAttachmentParts(endpoint, form.staging_key, form.parts, file, onProgress, signal)
+  }
   const method = form.method ?? 'POST'
   if (method !== 'POST' && method !== 'PUT') throw new AttachmentsError('upload', 502, 'invalid', 'unsupported upload method')
   const blob = file.bytes instanceof Blob ? file.bytes : new Blob([file.bytes as BlobPart], { type: file.contentType })
@@ -146,7 +246,6 @@ export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { b
 
 /** How a sender follows its declared bytes up (all optional: an agent just waits for them). */
 export type DeclaredUploadHooks = {
-  keep?: FileKeep
   /** Runs each upload attempt, e.g. inside a timed stage with its own endpoint and signal; by default it just runs. */
   attempt?: (attempt: number, run: (endpoint: AttachmentsEndpoint, signal?: AbortSignal) => Promise<void>) => Promise<void>
   /** The plan an attempt uploads under, once it has one. */
@@ -177,7 +276,11 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
       break
     } catch (error) {
       if (attempt >= UPLOAD_ATTEMPTS || hooks.stopped?.()) throw error
-      plan = undefined; uploadKey = null // a new plan: the old one may have expired or its object be half written
+      // A multipart plan that is still alive is tried again as it is: the parts already stored are not sent again. One
+      // whose permit lapsed, whose parts did not make the file, or whose upload is gone gets a new plan, like a form's.
+      const lives = !!plan?.parts && !(error instanceof AttachmentsError && (error.code === 'expired' || error.code === 'upload_changed'
+        || error.route === 'upload-parts' && error.code === 'upload_incomplete'))
+      if (!lives) { plan = undefined; uploadKey = null } // a new plan: the old one may have expired or its object be half written
       await new Promise(resolve => setTimeout(resolve, attempt * 1000))
     }
   }
@@ -186,7 +289,7 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
     if (hooks.stopped?.()) return false
     try {
       await finishAttachment(endpoint, { staging_key: declared.staging_key, ...(uploadKey !== declared.staging_key ? { upload_key: uploadKey! } : {}),
-        file_name: file.name, content_type: file.contentType, message_id: message.id, ...(hooks.keep ? { keep: hooks.keep } : {}) })
+        file_name: file.name, content_type: file.contentType, message_id: message.id })
       return true
     } catch (error) {
       if (!(error instanceof AttachmentsError && error.code === 'upload_not_found') || Date.now() + wait > until) throw error
@@ -219,12 +322,14 @@ export interface CommitArgs {
   /** The upload is this folder file's next version, from expected_version (a newer one stored since ⇒ refused, version_conflict). */
   item_id?: string
   expected_version?: number
-  /** How long this copy stays (temporary | permanent); not given, the chat's rule. Needs a backend with file_storage_mark_as. */
+  /** How long this copy stays: part of its declaration (temporary | permanent); not given, the chat's rule. */
   keep?: FileKeep
-  /** #2581 Files sent at once: one id for the send and how many files it holds (2–10). Not given, a file sent on its own. */
+  /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string
   send_group_size?: number
 }
+/** The most files one send holds (the backend refuses a larger send_group_size); more files at once go as consecutive sends. */
+export const SEND_GROUP_MAX_FILES = 10
 
 /** Sends the upload as an attachment message: the message row as `messages_view` has it. */
 export async function commitAttachment(endpoint: AttachmentsEndpoint, args: CommitArgs): Promise<Record<string, unknown>> {
@@ -259,7 +364,7 @@ export interface OwnerSendArgs {
   caption?: string
 }
 
-/** An agent sends a file to its owner's friend as the owner (message_send_file_as_owner): the send, as the server answers it. */
+/** An agent sends a file to its owner's friend as the owner (message_send_as_owner with file_path): the send, as the server answers it. */
 export async function sendFileAsOwner(endpoint: AttachmentsEndpoint, args: OwnerSendArgs): Promise<{ chat_id: string; message_id: string; sender_user_id: string; sent_by_agent: boolean }> {
   const answer = await call(endpoint, 'commit', { ...args }) as { message: { chat_id: string; message_id: string; sender_user_id: string; sent_by_agent: boolean } | null }
   if (!answer.message) throw new AttachmentsError('commit', 500, 'failed', `no send came back for ${args.request_id}`)
@@ -306,7 +411,10 @@ export interface ShareArgs {
   chat_id: string
   sender_user_id: string
   to_user_ids?: string[]
+  reply_to_message_id?: string | null
   thread_root_id?: string | null
+  /** The message's text under the file card (首尾空白去掉;空的就没有). */
+  caption?: string
 }
 
 /** Sends a file of a chat's folder by reference — no bytes from here; the one way a folder file becomes a file card: the new message row. */

@@ -191,7 +191,7 @@ async function withPackedCardSent(
   if ((name !== 'pack' && name !== 'install') || chatId === undefined) return run(action)
   const tool = `app_${name}`
   if (context.kind !== 'social' || context.forkOf !== undefined) {
-    throw new Error(`${tool}: chat_id needs a session with a Gugu identity; leave it out, then app_pack and send the file with message_send_file`)
+    throw new Error(`${tool}: chat_id needs a session with a Gugu identity; leave it out, then app_pack and send the file with message_send (file_path)`)
   }
   // F31: message_id goes out bare — the tool layer types it (a typed one here was refused as a double encoding, after
   // the card had gone out). A card of this version already in the chat is answered, not sent again.

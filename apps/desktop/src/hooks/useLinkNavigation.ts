@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
-import { askedSince, asksSoFar } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askedSince, asksSoFar, beginWait, endWait } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
+import { opensInImageViewer } from '../lib/imageViewer'
 import { SERVER_LOGIN_APPROVE_EVENT } from '../lib/inAppLinks'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
 import { assistantAppUsable } from '../lib/assistantEntry'
@@ -68,23 +69,38 @@ export function useLinkNavigation(input: {
         return 'own' as const
       }
       if (target.kind === 'file') {
-        // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
-        const { appsHere } = await import('../components/appSlot/appsHere')
-        if (!appsHere) throw new Error('The file opener is unavailable')
+        // The chat whose panel shows a chat's files (a topic's: its source's).
+        const panelChat = (id: string | undefined) => {
+          const row = id ? state.chats().find((chat) => chat.id === id) : undefined
+          return row ? (row.kind === 'topic' ? row.source_chat_id ?? null : row.id) : null
+        }
+        // Asked in a chat (a message's, or an App page's beside it): the file's waiting page there at once — not an image's,
+        // which opens over the chat in the image viewer (useChatOpener), the page left as it is.
+        const { from, intent } = request
+        const here = from?.chatId ?? panelChat(request.message?.chat_id)
+        const wait = here && !(request.fileName && opensInImageViewer(request.fileName, null, intent)) ? beginWait(here, { itemId: target.itemId, ...(request.fileName ? { fileName: request.fileName } : {}), ...(request.message ? { message: request.message } : {}), ...(from ? { from: from.tabId } : {}), ...(intent ? { intent } : {}) }) : null
         const mark = asksSoFar()
-        const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(target.at ? { at: target.at } : {}) })
-        if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
-        if (!found.success || !found.data) throw new Error(found.error || 'File reference is unavailable')
-        const groupId = found.data.chatId
-        const fileChat = state.chats().find((row) => row.id === groupId)
-        if (!fileChat) throw new Error('File reference is unavailable')
-        const chatId = fileChat.kind === 'topic' ? fileChat.source_chat_id! : fileChat.id
-        // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
-        // the one the chat opens.
-        if (askedSince(chatId, mark)) throw new OpenSuperseded()
-        await state.openFile(chatId, target, request, found.data)
-        window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
-        return
+        try {
+          // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
+          const { appsHere } = await import('../components/appSlot/appsHere')
+          if (!appsHere) throw new Error('The file opener is unavailable')
+          const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(request.chatId ? { chatId: request.chatId } : {}), ...(target.at ? { at: target.at } : {}), ...(request.among ? { among: request.among } : {}) })
+          if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
+          if (!found.success || !found.data) throw Object.assign(new Error(found.error || 'File reference is unavailable'), 'code' in found && found.code ? { code: found.code } : {})
+          const chatId = panelChat(found.data.chatId)
+          if (!chatId) throw new Error('File reference is unavailable')
+          // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
+          // the one the chat opens.
+          if (askedSince(chatId, mark)) throw new OpenSuperseded()
+          // Another chat's file (a forwarded one): nothing waits here; that chat comes up with it.
+          if (wait && chatId !== here) endWait(here!, wait)
+          await state.openFile(chatId, target, request, { ...found.data, ...(wait && chatId === here ? { wait } : {}), ...(intent ? { intent } : {}), ...(from?.chatId === chatId ? { from: from.tabId } : {}), ...(request.origin ? { origin: request.origin } : {}) })
+          window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
+          return
+        } finally {
+          // Not turned into the file (failed, superseded, picked, another chat's): its waiting page goes.
+          if (wait) endWait(here!, wait)
+        }
       }
       if (target.kind === 'app' && !target.place) { state.openOwnApp(target.extensionId, target.tab); return 'own' as const }
       if (target.kind === 'app' && target.place && 'chat' in target.place) {

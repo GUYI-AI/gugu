@@ -6,6 +6,7 @@ import { DropdownMenu, Menu, MenuFold, MenuItem } from '../ui/Menu'
 import { DeferredEmojiQuickPicker } from './messageActionModules'
 import { messageActionItems, type MessageActionItem, type MessageActionTarget } from './messageActionItems'
 import { PhoneMessageMenu } from './PhoneMessageMenu'
+import { menuLayout } from '../../session/shared/menu-table'
 
 /**
  * The hover menu, bubble context menu and phone long-press menu share message actions and quick reactions.
@@ -22,8 +23,10 @@ export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, 
   const [expanded, setExpanded] = useState(false)
   const { showReactions } = messageMenuModel({ hasHoverBar })
   const items = messageActionItems({ isRetracted, content, hasSelection, onReply, onQuoteSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask }, t)
+  // The message table's layout, the same rule as every object menu (menu-table.ts @@@menu-order): the phone draws it flat.
+  const { top, more } = menuLayout(items)
   if (lift) {
-    return <PhoneMessageMenu open={lift.open} bubble={lift.bubble} touchY={lift.touchY} mine={lift.mine} items={items}
+    return <PhoneMessageMenu open={lift.open} bubble={lift.bubble} touchY={lift.touchY} mine={lift.mine} items={[...top, ...more]}
       reactionsDisabled={isRetracted || !showReactions} onReact={onReact} onClose={onClose} />
   }
   const row = (item: MessageActionItem) => (
@@ -37,8 +40,8 @@ export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, 
       <div className={showReactions ? 'w-[min(358px,calc(100vw-24px))]' : 'min-w-40'} data-testid="message-action-menu">
         {showReactions && <DeferredEmojiQuickPicker menu disabled={isRetracted} onPick={onReact} onClose={onClose} onExpand={() => setExpanded(true)} />}
         {!expanded && <>
-          {items.filter((item) => !item.fold).map(row)}
-          <MenuFold icon={<MoreHorizontal size={15} />} label={t('message.actions.more')} data-testid="message-action-more">{items.filter((item) => item.fold).map(row)}</MenuFold>
+          {top.map(row)}
+          {more.length > 0 && <MenuFold icon={<MoreHorizontal size={15} />} label={t('message.actions.more')} data-testid="message-action-more">{more.map(row)}</MenuFold>}
         </>}
       </div>
   )

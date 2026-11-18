@@ -385,6 +385,8 @@ export const provider = registerPluginBehavior(plugin, {
     // (@gugu-acp/claude-agent-acp 1.4.0 dist/acp-agent.js `...userProvidedOptions`)。
     // 10-17 mac1 实测(隔离 HOME,echo 账本):不带它起了 3 台、带它 0 台,`session/new` 照样回模型清单。
     catalogProbeSessionMeta: { claudeCode: { options: { strictMcpConfig: true } } },
+    // Signed out, the adapter still opens the probe session and lists Claude's models; none of them can run.
+    catalogNeedsSignIn: true,
     // 咕咕维护的构建 @gugu-acp/claude-agent-acp,按别名装在 @agentclientprotocol/claude-agent-acp 下;
     // 宿主按用户这份 Claude 的版本从配对表选版本,随包那份不合适就下载配对的那份(#6394)。
     bridge: {

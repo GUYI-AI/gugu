@@ -44,13 +44,14 @@ export function LiveWindowPicture({ conversation, sourceId }: { conversation: Li
   return <div ref={root} className="h-full w-full" />;
 }
 export function useLiveWindowConversation(input: {
-  context: LiveWindowContext; platform: 'desktop' | 'phone'; operating?: boolean; transport: LiveWindowTransport;
+  context: LiveWindowContext; platform: 'desktop' | 'phone'; operating?: boolean; connected?: boolean; transport: LiveWindowTransport;
 }) {
-  const { context, platform, operating, transport } = input;
+  const { context, platform, operating, connected, transport } = input;
   const key = liveWindowConversationKey(context, platform), holder = useId();
   const conversation = useMemo(() => getLiveWindowConversation(context, platform, transport), [key, platform, transport]);
   useEffect(() => { conversation.setVisible(holder, context.shown); return () => conversation.setVisible(holder, false); }, [conversation, holder, context.shown]);
   useEffect(() => { if (operating !== undefined) conversation.setOperating(operating); }, [conversation, operating]);
+  useEffect(() => { if (connected !== undefined) conversation.setConnected(connected); }, [conversation, connected]);
   const snapshot = useSyncExternalStore(conversation.model.subscribe, conversation.model.getSnapshot, conversation.model.getSnapshot);
   const sources = useMemo(() => snapshot.sources.map(source => ({
     ...source, picture: <LiveWindowPicture key={source.id} conversation={conversation} sourceId={source.id} />,

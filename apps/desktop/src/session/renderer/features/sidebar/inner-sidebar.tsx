@@ -342,12 +342,12 @@ function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAncho
 
 /** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
 function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {
-  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={24} variant="group" />;
+  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={32} variant="group" />;
 }
 
 /**
  * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到它的主群聊(owner 11-14;信息与设置在页头「成员 N」与「⋯」里)。
- * 行尾:悬停才出的「+」(GroupAddMenu:添加成员、新建 Agent,同群信息页与成员页那一枚;新建 Agent 只从这里进,❌ 再一支常显的笔)、
+ * 行尾:悬停才出的「+」(GroupAddMenu:添加成员、新建 Agent,同群信息页与成员页那一枚;与第二行创建入口复用同一个动作)、
  * 收起这一列(最右,常显)。
  * 项目那份菜单在项目页签的右键里。
  * ❌ 未读数(#2548 提议稿 state0):这个群的数挂在左边列表它那一行上(叫到你的才是红数,其余一颗灰点),这里再挂一份就是两处。
@@ -361,6 +361,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   summary: ChatSummary | null;
   active: boolean;
 }) {
+  const { translate } = useSessionMessages();
   const { chatId } = anchor;
   const name = summary?.name ?? '';
   // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
@@ -375,6 +376,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
     <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => navigateToGroupRoot(chatId)} trailingButtons={1}
+      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}
       // 这一列只为看的人在的群画,在群里就能添加成员(groupInviteAccess.showInvite = 来源群的成员;项目群里那一页只加自己的 agent)。
       hoverButton={<GroupAddMenu chatId={chatId} canAddMembers onNewAgent={newAgent} size="sm" />}>
       <InnerSidebarFoldButton />
@@ -524,7 +526,6 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
               parentProjectId={row.parentProjectId}
               hasChildren={row.hasChildren}
               expanded={sidebarStore.expandedSessionIds.has(row.sessionId)}
-              needsAttention={row.needsAttention}
               treeSummary={row.summary}
               onToggle={() => sidebarStore.toggleSessionExpanded(row.sessionId)}
               sidebarPinMark

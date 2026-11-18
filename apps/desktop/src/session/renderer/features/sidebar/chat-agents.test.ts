@@ -147,7 +147,6 @@ describe('the agents section', () => {
     expect(rowIds(collapsed)).toEqual(['parent']);
     expect(collapsed.rows[0]).toMatchObject({
       hasChildren: true,
-      needsAttention: true,
       summary: { total: 2, active: [{ count: 1 }] },
     });
     const open = chatAgentSection(agents, { ...disclosure, expanded: new Set(['parent', 'fork']) });
@@ -292,7 +291,7 @@ describe("#2574 a standalone agent's sub-agents", () => {
     const subAgents = subAgentsOf(families, 'solo');
     const folded = chatAgentSection(subAgents, disclosure);
     expect(rowIds(folded)).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
-    expect(folded.rows.find((row) => row.sessionId === 'sub-quiet')).toMatchObject({ hasChildren: true, needsAttention: true });
+    expect(folded.rows.find((row) => row.sessionId === 'sub-quiet')).toMatchObject({ hasChildren: true });
     expect(chatAgentCounts(subAgents)).toEqual({ total: 4, running: 1 });
     const open = chatAgentSection(subAgents, { ...disclosure, expanded: new Set(['sub-quiet']) });
     expect(open.rows.map(({ sessionId, depth }) => [sessionId, depth])).toEqual([

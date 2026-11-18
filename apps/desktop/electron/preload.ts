@@ -1,3 +1,4 @@
+import type { AttachmentUploadIpc } from './attachmentUploadHost'
 import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -102,7 +103,7 @@ function emdashRequestWirePort(channel: string): Promise<void> {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // @@@sessionpage — generic RPC/event/wire surface the session-page renderer expects (additive).
-  invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
+  invoke: ((channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args)) as AttachmentUploadIpc['invoke'] & ((channel: string, ...args: unknown[]) => Promise<unknown>),
   eventSend: (channel: string, data: unknown): void => ipcRenderer.send(channel, data),
   eventOn: (channel: string, cb: (data: unknown) => void): (() => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, data: unknown): void => cb(data)
@@ -181,9 +182,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('device:self-identified', listener)
   },
   getLocalDeviceSelfSnapshot: (): Promise<unknown> => ipcRenderer.invoke('device:get-self-snapshot'),
-  // @@@share-card-rename 改名的本机那半:花名册上的 name(会话页读它)。云端改完再调,详见 main 侧同名注释。
-  renameOwnedAgentLocalFootprint: (agentUserId: string, name: string): Promise<boolean> =>
-    ipcRenderer.invoke('owned-agent:rename-local-footprint', { agentUserId, name }),
 })
 
 // @@@host-system-languages — 宿主真实系统语言。同步取值:renderer 的 i18n runtime 是模块副作用,在第一帧

@@ -280,7 +280,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
   })
   it('started from the collapsed sidebar: waits while it unfolds (创建智能体 still 0 wide), ❌ drops the step', async () => {
     const release = publishPanelToggle('list:sessions', { open: true, label: 'Collapse sidebar', toggle: () => {} })
-    sidebar.style.setProperty('--gg-sidebar-progress', '0.2')
+    createAgent.style.opacity = '0.2'
     const settled = createAgent.getBoundingClientRect
     createAgent.getBoundingClientRect = box(72, 52, 0, 32)
     const harness = createReactHarness()
@@ -289,7 +289,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       await settleTargets()
       expect(document.querySelector('[data-testid^="product-tour-step-"]')).toBeNull()
       await act(async () => {
-        sidebar.style.setProperty('--gg-sidebar-progress', '1')
+        createAgent.style.opacity = '1'
         createAgent.getBoundingClientRect = settled
       })
       await settleTargets()

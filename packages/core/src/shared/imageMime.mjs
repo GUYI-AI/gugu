@@ -1,5 +1,5 @@
 // @@@image-mime - 附件「是不是图、能不能内联画」的唯一判据,MCP 服务端(node .mjs)与渲染端共用。
-// 判据取 mime 与扩展名的并集:agent 调 message_send_file 时 mime_type 可选、大小写随意,
+// 判据取 mime 与扩展名的并集:agent 调 message_send 发文件时 mime_type 可选、大小写随意,
 // 只看 mime 会让同一张 .png 时而成图时而成文件卡片。
 // 文件名说它是什么也只这一张表:附件、agent 传进工作区的文件、App 传的文件(app-files-core contentTypeOf)都查它。
 

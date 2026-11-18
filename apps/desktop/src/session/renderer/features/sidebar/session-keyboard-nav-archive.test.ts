@@ -18,7 +18,9 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: { expandedProjectIds: new Set() },
 }));
 const archiveSessionNow = vi.hoisted(() => vi.fn());
-vi.mock('@renderer/features/sessions/archive-session-flow', () => ({ archiveSessionNow }));
+// The second press asks the one archive confirmation; the person ticks or unticks 「同时移出群和通讯录」 there.
+const confirmArchive = vi.hoisted(() => vi.fn((args: { proceed: (withChildren: boolean, removeSocialIdentity: boolean) => void }) => args.proceed(false, false)));
+vi.mock('@renderer/features/sessions/archive-session-flow', () => ({ archiveSessionNow, confirmArchive }));
 vi.mock('./with-mounted-session', () => ({
   withMountedSession: (_projectId: string, _sessionId: string, run: () => void) => run(),
 }));
@@ -32,6 +34,7 @@ const { installOneListNeighbour } = await import('@/lib/sidebarChatsBridge');
 let uninstall: (() => void) | undefined;
 beforeEach(() => {
   archiveSessionNow.mockClear();
+  confirmArchive.mockClear();
   navigateTransient.mockClear();
 });
 afterEach(() => uninstall?.());
@@ -46,9 +49,19 @@ describe('⌃X⌃X on the open task', () => {
     const neighbour = vi.fn(() => true);
     uninstall = installOneListNeighbour(neighbour);
     archiveTwice();
-    expect(archiveSessionNow).toHaveBeenCalledWith({ projectId: 'p1', sessionId: 's1', withChildren: false });
+    expect(confirmArchive).toHaveBeenCalledTimes(1);
+    expect(archiveSessionNow).toHaveBeenCalledWith({ projectId: 'p1', sessionId: 's1', withChildren: false, removeSocialIdentity: false });
     expect(neighbour).toHaveBeenCalledTimes(1);
     expect(navigateTransient).not.toHaveBeenCalled();
+  });
+
+  it('dismissing the confirmation archives nothing and stays put', () => {
+    confirmArchive.mockImplementationOnce(() => undefined);
+    const neighbour = vi.fn(() => true);
+    uninstall = installOneListNeighbour(neighbour);
+    archiveTwice();
+    expect(archiveSessionNow).not.toHaveBeenCalled();
+    expect(neighbour).not.toHaveBeenCalled();
   });
 
   it('with no other row in the one list, goes to the New task page (as the old sidebar did with nothing next)', () => {

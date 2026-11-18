@@ -1,5 +1,5 @@
 export default {
-  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}" },
+  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
   "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
   "agent": {
     "identity": {
@@ -266,6 +266,7 @@ export default {
     }
   },
   "chatList": {
+    "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
     "create": "New",
@@ -276,6 +277,13 @@ export default {
     "delete": "Delete",
     "disableNotifications": "Mute notifications",
     "deleteFailed": "Could not delete this conversation",
+    "deleteChat": "Delete chat",
+    "deleteChatConfirm": "Delete this chat with “{{name}}”? Its history is deleted with it.",
+    "deleteTopic": "Delete topic",
+    "deleteTopicConfirm": "Delete topic “{{name}}”? It is removed from every member's list.",
+    "dissolveGroup": "Dissolve group",
+    "leaveGroup": "Leave group",
+    "markTopicsRead": "Mark this group's topics read",
     "draft": "[Draft]",
     "moreTopics": "More topics ({{count}})",
     "moreTopics_one": "More topics ({{count}})",
@@ -302,8 +310,7 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin",
-    "unpinFromSidebar": "Unpin from sidebar"
+    "unpin": "Unpin"
   },
   "chatService": {
     "errors": {
@@ -506,6 +513,7 @@ export default {
     "forwarding": "Forwarding…",
     "noResults": "No chats found",
     "noTargets": "No chats available for forwarding",
+    "people": "Contacts",
     "note": "Add a note",
     "preview": {
       "attachment": "[Attachment]",
@@ -793,6 +801,8 @@ export default {
       "openLink": "Open link",
       "selectText": "Select text",
       "delete": "Delete",
+      "deleteConfirm": "Delete this message? It cannot be restored.",
+      "deleteTitle": "Delete message",
       "forward": "Forward",
       "more": "More",
       "openTopic": "Open a topic",
@@ -883,7 +893,6 @@ export default {
     "reference": { "loading": "Loading…", "unreadable": "A message you cannot see", "widgetUnreadable": "A widget you cannot see", "widgetRetracted": "This widget was retracted", "widgetElsewhere": "This widget is in another conversation", "locate": "Go to original", "locateActive": "Go to active widget", "previewQuote": "[Quote]", "previewMessage": "[Quoted message]" },
     "widgetUnavailable": { "missing": "App is not installed.", "disabled": "App is switched off.", "view": "This App view is unavailable.", "platform": "This App cannot run here." }
   },
-  "searchTrail": {"position": "“{{query}}” {{index}}/{{total}}", "positionNoWords": "{{index}}/{{total}}", "previous": "Previous", "next": "Next (⌘G)", "results": "Results", "close": "Close search"},
   "outbox": {
     "selectFileAgain": "Upload interrupted. Select the file again.",
     "sourceNotSent": "The original message was not sent. Retry it before forwarding again.",

@@ -49,15 +49,28 @@ export function getTerminalLinkAtBufferCell(
   );
   if (fileLink) return fileLink.text;
 
-  const lineWithColumns = getLineTextWithColumns(buffer.getLine(bufferLineNumber - 1));
-  if (!lineWithColumns.text) return null;
-  for (const match of lineWithColumns.text.matchAll(URL_PATTERN)) {
-    const text = trimLinkText(match[0]);
-    const startOffset = match.index ?? 0;
-    const endOffset = startOffset + text.length - 1;
-    const start = lineWithColumns.columnForOffset(startOffset);
-    const end = lineWithColumns.columnForOffset(endOffset);
-    if (column >= start && column <= end) return text;
+  let startIndex = bufferLineNumber - 1;
+  while (startIndex > 0 && buffer.getLine(startIndex)?.isWrapped) startIndex -= 1;
+  const lines: LineTextWithColumns[] = [];
+  let text = '';
+  let clickedOffset = 0;
+  for (let index = startIndex; ; index += 1) {
+    const line = buffer.getLine(index);
+    if (!line) break;
+    const mapped = getLineTextWithColumns(line);
+    if (index === bufferLineNumber - 1) clickedOffset = text.length;
+    lines.push(mapped);
+    text += mapped.text;
+    if (text.length > 4096) return null;
+    if (!buffer.getLine(index + 1)?.isWrapped) break;
+  }
+  const clicked = lines[bufferLineNumber - 1 - startIndex];
+  if (!clicked) return null;
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const link = trimLinkText(match[0]);
+    const startOffset = Math.max(0, match.index! - clickedOffset);
+    const endOffset = Math.min(clicked.text.length, match.index! + link.length - clickedOffset) - 1;
+    if (startOffset <= endOffset && column >= clicked.columnForOffset(startOffset) && column <= clicked.columnForOffset(endOffset)) return link;
   }
   return null;
 }
@@ -121,5 +134,15 @@ function rangeContainsColumn(
 }
 
 function trimLinkText(text: string): string {
-  return text.replace(/[),.;:!?]+$/, '');
+  let result = text;
+  for (;;) {
+    const trimmed = result.replace(/[,. ;:!?]+$/, '');
+    if (trimmed !== result) { result = trimmed; continue; }
+    const opening = ({ ')': '(', ']': '[', '}': '{' } as Record<string, string>)[result.at(-1) ?? ''];
+    if (opening && result.split(result.at(-1)!).length > result.split(opening).length) {
+      result = result.slice(0, -1);
+      continue;
+    }
+    return result;
+  }
 }
