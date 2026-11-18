@@ -8,6 +8,7 @@ const progress = vi.hoisted(() => ({ set: vi.fn(), fail: vi.fn() }))
 const copies = vi.hoisted(() => new Map<string, Blob>())
 const refuse = (status: number, error: string) => Object.assign(new Error(error), { status, error })
 import { createDeclaredUploads } from '@gugu/core/cloud/declaredUploads'
+import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
 const endpoint = async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 't',
   fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
     const route = String(input).split('/').at(-1)!, body = JSON.parse(String(init?.body)) as Record<string, unknown>
@@ -46,6 +47,36 @@ beforeEach(() => {
 afterEach(() => queue.dispose())
 
 describe('attachment bytes go up behind their message', () => {
+  it('an exhausted missing declaration stops when the server no longer lists the message', async () => {
+    vi.useFakeTimers()
+    try {
+      server.finish.mockRejectedValue(notFound())
+      const run = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1'))
+      await vi.advanceTimersByTimeAsync(121_000)
+      await run
+      expect(server.pending).toHaveBeenCalledOnce()
+      expect(progress.fail).not.toHaveBeenCalled()
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(server.store).toHaveBeenCalledOnce()
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each(['listed', 'read failed'])('an exhausted missing declaration keeps its duty when pending is %s', async state => {
+    vi.useFakeTimers()
+    try {
+      server.finish.mockRejectedValue(notFound())
+      if (state === 'listed') server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      else server.pending.mockRejectedValue(new TypeError('metadata offline'))
+      server.plan.mockResolvedValue(plan('upload/recovered'))
+      void beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(() => {})
+      await vi.advanceTimersByTimeAsync(121_000)
+      expect(progress.fail).toHaveBeenCalledOnce()
+      server.finish.mockReset().mockResolvedValue({})
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(server.finish).toHaveBeenCalledWith(expect.objectContaining({ upload_key: 'upload/recovered' }))
+    } finally { vi.useRealTimers() }
+  })
   it('discard before prepare returns prevents a late declaration from starting an upload', async () => {
     dropAttachmentUpload('discarded')
     await beginAttachmentUpload(task('discarded'), new Blob(['bytes']), plan('pending/discarded'))
@@ -132,10 +163,16 @@ describe('attachment bytes go up behind their message', () => {
     } finally { vi.useRealTimers() }
   })
 
-  it('bytes that are not the declared file fail for good: no retry', async () => {
-    server.finish.mockRejectedValue(refuse(409, 'upload_mismatch'))
-    await beginAttachmentUpload(task(), new Blob(['other']), plan('pending/message-1')).catch(() => undefined)
-    expect(progress.fail).toHaveBeenCalledExactlyOnceWith('message-1', undefined)
+  it.each(['upload_mismatch', 'too_large', 'storage 413'])('%s fails for good without scheduling another upload', async failure => {
+    vi.useFakeTimers()
+    try {
+      if (failure === 'storage 413') server.store.mockRejectedValue(new AttachmentsError('upload', 413, 'failed', 'HTTP 413'))
+      else server.finish.mockRejectedValue(refuse(failure === 'too_large' ? 413 : 409, failure))
+      await beginAttachmentUpload(task(), new Blob(['other']), plan('pending/message-1')).catch(() => undefined)
+      expect(progress.fail).toHaveBeenCalledExactlyOnceWith('message-1', undefined)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(server.store).toHaveBeenCalledOnce()
+    } finally { vi.useRealTimers() }
   })
 
   it('a message discarded unsent stops its upload', async () => {
