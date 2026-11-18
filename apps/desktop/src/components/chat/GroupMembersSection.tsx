@@ -20,7 +20,7 @@ import { useSettingsPages } from './useSettingsPages'
 import { SettingsNavRow, SettingsPageFrame, SettingsPageHead } from './groupSettingsUi'
 import {
   settingsBodyStyle,
-  settingsDangerRowStyle,
+  settingsDangerRowStyle, managementSettingsDangerRowStyle,
   settingsErrorStyle,
   settingsMobileBodyStyle,
   settingsReadOnlyBoxStyle,
@@ -269,9 +269,9 @@ export function GroupMembersSection({
                 </div>
               </div>
             ) : (
-              <div role="button" data-testid="group-settings-exit" style={settingsDangerRowStyle} onClick={() => setConfirmExit(true)}>
+              <Button variant="ghost" data-testid="group-settings-exit" className="gg-row w-full border-0 leading-[var(--lh-body)]" style={mobileShell ? managementSettingsDangerRowStyle : settingsDangerRowStyle} onClick={() => setConfirmExit(true)}>
                 {viewerRole === 'owner' ? t('group.settings.dissolve') : t('group.settings.leave')}
-              </div>
+              </Button>
             )
           ) : null}
           {errorLine}
