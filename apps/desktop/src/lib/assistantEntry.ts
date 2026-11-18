@@ -197,11 +197,15 @@ function openAssistantAppToInstall(): boolean {
 /**
  * Open the user's connector management from the desktop shell.
  */
-export function openInstalledConnectors(): boolean {
+export function openInstalledConnectors(deviceId?: string): boolean {
   if (!platform.capabilities.sessionHost) return false
   window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
   window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-  appState.navigation.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors' })
+  appState.navigation.navigate('apps', {
+    marketPage: 'connectors',
+    installedSection: 'connectors',
+    ...(deviceId ? { installedDeviceId: deviceId } : {}),
+  })
   return true
 }
 

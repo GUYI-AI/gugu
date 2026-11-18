@@ -184,7 +184,7 @@ export function AssistantMoveDialog() {
                   size="sm"
                   onClick={() => {
                     dismissMove()
-                    openInstalledConnectors()
+                    openInstalledConnectors(phase.report.targetDeviceId ?? (phase.direction === 'to-computer' ? env?.localDeviceId : undefined))
                   }}
                   data-testid="assistant-move-reconnect-open"
                 >

@@ -229,7 +229,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       if (during) await act(async () => { createAgent.remove() })
       await settleTargets()
       await waitForCondition(() => document.querySelector('[data-testid="product-tour-step-chats"]') !== null, 'continued without 创建智能体')
-      expect(h.card().textContent).toContain('2 / 6')
+      expect(h.card().textContent).toContain('2 / 5')
       await clickElement(h.button('previous')!)
       expect(h.card().dataset.testid).toBe('product-tour-step-assistant')
       await clickElement(h.button('next')!)

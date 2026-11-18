@@ -66,7 +66,7 @@ describe('the one settings nav', () => {
 
   // 手机「我的」没有会话页那几格(订阅、云端连接应用也在其中:读数要会话页宿主):同一份分组,少掉的格不画,整组空了就连组带小标题一起不画。
   it('drops the sections a host does not show, and a group left empty', async () => {
-    await render(mobileSections.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone' && section !== 'connectors'), { mobile: true })
+    await render(mobileSections.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone'), { mobile: true })
     expect(groups()).toEqual([
       ['account', 'usage', 'files'],
       ['general', 'connectors', 'permissions', 'model'],

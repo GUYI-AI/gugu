@@ -19,7 +19,7 @@ function buildStore() {
   const store = new NavigationStore();
   store.registerView('home');
   store.registerView('project');
-  store.registerView('apps', { transientParams: ['installedSection'] });
+  store.registerView('apps', { transientParams: ['installedSection', 'installedDeviceId'] });
   return store;
 }
 
@@ -93,8 +93,8 @@ describe('NavigationStore transient view params', () => {
 
   it('drops a transient param when the view is left, and keeps the remembered one', () => {
     const store = buildStore();
-    store.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors' });
-    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors', installedSection: 'connectors' });
+    store.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors', installedDeviceId: 'other-device' });
+    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors', installedSection: 'connectors', installedDeviceId: 'other-device' });
 
     store.navigate('home');
     expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors' });

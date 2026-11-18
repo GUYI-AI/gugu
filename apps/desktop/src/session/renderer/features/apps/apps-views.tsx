@@ -104,6 +104,7 @@ const AgentDetailHost = observer(function AgentDetailHost({ target, children }: 
 type AppsViewParams = {
   marketPage?: MarketplaceTab;
   installedSection?: 'connectors';
+  installedDeviceId?: string;
   detail?: ExtensionAppDetailLink;
   agentDetail?: AgentAppDetailLink;
   agentDetailFrom?: 'apps' | 'embedded-composer';
@@ -112,7 +113,7 @@ function AppsViewWrapper({ children }: { children: ReactNode } & AppsViewParams)
 
 export const appsView = {
   WrapView: AppsViewWrapper,
-  transientParams: ['detail', 'agentDetail', 'agentDetailFrom', 'installedSection'],
+  transientParams: ['detail', 'agentDetail', 'agentDetailFrom', 'installedSection', 'installedDeviceId'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   withoutSessionSidebar: true,

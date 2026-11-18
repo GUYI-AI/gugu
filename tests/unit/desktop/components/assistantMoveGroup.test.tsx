@@ -187,6 +187,7 @@ describe('点了先列清带走什么,确认才搬', () => {
       },
     })
     mocks.runAssistantMove.mockResolvedValue({
+      targetDeviceId: 'cloud-fixture',
       files: 3,
       skippedFiles: [],
       accounts: {
@@ -228,11 +229,11 @@ describe('点了先列清带走什么,确认才搬', () => {
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
     expect(done).toContain('Notion (a@x.cn)')
     expect(done).toContain('imap.x.cn')
-    expect(done).toContain('机器选「云上」')
+    expect(done).toContain('选择「云上」')
     await act(async () => {
       (document.body.querySelector('[data-testid="assistant-move-reconnect-open"]') as HTMLButtonElement).click()
     })
-    expect(mocks.openInstalledConnectors).toHaveBeenCalledOnce()
+    expect(mocks.openInstalledConnectors).toHaveBeenCalledExactlyOnceWith('cloud-fixture')
     expect(document.body.querySelector('[data-testid="assistant-move-dialog"]')).toBeNull()
   })
 
