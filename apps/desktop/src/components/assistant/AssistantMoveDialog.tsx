@@ -6,9 +6,7 @@ import { Sheet } from '../ui/Sheet'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import type { MoveDirection } from '@renderer/features/assistant/assistant-move'
 import type { MoveSkipped } from '@shared/core/integrations/integration-move'
-import { appState } from '../../session/renderer/lib/stores/app-state'
-import { UI_EVENTS } from '../../lib/uiEvents'
-import { revealSessionpage } from '../../hooks/useSessionpageReveal'
+import { openConnectedAppsSettings } from '@/lib/assistantEntry'
 import { dismissMove, getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import '../../i18n/registerAssistantCatalog'
 
@@ -186,10 +184,7 @@ export function AssistantMoveDialog() {
                   size="sm"
                   onClick={() => {
                     dismissMove()
-                    // 搬家多半是从设置弹窗里开的:先收起它、回到会话页,资源库才露得出来。
-                    window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
-                    revealSessionpage()
-                    appState.navigation.navigate('library', { tab: 'integrations' })
+                    openConnectedAppsSettings()
                   }}
                   data-testid="assistant-move-reconnect-open"
                 >

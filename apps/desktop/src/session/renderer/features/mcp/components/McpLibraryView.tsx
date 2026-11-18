@@ -37,7 +37,7 @@ const QUIET = 'py-2 pl-6 text-sm text-foreground-muted';
  * 上面是咕咕自己管的那份列表(加 / 改 / 删 / 默认启用 / 检测),下面按家列各家自己的用户级那几台(只读、可检测)。
  * 新建任务时勾选的只有咕咕的那几台;各家自己的照常由那一家自己带上。
  */
-export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ onOpenIntegrations }) => {
+export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSettings?: boolean }> = ({ onOpenIntegrations, inSettings }) => {
   const library = useMcpLibrary();
   const { translate } = useSessionMessages();
   const host = useLibraryHost();
@@ -78,8 +78,9 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
     <TooltipProvider delay={150}>
       <div data-slot="mcp-library" className="flex flex-col text-foreground">
         <PageHeader
-          sticky
+          sticky={!inSettings}
           title={translate('mcpLibrary.title')}
+          showTitleInSettings={inSettings}
         />
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={library.reload} />}
         {library.isLoading ? (
@@ -91,7 +92,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
               {library.provided?.builtIn.map((name) => (
                 <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
               ))}
-              <ProvidedGroup
+              {onOpenIntegrations && <ProvidedGroup
                 slot="mcp-library-integrations"
                 title={translate('mcpLibrary.integrationsGroup')}
                 servers={library.provided?.servers.filter((server) => server.group === 'integrations') ?? []}
@@ -102,7 +103,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
                 keepEmpty
                 library={library}
                 onFail={fail}
-              />
+              />}
               <ProvidedGroup
                 slot="mcp-library-apps"
                 title={translate('mcpLibrary.appsGroup')}

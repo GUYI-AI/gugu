@@ -20,6 +20,7 @@ import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stor
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } from '../../../../apps/desktop/src/lib/appHostLayerBridge'
 import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
 import { appConversationPanelCollapsed, setAppConversationPanelCollapsed } from '../../../../apps/desktop/src/session/renderer/features/apps/app-conversation-panel'
+import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
 // Where Apps are (a task host): the no-App 开通 opens the Apps page there; the web build has none.
@@ -311,18 +312,21 @@ describe('openAssistantPageInApp', () => {
     expect(appState.navigation.currentViewId).toBe('home')
   })
 
-  // 11-12 gap: no assistant and no App, no Settings group to fall back on. 资料 is 开通: the Apps page on the assistant App, to
-  // install or switch it on. The connected apps are the person's own: their computer home, the Library's 集成.
-  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the Library\'s 集成; the web build neither', () => {
+  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the user\'s Settings; the web build neither', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     expect(openAssistantPageInApp('settings')).toBe(true)
     expect(opened).toEqual([{ kind: 'app-detail', extensionId: ASSISTANT_APP_ID }])
     expect(revealed).toEqual([true])
     opened.length = 0
-    expect(openAssistantPageInApp('connected-apps')).toBe(true)
-    expect(appState.navigation.currentViewId).toBe('library')
-    expect(appState.navigation.viewParamsStore.library?.tab).toBe('integrations')
+    const settings = vi.fn()
+    window.addEventListener(UI_EVENTS.openSettings, settings, { once: true })
+    try {
+      expect(openAssistantPageInApp('connected-apps')).toBe(true)
+      expect(settings).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'connectors', ownerConnections: true } }))
+    } finally {
+      window.removeEventListener(UI_EVENTS.openSettings, settings)
+    }
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')

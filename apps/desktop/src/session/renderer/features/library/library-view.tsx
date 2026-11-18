@@ -1,26 +1,23 @@
 import { observer } from 'mobx-react-lite';
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { McpLibraryView } from '@renderer/features/mcp/components/McpLibraryView';
-import { IntegrationsProvider } from '@renderer/features/integrations/integrations-provider';
-import { DeviceScopePicker, DeviceScopeProvider, useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
+import { DeviceScopePicker, DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scope-picker';
 import { libraryDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { AgentsSettingsPage } from '@renderer/features/settings/agents-page/AgentsSettingsPage';
-import IntegrationsCard from '@renderer/features/settings/components/IntegrationsCard';
-import { PageHeader } from '@renderer/lib/components/page-header';
 import { PageContent, PageLayout, PageSidebarMenu } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useParams } from '@renderer/lib/layout/navigation-provider';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { createRemoteLibraryHost, LOCAL_LIBRARY_HOST, LibraryHostProvider, type LibraryHost } from './library-host';
+import { LibraryHostProvider } from './library-host';
+import { useSelectedLibraryHost } from './use-selected-library-host';
+import { RoutedIntegrationsLibraryPage } from './routed-integrations-library-page';
 import { PromptLibraryView } from './prompts/prompt-library-view';
 import { ThemesLibraryPage } from './themes/themes-library-page';
-import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
-import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
-import { useDevicesStore } from '@/store/devicesContext';
 import { LIBRARY_TABS, type LibraryTab } from '@shared/library-tabs';
+
+export { useSelectedLibraryHost } from './use-selected-library-host';
 
 /** Each tab's name, one list: the Library's own menu and an App's `hostLinks` entry (app-settings-page.tsx) say it the same. */
 export const LIBRARY_TAB_LABELS = {
@@ -86,45 +83,6 @@ function useLibraryTab() {
   return context;
 }
 
-/** 资源库此刻看的是哪台机器(选的那台不在名下了就回落本机)。挂在资源库那一页上,observer 里调。 */
-export function useSelectedLibraryHost(): LibraryHost {
-  const selected = useSelectedRemoteDevice(libraryDeviceStore);
-  const deviceId = selected?.deviceId ?? null;
-  const label = selected?.device.label ?? '';
-  const online = selected?.device.isOnline ?? false;
-  const lastSeenAt = selected?.device.lastSeenAt ?? null;
-  const hostKind = selected?.device.hostKind;
-  return useMemo(
-    () =>
-      deviceId
-        ? createRemoteLibraryHost({ deviceId, deviceLabel: label, online, lastSeenAt, hostKind }, (id, initialPath) =>
-            remoteHostsStore.pickFolder(id, initialPath)
-          )
-        : LOCAL_LIBRARY_HOST,
-    // device 对象本身每次心跳都换;按它身上会变、页面会用到的那几格重建。
-    [deviceId, label, online, lastSeenAt, hostKind]
-  );
-}
-
-function IntegrationsLibraryPage() {
-  const { translate } = useSessionMessages();
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        sticky
-        title={translate('settings.integrations')}
-      />
-      <IntegrationsCard />
-    </div>
-  );
-}
-
-const RoutedIntegrationsLibraryPage = observer(function RoutedIntegrationsLibraryPage({ legacy,host }: { legacy: ReactNode; host: LibraryHost }) {
-  const devices = useDevicesStore();
-  const deviceId = host.remote?.deviceId ?? devices.devices.find(row => row.is_current_device)?.device_id ?? null;
-  return <ConnectionRouteBoundary owner={route => <OwnerConnectorsSettings route={route} deviceId={deviceId} />} legacy={legacy} />;
-});
-
 export const LibraryMainPanel = observer(function LibraryMainPanel() {
   const { tab, onTabChange } = useLibraryTab();
   const { params, setParams } = useParams('library');
@@ -144,14 +102,7 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
         onSelectAgent={(agentId) => setParams({ agentId: agentId ?? undefined })}
       />
     ),
-    // 集成的数据放在一个 Provider 里(应用根上那份是本机的,聊天里的 @issue 用它);这里按所选机器另挂一份。
-    integrations: <RoutedIntegrationsLibraryPage host={host} legacy={host.remote ? (
-      <IntegrationsProvider>
-        <IntegrationsLibraryPage />
-      </IntegrationsProvider>
-    ) : (
-      <IntegrationsLibraryPage />
-    )} />,
+    integrations: <RoutedIntegrationsLibraryPage host={host} />,
     mcp: <McpLibraryView onOpenIntegrations={() => onTabChange('integrations')} />,
     themes: <ThemesLibraryPage />,
   };
