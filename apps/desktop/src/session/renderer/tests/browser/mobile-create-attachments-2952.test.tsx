@@ -87,7 +87,7 @@ async function mount(theme: 'light' | 'dark') {
   host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;background:var(--ta-panel-bg)'
   root = createRoot(host); render(theme)
   await until('real empty creation input and attachment control', () => !!host?.querySelector('[contenteditable]') && !!host?.querySelector('[data-phone-attachment]'))
-  expect(host!.textContent).toContain('新建任务')
+  expect(host!.textContent).toContain('创建智能体')
   expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('随心输入')
   expect(host!.textContent).not.toContain('agentWatch.')
 }

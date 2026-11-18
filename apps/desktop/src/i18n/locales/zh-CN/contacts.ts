@@ -273,7 +273,7 @@ export default {
     "contactCountSummary_other": "共 {{count}} 位联系人",
     "contactDetail": "联系人详情",
     "contactSectionTitle": "个人",
-    "createAgent": "新建 Agent",
+    "createAgent": "创建智能体",
     "createGroup": "创建群聊",
     "enterGroup": "进入群聊",
     "groupCount": "{{count}} 个群组",

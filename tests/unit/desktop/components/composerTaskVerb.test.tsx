@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // GUYI-AI/gugu#2548 the composer's 「新任务」 button: where the task page's one-list sidebar is mounted (the desktop) it reads
-// 「新智能体」 with the pen of 创建智能体 (mock v33 派智能体); where it is not (the phone) it stays 「新任务」. Same action.
+// 「新智能体」 with the pen of 创建智能体 (mock v33 派智能体); where it is not (the phone) it uses 「创建智能体」. Same action.
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ComposerVerbs } from '../../../../apps/desktop/src/components/chat/ComposerVerbs'
 import { SquarePen, Zap } from '../../../../apps/desktop/src/lib/icons'
 import { publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
@@ -10,8 +10,11 @@ import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVe
 import { InChatSlot } from '../../../../apps/desktop/src/lib/shellSlots'
 import { clickElement, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
+const viewport = vi.hoisted(() => ({ phone: false }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => viewport.phone }))
+
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness() })
+beforeEach(() => { viewport.phone = false; harness = createReactHarness() })
 afterEach(() => {
   harness.cleanup()
   publishSidebarChatView({ focusedChatId: null, groups: [] })
@@ -38,10 +41,11 @@ async function renderVerbs() {
 }
 
 describe('ComposerVerbs task button', () => {
-  it('reads 新任务 with the lightning where no one-list sidebar is mounted (the phone)', async () => {
+  it('reads 创建智能体 with the lightning on the phone', async () => {
+    viewport.phone = true
     await renderVerbs()
-    expect(button().textContent).toBe('新任务')
-    expect(button().getAttribute('aria-label')).toBe('新任务')
+    expect(button().textContent).toBe('创建智能体')
+    expect(button().getAttribute('aria-label')).toBe('创建智能体')
     expect(button().querySelector('svg')!.innerHTML).toBe(glyph(renderToStaticMarkup(<Zap size={14} />)))
   })
 

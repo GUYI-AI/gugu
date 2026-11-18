@@ -284,7 +284,7 @@ export default {
       "byMobile": "手机端"
     },
     "create": {
-      "title": "新建任务",
+      "title": "创建智能体",
       "pickMachine": "在哪台机器上",
       "welcome": "在 {{machine}} 上开始新任务",
       "placeholder": "随心输入",
@@ -512,7 +512,7 @@ export default {
     "guguNumberCopied": "已复制咕咕号",
     "guguNumberUnassigned": "咕咕号未分配",
     "my": "我的",
-    "newAgent": "新建 Agent",
+    "newAgent": "创建智能体",
     "newTask": "新建任务",
     "apps": {
       "intro": "装在这台手机上的 App:从聊天里的卡片装的，和从市场装的。咕咕自带的不在这里。",
@@ -582,7 +582,7 @@ export default {
         "help": "帮助"
       },
       "items": {
-        "newAgent": "新建 Agent",
+        "newAgent": "创建智能体",
         "settings": "设置",
         "exit": "退出",
         "undo": "撤销",
@@ -643,7 +643,7 @@ export default {
     "mainNavigation": "主导航",
     "messages": "消息 (⌘1)",
     "my": "我的",
-    "newAgent": "新建 Agent",
+    "newAgent": "创建智能体",
     "newTask": "新建任务",
     "usage": "用量",
     "resizeChatList": "调整聊天列表宽度",

@@ -273,7 +273,7 @@ export default {
     "contactCountSummary_other": "{{count}} contacts total",
     "contactDetail": "Contact details",
     "contactSectionTitle": "People",
-    "createAgent": "Create Agent",
+    "createAgent": "Create agent",
     "createGroup": "Create group chat",
     "enterGroup": "Open group chat",
     "groupCount": "{{count}} groups",
