@@ -1,3 +1,4 @@
+import { withAutoReviewHint, type ReviewCostSource } from '@renderer/features/sessions/acp/auto-review-permission-hint'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -72,6 +73,10 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   }
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
   const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description }])) : null
+  const reviewAuth = options?.modelMenu?.ownAuth?.status
+  const reviewCostSource: ReviewCostSource = options?.modelMenu?.conversationSelection ? 'platform'
+    : options?.modelMenu?.customModel ? 'api-key'
+    : options?.modelMenu?.conversationSelection === null && reviewAuth?.kind === 'authenticated' ? reviewAuth.credentialKind ?? 'unknown' : 'unknown'
   const props: Partial<ComponentProps<typeof AgentConversationComposer>> = {
     modelOptions: model ? Object.fromEntries(model.groups.flatMap(group => group.items.map(({ id, ...option }) => [id, option]))) : undefined,
     onModelMenuOpen: () => { if (!pending && !fastModePending) readOptions(true) },
@@ -88,8 +93,8 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     fastMode: fastModeValue(options?.fast),
     onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
     renderFastModeHint,
-    permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap,
-      mobile ? tier => t(`agentWatch.create.permission.${tier}.name`) : undefined),
+    permissionModeOptions: withAutoReviewHint(localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap,
+      mobile ? tier => t(`agentWatch.create.permission.${tier}.name`) : undefined), options?.modelMenu?.providerId, reviewCostSource, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
     ...(error ? { notice: { variant: 'error', message: error, onDismiss: () => setError(null) } } : {}),

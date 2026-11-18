@@ -31,3 +31,8 @@ describe('start-time reviewer source', () => {
     expect(nativeClaudeReviewEnv({ ANTHROPIC_API_KEY: 'fixture' })).toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER });
   });
 });
+
+it.each(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'])('uses an explicitly selected model on a native compatible API (%s)', credential => {
+  expect(nativeClaudeReviewEnv({ [credential]: 'fixture', ANTHROPIC_BASE_URL: 'https://compatible.example/v1', ANTHROPIC_MODEL: 'claude-sonnet-5' }))
+    .toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-sonnet-5' });
+});

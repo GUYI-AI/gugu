@@ -67,7 +67,8 @@ export async function readSessionModelMenu(sessionId: string, providerId: string
     agentsController.list(),
     readPlatformModels(getPlatformModelCatalogResolver(), providerId),
     readOwnCatalog ? probeHarnessCatalogState(providerId, 'acp') : null,
-    readOwnCatalog ? readOwnAuth(providerId) : null,
+    // Published credential facts are needed by the permission reviewer hint as well. No CLI probe.
+    readOwnAuth(providerId),
   ]);
   const agent = agents.find((entry) => entry.id === providerId);
   const liveSetting = agent?.capabilities?.acp?.liveSettings?.model;
