@@ -26,7 +26,7 @@ export const innerSectionEmptyClass = 'px-5 pb-2 text-xs text-foreground-muted';
 
 /**
  * 头一行:这个群 / 项目自己 —— 头像 + 名字(+ 标签,示例的「示例」),点它做什么由调用方给(群 / 项目 = 回到它的主群聊)。
- * 群 / 项目的两行头部共用一块高亮，创建按钮和行尾按钮是独立入口。独立智能体和示例的单行标题不画选中底色。
+ * 群 / 项目的两行头部共用一块悬停底，创建按钮和行尾按钮是独立入口。标题用 aria-current 表示当前页。
  * 标题用面板的粗体字号 --font-title。
  * 行尾的钮(群菜单、收起这一列)由调用方给,摆在行的右端,是左边列表顶上那一行(«、会话历史)那一种;
  * 名字给它们让出 `trailingButtons` 枚 28px 钮、钮间 4px、右边 8px。`hoverButton`(群的「⋯」)静止时不占地方,
@@ -75,7 +75,6 @@ export function InnerHeadRowLayout({
         <SidebarMenuButton
           aria-label={name}
           aria-current={active ? 'page' : undefined}
-          isActive={Boolean(createAction) && active}
           data-inner-head-open=""
           className="w-full"
           style={{ paddingInlineEnd: 'var(--head-reserve)' }}
