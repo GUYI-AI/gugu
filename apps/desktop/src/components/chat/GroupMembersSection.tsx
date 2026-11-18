@@ -269,9 +269,9 @@ export function GroupMembersSection({
                 </div>
               </div>
             ) : (
-              <button type="button" data-testid="group-settings-exit" className="gg-row block w-full border-0 bg-transparent text-left" style={mobileShell ? managementSettingsDangerRowStyle : settingsDangerRowStyle} onClick={() => setConfirmExit(true)}>
+              <Button variant="ghost" data-testid="group-settings-exit" className="gg-row w-full border-0 leading-[var(--lh-body)]" style={mobileShell ? managementSettingsDangerRowStyle : settingsDangerRowStyle} onClick={() => setConfirmExit(true)}>
                 {viewerRole === 'owner' ? t('group.settings.dissolve') : t('group.settings.leave')}
-              </button>
+              </Button>
             )
           ) : null}
           {errorLine}
