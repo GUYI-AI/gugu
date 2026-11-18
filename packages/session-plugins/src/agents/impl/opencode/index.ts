@@ -37,6 +37,7 @@ export const plugin = definePlugin(
   {
     id: 'opencode',
     name: 'OpenCode',
+    publisher: '开源',
     description:
       'OpenCode CLI that interfaces with models for code generation and edits from the shell.',
     websiteUrl: 'https://opencode.ai/docs/cli/',

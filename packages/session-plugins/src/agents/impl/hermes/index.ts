@@ -51,6 +51,7 @@ export const plugin = definePlugin(
   {
     id: 'hermes',
     name: 'Hermes Agent',
+    publisher: 'Nous Research',
     description:
       'Nous Research terminal agent with interactive chat, model-provider routing, skills, and session workflows.',
     websiteUrl: 'https://hermes-agent.nousresearch.com/docs/',

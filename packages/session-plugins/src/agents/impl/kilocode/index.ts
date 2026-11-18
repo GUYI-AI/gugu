@@ -42,6 +42,7 @@ export const plugin = definePlugin(
   {
     id: 'kilocode',
     name: 'Kilo',
+    publisher: '开源',
     description:
       'Kilo AI coding assistant with multiple modes, broad model support, and checkpoint-based workflows.',
     websiteUrl: 'https://kilo.ai/docs/cli',

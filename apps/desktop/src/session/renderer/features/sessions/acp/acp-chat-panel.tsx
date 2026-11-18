@@ -95,6 +95,7 @@ import {
   sortAgentsByAvailability,
 } from '@renderer/lib/components/agent-availability-groups';
 import { toast } from '@renderer/lib/hooks/use-toast';
+import { openAgentAppDetail } from '@renderer/features/apps/agent-app-detail-navigation';
 import { useNavigate } from '@renderer/lib/layout/navigation-actions';
 import type { SessionCondition as ChatSessionCondition } from '@gugu/session-chat-ui';
 
@@ -1862,7 +1863,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
                     {
                       label: translate('transcript.condition.install'),
                       // 与任务配置页里「去装这个 agent」同一条路(initial-session-section.tsx)。
-                      run: () => navigate('library', { tab: 'agents', agentId: providerId }),
+                      run: () => openAgentAppDetail(navigate, providerId, machine),
                     },
                   ],
                 }
@@ -1882,7 +1883,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
               ...(providerId
                 ? [{
                     label: translate('taskError.runtimeUpgradeOpenInstaller', { harnessName: agent?.name ?? providerId }),
-                    run: () => navigate('library', { tab: 'agents', agentId: providerId }),
+                    run: () => openAgentAppDetail(navigate, providerId, machine),
                   }]
                 : []),
               retry,
@@ -1977,7 +1978,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, machine, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
