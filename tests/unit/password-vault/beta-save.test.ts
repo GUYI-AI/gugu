@@ -39,6 +39,20 @@ describe('Agent save requests', () => {
     expect(draft.fields[0].id).toBe(item.fields[0].id)
     expect(posted[0]).toContain('d***@example.com')
   })
+  it('reproduces both Apple save failures while the phone-field request is pending', async () => {
+    const { value } = saves()
+    const first = await value.request(context(), caller, 'https://example.com', undefined,
+      { fields: [{ name: '手机号', value: '15500000000', secret: false }] })
+    expect(value.draft(first.requestId).fields[0].value).toBe('15500000000')
+    for (const origin of ['https://developer.apple.com', 'https://idmsa.apple.com']) {
+      await expect(value.request(context(), caller, origin, undefined,
+        { account: 'synthetic@example.com', password: 'synthetic-test-value' })).rejects.toMatchObject({ code: 'REQUEST_PENDING', requestId: first.requestId })
+    }
+    value.reject(first.requestId)
+    await expect(value.request(context(), caller, 'https://developer.apple.com', undefined,
+      { account: 'synthetic@example.com', password: 'synthetic-test-value' })).resolves.toMatchObject({ status: 'pending' })
+    value.invalidate()
+  })
   it('allows one open request per session', async () => {
     const { value } = saves()
     await value.request(context(), caller, 'https://github.com', undefined, {})

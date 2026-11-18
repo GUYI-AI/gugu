@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { awaitFact } from '../../../support/awaitFact'
 import { readDeliveryEnvelope, recoverDeliveryEnvelopes, renderDeliveryEnvelope } from '../../../../packages/core/src/local/agent/deliveryEnvelope'
-import { hermesPromptMeta, indexHermesPrompts, originalHermesPrompt } from '../../../../packages/session-core/src/acp/hermes-prompt'
+import { nativePromptMeta, indexNativePrompts, originalNativePrompt } from '../../../../packages/session-core/src/acp/native-prompt'
 
 // The Hermes bridge end to end over its two real protocols: ACP on stdio to the test (standing in for Gugu's
 // runtime), the serve gateway's JSON-RPC over a real WebSocket to a fake `hermes serve` that plays scripted turns.
@@ -271,8 +271,8 @@ describe('hermes serve bridge', () => {
     await bridge.request('session/prompt', { sessionId: 'stored-1', prompt })
     const native = String(bridge.rpcs('prompt.submit')[0].text)
     expect(native).toContain('<resource_changes>')
-    const originals = indexHermesPrompts([{ kind: 'message', role: 'user', text: envelope, _meta: hermesPromptMeta(prompt) }])
-    const original = originalHermesPrompt(native, originals)!
+    const originals = indexNativePrompts([{ kind: 'message', role: 'user', text: envelope, _meta: nativePromptMeta(prompt) }])
+    const original = originalNativePrompt(native, originals)!
     expect(readDeliveryEnvelope(native)).toBeNull()
     const received = readDeliveryEnvelope(original)?.segments.flatMap(segment => segment.facts?.messageId ? [segment.facts.messageId] : []) ?? []
     expect(received).toEqual(['msg:accepted-prefixed'])

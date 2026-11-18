@@ -224,9 +224,9 @@ describe('useComposerFileUploads', () => {
       return new Promise(resolve => { finish = resolve; });
     });
     await act(async () => { void hook!.add({ id: 'r', name: 'r.txt', kind: 'file' }, file('r.txt')); });
-    expect(chips[0]?.meta).toContain('33% · composer.attachmentResuming');
+    expect(chips[0]?.meta).toContain('33% (composer.attachmentResuming)');
     await act(async () => { place.mock.calls[0]![3](3, 3); place.mock.calls[0]![4].onPhase('confirming'); });
-    expect(chips[0]?.meta).toContain('100% · composer.attachmentConfirming');
+    expect(chips[0]?.meta).toContain('100% (composer.attachmentConfirming)');
     expect(hook!.unsettled()).toBe(true);
     await act(async () => { finish(ref('r')); await hook!.waitForUploads(); });
     expect(hook!.unsettled()).toBe(false);

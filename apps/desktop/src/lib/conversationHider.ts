@@ -1,24 +1,24 @@
-import type { PersonalConversationHiding } from './hideListedConversation'
+import type { PersonalConversationStateReceipt } from './hideListedConversation'
 
-type PendingHide = { operationId: string; boundary: AbortSignal; receipt?: PersonalConversationHiding; inFlight?: Promise<void> }
+type PendingHide<Receipt> = { operationId: string; boundary: AbortSignal; receipt?: Receipt; inFlight?: Promise<Receipt | undefined> }
 
-/** No automatic replay. An explicit retry retains its operation and any confirmed receipt. */
-export function createConversationHider(deps: {
-  hide: (chatId: string, operationId: string) => Promise<PersonalConversationHiding>
-  confirm: (accountId: string, receipt: PersonalConversationHiding) => Promise<void>
+/** No automatic replay. Explicit retries retain their operation and any confirmed receipt. */
+export function createConversationHider<Receipt extends PersonalConversationStateReceipt>(deps: {
+  hide: (chatId: string, operationId: string) => Promise<Receipt>
+  confirm: (accountId: string, receipt: Receipt) => Promise<void>
   boundary: () => AbortSignal
   operationId: () => string
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
   storageKey?: string
 }) {
-  const pending = new Map<string, PendingHide>()
-  return (accountId: string, chatId: string): Promise<void> => {
+  const pending = new Map<string, PendingHide<Receipt>>()
+  return (accountId: string, chatId: string): Promise<Receipt | undefined> => {
     const key = `${accountId}/${chatId}`, boundary = deps.boundary()
-    if (boundary.aborted) return Promise.resolve()
+    if (boundary.aborted) return Promise.resolve(undefined)
     let entry = pending.get(key)
     if (!entry || entry.boundary !== boundary) {
       const saved = deps.storage?.getItem(`${deps.storageKey}:${key}`)
-      const held = saved ? JSON.parse(saved) as Pick<PendingHide, 'operationId' | 'receipt'> : undefined
+      const held = saved ? JSON.parse(saved) as Pick<PendingHide<Receipt>, 'operationId' | 'receipt'> : undefined
       entry = { operationId: held?.operationId ?? deps.operationId(), ...(held?.receipt ? { receipt: held.receipt } : {}), boundary }
       pending.set(key, entry)
     }
@@ -31,8 +31,10 @@ export function createConversationHider(deps: {
       save()
       if (boundary.aborted) return
       await deps.confirm(accountId, current.receipt)
+      if (boundary.aborted) return
       deps.storage?.removeItem(`${deps.storageKey}:${key}`)
       if (pending.get(key) === current) pending.delete(key)
+      return current.receipt
     }
     current.inFlight = request().finally(() => { current.inFlight = undefined })
     return current.inFlight

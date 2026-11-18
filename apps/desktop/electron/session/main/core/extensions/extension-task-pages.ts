@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { liveWindowSourcesChanged } from './live-window-source-changes';
 import { log } from '@main/lib/logger';
 import { anySignal } from '@gugu/core/shared/anySignal';
 import type { TaskPageEvent, TaskPagePresentation } from '@shared/extensions/task-page-protocol';
@@ -50,6 +51,14 @@ export class ExtensionTaskPages {
     private readonly select: (input: { sessionId: string; url?: string; signal: AbortSignal; lifetime: AbortSignal }) => Promise<TaskPageNative>,
     private readonly report: (error: unknown) => void = error => log.error('App task page cleanup failed', { error: error instanceof Error ? error.message : String(error) }),
     private readonly files?: (caller: BridgeCaller, refs: unknown, signal: AbortSignal) => Promise<TaskPageFilePayload[]>) {}
+
+  /** No acquisition or driver startup: describe existing, admitted leases of this task only. */
+  describeSession(sessionId: string) {
+    return [...this.pages.values()].filter(page => page.sessionId === sessionId && !page.closed).map(page => {
+      this.authorize(page.extensionId); page.access.signal.throwIfAborted(); page.lifetime.signal.throwIfAborted();
+      return { id: page.id, sessionId: page.sessionId, title: page.native.title, signal: page.lifetime.signal };
+    });
+  }
 
   private caller(caller: BridgeCaller): { sessionId: string; signal: AbortSignal } {
     if (caller.kind !== 'program' || !caller.callingSession || !caller.signal) {
@@ -148,6 +157,7 @@ export class ExtensionTaskPages {
       access.signal.addEventListener('abort', stop, { once: true });
       if (page.closed) { page.off(); throw new Error('Task page closed during acquisition'); }
       this.pages.set(page.id, page);
+      liveWindowSourcesChanged(page.sessionId);
       signal.throwIfAborted();
       return { id: page.id, title: native.title, url: native.url };
     } catch (error) {
@@ -274,6 +284,7 @@ export class ExtensionTaskPages {
     // never reply; neither the calling tool nor another lease needs to end.
     page.lifetime.abort(new Error(reason));
     this.pages.delete(page.id);
+    liveWindowSourcesChanged(page.sessionId);
     const failures: unknown[] = [];
     for (const work of [() => page.unmount?.(), () => page.off()]) {
       try { work(); } catch (error) { failures.push(error); }

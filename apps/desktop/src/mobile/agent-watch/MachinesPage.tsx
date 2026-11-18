@@ -16,7 +16,7 @@ import { useMachineLabel } from './useMachineLabel'
 import { visibleMachines, workspaceDevices } from './machine-list'
 import { DeviceDirectoryRetry } from './DeviceDirectoryRetry'
 import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
-import { phoneAgentAvailable } from '../local-agent/nativeAgent'
+import { platform } from '@/platform'
 import './task-flow-catalog'
 
 /**
@@ -71,7 +71,7 @@ export function MachinesPage({
 
       {devices.length === 0 && !loading && !error ? (
         <div className="gg-aw-placeholder">
-          <div>{phoneAgentAvailable() ? tFlow('noHost') : t('agentWatch.machines.empty')}</div>
+          <div>{platform.capabilities?.phoneAgentHost ? tFlow('noHost') : t('agentWatch.machines.empty')}</div>
           <PhoneHostSetupEntry />
         </div>
       ) : null}
@@ -135,7 +135,6 @@ function MachineCard({
           <span>{online ? t('agentWatch.machines.online') : connectable ? tFlow(waking ? 'connecting' : 'readyToConnect') : t('agentWatch.machines.offline')}</span>
           {!online && !connectable && seen ? (
             <>
-              <span className="gg-aw-item-sep">·</span>
               <span>{seen}</span>
             </>
           ) : null}

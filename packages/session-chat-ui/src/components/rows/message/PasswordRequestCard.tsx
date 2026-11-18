@@ -66,6 +66,7 @@ export function passwordRequest(item: ChatMessage): PasswordRequestView | null {
       && typeof value.sessionId === 'string' && typeof value.agent === 'string' ? value : null
   } catch { return null }
 }
+const requester = (request: PasswordRequestView) => [...new Set([request.agentName || '此智能体', request.sessionTitle].filter(Boolean))].join(' / ')
 function host(origin: string) { try { return new URL(origin).host } catch { return origin } }
 const clip = { overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap', 'min-width': 0 } as const
 const tint = (percent: number) => `color-mix(in srgb, ${vars.fg} ${percent}%, transparent)`
@@ -151,6 +152,8 @@ function outcomeText(result: string, keep: PasswordFillOutcome['keep'], storing:
     case 'approved': case 'running': return '正在填入…'
     case 'filled': return keep === 'waiting' ? `已填入，登录成功后${storing ? '存到咕咕' : '生效'}` : keep === 'kept' ? (storing ? '已填入，已存到咕咕' : '已填入，以后不再问')
       : keep === 'dropped' ? `已填入；没登录上，${storing ? '没有存' : '下次还会问'}` : '已填入'
+    case 'saved': return '已保存'
+    case 'invalidated': return '请求已失效，请重新发起'
     case 'rejected': return '已拒绝'
     case 'expired': return '已过期，需要时让 Agent 重新发起'
     case 'unavailable': case 'uncertain': return '没填成，网页可能已经变了'
@@ -165,31 +168,35 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
   const [current, setCurrent] = createSignal<PasswordRequestView>()
   const [state, setState] = createSignal(save ? '等待你填写' : '等待你批准')
   const [busy, setBusy] = createSignal(false)
+  const [actionError, setActionError] = createSignal('')
   // Once this card settled the request (已允许 / 已拒绝), the refresh its own action triggers must not overwrite that.
   let settled = false
-  const ui = () => (window as unknown as { passwordVaultBeta?: PasswordBetaUi }).passwordVaultBeta
+  const scope = window as unknown as { passwordVaultBeta?: PasswordBetaUi; passwordSaveCards?: { forRequest(request: PasswordRequestView): PasswordBetaUi | undefined } }
+  const cardUi = scope.passwordSaveCards?.forRequest(props.request) ?? scope.passwordVaultBeta
+  const ui = () => cardUi
   const refresh = async () => {
     try {
       const reply = await ui()?.invoke({ type: 'snapshot' })
       const list: PasswordRequestView[] | undefined = reply?.ok ? (save ? reply.snapshot.saves : reply.snapshot.approvals) : undefined
       const pending = list?.find(value => value.requestId === props.request.requestId)
-      setCurrent(pending)
+      if (!settled) setCurrent(pending)
       // After 「填入」 the card follows the use itself: what the site did, and whether anything was kept.
-      const outcome = reply?.ok && !save ? reply.snapshot.outcomes?.find(value => value.requestId === props.request.requestId) : undefined
+      const outcome = reply?.ok ? reply.snapshot.outcomes?.find(value => value.requestId === props.request.requestId) : undefined
       if (outcome) { settled = true; setState(outcomeText(outcome.result, outcome.keep, fills(props.request).some(entry => entry.source !== 'saved'))) }
-      else if (!pending && !settled) setState('这条请求已结束，或需要在发起的电脑上处理')
-    } catch { setCurrent(undefined); setState('当前无法读取这条请求') }
+      else if (!pending && !settled) setState(Date.now() >= props.request.expiresAt ? '已过期，请重新发起' : '这张请求已结束')
+    } catch { if (!settled) { setCurrent(undefined); setState(Date.now() >= props.request.expiresAt ? '已过期，请重新发起' : '当前无法读取这条请求') } }
   }
   onMount(() => { void refresh(); const close = ui()?.subscribe(() => { void refresh() }); onCleanup(() => close?.()) })
   const act = async (command: PasswordUiCommand, done: string) => {
-    if (!current()) return
-    setBusy(true)
+    if (!current()) return false
+    setBusy(true); setActionError('')
     try {
       const result = await ui()?.invoke(command)
-      if (result?.ok) { settled = true; setCurrent(undefined); setState(done) }
-      else setState('这条请求已结束，需要时让 Agent 重新发起')
-    } catch { setState('当前无法处理，请重试') }
+      if (result?.ok) { settled = true; setCurrent(undefined); setState(done); return true }
+      else setActionError(result?.ok === false && result.code === 'SYSTEM_STORAGE_UNAVAILABLE' ? '发起电脑的系统密码存储不可用' : '保存失败，请重试')
+    } catch { setActionError('当前无法处理，请重试') }
     finally { setBusy(false) }
+    return false
   }
   // 「去填写」 opens Settings → 密码 on the same add/edit form; the values never travel through this message.
   const fill = () => {
@@ -204,6 +211,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
   function saveCard(request: Extract<PasswordRequestView, { kind: 'save' }>) {
     const inputs = request.inputs ?? [{ key: 'account', name: '账号', secret: false }, { key: 'password', name: '密码', secret: true }]
     const [values, setValues] = createSignal<Record<string, string>>({})
+    const [draftReady, setDraftReady] = createSignal(false)
     let draft: PasswordSaveDraft | undefined, item: PasswordItem | undefined, loaded = false
     const load = async () => {
       if (loaded) return
@@ -213,7 +221,8 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
         if (!reply?.ok || !reply.draft) return
         draft = reply.draft
         item = request.credentialId ? reply.snapshot.items.find(entry => entry.reference.id === request.credentialId) : undefined
-        setValues({ account: draft.account, password: draft.password, ...Object.fromEntries(draft.fields.map(field => [field.id, field.value])) })
+        setValues(typed => ({ account: draft!.account, password: draft!.password, ...Object.fromEntries(draft!.fields.map(field => [field.id, field.value])), ...typed }))
+        setDraftReady(true)
       } catch { loaded = false }
     }
     onMount(() => { void load() })
@@ -223,7 +232,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
     // 保密 per input, as the person sets it with the lock (the password always is).
     const [secrets, setSecrets] = createSignal<Record<string, boolean>>({})
     const secretOf = (entry: (typeof inputs)[number]) => entry.key === 'password' || (secrets()[entry.key] ?? entry.secret)
-    const ready = () => inputs.every(entry => stored(entry.key) || (values()[entry.key] ?? '').trim()) && extrasReady(request.requestId)
+    const ready = () => draftReady() && inputs.every(entry => stored(entry.key) || (values()[entry.key] ?? '').trim()) && extrasReady(request.requestId)
     const submit = () => {
       if (!current() || !ready() || busy()) return
       const typed = values()
@@ -235,7 +244,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       const account = inputs.find(entry => entry.key === 'account')
       void act({ type: 'save', origin: request.origin, name: draft?.name ?? item?.name ?? '', account: typed.account ?? '',
         accountSecret: account ? secretOf(account) : undefined, password: typed.password ?? '', fields, sites: item?.sites,
-        ...(item ? { reference: item.reference } : {}), requestId: request.requestId }, changing ? '已保存修改' : '已保存').then(() => { setValues({}); dropCard(request.requestId) })
+        ...(item ? { reference: item.reference } : {}), requestId: request.requestId }, changing ? '已保存修改' : '已保存').then(saved => { if (saved) { setValues({}); dropCard(request.requestId) } })
     }
     const site = host(request.origin)
     return <section data-password-request={request.requestId} style={{ height: `${passwordCardHeight(request)}px`, width: '100%', 'max-width': '400px',
@@ -245,13 +254,13 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
         <span style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center', width: '28px', height: '28px', 'border-radius': '8px', background: tint(5), color: vars.fgMuted, 'flex-shrink': 0 }}><IconKey /></span>
         <div style={{ display: 'flex', 'flex-direction': 'column', 'min-width': 0, flex: '1 1 0' }}>
           <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{`${changing ? '修改' : '保存'} ${site} 的${inputs.some(entry => entry.key === 'password') ? '密码' : ` ${inputs.map(entry => entry.name).join('、')}`}`}</span>
-          <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{request.agentName || '此智能体'} · {request.sessionTitle || '当前会话'}</span>
+          <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(request)}</span>
         </div>
       </div>
       <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>存进保险箱后，保密的值智能体只能代填，看不到。</p>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${INPUT_GAP}px`, 'flex-shrink': 0 }}>
         {inputs.map(entry => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
-          <span style={label}>{entry.name}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}>· 保密</span></Show></span>
+          <span style={label}>{entry.name}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}> 保密</span></Show></span>
           <CardField value={values()[entry.key] ?? ''} label={entry.name} secret={secretOf(entry)} lockable={entry.key !== 'password'} disabled={!current() || busy()}
             autocomplete={entry.key === 'password' ? 'new-password' : 'off'} placeholder={stored(entry.key) ? '已保存，留空不改' : entry.key === 'account' ? '邮箱或用户名' : ''}
             onInput={value => setValues(list => ({ ...list, [entry.key]: value }))} onSecret={secret => setSecrets(list => ({ ...list, [entry.key]: secret }))} onEnter={submit} />
@@ -260,7 +269,8 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       </div>
       <div style={{ height: `${FOOT}px`, display: 'flex', 'align-items': 'center', gap: '8px', 'flex-shrink': 0 }}>
         <Show when={current()} fallback={<span role="status" style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{state()}</span>}>
-          <button type="button" style={{ ...quiet, 'padding-inline-start': 0 }} class={passwordQuietAction} disabled={busy()} onClick={fill}>在设置里编辑</button>
+          <Show when={actionError()}><span role="alert" style={{ ...clip, 'font-size': '11px', color: vars.fgMuted }}>{actionError()}</span></Show>
+          <Show when={scope.passwordVaultBeta && !actionError()}><button type="button" style={{ ...quiet, 'padding-inline-start': 0 }} class={passwordQuietAction} disabled={busy()} onClick={fill}>在设置里编辑</button></Show>
           <span style={{ flex: '1 1 0' }} />
           <button type="button" style={quiet} class={passwordQuietAction} disabled={busy()} onClick={() => { void act({ type: 'reject-save', requestId: request.requestId }, '已拒绝').then(() => dropCard(request.requestId)) }}>拒绝</button>
           <button type="button" style={{ ...solid, opacity: ready() ? 1 : 0.4, cursor: ready() ? 'pointer' : 'default' }} disabled={busy() || !ready()} onClick={submit}>保存</button>
@@ -332,7 +342,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       <span style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center', width: '28px', height: '28px', 'border-radius': '8px', background: tint(5), color: vars.fgMuted, 'flex-shrink': 0 }}><IconKey /></span>
       <div style={{ display: 'flex', 'flex-direction': 'column', 'min-width': 0 }}>
         <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{title}</span>
-        <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{view().agentName || '此智能体'} · {view().sessionTitle || '当前会话'}</span>
+        <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(view())}</span>
       </div>
     </div>
     <Show when={fills(props.request).length}>
@@ -342,9 +352,9 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
             which replaces it for this use only. */}
         {fills(props.request).map((entry, index) => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
           <span style={label}><span style={clip}>{entry.input || entry.value}</span>
-            <Show when={entry.input && entry.input !== entry.value}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}>· {entry.value}</span></Show>
-            <Show when={entry.plain}><span style={{ 'flex-shrink': 0, color: vars.fgPermission }}>· 明文</span></Show>
-            <Show when={entry.source !== 'saved' && storing && remember() && secretOf(entry, index)}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}>· 保密</span></Show></span>
+            <Show when={entry.input && entry.input !== entry.value}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> {entry.value}</span></Show>
+            <Show when={entry.plain}><span style={{ 'flex-shrink': 0, color: vars.fgPermission }}> 明文</span></Show>
+            <Show when={entry.source !== 'saved' && storing && remember() && secretOf(entry, index)}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> 保密</span></Show></span>
           {/* A value to keep can be looked at and marked 保密 or not, as in Settings; a saved one is only shown. */}
           <CardField value={text(entry, index)} label={entry.input || entry.value} secret={entry.source === 'saved' ? !!entry.secret : secretOf(entry, index)}
             lockable={entry.source !== 'saved' && storing && !!use?.remember && remember() && entry.key !== 'password'} readOnly={!storing} disabled={!current() || busy()}

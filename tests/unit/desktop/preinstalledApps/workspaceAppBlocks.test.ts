@@ -11,10 +11,11 @@ import { fakeSharedMenu } from './sharedMenu'
 
 const now = Date.parse('2026-11-12T12:00:00Z')
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString()
-const entry = (id: string, name: string, more: Record<string, unknown> = {}) => ({
+const entry = <T extends Record<string, unknown>>(id: string, name: string, more: T = {} as T) => ({
   id, name, displayName: name, contentType: 'application/pdf', type: 'binary', size: 1000, parentId: null, path: name, systemRole: null,
   version: 1, createdAt: ago(600), updatedAt: ago(600), createdBy: { id: 'u1', name: '张三', kind: 'human' }, sourceMessageIds: [], keep: null, ...more,
 })
+
 const ENTRIES = [
   entry('att', '附件', { type: 'folder', contentType: 'inode/directory', systemRole: 'attachments', size: null }),
   entry('docs', 'Docs', { type: 'folder', contentType: 'inode/directory', size: null, childCount: 4 }),
@@ -44,6 +45,12 @@ const gugu = {
     openWith: vi.fn(async () => {}),
     download: vi.fn(async () => true),
     keep: vi.fn(async () => {}),
+    versions: vi.fn(async () => [
+      { n: 4, at: ago(100), size: 1000, by: null, availability: 'available' },
+      { n: 3, at: ago(200), size: 1000, by: null, availability: 'expired' },
+      { n: 2, at: ago(300), size: 1000, by: null, availability: 'deleted' },
+      { n: 1, at: ago(400), size: 1000, by: null, availability: 'unavailable' },
+    ]),
   },
 }
 
@@ -103,5 +110,67 @@ describe('the top of a chat folder', () => {
     filesChanged({ kind: 'entries', entries: [note], gone: [] })
     await until('Docs says 5', () => document.querySelector('[data-id="docs"] [data-cell="size"]')?.textContent === '5 项')
     expect(gugu.files.list.mock.calls.slice(reads).map(([place]) => (place as { folder?: string }).folder)).toEqual([''])
+  })
+})
+
+
+describe('service-reported file availability', () => {
+  const missing = [
+    entry('expired-image', 'expired-photo.png', { availability: 'expired', contentType: 'image/png' }),
+    entry('deleted-pdf', 'expired-report.pdf', { availability: 'deleted' }),
+    entry('expired-markdown', 'expired-notes.md', { availability: 'expired', type: 'text', contentType: 'text/markdown', expiredAt: ago(3600) }),
+    entry('deleted-json', 'expired-config.json', { availability: 'deleted', type: 'json', contentType: 'application/json' }),
+    entry('unknown', 'expired-unknown.zip', { availability: 'unavailable', version: 4 }),
+  ]
+
+  test('all unavailable file kinds show their evidenced state and opening explanation', async () => {
+    ENTRIES.push(...missing)
+    filesChanged({ kind: 'entries', entries: missing, gone: [] })
+    await until('the service states have their own sections', () => !!toggle('unavailable'))
+    for (const key of ['expired', 'deleted', 'unavailable']) {
+      if (toggle(key).getAttribute('aria-expanded') === 'false') toggle(key).click()
+    }
+    gugu.files.openWith.mockClear()
+    for (const file of missing) {
+      const row = document.querySelector<HTMLElement>(`[data-id="${file.id}"]`)!
+      expect(row.hasAttribute('data-expired'), file.name).toBe(true)
+      expect(row.querySelector('.file-keep[data-expired]')?.textContent).toBe(file.availability === 'expired' ? '已过期' : file.availability === 'deleted' ? '已删除' : '暂不可用')
+      row.querySelector<HTMLButtonElement>('.file-open')!.click()
+      expect($('list-banner').textContent).toContain(file.availability === 'unavailable' ? '暂时无法读取，可以联系上传的人' : '云端已删除，可以让上传的人重新发')
+    }
+    expect(gugu.files.openWith).not.toHaveBeenCalled()
+  })
+
+  test('details and history show each version independently of the unreadable current version', async () => {
+    document.querySelector<HTMLElement>('[data-id="unknown"]')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    await until('the file menu includes Details', () => menu.isOpen() && menu.labels().includes('详情'))
+    await menu.pick('详情')
+    await until('history arrives', () => document.querySelectorAll('.details-versions li').length === 4)
+    expect(document.querySelector('.details-facts')?.textContent).toContain('暂不可用')
+    const versions = [...document.querySelectorAll<HTMLElement>('.details-versions li')]
+    expect(versions[0]!.hasAttribute('data-expired')).toBe(false)
+    expect(versions.slice(1).map(row => row.textContent)).toEqual([
+      expect.stringContaining('已过期'), expect.stringContaining('已删除'), expect.stringContaining('暂不可用'),
+    ])
+    expect(versions[3]!.title).toBe('暂时无法读取，可以联系上传的人')
+    document.querySelector<HTMLButtonElement>('.details-close')!.click()
+  })
+
+  test('folder search keeps availability and an authoritative available update restores opening', async () => {
+    const filter = $('filter') as HTMLInputElement
+    filter.value = 'expired-'
+    filter.dispatchEvent(new Event('input', { bubbles: true }))
+    await until('search across the tree lists every matching unavailable kind', () => ids().length === missing.length)
+    for (const file of missing) expect(document.querySelector(`[data-id="${file.id}"][data-expired]`)).not.toBeNull()
+    const revived = { ...missing[0]!, availability: 'available', expiredAt: ago(10) }
+    Object.assign(ENTRIES.find(file => file.id === revived.id)!, revived)
+    // The change is allowed to omit list-only keep while supplying a newer authoritative state.
+    const { keep: _keep, ...partial } = revived
+    filesChanged({ kind: 'entries', entries: [partial], gone: [] })
+    await until('the available update is no longer dimmed', () => document.querySelector(`[data-id="${revived.id}"]:not([data-expired])`) !== null)
+    expect(document.querySelector(`[data-id="${revived.id}"] .file-keep[data-expired]`)).toBeNull()
+    gugu.files.openWith.mockClear()
+    document.querySelector<HTMLButtonElement>(`[data-id="${revived.id}"] .file-open`)!.click()
+    await until('the available file uses the ordinary host opener', () => gugu.files.openWith.mock.calls.length === 1)
   })
 })

@@ -1,12 +1,14 @@
 import { useId, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { ArrowUp, ChevronLeft, Monitor } from '@/lib/icons';
+import { ArrowRight, ArrowUp, ChevronLeft, Monitor } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { rpc } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { LIBRARY_TAB_LABELS } from '@renderer/features/library/library-view';
 import { localizedManifestText } from '@shared/extensions/catalog';
+import { hostLinkTarget } from '@shared/extensions/host-links';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { AppSettingsForm } from './app-settings-form';
 import { installedExtensionsStore } from './installed-extensions-store';
@@ -18,7 +20,7 @@ type Tab = 'overview' | 'settings';
 
 /**
  * Resident host page of an App without a page of its own (#7289). Overview = what to ask an agent; Settings = what its author
- * declared. Everything else about the App (permissions, which agents get it, switching off, uninstalling) is on its settings
+ * declared; its `hostLinks`, gugu's own pages where what its tools manage is shown, one entry each. Everything else about the App (permissions, which agents get it, switching off, uninstalling) is on its settings
  * page, one link away.
  */
 export const AppSettingsPage = observer(function AppSettingsPage({ manifest, active }: { manifest: ExtensionManifest; active: boolean }) {
@@ -50,6 +52,15 @@ export const AppSettingsPage = observer(function AppSettingsPage({ manifest, act
         </div>
         <button type="button" className="mk-link" data-testid="app-settings-manage" onClick={() => void followLink({ kind: 'app-detail', extensionId: manifest.id })}>{t('extensions.allSettings')}</button>
       </header>
+      {manifest.contributes.hostLinks ? <div className="mk-asks tool-app-links" data-testid="app-settings-host-links">
+        {manifest.contributes.hostLinks.map(link => {
+          const target = hostLinkTarget(link);
+          return <button type="button" className="mk-ask" key={link} data-testid={`app-settings-host-link-${link}`} onClick={() => navigate(target.view, target.params)}>
+            <span>{t('extensions.hostLinkLibrary', { page: t(LIBRARY_TAB_LABELS[target.params.tab]) })}</span>
+            <ArrowRight className="size-3.5" />
+          </button>;
+        })}
+      </div> : null}
       {tabs.length > 1 ? <div className="tool-app-tabs" role="tablist" aria-label={text.name}>
         {tabs.map(name => <button key={name} type="button" role="tab" id={`${prefix}-${name}-tab`} aria-selected={tab === name}
           aria-controls={`${prefix}-${name}`} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)}

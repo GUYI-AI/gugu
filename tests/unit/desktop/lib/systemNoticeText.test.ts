@@ -10,6 +10,7 @@ const text = (message: ReturnType<typeof row>) => systemNoticeText(parseSystemNo
 
 // The rows exactly as gugu-supabase writes them: Chinese content plus a marker. No stored row is ever rewritten.
 const ROWS = [
+  [row('migration-placeholder:120-135', '这条消息没有迁移'), 'This message was not migrated.', '这条消息没有迁移'],
   [row('agent-flood:m1', '这个群里 agent 较多,已把它们都转为被动模式,@ 它们才会回。'),
     'This group has many agents, so they now reply only when @-mentioned.',
     '这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。'],
@@ -44,6 +45,16 @@ describe('system rows in the reader language', () => {
   it('a sentence it does not know stays as written, and so does a row without a marker', () => {
     expect(text(row('member-managed:m1:u1,u2', '别的写法'))).toBe('别的写法')
     expect(text(row('', '没有标记的系统行'))).toBe('没有标记的系统行')
+    expect(text(row('', '这条消息没有迁移'))).toBe('这条消息没有迁移')
+    expect(text(row('other-notice:120-135', 'Unrecognized system row'))).toBe('Unrecognized system row')
+  })
+
+  it('uses the migration marker instead of the stored sentence', () => {
+    setLocalePreference('en-US')
+    const message = row('migration-placeholder:120-135', 'Stored preview')
+    expect(text(message)).toBe('This message was not migrated.')
+    expect(parseSystemNotice({ ...message, content_type: 'text' })).toBeNull()
+    expect(parseSystemNotice(row('migration-placeholder-other:120-135', 'Stored preview'))).toBeNull()
   })
 
   it('someone else\'s message cannot pass for a server row', () => {

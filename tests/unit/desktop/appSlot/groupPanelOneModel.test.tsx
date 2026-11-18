@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
+import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { folderItem, isFolderItem, WORKSPACE_APP_KIND } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { askChat, chatLayoutOf, chatPaneOf, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, chatPaneOf, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, shownPanelTab } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { tabFullscreen } from '../../../../apps/desktop/src/session/renderer/features/tabs/tab-fullscreen'
 import { extensionSurfaceStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-surface-store'
 import { extensionViewStore, residentPageKey, residentPlace } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store'
@@ -11,7 +12,7 @@ import {
   installedExtensionsStore,
   type InstalledExtensionsList,
 } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
-import { ask, chatTabs, shownItem, type ChatTabsProps } from './chatTabsHarness'
+import { ask, chatTabs, linkShell, pill, shownItem, type ChatTabsProps } from './chatTabsHarness'
 
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
@@ -105,7 +106,7 @@ describe('the slot header', () => {
       await harness.render(slot({ chatId: 'group-4' }))
       await act(async () => {})
       act(() => extensionSurfaceStore.say(null, claimOf('group-4', 'item-4').tabId, { title: 'Board' }))
-      expect(harness.container.querySelector('[title="plan.json · Board"]')?.textContent).toBe('plan')
+      expect(harness.container.querySelector('[title="plan.json，Board"]')?.textContent).toBe('plan')
       expect(harness.container.textContent).not.toContain('Board')
       expect(extensionSurfaceStore.sharedState(residentPageKey(WORKSPACE_APP_KIND, residentPlace({ chatId: 'group-4' }))).title).toBeNull()
     }
@@ -213,24 +214,19 @@ describe('an App opened in the group (「在本群打开」)', () => {
 
   // App 引用 pill: the place a pill points at goes with the file to whoever resolves who opens it (main on the desktop,
   // the phone's host there) — that is where the App that opens it is told, as the `link` event a gugu link brings.
+  // The pill is a file link: the shell asks the host once, the place with it (no chat named — the answer says the file's).
   it('a file asked for at a place: the place goes to the host that resolves who opens it', async () => {
     const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
     vi.mocked(appsHere!.groupFileOpener).mockClear()
     vi.mocked(appsHere!.groupFileOpener).mockResolvedValue({ success: false, error: 'not in this test' })
-    askChat('group-7', { itemId: 'item-7', at: { slide: '3', shape: '12' } })
-    const asked = takeChatAsk('group-7')
-    expect(asked).toEqual({ itemId: 'item-7', at: { slide: '3', shape: '12' } })
-    expect(takeChatAsk('group-7')).toBeNull()
-    await harness.render(slot({ chatId: 'group-7' }))
-    ask('group-7', asked!)
-    await act(async () => {})
-    expect(appsHere!.groupFileOpener).toHaveBeenCalledWith({ chatId: 'group-7', itemId: 'item-7', at: { slide: '3', shape: '12' } })
+    await harness.render(linkShell({ chatId: 'group-7' }))
+    await act(async () => { await pill('item-7', { slide: '3', shape: '12' }).catch(() => undefined) })
+    expect(appsHere!.groupFileOpener).toHaveBeenCalledExactlyOnceWith({ itemId: 'item-7', at: { slide: '3', shape: '12' } })
     // Control: a plain link's file goes without one.
     vi.mocked(appsHere!.groupFileOpener).mockClear()
-    await harness.render(slot({ chatId: 'group-8' }))
-    ask('group-8', { itemId: 'item-8' })
-    await act(async () => {})
-    expect(appsHere!.groupFileOpener).toHaveBeenCalledWith({ chatId: 'group-8', itemId: 'item-8' })
+    await harness.render(linkShell({ chatId: 'group-8' }))
+    await act(async () => { await pill('item-8').catch(() => undefined) })
+    expect(appsHere!.groupFileOpener).toHaveBeenCalledExactlyOnceWith({ itemId: 'item-8' })
   })
 
   it('an App of files only goes to its files', async () => {

@@ -9,7 +9,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //   · 「每个 agent 一行显示引擎、模型、跑在哪,以及响应档位」→ AgentRow。
 //
 // 数据与 fail-loud(❌ 不写死、❌ 不编占位值):
-//   · 名单由宿主的 useGroupCollabLoader 提供:已有快照先画,权威刷新不清空字段。
+//   · 名单由宿主的 groupRoster 读模型提供(hooks/useRoomCollab):已有快照先画,权威刷新不清空字段。
 //   · 引擎:权威快照的 group_agent_states.client 目前全产品没有写者(永远 null),所以引擎退回**联系人档**
 //     的 agent_type —— 与单聊头栏取引擎的来源是同一个(ChatAreaPanel「单聊 Agent 的联系人档」)。
 //     这条来源**只覆盖主人自己的 agent**:别人的 agent 不在主人通讯录里,那一格就空着。
@@ -19,10 +19,12 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //     **人这一段没有在线态**:产品里压根没有「某个人在不在线」的真值(聊天列表、通讯录的绿点都只画 agent),
 //     所以这一格不显 —— ❌ 不拿 desired_status 这类 agent 字段冒充人的在线。
 import { ArchivedAgentLabel } from './ArchivedAgentLabel'
+import { GroupAddMenu } from './GroupAddMenu'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 import { Button } from '../ui/Button'
 import { Hint } from '../ui/Tooltip'
 import { SectionLabel } from '../ui/SectionLabel'
+import { GrowingList } from '@gugu/session-ui/react/growing-list'
 import { ListRowContent } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
 import { HeaderSearch } from '../ui/HeaderSearch'
@@ -33,6 +35,7 @@ import { Popover } from '../ui/Popover'
 import { useGroupMemberPanelControls } from './GroupMemberPanelControls'
 import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useViewState } from '../../lib/viewStateTable'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { agentLocationText, resolveAgentLocation } from '../../lib/agentRunningStatusModels'
@@ -59,11 +62,9 @@ import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
 import { buildUnifiedMembers } from './groupMemberModels'
-import { groupClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
-import { ChatClashNames } from './ChatClashNames'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
-import type { UseGroupCollabLoaderResult } from '../../hooks/useGroupCollabLoader'
+import type { RoomCollabError } from '../../hooks/useRoomCollab'
 // gugu-dev#181「我的 agent」那一行的折叠箭头:放在计数后面,分区名留在和行、搜索、标题同一条左边线上。
 const myAgentsChevronStyle = (open: boolean): React.CSSProperties => ({
   width: 14, height: 14, flexShrink: 0, transform: open ? 'rotate(90deg)' : undefined,
@@ -100,6 +101,10 @@ const TOPIC_NAME_EDIT_STYLE: React.CSSProperties = { flex: 1, minWidth: 0 }
 const MEMBER_LIST_ERROR_STYLE: React.CSSProperties = { padding: 'var(--spacing-sm) var(--spacing-lg)', color: 'var(--danger-fg)', fontSize: 'var(--font-caption)' }
 // 档位没改成的原因:写在那一行的档位钮下面。
 const MEMBER_ROW_ERROR_STYLE: React.CSSProperties = { marginTop: 4, color: 'var(--danger-fg)', fontSize: 'var(--font-caption)' }
+// Where the rows not mounted yet go (every mounted row is measured): a row is 48 px, an agent row
+// with its meta line (owner, engine, model, device) 58.
+const personRowEstimate = () => 48
+const agentRowEstimate = () => 58
 const MEMBER_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' }
 
 /**
@@ -165,7 +170,7 @@ function MemberRow({
   // 名册里有这个 id、身份却没跟上来 —— 这是数据层该出而没出的值,照 GroupMemberAvatarRow 的做法喊出来,
   // ❌ 不静默补一个「未知用户」。
   const diagnostic = identity ? null : resolveOrLoud(undefined, `member list identity ${memberId}`)
-  const shownName = useShownAgentName({ id: memberId, name: identity?.display_name ?? diagnostic ?? '', createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
+  const shownName = useShownAgentName({ name: identity?.display_name ?? diagnostic ?? '', createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
   const rowData = { 'data-member-row': memberId, 'data-member-kind': isAgent ? 'agent' : 'human' }
   const content = (
     <ListRowContent
@@ -191,7 +196,7 @@ function MemberRow({
 
 function joinMeta(cells: ReactNode[]): ReactNode {
   const shown = cells.filter(Boolean)
-  return shown.length ? shown.flatMap((cell, index) => index ? [' · ', cell] : [cell]) : undefined
+  return shown.length ? shown.map((cell, index) => <span key={index} className="mr-2 last:mr-0">{index > 0 ? ' ' : ''}{cell}</span>) : undefined
 }
 
 export type MemberListPanelProps = {
@@ -201,7 +206,7 @@ export type MemberListPanelProps = {
   /** 页头归宿主画(群设置栈 / 👥 右栏 / 话题分栏各画各的);这里只给标题与标题旁的动作。 */
   head: (title: ReactNode, actions: ReactNode) => ReactNode
   /**
-   * 话题的当前名字。spec 把「名字可改」当成「建立只有一步」的**理由**
+   * 名片显示的群或话题名。话题还用这份名字做就地改名。spec 把「名字可改」当成「建立只有一步」的**理由**
    * (「创建时要决定的每一项都能从上下文推出来,且都可以事后改」),所以改名入口不能缺 ——
    * 缺了之后,系统消息/附件开出来的那条永远叫「话题」,开两次就是两行同名。
    * 群不走这里:群名在设置抽屉里改(GroupMembersSection),❌ 不做第二个入口。
@@ -210,15 +215,13 @@ export type MemberListPanelProps = {
   /** @@@6418 群:名册被这里改动(邀请/移出/改角色/审批)后通知外层重读它自己的那份快照。 */
   settingsState?: GroupChatSettingsState
   snapshot: GroupCollabSnapshot | null
-  error?: UseGroupCollabLoaderResult['error']
+  error?: RoomCollabError
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
-  /** 群:进来时选人页已经开着(群信息页成员行的「+」)。 */
-  invite?: boolean
 }
 
-export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, settingsState, error, onReload: load, onOpenUserChat, onWhisper, invite }: MemberListPanelProps) {
+export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, settingsState, error, onReload: load, onOpenUserChat, onWhisper }: MemberListPanelProps) {
   const { t } = useTranslation('messaging')
   const { t: tContacts } = useTranslation('contacts')
   const { user } = useAuth()
@@ -245,6 +248,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const group = useGroupMemberPanelControls({
     chatId,
     chatKind,
+    chatName,
     settings,
     snapshot,
     identities,
@@ -253,15 +257,15 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
     onReload: reload,
     onOpenUserChat,
     onWhisper,
-    invite,
   })
 
   // @@@6418 搜索:名字、主人、引擎、模型、设备,与行上看得见的字一致(看不见的字段不参与匹配)。
-  const [query, setQuery] = useState('')
-  const [myAgentsExpanded, setMyAgentsExpanded] = useState(true)
+  // Each chat keeps its own search words and fold (view-state table): switching chats, closing the panel or a remount keeps them.
+  const [view, setView] = useViewState({ conversation: chatId, panel: 'members' }, { query: '', myAgentsExpanded: true })
+  const { query, myAgentsExpanded } = view
+  const setQuery = (next: string) => setView({ query: next })
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const mobile = useMobileShell()
-  const nameScope = useMemo(() => ({ chatId, names: mobile || !snapshot ? NO_CLASH_NAMES : groupClashNames(snapshot, identities) }), [chatId, mobile, snapshot, identities])
-  useEffect(() => { setQuery('') }, [chatId])
 
   // The row and profile use the same owner/source-group permission and mutation hook.
   const resolveEditControls = useListenModeEditControls({
@@ -311,7 +315,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
     const agent = member.raw as GroupAgentItem
     const identity = identities[agent.id]
     return matchesQuery([
-      nameScope.names.get(agent.id) ?? identity?.display_name,
+      identity?.display_name,
       identity ? agentOwnerDisplayName(identity, identities) : null,
       engineLabel(agent),
       agent.model_source,
@@ -323,7 +327,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const myAgents = shownAgents.filter((member) => identities[member.id]?.owner_user_id === user?.id)
   const otherAgents = shownAgents.filter((member) => identities[member.id]?.owner_user_id !== user?.id)
   const myAgentsOpen = myAgentsExpanded || Boolean(needle)
-  const setMyAgentsOpen = setMyAgentsExpanded
+  const toggleMyAgents = () => setView({ myAgentsExpanded: !myAgentsExpanded })
   const renderAgentRow = (member: (typeof shownAgents)[number]) => {
     const agent = member.raw as GroupAgentItem
     const identity = identities[agent.id]
@@ -372,7 +376,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   }
 
   return (
-    <ChatClashNames.Provider value={nameScope}>
+    <>
       <div
         data-testid="member-list-panel"
         data-chat-kind={chatKind}
@@ -395,10 +399,10 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               </div>
             </>
           ) : t('group.memberList.title'),
-          searchButton,
+          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行),❌ 标题下面一条通栏钮。
+          chatKind === 'group' ? <>{searchButton}<GroupAddMenu chatId={chatId} canAddMembers={group.showInvite} /></> : searchButton,
         )}</HeaderSearch>
 
-        {group.inviteAction ? <div style={MEMBER_LIST_SEARCH_STYLE}>{group.inviteAction}</div> : null}
         {snapshot && (!mobile || chatKind === 'group') ? (
           <div style={MEMBER_LIST_SEARCH_STYLE}>
             <SearchField
@@ -428,27 +432,30 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
           </div>
         ) : null}
 
-        <div data-member-list-scroll="" style={MEMBER_LIST_SCROLL_STYLE}>
+        <div ref={setScroller} data-growing-list="" data-member-list-scroll="" style={MEMBER_LIST_SCROLL_STYLE}>
           {nothingMatches ? (
             <div data-testid="member-list-no-match" style={MEMBER_LIST_EMPTY_STYLE}>{t('group.memberList.noMatches', { query: query.trim() })}</div>
           ) : null}
           {needle && shownPeople.length === 0 ? null : (
           <section data-member-section="human" style={MEMBER_LIST_ROWS_STYLE}>
             <SectionLabel trailing={<span aria-hidden="true" style={SECTION_COUNT_STYLE}>{shownPeople.length}</span>}>{t('group.memberList.sectionPeople')}</SectionLabel>
+            {/* @@@growing-list: a section mounts the rows around the visible part of the panel's one scroller. */}
             <div data-member-section-rows="human">
-              {shownPeople.map((member) => (
-                <MemberRow
-                  key={member.id}
-                  memberId={member.id}
-                  identity={identities[member.id]}
-                  isAgent={false}
-                  roleLabel={roleLabel((member.raw as GroupMemberItem).role)}
-                  // 在线态:人这一侧产品里没有真值 ⇒ 不给角标(❌ 不编一个「在线」出来)。
-                  statusBadge={undefined}
-                  profile={group.profileTrigger(member.id)}
-                  actions={group.rowActions(member.id)}
-                />
-              ))}
+              <GrowingList scroller={scroller} count={shownPeople.length} getKey={(index) => shownPeople[index]!.id} estimateSize={personRowEstimate} renderLine={(index) => {
+                const member = shownPeople[index]!
+                return (
+                  <MemberRow
+                    memberId={member.id}
+                    identity={identities[member.id]}
+                    isAgent={false}
+                    roleLabel={roleLabel((member.raw as GroupMemberItem).role)}
+                    // 在线态:人这一侧产品里没有真值 ⇒ 不给角标(❌ 不编一个「在线」出来)。
+                    statusBadge={undefined}
+                    profile={group.profileTrigger(member.id)}
+                    actions={group.rowActions(member.id)}
+                  />
+                )
+              }} />
             </div>
           </section>
           )}
@@ -463,18 +470,18 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
                   tabIndex={0}
                   aria-expanded={myAgentsOpen}
                   trailing={<><span aria-hidden="true" style={SECTION_COUNT_STYLE}>{myAgents.length}</span><ChevronRight aria-hidden="true" style={myAgentsChevronStyle(myAgentsOpen)} /></>}
-                  onClick={() => setMyAgentsOpen((open) => !open)}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setMyAgentsOpen((open) => !open) } }}
+                  onClick={toggleMyAgents}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleMyAgents() } }}
                 >
                   {t('group.memberList.myAgents')}
                 </SectionLabel>
-                {myAgentsOpen ? myAgents.map(renderAgentRow) : null}
+                {myAgentsOpen ? <GrowingList scroller={scroller} count={myAgents.length} getKey={(index) => myAgents[index]!.id} estimateSize={agentRowEstimate} renderLine={(index) => renderAgentRow(myAgents[index]!)} /> : null}
               </section>
             ) : null}
             {otherAgents.length > 0 ? (
               <section data-member-section="agent" data-member-group="others" style={MEMBER_LIST_NEXT_SECTION_STYLE}>
                 <SectionLabel trailing={<span aria-hidden="true" style={SECTION_COUNT_STYLE}>{otherAgents.length}</span>}>{t(myAgents.length > 0 ? 'group.memberList.otherAgents' : 'group.memberList.sectionAgents')}</SectionLabel>
-                {otherAgents.map(renderAgentRow)}
+                <GrowingList scroller={scroller} count={otherAgents.length} getKey={(index) => otherAgents[index]!.id} estimateSize={agentRowEstimate} renderLine={(index) => renderAgentRow(otherAgents[index]!)} />
               </section>
             ) : null}
           </>
@@ -482,6 +489,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
         </div>
       </div>
       {group.overlays}
-    </ChatClashNames.Provider>
+    </>
   )
 }

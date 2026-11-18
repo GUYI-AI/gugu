@@ -54,12 +54,12 @@ import { useToast } from './toastContext'
 import type { ContactGroup, ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { isCloudAgentMarked } from '@gugu/core/shared/enums/agentTypeModels'
 import { chatService } from '../lib/chat'
-import { persistableGroupRoster, replaceGroupRoster } from '../lib/imRepository'
-import { rendererLogger } from '../lib/log'
+import { groupRoster } from '../hooks/useRoomCollab'
+import { useReplica } from '../lib/replica'
 import { closeIfMyAssistant } from '../lib/assistantClose'
 import { normalizeGroupRole } from '@gugu/core/shared/enums/groupRoleModels'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import type { GroupMemberItem } from '@gugu/core/shared/types/chat'
+import { Unknown } from './ui/Unknown'
 import type { QrScanRoute } from '../lib/qrScanRoute'
 import { AgentContactProfileCard, PersonContactProfileCard } from './contacts/ContactProfileCard'
 import { commonGroupForAgent, requestStateForAgent } from './contacts/agentContactRequest'
@@ -75,6 +75,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
+import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
 import {
   cpaneActionsClass, cpaneAvatarClass, cpaneCardClass, cpaneNameClass, cpaneStatusClass, ct,
@@ -322,7 +323,7 @@ function ContactsThreeSectionSidebar({
   getContactRemoveLabel,
   onGroupPin,
   onGroupToggleNotif,
-  onGroupLeaveOrDissolve,
+  onGroupLeave,
   groupPinned,
   groupNotifMuted
 }: {
@@ -361,7 +362,7 @@ function ContactsThreeSectionSidebar({
   // #1694 — 群行右键菜单动作（chat-scoped；群本身即 chat，无需 resolveDmId）
   onGroupPin?: (g: ContactGroupChat) => void
   onGroupToggleNotif?: (g: ContactGroupChat) => void
-  onGroupLeaveOrDissolve?: (g: ContactGroupChat) => void
+  onGroupLeave?: (g: ContactGroupChat) => void
   groupPinned?: Map<string, boolean>
   groupNotifMuted?: Map<string, boolean>
 }) {
@@ -382,21 +383,21 @@ function ContactsThreeSectionSidebar({
     },
     [onPin, onMarkUnread, onToggleNotif, onRemove, onStartChat, contactPinned, contactNotifMuted, getContactRemoveLabel]
   )
-  // #1694 — 群行右键菜单：复用 ContactRowContextMenu，仅给 置顶 / 通知 / 退出·解散（不传 onStartChat/onMarkUnread）。
-  // 角色化：owner → 「解散群聊」，member → 「退出群聊」；确认弹窗 + 真正动作在父层 onGroupLeaveOrDissolve。
+  // #1694 — 群行右键菜单：ContactRowContextMenu 按对话动作表(入口 contacts-group)画；这里只给群的置顶 / 通知 / 退出。
+  // 解散群聊不进右键(menu-table.ts @@@menu-order),只在群设置页最底下;成员的「退出群聊」确认 + 动作在父层 onGroupLeave。
   const buildGroupRowMenu = useCallback(
     (g: ContactGroupChat): ContactRowMenuActions | undefined => {
-      if (!onGroupPin || !onGroupToggleNotif || !onGroupLeaveOrDissolve) return undefined
+      if (!onGroupPin || !onGroupToggleNotif || !onGroupLeave) return undefined
       return {
-        removeLabel: g.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'),
+        removeLabel: ct('contextMenu.leaveGroup'), group: { chatId: g.id, role: g.my_role, name: g.name },
         isPinned: groupPinned?.get(g.id) ?? false,
         notifMuted: groupNotifMuted?.get(g.id) ?? g.is_muted,
         onPin: () => onGroupPin(g),
         onToggleNotif: () => onGroupToggleNotif(g),
-        onRemove: () => onGroupLeaveOrDissolve(g)
+        onRemove: () => onGroupLeave(g)
       }
     },
-    [onGroupPin, onGroupToggleNotif, onGroupLeaveOrDissolve, groupPinned, groupNotifMuted]
+    [onGroupPin, onGroupToggleNotif, onGroupLeave, groupPinned, groupNotifMuted]
   )
   const [personCollapsed, setPersonCollapsed] = useState(false)
   const agentRowActions = useAgentRowActions({ onSelect: onSelectContact, onToggleSelection: onToggleContact, onStartChat, onPin, onMarkUnread, onToggleNotif, onRemove })
@@ -735,33 +736,12 @@ function GroupChatDetailPane({
   onBack?: () => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
 }) {
-  const { identitiesById, getImRepository } = useChatStore('identitiesById', 'getImRepository')
-  const [members, setMembers] = useState<GroupMemberItem[]>([])
-  const [loadingMembers, setLoadingMembers] = useState(false)
+  const { identitiesById } = useChatStore('identitiesById')
   const groupId = group?.id ?? null
-  useEffect(() => {
-    if (!groupId) { setMembers([]); return }
-    let cancelled = false
-    setLoadingMembers(true)
-    chatService
-      .getGroupCollab(groupId)
-      .then(async ({ snapshot, identities }) => {
-        // 与聊天面板同一条写路径(名册 + 身份同事务),先落库再渲染成员;本地写失败只记日志,不否决远端读到的名册 (#5610)
-        await getImRepository().then((repository) => replaceGroupRoster(repository, groupId, persistableGroupRoster(groupId, snapshot, identities), identities)).catch((err: unknown) => rendererLogger('contacts/group-detail').error({ err }, 'write group roster failed'))
-        if (!cancelled) setMembers([...snapshot.humans, ...snapshot.agents])
-      })
-      .catch((err) => {
-        console.error('[ContactsPanel] load group members error', err)
-        if (!cancelled) setMembers([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingMembers(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [groupId, getImRepository])
-  const visibleMembers = members.slice(0, 12)
+  // The chat's roster replica (the IM library's copy first, the same write path): ❌ a loader of its own (open-flicker CH22).
+  const roster = useReplica(groupRoster, groupId ? [groupId, 'group'] : null)
+  const members = roster.state === 'value' ? [...roster.value.humans, ...roster.value.agents] : null
+  const visibleMembers = members ? members.slice(0, 12) : []
   const memberNames = useShownAgentName(visibleMembers.map(member => ({ name: identitiesById[member.id]?.display_name ?? '', createdAt: member.type === 'agent' ? identitiesById[member.id]?.created_at ?? undefined : undefined })))
 
   if (!group) {
@@ -838,9 +818,9 @@ function GroupChatDetailPane({
           <div className={cn(detailCaptionClass, '!mb-3')}>
             {ct('groupDetail.overview')}
           </div>
-          {loadingMembers || visibleMembers.length === 0 ? (
-            <div className="text-sm text-[var(--muted-fg)]">
-              {loadingMembers ? ct('groupDetail.loadingMembers') : ct('groupDetail.emptyMembers')}
+          {roster.state !== 'value' || visibleMembers.length === 0 ? (
+            <div className="text-sm text-[var(--muted-fg)]" role={roster.state === 'error' ? 'alert' : undefined}>
+              {roster.state === 'unknown' ? <Unknown className="w-40" /> : roster.state === 'error' ? roster.error.message : ct('groupDetail.emptyMembers')}
             </div>
           ) : (
             <div className="grid max-w-[720px] grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
@@ -864,12 +844,12 @@ function GroupChatDetailPane({
                   </div>
                 </div>
               ))}
-              {members.length > visibleMembers.length ? (
+              {members && members.length > visibleMembers.length ? (
                 <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
                   {ct('groupDetail.remainingMembers', { count: members.length - visibleMembers.length })}
                 </div>
               ) : null}
-              {group.member_count > members.length ? (
+              {members && group.member_count > members.length ? (
                 <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
                   {ct('groupDetail.pendingSync', { count: group.member_count - members.length })}
                 </div>
@@ -887,7 +867,7 @@ function GroupChatsDetail({
   mobile = false,
   onBack,
   onOpenGroupChat,
-  onCreateGroup, onGroupPin, onGroupToggleNotif, onGroupLeaveOrDissolve,
+  onCreateGroup, onGroupPin, onGroupToggleNotif, onGroupLeave,
   groupPinned,
   groupNotifMuted,
 }: {
@@ -898,7 +878,7 @@ function GroupChatsDetail({
   onCreateGroup?: () => void // #2118 — 空群组分区「创建群聊」CTA
   onGroupPin?: (group: ContactGroupChat) => void
   onGroupToggleNotif?: (group: ContactGroupChat) => void
-  onGroupLeaveOrDissolve?: (group: ContactGroupChat) => void
+  onGroupLeave?: (group: ContactGroupChat) => void
   groupPinned?: Map<string, boolean>
   groupNotifMuted?: Map<string, boolean>
 }) {
@@ -913,14 +893,14 @@ function GroupChatsDetail({
   )
 
   const menuForGroup = (group: ContactGroupChat): ContactRowMenuActions | undefined => {
-    if (!onGroupPin || !onGroupToggleNotif || !onGroupLeaveOrDissolve) return undefined
+    if (!onGroupPin || !onGroupToggleNotif || !onGroupLeave) return undefined
     return {
-      removeLabel: group.my_role === 'owner' ? ct('contextMenu.dissolveGroup') : ct('contextMenu.leaveGroup'),
+      removeLabel: ct('contextMenu.leaveGroup'), group: { chatId: group.id, role: group.my_role, name: group.name },
       isPinned: groupPinned?.get(group.id) ?? false,
       notifMuted: groupNotifMuted?.get(group.id) ?? group.is_muted,
       onPin: () => onGroupPin(group),
       onToggleNotif: () => onGroupToggleNotif(group),
-      onRemove: () => onGroupLeaveOrDissolve(group),
+      onRemove: () => onGroupLeave(group),
     }
   }
 
@@ -1039,11 +1019,10 @@ export const ContactsPanel = memo(function ContactsPanel({
     setAgentDesiredStatus,
     removeOwnedAgent,
     removeContact,
-    getCommonGroupChats,
   } = useContactsStore()
   const { user } = useAuth()
   const { toast } = useToast()
-  const { pinChat, markUnread, setChatNotificationLevel, leaveGroup, deleteChat, refreshChats } = useChatStore('pinChat', 'markUnread', 'setChatNotificationLevel', 'leaveGroup', 'deleteChat', 'refreshChats')
+  const { pinChat, markUnread, setChatNotificationLevel, leaveGroup, refreshChats } = useChatStore('pinChat', 'markUnread', 'setChatNotificationLevel', 'leaveGroup', 'refreshChats')
   const chats = useStoreValueBy((store) => store.chats, (store) => store.chats.map((c) => [c.id, c.kind, c.peer_user_id, c.is_pinned, c.notification_level]))
   const [selectedNav, setSelectedNav] = useState<LeftSel>('contacts')
   const [mobilePane, setMobilePane] = useState<MobileContactsPane>('nav')
@@ -1163,23 +1142,19 @@ export const ContactsPanel = memo(function ContactsPanel({
     },
     [chats, setChatNotificationLevel]
   )
-  // 角色化：owner → 解散群聊（deleteChat persist → chats.status='archived'，全员退出）；
-  // member → 退出群聊（leaveGroup 删自己 chat_members 行）。确认弹窗复用 ChatManagementActions 文案。
-  const handleGroupLeaveOrDissolve = useCallback(
+  // 成员退出群聊（leaveGroup 删自己 chat_members 行）;群主没有这一项,解散只在群设置页。确认走对话动作表那一份
+  // (confirmConversationAction),与聊天列表同一个确认框。#1694-followup:成功/失败都 toast,别静默吞(fail-loud)。
+  const handleGroupLeave = useCallback(
     async (g: ContactGroupChat) => {
-      const isOwner = g.my_role === 'owner'
-      const ok = window.confirm(isOwner ? ct('confirmations.dissolveGroup') : ct('confirmations.leaveGroup'))
-      if (!ok) return
-      // #1694-followup — 对齐 handleRemoveContact:成功/失败都 toast，别静默吞(fail-loud)。
+      if (!(await confirmConversationAction('leave-group', 'group', g.name ?? ''))) return
       try {
-        if (isOwner) await deleteChat(g.id, true)
-        else await leaveGroup(g.id)
-        toast(isOwner ? ct('toast.dissolvedGroup') : ct('toast.leftGroup'), 'success')
+        await leaveGroup(g.id)
+        toast(ct('toast.leftGroup'), 'success')
       } catch (error) {
-        toast(isOwner ? ct('toast.dissolveFailed') : ct('toast.leaveFailed'), 'error', messageForUser(error))
+        toast(ct('toast.leaveFailed'), 'error', messageForUser(error))
       }
     },
-    [deleteChat, leaveGroup, toast]
+    [leaveGroup, toast]
   )
 
   const selectedGroup = selectedNav.startsWith('group:')
@@ -1323,7 +1298,7 @@ export const ContactsPanel = memo(function ContactsPanel({
     const name = displayName(contact)
     const isOwnedAgent = contact.type === 'agent' && contact.owner_user_id === user?.id
     if (isOwnedAgent && closeIfMyAssistant(user?.id, contact.id)) return // #7350 删的是咕咕:换成关闭咕咕那份确认
-    if (!isOwnedAgent && !window.confirm(ct('confirmations.deleteContact', { name }))) return
+    if (!isOwnedAgent && !(await confirmConversationAction('remove-contact', 'dm', name))) return
     try {
       if (isOwnedAgent) { if (!(await confirmOwnedAgentArchive(contact.id, name, removeOwnedAgent))) return }
       else await removeContact(contact.id)
@@ -1503,7 +1478,7 @@ export const ContactsPanel = memo(function ContactsPanel({
           getContactRemoveLabel={getContactRemoveLabel}
           onGroupPin={handleGroupPin}
           onGroupToggleNotif={handleGroupToggleNotif}
-          onGroupLeaveOrDissolve={handleGroupLeaveOrDissolve}
+          onGroupLeave={handleGroupLeave}
           groupPinned={groupPinned}
           groupNotifMuted={groupNotifMuted}
         />
@@ -1556,7 +1531,7 @@ export const ContactsPanel = memo(function ContactsPanel({
             onCreateGroup={() => setShowGroupModal(true)}
             onGroupPin={handleGroupPin}
             onGroupToggleNotif={handleGroupToggleNotif}
-            onGroupLeaveOrDissolve={handleGroupLeaveOrDissolve}
+            onGroupLeave={handleGroupLeave}
             groupPinned={groupPinned} groupNotifMuted={groupNotifMuted}
           />
         ) : null
@@ -1630,7 +1605,6 @@ export const ContactsPanel = memo(function ContactsPanel({
                 onRequestAgent={requestAgent}
                 onSetAgentPublic={setAgentPublic}
                 onSetAgentDesiredStatus={setAgentDesiredStatus}
-                getCommonGroupChats={getCommonGroupChats}
               />
             ) : null
           ) : showDetail ? (
@@ -1647,7 +1621,6 @@ export const ContactsPanel = memo(function ContactsPanel({
               onRequestAgent={requestAgent}
               onSetAgentPublic={setAgentPublic}
               onSetAgentDesiredStatus={setAgentDesiredStatus}
-              getCommonGroupChats={getCommonGroupChats}
             />
           ) : null}
         </>

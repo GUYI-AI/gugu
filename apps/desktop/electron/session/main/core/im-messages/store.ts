@@ -191,7 +191,8 @@ export function createImMessageStore(database: MessageSqlDatabase) {
 
 /** A body-only row (no reactions / delivery_blocks) does not speak for the overlay facts already stored. */
 function withStoredOverlays(message: MessageItem, storedRest: string): MessageItem {
-  if (message.reactions && message.delivery_blocks) return message
-  const stored = JSON.parse(storedRest) as Pick<MessageItem, 'reactions' | 'delivery_blocks'>
-  return { ...message, reactions: message.reactions ?? stored.reactions, delivery_blocks: message.delivery_blocks ?? stored.delivery_blocks }
+  const stored = JSON.parse(storedRest) as Pick<MessageItem, 'reactions' | 'delivery_blocks' | 'local_timeline'>
+  if (message.reactions && message.delivery_blocks && !stored.local_timeline) return message
+  return { ...message, local_timeline: stored.local_timeline ?? message.local_timeline,
+    reactions: message.reactions ?? stored.reactions, delivery_blocks: message.delivery_blocks ?? stored.delivery_blocks }
 }

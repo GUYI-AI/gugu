@@ -91,7 +91,7 @@ export function DeviceRemoveDialog({
     >
       <div className="flex flex-col gap-3 overflow-y-auto p-[18px]">
         <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t(`${scope}.title`, target)}</div>
-        {!removesVersion && device.tier && <div className={body}>{t('devices.configurations')} · {deviceVersionLabel(device.tier,t)}</div>}
+        {!removesVersion && device.tier && <div className={body}>{t('devices.configurations')}  {deviceVersionLabel(device.tier,t)}</div>}
         {replacedBy && <div className={body} data-testid="settings-device-remove-replaced">{t('devices.replaced.confirm', { name: replacedBy.label })}</div>}
         <div className={`${body} text-[var(--muted-fg)]`}>{consequence}</div>
         {replacedBy && <div className={`${body} text-[var(--muted-fg)]`}>{t('devices.replaced.cascade')}</div>}

@@ -2,7 +2,10 @@
 /**
  * turn-outcome —— 一个 turn 结束后的收尾行（对照表 #12 error-state / #18 stopped-run）。
  *
- * # ⚠️ 上游三颗按钮的去向：retry ❌ / continue ✅ / discard ✅
+ * # ⚠️ 普通 provider 的三颗按钮：retry ❌ / continue ✅ / discard ✅
+ * Native phone interruption (#2812) is a separate recorded capability: its
+ * explicit Retry creates an idempotent new attempt and retains the old ledger.
+ * It does not claim that an ordinary provider supports rewind.
  *
  * 上游 `elements-error-state` 有 retry、`elements-stopped-run` 有 continue/discard。
  *
@@ -121,7 +124,7 @@ import { defineUnit } from '@session-chat/core/units';
 import { turnDiscardedId, turnOutcomeDetailId } from '@session-chat/state/flatten';
 import type { TranscriptTurnOutcome, TurnOutcomeItem } from '@session-chat/model';
 import { vars } from '@session-chat/styles/theme.css';
-import { Show } from 'solid-js';
+import { Show, createSignal } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useChatTranslator, type ChatTranslationKey, type ChatTranslator } from '@session-chat/localization';
 import {
@@ -172,6 +175,7 @@ const CANCELLED_REASON_KEY: Record<CancelledReason, ChatTranslationKey> = {
 function reasonText(outcome: TranscriptTurnOutcome, translate: ChatTranslator): string | null {
   switch (outcome.kind) {
     case 'error':
+      if (outcome.phoneInterruption) return null;
       // #6264 因为这家的登录不能用了才失败的那一轮:原因直说「需要登录」(失效与从没登录过都是它,下面那一行再分),
       // ❌ 笼统的「回合未能完成」。
       // 「重新登录」那段字在消息列表末尾的条件行里(登上之后那一行自己消失),不挤进这条 32px 的 lane。
@@ -191,6 +195,7 @@ function outcomeLabel(outcome: TranscriptTurnOutcome, translate: ChatTranslator)
     case 'cancelled':
       return translate('transcript.turnCancelled', { reason: '' });
     case 'error':
+      if (outcome.phoneInterruption) return translate('transcript.interrupted');
       return translate('transcript.turnFailed', { reason: '' });
     case 'done':
       return translate('transcript.turnCompleted', { reason: '' });
@@ -247,6 +252,7 @@ function badgeParts(
 /** The host still owns an unsent input: restoring it would create a second send. Shared by DOM and measurement. */
 function hasRestorablePrompt(data: TurnOutcomeItem): boolean {
   return Boolean(data.prompt) && data.outcome.kind !== 'cancelled'
+    && !(data.outcome.kind === 'error' && data.outcome.phoneInterruption)
     && !(data.outcome.kind === 'error' && data.outcome.reason === 'send_failed');
 }
 
@@ -264,6 +270,8 @@ function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/cor
   const actions: number[] = [];
   const actionWidth = (text: string, icon = false) => readableLabel(text, ctx, ctx.width, 14, 20, 500).width + 20 + (icon ? 18 : 0);
   if (refused?.action) actions.push(actionWidth(refused.action.label));
+  if (outcome.kind === 'error' && outcome.phoneInterruption?.retryable && commands?.onRetryPhoneTask
+    && commands.canRetryPhoneTask?.(outcome.phoneInterruption.jobId) !== false) actions.push(actionWidth(t('transcript.retryPhoneTask')));
   if (outcome.kind === 'cancelled' && outcome.reason !== 'interrupted_for_message') {
     if (commands?.onContinueTurn) actions.push(actionWidth(t('transcript.continueTurn'), true));
     actions.push(actionWidth(t('transcript.discardTurn')));
@@ -317,6 +325,12 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
       return refused ? { ...base, reason: refused.text } : base;
     };
     const detail = () => outcomeDetail(props.data.outcome);
+    const [retryingJob, setRetryingJob] = createSignal<string | null>(null);
+    const retryablePhone = () => {
+      const outcome = props.data.outcome, go = commands().onRetryPhoneTask;
+      const target = outcome.kind === 'error' ? outcome.phoneInterruption : null;
+      return target?.retryable && go && commands().canRetryPhoneTask?.(target.jobId) !== false ? { jobId: target.jobId, go } : null;
+    };
 
     /**
      * 两个门都得开：宿主接了回调 **且** 这一轮真有一条可还的用户指令。
@@ -399,7 +413,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             // spread 里的 `detail()` 只在创建那一刻求值一次,而行组件按下标复用 ⇒ 换单元时不重算。
             aria-label={
               detail()
-                ? `${[parts().label, parts().reason].filter(Boolean).join(' · ')}: ${detail()}`
+                ? `${[parts().label, parts().reason].filter(Boolean).join(translate('metadata.separator'))}: ${detail()}`
                 : undefined
             }
             // ⚠️ `title` **就是 detail 本身,一个字不多** —— `failure-scope.contract.test.tsx`
@@ -418,9 +432,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             <Show when={parts().reason}>
               {(text) => (
                 <>
-                  <span aria-hidden="true" class={outcomeBadgeSeparator}>
-                    ·
-                  </span>
+                  <span aria-hidden="true" class={outcomeBadgeSeparator} />
                   <span data-slot="turn-outcome-reason" class={outcomeReason}>
                     {lane().reason?.text ?? text()}
                   </span>
@@ -455,6 +467,17 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
                 {action().label}
               </button>
             )}
+          </Show>
+          <Show when={retryablePhone()}>
+            {(target) => <button type="button" data-slot="turn-outcome-phone-retry" class={outcomeActionPrimary}
+              disabled={retryingJob() === target().jobId}
+              onClick={async () => {
+                const action = target();
+                if (retryingJob() === action.jobId) return;
+                setRetryingJob(action.jobId);
+                try { await action.go({ itemId: props.data.id, jobId: action.jobId }); }
+                finally { setRetryingJob(null); }
+              }}>{translate('transcript.retryPhoneTask')}</button>}
           </Show>
           <Show when={continuable()}>
             {(target) => (

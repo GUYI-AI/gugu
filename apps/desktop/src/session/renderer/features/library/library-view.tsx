@@ -1,40 +1,32 @@
 import { observer } from 'mobx-react-lite';
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { McpLibraryView } from '@renderer/features/mcp/components/McpLibraryView';
-import { IntegrationsProvider } from '@renderer/features/integrations/integrations-provider';
-import { DeviceScopePicker, DeviceScopeProvider, useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
+import { DeviceScopePicker, DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scope-picker';
 import { libraryDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { AgentsSettingsPage } from '@renderer/features/settings/agents-page/AgentsSettingsPage';
-import IntegrationsCard from '@renderer/features/settings/components/IntegrationsCard';
-import { PageHeader } from '@renderer/lib/components/page-header';
 import { PageContent, PageLayout, PageSidebarMenu } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
-import { useParams } from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
+import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { createRemoteLibraryHost, LOCAL_LIBRARY_HOST, LibraryHostProvider, type LibraryHost } from './library-host';
+import { LibraryHostProvider } from './library-host';
+import { useSelectedLibraryHost } from './use-selected-library-host';
+import { RoutedIntegrationsLibraryPage } from './routed-integrations-library-page';
 import { PromptLibraryView } from './prompts/prompt-library-view';
 import { ThemesLibraryPage } from './themes/themes-library-page';
-import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
-import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
-import { useDevicesStore } from '@/store/devicesContext';
+import { LIBRARY_TABS, type LibraryTab } from '@shared/library-tabs';
 
-/**
- * 资源库 = 给 agent 用的东西;咕咕这个 app 自己怎么表现归设置(owner 2026-09-15,#5688)。
- * 智能体、集成两页因此从设置搬到这里。App(原「扩展」)在这里待过一阵,10-01 起搬到最左栏自己的一格(apps 视图)。
- * MCP 那格 10-18 换了内容(owner 选的):原来只抄各家配置文件、不连 server;现在是咕咕自己管的列表(检测连接、
- * 新建任务时勾选),各家自己配的并排列出、只读。
- *
- * 「主题」11-07 加进来(owner 原话「除了 integrations 之外, 可以在资源库里加一个"主题"」):它管的是咕咕自己的外观,
- * 与上面「app 怎么表现归设置」那条相反,是 owner 这次点名放这里的;设置「通用」里留一行说当下用的哪族、点过来。
- * 它也是唯一**不分机器**的一格:主题只改这台电脑上的咕咕。
- *
- * 唯一的一份清单,类型从它推出来;LibraryMainPanel 以它为键配页面,少配一格就编译不过。
- */
-export const LIBRARY_TABS = ['prompts', 'agents', 'integrations', 'mcp', 'themes'] as const;
+export { useSelectedLibraryHost } from './use-selected-library-host';
 
-export type LibraryTab = (typeof LIBRARY_TABS)[number];
+/** Each tab's name, one list: the Library's own menu and an App's `hostLinks` entry (app-settings-page.tsx) say it the same. */
+export const LIBRARY_TAB_LABELS = {
+  prompts: 'prompts.title',
+  agents: 'settings.agents',
+  integrations: 'settings.integrations',
+  mcp: 'mcpLibrary.title',
+  themes: 'themes.title',
+} as const satisfies Record<LibraryTab, SessionMessageKey>;
 
 const LibraryTabContext = createContext<{
   tab: LibraryTab;
@@ -91,48 +83,9 @@ function useLibraryTab() {
   return context;
 }
 
-/** 资源库此刻看的是哪台机器(选的那台不在名下了就回落本机)。挂在资源库那一页上,observer 里调。 */
-export function useSelectedLibraryHost(): LibraryHost {
-  const selected = useSelectedRemoteDevice(libraryDeviceStore);
-  const deviceId = selected?.deviceId ?? null;
-  const label = selected?.device.label ?? '';
-  const online = selected?.device.isOnline ?? false;
-  const lastSeenAt = selected?.device.lastSeenAt ?? null;
-  const hostKind = selected?.device.hostKind;
-  return useMemo(
-    () =>
-      deviceId
-        ? createRemoteLibraryHost({ deviceId, deviceLabel: label, online, lastSeenAt, hostKind }, (id, initialPath) =>
-            remoteHostsStore.pickFolder(id, initialPath)
-          )
-        : LOCAL_LIBRARY_HOST,
-    // device 对象本身每次心跳都换;按它身上会变、页面会用到的那几格重建。
-    [deviceId, label, online, lastSeenAt, hostKind]
-  );
-}
-
-function IntegrationsLibraryPage() {
-  const { translate } = useSessionMessages();
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        sticky
-        title={translate('settings.integrations')}
-      />
-      <IntegrationsCard />
-    </div>
-  );
-}
-
-const RoutedIntegrationsLibraryPage = observer(function RoutedIntegrationsLibraryPage({ legacy,host }: { legacy: ReactNode; host: LibraryHost }) {
-  const devices = useDevicesStore();
-  const deviceId = host.remote?.deviceId ?? devices.devices.find(row => row.is_current_device)?.device_id ?? null;
-  return <ConnectionRouteBoundary owner={route => <OwnerConnectorsSettings route={route} deviceId={deviceId} />} legacy={legacy} />;
-});
-
 export const LibraryMainPanel = observer(function LibraryMainPanel() {
   const { tab, onTabChange } = useLibraryTab();
-  const { params, setParams } = useParams('library');
+  const { navigate } = useNavigate();
   const { translate } = useSessionMessages();
   /**
    * #6264 **整个资源库**是分机器的(owner:「整个资源库或者其他的都是分设备的,而不是说智能体中分设备」):
@@ -140,29 +93,16 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
    * 都换成那台机器的,长相不变。换机器 = 换一份页面(key 按机器):上一台机器的搜索词、刷新中的状态不带到下一台。
    */
   const host = useSelectedLibraryHost();
-  const tabs: Array<{ id: LibraryTab; label: string; badge?: number }> = [
-    { id: 'prompts', label: translate('prompts.title') },
-    { id: 'agents', label: translate('settings.agents') },
-    { id: 'integrations', label: translate('settings.integrations') },
-    { id: 'mcp', label: translate('mcpLibrary.title') },
-    { id: 'themes', label: translate('themes.title') },
-  ];
+  const tabs: Array<{ id: LibraryTab; label: string; badge?: number }> = LIBRARY_TABS.map((id) => ({ id, label: translate(LIBRARY_TAB_LABELS[id]) }));
   const tabContent: Record<LibraryTab, ReactNode> = {
     prompts: <PromptLibraryView />,
     agents: (
       <AgentsSettingsPage
-        selectedAgentId={params.agentId ?? null}
-        onSelectAgent={(agentId) => setParams({ agentId: agentId ?? undefined })}
+        selectedAgentId={null}
+        onSelectAgent={(agentId) => agentId && navigate('apps', { agentDetail: { kind: 'agent-app-detail', agentId, deviceId: host.remote?.deviceId } })}
       />
     ),
-    // 集成的数据放在一个 Provider 里(应用根上那份是本机的,聊天里的 @issue 用它);这里按所选机器另挂一份。
-    integrations: <RoutedIntegrationsLibraryPage host={host} legacy={host.remote ? (
-      <IntegrationsProvider>
-        <IntegrationsLibraryPage />
-      </IntegrationsProvider>
-    ) : (
-      <IntegrationsLibraryPage />
-    )} />,
+    integrations: <RoutedIntegrationsLibraryPage host={host} />,
     mcp: <McpLibraryView onOpenIntegrations={() => onTabChange('integrations')} />,
     themes: <ThemesLibraryPage />,
   };

@@ -7,7 +7,7 @@ export default {
   "done": "Done",
   "saveFailed": "Couldn't save tour progress. Try again.",
   "featureHeader": "Three useful features to revisit",
-  "featuresProgress": "Feature films · {{current}} / {{total}}",
+  "featuresProgress": "Feature films ({{current}}/{{total}})",
   "filmProgress": "Film progress",
   "featureSteps": "Feature film steps",
   "play": "Play",

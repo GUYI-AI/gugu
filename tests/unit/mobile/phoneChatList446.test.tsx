@@ -145,7 +145,7 @@ it('phone group long-press reuses all row actions and marks only the group and d
   await render(true)
   await hold(row())
   expect([...document.querySelectorAll('[role=menuitem]')].map(item => item.getAttribute('data-testid'))).toEqual([
-    'conversation-row-mark-read', 'chat-row-mark-all-read', 'conversation-row-pin', 'conversation-row-notifications', 'conversation-row-hide-chat', 'conversation-row-delete-chat',
+    'conversation-row-pin', 'conversation-row-mark-read', 'conversation-row-notifications', 'conversation-row-hide-chat', 'conversation-row-delete-chat',
   ])
   expect(state.select).not.toHaveBeenCalled()
   expect(state.open).not.toHaveBeenCalled()
@@ -159,7 +159,7 @@ it('phone group long-press keeps personal removal when the member cannot dissolv
   await render(true)
   await hold(row())
   expect(document.querySelector('[data-testid=conversation-row-hide-chat]')?.textContent).toContain('不显示')
-  expect(document.querySelector('[data-testid=conversation-row-delete-chat]')?.textContent).toContain('删除')
+  expect(document.querySelector('[data-testid=conversation-row-delete-chat]')?.textContent).toContain('清空聊天记录')
   expect(chatService.getGroupChatSettings).not.toHaveBeenCalled()
   expect(readAction()).not.toBeNull()
   expect(document.querySelector('[data-testid=conversation-row-pin]')).not.toBeNull()
@@ -193,15 +193,16 @@ it('short tap and a cancelled scroll retain ordinary row behavior', async () => 
   expect(state.read).not.toHaveBeenCalled()
 })
 
-it('desktop still opens by right click, with scoped read disabled when only other rows are unread', async () => {
+it('desktop opens by right click and disables personal mark-read when only other rows are unread', async () => {
   await render(false, [{ ...source, unread_count: 0 }, { ...topic, unread_count: 0 }, orphan])
   vi.useFakeTimers()
   await act(async () => { pointer(row(), 'pointerdown'); vi.advanceTimersByTime(650) })
   expect(document.querySelector('[role=menu]')).toBeNull()
   vi.useRealTimers()
   await act(async () => row().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 40 })))
-  expect(readAction().getAttribute('aria-disabled')).toBe('true')
-  expect(document.querySelector('[data-testid=chat-row-mark-all-read]')?.getAttribute('aria-disabled')).not.toBe('true')
+  expect(document.querySelector('[data-testid=conversation-row-mark-read]')?.getAttribute('aria-disabled')).toBe('true')
+  expect(document.querySelector('[data-testid=conversation-row-mark-unread]')).toBeNull()
+  expect(document.querySelector('[data-testid=conversation-row-mark-all-read]')).toBeNull()
 })
 
 it.each([false, true])('hides an empty owned agent and uses message time on desktop and phone (mobile: %s)', async mobile => {

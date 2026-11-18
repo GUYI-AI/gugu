@@ -5,8 +5,7 @@
  * Layout (fixed single-line row, no border, no background, no inset):
  *   [resource || fileIcon] title path
  *
- * The icon is the file-type devicon when resolvable, else a generic resource
- * glyph. Title and path sit inline; the path keeps the muted secondary styling.
+ * The icon is the file's family glyph (`FileMark`). Title and path sit inline; the path keeps the muted secondary styling.
  * Clickable and opaque targets share one shape — clickability shows up only as
  * the cursor plus the hover colour/underline on the title, never as chrome.
  *
@@ -20,8 +19,8 @@
 import type { MeasureCtx } from '@session-chat/core/define';
 import { readableLabel, wrappedRowHeight } from '../readable-label';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { GenericFileIcon, IconError } from '@session-chat/components/primitives/icons';
-import { resolveFileIconClass } from '@session-chat/lib/file-icons';
+import { FileMark, IconError } from '@session-chat/components/primitives/icons';
+import { genericFileIcon } from '@session-chat/components/primitives/icons.css';
 import { Show } from 'solid-js';
 import type { ChatResourceLink, ResourceTarget } from '@session-chat/model';
 import {
@@ -82,10 +81,6 @@ export function ResourceLink(props: ResourceLinkProps) {
   const commands = useCommands();
 
   const layout = () => resourceLinkLayout(props.item, props.measureCtx());
-  const iconName = () => {
-    const name = props.item.name;
-    return resolveFileIconClass(name) ?? null;
-  };
   const isClickable = () => props.item.target.kind !== 'opaque';
 
   const handleClick = () => {
@@ -104,14 +99,13 @@ export function ResourceLink(props: ResourceLinkProps) {
   return (
     <div
       class={isClickable() ? rowClickable : rowStatic}
+      data-pane-opener=""
       style={{ height: '100%' }}
       onClick={isClickable() ? handleClick : undefined}
       role={isClickable() ? 'button' : undefined}
     >
       <div class={iconWrap}>
-        <Show when={iconName()} fallback={<GenericFileIcon />}>
-          <span class={iconName()!} />
-        </Show>
+        <FileMark name={props.item.name} size={12} class={genericFileIcon} />
       </div>
       <span class={titleText} style={{ width: `${Math.min(layout().available, layout().title.width)}px`, flex: 'none' }}>{layout().title.text}</span>
       <span class={pathText} style={{ width: `${Math.min(layout().available, layout().path.width)}px`, flex: 'none' }}>{layout().path.text}</span>

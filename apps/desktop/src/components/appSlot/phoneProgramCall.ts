@@ -28,7 +28,7 @@ export function phoneAppCaller(app: { extensionId: string; extensionName: string
   return { kind: 'app' as const, deviceId: callerId(), deviceLabel: 'phone', extensionId: app.extensionId, extensionName: app.extensionName }
 }
 
-const refused = (code: string, message: string) => Object.assign(new Error(message), { code })
+const refused = (code: string, message: string, cause?: unknown) => Object.assign(new Error(message, cause === undefined ? undefined : { cause }), { code })
 
 type PhoneApp = { extensionId: string; extensionName: string; version: string }
 type PhoneSession = { id?: string; deviceId: string; deviceLabel: string | null; online?: boolean }
@@ -46,8 +46,8 @@ export async function callOnComputer(app: PhoneApp, session: PhoneSession, metho
   try {
     return await appCallOn(session.deviceId, caller, action)
   } catch (error) {
-    if (error instanceof DeviceRpcTimeoutError) throw refused('unavailable', `"${where}" did not answer — the call may or may not have run there`)
-    if (error instanceof DeviceRpcChannelError) throw refused('unavailable', `"${where}" could not be reached (${error.message})`)
+    if (error instanceof DeviceRpcTimeoutError) throw refused('unavailable', `"${where}" did not answer — the call may or may not have run there`, error)
+    if (error instanceof DeviceRpcChannelError) throw refused('unavailable', `"${where}" could not be reached (${error.message})`, error)
     const code = (error as { code?: unknown } | null)?.code
     const message = error instanceof Error ? error.message : String(error)
     if (code === 'unknown_method' || message.startsWith('No handler registered for ')) throw refused('unavailable', `咕咕 on "${where}" is too old to do this App's call for a phone`)

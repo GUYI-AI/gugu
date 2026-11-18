@@ -61,7 +61,7 @@ export function SessionScheduleChip({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(sessionComposerTrayTriggerClassName, 'max-w-full overflow-hidden text-xs text-[var(--em-foreground-muted)]')}
-        title={headWhen ? `${headWhen} · ${headText}` : headText}
+        title={headWhen ? `${headWhen}: ${headText}` : headText}
         data-testid="session-schedule-chip"
         data-attention={anyAttention || undefined}
       >
@@ -73,7 +73,7 @@ export function SessionScheduleChip({
         {headWhen ? (
           <>
             <span className="shrink-0 tabular-nums">{headWhen}</span>
-            <span aria-hidden>·</span>
+            <span aria-hidden> </span>
           </>
         ) : null}
         <span className="min-w-0 truncate text-[var(--em-foreground)]">{headText}</span>
@@ -173,7 +173,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
       )}
       <div className="min-w-0">
         <div className="truncate text-sm text-foreground">
-          {when ? <span className="tabular-nums">{when} · </span> : null}
+          {when ? <span className="tabular-nums">{when}  </span> : null}
           {schedule.title}
         </div>
         {attention && lastWhen ? (
@@ -183,7 +183,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
           <div className="text-xs text-foreground-muted">
             {rule}
             {!attention && last?.status === 'done' && lastWhen
-              ? ` · ${translate('sessionSchedule.lastDelivered', { when: lastWhen })}`
+              ? ` ${translate('sessionSchedule.lastDelivered', { when: lastWhen })}`
               : null}
           </div>
         ) : null}

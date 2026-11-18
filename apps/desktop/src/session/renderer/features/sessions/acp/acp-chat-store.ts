@@ -182,7 +182,11 @@ export class AcpChatStore {
   transcriptPendingId: string | null = null;
   /** The row the person stopped before it went: drawn where it was until it goes. */
   stoppedRowId: string | null = null;
-  /** Failed-start inputs remain in host custody and are projected into the transcript, never stored as history. */
+  /**
+   * Failed-start inputs remain in host custody and are projected into the transcript, never stored as history.
+   * Compared by value (`observable.struct`): it is re-derived on every projection of the session, which a running turn
+   * makes with each streamed chunk, and an unchanged list must not re-render the panel and composer that read it.
+   */
   failedRowIds: string[] = [];
   /**
    * #6552 在飞的开场(`_runBootstrap`)数。>0 且还没挂上会话 = 引擎会话在起:这段里模型 / 强度照样能选 ——
@@ -382,7 +386,7 @@ export class AcpChatStore {
       _lifeRetriedVersion: observable,
       transcriptPendingId: observable,
       stoppedRowId: observable,
-      failedRowIds: observable.ref,
+      failedRowIds: observable.struct,
       loadError: computed,
       _bootstrapsInFlight: observable,
       starting: computed,
@@ -413,6 +417,7 @@ export class AcpChatStore {
       permissionModeChangeNotice: computed,
       effort: computed,
       effortOptions: computed,
+      fastModeGroup: computed,
       commands: computed,
       permissionQueue: computed,
       queuedPrompts: computed,
@@ -427,6 +432,7 @@ export class AcpChatStore {
       setModel: action,
       setMode: action,
       setEffort: action,
+      setFastMode: action,
       resolvePermission: action,
       editQueuedPrompt: action,
       deleteQueuedPrompt: action,
@@ -553,6 +559,10 @@ export class AcpChatStore {
         { name: option.name, description: option.description },
       ])
     );
+  }
+
+  get fastModeGroup() {
+    return this.session?.config.current().fastMode ?? null;
   }
 
   get commands(): CommandItem[] {
@@ -1482,9 +1492,7 @@ export class AcpChatStore {
    * 写失败只报错不回滚:活会话上已经生效了,回滚活会话等于再改一次用户的设置。
    */
   private async _recordLiveSetting(
-    setting:
-      | { dimension: 'permission'; modeId: string }
-      | { dimension: 'effort'; value: string },
+    setting: Parameters<typeof rpc.sessions.recordLiveSessionSetting>[1],
   ): Promise<void> {
     if (this.runtimeView) return;
     try {
@@ -1736,6 +1744,21 @@ export class AcpChatStore {
       const result = await session.setModelOption('effort', effort);
       if (result.success && result.data.status === 'applied') {
         await this._recordLiveSetting({ dimension: 'effort', value: result.data.effectiveValue });
+      }
+      return this._settleLiveSetting('acpFailure.changeSetting', result);
+    } catch (error: unknown) {
+      this._toastError('acpFailure.changeSetting', error);
+      return null;
+    }
+  }
+
+  async setFastMode(enabled: boolean): Promise<LiveSettingOutcome> {
+    const session = this._requireSession('acpFailure.changeSetting');
+    if (!session) return null;
+    try {
+      const result = await session.setModelOption('fast', enabled ? 'on' : 'off');
+      if (result.success && result.data.status === 'applied') {
+        await this._recordLiveSetting({ dimension: 'fast', value: result.data.effectiveValue === 'on' });
       }
       return this._settleLiveSetting('acpFailure.changeSetting', result);
     } catch (error: unknown) {

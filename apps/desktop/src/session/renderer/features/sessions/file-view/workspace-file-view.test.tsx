@@ -2,6 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { HostedPreviewFile } from '@/components/chat/MessageFilePreview';
 
 // owner 2026-11-09: a PDF overwritten on a Gugu server kept showing the old pages until its tab was closed.
 const h = vi.hoisted(() => {
@@ -10,6 +11,7 @@ const h = vi.hoisted(() => {
     listeners,
     watchDirectory: vi.fn(async () => ({ success: true, data: { leaseId: 'lease-1' } })),
     releaseDirectoryWatch: vi.fn(async () => {}),
+    source: null as HostedPreviewFile['source'] | null,
   };
 });
 
@@ -19,7 +21,7 @@ vi.mock('../workspace-backend/workspace-backend', () => ({
   workspaceRpc: () => ({ files: { watchDirectory: h.watchDirectory, releaseDirectoryWatch: h.releaseDirectoryWatch } }),
 }));
 vi.mock('@/components/chat/MessageFilePreview', () => ({
-  MessageFilePreview: ({ file }: { file: { source: { key: string } } }) => <div data-key={file.source.key} />,
+  MessageFilePreview: ({ file }: { file: HostedPreviewFile }) => { h.source = file.source; return <div data-key={file.source.key} />; },
 }));
 vi.mock('../stores/open-file-in-file-editor', () => ({ openPathWithFailureToast: vi.fn() }));
 vi.mock('../stores/session-selectors', () => ({ getSessionView: vi.fn() }));
@@ -70,4 +72,13 @@ it('watches nothing for a file outside the workspace: no change feed carries it'
 it('watches the folder of a Windows path, not the path cut by one character', async () => {
   await draw(true, 'C:\\Users\\me\\task\\hw1.pdf');
   expect(h.watchDirectory.mock.calls).toEqual([['p', 'w', 'C:\\Users\\me\\task']]);
+});
+
+it('offers Cite on a selection only for a session\'s file, through the same quote as its menu', async () => {
+  await act(async () => root.render(<WorkspaceFileView projectId="p" workspaceId="w" sessionId="file-cite-owner"
+    path="src/example.ts" absolutePath="/home/task/src/example.ts" inWorkspace onClose={() => {}} />));
+  expect(h.source?.citesSelection).toBe(true);
+  await act(async () => root.render(<WorkspaceFileView projectId="p" workspaceId="w"
+    path="src/example.ts" absolutePath="/home/task/src/example.ts" inWorkspace onClose={() => {}} />));
+  expect(h.source?.citesSelection).toBe(false);
 });

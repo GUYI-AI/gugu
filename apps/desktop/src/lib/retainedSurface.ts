@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { createContext, createElement, useContext, type CSSProperties, type ReactNode } from 'react'
 
 // #6158 「常驻但隐藏」的面(切到别的 tab、别的会话、别的预览时用):布局原样保留,只是不画、不可点、不可聚焦、find 找不到。
 // content-visibility:hidden 一项全给:被跳过的子树不绘制、不进 tab 序与无障碍树、不接点击、不被 find 命中,
@@ -17,3 +17,12 @@ import type { CSSProperties } from 'react'
 //   DOM 序靠后就盖掉正在显示那一面的 no-drag:页签、群头按钮点不动(OS 吃掉点击,elementFromPoint 看不出)。
 //   矩形按祖先的 transform 换算,scale(0) 把它们压成 0 面积;transform 不继承,不重算子树,也不动布局盒与 ResizeObserver。
 export const RETAINED_SURFACE_HIDDEN_STYLE: CSSProperties = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, contentVisibility: 'hidden', pointerEvents: 'none', transform: 'scale(0)' }
+
+// 「在不在屏上」只有这一个答案:保留面藏起来时它为 false,里面的东西据此挂起(不跑计时器、不画动效),重新显示时一次补齐。
+// 嵌套的保留面(会话页框架 → 屏上的一页 → 页签层)各自只说自己藏没藏,`SurfaceShown` 和外层相与,所以里面读到的总是「真的在屏上」。
+// 一个单独的窗是它自己的屏:那里直接给 `SurfaceShownContext.Provider value`,不与主窗相与。
+export const SurfaceShownContext = createContext(true)
+
+export function SurfaceShown({ shown, children }: { shown: boolean; children?: ReactNode }) {
+  return createElement(SurfaceShownContext.Provider, { value: useContext(SurfaceShownContext) && shown }, children)
+}

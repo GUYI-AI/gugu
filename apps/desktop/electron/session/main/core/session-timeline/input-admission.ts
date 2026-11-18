@@ -3,6 +3,7 @@ import type { SessionpageSessionSendRequest } from '@gugu/session-core/session-r
 import type { PromptAttachment } from '@gugu/session-core/acp/client';
 import { readAcceptedMessage } from '../sessions/sendMessage';
 import { runtimeForkInput } from '../sessions/session-life-forks';
+import { inspectCreationInputCustody, type CreationCustodyEvidence } from './creation-attachment-recovery';
 
 export type InputAdmissionPayload = {
   conversationId: string;
@@ -33,4 +34,11 @@ export function priorInputAdmission(input: InputAdmissionPayload): 'accepted' | 
   if (metadata?.kind !== 'ordinary-message' && metadata?.kind !== 'session-direct') return 'uncertain';
   const original = metadata.sourceInput ?? { text: receipt.content, files: metadata.delivery?.files, attachments: metadata.delivery?.attachments };
   return sameInput(input, { ...input, ...original, steerIfBusy: metadata.delivery?.steerIfBusy }) ? 'accepted' : 'uncertain';
+}
+
+/** Creation recovery must read durable ownership, not an in-memory fork or a caller reply. */
+export function readCreationInputCustody(input: InputAdmissionPayload): CreationCustodyEvidence {
+  if (!input.clientMessageId) return 'conflict';
+  try { return inspectCreationInputCustody(input, readAcceptedMessage(input.clientMessageId)); }
+  catch { return 'unavailable'; }
 }

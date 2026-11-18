@@ -1,4 +1,4 @@
-type Request = { id: number; agentOption: boolean; finish(value: boolean | null): void }
+type Request = { id: number; agentOption: boolean; name: string; finish(value: boolean | null): void }
 let current: Request | null = null
 let sequence = 0
 const listeners = new Set<() => void>()
@@ -10,13 +10,13 @@ export const subscribeConversationDeleteConfirmation = (listener: () => void) =>
 }
 
 /** The authenticated shell hosts this choice, including the phone's list-only screen. */
-export function requestConversationDeleteConfirmation(signal: AbortSignal, agentOption: boolean): Promise<boolean | null> {
+export function requestConversationDeleteConfirmation(signal: AbortSignal, agentOption: boolean, name = ''): Promise<boolean | null> {
   if (signal.aborted) return Promise.resolve(null)
   current?.finish(null)
   return new Promise(resolve => {
     const cancel = () => request.finish(null)
     let finished = false
-    const request: Request = { id: ++sequence, agentOption, finish(value) {
+    const request: Request = { id: ++sequence, agentOption, name, finish(value) {
       if (finished) return
       finished = true
       signal.removeEventListener('abort', cancel)

@@ -107,7 +107,7 @@ describe('what a page says about itself: one way out of main', () => {
     expect(await call(GROUP_PAGE, 'setTabTitle', { title: 'Board' })).toMatchObject({ ok: true });
     expect(await call(GROUP_PAGE, 'setTabBadge', { badge: 3 })).toMatchObject({ ok: true });
     expect(await call(GROUP_PAGE, 'reportError', { message: 'boom' })).toMatchObject({ ok: true });
-    const group = { extensionId: 'board', sessionId: null, tabId: 'slot-1', embedderId: 42 };
+    const group = { extensionId: 'board', sessionId: null, tabId: 'slot-1', pageId: GROUP_PAGE, embedderId: 42 };
     expect(deliver.mock.calls).toEqual([
       [group, { kind: 'setTabTitle', title: 'Board' }],
       [group, { kind: 'setTabBadge', badge: 3 }],
@@ -120,7 +120,7 @@ describe('what a page says about itself: one way out of main', () => {
     deliver.mockClear();
     await call(SESSION_TAB, 'setTabTitle', { title: 'Board' });
     await call(SESSION_TAB, 'reportError', { message: 'boom' });
-    const tab = { extensionId: 'board', sessionId: 'task-1', tabId: 'tab-1', embedderId: 42 };
+    const tab = { extensionId: 'board', sessionId: 'task-1', tabId: 'tab-1', pageId: SESSION_TAB, embedderId: 42 };
     expect(deliver.mock.calls).toEqual([
       [tab, { kind: 'setTabTitle', title: 'Board' }],
       [tab, { kind: 'reportError', message: 'boom' }],
@@ -147,9 +147,9 @@ describe('what a page says about itself: one way out of main', () => {
     expect(await call(SESSION_TAB, 'dispatch', { text: 'picked', draft: true, to: { agent: 'user:0a000000-0000-4000-8000-0000000000a2' } })).toMatchObject({ ok: true });
     expect(await call(DOCK_PAGE, 'dispatch', { text: 'picked', draft: true, to: { chat: CHAT } })).toMatchObject({ ok: true });
     expect(deliver.mock.calls).toEqual([
-      [{ extensionId: 'board', sessionId: null, tabId: 'slot-1', embedderId: 42 }, { kind: 'compose', detail: { chatId: OTHER, text: 'picked\n' } }],
-      [{ extensionId: 'board', sessionId: 'task-1', tabId: 'tab-1', embedderId: 42 }, { kind: 'compose', sessionId: 'task-2', text: 'picked\n' }],
-      [{ extensionId: 'board', sessionId: null, tabId: 'dock-1', embedderId: 42 }, { kind: 'compose', detail: { chatId: CHAT, text: 'picked\n' } }],
+      [{ extensionId: 'board', sessionId: null, tabId: 'slot-1', pageId: GROUP_PAGE, embedderId: 42 }, { kind: 'compose', detail: { chatId: OTHER, text: 'picked\n' } }],
+      [{ extensionId: 'board', sessionId: 'task-1', tabId: 'tab-1', pageId: SESSION_TAB, embedderId: 42 }, { kind: 'compose', sessionId: 'task-2', text: 'picked\n' }],
+      [{ extensionId: 'board', sessionId: null, tabId: 'dock-1', pageId: DOCK_PAGE, embedderId: 42 }, { kind: 'compose', detail: { chatId: CHAT, text: 'picked\n' } }],
     ]);
     expect(emitted).toHaveBeenCalledWith(expect.anything(), { projectId: 'p-1', sessionId: 'task-2' });
     // Where the page is fills only what the sheet shows: its session.

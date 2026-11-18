@@ -27,7 +27,9 @@ const MINE_FG = 'var(--conversation-bubble-mine-fg, var(--chat-bubble-user-fg))'
 const MINE_SCHEME = 'var(--conversation-bubble-mine-color-scheme, var(--chat-bubble-user-color-scheme))';
 // The pinned summary (PinnedUserSummary) is the same bubble.
 globalStyle(`${conversationRoot} :is([data-user-card], [data-pin-summary])`, { background: MINE_BG, color: vars.fgBody, borderColor: 'transparent' });
-globalStyle(`${conversationRoot}[data-side="right"] :is([data-user-card], [data-pin-summary])`, { colorScheme: MINE_SCHEME, vars: { [vars.fgBody]: MINE_FG, [vars.link]: MINE_FG } });
+globalStyle(`${conversationRoot}[data-side="right"] :is([data-user-card], [data-pin-summary])`, { colorScheme: MINE_SCHEME, vars: { [vars.fgBody]: MINE_FG, [vars.link]: MINE_FG, [vars.mentionChipBg]: `color-mix(in srgb, ${MINE_FG} 16%, transparent)`, [vars.mentionChipFg]: MINE_FG } });
+// A cite in my own bubble is tinted from the bubble's text colour, not a light chip pasted on a dark bubble.
+globalStyle(`${conversationRoot}[data-side="right"] [data-user-card] .gg-md-mention`, { boxShadow: 'none' });
 globalStyle(`${conversationRoot}[data-side="left"] [data-user-card]`, { background: 'var(--bubble-other, var(--chat-bg-2))', colorScheme: 'inherit' });
 
 
@@ -53,13 +55,18 @@ for (const label of [collapseHeader, toolName, summaryChip]) {
 // 那一行本身常亮(原气泡的 hover 规则会把整行藏起来),藏的是里面的时间、复制、编辑;「发到」常驻(管家 10-28)。
 globalStyle(`${conversationRoot} [data-user-message-actions]`, { opacity: 1, pointerEvents: 'auto' });
 // Exempt persistent controls without making the hidden state outrank hover/focus.
-globalStyle(`${conversationRoot} [data-user-message-actions] > :where(:not([data-slot="sent-to"]):not([data-slot="conversation-reference"]):not([data-collapse-id]))`, { opacity: 0, pointerEvents: 'none', transition: 'opacity 120ms ease' });
+globalStyle(`${conversationRoot} [data-user-message-actions] > :where(:not([data-slot="sent-to"]):not([data-slot="conversation-reference"]):not([data-collapse-id]))`, {
+  '@media': { '(hover: hover)': { opacity: 0, pointerEvents: 'none', transition: 'opacity 120ms ease' } },
+});
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] time`, { order: 2 });
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] ${conversationReference}`, { order: 1, height: CONVERSATION_FOOTER_H });
 globalStyle(`${conversationRoot} [data-user-message-actions] [data-slot="message-copy"]`, { order: 3 });
 globalStyle(`${conversationRoot} [data-user-message-actions] [data-slot="message-edit"]`, { order: 4 });
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] [data-slot="conversation-quote"]`, { height: CONVERSATION_FOOTER_H });
-globalStyle(`${conversationRoot}:hover [data-user-message-actions] > *, ${conversationRoot} [data-user-message-actions]:focus-within > *`, { opacity: 1, pointerEvents: 'auto' });
+globalStyle(`${conversationRoot}:hover [data-user-message-actions] > *, [data-utterance-hovered] ${conversationRoot} [data-user-message-actions] > *, ${conversationRoot} [data-user-message-actions]:focus-within > *`, { opacity: 1, pointerEvents: 'auto' });
+globalStyle(`[data-phone-shell] ${conversationRoot} [data-user-message-actions] > *`, {
+  opacity: 1, pointerEvents: 'auto',
+});
 globalStyle(`${conversationRoot}[data-side="left"] [data-user-message-actions]`, { justifyContent: 'flex-start' });
 globalStyle(`${conversationRoot}[data-side="left"] ${userMessageExpandRow}`, { justifyContent: 'flex-start' });
 globalStyle(`${conversationRoot} [data-user-message-actions] time`, { order: 2, marginLeft: 0, marginRight: 0 });

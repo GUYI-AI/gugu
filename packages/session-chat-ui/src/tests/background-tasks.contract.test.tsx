@@ -107,7 +107,7 @@ describe('background tasks at the end of the transcript', () => {
     state.session.setBackgroundTasks({ commands: [command], subagents: [agent()] })
 
     await until('the background line is on screen', () => row(host) !== null)
-    expect(row(host)?.textContent).toContain('Background · 1 command · 1 subagent')
+    expect(row(host)?.textContent).toContain('Background tasks (1 command, 1 subagent)')
     // 收着:只有那一句,单子不画。
     expect(items(host)).toHaveLength(0)
 
@@ -119,7 +119,7 @@ describe('background tasks at the end of the transcript', () => {
     expect(agentRow.textContent).toContain('Audit chat perf')
     expect(agentRow.textContent).toContain('3 steps')
     // 文案与量高取同一个值(快照):显示 30s,就是量高的那个 elapsedMs(评审)。
-    expect(agentRow.textContent).toContain('3 steps · 30s')
+    expect(agentRow.textContent).toContain('3 steps, 30s')
 
     // 它是最后一行:回复在它上面。
     const reply = [...host.querySelectorAll('*')].find((el) => el.textContent === 'Started them; I will report back.')
@@ -163,7 +163,7 @@ describe('background tasks at the end of the transcript', () => {
     state.transcript.history.seed([settled])
     state.session.setBackgroundTasks({ commands: [command], subagents: [] })
     await until('the background line is on screen', () => row(host) !== null)
-    expect(row(host)?.textContent).toContain('Background · 1 command')
+    expect(row(host)?.textContent).toContain('Background tasks (1 command)')
     expect(row(host)?.textContent).not.toContain('subagent')
     host.querySelector<HTMLElement>('[data-collapse-id="background-tasks:open"]')?.click()
     await until('the list opens', () => items(host).length === 1)
@@ -183,7 +183,7 @@ describe('background tasks at the end of the transcript', () => {
     const { state, host } = mount()
     state.session.setBackgroundTasks({ commands: [], subagents: [agent()] })
     await until('the background line is on screen', () => row(host) !== null)
-    expect(row(host)?.textContent).toContain('Background · 1 subagent')
+    expect(row(host)?.textContent).toContain('Background tasks (1 subagent)')
   })
 
   // owner 2026-10-27 原型:末尾那条回复带着过程行时,后台那一句与「执行中」同一行,单子就地展开在它下面。
@@ -265,7 +265,7 @@ describe('background tasks at the end of the transcript', () => {
     // 对话布局里一轮回复拆成「名字 + 过程行」那一行(w1:process:head)和气泡那一行(answer)。
     const pill = () => host.querySelector<HTMLElement>('[data-agent-conversation-message="w1:process:head"] [data-slot="background-tasks-pill"]')
     await until('the background line sits on the reply\'s process line', () => pill() !== null)
-    expect(pill()?.textContent).toContain('Background · 1 command · 1 subagent')
+    expect(pill()?.textContent).toContain('Background tasks (1 command, 1 subagent)')
     expect(row(host)).toBeNull()
     const process = host.querySelector<HTMLElement>('[data-agent-conversation-message="w1:process:head"] [data-conversation-process]')!
     // 同一行
@@ -463,8 +463,11 @@ it('summarizes a single live command, discloses semantic details and keeps the o
   expect(process.textContent).not.toContain('background task')
   const bubble = host.querySelector<HTMLElement>('[data-user-card="before"]')!
   const input = host.querySelector<HTMLElement>('[data-agent-conversation-message="owner-steer"]')!
-  await untilStable('message seam settles', () => input.getBoundingClientRect().top - bubble.getBoundingClientRect().bottom)
-  expect(Math.abs(input.getBoundingClientRect().top - bubble.getBoundingClientRect().bottom - 20)).toBeLessThanOrEqual(1)
+  const footer = host.querySelector<HTMLElement>('[data-user-message-actions="before"]')
+  const previousEnd = footer ?? bubble
+  const seam = () => input.getBoundingClientRect().top - previousEnd.getBoundingClientRect().bottom
+  await untilStable('message seam settles', seam)
+  expect(Math.abs(seam() - 24)).toBeLessThanOrEqual(1)
 })
 
 it('keeps background tasks on the completed process with a trailing change card', async () => {
@@ -482,7 +485,7 @@ it('keeps background tasks on the completed process with a trailing change card'
   const head = host.querySelector<HTMLElement>('[data-agent-conversation-message="edited:process:head"]')!
   const pill = head.querySelector<HTMLElement>('[data-slot="background-tasks-pill"]')
   expect(pill).not.toBeNull()
-  expect(pill!.textContent).toContain('Background · 1 command · 1 subagent')
+  expect(pill!.textContent).toContain('Background tasks (1 command, 1 subagent)')
   expect(row(host)).toBeNull()
   const process = head.querySelector<HTMLElement>('[data-conversation-process]')!
   expect(Math.abs(process.getBoundingClientRect().top - pill!.getBoundingClientRect().top)).toBeLessThanOrEqual(2)

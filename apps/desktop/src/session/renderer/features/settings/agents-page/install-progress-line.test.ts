@@ -80,7 +80,7 @@ describe('installProgressLine', () => {
       },
       translate
     )
-    expect(line?.text.startsWith('Antigravity CLI 2/2 · ')).toBe(true)
+    expect(line?.text.startsWith('Antigravity CLI 2/2, ')).toBe(true)
     expect(line?.ratio).toBeCloseTo(0.25, 5)
   })
 })

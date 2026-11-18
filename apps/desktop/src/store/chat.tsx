@@ -35,7 +35,7 @@ import { bindOutboxActions, createOutboxWiring, forwardingDeviceFiles, type Outb
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
 import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
-import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useAppActive } from '../lib/onScreenChat'
+import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useWatchAppActive } from '../lib/onScreenChat'
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
 import { useActiveChatTransitionState } from './activeChatTransition'; import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
@@ -67,7 +67,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const { toast } = useToast()
   const userId = user?.id ?? null
   const catchupPriority = useChatCatchupPriority(userId)
-  const notificationSettings = useNotificationSettings(), appActive = useAppActive()
+  const notificationSettings = useNotificationSettings(); useWatchAppActive() // reads are taken only while the app is active
   const [chats, setChats, chatsRef] = useChatListState()
   const [identitiesById, setIdentitiesById] = useState<ReturnType<typeof imSelectors.identitiesById>>({})
   const [activeChatId, setActiveChatIdState] = useActiveChatTransitionState()
@@ -468,7 +468,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   }, [userId, cache, persistWindowToLocalSync, revalidateWindowOverlays])
   const markMessageVisible = useCallback((message: MessageItem) => {
     const chatId = message.chat_id
-    if (!userId || !appActive || !isAppActive() || !cache.isObserved(chatId)) return
+    if (!userId || !isAppActive() || !cache.isObserved(chatId)) return
     const receipts = cache.readReceipts(chatId)
     if (message.seq > 0 && !message.is_mine && !message.thread_root_id && !unreadNavigationRef.current?.ownsChat(chatId)
       && cache.rows(chatId).some((row) => row.id === message.id)) advanceSeenReadWatermark(chatsRef.current, chatId, message.seq, patchChat)
@@ -479,7 +479,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       receipts.delete(message.id)
       revisionLog.warn({ error, chatId }, 'message read receipt failed')
     })
-  }, [appActive, cache, chatsRef, patchChat, userId]) // Activity changes remeasure the current visible rows; never replay cached history.
+  }, [cache, chatsRef, patchChat, userId]) // Coming back to the window re-reports the seen rows (MessageList); never replay cached history.
 
   useAccountStartBeat(userId, {
     getImRepository, getRevisionCoordinator, coordinatorRef: revisionCoordinatorRef, registrationsRef: revisionRegistrationsRef,
@@ -785,7 +785,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
   }, [chatsRef, setChats, userId])
 
-  const { hideConversation, clearConversation } = useConversationHiding(userId, chatProjection)
+  const { hideConversation, clearConversation, undoConversationHide } = useConversationHiding(userId, chatProjection)
   const deleteChat = useCallback(async (chatId: string, persist = false) => {
     if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
     projectionRef.current.forgetChat(chatId) // 显式删除是权威动作:乐观行与投影水位一起出列 (#4314)
@@ -888,7 +888,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         upsertChat,
         pinChat,
         deleteChat,
-        hideConversation, clearConversation,
+        hideConversation, clearConversation, undoConversationHide,
         leaveGroup,
         markUnread,
         setChatNotificationLevel,

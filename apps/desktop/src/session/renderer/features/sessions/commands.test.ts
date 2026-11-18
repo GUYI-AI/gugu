@@ -87,7 +87,7 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
   getGitRepositoryStore: mocks.getGitRepositoryStore,
 }));
 
-// 归档命令自 #5413 起点名**当前打开的那条会话**(spec session-graph:标签说「归档任务」,动的是这条
+// 归档命令自 #5413 起点名**当前打开的那条会话**(spec session-graph:标签说「归档会话」,动的是这条
 // conversation),所以它读的是 registry 与 pane 那个「谁在前台」的判定,❌ 不再是 sessionManager.archiveSession。
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
   sessionRegistry: {
@@ -132,7 +132,8 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({
 }));
 
 // 归档命令走 archive-session-flow(与侧栏那一行、会话页 ⋯ 菜单同一条),它读设置、发文案、打日志。
-vi.mock('@renderer/features/settings/app-settings-client', () => ({
+vi.mock('@renderer/features/settings/app-settings-client', async (original) => ({
+  ...await original<object>(),
   getAppSettingValueSnapshot: mocks.getAppSettingValueSnapshot,
   setAppSettingsValueInCache: vi.fn(),
   updateAppSettingsRequest: vi.fn(() => Promise.resolve()),
@@ -404,8 +405,8 @@ describe('createSessionCommandProvider', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // 按键静默归档时按**默认范围**走:一个不弹的确认不能替用户勾上递归。
-    expect(archiveSession).toHaveBeenCalledWith('conversation-1', { withChildren: false, removeSocialIdentity: true });
+    // 按键静默归档时按**默认范围**走:一个不弹的确认不能替用户勾上递归,也不能替用户把 agent 移出群和通讯录。
+    expect(archiveSession).toHaveBeenCalledWith('conversation-1', { withChildren: false, removeSocialIdentity: false });
     // 这条会话就是此刻打开的那一条:归档成功后离开它的视图。
     expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
   });
@@ -513,8 +514,8 @@ describe('createSessionCommandProvider', () => {
     });
 
     it.each([
-      [false, 'Pin Task'],
-      [true, 'Unpin Task'],
+      [false, 'task.pin'],
+      [true, 'task.unpin'],
     ])('reports and toggles the current task pin state', (isPinned, label) => {
       const setPinned = vi.fn();
       mocks.getSessionPageStore.mockReturnValue({

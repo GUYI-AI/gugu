@@ -316,7 +316,7 @@ describe('a project chat is one of the account\'s projects, as the backend lists
       from: (table: string) => { asked.push(table); return settings },
     }
     const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }) as never, root: async () => root, project: async () => undefined,
-      links: () => null, tempRoot: join(home, 'snapshots'), downloads: join(home, 'downloads'), fetch: vi.fn() as never, rpc: vi.fn(), env,
+      links: () => null, tempRoot: join(home, 'snapshots'), fetch: vi.fn() as never, rpc: vi.fn(), env,
       deviceStore: store, identityDb: () => db as never })
     expect(await access.publish.local('folderless-project')).toBe(true)
     expect(await access.publish.local('a-dm')).toBe(false)

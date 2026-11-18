@@ -12,7 +12,7 @@ describe('shared store hide controller', () => {
     const f = fixture()
     f.hide.mockRejectedValueOnce(new Error('network'))
     await expect(f.run('owner', 'chat')).rejects.toThrow('network')
-    await f.run('owner', 'chat')
+    expect(await f.run('owner', 'chat')).toEqual(receipt)
     expect(f.hide.mock.calls).toEqual([['chat', 'op1'], ['chat', 'op1']])
     expect(f.confirm).toHaveBeenCalledWith('owner', receipt)
     await f.run('owner', 'chat')
@@ -51,4 +51,14 @@ describe('shared store hide controller', () => {
     expect(f.operationId).toHaveBeenCalledTimes(1)
     expect(storage.size).toBe(0)
   })
+  it('does not expose a receipt after account change during reconciliation', async () => {
+    const f = fixture()
+    let finish!: () => void
+    f.confirm.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
+    const pending = f.run('owner', 'chat')
+    await vi.waitFor(() => expect(f.confirm).toHaveBeenCalledOnce())
+    f.boundary.abort(); finish()
+    expect(await pending).toBeUndefined()
+  })
+
 })

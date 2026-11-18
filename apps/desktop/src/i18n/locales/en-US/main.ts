@@ -1,9 +1,82 @@
 export default {
+  "agentHome": {
+  "mcpCount": "including {{count}} MCP servers",
+  "unmarkedMcp": "Existing MCP servers are kept because their origin was not recorded: {{names}}",
+  "terminalSignIn": "{{name}} in your terminal needs to sign in again.",
+  "oldSessionsSkipped": "{{count}} old session files were too large and were not brought over.",
+  "accountSignIn": "{{name}} needs to sign in again inside Gugu.",
+  "signInAction": "Sign in",
+
+  "title": "Bring your local configuration",
+  "intro": "Copy the configuration found on this computer into Gugu. Your terminal keeps its own configuration.",
+  "skip": "Skip",
+  "importContinue": "Import and continue",
+  "failed": "Configuration import failed",
+  "signIn": "Sign-ins are not copied. Sign in once inside Gugu; your terminal sign-in stays separate.",
+  "migration": "Your existing Gugu tasks and accounts will be kept.",
+  "copyNote": "This makes a copy. Later terminal edits can be brought in from Settings → Subscriptions → Re-import. Gugu changes never write back to your terminal.",
+  "mcpSecrets": "{{names}}: includes secrets, copied with the selected configuration.",
+  "projectMcp": "Another {{count}} project-level MCP servers are not imported.",
+  "groups": {
+    "settings": "Settings and permissions",
+    "hooks": "Hooks",
+    "mcp": "MCP servers",
+    "rules": "Rules",
+    "skills": "Skills",
+    "agents": "Agents and commands",
+    "models": "Models"
+  },
+  "issue": {
+    "symlink": "Symbolic link skipped",
+    "tooLarge": "Too large; not imported",
+    "sourceChanged": "Source changed; retry",
+    "unreadable": "Could not read this file"
+  },
+  "local": "Local configuration",
+  "updated": "Local configuration has updates",
+  "row": "A copy was imported from {{path}} on {{date}}. Terminal and Gugu changes do not sync automatically.",
+  "upgradeKept": "Gugu kept your existing {{name}} configuration.",
+  "upgradeCopied": "Gugu brought over your existing sign-in. If you use the same account in your terminal, one side may eventually need to sign in again.",
+  "upgradeRelogin": "Sign in to {{name}} again in Settings → Subscriptions.",
+  "importAction": "Import",
+  "notImported": "Choose which configuration to bring into Gugu.",
+  "repairRequired": "Import {{name}} configuration or sign in to {{name}} in Gugu, then try again.",
+  "repairRequiredGeneric": "Import configuration or sign in to the agent in Gugu, then try again.",
+  "repairAction": "Open configuration import",
+  "repairFailed": "Couldn't open configuration import.",
+  "reimport": "Re-import",
+  "reimportTitle": "Re-import local configuration",
+  "loginNotSynced": "Sign-ins are not synced here.",
+  "apply": "Import selected changes",
+  "cancel": "Cancel",
+  "uncertain": "Cannot tell which side changed",
+  "states": {
+    "unchanged": "Unchanged",
+    "userChanged": "Changed in terminal",
+    "guguChanged": "Changed in Gugu",
+    "bothChanged": "Both changed · select to replace with the terminal copy",
+    "userAdded": "Added in terminal",
+    "userDeleted": "Deleted in terminal · kept in Gugu"
+  }
+},
+  "controlWatch": {
+    "picture": "Control picture",
+    "enlarge": "Enlarge",
+    "shrink": "Shrink",
+    "landscape": "Landscape",
+    "portrait": "Portrait",
+    "dock": "Dock to edge",
+    "restore": "Show picture, drag to either edge",
+    "close": "Hide picture",
+    "sources": "Picture source",
+    "web": "Browser",
+    "computer": "Computer"
+  },
   "referralPreview": {
     "contactCaption": "Scan to add me as a contact",
     "contactFooter": "Connect your AI collaboration network with Gugu",
     "noNumber": "A contact card is unavailable until a Gugu number is assigned.",
-    "proposal": "Proposal · pending review",
+    "proposal": "Proposal pending review",
     "invite": "Invite friends",
     "summary": "Share an invitation code with friends. Codes are optional; anyone can register.",
     "code": "My invitation code",
@@ -19,8 +92,7 @@ export default {
     "optionalCode": "Invitation code (optional)",
     "placeholder": "Enter a code if you have one",
     "clear": "Clear",
-    "draftNote": "Saved only as a local preview draft. No referral is submitted or confirmed; you can continue without a code.",
-    "storageError": "The local draft could not be saved. You can continue without a code; nothing will be submitted."
+    "draftNote": "Saved only as a local preview draft. No referral is submitted or confirmed; you can continue without a code."
 },
   "imageAnnotate": {
     "title": "Edit image",
@@ -63,8 +135,8 @@ export default {
     "notSignedIn": "Sign in to put the image in a chat",
     "originalUnavailable": "The original message is no longer available to reply to.",
     "canvas": "Annotation canvas",
-    "keyboardHint": "R rectangle · A arrow · N number · P pen · T text · M mosaic · C crop · Space + drag to pan · ⌘ +/− zoom",
-    "touchHint": "Draw with one finger · Pan and zoom with two fingers · Hold a mark to select it"
+    "keyboardHint": "R rectangle;A arrow;N number;P pen;T text;M mosaic;C crop;Space + drag to pan;⌘ +/− zoom",
+    "touchHint": "Draw with one finger, pan or zoom with two, and hold a mark to select it."
   },
   "firstRun": {
     "unreadableTitle": "Couldn't read your setup progress",
@@ -136,10 +208,7 @@ export default {
       "exportMarkdown": "Export as Markdown"
     },
     "attachment": {
-      "add": "Add attachment",
-      "remove": "Remove {{name}}",
-      "cancel": "Cancel upload of {{name}}",
-      "retry": "Retry"
+      "add": "Add attachment"
     },
     "tool": {
       "groupCount_one": "{{count}} tool call",
@@ -188,8 +257,6 @@ export default {
       "menu": "More",
       "cancel": "Cancel",
       "stop": "Stop current task",
-      "pin": "Pin",
-      "unpin": "Unpin",
       "pinned": "Pinned",
       "expandChildren_one": "Show 1 child task",
       "expandChildren_other": "Show {{count}} child tasks",
@@ -206,13 +273,12 @@ export default {
       "showMore_one": "Show 1 more",
       "showMore_other": "Show {{count}} more",
       "showLess": "Collapse",
-      "renameSave": "Save",
-      "archive": "Archive"
+      "renameSave": "Save"
     },
     "output": {
       "machineOnly": "Opens only on that computer",
       "notOpened": "This session hasn't opened this file yet.",
-      "editedNotOpened": "Edited by agent · Open on computer",
+      "editedNotOpened": "The agent edited this file. Open it on your computer.",
       "fileMissing": "The file is no longer on that computer.",
       "fileChanged": "The file changed while it was being read. Tap again.",
       "tooLarge": "The file is too large. The phone shows files up to {{limit}}.",
@@ -229,7 +295,7 @@ export default {
       "copyFailed": "Couldn't copy. Try again.",
       "saveFailed": "Couldn't save the file. Try again.",
       "readingStart": "Getting it from that computer…",
-      "reading": "Getting it from that computer · {{read}} / {{total}}"
+      "reading": "Reading from that computer: {{read}} of {{total}}."
     },
     "toolImages": {
       "failed": "Couldn't load · tap to retry",
@@ -284,10 +350,10 @@ export default {
       "byMobile": "the phone"
     },
     "create": {
-      "title": "New task",
+      "title": "Create agent",
       "pickMachine": "On which machine",
       "welcome": "Start a new task on {{machine}}",
-      "placeholder": "First message…",
+      "placeholder": "Write anything…",
       "project": "Project",
       "harness": "Harness",
       "model": "Model",
@@ -399,7 +465,7 @@ export default {
     "emailPlaceholder": "Email address",
     "emailRequired": "Enter your email address",
     "failed": "The operation failed. Try again later.",
-    "headline": "Let an Agent<break />do it for you.",
+    "headline": "Don't do it yourself.<break />Let AI.",
     "welcome": "Welcome to Gugu",
     "subtitle": "Sign in and start working with AI",
     "brandSubtitle": "What you want to do, Gugu helps you get done.",
@@ -480,6 +546,7 @@ export default {
       "notificationsChat": "Chat message notifications",
       "notificationsChatAria": "Enable chat message notifications",
       "notificationsChatDescription": "New direct messages, and group messages addressed to you",
+      "notificationsEmpty": { "title": "No notifications yet", "hint": "See alerts here when someone needs you or an agent finishes a task" },
       "notificationsScope": "These cover Gugu messages only. Notifications for agents on the task page are under Tasks.",
       "notificationsBlocked": "The system is blocking Gugu's notifications.",
       "notificationsBlockedAction": "Open Device control",
@@ -505,22 +572,19 @@ export default {
       "trayBadgeEnabled": "Show the unread count on the tray icon",
       "system": "System",
       "theme": "Appearance",
-      "themePack": "Theme",
-      "themePackDefault": "Gugu default",
-      "themePackValue": "Dark: {{dark}} · Light: {{light}}",
       "title": "General"
     },
     "guguNumber": "Gugu ID",
     "guguNumberCopied": "Gugu ID copied",
     "guguNumberUnassigned": "Gugu ID not assigned",
     "my": "Me",
-    "newAgent": "New Agent",
+    "newAgent": "Create agent",
     "newTask": "New task",
     "apps": {
       "intro": "Apps installed on this phone — from cards in chats and from the market. The ones that come with Gugu are not listed.",
       "empty": "No App installed yet.",
-      "from": "{{version}} · from {{name}}",
-      "fromMarket": "{{version}} · from the Gugu market",
+      "from": "Version {{version}}, from {{name}}",
+      "fromMarket": "Version {{version}}, from the Gugu market",
       "updateTo": "Update to {{version}}",
       "open": "Open"
     },
@@ -564,8 +628,8 @@ export default {
       "fileAccessPurpose": "Opens project folders on your computer",
       "on": "On",
       "off": "Off",
-      "offPrompt": "Off · tap to turn on",
-      "offBlocked": "Off · turn on in system settings",
+      "offPrompt": "Off. Tap to turn on.",
+      "offBlocked": "Off. Turn it on in system settings.",
       "unknown": "Check system settings",
       "settingsUnreachable": "Couldn't open that screen. Open system settings yourself, find 咕咕, and turn on {{name}}.",
       "readFailed": "Couldn't read permission status from the system. Come back to this page to try again."
@@ -584,7 +648,7 @@ export default {
         "help": "Help"
       },
       "items": {
-        "newAgent": "New agent",
+        "newAgent": "Create agent",
         "settings": "Settings",
         "exit": "Exit",
         "undo": "Undo",
@@ -606,8 +670,6 @@ export default {
       }
     },
     "panelToggles": {
-      "collapseList": "Collapse sidebar",
-      "expandList": "Expand sidebar",
       "noList": "No sidebar on this page"
     },
     "loading": "Restoring your session",
@@ -645,7 +707,7 @@ export default {
     "mainNavigation": "Main navigation",
     "messages": "Messages (⌘1)",
     "my": "Me",
-    "newAgent": "New Agent",
+    "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
     "resizeChatList": "Resize chat list",
@@ -654,7 +716,7 @@ export default {
       "title": "Can't reach the server right now"
     },
     "settings": "Settings",
-    "shareSubtitle": "Agent · Gugu ID {{number}}",
+    "shareSubtitle": "Agent, Gugu ID {{number}}",
     "taskFrame": {
       "hostDisconnectedTitle": "Task host not connected",
       "hostNotConnected": "Task host is not connected",
@@ -671,6 +733,7 @@ export default {
     "library": "Library",
     "apps": "Apps",
     "appDockFailed": "The left rail could not be changed",
+    "moreApps": "More Apps",
     "appOpen": "Open",
     "appOpenInWindow": "Open in New Window",
     "appSettings": "App settings",
@@ -727,11 +790,11 @@ export default {
   "partners": {
     "search": "Search",
     "noResults": "No results",
-    "projects": "Projects · {{count}}",
-    "friends": "Friends · {{count}}",
-    "groupAgents": "Agents met in groups · {{count}}",
-    "rooms": "Chats · {{count}}",
-    "agents": "Agents · {{count}}",
+    "projects": "Projects ({{count}})",
+    "friends": "Friends ({{count}})",
+    "groupAgents": "Agents met in groups ({{count}})",
+    "rooms": "Chats ({{count}})",
+    "agents": "Agents ({{count}})",
     "groupChat": "Group chat",
     "assistant": "Personal assistant",
     "groupOffline": "The computer with this project is offline",

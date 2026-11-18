@@ -70,8 +70,13 @@ it.each([
   inner.append(...(band ? [tray, card] : [card]));
   await until('composer occupies its slot', () => inner.getBoundingClientRect().height >= 120);
   if (phone) {
-    const glass = getComputedStyle(inner, '::before');
-    expect(glass.backdropFilter).not.toBe('none');
+    // The phone backs the input itself (its composer bar), not the rows above it.
+    const bar = card.appendChild(document.createElement('div'));
+    bar.dataset.slot = 'composer-bar';
+    bar.style.position = 'relative';
+    expect(getComputedStyle(inner, '::before').content).toBe('none');
+    const glass = getComputedStyle(bar, '::before');
+    expect(glass.content).toBe('""');
     expect(Number.parseFloat(glass.width)).toBe(innerWidth);
     const fade = getComputedStyle(layer, '::before');
     expect(fade.backgroundImage).toContain('linear-gradient');

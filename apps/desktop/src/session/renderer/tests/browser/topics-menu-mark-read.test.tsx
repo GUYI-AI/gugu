@@ -38,7 +38,7 @@ function mount() {
 
 test.each([
   ['conversation-row-mark-read', 'old'],
-  ['chat-row-mark-all-read', ['new', 'old']],
+  ['conversation-row-mark-topics-read', ['new', 'old']],
 ])('%s from a topic row in the open Topics menu reaches the read writer', async (item, scope) => {
   mount()
   await userEvent.click(page.getByTestId('topics'))

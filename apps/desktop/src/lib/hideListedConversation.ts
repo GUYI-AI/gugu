@@ -1,12 +1,14 @@
 import { chatDb } from './supabase'
 
-export type PersonalConversationHiding = {
+export type PersonalConversationStateReceipt = {
   chat_id: string
-  hidden_at: string
+  hidden_at: string | null
   operation_id: string
   account_revision: string
   cleared_at?: string
 }
+
+export type PersonalConversationHiding = PersonalConversationStateReceipt & { hidden_at: string }
 
 /** Temporary personal list state. Never dispatch through group-management or Agent-lifecycle APIs. */
 export async function hideListedConversation(chatId: string, operationId: string): Promise<PersonalConversationHiding> {

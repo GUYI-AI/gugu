@@ -24,18 +24,18 @@ function Choice({ request }: { request: NonNullable<ReturnType<typeof readConver
     <Dialog.Portal>
       <Dialog.Backdrop className="fixed inset-0 z-[var(--z-modal)] bg-[var(--bg-overlay-soft)]" />
       <Dialog.Viewport className="pointer-events-none fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-6">
-        <Dialog.Popup data-testid="conversation-delete-confirm" className="pointer-events-auto flex w-full max-w-xs flex-col overflow-hidden rounded-[var(--radius-dialog)] border border-[var(--border)] bg-[var(--card)] text-[length:var(--font-body)] text-[var(--text-primary)] shadow-[var(--shadow-dialog)] outline-none">
+        <Dialog.Popup data-testid="conversation-delete-confirm" className="pointer-events-auto flex w-full max-w-[380px] flex-col overflow-hidden rounded-[var(--radius-dialog)] border border-[var(--border)] bg-[var(--card)] text-[length:var(--font-body)] text-[var(--text-primary)] shadow-[var(--shadow-dialog)] outline-none">
           <div className="flex flex-col gap-3 p-6">
-            <Dialog.Title className="text-[length:var(--font-title)] font-medium">{t('chatList.delete')}</Dialog.Title>
+            <Dialog.Title className="text-[length:var(--font-title)] font-medium">{t('chatList.clearHistoryTitle', { name: request.name })}</Dialog.Title>
             <Dialog.Description className="leading-relaxed text-[var(--text-secondary)]">{t('chatList.deleteHistoryDescription')}</Dialog.Description>
             {request.agentOption ? <label className="flex items-start gap-2">
               <Checkbox className="border-[var(--border-strong)] bg-[var(--card)] data-checked:border-[var(--primary)] data-checked:bg-[var(--primary)] data-checked:text-[var(--primary-fg)]" checked={checked} onCheckedChange={value => setChecked(Boolean(value))} />
               <span>{t('chatList.alsoRemoveAgent')}</span>
             </label> : null}
           </div>
-          <div className="flex justify-end gap-2 border-t border-[var(--border)] p-3">
+          <div className="flex justify-end gap-2 px-6 pb-6">
             <Button variant="secondary" onClick={cancel}>{translate('common.cancel')}</Button>
-            <Button variant="danger" data-testid="conversation-delete-submit" onClick={() => request.finish(checked)}>{t('chatList.delete')}</Button>
+            <Button variant="danger" data-testid="conversation-delete-submit" onClick={() => request.finish(checked)}>{t('chatList.clearHistoryConfirm')}</Button>
           </div>
         </Dialog.Popup>
       </Dialog.Viewport>

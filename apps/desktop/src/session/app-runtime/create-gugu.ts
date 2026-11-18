@@ -124,6 +124,8 @@ export function createGugu(
     });
   // Every call names where its file is (真源原则 13): an entry or `ctx.file` carries it, a place says it.
   const files = Object.freeze({
+    /** Preinstalled Files App only, inside a real click: the host's Send box beside the selection. Answers 'sent' or 'cancelled'. */
+    ...(host.appFiles.sendSelection ? { sendSelection: (args: unknown) => host.appFiles.sendSelection!({ ...(args as Record<string, unknown> | null) }) } : {}),
     open: (file: unknown, options?: { readOnly?: boolean }) => {
       const counts = countsOf(host);
       counts?.opened();
@@ -220,13 +222,15 @@ export function createGugu(
               });
             })),
           // `{ ask: true }`: 「用别的 App 打开」 — every App that opens it, the person picks. `{ at }`: the place in it (a pill's).
-          // `{ peek: true }`: beside this page, which stays as it is (G1).
-          openWith: (file: unknown, options?: { ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }) =>
+          // `{ peek: true }`: beside this page, which stays as it is (G1). `{ among, origin }` (57): an image opens in the
+          // host's viewer, paging through `among` and opening from `origin`.
+          openWith: (file: unknown, options?: { ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown>; among?: unknown[]; origin?: { x: number; y: number; width: number; height: number } }) =>
             // A folder of the working copy, not a file: `{ workspace, folder }`, its list in this tab.
             typeof (file as { folder?: unknown } | null)?.folder === 'string'
               ? openWith({ ref: file as never })
               : withRef(file, (ref) =>
-              openWith({ ref, ...(options?.viewState ? { viewState: options.viewState } : {}), ...(options?.ask === true ? { ask: true } : {}), ...(options?.at ? { at: options.at } : {}), ...(options?.peek === true ? { peek: true } : {}), ...(Object.hasOwn(options ?? {}, 'tab') ? { tab: options?.tab } : {}), ...(Object.hasOwn(options ?? {}, 'intent') ? { intent: options?.intent } : {}) })),
+              // The entry's own name beside the ref: the host titles the file's waiting tab with it.
+              openWith({ ref, ...(typeof (file as { name?: unknown } | null)?.name === 'string' && (file as { name: string }).name ? { fileName: (file as { name: string }).name } : {}), ...(options?.viewState ? { viewState: options.viewState } : {}), ...(options?.ask === true ? { ask: true } : {}), ...(options?.at ? { at: options.at } : {}), ...(options?.peek === true ? { peek: true } : {}), ...(Object.hasOwn(options ?? {}, 'tab') ? { tab: options?.tab } : {}), ...(Object.hasOwn(options ?? {}, 'intent') ? { intent: options?.intent } : {}), ...openingViewArgs(options) })),
         }
       : {}),
     // API 23: 「转发」 — one file or several, the host's forward page; resolves once it is up (what is sent is the person's).
@@ -452,6 +456,20 @@ function withRefs<T>(files: unknown, run: (refs: ReturnType<typeof refOf>[]) => 
   }
   if (refs.length === 0) return Promise.reject(Object.assign(new Error('Give one file or more'), { code: 'invalid' }));
   return run(refs);
+}
+
+/**
+ * API 57 `{ among, origin }` as they cross to the host: the entries' places alone (the host keeps those of the clicked
+ * file's place, `openingViewOf`), and the box's four numbers.
+ */
+function openingViewArgs(options: { among?: unknown[]; origin?: { x: number; y: number; width: number; height: number } } | undefined): { among?: { id: string; chat?: string; workspace?: string }[]; origin?: { x: number; y: number; width: number; height: number } } {
+  const among = Array.isArray(options?.among) ? options.among.flatMap((entry) => {
+    const file = (entry ?? {}) as { id?: unknown; chat?: unknown; workspace?: unknown };
+    return typeof file.id === 'string' ? [{ id: file.id, ...(typeof file.chat === 'string' ? { chat: file.chat } : {}), ...(typeof file.workspace === 'string' ? { workspace: file.workspace } : {}) }] : [];
+  }) : undefined;
+  const box = options?.origin;
+  const origin = box && typeof box === 'object' ? { x: Number(box.x), y: Number(box.y), width: Number(box.width), height: Number(box.height) } : undefined;
+  return { ...(among?.length ? { among } : {}), ...(origin ? { origin } : {}) };
 }
 
 function withRef<T>(file: unknown, run: (ref: ReturnType<typeof refOf>) => Promise<T>): Promise<T> {

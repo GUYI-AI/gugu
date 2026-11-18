@@ -42,7 +42,7 @@ it('keeps the native preview when a restored legacy block creates and removes a 
 it('carries the actual openChatResource task pane through its native portal without inventing a conversation opener', async () => {
   const provider = (kind: string, conversation = false) => createTabProvider({ kind, conversation, resourceKey: (s: { id?: string; sourceTabId?: string }) => s.id ?? s.sourceTabId ?? '', initialize: () => ({ dispose() {} }), dispose() {}, TabBarItem: () => null, TabBarItemDragPreview: () => null, TabContent: () => null })
   const layout = new PaneLayoutStore(createTabRegistry([provider('session', true), provider('chat-resource')]), { viewId: 'owned-native-toolbar' })
-  layout.focusedPane.setDimensions(390, 620)
+  layout.setDimensions(390, 620)
   const conversation = layout.open('session', { id: 'task' }, { from: null, intent: 'newTab' })!
   view.layout = layout
   await openChatResource({ projectId: 'project', sessionId: 'session', chatId: 'dm', sourceTabId: 'file' })

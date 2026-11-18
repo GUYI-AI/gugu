@@ -22,7 +22,7 @@ function twoComputers(overrides: Partial<ProjectionSource> = {}, admit?: (input:
   const host = createProjectionRemoteHost(() => ({
     connect: async (input, send) => {
       admit?.(input);
-      const viewer = resources.connect({ extensionId: input.app, sessionId: input.session }, input.source, { transport: 'device', send, onClose: () => () => {} });
+      const viewer = resources.connect({ extensionId: input.app, sessionId: input.session }, input.source, { transport: 'device', presentation: input.presentation === 1, send, onClose: () => () => {} });
       return { receive: viewer.receive, close: viewer.close };
     },
     page: page ?? (async () => { throw Object.assign(new Error('This task has no browser page'), { code: 'not-found' }); }),
@@ -56,6 +56,22 @@ afterEach(() => {
 });
 
 describe('an App projection watched from another computer (#1607 node 5)', () => {
+  it('falls back only from an older host refusing the opt-in, retaining its original pixel watch', async () => {
+    const calls: unknown[] = [];
+    setProjectionRemoteCaller({ call: async (_device, type, payload) => {
+      if (type !== 'appProjection.watch') return { result: {} } as never;
+      calls.push(payload);
+      return (payload as { presentation?: unknown }).presentation === 1
+        ? { error: { code: 'invalid_payload', message: 'Unknown option' } } as never : { result: { watching: true } } as never;
+    } });
+    const viewer = await watchRemoteProjection('device-d22', { app: 'browser-use', version: '0.4.0', session: 'task', source: 'source', presentation: 1 }, () => {});
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toHaveProperty('presentation', 1); expect(calls[1]).not.toHaveProperty('presentation'); viewer.close();
+    const refused = vi.fn(async () => ({ error: { code: 'not_granted', message: 'Denied' } } as never));
+    setProjectionRemoteCaller({ call: refused });
+    await expect(watchRemoteProjection('device-d22', { app: 'browser-use', version: '0.4.0', session: 'task', source: 'source', presentation: 1 }, () => {})).rejects.toMatchObject({ code: 'not_granted' });
+    expect(refused).toHaveBeenCalledOnce();
+  });
   it("a task page's toolbar there: its state comes back with the watch and as it changes; its controls reach the page", async () => {
     const control = vi.fn(async () => {});
     let report: ((state: TaskPageState) => void) | null = null;
@@ -74,6 +90,21 @@ describe('an App projection watched from another computer (#1607 node 5)', () =>
     expect(control).toHaveBeenCalledWith({ action: 'resize', width: 800, height: 600, scale: 2 });
     // Not a control: refused there, before the page.
     await expect(viewer.control({ action: 'jump' } as never)).rejects.toMatchObject({ code: 'invalid_payload' });
+    viewer.close();
+  });
+
+  it('returns the selected page evidence and capture through the same authenticated watch', async () => {
+    const inspection = { target: { url: 'https://example.org/', selector: '#intro', targetPath: 'p#intro',
+      rect: { x: 40, y: 20, width: 120, height: 40 }, viewport: { width: 800, height: 600, scrollX: 0, scrollY: 0 }, text: 'Selected evidence' },
+      screenshot: 'data:image/png;base64,cGFnZQ==' };
+    const control = vi.fn(async () => inspection);
+    twoComputers({}, undefined, async () => ({ receive: async () => {}, control, close: () => {} }));
+    const viewer = await watchRemoteProjection('device-d22', { session: 'task-on-d22', page: true }, () => {});
+    const selection = { action: 'annotate' as const, query: { x: 0.25, y: 0.25, width: 0, height: 0 }, capture: true };
+    expect(await viewer.control(selection)).toEqual(inspection);
+    expect(control).toHaveBeenCalledWith(selection);
+    await expect(viewer.control({ ...selection, query: { x: -1, y: 0, width: 0, height: 0 } })).rejects.toMatchObject({ code: 'invalid_payload' });
+    expect(control).toHaveBeenCalledTimes(1);
     viewer.close();
   });
 

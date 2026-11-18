@@ -88,11 +88,11 @@ export function SessionRow({
       </div>
       <div className="flex min-w-0 items-center gap-1.5 text-xs text-foreground-muted">
         <span className="shrink-0">{LOCAL_SESSION_ENGINE_LABEL[session.engine]}</span>
-        <span className="shrink-0 text-foreground-tertiary-muted">·</span>
+        <span className="shrink-0 text-foreground-tertiary-muted"> </span>
         <span className="min-w-0 truncate" title={session.cwd ?? undefined}>
           {shortenPath(session.cwd, translate('sessionImport.unknownDirectory'))}
         </span>
-        <span className="shrink-0 text-foreground-tertiary-muted">·</span>
+        <span className="shrink-0 text-foreground-tertiary-muted"> </span>
         <span className="shrink-0 text-foreground-tertiary-muted">
           {formatSize(session.sizeBytes)}
         </span>

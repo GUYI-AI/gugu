@@ -44,6 +44,7 @@ function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
     id: metadata.id,
     name: metadata.name,
     description: metadata.description,
+    ...(metadata.publisher ? { publisher: metadata.publisher } : {}),
     websiteUrl: metadata.websiteUrl,
     icon: assets.icon,
     capabilities: {

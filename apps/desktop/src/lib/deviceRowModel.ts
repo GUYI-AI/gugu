@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { DeviceServerUpdate } from '@gugu/core/shared/types/deviceHost'
 import { serverMachineNotices, serverSupportsConfirmedRestart, type ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth'
@@ -6,7 +7,7 @@ import { isPhoneDevice } from '@gugu/core/cloud/devices'
 import type { DeviceBoundAgent } from './chat'
 
 /**
- * #6264「设置 → 设备」一行要说清的几件事,从设备行 + 这台桌面记下的 SSH 映射推出来(纯函数,可单测)。
+ * #6264「设置 → 设备」一行要说清的几件事,从设备行 + 这台桌面记下的 SSH 映射推出来,显示文本按界面语言格式化。
  * 每行:名字、系统、版本 + 可更新标记、最近在线、地址(可复制)、行内「需要更新」。老宿主不报的项一律按缺席处理,❌ 补默认值冒充事实。
  */
 
@@ -25,6 +26,8 @@ export type DeviceConnection =
   | { via: 'ssh'; address: string }
   | { via: 'sshElsewhere' }
   | { via: 'cloud' }
+  /** This desktop's SSH registry is not read yet: the row draws a placeholder, ❌ a guessed route. */
+  | { via: 'unknown' }
 
 export type DeviceRowModel = {
   kind: DeviceRowKind
@@ -72,11 +75,12 @@ export function deviceSystem(device: Device): string | null {
   if (device.platform === 'cloud') return null
   const os = device.capabilities.os_name ?? PLATFORM_NAMES[device.platform.toLowerCase()] ?? null
   const arch = device.capabilities.arch ?? null
-  if (os && arch) return `${os} · ${arch}`
+  if (os && arch) return `${os}${metadataSeparator()}${arch}`
   return os ?? arch
 }
 
-export function deviceRowModel(device: Device, sshAddress: string | null, cloudComputerId?: string | null): DeviceRowModel {
+/** `sshAddress`: the address this desktop reaches it by, null = none, undefined = this desktop's SSH registry not read yet. */
+export function deviceRowModel(device: Device, sshAddress: string | null | undefined, cloudComputerId?: string | null): DeviceRowModel {
   const kind = deviceKind(device, cloudComputerId)
   // 云电脑里跑的就是咕咕 server:版本、升级、要人知道的事照 server 说。
   const isServer = kind === 'server' || kind === 'cloudComputer'
@@ -88,7 +92,9 @@ export function deviceRowModel(device: Device, sshAddress: string | null, cloudC
     notices: serverMachineNotices(device.capabilities),
     connection: kind === 'this'
       ? { via: 'this' }
-      : sshAddress
+      : sshAddress === undefined
+        ? { via: 'unknown' }
+        : sshAddress
         ? { via: 'ssh', address: sshAddress }
         : kind === 'server' && device.capabilities.connect_via === 'ssh'
           ? { via: 'sshElsewhere' }
@@ -104,7 +110,7 @@ export type DeviceFilter = 'all' | 'online' | 'offline'
  */
 export function filterDevices(
   devices: readonly Device[],
-  options: { query: string; filter: DeviceFilter; sshAddress: (deviceId: string) => string | null },
+  options: { query: string; filter: DeviceFilter; sshAddress: (deviceId: string) => string | null | undefined },
 ): Device[] {
   const query = options.query.trim().toLowerCase()
   return devices.filter((device) => {

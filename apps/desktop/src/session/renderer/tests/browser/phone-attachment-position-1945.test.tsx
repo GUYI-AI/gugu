@@ -1,3 +1,4 @@
+import { requestGroupAgentCreation } from '@/lib/uiEvents'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
@@ -5,7 +6,9 @@ import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
-import { startPhoneNewTask } from '@/mobile/chat/PhoneNewTask'
+import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
+import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
+import { PhoneGroupAgentCreation } from '@/mobile/chat/PhoneNewTask'
 import { DevicesContext, useDevicesStore } from '@/store/devicesContext'
 import { publishRendererSession } from '@/lib/sessionPublication'
 import { chatService } from '@/lib/chat'
@@ -34,7 +37,7 @@ import '@/mobile/phone-look.css'
 const fixture = vi.hoisted(() => ({ theme: 'light' as 'light' | 'dark' }))
 vi.mock('@/store/theme', async original => ({ ...await original<object>(),
   useTheme: () => ({ theme: fixture.theme, preference: fixture.theme, setTheme: vi.fn() }) }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({
   props: { permissionModeOptions: { full: { name: '完全访问' } }, selectedPermissionMode: 'full',
     modelOptions: { model: { name: '测试模型' } }, selectedModel: 'model' }, confirmation: null, steers: false,
@@ -68,7 +71,7 @@ function ProjectTaskComposer() {
   return <DevicesContext.Provider value={{ ...base, devices: [device('machine', [], { projects: [{
     localProjectId: 'project', name: '测试项目', rootPath: '/fixture', createdAt: '2026-11-07T00:00:00Z', chatId: 'position-task',
     folders: [{ workspaceId: 'workspace', kind: 'root', path: '/fixture', attachedAt: null }],
-  }] })] }}><ChatMessageComposer chatId="position-task" isGroupChat onSend={vi.fn()} /></DevicesContext.Provider>
+  }] })] }}><PhoneGroupAgentCreation chatId="position-task" name="测试项目" /></DevicesContext.Provider>
 }
 
 function Composer({ surface }: { surface: Surface }) {
@@ -94,16 +97,19 @@ beforeEach(async () => {
 })
 afterEach(() => {
   harness.cleanup()
+  const draftKey = mobileCreationDraftKey('owner', 'position-task')
+  composerDrafts.set(draftKey, '')
+  composerDrafts.forKey(draftKey).setPending([])
   document.body.style.removeProperty('margin')
   document.documentElement.removeAttribute('data-theme')
 })
 
-async function pick(count: number) {
-  const picker = harness.container.querySelector<HTMLInputElement>('input[type="file"][multiple]')!
+async function pick(surface: HTMLElement, count: number) {
+  const picker = surface.querySelector<HTMLInputElement>('input[type="file"][multiple]')!
   const files = new DataTransfer()
   for (let index = 0; index < count; index++) files.items.add(new File(['非敏感测试附件'], `附件-${index + 1}.txt`, { type: 'text/plain' }))
   await act(async () => { picker.files = files.files; picker.dispatchEvent(new Event('change', { bubbles: true })) })
-  await until('all picked files have real tiles', () => harness.container.querySelectorAll('[data-slot="composer-attachment"]').length === count)
+  await until('all picked files have real tiles', () => surface.querySelectorAll('[data-slot="composer-attachment"]').length === count)
 }
 
 it.each(cases)('$surface/$theme/$count/$width: pending files align above the editor', async ({ surface, theme, count, width }) => {
@@ -118,22 +124,24 @@ it.each(cases)('$surface/$theme/$count/$width: pending files align above the edi
     </header>
     <div style={{ flex: 1, minHeight: 80 }} />
     {surface === 'agent' ? <Composer surface={surface} /> : <ChatBottomDock reserve><Composer surface={surface} /></ChatBottomDock>}
-  </>, { contacts: {} })
-  await until('normal file picker mounts', () => !!harness.container.querySelector('input[type="file"][multiple]'))
+  </>, { contacts: {}, auth: { id: 'owner' } })
+  let composerHost: HTMLElement = harness.container
   if (surface === 'new-task') {
-    await act(async () => { startPhoneNewTask('position-task') })
-    await until('project folder chooser mounts', () => !!harness.container.querySelector('[data-testid="project-folder-paper"]'))
-    await act(async () => { harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!.click() })
-    await until('new task mode active', () => !!harness.container.querySelector('[data-phone-task]'))
+    await act(async () => { requestGroupAgentCreation('position-task') })
+    await until('group creation sheet mounts', () => !!document.querySelector('[data-testid="phone-group-agent-sheet"]'))
+    composerHost = document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')!
+    await page.getByTestId('agent-watch-create-folder').click()
+    await page.getByTestId('project-folder-paper').click()
   }
-  await pick(count)
-  const row = harness.container.querySelector<HTMLElement>('[data-slot="composer-attachments"]')!
-  const input = harness.container.querySelector<HTMLElement>('[data-slot="composer-input"]')!
+  await until('normal file picker mounts', () => !!composerHost.querySelector('input[type="file"][multiple]'))
+  await pick(composerHost, count)
+  const row = composerHost.querySelector<HTMLElement>('[data-slot="composer-attachments"]')!
+  const input = composerHost.querySelector<HTMLElement>('[data-slot="composer-input"]')!
   await until('the complete editor is visible within the phone screenshot', () =>
-    input.getBoundingClientRect().bottom <= harness.container.getBoundingClientRect().bottom + 1)
+    input.getBoundingClientRect().bottom <= composerHost.getBoundingClientRect().bottom + 1)
   if (screenshotHead) {
     expect(screenshotHead).toMatch(/^[a-f0-9]{40}$/)
-    await page.screenshot({ element: harness.container, path: `__screenshots__/attachment-position-1945/${surface}-${theme}-${count}-${width}-${screenshotHead.slice(0, 8)}.png` })
+    await page.screenshot({ element: composerHost, path: `__screenshots__/attachment-position-1945/${surface}-${theme}-${count}-${width}-${screenshotHead.slice(0, 8)}.png` })
   }
   expect(row.getBoundingClientRect().bottom, 'the entire attachment grid must be above the text editor').toBeLessThanOrEqual(input.getBoundingClientRect().top + 1)
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)

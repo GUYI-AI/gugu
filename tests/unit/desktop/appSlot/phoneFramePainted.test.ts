@@ -6,7 +6,7 @@ import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/
 import { APP_FRAME_MARKER } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol';
 
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({}) }));
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => null }));
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => null }));
 const manifest = parseExtensionManifest({ id: 'vote', name: 'Vote', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'main.html', contributes: { tabs: [{ name: 'poll', title: 'Vote' }] } });
 const frames: HTMLIFrameElement[] = [];
 const hosts: Array<ReturnType<typeof hostAppFrame>> = [];

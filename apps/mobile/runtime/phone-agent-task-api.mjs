@@ -2,9 +2,19 @@ import { changePhoneConversationQueue } from './phone-conversation-queue.mjs'
 import { randomUUID } from 'node:crypto'
 import { stableId, uuid } from './phone-agent-store.mjs'
 import { SessionInputAdmissionError } from '../../../packages/core/src/shared/sessionInputAdmission.ts'
+import { retryInterruptedPhoneJob } from './phone-agent-retry.mjs'
 
 const failure = (code, message) => new SessionInputAdmissionError(message, 'rejected', code)
-const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage', 'sessionSend', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
+const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage', 'sessionSend', 'sessionRetry', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
+
+const inputId = (ownerId, sessionId, clientId) => stableId('phone-task-input', ownerId, sessionId, clientId)
+const inputFingerprint = (text, files, complete, digests) => stableId('phone-task-input-body', JSON.stringify([text.trim(), files.map((file) => [file.itemId, file.version]), ...(complete ? [true, digests] : [])]))
+/** Only a matching actual input job proves admission; a renderer upload flag cannot. */
+export function phoneTaskInputReceipt(store, ownerId, agentUserId, input) {
+  const existing = store.state.jobs[inputId(ownerId, input.conversationId, input.clientRequestId)]
+  if (!existing) return null
+  return existing.agentUserId === agentUserId && existing.inputFingerprint === inputFingerprint(input.text, input.files ?? [], input.requiresCompleteFiles, input.expectedFileDigests) ? 'accepted' : 'uncertain'
+}
 
 /** Task-page methods share the native and remote taskhost.call transport. No DM or workspace
  * pipe is needed; only a Java-originated native UI command may approve a phone operation. */
@@ -19,8 +29,8 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
       clientId = input.clientRequestId ? uuid(input.clientRequestId, 'clientRequestId') : requestId ?? randomUUID()
       sessionId = uuid(typeof input.conversationId === 'string' ? input.conversationId.replace(/^session:/, '') : input.conversationId, 'session_id')
     } catch (error) { throw failure('invalid_args', error.message) }
-    const id = stableId('phone-task-input', ownerId, sessionId, clientId)
-    const fingerprint = stableId('phone-task-input-body', JSON.stringify([input.text.trim(), files.map((file) => [file.itemId, file.version])]))
+    const id = inputId(ownerId, sessionId, clientId)
+    const fingerprint = inputFingerprint(input.text, files, input.requiresCompleteFiles, input.expectedFileDigests)
     const pending = admitting.get(id)
     if (pending) {
       if (pending.fingerprint !== fingerprint) throw new SessionInputAdmissionError('原消息尚在确认，不能更换内容', 'uncertain', 'invalid_args')
@@ -38,7 +48,7 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
         const agent = findSession(sessionId)
         await verifyAgent(agent.agentUserId)
         // Keep the person's words; resolve files only when this job reaches the model.
-        await admit({ id, agentUserId: agent.agentUserId, clientMessageId: clientId, inputFingerprint: fingerprint, prompt: input.text.trim(), ...(files.length ? { files } : {}), route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
+        await admit({ id, agentUserId: agent.agentUserId, clientMessageId: clientId, inputFingerprint: fingerprint, prompt: input.text.trim(), ...(files.length ? { files } : {}), ...(input.requiresCompleteFiles ? { requiresCompleteFiles: true, expectedFileDigests: structuredClone(input.expectedFileDigests) } : {}), route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
       }
       return { accepted: true, messageId: id, admission: 'accepted' }
     })()
@@ -73,7 +83,8 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
     const agent = findSession(input.conversationId)
     await verifyAgent(agent.agentUserId)
     let value
-    if (method === 'prefetchFiles') value = await turnFiles.prefetch(agent, input.files, source.signal)
+    if (method === 'sessionRetry') value = await retryInterruptedPhoneJob({ ownerId, store, agent, jobId: input.jobId, admit })
+    else if (method === 'prefetchFiles') value = await turnFiles.prefetch(agent, input.files, source.signal)
     else if (method === 'sessionQueue') value = await changePhoneConversationQueue({ store, agent, action: input.action, interrupt, publish })
     else if (method === 'sessionSnapshot') value = await timelines.snapshot(agent, input)
     else if (method === 'sessionAfter') value = await timelines.after(agent, input)

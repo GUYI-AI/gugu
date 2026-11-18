@@ -9,6 +9,7 @@ import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
 import { publishChatSummaries, publishContactSummaries } from '@/lib/chatSummariesBridge'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { takeTaskReveal } from '@/hooks/useSourceMessageReveal'
+import { takeFlashWords } from '@/lib/sourceMessageReveal'
 import type { TaskTurnHit } from '@shared/core/search'
 import { GlobalSearch } from './global-search'
 import { messageKinds } from './use-global-search'
@@ -19,6 +20,7 @@ import { dicebearAvatarDataUri } from '@/lib/dicebearAvatar'
 import { displayIdentity } from '../../../../../../../tests/support/testHarness'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { installPhoneImeDismiss } from '@/mobile/usePhoneImeDismiss'
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
 
 const remote = vi.hoisted(() => ({ opened: [] as unknown[], turns: vi.fn(), indexStatus: vi.fn(), messages: vi.fn(), firstOfDay: vi.fn(), viewFilters: [] as unknown[][], local: vi.fn(), desktop: false }))
 vi.mock('@/lib/guguLinks', () => ({ followLink: (target: unknown) => { remote.opened.push(target); return true } }))
@@ -81,7 +83,7 @@ beforeEach(() => {
   remote.messages.mockReset().mockResolvedValue({ data: rows, error: null })
   remote.firstOfDay.mockReset(); remote.viewFilters = []
   publishSelfIdentity({ userId: 'me-1', displayName: null, guguNumber: null })
-  localStorage.clear()
+  localStorage.clear(); viewStateCache.forget('view:')
   installIdentityDirectoryBridge()
   publishIdentityDirectory({}, ensureIdentity.mockReset())
   runInAction(() => sessionAgentBindings.bindings.clear())
@@ -130,7 +132,8 @@ function SessionProbe() { latestSession = useSearchSession(); return null }
 const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
 const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
-const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')].map((button) => button.textContent)
+const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')].map((button) => button.textContent)
+
 
 it('drops a freshly cached message search after personal deletion while retaining the other conversation', async () => {
   await render('回滚', false)
@@ -425,7 +428,7 @@ describe('global search panel', () => {
     await render('回滚')
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: null, p_query: '回滚', p_limit: 100 })
     expect(remote.turns).toHaveBeenCalledWith({ query: '回滚', limit: 100 })
-    expect(headers()).toEqual(['搜索测试群甲', '发布排查· globalSearch.task', '设计组'])
+    expect(headers()).toEqual(['搜索测试群甲', '发布排查 globalSearch.task', '设计组'])
     expect(options().map((option) => option.querySelector('mark')?.textContent)).toEqual(['回滚', '回滚', '回滚'])
     expect(tab('globalSearch.facet.all').textContent).toBe('globalSearch.facet.all3')
     expect(tab('globalSearch.facet.message').textContent).toBe('globalSearch.facet.message2')
@@ -445,7 +448,7 @@ describe('global search panel', () => {
   it('a group header narrows to that conversation, asking the cloud for that chat only and not the tasks', async () => {
     await render('回滚')
     remote.turns.mockClear()
-    await act(async () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')][0]!.click())
+    await act(async () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')][0]!.click())
     await settle()
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: GROUP, p_query: '回滚', p_limit: 100 })
     expect(remote.turns).not.toHaveBeenCalled()
@@ -482,7 +485,7 @@ describe('global search panel', () => {
     await act(async () => elsewhere.click())
     await settle()
     expect(host.querySelector('[data-testid=global-search-elsewhere]')).toBeNull()
-    expect(headers()).toEqual(['搜索测试群甲', '发布排查· globalSearch.task', '设计组'])
+    expect(headers()).toEqual(['搜索测试群甲', '发布排查 globalSearch.task', '设计组'])
   })
 
   it('with nothing typed in one conversation it offers the quick filters; a kind of message is a search with no words', async () => {
@@ -538,12 +541,12 @@ describe('global search panel', () => {
     expect(closed).toBe(0)
   })
 
-  it('opening a message hit starts the trail over the message hits and remembers the words for this conversation', async () => {
+  it('opening a message hit opens it, leaves no search state behind but the selection, and remembers the words for this conversation', async () => {
     await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
     await render('回滚')
     await act(async () => options()[1]!.click())
-    const { trail } = JSON.parse(JSON.stringify(sessionSnapshot()))
-    expect(trail).toEqual({ hits: [{ chatId: GROUP, messageId: NEW }, { chatId: OTHER, messageId: OLD }], index: 1, query: '回滚' })
+    expect(Object.keys(sessionSnapshot()!).sort()).toEqual(['chips', 'facet', 'selectedId', 'text'])
+    expect(takeFlashWords(OLD), 'its words wait for that message\'s flash').toBe('回滚')
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()

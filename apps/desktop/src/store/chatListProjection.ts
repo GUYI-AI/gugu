@@ -11,7 +11,7 @@ import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { imSelectors, type AccountImRepository } from '../lib/imRepository'
 import type { PersonalConversationDeletion } from '../lib/deleteListedConversation'
-import type { PersonalConversationHiding } from '../lib/hideListedConversation'
+import type { PersonalConversationStateReceipt } from '../lib/hideListedConversation'
 import { prepareProjectedReadWatermark } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
 import {
@@ -249,7 +249,7 @@ export function useChatProjectionBinding(deps: {
   const identities = useCallback((accountId: string) => ownerFor(accountId).identities(), [ownerFor])
   deps.conversations.readSeqsOf = (chatId) => ownerRef.current?.owner.memberReadSeqs(chatId)
 
-  const confirmPersonalHiding = useCallback(async (accountId: string, receipt: PersonalConversationHiding) => {
+  const confirmPersonalHiding = useCallback(async (accountId: string, receipt: PersonalConversationStateReceipt) => {
     const binding = ownerRef.current
     if (!binding || binding.accountId !== accountId) throw new Error('Conversation projection is not attached')
     const rows = await binding.owner.confirmPersonalHiding(receipt, currentAuthSessionSignal())

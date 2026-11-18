@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { execFileSync } from '@gugu/core/local/childProcess';
 import type { OwnedChild } from '../exec/owned-child';
 import {
   collectDescendantProcesses,
@@ -53,6 +55,8 @@ export interface EngineTreeOps {
   snapshot(): Promise<ProcessGroupMember[]>;
   /** 同一张表的同步读法:停树时读表与发信号必须在同一个同步步骤里(见 `signalEngineTree`)。 */
   snapshotSync(): ProcessGroupMember[];
+  /** Windows: stop a live root and every descendant along the parent chain (`taskkill /T /F`), synchronously. */
+  killTreeSync(pid: number): void;
 }
 
 export function defaultEngineTreeOps(): EngineTreeOps {
@@ -61,12 +65,45 @@ export function defaultEngineTreeOps(): EngineTreeOps {
     kill: (pid, signal) => process.kill(pid, signal),
     snapshot: () => collectLocalProcessSnapshotAsync(),
     snapshotSync: () => collectLocalProcessSnapshotSync(),
+    killTreeSync: taskkillTreeSync,
   };
 }
 
-/** Host exit: snapshot the owned roots before any parent chain is severed. */
+/** taskkill exits 128 when the root is already gone: the tree's stop is then not ours to report. */
+const TASKKILL_NOT_FOUND = 128;
+
+function taskkillTreeSync(pid: number): void {
+  // By system directory: something else named taskkill on PATH is not taskkill.
+  const taskkill = path.win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+  try {
+    execFileSync(taskkill, ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5_000 });
+  } catch (error) {
+    if ((error as { status?: number }).status === TASKKILL_NOT_FOUND) return;
+    throw new Error(`taskkill /T /F ${pid} failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Host exit: snapshot the owned roots before any parent chain is severed.
+ *
+ * @@@windows-exit-tree - Windows has no process groups, so the roots' trees are stopped with `taskkill /T`, which
+ * walks the same parent chain while the roots are still alive — the root itself goes with it (its caller kills it next
+ * anyway). Only the roots handed in are walked, never this process: its other children are the person's (an editor,
+ * a browser from `shell.openExternal`) or the updater's installer.
+ */
 export function signalProcessDescendantsSync(roots: readonly number[], signal: NodeJS.Signals, ops = defaultEngineTreeOps()): void {
-  if (ops.isWindows || roots.length === 0) return;
+  if (roots.length === 0) return;
+  if (ops.isWindows) {
+    let failure: unknown;
+    for (const root of roots) {
+      try {
+        if (root === process.pid) throw new Error('signalProcessDescendantsSync: this process is not a root on Windows');
+        ops.killTreeSync(root);
+      } catch (error) { failure ??= error; }
+    }
+    if (failure !== undefined) throw failure;
+    return;
+  }
   const table = ops.snapshotSync();
   const ownGroup = table.find(member => member.pid === process.pid)?.pgid;
   const descendants = collectDescendantProcesses(table, [...roots]).filter(member => member.pid !== process.pid);

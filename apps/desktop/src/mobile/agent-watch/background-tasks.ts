@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useMemo, useState } from 'react'
 import {
   collectBackgroundCommandRoster,
@@ -96,5 +97,5 @@ export function backgroundTasksLabel(commandCount: number, agentCount: number): 
   const parts: string[] = []
   if (commandCount > 0) parts.push(translateSessionMessage(commandCount === 1 ? 'transcript.backgroundTasks.commandsOne' : 'transcript.backgroundTasks.commands', { count: commandCount }))
   if (agentCount > 0) parts.push(translateSessionMessage(agentCount === 1 ? 'transcript.backgroundTasks.subagentsOne' : 'transcript.backgroundTasks.subagents', { count: agentCount }))
-  return translateSessionMessage('transcript.backgroundTasks.label', { parts: parts.join(' · ') })
+  return translateSessionMessage('transcript.backgroundTasks.label', { parts: parts.join(metadataSeparator()) })
 }

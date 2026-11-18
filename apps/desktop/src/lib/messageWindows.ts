@@ -1,4 +1,5 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import { orderMessages } from '@gugu/core/shared/ui/messageTimeline'
 import type { ImMessageWrite } from '../session/shared/core/im-messages'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
 
@@ -20,7 +21,7 @@ export function setMessageWindow(accountId: string, chatId: string, root: string
   const windows = accounts.get(accountId)
   if (!windows) return
   if (root) for (const [id, window] of windows) if (window.chatId === chatId && window.root && window.root !== root) windows.delete(id)
-  const sorted = [...rows].sort((a, b) => a.seq - b.seq || a.id.localeCompare(b.id)).slice(-MAX_WINDOW)
+  const sorted = orderMessages(rows).slice(-MAX_WINDOW)
   windows.set(key(chatId, root), { chatId, root, rows: sorted })
   if (!root) publishers.get(accountId)?.(chatId, sorted)
 }

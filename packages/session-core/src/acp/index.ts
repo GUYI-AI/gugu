@@ -5,6 +5,7 @@ export * from './api/queries';
 export * from './api/runtime-contract';
 export * from './errors';
 export * from './models';
+export { flattenSelectOptions } from './models/select-options';
 export * from './provider-session';
 export type * from './session-protocol';
 export { decodeSessionUpdate, decodeV2SessionUpdate, decodeConfigOptions, decodePermissionRequest } from './transport/decode';

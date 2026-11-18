@@ -209,7 +209,7 @@ export type DeliveryOutcome =
     }
 
 /** 单测替身:替掉真 socket 往返。 */
-export type RendezvousSend = (sockPath: string, text: string, wallMs: number) => Promise<DeliveryOutcome>
+export type RendezvousSend = (sockPath: string, text: string, wallMs: number, beforeAdmission?: () => void) => Promise<DeliveryOutcome>
 
 export const CLAUDE_DELIVERY_MAX_ATTEMPTS = 3
 export const CLAUDE_RETRY_BACKOFF_MS = [250, 500] as const
@@ -285,12 +285,12 @@ export function classifyRendezvousError(code: string): RendezvousErrorClass {
   return { kicked, unavailable, transport: !kicked && !unavailable }
 }
 
-const realSend: RendezvousSend = (sockPath, text, wallMs) =>
-  new Promise((resolve) => {
+const realSend: RendezvousSend = (sockPath, text, wallMs, beforeAdmission) =>
+  new Promise((resolve, reject) => {
     let settled = false
     let conn: ReturnType<typeof createConnection> | null = null
     let bytesWritten = 0
-    const done = (outcome: DeliveryOutcome): void => {
+    const done = (outcome: DeliveryOutcome, failure?: unknown): void => {
       if (settled) return
       settled = true
       clearTimeout(wall)
@@ -299,11 +299,19 @@ const realSend: RendezvousSend = (sockPath, text, wallMs) =>
       } catch {
         /* 已经没了 */
       }
-      resolve({ ...outcome, bytes: bytesWritten })
+      if (failure !== undefined) reject(failure)
+      else resolve({ ...outcome, bytes: bytesWritten })
     }
     // 墙钟到点而连接仍开着 = 对方可能忙,但没有 repaint-done 就不能冒称确认送达。
     // 此时重发也不安全:reply 可能已经被解析,只是确认迟到。
-    const wall = setTimeout(() => done({ ok: true, acknowledged: false }), wallMs)
+    const wall = setTimeout(() => {
+      try {
+        if (bytesWritten === 0) beforeAdmission?.()
+        done({ ok: true, acknowledged: false })
+      } catch (error) {
+        done({ ok: false, error: 'host admission revoked before rendezvous write' }, error)
+      }
+    }, wallMs)
     try {
       conn = createConnection({ path: sockPath })
     } catch (error) {
@@ -332,9 +340,15 @@ const realSend: RendezvousSend = (sockPath, text, wallMs) =>
     // 一次写入 = 一个 chunk:reply 与 repaint 不可分割(见文件头 ②)
     conn.on('connect', () =>
       (() => {
-        const payload = `${JSON.stringify({ type: 'reply', text })}\n${JSON.stringify({ type: 'repaint' })}\n`
-        bytesWritten = Buffer.byteLength(payload, 'utf8')
-        conn?.write(payload)
+        if (settled) return
+        try {
+          beforeAdmission?.()
+          const payload = `${JSON.stringify({ type: 'reply', text })}\n${JSON.stringify({ type: 'repaint' })}\n`
+          bytesWritten = Buffer.byteLength(payload, 'utf8')
+          conn?.write(payload)
+        } catch (error) {
+          done({ ok: false, error: 'host admission revoked before rendezvous write' }, error)
+        }
       })(),
     )
     let buf = ''
@@ -546,12 +560,14 @@ class ClaudeSessionDeliveryRegistry {
   async tryInjectSessionMessage(
     sessionId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct' },
+    beforeAdmission?: () => void,
   ): Promise<boolean> {
-    return this.tryInjectMessage(sessionId, message.text)
+    return beforeAdmission ? this.tryInjectMessage(sessionId, message.text, beforeAdmission) : this.tryInjectMessage(sessionId, message.text)
   }
 
 
-  async injectMessage(sessionId: string, text: string): Promise<void> {
+  async injectMessage(sessionId: string, text: string, beforeAdmission?: () => void): Promise<void> {
+    beforeAdmission?.()
     const reg = this.bySession.get(sessionId)
     if (!reg) {
       throw new ClaudeSessionUnavailableError(
@@ -579,7 +595,8 @@ class ClaudeSessionDeliveryRegistry {
     let attempted = 0
     for (let attempt = 1; attempt <= this.attempts; attempt += 1) {
       attempted = attempt
-      last = await this.sendImpl(sock, text, this.wallMs)
+      beforeAdmission?.()
+      last = await (beforeAdmission ? this.sendImpl(sock, text, this.wallMs, beforeAdmission) : this.sendImpl(sock, text, this.wallMs))
       if (last.ok) {
         const message = last.acknowledged
           ? `[sessionpage] claude 第 ${attempt} 次投递已确认送达(repaint-done):session=${sessionId}:bytes=${last.bytes ?? 0}`
@@ -602,9 +619,10 @@ class ClaudeSessionDeliveryRegistry {
     throw new Error(message)
   }
 
-  async tryInjectMessage(sessionId: string, text: string): Promise<boolean> {
+  async tryInjectMessage(sessionId: string, text: string, beforeAdmission?: () => void): Promise<boolean> {
     try {
-      await this.injectMessage(sessionId, text)
+      if (beforeAdmission) await this.injectMessage(sessionId, text, beforeAdmission)
+      else await this.injectMessage(sessionId, text)
       return true
     } catch (error) {
       if (error instanceof ClaudeSessionUnavailableError) return false

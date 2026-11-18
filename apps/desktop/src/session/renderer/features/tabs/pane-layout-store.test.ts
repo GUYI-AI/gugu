@@ -277,7 +277,7 @@ describe('PaneLayoutStore: isViewActive and onActivate', () => {
   });
 });
 
-describe('PaneLayoutStore: single-mount explicit target opens', () => {
+describe('PaneLayoutStore: independent context opens', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     browserSessionStore.clear();
@@ -295,7 +295,7 @@ describe('PaneLayoutStore: single-mount explicit target opens', () => {
     terminalRegistryEntries().delete('task-1');
   });
 
-  it('opens an independent context in an explicit target without moving the existing one', () => {
+  it('opens an independent context beside the current pane without moving the existing resource', () => {
     const layout = createLayout();
 
     layout.open('terminal', { terminalId: 'terminal-1' }, { from: null, intent: 'newTab' });
@@ -313,13 +313,14 @@ describe('PaneLayoutStore: single-mount explicit target opens', () => {
     expect(sourcePane.resolvedTabs.some((tab) => tab.kind === 'terminal')).toBe(true);
     expect(targetPane.resolvedTabs.some((tab) => tab.kind === 'terminal')).toBe(false);
 
-    layout.open('terminal', { terminalId: 'terminal-1' }, { intent: 'newTab', from: null, target: { paneId: targetPaneId } });
+    layout.open('terminal', { terminalId: 'terminal-1' }, { intent: 'newTab', from: null });
 
     expect(sourcePane.resolvedTabs.some((tab) => tab.kind === 'terminal')).toBe(true);
-    const movedTerminalTab = targetPane.resolvedTabs.find((tab) => tab.kind === 'terminal');
-    expect(movedTerminalTab?.tabId).not.toBe(terminalTab.tabId);
-    expect(movedTerminalTab?.resource).not.toBe(terminalResource);
-    expect(targetPane.resolvedActiveTabId).toBe(movedTerminalTab?.tabId);
+    const newTerminalTab = sourcePane.resolvedTabs.find((tab) => tab.kind === 'terminal' && tab.tabId !== terminalTab.tabId)!;
+    expect(sourcePane.resolvedTabs.find((tab) => tab.tabId === terminalTab.tabId)?.resource).toBe(terminalResource);
+    expect(newTerminalTab.resource).not.toBe(terminalResource);
+    expect(sourcePane.resolvedActiveTabId).toBe(newTerminalTab.tabId);
+    expect(targetPane.activeEntry?.kind).toBe('browser');
 
     layout.dispose();
   });
@@ -334,6 +335,7 @@ describe('PaneLayoutStore: runtime-only persistence projection', () => {
     onActiveTabChange.mockClear();
 
     layout.open('runtime-test', { id: 'side-chat:view-1' }, { from: layout.focusedPane.resolvedActiveTabId!, intent: 'beside' });
+    layout.setActiveGroup(layout.sidePaneId!);
 
     expect(layout.groups).toHaveLength(2);
     expect(layout.activePaneId).not.toBe(sourcePaneId);
@@ -483,11 +485,11 @@ describe('PaneLayoutStore: side by side is a pair in the one strip', () => {
     layout.open('persistent-test', { id: 'b' }, { from: null, intent: 'newTab' });
     const paneId = layout.activePaneId;
     const b = tabIdOf(layout, 'b');
-    layout.setPaneSizer(() => ({ width: 400, height: 600 }));
+    layout.setDimensions(400, 600);
     expect(layout.splitBlocked(paneId, b, 'right')).toBe('too-small');
     layout.handleDragEnd(b, paneEdgeDropId('right', paneId));
     expect(layout.groups).toHaveLength(1);
-    layout.setPaneSizer(() => null);
+    layout.dimensions = null;
     expect(layout.splitBlocked(paneId, b, 'right')).toBeNull();
     layout.dispose();
   });

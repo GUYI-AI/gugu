@@ -56,6 +56,8 @@ export interface SendSessionMessageParams {
   signal?: AbortSignal;
   /** Captured by the admission wrapper, never accepted from renderer input. */
   personalPublication?: NativePublicationContext;
+  /** Trusted host check only; never serialized. Re-run at the actual router/custody boundary. */
+  beforeAdmission?: () => void;
 }
 
 export type SendSessionMessageResult = {
@@ -441,11 +443,12 @@ export function recordFailedSessionDirectMessage(
 
 /** Keep a gate-rejected session-direct message in the recipient's existing inbox projection. */
 async function enqueuePendingSessionDirectMessage(
-  params: Pick<SendSessionMessageParams, 'projectId' | 'sessionId' | 'clientMessageId' | 'sourceInput' | 'personalPublication'>,
+  params: Pick<SendSessionMessageParams, 'projectId' | 'sessionId' | 'sourceInput' | 'personalPublication' | 'beforeAdmission'> & { clientMessageId: string },
   text: string,
 ): Promise<void> {
   await serialize(enqueueOperations, params.sessionId, async () => {
     const row = await readSession(params)
+    params.beforeAdmission?.()
     const pending = { id: params.clientMessageId, text, kind: 'session-direct' as const }
     const existing = readAcceptedMessage(params.clientMessageId)
     if (existing) {
@@ -570,6 +573,7 @@ function enqueueIntoLife(params: SendSessionMessageParams): SendSessionMessageRe
 }
 
 export async function sendMessage(params: SendSessionMessageParams): Promise<SendSessionMessageResult> {
+  params.beforeAdmission?.();
   params.signal?.throwIfAborted();
   const personalPublication = await nativePersonalInputContext(params);
   params = { ...params, personalPublication: personalPublication ?? undefined };
@@ -603,6 +607,7 @@ async function sendMessageOnce(
   // exact message in the existing outbox until the coordinator's retry kicks the common reader.
   if (params.kind === 'session-direct' && !params.queuedStartupDelegation) {
     const row = await readSession(params);
+    params.beforeAdmission?.();
     const integration = resolveSessionpageSessionIntegration(row.provider, 'tui');
     if (integration.messageTransport === 'none') {
       throw new Error(
@@ -633,12 +638,16 @@ async function sendMessageOnce(
       throw new SessionDirectDeliveryError(params.sessionId, 'no session message router is installed');
     }
     params.signal?.throwIfAborted();
-    const receipt = await router(params.sessionId, {
+    params.beforeAdmission?.();
+    const routedMessage = {
       id: clientMessageId,
       text,
-      kind: 'session-direct',
+      kind: 'session-direct' as const,
       ...(params.delivery ? { delivery: params.delivery } : {}),
-    }, params.signal);
+    };
+    const receipt = await (params.beforeAdmission
+      ? router(params.sessionId, routedMessage, params.signal, params.beforeAdmission)
+      : router(params.sessionId, routedMessage, params.signal));
     if (receipt.status === 'not-ready') {
       // The outbox keeps text only: a kept message with `delivery` would later go out the default way — into the
       // current turn, its key lost. So it is not kept; the sender is told now and sends it again.

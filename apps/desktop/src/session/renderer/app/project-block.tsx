@@ -5,7 +5,6 @@ import { getProjectStore, projectDisplayName } from '@renderer/features/projects
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
-import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
@@ -42,7 +41,6 @@ export const ProjectBlock = observer(function ProjectBlock({
   blockActions?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const label = projectDisplayName(getProjectStore(projectId)) ?? translate('projects.fallbackName');
@@ -72,7 +70,7 @@ export const ProjectBlock = observer(function ProjectBlock({
     return (
       <>
         <TabStripShell
-          reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
+          reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
           actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
         >
           {projectChip}
@@ -83,17 +81,17 @@ export const ProjectBlock = observer(function ProjectBlock({
       </>
     );
   }
+  const actions = <>
+    <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
+    {blockActions}
+  </>;
   return (
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
-      actionsSlot={
-        <TabBarActionRow atWindowEdge={corners.topRight}>
-          <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
-          {blockActions}
-        </TabBarActionRow>
-      }
+      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
+      actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
+      chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
       // 项目群那一枚写项目名;点它 = 看群(并排着的那一页照旧在旁边)。它和别的群页签一样没有右键菜单:项目的文件夹在「文件」的电脑文件里打开,移除项目在侧栏那一行的右键里。
       chip={({ tab, host }) => (
         <ChatTabChip

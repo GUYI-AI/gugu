@@ -99,7 +99,7 @@ export type ChatProjectionLedgerEntry = {
 
 export type ChatProjection = {
   /** Versioned list maintenance; a newer cleared membership supersedes a delayed hide receipt. */
-  confirmPersonalHiding: (receipt: import('./hideListedConversation').PersonalConversationHiding, signal?: AbortSignal) => Promise<ChatItem[]>
+  confirmPersonalHiding: (receipt: import('./hideListedConversation').PersonalConversationStateReceipt, signal?: AbortSignal) => Promise<ChatItem[]>
   /** RPC receipt has no revision stamp; retain this monotonic list fact until account reset. */
   confirmPersonalDeletion: (receipt: import('./deleteListedConversation').PersonalConversationDeletion) => void
   /**
@@ -614,7 +614,9 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       assertRevision(receipt.account_revision, 'hide receipt')
       const key = entityKey('membership', membershipId(receipt.chat_id, viewerId))
       const current = cache.get(key)
-      if (current?.value) {
+      // A clear receipt revokes retained bytes before any further IO. Hide and Undo
+      // reconcile through the same bounded family reader after the RPC commits.
+      if (current?.value && receipt.cleared_at) {
         merge([[key, { stamp: receipt.account_revision,
           value: { ...current.value, conversation_hidden_at: receipt.hidden_at, ...(receipt.cleared_at ? { conversation_cleared_at: receipt.cleared_at } : {}) } }]])
         if (receipt.cleared_at) await ingestMessages(viewerId, { writes: messageAccessWrites(cache, viewerId, [key]), revisions: [] })

@@ -16,6 +16,7 @@ vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({
 }));
 
 const archiveSession = vi.hoisted(() => vi.fn());
+const markSessionSeen = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 /** 记下每个频道的 handler —— 不记就测不到「事件到达之后发生了什么」。 */
 const eventHandlers = vi.hoisted(() => new Map<unknown, ((payload: unknown) => void)[]>());
 
@@ -35,7 +36,7 @@ vi.mock('@renderer/lib/ipc', () => {
       dehydrateSession,
       getUnarchivedSession: vi.fn(),
       hydrateSession,
-      markSessionSeen: vi.fn().mockResolvedValue(undefined),
+      markSessionSeen,
     },
   },
 };
@@ -223,17 +224,36 @@ describe('PageSessionsStore four-state status projection', () => {
     store.dispose();
   });
 
-  it('suppresses the indicator once the conversation is seen (you are already looking at it)', () => {
+  it('suppresses the indicator after the host acknowledges the conversation', async () => {
     const store = makeStore();
     const conv = store.sessions.get('c1');
     conv!.applyStatus({ reading: { status: 'needs_user', detail: 'approval' }, unseen: true, statusSourceFault: null });
     expect(conv!.indicatorStatus).toBe('needs_user');
     // Viewing a conversation marks it seen → its own indicator is suppressed; the attention shifts to
     // whichever OTHER agent still needs you (this is why the otty demo shows a non-active agent's dot).
-    conv!.markSeen();
+    await conv!.markSeen();
     expect(conv!.indicatorStatus).toBeNull();
     expect(store.sessionStatus).toBeNull();
     store.dispose();
+  });
+  it('leaves a rejected host read unread and allows the next attempt', async () => {
+    const store = makeStore(); const conv = store.sessions.get('c1')!;
+    conv.applyStatus({ reading: { status: 'error', detail: null }, unseen: true, statusSourceFault: null });
+    markSessionSeen.mockRejectedValueOnce(new Error('host disconnected'));
+    expect(await conv.markSeen()).toBe(false); expect(conv.seen).toBe(false);
+    expect(await conv.markSeen()).toBe(true); expect(conv.seen).toBe(true);
+    store.dispose();
+  });
+  it('a delayed read reply cannot acknowledge a newer failure', async () => {
+    const store = makeStore(); const conv = store.sessions.get('c1')!;
+    conv.applyStatus({ reading: { status: 'error', detail: null }, unseen: true, statusSourceFault: null });
+    let resolve!: () => void;
+    markSessionSeen.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
+    const pending = conv.markSeen();
+    conv.applyStatus({ reading: { status: 'working', detail: 'running' }, unseen: false, statusSourceFault: null });
+    conv.applyStatus({ reading: { status: 'error', detail: null }, unseen: true, statusSourceFault: null });
+    resolve(); await pending;
+    expect(conv.seen).toBe(false); store.dispose();
   });
 });
 

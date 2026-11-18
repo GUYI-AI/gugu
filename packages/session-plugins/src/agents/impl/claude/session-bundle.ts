@@ -18,6 +18,7 @@ import type {
   SessionPromptBlocks,
 } from '@gugu/session-core/agents/plugins';
 import { extensionSkillFolderName } from '@gugu/session-core/agents/plugins';
+import { stripManagedJsonHooks } from '@gugu/session-core/agents/plugins/helpers';
 import { claudePlatformModelOption } from '@gugu/session-core/acp/platform-model-address';
 import { mcpToggleDirective, type McpToggleServer } from '@gugu/session-core/mcp';
 import {
@@ -78,18 +79,27 @@ export const CLAUDE_NATIVE_HOME = {
 } as const satisfies NativeHome;
 
 export const claudeSessionBundleDescriptor = {
-  // 运行时注入(product spec 的默认那一侧)。owner 2026-09-03:
-  // 「claude 配置不需要托管,也不应该托管」。#4834 留下的举证在 #4780 之后补完了:
-  //  · 模型 / 中转 / agent view 禁用:每会话 `--settings` 临时文档(sessionpage-platform-model.ts)。
-  //  · MCP / 能力包:每会话 `--plugin-dir`(下面 extension.activation = 'session-dir')。
-  //  · 首启向导 + 工作区信任:`IS_DEMO=1` + `CLAUDE_CODE_SANDBOXED=1` 两个 env,二进制里逐条
-  //    取证见 ./trust.ts —— 托管侧当年要写 `.claude.json` 只为这两位,现在有 env 通道了。
-  //  · bypass 免责声明:settings 键 `skipDangerousModePermissionPrompt`(同一份 --settings 文档)。
-  // 托管那一侧对本家只剩代价:整树复制 `~/.claude`(实测 813 MB)、凭据一式两份各自过期
-  // (owner 实机撞到的「Authentication required」),而 `.claude.json` 本就住在家目录根、
-  // 托管副本够不着。⇒ 用户的 `~/.claude` 就是会话的 `~/.claude`,咕咕不复制、不改写。
-  injectionMode: 'runtime',
+  injectionMode: 'managed-config-root',
   nativeHome: CLAUDE_NATIVE_HOME,
+  configRoot: {
+    ...CLAUDE_NATIVE_HOME,
+    credentialPaths: [{ path: '.credentials.json', evidence: 'Claude file credential store; macOS uses a root-specific keychain item.' }],
+    importGroups: [
+      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }, { path: 'settings.local.json', omitKeys: ['hooks'] }], evidence: 'https://code.claude.com/docs/en/settings#settings-files' },
+      { id: 'hooks', paths: [{ path: 'settings.json', keys: ['hooks'] }, { path: 'settings.local.json', keys: ['hooks'] }], evidence: 'https://code.claude.com/docs/en/hooks#configuration' },
+      { id: 'mcp', paths: [{ path: '../.claude.json', keys: ['mcpServers'], target: '.claude.json' }], evidence: 'Claude CLI mcp list with an isolated CLAUDE_CONFIG_DIR reads <root>/.claude.json.' },
+      { id: 'rules', paths: ['CLAUDE.md', 'rules/'], evidence: 'https://code.claude.com/docs/en/memory' },
+      { id: 'skills', paths: ['skills/'], evidence: 'https://code.claude.com/docs/en/skills' },
+      { id: 'agents', paths: ['agents/', 'commands/', 'plugins/'], evidence: 'https://code.claude.com/docs/en/sub-agents and /plugins' },
+    ],
+    carryExclusions: [
+      ...['projects', 'file-history', 'todos'].map((path) => ({ path, upgradeHistory: true, evidence: 'Claude session records copied when migrating existing Gugu tasks.' })),
+      ...['shell-snapshots', 'statsig', 'logs', 'cache', '.cache', 'debug', 'telemetry', 'backups', 'session-env', '.last-cleanup', 'ide',
+        'history.jsonl', 'paste-cache', 'plugins/cache', 'plugins/marketplaces'].map((path) => ({ path, evidence: 'Claude runtime logs, telemetry, cached content, lockfiles or snapshots.' })),
+      { path: 'sessions', evidence: 'Claude writes live process metadata and per-session key files here; resumable transcripts are in projects/.' },
+    ],
+    legacyCleanup: [{ path: 'settings.local.json', update: (fs, path) => stripManagedJsonHooks(fs, path, 'user') }],
+  },
   platform: harnessPlatform,
   // ❌ `IS_DEMO` / `CLAUDE_CODE_SANDBOXED` 是咕咕给 claude 的工作区信任通道(./trust.ts),必须成对由 WorkspaceTrustService 给出 ——
   // 曾经只透传 IS_DEMO(#2905),用户 shell 里碰巧 export 了它,claude 跳过信任对话框而工作区仍不可信。
@@ -609,7 +619,7 @@ function report(
     units: {
       mcp: loaded(),
       env: loaded(),
-      model: bundle.model
+      model: bundle.model?.model
         ? loaded()
         : { status: 'degraded', reason: { code: 'unverified', reason: 'No model was declared.' } },
       autonomy: { status: 'degraded', reason: degradedAutonomy },
@@ -694,6 +704,11 @@ export function materializeClaudeSessionBundle(
   }
 
   const options = {
+    // ❌ No inline `settings` here: on the ACP wire `options.settings` is a settings-file path
+    // (acpSessionMetaSchema), and only the host that owns such a file sets it (platform sessions).
+    // A native session's Fast reaches Claude through the ACP `fast` config option at startup
+    // (SessionManager.applyInitialFastMode), so an inline copy would be a second path that the
+    // wire rejects before the adapter is ever spawned.
     ...(plugin ? { plugins: [{ type: 'local', path: plugin.root }, ...(library ? [{ type: 'local', path: library.root }] : [])] } : {}),
     // #5117 咕咕在子智能体卡上有「停止」按钮(适配器 `_session/async_task/stop` → SDK `stop_task`)。
     // 向 SDK 声明这一点(0.3.257 起认):按「停止」中断这一轮时**放过**还在跑的后台子智能体,

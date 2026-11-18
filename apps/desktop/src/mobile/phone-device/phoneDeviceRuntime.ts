@@ -527,7 +527,7 @@ async function retainPhoneAgentDevice(userId: string, deviceId: string): Promise
   const settings = readPhoneDeviceSettings(userId)
   if (settings.enabled || settings.hostEnabled) return true
   if (getRendererSession()?.user.id !== userId) throw new Error('手机宿主的登录状态已改变')
-  const updated = await identityDb.from('gugu_devices').update({ status: 'offline', updated_at: new Date().toISOString(), capabilities: { ...capabilities, runtimes: [], host_runtime_capability: 0 } }).eq('user_id', userId).eq('device_id', deviceId)
+  const updated = await identityDb.from('gugu_devices').update({ status: 'offline', updated_at: new Date().toISOString(), capabilities: { ...capabilities, runtimes: [] } }).eq('user_id', userId).eq('device_id', deviceId)
   if (updated.error) throw new Error(updated.error.message)
   return true
 }

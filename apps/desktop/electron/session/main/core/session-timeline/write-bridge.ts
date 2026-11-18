@@ -127,7 +127,8 @@ export async function deliverSessionText(
   clientMessageId?: string,
   files?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['files'],
   attachments?: import('@gugu/session-core/acp/client').PromptAttachment[],
-  steerIfBusy?: true
+  steerIfBusy?: true,
+  admissionFence?: () => void
 ): Promise<{ accepted: 'started' | 'queued' }> {
   if (!text.trim() && !files?.length && !attachments?.length) throw new SessionWriteError('empty_text', '消息是空的', 'rejected');
 
@@ -146,6 +147,7 @@ export async function deliverSessionText(
   // refetch after a lost reply finds the existing row), the sender's outbox copy ends here.
   if (target.runtime === 'acp') {
     const personalPublication = await nativePersonalInputContext({ sessionId: target.id, text, kind: 'session-direct', delivery: { origin: 'manual' } });
+    admissionFence?.();
     sessionLife().enqueue({
       sessionId: target.id, messageId: clientMessageId ?? crypto.randomUUID(), text: text.trim(), kind: 'session-direct',
       delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) },
@@ -158,6 +160,7 @@ export async function deliverSessionText(
     if (attachments?.length) throw new SessionWriteError('unsupported_runtime', '终端任务不能回放图片附件', 'rejected');
     const turn = files?.length ? await turnFileText(target.id, files, false) : null;
     const body = [text.trim(), turn?.text].filter(Boolean).join('\n\n');
+    admissionFence?.();
     const params = {
       projectId: target.projectId,
       sessionId: target.id,
@@ -165,6 +168,7 @@ export async function deliverSessionText(
       text: body,
       sourceInput: { text: text.trim(), ...(files?.length ? { files } : {}) },
       kind: 'session-direct' as const,
+      ...(admissionFence ? { beforeAdmission: admissionFence } : {}),
     };
     // 冷着的终端腿(app 重启后没起、被停过)由 session-direct 的路由自己唤醒再投(#6546),
     // 这里 ❌ 再拉一遍 —— owner 2026-09-06 真机撞的那格(codex 终端腿)现在走的是同一条恢复。

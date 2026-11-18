@@ -1,4 +1,5 @@
 import { comparer, observable, reaction, runInAction } from 'mobx';
+import { onViewStateAccount, readViewState, takeLegacyLocalStorageForAccount, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 import { appPlacementStore } from '@renderer/features/extensions/app-placement-store';
 import type { PaneEdge } from '@renderer/features/tabs/pane-layout-tree';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -14,6 +15,8 @@ import { readChatSummaries, subscribeChatSummaries } from '@/lib/chatSummariesBr
 import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
+import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 
 export { isScreenView };
@@ -26,39 +29,44 @@ export { isScreenView };
 
 let syncing = false;
 
-/** 这屏怎么摆存在本机(和 App 摆在哪同一处):重启之后几块并排照旧。 */
-const STORAGE_KEY = 'gugu.screen-layout.v1';
+/**
+ * 这屏怎么摆是这个账号的视图状态(lib/viewStateTable,首帧就在):重启之后几块并排照旧。以前存在 localStorage 里、不分账号,
+ * 搬一次进这时的账号(上次登录的那个)。
+ */
+const LEGACY_KEY = 'gugu.screen-layout.v1';
+const SCREEN: ViewPanel = { conversation: '', panel: 'screen' };
+takeLegacyLocalStorageForAccount((key) => key === LEGACY_KEY, (_, raw, account) =>
+  writeViewState<{ snapshot: ScreenLayoutSnapshot }>({ ...SCREEN, account }, { snapshot: JSON.parse(raw) as ScreenLayoutSnapshot }));
 
-function loadScreenLayout(): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const snapshot = JSON.parse(raw) as ScreenLayoutSnapshot;
-    // 一个 App 只有一份:读回来时它已经摆在某条会话里(最后那一下没来得及存这屏),那块不要。收起来的组同理。
-    const withoutPlacedApps = <T extends { blocks: ScreenLayoutSnapshot['blocks'] }>(group: T): T => ({
-      ...group,
-      blocks: Object.fromEntries(
-        Object.entries(group.blocks ?? {}).filter(([, block]) => block?.kind !== 'app' || !appPlacementStore.of(block.tabKind))
-      ),
-    });
-    screenLayout.restore({
-      ...withoutPlacedApps(snapshot),
-      parked: Array.isArray(snapshot.parked) ? snapshot.parked.map(withoutPlacedApps) : undefined,
-    });
-  } catch {
-    // 读不出来就从一块开始:❌ 不让一条坏掉的记录把会话页拖垮。
-  }
+/** The saved screen of the account (the session page restores it; the host's location repair rewrites its references). */
+export function readSavedScreen(): ScreenLayoutSnapshot | null {
+  return readViewState<{ snapshot: ScreenLayoutSnapshot }>(SCREEN).snapshot ?? null;
 }
 
-function saveScreenLayout(snapshot: ScreenLayoutSnapshot | null): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    if (snapshot) localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-    else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // 存不进去只是重启后忘了怎么摆,本次照常。
-  }
+export function writeSavedScreen(snapshot: ScreenLayoutSnapshot | null): void {
+  writeViewState<{ snapshot: ScreenLayoutSnapshot }>(SCREEN, { snapshot: snapshot ?? undefined });
+}
+
+/** The account's saved screen as it is drawn now. */
+function savedScreenToDraw(): ScreenLayoutSnapshot | null {
+  const snapshot = readSavedScreen();
+  if (!snapshot) return null;
+  // 一个 App 只有一份:读回来时它已经摆在某条会话里(最后那一下没来得及存这屏),那块不要。收起来的组同理。
+  const withoutPlacedApps = <T extends { blocks: ScreenLayoutSnapshot['blocks'] }>(group: T): T => ({
+    ...group,
+    blocks: Object.fromEntries(
+      Object.entries(group.blocks ?? {}).filter(([, block]) => block?.kind !== 'app' || !appPlacementStore.of(block.tabKind))
+    ),
+  });
+  return {
+    ...withoutPlacedApps(snapshot),
+    parked: Array.isArray(snapshot.parked) ? snapshot.parked.map(withoutPlacedApps) : undefined,
+  };
+}
+
+function loadScreenLayout(): void {
+  const snapshot = savedScreenToDraw();
+  if (snapshot) screenLayout.restore(snapshot);
 }
 
 /**
@@ -139,9 +147,10 @@ export function ensureScreenLayoutSync(): void {
   if (syncing) return;
   syncing = true;
   loadScreenLayout();
-  reaction(() => screenLayout.snapshot, saveScreenLayout, { delay: 300 });
-  // 拖分隔条这类连续变化攒一下再存;关窗、重载前把最后一下存上(和 App 摆在哪那张表对得上)。
-  window.addEventListener('pagehide', () => saveScreenLayout(screenLayout.snapshot));
+  // Another account signed in (or the first one of a start that knew none): its own screen, or an empty one.
+  onViewStateAccount(() => screenLayout.replaceWith(savedScreenToDraw()));
+  // Each change is written at once: main holds it and writes the disk behind, so a quit right after keeps it.
+  reaction(() => screenLayout.snapshot, writeSavedScreen, { equals: comparer.structural });
   pruneGoneApps();
   pruneGoneChats();
   // 左边列表把拼成一组的几行并在一处(spec session-page「拼在一屏的几块是一组」):列表自己不认这屏,由这里喂。
@@ -183,7 +192,18 @@ function showNavigationBlock(content: ScreenBlockContent | undefined): void {
   const windowed = content.kind === 'session' ? auxWindows.windowOfSession(content.sessionId) : undefined;
   if (windowed) {
     if (auxWindows.focusedWindowId !== windowed.id) windowed.handle?.focus();
-  } else screenLayout.show(content);
+  } else if (content.kind === 'session' && livesInEntryRoom(content.sessionId)) screenLayout.withinEntry(() => screenLayout.show(content));
+  else screenLayout.show(content);
+}
+
+/**
+ * 正看着一个群 / 项目的屏,打开住在它里面的一个智能体(它那一列里点的、群里的任务卡、刚在群里建的):仍是这个群的屏(screen-layout `entry`),
+ * 切走再点回这个群就回到它,内层侧栏照旧挂着这个群。
+ */
+function livesInEntryRoom(sessionId: string): boolean {
+  const summaries = readChatSummaries() ?? new Map();
+  const room = roomOfEntry(screenLayout.currentEntry, summaries);
+  return !!room && roomListsSession(room, sessionId, summaries);
 }
 
 /**
@@ -294,6 +314,17 @@ export function showSessionBeside(target: ScreenSession): void {
 export function showOnScreen(content: ScreenBlockContent): void {
   tabFullscreen.exit();
   screenLayout.show(content);
+  followFocus();
+}
+
+/**
+ * 回到群本身(群标题、已经在这个群的屏里再点它那一行):这个群名下记着的那一屏(从群里点开的私聊、智能体)不要了,
+ * 群单独一屏。项目群认它的项目块,同 openChatOnScreen。
+ */
+export function navigateToGroupRoot(chatId: string): void {
+  tabFullscreen.exit();
+  const projectId = projectGroupsStore.rowProjectOfChat(chatId);
+  screenLayout.showRoot(projectId ? { kind: 'project', projectId } : { kind: 'chat', chatId });
   followFocus();
 }
 

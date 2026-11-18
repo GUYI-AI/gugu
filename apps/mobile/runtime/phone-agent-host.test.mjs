@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename, utimes, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -164,6 +164,21 @@ const untilNetworkQueued = (fx) => until(async () => {
   return !fx.host.state().execution && Object.values(journal.jobs).some(job => job.status === 'queued' && job.networkWait)
 }, fx.events)
 
+test('host start drops file-cache chunks older than an hour and keeps fresh ones', async () => {
+  const cache = (root) => join(root, 'hosts', ownerId, 'file-cache')
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }), { prepare: async ({ root }) => {
+    const stale = join(cache(root), `open-${'a'.repeat(64)}`), fresh = join(cache(root), `open-${'b'.repeat(64)}`)
+    await mkdir(stale, { recursive: true }); await writeFile(join(stale, '0'), 'x')
+    await mkdir(fresh, { recursive: true }); await writeFile(join(fresh, '0'), 'x')
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    await utimes(stale, old, old)
+  } })
+  try {
+    await until(async () => !(await readdir(cache(fx.root))).includes(`open-${'a'.repeat(64)}`), fx.events)
+    assert.deepEqual(await readdir(cache(fx.root)), [`open-${'b'.repeat(64)}`])
+  } finally { await fx.close() }
+})
+
 test('a read phone failure stays an error and the next real failed turn becomes unseen again', async () => {
   const fx = await fixture(async () => ({ status: 'failed', text: '', error: 'controlled turn failure' }))
   try {
@@ -211,7 +226,7 @@ test('phone presence budget closing an already idle host withdraws capability wi
     const status = device.status
     await fx.host.close()
     assert.equal(fx.host.state().status, 'stopped')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, 1)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.equal(device.status, status)
     for (const [, args] of reports()) assert.equal(Object.hasOwn(args, 'p_runtime_status'), false)
@@ -793,7 +808,8 @@ test('real phone device IDs register honestly, and remote spawn completes the ca
     assert.equal(fx.sessionReplies.length, 1)
     const registrations = fx.calls.filter(([name]) => name === 'upsert_device').map(([, row]) => row)
     assert.equal(registrations[0].device_id, deviceId)
-    assert.equal(registrations[0].capabilities.host_runtime_capability, 0)
+    assert.equal(registrations[0].capabilities.host_runtime_capability, 1)
+    assert.deepEqual(registrations[0].capabilities.runtimes, [])
     assert.equal(registrations.at(-1).capabilities.host_runtime_capability, 1)
     assert.equal(fx.host.state().lastHeartbeatAt > 0, true)
     assert.deepEqual(await fx.host.invoke('agentSession.locate', [caller, { action: 'locate', session_ids: [result.session_id, randomUUID()] }], randomUUID()), { session_ids: [result.session_id] })
@@ -930,14 +946,14 @@ test('a failed turn on a whispered message posts no public notice: it would tell
   } finally { await fx.close() }
 })
 
-test('an image attachment is durably admitted as safe metadata and acknowledged without fetching bytes during inbox delivery', async () => {
+test('an image attachment is durably admitted as the desktop reads it, a reference to fetch, without fetching bytes during inbox delivery', async () => {
   let prompt
   const fx = await fixture(async (command, hooks) => {
     if (!command.prompt.includes('gugu_delivery')) return { status: 'done', text: '[NO_REPLY]' }
     prompt = command.prompt
     assert.match(prompt, /message_download_file/)
     assert.match(prompt, /calendar\.png/)
-    assert.equal(prompt.includes('https://unreachable.invalid'), false)
+    assert.ok(prompt.includes('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:'), prompt)
     assert.equal(prompt.includes('[Image attached at local path:'), false)
     await hooks.extraTools.find((item) => item.name === 'message_send').execute('ack-image', { chat_id: chatId, text: '已收到附件消息', to_user_ids: [`user:${ownerId}`] })
     return { status: 'done', text: '已回复' }
@@ -1384,7 +1400,9 @@ test('RPC connectivity cannot publish ready before the initial heartbeat and sta
       onConnectivity(true)
       assert.equal(events.some((event) => event.type === 'host_state' && event.ready), false)
       assert.equal(calls.some(([name]) => name === 'runtime_instance_heartbeat'), true)
-      assert.equal(calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities.host_runtime_capability, 0)
+      const capability = calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities
+      assert.equal(capability.host_runtime_capability, 1)
+      assert.deepEqual(capability.runtimes, [])
     },
   })
   try { assert.equal(fx.host.state().ready, true) } finally { await fx.close() }
@@ -1622,7 +1640,7 @@ test('a failed heartbeat changes admission state and other healthy signals canno
   } finally { await fx.close() }
 })
 
-test('closing the task host withdraws only runtime capability on its owner-scoped device row', async () => {
+test('closing the task host withdraws runtimes and preserves its owner-scoped device version', async () => {
   const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
   try {
     const device = fx.devices.find((row) => row.device_id === deviceId)
@@ -1634,9 +1652,21 @@ test('closing the task host withdraws only runtime capability on its owner-scope
     assert.equal(device.last_seen_at, before.last_seen_at)
     assert.deepEqual(device.capabilities.actions, before.capabilities.actions)
     assert.equal(device.capabilities.futureCapability, 'preserve')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, before.capabilities.host_runtime_capability)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.deepEqual(fx.calls.find(([name]) => name === 'update_device')[1].filters, [['device_id', deviceId], ['user_id', ownerId]])
+  } finally { await fx.close() }
+})
+
+for (const capability of [3, null, undefined]) test(`closing preserves an existing runtime version value (${capability})`, async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  try {
+    const device = fx.devices.find((row) => row.device_id === deviceId)
+    if (capability === undefined) delete device.capabilities.host_runtime_capability
+    else device.capabilities.host_runtime_capability = capability
+    const before = structuredClone(device.capabilities)
+    await fx.host.close()
+    assert.deepEqual(device.capabilities, { ...before, runtimes: [] })
   } finally { await fx.close() }
 })
 
@@ -2014,7 +2044,7 @@ test('resolves files at run time, warns without blocking later text, and persist
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'original caption', files: [ref], clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 2 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);
     assert.match(prompts[1], /^original caption\n\n/);
-    assert.match(prompts[1], /File not saved/);
+    assert.ok(prompts[1].includes(`[Not on this computer. To read or change it: message_download_file {file: "gugu-file://${ref.itemId}?v=${ref.version}"}]`), prompts[1]);
     assert.ok(fx.events.some(event => event.type === 'host_log' && event.level === 'warn' && event.message.includes(ref.itemId) && event.message.includes(created.conversationId)));
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'following text', clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 3 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);

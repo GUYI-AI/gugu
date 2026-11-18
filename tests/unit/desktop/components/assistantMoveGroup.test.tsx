@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   nativePending: null as unknown,
   recoveryError: null as Error | null,
   previewMove: vi.fn(),
-  navigate: vi.fn(),
+  openConnectedAppsSettings: vi.fn(),
   runAssistantMove: vi.fn(),
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
@@ -33,8 +33,8 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
   rpc: {},
   rpcOn: () => ({ integrations: { list: mocks.list } }),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({
-  appState: { navigation: { navigate: (...args: unknown[]) => mocks.navigate(...args) } },
+vi.mock('../../../../apps/desktop/src/lib/assistantEntry', () => ({
+  openConnectedAppsSettings: mocks.openConnectedAppsSettings,
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-sessions', () => ({
   homeTarget: () => null,
@@ -44,7 +44,7 @@ import { AssistantMoveGroup } from '../../../../apps/desktop/src/components/assi
 import { AssistantMoveDialog } from '../../../../apps/desktop/src/components/assistant/AssistantMoveDialog'
 import { resetMoveForTests, startMove } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-controller'
 import { MoveError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move'
-import { queryClient } from '../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { MoveCopyError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-copy'
 import type { AssistantHomePlace } from '../../../../apps/desktop/src/lib/assistantHome'
 
@@ -57,6 +57,7 @@ beforeEach(() => {
   mocks.recoveryError = null
   mocks.previewMove.mockReset()
   mocks.runAssistantMove.mockReset()
+  mocks.openConnectedAppsSettings.mockClear()
   resetMoveForTests()
 })
 afterEach(() => harness.cleanup())
@@ -209,7 +210,7 @@ describe('点了先列清带走什么,确认才搬', () => {
     expect(mocks.runAssistantMove).not.toHaveBeenCalled()
     const confirm = document.body.querySelector('[data-testid="assistant-move-confirm"]') as HTMLButtonElement | null
     expect(confirm).not.toBeNull()
-    expect(body()).toContain('Notion · 阿满的 Notion')
+    expect(body()).toContain('Notion (阿满的 Notion)')
     // 服务名表里没有钉钉(mock 只给了 Notion)→ 退回 id,仍然列出来、不吞
     expect(body()).toContain('dingtalk')
     expect(body()).not.toMatch(/accessToken|secret/i)
@@ -225,21 +226,13 @@ describe('点了先列清带走什么,确认才搬', () => {
     expect(document.body.querySelector('[data-testid="assistant-move-exists"]')?.textContent).toContain('没有覆盖')
     expect(document.body.querySelector('[data-testid="assistant-move-done-reconnect-list"]')?.textContent).toContain('github')
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
-    expect(done).toContain('Notion · a@x.cn')
+    expect(done).toContain('Notion (a@x.cn)')
     expect(done).toContain('imap.x.cn')
     expect(done).toContain('机器选「云上」')
-    const shellEvents: string[] = []
-    const record = (event: Event) => shellEvents.push(event.type)
-    window.addEventListener('__close_settings', record)
-    window.addEventListener('__sessionpage_reveal', record)
     await act(async () => {
       (document.body.querySelector('[data-testid="assistant-move-reconnect-open"]') as HTMLButtonElement).click()
     })
-    window.removeEventListener('__close_settings', record)
-    window.removeEventListener('__sessionpage_reveal', record)
-    // 搬家是从设置弹窗里开的:先收起设置、回到会话页,再去资源库(真机上设置弹窗曾盖在资源库上面)。
-    expect(shellEvents).toEqual(['__close_settings', '__sessionpage_reveal'])
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'integrations' })
+    expect(mocks.openConnectedAppsSettings).toHaveBeenCalledOnce()
     expect(document.body.querySelector('[data-testid="assistant-move-dialog"]')).toBeNull()
   })
 

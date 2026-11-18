@@ -1,12 +1,17 @@
+import type { PersonalConversationHiding } from '../../lib/hideListedConversation'
 import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { chatAttention } from '@gugu/core/shared/ui/chatModels'
-import { MessageSquare } from '@/lib/icons'
+import { Archive, MessageSquare, Pin, PinOff } from '@/lib/icons'
 import { cn } from '@/session/renderer/utils/utils'
-import { SidebarMenuButton, sidebarRowContentInsetX } from '@/session/renderer/features/sidebar/sidebar-primitives'
+import {
+  SidebarMenuAction, SidebarMenuRow, sidebarRowActionsSlotClass, sidebarRowContentInsetX,
+  sidebarRowHoverActionsClass, sidebarRowRestActionsClass,
+} from '@/session/renderer/features/sidebar/sidebar-primitives'
+import { SidebarRowQuickAction } from '@/session/renderer/features/sidebar/sidebar-row-quick-action'
 import { clearDraggedScreenContent, startChatDrag } from '@/session/renderer/lib/drag-screen-content'
-import { useChatStore, useStoreValueBy } from '../../store/chatContext'
+import { useChatStore, useChatStoreSelect, useStoreValueBy } from '../../store/chatContext'
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { useStableHandler } from '../../hooks/useStableHandler'
 import { publishInnerSidebarTopicsView, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
@@ -17,15 +22,20 @@ import { Chip } from '../ui/Chip'
 import { ChatRowContextMenu } from './ChatRowContextMenu'
 import { TopicCallChip } from './GroupTopicsRows'
 import { innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
+import { useCloseTopic } from './useCloseTopic'
+import { useGroupChatSettings } from './useGroupChatSettings'
+import { useToast } from '../toastContext'
+import { messageForUser } from '../../lib/userFacingError'
 
 /**
- * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来)。行是侧栏顶上那几行动作行的样子
- * (SidebarMenuButton,对齐分区的内容列,❌ 竖轨与缩进):话题图标 + 名字 + 行尾:叫到你的「@N」(红),其余新消息一个小灰点;
- * 右键是聊天列表话题子行那一份菜单(置顶 / 免打扰 / 删除)。点一行 = 聊天列表里点话题那一下(开源对话,话题开成分栏)。
+ * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来)。
+ * 行尾静止时显示未读，悬停时显示与智能体行共用的快捷按钮。右键和打开沿用聊天列表话题子行的行为。
  * 露哪几条、什么次序见 innerSidebarTopicsModel;分区头的「全部 ›」在会话页那一侧。
  */
 export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
+  const { toast } = useToast()
+  const closeTopic = useCloseTopic()
   const { pinChat, hideConversation, setChatNotificationLevel } = useChatStore('pinChat', 'hideConversation', 'setChatNotificationLevel')
   // Only this chat's topics: a message elsewhere must not redraw these rows.
   const topics = useStoreValueBy(
@@ -35,6 +45,10 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const all = useInnerSidebarTopicsAll() === chatId
   const rows = innerSidebarTopicRows(topics, { all })
   const level = innerSidebarTopicRows(topics, { all: false })
+  const sourceRole = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.my_role ?? 'unknown')
+  const { settings, error } = useGroupChatSettings(rows.shown.length ? chatId : null, sourceRole)
+  // For group/project topics the server derives can_archive_topic from the source group's management authority.
+  const canClose = !error && settings?.can_manage === true && (sourceRole === 'unknown' || settings.my_role === sourceRole)
   useEffect(
     () => publishInnerSidebarTopicsView({ chatId, total: topics.length, hidden: level.hidden, calling: level.calling }),
     [chatId, topics.length, level.hidden, level.calling],
@@ -55,50 +69,68 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
     sessionPage.openChat(chatId, beside)
     requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: chatId, focusComposer: true })
   })
-  const pin = useStableHandler((topic: ChatItem) => pinChat(topic.id, !topic.is_pinned))
+  const pin = useStableHandler((topic: ChatItem) => {
+    void pinChat(topic.id, !topic.is_pinned).catch((error: unknown) => {
+      toast(t('chatArea.management.pinFailed', { reason: messageForUser(error) }), 'error')
+    })
+  })
+  const close = useStableHandler((topic: ChatItem) => closeTopic(topic.id, topic.name ?? ''))
   const setLevel = useStableHandler((topicId: string, notificationLevel: NotificationLevel) => setChatNotificationLevel(topicId, notificationLevel))
   const remove = useStableHandler((topicId: string) => hideConversation(topicId))
 
   return (
     <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
       {rows.shown.map((topic) => (
-        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onSetLevel={setLevel} onRemove={remove} />
+        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} />
       ))}
     </div>
   )
 }
 
-const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onSetLevel, onRemove }: {
+const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onClose, onSetLevel, onRemove }: {
   topic: ChatItem
   active: boolean
   onOpen: (topic: ChatItem, beside: boolean) => void
   onPin: (topic: ChatItem) => void
+  onClose?: (topic: ChatItem) => void
+  onRemove: (topicId: string) => Promise<PersonalConversationHiding | undefined>
   onSetLevel: (topicId: string, level: NotificationLevel) => void
-  onRemove: (topicId: string) => void
 }) {
   const { t } = useTranslation('messaging')
   const menu = useRowContextMenu()
   const calls = chatAttention(topic).callsYou
+  const unread = calls > 0 ? <TopicCallChip count={calls} at />
+    : topic.unread_count > 0 ? <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} /> : null
   // 拖进聊天区 = 开成分栏:与聊天列表话题子行(TopicSubRow)同一个拖拽源;行里那枚按钮因此放开原生拖拽。
   return (
-    <div role="listitem" draggable onDragStart={(event) => startChatDrag(event, topic, topic.name)} onDragEnd={clearDraggedScreenContent}>
-      <SidebarMenuButton
+    <>
+      <SidebarMenuRow
+        role="listitem"
         isActive={active}
-        allowNativeDrag
-        data-topic-row={topic.id}
-        aria-label={topic.name ?? ''}
-        className="w-full justify-between pr-2"
+        className="group/row gap-1 pr-1"
+        draggable
+        onDragStart={(event) => startChatDrag(event, topic, topic.name)}
+        onDragEnd={clearDraggedScreenContent}
         onClick={(event) => onOpen(topic, event.metaKey || event.ctrlKey)}
         onContextMenu={menu.onContextMenu}
       >
-        <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
+        <SidebarMenuAction allowNativeDrag data-topic-row={topic.id} data-pane-opener="" aria-label={topic.name ?? ''}
+          className={cn('gap-2', sidebarRowContentInsetX)}>
           <MessageSquare className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
           <span className="truncate">{topic.name}</span>
+        </SidebarMenuAction>
+        <span className={sidebarRowActionsSlotClass} data-row-hover-actions>
+          <span className={sidebarRowHoverActionsClass}>
+            <SidebarRowQuickAction label={t(topic.is_pinned ? 'chatList.unpin' : 'chatList.pin')} onClick={() => onPin(topic)}>
+              {topic.is_pinned ? <PinOff /> : <Pin />}
+            </SidebarRowQuickAction>
+            {onClose && <SidebarRowQuickAction label={t('chatList.closeTopic')} onClick={() => onClose(topic)}>
+              <Archive />
+            </SidebarRowQuickAction>}
+          </span>
+          <span className={cn(sidebarRowRestActionsClass, 'mr-1')}>{unread}</span>
         </span>
-        {/* #2548 叫到你的(点名你、@所有人、回复你说的)是「@N」,同群里话题菜单那一枚;其余新消息只挂小灰点,同一个列表的行。 */}
-        {calls > 0 ? <TopicCallChip count={calls} at />
-          : topic.unread_count > 0 ? <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} /> : null}
-      </SidebarMenuButton>
+      </SidebarMenuRow>
       {menu.menuPos && (
         <ChatRowContextMenu
           x={menu.menuPos.x}
@@ -107,9 +139,9 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
           onClose={menu.closeMenu}
           onPin={() => onPin(topic)}
           onSetNotificationLevel={(level) => onSetLevel(topic.id, level)}
-          onHide={async () => { await onRemove(topic.id) }}
+          onHide={() => onRemove(topic.id)}
         />
       )}
-    </div>
+    </>
   )
 })

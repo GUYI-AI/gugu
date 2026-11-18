@@ -24,8 +24,6 @@ import { Pane, PaneHeader } from './ui/Pane'
 import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
 import { platform } from '../platform'
-import { UI_EVENTS } from '../lib/uiEvents'
-import { appState } from '../session/renderer/lib/stores/app-state'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import {
   SETTINGS_SECTIONS,
@@ -40,20 +38,19 @@ import { useTranslation } from 'react-i18next'
  * ❌ 桌面手机各写一个判断:
  * - 「权限」只在读得到系统权限真值的宿主上(product spec);
  * - 「App」只在手机壳上:那里的 App 由这一页自己的 App 仓管(L9);桌面在最左栏的「App」里管,网页不装 App;
- * - 「这台手机」只在手机壳上(#7199 手机当设备:那几个动作要安卓的系统接口;桌面的「这台电脑能做的事」在「设备」里);
+ * - 「这台手机」由原生动作或 Agent 宿主能力开放；平台各自保管动作协议与宿主生命周期;
  * - 会话页那几格只在有会话页宿主的桌面形态上(它们是会话页的组件);手机「我的」不画。
  * 咕咕的资料、连接应用不在这里:它们在它的 App 里(owner 11-12)。
- * - 「连接应用」(人自己连的应用,不是咕咕的)只在手机壳上、「通用」那组:手机没有资源库;电脑上它们在资源库「集成」。
- *   连接还记在助理家里(legacy)时那是它的,不画。
+ * - 「连接应用」管理用户自己的连接，桌面按机器，手机仅在账户级连接模式下显示。
  */
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
-      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
-      (section !== 'apps' || platform.kind === 'capacitor') &&
-      (section !== 'phone' || platform.kind === 'capacitor') &&
-      (section !== 'connectors' || mobile) &&
+      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
+      (section !== 'apps' || platform.capabilities.mobileApps) &&
+      (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
+      (section !== 'connectors' || mobile || platform.capabilities.sessionHost) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
@@ -71,7 +68,7 @@ const sessionOverlayOpen = (): boolean =>
 // ─── SettingsPanel ────────────────────────────────────────────────────────────
 
 export function SettingsPanel({ mobile = false, inline = false, onClose, initialSection = 'account', section, onSectionChange, pane, onPaneChange, appDetail }: {
-  appDetail?: import('@gugu/core/shared/ui/guguLink').AppDetailLink
+  appDetail?: import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink
   mobile?: boolean
   // @@@1787 owner:「我的」是底部 tab 之一 → 移动端作 tab 页内联渲染(无 Sheet 壳),nav 层保留底部 tab 栏
   inline?: boolean
@@ -87,7 +84,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 }) {
   const { user, updateUser, logout } = useAuth()
   const { t } = useTranslation('main')
-  // The person's own connected apps (a phone row): not while connections are still kept in the assistant's home (legacy).
+  // On phones, hide the user's connected apps while connections are still kept in the assistant's home.
   const { route: connectionRoute } = useConnectionAuthority()
   const sections = mobile
     ? MOBILE_SECTIONS_FOR_PLATFORM.filter((s) => s !== 'connectors' || connectionRoute?.mode !== 'legacy')
@@ -96,10 +93,11 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)
   const requestedSection = section ?? internalSection
-  // The assistant's pages are in its App (MainLayout sends their routes there): never drawn here. On the phone a route to
-  // connected apps (or its chat tools, part of them) is the person's own row, where it is shown.
-  const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || requestedSection === 'channels')
-  const activeSection = ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
+  // The assistant's App keeps its own routes. On the phone, the old channels route can also land on the user's connections.
+  const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || (mobile && requestedSection === 'channels'))
+  const unsupportedPhoneSection = (requestedSection === 'apps' && !platform.capabilities.mobileApps)
+    || (requestedSection === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
+  const activeSection = unsupportedPhoneSection ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
   const mobilePane = pane ?? internalPane
@@ -120,9 +118,13 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 
   function renderSection() {
     switch (activeSection) {
-      case 'connectors': return <ConnectorsSection />
+      case 'connectors': return mobile ? <ConnectorsSection /> : (
+        <div>
+          <SessionSettingsSection section="connectors" context={{ desktopConnections: true }} />
+        </div>
+      )
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
-      case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} onOpenThemes={openThemes} />
+      case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
       // This is a primary page now; keep its content while opting out of nested-page navigation.
       case 'files':    return <SettingsDetailNavigation.Provider value={null}><FileStorageSection onBack={back} /></SettingsDetailNavigation.Provider>
@@ -141,15 +143,6 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       default:         return null
     }
   }
-
-  // 主题在资源库「主题」那一格里选(owner 11-07);资源库只在有本机会话页的桌面上,手机「我的」不给。
-  const openThemes = !mobile && onClose && platform.capabilities.agentRuntime
-    ? () => {
-        onClose()
-        window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-        appState.navigation.navigate('library', { tab: 'themes' })
-      }
-    : undefined
 
   const selectSection = (section: ActiveSection) => {
     if (mobile) setParentSection(mobilePane === 'detail' ? activeSection : null)

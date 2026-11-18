@@ -49,7 +49,7 @@ vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', async (importOrigin
   readDisplayIdentities: async (ids: readonly string[]) => ids.map((id) => displayIdentity(id, { display_name: id })),
 }))
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 const { ChatSettingsPanel } = await import('../../../apps/desktop/src/components/chat/ChatSettingsPanel')
 const { NATIVE_BACK_EVENT } = await import('../../../apps/desktop/src/components/ui/sheetStack')
@@ -98,7 +98,7 @@ it.each([[false, false], [false, true], [true, false], [true, true]])('topic inf
   expect(harness.container.querySelector('[data-testid="member-list-panel"]')?.getAttribute('data-chat-kind')).toBe('topic')
   expect(harness.container.querySelector('[data-testid="topic-name-edit"]')?.textContent).toContain('Current topic')
   expect(harness.container.querySelector('[data-testid="group-name-edit"]') !== null).toBe(manageable)
-  expect(harness.container.querySelector('[data-testid="member-list-invite"]')).toBeNull()
+  expect(harness.container.querySelector('[data-group-add-menu]')).toBeNull()
   if (mobile) {
     await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
     expect(close).toHaveBeenCalledOnce()

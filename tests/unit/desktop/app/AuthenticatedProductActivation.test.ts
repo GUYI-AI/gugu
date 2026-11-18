@@ -71,6 +71,10 @@ vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({
   readOccupation: vi.fn(async () => null),
 }))
 
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/agent-config/runtime-client', () => ({
+  getAgentConfigRuntimeClient: vi.fn(async () => ({ scanAgentHomes: async () => ({ success: true, data: [] }) })),
+}))
+
 vi.mock('../../../../apps/desktop/src/store/theme', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {

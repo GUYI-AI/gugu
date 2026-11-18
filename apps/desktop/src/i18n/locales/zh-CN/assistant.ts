@@ -23,6 +23,10 @@ export default {
     "fileOpenFailed": "暂时打不开这个文件，请稍后重试"
   },
   "question": {
+    "count": "{{count}} 个问题", "flowHint": "选完后统一提交", "progress": "回答进度",
+    "singleSelect": "选一项", "multiSelect": "可多选", "review": "核对回答", "reviewTitle": "提交前核对",
+    "reviewHint": "确认后一次提交给智能体", "edit": "修改", "back": "返回", "noSelection": "未选择", "answerSeparator": "、",
+    "answerUnreadable": "回答详情暂时无法读取",
     "title": "需要你确认", "other": "自己填写", "later": "稍后回答", "resume": "继续回答",
     "previous": "上一题", "next": "下一题", "submit": "提交回答", "submitting": "发送中…",
     "answered": "已回答", "withdrawn": "这次提问已结束", "waiting": "待你回答",
@@ -48,10 +52,6 @@ export default {
     }
   },
   "hints": {
-    "phone": {
-      "assistant": "咕咕是你的个人助理，记安排、办事情都可以找它。",
-      "collaboration": "在这里找项目和朋友，点进去就能开始协作。"
-    },
     "desktop": {
       "assistant": "你的个人助理在这里，记安排、办事情直接告诉它。"
     },
@@ -278,9 +278,9 @@ export default {
     "doneReconnect": "这些没带过去，要在新家重新连接（旧家那份还在）：",
     "doneReconnectNoKeyring": "新家没有可用的系统钥匙串，账号凭据没法安全存在那里。请装好并解锁钥匙串（Linux 上是 GNOME Keyring 或 KWallet），重启咕咕后再连。",
     "doneReconnectExists": "新家已经有同名账号，凭据和旧家的不一样，没有覆盖。如果它连不上，就重新连接。",
-    "doneReconnectWhereCloud": "打开资源库 → 集成，机器选「云上」，照下面逐个连上。",
-    "doneReconnectWhereComputer": "打开资源库 → 集成，机器选这台电脑，照下面逐个连上。",
-    "doneReconnectAction": "去资源库重新连接",
+    "doneReconnectWhereCloud": "打开设置 → 连接应用，机器选「云上」，照下面逐个连上。",
+    "doneReconnectWhereComputer": "打开设置 → 连接应用，机器选这台电脑，照下面逐个连上。",
+    "doneReconnectAction": "去连接应用重新连接",
     "doneAccountsUnsupported": "没读出那边连着哪些集成：集成都还在原处，没有丢。到新家的资源库里按需重新连接。",
     "doneSchedulesUnsupported": "那边的咕咕版本还不能重排定时任务：{{names}}。更新后告诉它重排一下。",
     "doneSchedulesUnreadable": "没能确认{{name}}原来有没有定时任务（读不到它那边的会话），一条都没带。有的话，告诉它重新排一下。",
@@ -481,7 +481,7 @@ export default {
     "tileSub_one": "{{count}} 项数据",
     "tileSub_other": "{{count}} 项数据",
     "tileSubEmpty": "睡眠、活动、心率",
-    "from": "来自 {{device}} · 更新于 {{time}}",
+    "from": "来自 {{device}}，更新于 {{time}}",
     "refresh": "刷新",
     "loading": "加载中…",
     "emptyStateTitle": "让健康状况一目了然",
@@ -502,7 +502,7 @@ export default {
     },
     "phone": {
       "thisPhone": "这台手机",
-      "notAndroid": "健康数据只有在咕咕安卓 App 里才读得到。",
+      "notAndroid": "健康数据只有在咕咕安卓端才读得到。",
       "oldApp": "这台手机上的咕咕版本太旧，还读不了健康数据。更新后再试。",
       "unsupported": "这台手机没有 Health Connect（安卓 14 起系统自带），读不了健康数据。",
       "notGranted": "到“我的 → 本机控制”允许健康数据读取。",
@@ -532,7 +532,7 @@ export default {
     "noData": "没有记录",
     "lastNight": "昨晚",
     "nightOf": "{{date}} 醒来",
-    "bedWake": "{{bed}} 入睡 · {{wake}} 醒来",
+    "bedWake": "{{bed}} 入睡，{{wake}} 醒来",
     "inBed": "卧床 {{duration}}",
     "stage": {
       "awake": "清醒",
@@ -543,7 +543,7 @@ export default {
     },
     "workouts": "锻炼",
     "noWorkouts": "最近 7 天没有锻炼记录。",
-    "workoutHr": "平均 {{avg}} · 最高 {{max}}",
+    "workoutHr": "平均心率 {{avg}}，最高心率 {{max}}",
     "body": "身体",
     "bodyItem": {
       "weight_kg": "体重",
@@ -653,10 +653,10 @@ export default {
     "accountWhereNote": "存在{{name}}的家里，{{device}}开着它就用得上",
     "thisComputer": "这台电脑",
     "goneHome": "{{device}}上没有这个连接应用。",
-    "connectOnDesktop": "在咕咕电脑 App 的「助理」里连接",
-    "reconnectOnDesktop": "要重新连接，去咕咕电脑 App 的「助理」",
+    "connectOnDesktop": "在咕咕桌面端的「助理」里连接",
+    "reconnectOnDesktop": "要重新连接，去咕咕桌面端的「助理」",
     "loadFailed": "没读到连接应用",
-    "connectInApp": "要在咕咕手机 App 或电脑 App 里连接{{name}}",
+    "connectInApp": "要在咕咕手机端或桌面端连接{{name}}",
     "addAccount": "添加另一个账号",
     "accounts": "账号",
     "accountsFailed": "没读到已连接的账号",
@@ -698,7 +698,7 @@ export default {
       "paste": "粘贴",
       "submitReturn": "完成授权",
       "reopen": "重新打开授权页",
-      "appInterceptHint": "没有跳到浏览器，或被{{name}} App 接走了？复制授权链接，到浏览器里打开。",
+      "appInterceptHint": "没有跳到浏览器，或被{{name}}应用接走了？复制授权链接，到浏览器里打开。",
       "copyAuthLink": "复制授权链接",
       "pasteFailed": "读不到剪贴板，请长按上面的输入框手动粘贴。",
       "hint": {

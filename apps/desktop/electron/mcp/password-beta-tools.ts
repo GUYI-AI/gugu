@@ -4,6 +4,7 @@ import type { GuguMcpContext } from '../acp-engine-utils'
 import type { GuguMcpRequestTracker } from '../gugu-mcp-host'
 import { passwordBetaAgentPort } from '../password-vault/beta-runtime-port'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
+import { passwordSaveFailure } from '../password-vault/save-error'
 import { registerGuguTool } from './register-gugu-tool.mjs'
 
 const fillEntrySchema = z.object({ field: z.string().trim().min(1).max(200), into: z.string().min(1).max(1000), code: z.boolean().optional(), value: z.string().max(4096).optional() }).strict()
@@ -30,7 +31,7 @@ export function registerPasswordBetaTools(server: McpServer, context: () => Gugu
     const run = value.runHostAction
     return { ...value, runHostAction: (action: unknown, own?: AbortSignal) => run(action, own ?? signal) }
   }
-  registerGuguTool(server, { name: 'password_credentials', description: 'Find saved credentials (logins, API keys): credentialId, name, website, the names of its values and your access (ask: the person approves each use; read: use without asking; write: also change it). Secret values (passwords, keys) are never returned; with read/write access you also get the account and values marked non-secret. Filters: site (matches subdomains), query (name, website, value names), field (has a value of this name), usable (no approval needed); rows pages ("21-40"), 20 by default.',
+  registerGuguTool(server, { name: 'password_credentials', description: 'Find saved credentials (logins, API keys): credentialId, name, website, the names of its values and your access (ask: the person approves each use; read: use without asking; write: also change it). Secret values (passwords, keys) are never returned; with read/write access you also get the account and values marked non-secret. Filters: site (matches subdomains), query (name, website, value names), field (has a value of this name), usable (no approval needed); rows pages ("21-40"), 20 by default. Save or change one: catalog password_save; never write a secret to a file or memory.',
     schema: z.object({ site: z.string().max(253).optional(), query: z.string().max(200).optional(), field: z.string().max(200).optional(), usable: z.boolean().optional(),
       rows: z.string().regex(/^\d+(?:-\d+)?$/).optional() }).strict() },
     async args => { try { return result(await passwordBetaAgentPort().list(context(), args)) } catch { return result({ status: 'unavailable' }) } }, track)
@@ -63,6 +64,6 @@ export function registerPasswordBetaTools(server: McpServer, context: () => Gugu
         if (input.action === 'status') return result(await passwordBetaAgentPort().saveStatus(context(), input.requestId))
         const { action: _action, ...proposal } = input
         return result(await passwordBetaAgentPort().save(bound(signal), proposal))
-      } catch { return result({ status: 'unavailable', retry: false }) }
+      } catch (error) { return result(passwordSaveFailure(error)) }
     }, track)
 }

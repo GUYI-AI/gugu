@@ -33,6 +33,7 @@ export const plugin = definePlugin(
   {
     id: 'pi',
     name: 'Pi',
+    publisher: '开源',
     description:
       'Minimal terminal coding agent with multi-provider model support and extensible custom tools.',
     websiteUrl: 'https://github.com/earendil-works/pi/tree/main/packages/coding-agent',

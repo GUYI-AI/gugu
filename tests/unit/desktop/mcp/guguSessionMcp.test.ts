@@ -32,7 +32,7 @@ const EXTENSION_TOOL_NAMES = ['app_manage', 'app_create', 'app_pack', 'app_insta
 // #7221 给自己排的已安排:与 session_* 同一个分派器、同一份 grant。
 const SCHEDULE_TOOL_NAMES = ['schedule_create', 'schedule_list', 'schedule_cancel'] as const
 // #6614 每条 grant 都有的两个域:guide_* 与渐进披露的 catalog_*。
-const ALWAYS_TOOL_NAMES = ['guide_topics', 'guide_read', 'catalog_list', 'catalog_describe', 'catalog_call', 'app_search', 'widget_send', 'widget_get'] as const
+const ALWAYS_TOOL_NAMES = ['guide_read', 'catalog_list', 'catalog_call', 'app_search', 'widget_send', 'widget_get'] as const
 
 const clients: Client[] = []
 const hosts: DesktopGuguMcpHost[] = []
@@ -42,12 +42,12 @@ function responseText(value: unknown): string {
   return content?.[0]?.text ?? ''
 }
 
-/** 模型拿得到的全部工具:tools/list 列出的,加上 catalog_list 里的(各自经 catalog_describe 的完整定义)。 */
+/** 模型拿得到的全部工具:tools/list 列出的,加上 catalog_list 里的(各自经 catalog_list 按精确名字给的完整定义)。 */
 async function reachableTools(client: Client): Promise<Array<{ name: string; inputSchema: unknown }>> {
   const listed = (await client.listTools()).tools
   const catalog = JSON.parse(responseText(await client.callTool({ name: 'catalog_list', arguments: {} }))) as { items: Array<{ call: string }> }
   const described = await Promise.all(catalog.items.map(async ({ call }) =>
-    JSON.parse(responseText(await client.callTool({ name: 'catalog_describe', arguments: { tool: call.slice(0, call.indexOf('(')) } }))) as { name: string; inputSchema: unknown }))
+    JSON.parse(responseText(await client.callTool({ name: 'catalog_list', arguments: { name: call.slice(0, call.indexOf('(')) } }))) as { name: string; inputSchema: unknown }))
   return [...listed, ...described]
 }
 
@@ -379,6 +379,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
           spawned_by_session_id: 'session:agent-session',
           device_id: 'device:dev-b',
           spawned_by_device_id: 'device:dev-a',
+          session_link: 'gugu://session/remote-child',
         })
       }
       if (tool === 'session_get') {
@@ -567,7 +568,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     // 写错的区间响亮地拒,并说清两种写法。
     const bad = await client.callTool({ name: 'session_children', arguments: { rows: 'first ten' } })
     expect(bad.isError).toBe(true)
-    expect(responseText(bad)).toContain('rows must be a count like "20" or a range like "41-60"')
+    expect(responseText(bad)).toContain('rows must be a count like "20", a range like "41-60" (counted from 1) or "all"')
     // 词表外的状态词响亮地拒,并列出合法的词(词表只有 core 那一份)。
     const badStatus = await client.callTool({ name: 'session_children', arguments: { status: 'running-ish' } })
     expect(badStatus.isError).toBe(true)

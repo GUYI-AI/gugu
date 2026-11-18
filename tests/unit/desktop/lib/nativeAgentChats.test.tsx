@@ -8,7 +8,7 @@ import type { ChatItem, Device } from '@gugu/core/shared/types/chat'
 import { chatPreviewText } from '../../../../apps/desktop/src/lib/systemNoticeText'
 import { act } from 'react'
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
 let remove: (() => void) | undefined

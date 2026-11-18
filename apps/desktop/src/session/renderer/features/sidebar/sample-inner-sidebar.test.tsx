@@ -31,7 +31,7 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useInnerSidebarFrame: () => 260,
-  useWorkspaceLayoutContext: () => ({ isLeftOpen: true, leftRail: 0 }),
+  useWorkspaceLayoutContext: () => ({ isLeftOpen: true }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live.navigation; } },
@@ -56,7 +56,7 @@ vi.mock('@renderer/app/screen-layout-actions', () => ({ forgetSampleProjectOnScr
 // The chat column's own wiring (inner-sidebar.test.tsx covers it).
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => undefined } }));
 vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
-  accountProjectsStore: { projectOfLocal: () => undefined, membersOf: () => [], representativeOf: () => undefined },
+  accountProjectsStore: { projects: [], projectOfLocal: () => undefined, membersOf: () => [], representativeOf: () => undefined },
 }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: vi.fn() }));
 vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));

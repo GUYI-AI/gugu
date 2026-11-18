@@ -63,6 +63,22 @@ describe('Beta password MCP boundary', () => {
     await handlers.get('password_save')!({ action: 'status', requestId }, new AbortController().signal)
     expect(ports.saveStatus).toHaveBeenCalledWith(context(), requestId)
   })
+  it('returns the existing save card and a safe reason when another request is pending', async () => {
+    await register('beta')
+    const { PasswordSaveError } = await import('../../../../apps/desktop/electron/password-vault/save-error')
+    ports.save.mockRejectedValue(new PasswordSaveError('REQUEST_PENDING', requestId))
+    const reply = await handlers.get('password_save')!({ action: 'request', origin: 'https://developer.apple.com', account: 'synthetic@example.com', password: 'synthetic-test-value' }, new AbortController().signal)
+    expect(JSON.stringify(reply)).toContain('请先处理上一张保存卡')
+    expect(JSON.stringify(reply)).toContain(requestId)
+    expect(JSON.stringify(reply)).not.toContain('synthetic-test-value')
+  })
+  it('gives a fixed save failure reason without forwarding an exception', async () => {
+    await register('beta')
+    ports.save.mockRejectedValue(new Error('synthetic-sensitive-error'))
+    const reply = await handlers.get('password_save')!({ action: 'request', origin: 'https://idmsa.apple.com' }, new AbortController().signal)
+    expect(JSON.stringify(reply)).toContain('当前设备无法保存')
+    expect(JSON.stringify(reply)).not.toContain('synthetic-sensitive-error')
+  })
   it('posts the request card with the call signal; browserId may be left out', async () => {
     vi.stubGlobal('__GUGU_TIER__', 'beta')
     const { registerPasswordBetaTools } = await import('../../../../apps/desktop/electron/mcp/password-beta-tools')

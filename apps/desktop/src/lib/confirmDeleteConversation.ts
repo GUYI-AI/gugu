@@ -6,13 +6,14 @@ import { notify, dismissNotice } from './notices'
 import { messageForUser } from './userFacingError'
 
 /** Shared by desktop right-click and phone long-press menus. The Agent option starts unchecked. */
-export async function confirmDeleteConversation({ clear, ownedAgent }: {
+export async function confirmDeleteConversation({ name = '', clear, ownedAgent }: {
+  name?: string
   clear: () => Promise<void>
   ownedAgent?: { id: string; remove: () => Promise<void> }
 }): Promise<void> {
   const boundary = currentAuthSessionSignal()
   const t = (key: string) => i18n.t(`chatList.${key}`, { ns: 'messaging' })
-  const choice = await requestConversationDeleteConfirmation(boundary, Boolean(ownedAgent))
+  const choice = await requestConversationDeleteConfirmation(boundary, Boolean(ownedAgent), name)
   if (choice === null || boundary.aborted) return
   const key = `conversation-agent-removal:${ownedAgent?.id}`
   const dismiss = () => dismissNotice(key)

@@ -2,6 +2,7 @@ import { assistantWorkIntentSchema } from '../../../packages/core/src/shared/ass
 import { randomUUID } from 'node:crypto'
 import { buildSessionDirectEnvelope, formatDeliveryTimestamp } from '../../../packages/core/src/local/agent/deliveryEnvelope.ts'
 import { stableId, uuid } from './phone-agent-store.mjs'
+import { creationAttachmentIntentIdentity, validateCreationAttachmentRequest } from '../../../packages/session-core/src/session-record/creation-attachment-protocol.ts'
 
 const first = (data) => Array.isArray(data) ? data[0] : data
 const required = (value, name) => { if (typeof value !== 'string' || !value.trim()) throw new Error(name + ' is required'); return value.trim() }
@@ -9,7 +10,7 @@ const required = (value, name) => { if (typeof value !== 'string' || !value.trim
 /** Both native and cloud creation drive this one durable provisioning saga and birth-group contract. */
 export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish }) {
   const provisioning = new Map()
-  const provisionOnce = async (requestId, action, caller = null, inputDataProof = null) => {
+  const provisionOnce = async (requestId, action, caller = null, inputDataProof = null, options = {}) => {
     const intent=action.assistant_work ? assistantWorkIntentSchema.parse(action.assistant_work) : null
     if(intent && (!caller || caller.sessionId!==intent.coordinator.session_id || caller.deviceId!==intent.coordinator.device_id)) throw new Error('Assistant work coordinator does not match the phone caller')
     let request = store.state.requests[requestId]
@@ -20,9 +21,10 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
       if (action.sessionView && action.sessionView !== 'general') throw new Error('手机 Agent 只提供通用会话')
       if (action.permissionMode || action.effort) throw new Error('手机 Agent 尚未提供权限模式和思考档位选择')
       if ((action.project_id && action.project_id !== projectId) || (action.projectId && action.projectId !== projectId) || (action.project_path && action.project_path !== root) || (action.projectPath && action.projectPath !== root)) throw new Error('手机 Agent 只能在这台手机的 App 私有工作目录中运行')
-      const prompt = required(action.prompt, 'prompt')
+      if (options.deferFirstInput) validateCreationAttachmentRequest(action)
+      const prompt = options.deferFirstInput && typeof action.prompt === 'string' ? action.prompt.trim() : required(action.prompt, 'prompt')
       const requestedGroup = action.chat_id ?? action.chatId ?? null
-      const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, projectId: action.projectId ?? action.project_id ?? null, projectPath: action.projectPath ?? action.project_path ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}) })
+      const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, projectId: action.projectId ?? action.project_id ?? null, projectPath: action.projectPath ?? action.project_path ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}), ...(options.deferFirstInput ? { attachmentIntent: creationAttachmentIntentIdentity(ownerId, deviceId, action) } : {}) })
       if (request?.inputFingerprint && request.inputFingerprint !== inputFingerprint) throw new Error('同一个创建请求不能更换任务、名字、群或模型；请开始一条新的创建请求')
       if (request?.result) return request.result
       if (!request) {
@@ -35,7 +37,7 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
           birthGroupChatId = data.id
         }
         const modelId = await models.resolve(action.model ?? caller?.platformModel)
-        request = { kind: 'spawn',...(intent ? {assistantWork:intent} : {}), inputFingerprint, birthGroupChatId, operationId: randomUUID(), provisionId: randomUUID(), displayName: action.title?.trim() || action.displayName?.trim() || '手机任务 Agent', modelId, prompt, caller, ...(inputDataProof ? { inputDataProof: structuredClone(inputDataProof) } : {}), createdAt: new Date().toISOString() }
+        request = { kind: 'spawn',...(intent ? {assistantWork:intent} : {}), inputFingerprint, birthGroupChatId, operationId: randomUUID(), provisionId: randomUUID(), displayName: action.title?.trim() || action.displayName?.trim() || '手机任务 Agent', modelId, prompt, caller, ...(options.deferFirstInput ? { deferredAttachmentInput: true } : {}), ...(inputDataProof ? { inputDataProof: structuredClone(inputDataProof) } : {}), createdAt: new Date().toISOString() }
       }
     } catch (cause) {
       // Only validation before durable admission is safe to edit. A recorded intent, a failed
@@ -101,6 +103,11 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
       await store.save();publish()
       return request.result
     }
+    if (request.deferredAttachmentInput) {
+      request.result = snapshot(agent)
+      await store.save(); publish()
+      return request.result
+    }
     const id = stableId(request.operationId, 'initial-task')
     const source = caller ?? { sessionId: agent.sessionId, name: '主人', deviceId, agentUserId: ownerId }
     if (caller) await admit({ id, agentUserId: agent.agentUserId, prompt: buildSessionDirectEnvelope({ senderSessionId: source.sessionId, senderTitle: source.name, messageId: id, content: request.prompt, at: formatDeliveryTimestamp(new Date().toISOString()) }), ...(request.inputDataProof ? { inputDataProof: request.inputDataProof } : {}), route: { kind: 'session-direct', caller, sourceMessageId: id } })
@@ -109,15 +116,15 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
     await store.save(); publish()
     return request.result
   }
-  const provision = async (requestId, action, caller = null, inputDataProof = null) => {
+  const provision = async (requestId, action, caller = null, inputDataProof = null, options = {}) => {
     const key = action.assistant_work ? `assistant-work:${assistantWorkIntentSchema.parse(action.assistant_work).operation_id}` : action.clientRequestId ? `client:${uuid(action.clientRequestId, 'clientRequestId')}` : required(requestId, 'request id')
     const active = provisioning.get(key)
     if (active) {
       // Even concurrent retries must pass the durable intent check before reusing the answer.
       await active
-      return provisionOnce(key, action, caller, inputDataProof)
+      return provisionOnce(key, action, caller, inputDataProof, options)
     }
-    const operation = provisionOnce(key, action, caller, inputDataProof).finally(() => { provisioning.delete(key) })
+    const operation = provisionOnce(key, action, caller, inputDataProof, options).finally(() => { provisioning.delete(key) })
     provisioning.set(key, operation)
     return operation
   }

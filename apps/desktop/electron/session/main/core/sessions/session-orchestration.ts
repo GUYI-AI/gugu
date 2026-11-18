@@ -384,7 +384,7 @@ async function localEnvelopeSender(caller: SessionRow): Promise<EnvelopeSender> 
 function remoteEnvelopeSender(caller: RemoteSessionCaller): EnvelopeSender {
   const name = caller.name?.trim() || providerDisplayName(caller.harness) || null;
   const device = caller.deviceLabel?.trim();
-  return { sessionId: caller.sessionId, title: name && device ? `${name} · ${device}` : name ?? device ?? null };
+  return { sessionId: caller.sessionId, title: name && device ? `${name} (${device})` : name ?? device ?? null };
 }
 
 /**
@@ -1616,7 +1616,7 @@ export async function openTaskBrowserPane(
       sessionId: target.sessionId,
       url: normalized,
       intent: 'pinned',
-      acquire: { browserId, createIfMissing: url !== undefined, deadline: Date.now() + 9_000 },
+      acquire: { browserId, createIfMissing: url !== undefined, deadline: Date.now() + 9_000, mapped: true },
     });
   }, signal).catch((error: unknown) => {
     if (acquisitionId) events.emit(sessionCancelBrowserAcquireChannel, { requestId: acquisitionId });

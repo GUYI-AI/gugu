@@ -17,6 +17,8 @@ vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({
   ingestMessages: async (_userId: string, batch: ImMessageBatch) => { ingested.push(batch) },
 }))
 const { useTopicsOfChat } = await import('../../../../apps/desktop/src/hooks/useTopics')
+// The topics are an account replica: it follows the published session, which the product signs in with the same user.
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 
 const topic = (chatId: string, at: string | null, over: Partial<TopicSummary> = {}): TopicSummary => ({ chat_id: chatId, name: chatId,
   source_message_id: 'm1', creator_user_id: null, participant_count: 1, message_count: 1, last_message_at: at, is_participant: true, ...over })
@@ -38,7 +40,7 @@ let seen: TopicSummary[] = []
 let seenError: string | null = null
 function Probe() {
   const state = useTopicsOfChat('line', subscribe)
-  seen = state.topics
+  seen = state.topics ?? []
   seenError = state.error
   return null
 }
@@ -50,7 +52,7 @@ async function open(rows: TopicSummary[]) {
   listTopicsOfChat.mockClear()
   ingested.length = 0
 }
-beforeEach(() => { harness = createReactHarness(); listeners = []; listTopicsOfChat.mockReset(); ingested.length = 0 })
+beforeEach(() => { followRendererSession('SIGNED_IN', USER.id); harness = createReactHarness(); listeners = []; listTopicsOfChat.mockReset(); ingested.length = 0 })
 afterEach(() => harness.cleanup())
 
 describe('useTopicsOfChat follows topic changes, not line messages', () => {
@@ -100,6 +102,30 @@ describe('useTopicsOfChat follows topic changes, not line messages', () => {
     await changed({ chat_id: 'line', entity_id: 't1' })
     expect(seen.map(row => row.name)).toEqual(['recovered'])
     expect(seenError).toBeNull()
+  })
+
+  it.each(['failure then recovery', 'success then failure'] as const)('orders same-millisecond reads correctly: %s', async order => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000)
+    try {
+      await open([topic('t1', null)])
+      if (order === 'failure then recovery') {
+        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure'))
+        await changed({ chat_id: 'line', entity_id: 't1' })
+        expect(seenError).toBe('same-clock failure')
+        // Even an unchanged payload is a successful recovery and must clear the preceding error.
+        listTopicsOfChat.mockResolvedValueOnce([topic('t1', null)])
+        await changed({ chat_id: 'line', entity_id: 't1' })
+        expect(seenError).toBeNull()
+      } else {
+        listTopicsOfChat.mockResolvedValueOnce([topic('t1', null, { name: 'fresh' })])
+        await changed({ chat_id: 'line', entity_id: 't1' })
+        expect(seenError).toBeNull()
+        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure'))
+        await changed({ chat_id: 'line', entity_id: 't1' })
+        expect(seenError).toBe('same-clock failure')
+        expect(seen.map(row => row.name)).toEqual(['fresh'])
+      }
+    } finally { clock.mockRestore() }
   })
 
   it('a topic change while the whole line is still loading reads the line again', async () => {

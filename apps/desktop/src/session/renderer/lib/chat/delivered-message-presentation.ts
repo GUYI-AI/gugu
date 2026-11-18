@@ -23,9 +23,12 @@ export function connectDeliveredMessagePresentation(state: ChatState, load: (id:
   const stop = createRoot(dispose => {
     createEffect(() => {
       const turns = [...state.transcript.history.get(), ...(state.transcript.state.activeTurnSnapshot ? [state.transcript.state.activeTurnSnapshot] : [])];
-      for (const turn of turns) for (const item of turn.items) {
-        if (item.kind !== 'message' || item.role !== 'user') continue;
-        for (const segment of readDeliveryEnvelope(item.text)?.segments ?? []) {
+      // A delivery still waiting in its agent's queue is drawn too: it is read from then, not when its turn echoes it.
+      const pending = [state.session.state.pendingPrompt, ...state.session.state.pendingMessages];
+      const texts = [...turns.flatMap(turn => turn.items.flatMap(item => item.kind === 'message' && item.role === 'user' ? [item.text] : [])),
+        ...pending.flatMap(input => input ? [input.text] : [])];
+      for (const text of texts) {
+        for (const segment of readDeliveryEnvelope(text)?.segments ?? []) {
           const id = segment.facts?.messageId?.replace(/^msg:/, '');
           // Plain text needs no extra read. Attachment transport hints are not a presentation.
           if (!id || requested.has(id) || !hasAttachmentDeliveryHints(segment.body)) continue;

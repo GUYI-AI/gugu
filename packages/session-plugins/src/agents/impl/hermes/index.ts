@@ -1,6 +1,6 @@
 import { hermesApiKeyConnection, hermesApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
-import { hermesPromptMeta } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -51,6 +51,7 @@ export const plugin = definePlugin(
   {
     id: 'hermes',
     name: 'Hermes Agent',
+    publisher: 'Nous Research',
     description:
       'Nous Research terminal agent with interactive chat, model-provider routing, skills, and session workflows.',
     websiteUrl: 'https://hermes-agent.nousresearch.com/docs/',
@@ -198,7 +199,7 @@ export const provider = registerPluginBehavior(plugin, {
   subscription: hermesSubscription,
   mcp: hermesMcpAdapter(),
   acp: {
-    historyRecovery: { canonicalReplay: true, promptMeta: hermesPromptMeta },
+    historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },
     // Gugu's own bridge to `hermes serve` (the backend Hermes Desktop uses), built with the app; the host
     // resolves its entry (#6394). It drives the user's own `hermes`: their HERMES_HOME, providers and sessions.
     bridge: { kind: 'app-runtime', file: 'hermes-serve-acp.mjs' },

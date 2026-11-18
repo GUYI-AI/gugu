@@ -791,6 +791,22 @@ describe('the first message keeps one place while its session starts', () => {
     store.dispose();
   });
 
+  it('re-projecting the same session state (each streamed chunk does) leaves the failed inputs unchanged for readers', async () => {
+    const { store } = storeFor();
+    store.bootstrap();
+    await parked(store);
+    let changes = 0;
+    const stop = reaction(() => store.failedRowIds, () => { changes++; });
+    for (let chunk = 0; chunk < 5; chunk++) life.pend(store.sessionId, 'ready', []);
+    expect(changes, 'no failed input before or after: nothing to re-render').toBe(0);
+    life.pend(store.sessionId, 'failed', [row('queued')], 'start-failed');
+    life.pend(store.sessionId, 'failed', [row('queued')], 'start-failed');
+    expect(store.failedRowIds).toEqual(['m-first']);
+    expect(changes, 'one change when an input fails, none when the same failure is projected again').toBe(1);
+    stop();
+    store.dispose();
+  });
+
   it('does not append failed inputs ahead of a running turn and preserves it when projections leave', async () => {
     const { store } = storeFor();
     store.bootstrap();

@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import './extensions-panel.css';
@@ -29,6 +30,7 @@ import { AppMoreMenu } from './app-more-menu';
 import { PermissionIcon, formatSize, listOf } from './app-product-page';
 import { AppVariantList, type AppVariantRow } from './app-variant-list';
 import { VersionHistorySection, type Loadable } from './app-version-history';
+import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 import { AppUnreadBindingSection, type UnreadBindingApi } from './app-unread-binding-section';
@@ -152,22 +154,8 @@ export function AppManagePage({
 
   // ── 版本历史:点开才读 ──
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [history, setHistory] = useState<Loadable<MarketVersionHistoryEntry[]>>({ status: 'idle' });
-  useEffect(() => {
-    if (!historyOpen) return;
-    let cancelled = false;
-    setHistory({ status: 'loading' });
-    void api.marketHistory({ extensionId: manifest.id }).then((result) => {
-      if (cancelled) return;
-      if (!result.success || !result.data) throw new Error(result.error ?? 'history unreadable');
-      setHistory({ status: 'ready', data: result.data });
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      log.warn('extension version history unreadable:', error);
-      setHistory({ status: 'error' });
-    });
-    return () => { cancelled = true; };
-  }, [api, manifest.id, historyOpen]);
+  const { state: history, retry: readHistoryAgain } = useVersionHistory(api, manifest.id, historyOpen);
+
 
   // ── 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单 ──
   const toolsLive = enabled && givesAgentTools(manifest) && !revoked.includes('agents:tools');
@@ -308,6 +296,7 @@ export function AppManagePage({
             <div className="mk-vers">
               <VersionHistorySection
                 state={history}
+                onReadAgain={readHistoryAgain}
                 extensionId={manifest.id}
                 installedVersion={manifest.version}
                 offeredVersion={autoUpdate?.on ? (notice?.kind === 'update' ? notice.version : manifest.version) : null}
@@ -415,7 +404,7 @@ export function AppManagePage({
     <Row title={translate(`extensions.origin.${origin ?? 'unknown'}`)} note={manifest.author} testId="app-manage-origin">
       {onViewInMarket ? <Button type="button" variant="outline" size="sm" onClick={onViewInMarket} data-testid="app-manage-market">{translate('extensions.viewInMarket')}</Button> : null}
     </Row>
-    <Row title={translate('extensions.manageTechnical')} note={[manifest.id, translate('extensions.manageApi', { version: String(manifest.apiVersion) }), manifest.license && `${translate('extensions.infoLicense')} ${manifest.license}`].filter(Boolean).join(' · ')} testId="app-manage-technical">
+    <Row title={translate('extensions.manageTechnical')} note={[manifest.id, translate('extensions.manageApi', { version: String(manifest.apiVersion) }), manifest.license && `${translate('extensions.infoLicense')} ${manifest.license}`].filter(Boolean).join(metadataSeparator())} testId="app-manage-technical">
       {links.map((link) => <Button type="button" variant="outline" size="sm" key={link.href} onClick={() => onOpenExternal(link.href)}>{link.label}</Button>)}
     </Row>
   </> });
@@ -468,7 +457,7 @@ export function AppManagePage({
             <span className="mk-icon is-56"><ExtensionMonogram name={text.name} iconDataUrl={iconDataUrl} /></span>
             <div className="mg-head-tx">
               <h2 title={text.name}>{text.name}</h2>
-              <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(' · ')}</p>
+              <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(metadataSeparator())}</p>
             </div>
             <fieldset disabled={readOnly} className="mg-head-acts">
               <AppLifecycleButton state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />

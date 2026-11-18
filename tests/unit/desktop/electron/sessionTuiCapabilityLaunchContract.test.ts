@@ -9,6 +9,7 @@ import {
   PRODUCT_CAPABILITY_PACKAGES,
   type Materialization,
   type SessionCapabilityBundle,
+  guguAppsBlock,
   guguSessionSurfaceBlock,
 } from '../../../../apps/desktop/electron/capability-bundle';
 import {
@@ -20,7 +21,7 @@ import { pluginRegistry, resolveSessionTuiDeliveryToolNames } from '@gugu/sessio
 // #3577：会话自述 = 平台常量 + 该 surface 的自述块；这张表的每一行都是 session-TUI。
 // #6192：自述块里还有这一家 harness 的工具名那一行,所以按 provider 合成。
 const promptFor = (providerId: string) =>
-  `<gugu_platform>P</gugu_platform>\n${guguSessionSurfaceBlock('tui', providerId, false)}<agent_identity>A</agent_identity>\n`;
+  `<gugu_platform>P</gugu_platform>\n${guguSessionSurfaceBlock('tui', providerId, false)}${guguAppsBlock([], [])}<agent_identity>A</agent_identity>\n`;
 const PROMPT = promptFor('claude');
 const CWD = '/tmp/gugu-tui-launch-contract';
 const GUGU_HOME = '/tmp/gugu-tui-launch-contract-home';
@@ -101,9 +102,10 @@ describe('task-TUI capability launch contract', () => {
       'const startCodexAppServer: HostStart',
     );
     const claudeConsumesNativeOutput =
-      /args:\s*\[\s*\.\.\.info\.baseArgs,\s*\.\.\.\(capabilities\.extraArgs \?\? \[\]\),/.test(
-        claudeHook,
-      ) &&
+      // The settings composer retains the native adapter's prompt-file arguments.
+      /await claudeTuiSessionArgs\(\{[\s\S]*?baseArgs: info\.baseArgs,[\s\S]*?extraArgs: \[\.\.\.\(capabilities\.extraArgs \?\? \[\]\), \.\.\.platform\.clientArgs\]/.test(claudeHook) &&
+      readFileSync(join(process.cwd(), 'apps/desktop/electron/sessionpage/claude-tui-settings.ts'), 'utf8')
+        .includes("return [...base.args, ...extra.args, '--settings', path]") &&
       /env:\s*\{\s*\.\.\.\(capabilities\.spawnEnv \?\? \{\}\),/.test(claudeHook) &&
       claudeHook.includes('await materialize(info, bundle.env.GUGU_HOME, capabilities');
     const providerConsumesNativeOutput =

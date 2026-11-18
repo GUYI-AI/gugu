@@ -9,7 +9,8 @@ import { Button } from '../ui/Button'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
-import { chatPickRows } from './forwardMessageUtils'
+import { sendableConversations, sendablePickRows } from './forwardMessageUtils'
+import { useAuth } from '../../store/auth'
 import { ChatPickSheet, type ChatPickRow, type ChatPickSection } from './ChatPickSheet'
 import { DispatchMachine } from './DispatchMachine'
 import { takeDispatchAsks, type DispatchAsked } from './dispatchAsk'
@@ -28,6 +29,8 @@ export const DispatchSheet = observer(function DispatchSheet() {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const owned = useOwnedAgents()
+  const { user } = useAuth()
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [asked, setAsked] = useState<DispatchAsked | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [query, setQuery] = useState('')
@@ -83,7 +86,8 @@ export const DispatchSheet = observer(function DispatchSheet() {
       avatar: { name: agent.display_name, avatarUrl: agent.avatar, seed: agent.id, isAgent: true },
     }))
   const nameOf = (chat: (typeof chats)[number]) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name)
-  const chatRows = !offers.has('chat') ? [] : chatPickRows(chats, '', query, nameOf, identitiesById, (id) => `chat:${id}`)
+  const chatRows = !offers.has('chat') ? [] : sendablePickRows(sendableConversations(chats, { ownerId: user?.id, query, displayName: nameOf, identitiesById }),
+    nameOf, identitiesById, { expanded, searching: needle !== '', idOf: (id) => `chat:${id}` })
   const newRows: ChatPickRow[] = offers.has('new-agent') && found(t('dispatchPick.newAgent'))
     ? [{ id: NEW_AGENT, name: t('dispatchPick.newAgent'), avatar: { name: '+', seed: NEW_AGENT, isAgent: true } }]
     : []
@@ -149,9 +153,11 @@ export const DispatchSheet = observer(function DispatchSheet() {
       sections={sections}
       above={preview}
       selected={selected}
-      onToggle={(id) => setSelected(new Set([id]))}
+      // One at a time: another row replaces the pick, the picked row (or its chip's ×) takes it back.
+      onToggle={(id) => setSelected((current) => (current.has(id) ? new Set() : new Set([id])))}
       query={query}
       onQuery={setQuery}
+      onMoreTopics={(id) => setExpanded((open) => new Set([...open, id.replace(/^chat:/, '')]))}
       placeholder={pick ? pick.search : t('dispatchPick.search')}
       empty={pick ? pick.empty : t('dispatchPick.empty')}
       actionLabel={pick ? pick.action : asked.draft ? t('composePick.action') : t('dispatchPick.send')}

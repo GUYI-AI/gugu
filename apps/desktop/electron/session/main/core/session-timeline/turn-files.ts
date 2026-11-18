@@ -44,26 +44,42 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
   const images: PromptAttachment[] = [];
   const prepared: NonNullable<import('@gugu/session-core/acp/client').PromptInput['files']> = [];
   for (const file of files) {
-    let saved: Parameters<typeof turnAttachmentText>[1];
+    let local: { localPath: string; readOnly?: boolean } | null = null;
     try {
       if (!agent) throw new Error('This task has no agent identity to read its attachments as');
-      saved = await localPathOf(file, agent, sessionId);
+      const { localPath, readOnly } = await localPathOf(file, agent, sessionId);
+      local = { localPath, readOnly };
     } catch (error) {
-      saved = { failure: attachmentFailureReason(error) };
-      log.warn('Task attachment could not be saved', { sessionId, itemId: file.itemId, reason: saved.failure });
+      if (file.requiredPlacement) throw error;
+      log.warn('Task attachment could not be saved', { sessionId, itemId: file.itemId, reason: attachmentFailureReason(error) });
     }
-    const promptText = turnAttachmentText(file, saved);
+    const promptText = turnAttachmentText(file, local);
     parts.push(promptText);
     prepared.push({ ...file, promptText });
     const inline = attachmentMimeTypeSchema.safeParse(file.mimeType);
-    if (inlineImages && 'localPath' in saved && inline.success && !replayImages.some(image => image.name === file.name)) {
-      images.push({ type: 'local-file', originalPath: saved.localPath, mimeType: inline.data, name: file.name });
+    if (inlineImages && local && inline.success && !replayImages.some(image => image.name === file.name)) {
+      images.push({ type: 'local-file', originalPath: local.localPath, mimeType: inline.data, name: file.name });
     }
   }
   return { text: parts.join('\n\n'), images, files: prepared };
 }
 
 async function localPathOf(file: TurnFileRef, agent: string, sessionId: string): Promise<Prefetched> {
+  if (file.requiredPlacement) {
+    const resolved = await resolveAccountFile({ id: file.itemId }, agent, { version: file.version });
+    if (!resolved || resolved.status !== 'ready') throw new Error('A required creation attachment is no longer available');
+    try {
+      if (resolved.reader.actorId !== agent || resolved.revision.chat_id !== file.requiredPlacement.chatId
+        || resolved.revision.item_id !== file.itemId || resolved.revision.version !== file.version) {
+        throw new Error('The required creation placement changed');
+      }
+      const saved = await saveToFileStore(resolved, resolveGuguHome(process.env), file.name);
+      if (saved.size_bytes !== file.sizeBytes || saved.sha256 !== file.requiredPlacement.sha256) {
+        throw new Error('The required creation attachment bytes changed');
+      }
+      return { localPath: saved.file_path, readOnly: saved.read_only };
+    } finally { await resolved.dispose(); }
+  }
   const key = fileKey(sessionId, file), cached = prefetched.get(key);
   if (cached) {
     const info = await stat(cached.localPath).catch(() => null);

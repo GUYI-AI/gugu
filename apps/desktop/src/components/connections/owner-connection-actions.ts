@@ -58,7 +58,7 @@ export function ownerConnectionActions(base: LibraryHost, host: LibraryHost,devi
   }
   const providerName = (provider: string) => builtinConnectionCatalog(i18n.language).find(app => app.id === provider)?.name ?? provider
   const message = (error: unknown,provider = 'github',failure = 'connectFailed') => ['outcome-unknown','operation-pending'].includes((error as { code?: string } | null)?.code ?? '')
-    ? `${providerName(provider)} · ${i18n.t('connections:authorizationUnknown')}`
+    ? `${providerName(provider)}: ${i18n.t('connections:authorizationUnknown')}`
     : i18n.t((error as { code?: string } | null)?.code === 'device-required' ? 'connections:chooseAppDevice' : `connections:${failure}`,{ name: providerName(provider) })
   function safe<Args extends unknown[],Result>(action: (...args: Args) => Promise<Result>,fixedProvider?: string,failure = 'connectFailed') {
     return async (...args: Args) => {

@@ -11,6 +11,7 @@ import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import type { Session } from '@shared/core/sessions/sessions';
+import { sessionPlatformModel } from './platform-model-selection';
 
 /**
  * 会话**中途**改的一项设置,且 provider **已经确认生效**(`LiveSettingResult.status === 'applied'`)。
@@ -22,7 +23,8 @@ import type { Session } from '@shared/core/sessions/sessions';
  */
 export type LiveSessionSetting =
   | { dimension: 'permission'; modeId: string }
-  | { dimension: 'effort'; value: string };
+  | { dimension: 'effort'; value: string }
+  | { dimension: 'fast'; value: boolean };
 
 /**
  * 把用户在活会话上改过、且 provider 已确认的设置**写回会话记录**。
@@ -52,6 +54,9 @@ export async function recordLiveSessionSetting(
   sessionId: string,
   setting: LiveSessionSetting
 ): Promise<void> {
+  if (setting.dimension === 'fast' && setting.value && await sessionPlatformModel(sessionId) !== null) {
+    throw new Error('Fast requires an explicit own-account billing route');
+  }
   // ⚠️ 读与写在同一个**同步**事务里:权限档与思考档是两个控件,连着改两下时,两次调用若各自
   //    `await` 读再写,后写的那次会拿过期的 config 把前一次刚落的那一维盖掉 —— 正是这个函数要防的回退。
   const written = db.transaction((tx) => {
@@ -66,13 +71,16 @@ export async function recordLiveSessionSetting(
       .limit(1)
       .get();
     if (!row) throw new Error(`Session not found: ${sessionId}`);
+    if (setting.dimension === 'fast' && setting.value && row.provider !== 'claude' && row.provider !== 'codex') {
+      throw new Error('Fast is unavailable for this harness');
+    }
     const current = row.config;
     if (!current || typeof current !== 'object') {
       throw new Error(`Session ${sessionId} has no config to record the live ${setting.dimension} change`);
     }
 
     // ⚠️ 补丁走 Record 再展开 —— `config` 列是 pty | acp 的联合,理由同 set-session-mcp-servers。
-    const changes: Partial<Pick<Session, 'permissionMode' | 'effort'>> = {};
+    const changes: Partial<Pick<Session, 'permissionMode' | 'effort' | 'fastMode'>> = {};
     if (setting.dimension === 'permission') {
       const permissionMode = permissionModeForProviderMode(row.provider, setting.modeId);
       if (!permissionMode) {
@@ -86,6 +94,8 @@ export async function recordLiveSessionSetting(
         return null;
       }
       changes.permissionMode = permissionMode;
+    } else if (setting.dimension === 'fast') {
+      changes.fastMode = setting.value;
     } else {
       changes.effort = setting.value;
     }

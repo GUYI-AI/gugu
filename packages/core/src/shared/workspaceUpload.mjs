@@ -88,7 +88,7 @@ export function workspaceFileText(fileName, bytes) {
  * @param {number | null} size
  */
 export function opensAsStoredText(fileName, mimeType, size) {
-  return size !== null && size <= WORKSPACE_STORED_TEXT_MAX_BYTES && textContentTypeOf(fileName, mimeType) !== null
+  return Number.isSafeInteger(size) && size >= 0 && size <= WORKSPACE_STORED_TEXT_MAX_BYTES && textContentTypeOf(fileName, mimeType) !== null
 }
 
 /**

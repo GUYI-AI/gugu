@@ -27,13 +27,16 @@ const manifestPath = path.join(repoRoot, 'scripts/icons/solar-icons.json')
 const targetPath = path.join(repoRoot, 'packages/session-ui/src/icons.tsx')
 // 字形本身单独一份纯数据(不 import React):App 页面的 <gugu-icon>(/_gugu/<ver>/ui.js)与 React 组件读同一份。
 const bodiesPath = path.join(repoRoot, 'packages/session-ui/src/icon-bodies.ts')
+// 清单 `shared` 栏的字形(文件族那一组)放到 session-shared:Solid 的 session-chat-ui 也要画它们,却不能依赖 session-ui。
+const sharedPath = path.join(repoRoot, 'packages/session-shared/src/file-glyphs.ts')
 
 const BODIES_HEADER = `/**
  * Solar 图标集的字形 —— Icons: Solar Icon Set by 480 Design — CC BY 4.0 (https://github.com/480-Design/Solar-Icon-Set)
  * Lucide 0.564.0 original glyphs: ISC / Feather MIT; full notices in THIRD_PARTY_NOTICES.md.
  * 自动生成, 勿手改 —— 改 scripts/icons/solar-icons.json 后跑 \`node scripts/build/gen-icons.mjs\`.
- * 纯数据,不 import 任何东西:React 的图标组件(icons.tsx)和 App 页面的 <gugu-icon>(app-runtime/ui)都读这一份。
+ * 纯数据:React 的图标组件(icons.tsx)和 App 页面的 <gugu-icon>(app-runtime/ui)都读这一份;文件族那几枚在 session-shared,这里展开。
  */
+import { FILE_GLYPHS } from '@gugu/session-shared/file-glyphs'
 `
 
 const HEADER = `/**
@@ -170,8 +173,8 @@ const sortedAliases = (manifest) => Object.entries(manifest.alias ?? {}).sort(([
 /** packages/session-ui/src/icon-bodies.ts:字形与同形别名,纯数据。 */
 export function renderBodies(manifest, solar) {
   const bodies = iconBodies(manifest, solar)
-  const lines = [BODIES_HEADER, 'export const ICON_BODIES: Record<string, string> = {']
-  for (const name of Object.keys(bodies).sort()) {
+  const lines = [BODIES_HEADER, 'export const ICON_BODIES: Record<string, string> = {', '  ...FILE_GLYPHS,']
+  for (const name of Object.keys(bodies).sort().filter((name) => !manifest.shared.includes(name))) {
     lines.push(`  ${JSON.stringify(name)}: ${JSON.stringify(bodies[name])},`)
   }
   lines.push('}', '', '/** 同形别名 → 它复用的那个导出名。 */', 'export const ICON_ALIASES: Record<string, string> = {')
@@ -182,6 +185,15 @@ export function renderBodies(manifest, solar) {
     lines.push(`  ${JSON.stringify(name)}: ${JSON.stringify(manifest.svg[name])},`)
   }
   lines.push('}', '')
+  return lines.join('\n')
+}
+
+/** packages/session-shared/src/file-glyphs.ts:清单 `shared` 栏的字形,纯数据。 */
+export function renderShared(manifest, solar) {
+  const bodies = iconBodies(manifest, solar)
+  const lines = [BODIES_HEADER.split('\n').slice(0, 4).join('\n') + '\n */', 'export const FILE_GLYPHS = {']
+  for (const name of [...manifest.shared].sort()) lines.push(`  ${JSON.stringify(name)}: ${JSON.stringify(bodies[name])},`)
+  lines.push('} as const', '')
   return lines.join('\n')
 }
 
@@ -201,6 +213,7 @@ const solar = loadSolar()
 const outputs = [
   [targetPath, renderModule(manifest, solar)],
   [bodiesPath, renderBodies(manifest, solar)],
+  [sharedPath, renderShared(manifest, solar)],
 ]
 
 if (process.argv.includes('--check')) {

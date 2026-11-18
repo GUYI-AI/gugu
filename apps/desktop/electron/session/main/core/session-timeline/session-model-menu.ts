@@ -21,7 +21,7 @@ export type SessionModelMenu = {
   agentName: string;
   /** 咕咕目录(这家 × 聊天腿)。 */
   platformModels: PlatformCatalogModel[];
-  /** 用户自己凭据下的那份目录;会话明确在自己那条路上时不问 —— 活清单就是它(同桌面 @@@own-model-tier)。 */
+  /** 用户自己凭据下的目录。BYOK 会话先显示活清单；模型菜单打开后再查目录。 */
   ownCatalog: HarnessCatalogState | null;
   /** 这家此刻的登录读数(worker 发布的那一格,桌面 `useAgentAuthStatus` 读的同一份);手机据此叠 `withAuthExpiry`。 */
   ownAuth: AuthStatusModelState | null;
@@ -47,7 +47,7 @@ export async function readSessionPermissionAgentName(providerId: string): Promis
   return listPlugins().find((entry) => entry.metadata.id === providerId)?.metadata.name ?? providerId;
 }
 
-export async function readSessionModelMenu(sessionId: string, providerId: string): Promise<SessionModelMenu> {
+export async function readSessionModelMenu(sessionId: string, providerId: string, includeOwnModelCatalog?: true): Promise<SessionModelMenu> {
   const [{ sessionPlatformModel }, { getPlatformModelCatalogResolver }, { probeHarnessCatalogState }, { agentsController }] =
     await Promise.all([
       import('@main/core/sessions/platform-model-selection'),
@@ -56,11 +56,12 @@ export async function readSessionModelMenu(sessionId: string, providerId: string
       import('@main/core/agents/controller'),
     ]);
   const selection = await sessionPlatformModel(sessionId);
+  const readOwnCatalog = selection !== null || includeOwnModelCatalog === true;
   const [agents, platformModels, ownCatalog, ownAuth] = await Promise.all([
     agentsController.list(),
     readPlatformModels(getPlatformModelCatalogResolver(), providerId),
-    selection === null ? null : probeHarnessCatalogState(providerId, 'acp'),
-    selection === null ? null : readOwnAuth(providerId),
+    readOwnCatalog ? probeHarnessCatalogState(providerId, 'acp') : null,
+    readOwnCatalog ? readOwnAuth(providerId) : null,
   ]);
   const agent = agents.find((entry) => entry.id === providerId);
   const liveSetting = agent?.capabilities?.acp?.liveSettings?.model;

@@ -6,9 +6,8 @@ import { FirstRunHarness } from '@/components/firstRun/FirstRunHarness';
 
 const f = vi.hoisted(() => ({ queue: vi.fn(), remember: vi.fn(), save: vi.fn(), done: vi.fn() }));
 vi.mock('react-i18next', async (importOriginal) => ({ ...(await importOriginal<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ updateAsync: f.save, isLoading: false, isSaving: false, error: null }),
+  useAppSettingsKey: () => ({ updateAsync: f.save, isSaving: false, settings: { state: 'value', value: { value: {}, defaults: {}, overrides: {} }, stale: false, error: null } }),
 }));
 vi.mock('@renderer/lib/components/app-icon', () => ({ AppIcon: () => null }));
 vi.mock('@/components/firstRun/first-run-install-context', () => ({ useFirstRunInstaller: () => f.queue }));

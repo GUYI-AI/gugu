@@ -13,14 +13,14 @@ beforeEach(() => {
   state.modal.mockImplementation(() => Promise.resolve(state.checked))
 })
 describe('shared Agent delete confirmation', () => {
-  it('defaults Agent removal to unchecked and only hides on confirmation', async () => {
+  it('defaults Agent removal to unchecked and only clears on confirmation', async () => {
     const hide = vi.fn().mockResolvedValue(undefined), remove = vi.fn()
-    await confirmDeleteConversation({ clear: hide, ownedAgent: { id: 'agent', remove } })
-    expect(state.modal).toHaveBeenCalledWith(state.boundary.signal, true)
+    await confirmDeleteConversation({ name: '我的任务', clear: hide, ownedAgent: { id: 'agent', remove } })
+    expect(state.modal).toHaveBeenCalledWith(state.boundary.signal, true, '我的任务')
     expect(hide).toHaveBeenCalledTimes(1)
     expect(remove).not.toHaveBeenCalled()
   })
-  it('does nothing when cancelled and hides other conversations without an Agent option', async () => {
+  it('does nothing when cancelled and clears other conversations without an Agent option', async () => {
     const hide = vi.fn().mockResolvedValue(undefined)
     state.modal.mockResolvedValueOnce(null)
     await confirmDeleteConversation({ clear: hide, ownedAgent: { id: 'agent', remove: vi.fn() } })
@@ -37,7 +37,7 @@ describe('shared Agent delete confirmation', () => {
     await confirmDeleteConversation({ clear: hide, ownedAgent: { id: 'agent', remove } })
     const notice = state.notice.mock.calls[0][0]
     expect(notice.ongoing).toBe(true)
-    expect(notice.title).toBe('聊天记录已删除，但 Agent 删除失败')
+    expect(notice.title).toBe('聊天记录已清空，但智能体删除失败')
     notice.action.onClick()
     await vi.waitFor(() => expect(remove).toHaveBeenCalledTimes(2))
     expect(hide).toHaveBeenCalledTimes(1)

@@ -139,16 +139,38 @@ describe('chat projection 失败支 —— 一波失败 ⇒ 账本一行 ok:fals
     const projection = createChatProjection(VIEWER), signal = new AbortController().signal
     await projection.hydrate('9007199254740992', signal)
     const receipt = { chat_id: chatId(0), hidden_at: '2026-11-06T17:00:00Z', operation_id: 'operation', account_revision: '9007199254740993' }
+    const seats = rowsByKey.get('active_members') as Record<string, unknown>[]
+    Object.assign(seats[0]!, { conversation_hidden_at: receipt.hidden_at, personal_state_observed_revision: receipt.account_revision })
     const hidden = await projection.confirmPersonalHiding(receipt)
     expect(hidden).toHaveLength(2)
     expect(hidden[0].conversation_hidden_at).toBe(receipt.hidden_at)
     expect(projection.isMembershipRevoked(chatId(0))).toBe(false)
     expect(projection.isConversationDeleted(chatId(0))).toBe(false)
-    const seats = rowsByKey.get('active_members') as Record<string, unknown>[]
-    seats[0].conversation_hidden_at = null
+    Object.assign(seats[0]!, { conversation_hidden_at: null, personal_state_observed_revision: '9007199254740994' })
     const restored = await projection.advance([{ revision: '9007199254740994', event: 'chat_members_changed', chatId: chatId(0), entityId: VIEWER, own: true }], '9007199254740994', signal)
     expect(restored?.find(row => row.id === chatId(0))?.conversation_hidden_at).toBeNull()
     expect((await projection.confirmPersonalHiding(receipt)).find(row => row.id === chatId(0))?.conversation_hidden_at).toBeNull()
+  })
+  it('reads the committed membership when an old Undo receipt arrives after another device clears history', async () => {
+    seedWorld(2)
+    const projection = createChatProjection(VIEWER), signal = new AbortController().signal
+    await projection.hydrate('1', signal)
+    const floor = '2026-11-19T00:00:03.000001Z'
+    const seats = rowsByKey.get('active_members') as Record<string, unknown>[]
+    Object.assign(seats[0]!, {
+      conversation_hidden_at: floor, conversation_cleared_at: floor,
+      personal_state_observed_revision: '3',
+    })
+    // Undo committed at 2, but its network response arrives after clear at 3.
+    await projection.confirmPersonalHiding({
+      chat_id: chatId(0), operation_id: 'undo', hidden_at: null, account_revision: '2',
+    })
+    expect(projection.current().find(row => row.id === chatId(0))).toMatchObject({
+      conversation_hidden_at: floor, conversation_cleared_at: floor,
+      conversation_visibility_revision: '3',
+    })
+    expect(projection.isMembershipRevoked(chatId(0))).toBe(false)
+    expect(calls.filter(call => call === 'rpc:list_conversation_memberships').length).toBeGreaterThan(1)
   })
   it('阳控:一波里**一发**失败 ⇒ hydrate 响亮抛出,账本恰**一行** ok:false(不是每发一行)', async () => {
     const total = 150

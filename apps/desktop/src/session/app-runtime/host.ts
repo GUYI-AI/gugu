@@ -134,6 +134,8 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch(args: { watchId: string; place: AppPlace & { folder?: string; id?: string }; on: boolean }): Promise<void>;
     replace(args: { ref: AppFileRef; file: AppFileUpload; expectedVersion?: number | null }): Promise<AppFileEntry>;
     readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
+    /** API 54, the preinstalled Files App's page only (selection-send.ts): the host's Send box; only the outcome comes back. */
+    sendSelection?(args: Record<string, unknown>): Promise<import('@shared/extensions/selection-send').SelectionSendResult>;
     exists(args: { ref: AppFileRef }): Promise<boolean>;
     draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;
     writeText(args: { ref: AppFileRef; text: string }): Promise<{ entry: AppFileEntry }>;
@@ -144,7 +146,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     /** Bytes the caller has, or (no `files`) the person's picker — which only a page has, inside a gesture. */
     upload(args: { place: AppPlace; files?: AppFileUpload[]; sourceMessageIds?: string[]; folder?: string; keep?: string }): Promise<AppFileEntry[]>;
     /** The gesture halves: a page's only (`VerbFacts.only`) — a background page and a program have none. */
-    openWith?(args: { ref: AppFileRef; ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }): Promise<void>;
+    openWith?(args: { ref: AppFileRef; fileName?: string; ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown>; among?: { id: string; chat?: string; workspace?: string }[]; origin?: { x: number; y: number; width: number; height: number } }): Promise<void>;
     /** One file (`true` saved), or several (API 20: how many were saved; `0` when the person cancelled). */
     download?(args: { ref: AppFileRef; folder?: boolean; transferId?: string } | { refs: AppFileRef[] }): Promise<boolean | number>;
     downloadStop?(args: { transferId: string }): Promise<void>;

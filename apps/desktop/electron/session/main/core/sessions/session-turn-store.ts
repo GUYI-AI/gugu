@@ -7,7 +7,7 @@ export { renumberStoredTurn } from './session-turn-identity';
 import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, type LeanPage, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { hermesNativeDigest } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
@@ -228,7 +228,7 @@ const STORED_SEQ_PAGE = 200;
 
 /** The messages of this session's rows that carry the Hermes receipt for `nativeText` (found by SQL, not read in turn). */
 export function storedMessagesWithPromptHash(sessionId: string, nativeText: string): TranscriptTurn['items'] {
-  const digest = hermesNativeDigest(nativeText);
+  const digest = nativePromptDigest(nativeText);
   return db.select({ data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.data, `%${digest}%`))).all()
     .flatMap(row => (JSON.parse(row.data) as TranscriptTurn).items.filter(item => item.kind === 'message'));

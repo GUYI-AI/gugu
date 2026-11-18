@@ -1,6 +1,7 @@
 package app.gugu.chat;
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.os.Build;
 import android.webkit.CookieManager;
@@ -15,6 +16,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     private static final String NATIVE_BACK_EVENT = "gugu:native-back";
     private StartupSurface startup;
+    private boolean shellChromeDark;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,6 +40,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GuguPhoneDataPlugin.class);
         registerPlugin(GuguAudioPermissionsPlugin.class);
         registerPlugin(MobileShellChrome.class);
+        registerPlugin(GuguWatchOrientation.class);
+        registerPlugin(GuguPageScale.class);
+        registerPlugin(GuguTextSelectionPlugin.class);
         super.onCreate(savedInstanceState);
         StartupTrace.mark("bridge_created");
         if (getBridge() == null || getBridge().getWebView() == null) {
@@ -60,7 +65,7 @@ public class MainActivity extends BridgeActivity {
         // Not the WebView's default being restated: Capacitor's cookie manager turns third-party cookies on in super.onCreate
         // above (CapacitorCordovaCookieManager), so this puts them back off, after it.
         CookieManager.getInstance().setAcceptThirdPartyCookies(getBridge().getWebView(), false);
-        MobileShellChrome.applyTo(getWindow(), startup.enabled() && startup.launchDark());
+        applyShellChrome(startup.enabled() && startup.launchDark());
         // @@@native-back-bridge - Android owns the hardware back button; the web shell answers
         // "handled" for every in-app navigation layer. Only an unhandled root-level back exits.
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -72,6 +77,20 @@ public class MainActivity extends BridgeActivity {
     }
 
     StartupSurface startup() { return startup; }
+
+    void applyShellChrome(boolean dark) {
+        shellChromeDark = dark;
+        MobileShellChrome.applyTo(getWindow(), dark);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        // Capacitor's SystemBars callback restores its launch-time style and the Android theme's
+        // decor background. Run after every plugin, then restore the last tone actually painted
+        // by the page/startup handoff; a queued startup preference must not reveal early.
+        super.onConfigurationChanged(newConfig);
+        MobileShellChrome.applyTo(getWindow(), shellChromeDark);
+    }
 
     /** Shortcut retries are durable before recreation; no disk write blocks the UI draw. */
     void setStartupPolicy(boolean enabled) {

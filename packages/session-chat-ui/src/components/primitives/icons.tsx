@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-export { GenericFileIcon } from './icons/GenericFileIcon';
+export { FileMark } from './icons/FileMark';
 export { IconCheck } from './icons/IconCheck';
 export { IconContinueTurn } from './icons/IconContinueTurn';
 export { IconCopy } from './icons/IconCopy';
@@ -8,15 +8,14 @@ export { IconError } from './icons/IconError';
 export { IconRestorePrompt } from './icons/IconRestorePrompt';
 export { IconShieldAlert } from './icons/IconShieldAlert';
 export { IconStop } from './icons/IconStop';
-export { ImageOffIcon } from './icons/ImageOffIcon';
 export { MentionAtIcon } from './icons/MentionAtIcon';
-export { MentionFileIcon } from './icons/MentionFileIcon';
 export { MentionIssueIcon } from './icons/MentionIssueIcon';
 export { MentionSymbolIcon } from './icons/MentionSymbolIcon';
 export { PlanCompletedIcon } from './icons/PlanCompletedIcon';
 export { PlanInProgressIcon } from './icons/PlanInProgressIcon';
 export { PlanPendingIcon } from './icons/PlanPendingIcon';
-export { IconChevronDown, IconChevronRight, IconDocument, IconGlobe, IconImage } from './icons/OutputIcons';
+export { FileTile } from './icons/FileTile';
+export { IconChevronDown, IconChevronRight, IconGlobe } from './icons/OutputIcons';
 export { IconSquareTerminal } from './icons/IconSquareTerminal';
 export { IconUser } from './icons/IconUser';
 export { IconX } from './icons/IconX';
