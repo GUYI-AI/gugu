@@ -18,7 +18,7 @@ beforeEach(async () => {
 afterEach(() => { fixture.close(); mocks.db = undefined; });
 
 /** `platform` is the model-access stage: it answers as the test says (refuse, hang, or pass). */
-function rig(timing: 'next-tool-call' | 'idle-only' = 'next-tool-call') {
+function rig(timing: 'next-tool-call' | 'idle-only' = 'next-tool-call', ownedBy = async () => true) {
   let platform: () => Promise<void> = async () => {};
   const dispatch = vi.fn<LegAdapter['dispatch']>(async () => ({ result: 'accepted', nativeReceiptId: 'native' }));
   const teardown = vi.fn<LegAdapter['teardown']>(async () => {});
@@ -29,11 +29,39 @@ function rig(timing: 'next-tool-call' | 'idle-only' = 'next-tool-call') {
         return (at === 'identity' ? { kind: 'bound', agentUserId: 'agent' } : { at, gen: ctx.gen, timing }) as StageOut[K];
       }, dispatch, teardown,
       onExit: () => () => {} }),
-    forks: () => [], allForks: () => [], parentOf: () => null, ownedBy: async () => true,
+    forks: () => [], allForks: () => [], parentOf: () => null, ownedBy,
     markRead: async () => {}, reportFailure: async () => {}, publish: () => {}, removed: () => {}, failed: vi.fn(), now: Date.now });
   return { owner, dispatch, teardown, platform: (next: () => Promise<void>) => { platform = next; },
     send: (id: string) => owner.enqueue({ sessionId: 's', messageId: id, text: id, kind: 'ordinary' }) };
 }
+
+it('waits for initial account restoration before recovering a queued schedule', async () => {
+  const r = rig();
+  const row = lifeStore.enqueue({ sessionId: 's', messageId: 'boot-schedule', text: 'pending schedule', kind: 'session-direct' });
+  expect(r.owner.recoverQueuedDelivery('s', 'boot-schedule', false)).toEqual({ state: 'waiting' });
+  expect(r.dispatch).not.toHaveBeenCalled();
+  await r.owner.signIn('A'); await r.owner.quiescent('s');
+  expect(lifeStore.row('s', row.seq).state).toBe('accepted');
+  expect(r.dispatch).toHaveBeenCalledOnce();
+  await r.owner.signOut();
+});
+
+it('waits through account hydration but keeps a completed sign-out blocked', async () => {
+  const ownership = Promise.withResolvers<boolean>();
+  const checked = Promise.withResolvers<void>();
+  const r = rig('next-tool-call', () => { checked.resolve(); return ownership.promise; });
+  lifeStore.enqueue({ sessionId: 's', messageId: 'hydrating-schedule', text: 'pending schedule', kind: 'session-direct' });
+  const signingIn = r.owner.signIn('A');
+  await checked.promise;
+  expect(r.owner.recoverQueuedDelivery('s', 'hydrating-schedule', false)).toEqual({ state: 'waiting' });
+  expect(r.dispatch).not.toHaveBeenCalled();
+  ownership.resolve(true); await signingIn; await r.owner.quiescent('s');
+  await r.owner.signOut();
+  lifeStore.enqueue({ sessionId: 's', messageId: 'signed-out-schedule', text: 'leave pending', kind: 'session-direct' });
+  await vi.waitFor(() => expect(r.owner.recoverQueuedDelivery('s', 'signed-out-schedule', true))
+    .toEqual({ state: 'blocked', cause: 'The session is signed out' }));
+  expect(r.dispatch).toHaveBeenCalledOnce();
+});
 
 it('starts a session the outage failed once the backend is back, after clearing its issue backoff, and only that one', async () => {
   const r = rig(); await r.owner.signIn('A');

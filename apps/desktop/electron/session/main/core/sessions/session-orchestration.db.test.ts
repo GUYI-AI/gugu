@@ -584,7 +584,6 @@ describe('session orchestration', () => {
 
         const ready = Promise.withResolvers<void>();
         after = runtime(() => ready.promise);
-        await after.signIn('owner');
         scheduler = new AutomationScheduler({ onRunStep: () => {}, onScheduledRunChanged: () => {} });
         scheduler.start();
         await scheduler.reload();
@@ -592,6 +591,7 @@ describe('session orchestration', () => {
         expect(JSON.parse(runRow().error!).deliveryRecoveryAttempts).toBe(1);
         expect((await getAutomation(automation.id))?.enabled).toBe(true);
         expect(dispatch).not.toHaveBeenCalled();
+        await after.signIn('owner');
         ready.resolve();
         await after.quiescent('caller');
         vi.setSystemTime(now + 124_000);
