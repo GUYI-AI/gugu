@@ -3,6 +3,8 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
+import { openChatWorkspaceNewTab } from './chat-workspace-new-tab';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { escapeIsFree } from '@shared/escape-is-free';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
@@ -31,6 +33,13 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const { focused } = useScreenBlock();
   const dragging = useDndContext().active !== null;
   const header = useRef<HTMLDivElement>(null);
+  useCommandProvider({
+    scopeId: 'session-sub',
+    getCommands: () => !embedded && focused && layout.groups[0]?.pane.registry.has('browser') ? [{
+      id: 'session.openAddMenu',
+      execute: () => { openChatWorkspaceNewTab(layout); },
+    }] : [],
+  });
   useEffect(() => {
     if (!focused || dragging || mode !== 'full') return;
     const workspace = header.current?.closest('[data-chat-tool-workspace]');

@@ -737,7 +737,7 @@ function InnerLayout({
         .then((chatId) => {
           const from = readChats().chats.find((row) => row.id === named)
           const topic = !mobile && from?.kind === 'topic' && from.source_chat_id === chatId
-          return bringUp(topic ? named : chatId, (id) => askChat(id, { app: detail.extensionId }), true)
+          return bringUp(topic ? named : chatId, (id) => askChat(id, { app: detail.extensionId, ...(detail.from && id === named ? { from: detail.from } : {}) }), true)
         })
         .catch((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'))
     }

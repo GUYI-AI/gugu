@@ -8,6 +8,7 @@ import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { typedFileName } from '@shared/extensions/app-runtime-protocol';
 import type { ScreenBlockContent } from '@renderer/app/screen-layout';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
+import { browserTabProvider } from '@renderer/features/browser/browser-tab-provider';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import type { TabOpenIntent } from '@shared/view-state';
 import type { PaneStore } from '@renderer/features/tabs/pane-store';
@@ -35,7 +36,7 @@ import {
  * A chat's strip, on the same engine as a task's (spec session-page「并排」): the chat is its first tab, as a task's
  * conversation is; what opens beside it pairs with it, left or right, above or below; separated, either fills the block.
  */
-export const chatTabView = createTabView([chatTabProvider, chatPanelTabProvider, chatTopicTabProvider, chatInfoTabProvider] as const, {
+export const chatTabView = createTabView([chatTabProvider, chatPanelTabProvider, chatTopicTabProvider, chatInfoTabProvider, browserTabProvider] as const, {
   // Kept as a task's tabs are (`chat:<id>:tabs` in view-state).
   makePersistor: (ctx) => new TabViewPersistor(ctx.viewId),
 });
@@ -369,7 +370,7 @@ export const updateFileNames = action(function updateFileNames(
  */
 export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): void };
 export type ChatOpenAsk =
-  | { app: string; tab?: string }
+  | { app: string; tab?: string; from?: string }
   | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt }
   | { waiting: FileWait & { waitId: string } };
 type FileWait = { itemId: string; fileName?: string; message?: MessageItem; from?: string; intent?: TabOpenIntent };
