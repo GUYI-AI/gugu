@@ -29,7 +29,7 @@ import {
 } from '@shared/core/sessions/sessionEvents';
 import { sessionTabKind } from '@renderer/features/sessions/session-tab-kind';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
-import { closeTabsOfSession, findChatPaneId, sessionConversationTabId } from '../view/session-pane-policy';
+import { closeTabsOfSession, findChatPaneId, isSessionConversationTab, sessionConversationTabId } from '../view/session-pane-policy';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
 import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
 import type {
@@ -107,6 +107,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
       modelRootPath: `workspace:${workspaceId}`,
     };
     this.paneLayout = sessionTabView.createPaneLayoutStore(sessionCtx, {
+      isPrimaryChatTab: (entry) => isSessionConversationTab(entry, this.sessionId),
       // 一条会话一条页签条:分屏只有并排一种(spec session-page「并排」)。
       onActiveTabChange: (tabId) => {
         if (!tabId) return;

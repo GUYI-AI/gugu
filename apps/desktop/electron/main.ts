@@ -1,5 +1,4 @@
-import { accountAttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
-import { nativeAttachmentUpload } from './attachmentUploadTransport'
+import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
@@ -2468,7 +2467,9 @@ const attachmentUploads = createAttachmentUploadHost({
     return { id: auth.userId, home: resolveGuguHome(process.env), endpoint: async () => {
       const current = await desktopAuthProvider().getAuth()
       if (current?.userId !== auth.userId || !current.accessToken) throw new Error('Attachment upload account changed')
-      return { ...await accountAttachmentsEndpoint({ supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken }, electronFetch), upload: nativeAttachmentUpload }
+      return hostAttachmentsEndpoint({
+        supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken,
+      }, electronFetch, SERVER_MODE)
     } }
   },
   result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),

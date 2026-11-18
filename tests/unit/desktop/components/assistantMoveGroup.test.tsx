@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   nativePending: null as unknown,
   recoveryError: null as Error | null,
   previewMove: vi.fn(),
-  navigate: vi.fn(),
+  openConnectedAppsSettings: vi.fn(),
   runAssistantMove: vi.fn(),
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
@@ -33,8 +33,8 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
   rpc: {},
   rpcOn: () => ({ integrations: { list: mocks.list } }),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({
-  appState: { navigation: { navigate: (...args: unknown[]) => mocks.navigate(...args) } },
+vi.mock('../../../../apps/desktop/src/lib/assistantEntry', () => ({
+  openConnectedAppsSettings: mocks.openConnectedAppsSettings,
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-sessions', () => ({
   homeTarget: () => null,
@@ -57,6 +57,7 @@ beforeEach(() => {
   mocks.recoveryError = null
   mocks.previewMove.mockReset()
   mocks.runAssistantMove.mockReset()
+  mocks.openConnectedAppsSettings.mockClear()
   resetMoveForTests()
 })
 afterEach(() => harness.cleanup())
@@ -228,18 +229,10 @@ describe('点了先列清带走什么,确认才搬', () => {
     expect(done).toContain('Notion (a@x.cn)')
     expect(done).toContain('imap.x.cn')
     expect(done).toContain('机器选「云上」')
-    const shellEvents: string[] = []
-    const record = (event: Event) => shellEvents.push(event.type)
-    window.addEventListener('__close_settings', record)
-    window.addEventListener('__sessionpage_reveal', record)
     await act(async () => {
       (document.body.querySelector('[data-testid="assistant-move-reconnect-open"]') as HTMLButtonElement).click()
     })
-    window.removeEventListener('__close_settings', record)
-    window.removeEventListener('__sessionpage_reveal', record)
-    // 搬家是从设置弹窗里开的:先收起设置、回到会话页,再去资源库(真机上设置弹窗曾盖在资源库上面)。
-    expect(shellEvents).toEqual(['__close_settings', '__sessionpage_reveal'])
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'integrations' })
+    expect(mocks.openConnectedAppsSettings).toHaveBeenCalledOnce()
     expect(document.body.querySelector('[data-testid="assistant-move-dialog"]')).toBeNull()
   })
 

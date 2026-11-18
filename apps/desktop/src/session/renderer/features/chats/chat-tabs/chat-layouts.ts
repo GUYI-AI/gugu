@@ -51,7 +51,10 @@ const layouts = new Map<string, ChatLayout>();
 export function chatLayoutOf(chatId: string): ChatLayout {
   const existing = layouts.get(chatId);
   if (existing) return existing;
-  const layout = chatTabView.createPaneLayoutStore({ viewId: `chat:${chatId}`, place: { kind: 'chat', chatId } }) as ChatLayout;
+  // A topic's own tools use its chatId as well. The temporary topic page in the source strip is not its owner.
+  const layout = chatTabView.createPaneLayoutStore({ viewId: `chat:${chatId}`, place: { kind: 'chat', chatId } }, {
+    isPrimaryChatTab: (entry) => entry.kind === CHAT_TAB_KIND,
+  });
   layouts.set(chatId, layout);
   runInAction(() => {
     // The saved strip is in the view state from the first frame, on every shell.
@@ -72,7 +75,7 @@ export function chatLayoutOf(chatId: string): ChatLayout {
 
 const paneOf = (layout: ChatLayout): PaneStore => layout.focusedPane;
 export function chatTabOf(layout: ChatLayout): string | undefined {
-  return tabsOf(layout).find(({ tab }) => tab.kind === CHAT_TAB_KIND)?.tab.tabId;
+  return layout.primaryChatTabId;
 }
 
 export interface ChatPanelTab {

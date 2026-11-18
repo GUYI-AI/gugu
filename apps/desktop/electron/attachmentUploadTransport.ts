@@ -1,8 +1,18 @@
 import { net } from 'electron'
-import type { AttachmentUploadTransport } from '@gugu/core/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, type AttachmentUploadTransport } from '@gugu/core/cloud/attachmentsApi'
+
+export async function hostAttachmentsEndpoint(
+  account: Parameters<typeof accountAttachmentsEndpoint>[0],
+  fetchImpl: typeof fetch,
+  headless: boolean,
+) {
+  const endpoint = await accountAttachmentsEndpoint(account, fetchImpl)
+  if (!headless) endpoint.upload = nativeAttachmentUpload
+  return endpoint
+}
 
 /** Chromium reports transferred bytes on main's requests, the same progress the renderer previously read from XHR. */
-export const nativeAttachmentUpload: AttachmentUploadTransport = async (url, init, onProgress) => {
+const nativeAttachmentUpload: AttachmentUploadTransport = async (url, init, onProgress) => {
   init.signal?.throwIfAborted()
   const body = new Request(url, { method: init.method, headers: init.headers, body: init.body })
   const bytes = Buffer.from(await body.arrayBuffer())

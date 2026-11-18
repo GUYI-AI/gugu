@@ -309,7 +309,7 @@ export default {
     "title": "联系人"
   },
   "profile": {
-    "myAgentLabel": "我的 agent",
+    "myAgentLabel": "我的智能体",
     "agentOwnerUnavailable": "主人信息不可用",
     "agentOwnerLabel": "{{owner}} 的 agent",
     "alias": "备注",

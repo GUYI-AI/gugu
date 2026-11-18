@@ -169,6 +169,7 @@ export default {
     "unreadAbove_one": "↑ {{count}} 条新消息",
     "unreadAbove_other": "↑ {{count}} 条新消息",
     "noMessages": "暂无消息，发一条开始聊天",
+    "mobileEmpty": { "title": "还没有消息", "hint": "发出的消息会显示在这里" },
     "notificationLevel": {
       "all": "全部",
       "important": "仅重要",
@@ -279,6 +280,7 @@ export default {
     "deleteChat": "删除聊天",
     "deleteChatConfirm": "删除和「{{name}}」的这条聊天？聊天记录将一并删除。",
     "deleteTopic": "删除话题",
+    "closeTopic": "关闭话题",
     "deleteTopicConfirm": "删除话题「{{name}}」？它会从所有成员的列表里收起。",
     "dissolveGroup": "解散群聊",
     "leaveGroup": "退出群聊",
@@ -392,7 +394,7 @@ export default {
     "retry": "重试"
   },
   "dispatchPick": {
-    "myAgents": "我的 agent",
+    "myAgents": "我的智能体",
     "title": "交给谁",
     "search": "搜索成员、任务或对话",
     "chatAgents": "{{chat}} 的 agent",
@@ -461,7 +463,7 @@ export default {
     "mentionMembers": "@ 提及成员",
     "mentionNoMatch": "没有匹配的成员",
     "placeholder": "发送消息…",
-    "mobilePlaceholder": "消息",
+    "mobilePlaceholder": "随心输入",
     "projectGroupPlaceholder": "发消息给 {{name}}… @ 某个 agent 叫它",
     "removeAttachment": "移除 {{fileName}}",
     "sendFailed": "消息没发出去：{{guidance}}",
@@ -577,7 +579,7 @@ export default {
       "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
-      "myAgents": "我的 agent",
+      "myAgents": "我的智能体",
       "otherAgents": "其他人的 agent",
       "listen": {
         "all": "收听全部消息",
@@ -719,7 +721,6 @@ export default {
       "rules": "协作规则",
       "rulesPlaceholder": "群协作规则：核心原则、方向确认、协作约定…",
       "rulesUnset": "未设置协作规则",
-      "title": "群设置",
       "unavailable": "不可用",
       "uploading": "上传中"
     }
@@ -782,7 +783,7 @@ export default {
     "view": "查看 {{title}}"
   },
   "message": {
-    "myAgentTag": "我的 agent",
+    "myAgentTag": "我的智能体",
     "removedIdentityTag": "已移除",
     "agentOwnerUnavailableTag": "主人信息不可用",
     "agentOwnerTag": "{{owner}} 的 agent",
@@ -956,7 +957,7 @@ export default {
       "members": "成员",
       "collapseSplit": "收起分栏",
       "collapseSplitHint": "收起分栏，话题不会关闭",
-      "composerPlaceholder": "在这条话题里说…",
+      "composerPlaceholder": "随心输入",
       "empty": "还没有人在这条话题里说话",
       "resize": "拖动改变话题分栏的宽度"
     }

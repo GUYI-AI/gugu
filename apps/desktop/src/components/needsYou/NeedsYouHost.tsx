@@ -15,6 +15,7 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { SectionLabel } from '../ui/SectionLabel'
+import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { Hint } from '../ui/Tooltip'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
@@ -32,7 +33,7 @@ const unread = (task: NeedsYouTask) => isNeedsYou(sessionPresentation(task.sessi
 export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }: { onAttentionChange?: (attention: AgentAttention) => void }) {
   const { t } = useTranslation()
   const mobile = useMobileShell()
-  const { tasks, count, attention, error } = useNeedsYouTasks()
+  const { tasks, count, attention, error, loading } = useNeedsYouTasks()
   const passwords = usePasswordNotifications()
   const sync = usePasswordSnapshot()?.sync
   const devices = promptedRequests(sync), joining = waitingToJoin(sync)
@@ -67,12 +68,15 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
         {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
       </span>, element, key)
     if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || slots?.getSlotLabel?.(key) !== 'active') return null
+    const showEmpty = mobile && !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && !joining
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
         <SectionLabel>{title}</SectionLabel>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
-      <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
+      {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">
+        <PaneEmptyState phone icon={<Bell size={24} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
+      </div> : <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
@@ -96,7 +100,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
           }
           return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
         })}
-      </div>
+      </div>}
     </>, element, key)
   })}</>
 })

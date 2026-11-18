@@ -1030,6 +1030,16 @@ describe('MainLayout', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices' } })) })
     expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="devices"]')).not.toBeNull()
   })
+  it('opens the user’s desktop Connected Apps from an explicit settings request', async () => {
+    platformMock.kind = 'electron'
+    platformMock.capabilities.sessionHost = true
+    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'connectors', ownerConnections: true } }))
+    })
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull()
+  })
+
   // 11-12 gap: the person's own connected apps are not the assistant's. A phone with no assistant has them as a plain row of
   // Settings (under 偏好, SettingsPanel): a route to them (or the chat tools, part of them) opens that page; its 资料 has none.
   it.each(['owner','read-error'])('a phone with no assistant opens its own connected apps in Settings for %s',async state => {
@@ -1101,7 +1111,7 @@ describe('MainLayout', () => {
   it.each(['error', 'needs_user', null] as const)('keeps global notifications independent of the assistant without prepending attention rows (attention=%s)', async attention => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
-    const read = vi.spyOn(needsYouTasks, 'useNeedsYouTasks').mockReturnValue({ tasks: [], count: 0, attention, error: null })
+    const read = vi.spyOn(needsYouTasks, 'useNeedsYouTasks').mockReturnValue({ tasks: [], count: 0, attention, error: null, loading: false })
     try {
       await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
       expect(read).toHaveBeenCalled()

@@ -58,6 +58,7 @@ const metadataSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  publisher: z.string().optional(),
   websiteUrl: z.string(),
   compatibleVersions: z.string().optional(),
 });

@@ -1,6 +1,6 @@
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useAppDetailRequest } from '@renderer/features/apps/use-app-detail-request';
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { messageForUser } from '@/lib/userFacingError';
 import { CircleAlert, Trash2Icon } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
@@ -41,6 +41,9 @@ import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/
 import { AppPromptsSection } from '@renderer/features/library/prompts/prompt-library-view';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import { InstalledAppRow } from '@renderer/features/extensions/panel/app-rows';
+import { InstalledAgentRows, useInstalledAgentRows } from '@renderer/features/extensions/panel/installed-agent-rows';
+import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry';
+import { AgentDetailModal } from '../agents-page/AgentDetailModal';
 import {
   InstalledRowNoticeLine,
   programFailureText,
@@ -65,7 +68,6 @@ import {
   localizedManifestText,
   marketCategoryOf,
   matchesExtensionQuery,
-  type InstalledGroup,
   type InstalledUpdateFlag,
   type MarketCategory,
 } from '@shared/extensions/catalog';
@@ -84,7 +86,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 /**
  * 左栏「App」那一页 = App 市场(#7059,照改版原型):整页居中一栏,顶上「App」+ 一句话 + 搜索,下面「市场 / 已安装」。
  * 市场 = 官方精选 + 按类别两列平铺,每行就地一颗按钮;点一行 = 它的市场页(就在这一栏里铺开,❌ 弹框)。
- * 已安装按「需要处理 / 有更新 / 已启用 / 未启用」分组,每行按钮 + 开关 + ⋯;点一行 = 它的 App 设置页。
+ * 已安装分为智能体和扩展，咕咕助理在智能体段开头。
  * 从市场装走的是与手选文件夹**完全相同**的 `inspect → consent → install`。Refs #2374, #5265, #5410.
  */
 
@@ -136,13 +138,6 @@ function marketStaleTime(iso: string, locale: string): string {
 }
 
 
-const GROUP_LABEL = {
-  attention: 'extensions.groupAttention',
-  update: 'extensions.groupUpdate',
-  active: 'extensions.groupActive',
-  disabled: 'extensions.groupDisabled',
-} as const satisfies Record<InstalledGroup, string>;
-
 /** Which page of an App is open, and the one the back button returns to. */
 export type AppDetail =
   | { page: 'market'; subject: Omit<ExtensionDetailSubject, 'installedVersion'>; from?: AppDetail }
@@ -150,7 +145,10 @@ export type AppDetail =
 
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
-export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink }: { detailLink?: AppDetailLink }) {
+export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail }: {
+  detailLink?: ExtensionAppDetailLink;
+  onOpenAgentDetail?: (agentId: string) => void;
+}) {
   const { translate, locale } = useSessionMessages();
   // #6264 资源库看的是哪台咕咕:本机是全局那份清单与 `rpc.extensions`;另一台咕咕桌面是它自己的那份,
   // 动作经设备 RPC 转到它的主进程,它自己的窗口跟着补上 / 撤下 tab。页面长相不变。
@@ -196,6 +194,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     return node;
   };
   const [query, setQuery] = useState('');
+  const installedAgents = useInstalledAgentRows(query);
+  const [installedAgentDetailId, setInstalledAgentDetailId] = useState<string | null>(null);
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
   const debouncedQuery = useDebounce(query.trim(), 250);
   const [shelf, setShelf] = useState<ShelfState>(() => shelfOf(host.key) ?? { status: 'loading' });
@@ -1059,25 +1059,24 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const toggleOf = (manifest: ExtensionManifest) =>
     store.isPreinstalled(manifest.id) ? undefined : (enabled: boolean) => void switchExtension(manifest, enabled);
 
-  const listedManifests = store.manifests;
-  const installedRows = listedManifests
+  const installedRows = store.manifests
     .filter((manifest) => matchesExtensionQuery(manifest, query))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const grouped: Record<InstalledGroup, ExtensionManifest[]> = {
-    attention: [],
-    update: [],
-    active: [],
-    disabled: [],
-  };
-  for (const manifest of installedRows) {
-    grouped[installedGroupOf(store.isEnabled(manifest.id), updateFlagOf(manifest.id))].push(manifest);
-  }
+  const assistant = installedRows.find((manifest) => manifest.id === ASSISTANT_APP_ID);
+  const extensionRows = installedRows.filter((manifest) => manifest.id !== ASSISTANT_APP_ID);
+  const extensionPriority = (manifest: ExtensionManifest) =>
+    INSTALLED_GROUP_ORDER.indexOf(installedGroupOf(store.isEnabled(manifest.id), updateFlagOf(manifest.id)));
+  extensionRows.sort((a, b) => extensionPriority(a) - extensionPriority(b));
+  const agentCount = installedAgents.rows.length + Number(assistant !== undefined);
   const invalidRows =
     query.trim() === ''
       ? store.invalid
       : store.invalid.filter((entry) =>
           entry.dirName.toLowerCase().includes(query.trim().toLowerCase())
         );
+
+  const extensionCount = extensionRows.length + invalidRows.length;
+  const installedCount = agentCount + extensionCount;
 
   const marketRows = shelf.status === 'ready' ? shelf.items : [];
 
@@ -1166,7 +1165,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     setQuery(replacementId);
   };
 
-  const installedCount = listedManifests.length;
   const searchPlaceholder = translate('extensions.searchPlaceholder');
   const pendingPermissionsOf = (extensionId: string) =>
     Object.keys(pendingPermissions)
@@ -1206,6 +1204,28 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const text = localizedManifestText(manifest, locale);
     return <span>{text.subtitle}</span>;
   };
+
+  const renderInstalledApp = (manifest: ExtensionManifest) => (
+    <InstalledAppRow
+      key={manifest.id}
+      id={manifest.id}
+      name={`${localizedManifestText(manifest, locale).name}${store.variants[manifest.id]?.active && store.variants[manifest.id]!.active !== 'upstream' ? ` ${store.variants[manifest.id]!.active}` : ''}`}
+      version={manifest.version}
+      line={installedLine(manifest)}
+      iconUrl={store.appIcons[manifest.id]}
+      enabled={store.isEnabled(manifest.id)}
+      switching={switching[manifest.id] === true}
+      lifecycle={lifecycleOf(manifest.id)}
+      pending={pending[manifest.id]}
+      pendingPercent={downloadPercent[manifest.id]}
+      docked={store.dock.includes(manifest.id)}
+      translate={translate}
+      onOpen={() => openInstalledDetail(manifest)}
+      onAction={() => runLifecycle(manifest.id)}
+      onToggleEnabled={toggleOf(manifest)}
+      menu={menuOf(manifest)}
+    />
+  );
 
   const header = (aside?: ReactNode) => (
     // 照 Google Play 的应用首页:顶上不写说明句,标题、换机器、搜索就够了(owner 10-10 嫌字多)。
@@ -1473,84 +1493,89 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               </div>
             )}
 
-            {inventory === 'loading' && installedRows.length === 0 && invalidRows.length === 0 && (
+            {(inventory === 'loading' || installedAgents.inventory.isLoading) && installedCount === 0 && (
               <div className="mk-sec">
                 <InstalledRowsSkeleton label={translate('extensions.loading')} />
               </div>
             )}
 
-            {INSTALLED_GROUP_ORDER.map((group) => {
-              const rows = grouped[group];
-              const broken = group === 'attention' ? invalidRows : [];
-              if (rows.length === 0 && broken.length === 0) return null;
-              return (
-                <section className="mk-sec" key={group} data-testid={`extensions-installed-${group}`}>
-                  <h3>
-                    {translate(GROUP_LABEL[group])}
-                    <span className="mk-count">{rows.length + broken.length}</span>
-                  </h3>
-                  <ul className="mk-list">
-                    {broken.map((entry) => (
-                      <li
-                        key={entry.dirName}
-                        className="mk-row"
-                        data-testid="extension-row-unreadable"
-                        data-extension-dir={entry.dirName}
-                      >
-                        <span className="mk-icon">
-                          <ExtensionMonogram name={entry.dirName} broken />
-                        </span>
-                        <div className="mk-tx">
-                          <b>
-                            <span className="mk-name">{entry.dirName}</span>
-                            <em>{translate('extensions.unreadableShort')}</em>
-                          </b>
-                          <span className="xp-row-error" title={entry.reason}>
-                            {translate('extensions.unreadable', { name: entry.dirName, reason: entry.reason })}
-                          </span>
-                        </div>
-                        {/* Unreadable is still installed: removable here, as every other row is (L11 复核 60). */}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="hover:text-foreground-destructive"
-                          data-testid="extension-row-unreadable-uninstall"
-                          aria-label={translate('extensions.uninstallAction')}
-                          title={translate('extensions.uninstallAction')}
-                          onClick={() => confirmUninstall({ id: entry.dirName, name: entry.dirName })}
-                        >
-                          <Trash2Icon className="size-4" />
-                        </Button>
-                      </li>
-                    ))}
-                    {rows.map((manifest) => (
-                      <InstalledAppRow
-                        key={manifest.id}
-                        id={manifest.id}
-                        name={`${localizedManifestText(manifest, locale).name}${store.variants[manifest.id]?.active && store.variants[manifest.id]!.active !== 'upstream' ? ` ${store.variants[manifest.id]!.active}` : ''}`}
-                        version={manifest.version}
-                        line={installedLine(manifest)}
-                        iconUrl={store.appIcons[manifest.id]}
-                        enabled={store.isEnabled(manifest.id)}
-                        switching={switching[manifest.id] === true}
-                        lifecycle={lifecycleOf(manifest.id)}
-                        pending={pending[manifest.id]}
-                        pendingPercent={downloadPercent[manifest.id]}
-                        docked={store.dock.includes(manifest.id)}
-                        translate={translate}
-                        onOpen={() => openInstalledDetail(manifest)}
-                        onAction={() => runLifecycle(manifest.id)}
-                        onToggleEnabled={toggleOf(manifest)}
-                        menu={menuOf(manifest)}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
+            {installedAgents.inventory.isError && !notice && (
+              <div className="mk-status" role="alert">
+                <CircleAlert className="size-4 shrink-0" />
+                <span className="min-w-0">{translate('extensions.agentInventoryFailed')}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void installedAgents.inventory.refetch()}>
+                  {translate('extensions.retry')}
+                </Button>
+              </div>
+            )}
 
-            {inventory === 'ready' && installedRows.length === 0 && invalidRows.length === 0 && (
+            {agentCount > 0 && (
+              <section className="mk-sec" data-testid="installed-apps-agents">
+                <h3>
+                  {translate('settings.agents')}
+                  <span className="mk-count">{agentCount}</span>
+                </h3>
+                <ul className="mk-list">
+                  {assistant && renderInstalledApp(assistant)}
+                  <InstalledAgentRows
+                    inventory={installedAgents}
+                    onOpenAgentDetail={onOpenAgentDetail ?? setInstalledAgentDetailId}
+                    readOnly={!!notice?.readOnly}
+                  />
+                </ul>
+              </section>
+            )}
+
+            {extensionCount > 0 && (
+              <section className="mk-sec" data-testid="installed-apps-extensions">
+                <h3>
+                  {translate('extensions.installedExtensions')}
+                  <span className="mk-count">{extensionCount}</span>
+                </h3>
+                <ul className="mk-list">
+                  {invalidRows.map((entry) => (
+                    <li
+                      key={entry.dirName}
+                      className="mk-row"
+                      data-testid="extension-row-unreadable"
+                      data-extension-dir={entry.dirName}
+                    >
+                      <span className="mk-icon">
+                        <ExtensionMonogram name={entry.dirName} broken />
+                      </span>
+                      <div className="mk-tx">
+                        <b>
+                          <span className="mk-name">{entry.dirName}</span>
+                          <em>{translate('extensions.unreadableShort')}</em>
+                        </b>
+                        <span className="xp-row-error" title={entry.reason}>
+                          {translate('extensions.unreadable', { name: entry.dirName, reason: entry.reason })}
+                        </span>
+                      </div>
+                      {/* Unreadable is still installed: removable here, as every other row is (L11 复核 60). */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="hover:text-foreground-destructive"
+                        data-testid="extension-row-unreadable-uninstall"
+                        aria-label={translate('extensions.uninstallAction')}
+                        title={translate('extensions.uninstallAction')}
+                        onClick={() => confirmUninstall({ id: entry.dirName, name: entry.dirName })}
+                      >
+                        <Trash2Icon className="size-4" />
+                      </Button>
+                    </li>
+                  ))}
+                  {extensionRows.map(renderInstalledApp)}
+                </ul>
+              </section>
+            )}
+            {!onOpenAgentDetail && installedAgentDetailId !== null && (
+              <AgentDetailModal agentId={installedAgentDetailId} onClose={() => setInstalledAgentDetailId(null)} />
+            )}
+
+            {inventory === 'ready' && installedAgents.inventory.isSuccess && installedCount === 0 && (
               <div className="mk-empty">
                 {query.trim() === '' ? translate('extensions.empty') : translate('extensions.noMatch', { query: query.trim() })}
                 {query.trim() === '' && (
