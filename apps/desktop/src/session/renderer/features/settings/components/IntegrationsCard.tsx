@@ -5,6 +5,8 @@ import { IntegrationIcon } from '@renderer/features/integrations/integration-ico
 import { integrationErrorText } from '@renderer/features/integrations/integration-display';
 import { keptByPlatform } from '@renderer/features/integrations/integration-setup-model';
 import { integrationSections } from '@renderer/features/integrations/integration-sections';
+import { ConnectorMarketCatalog } from '@renderer/features/extensions/panel/connector-market-catalog';
+import { connectorState } from '@renderer/features/assistant/assistant-connector-status';
 import { useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
 import { PageLoading } from '@renderer/lib/components/page-layout';
 import type { IntegrationAccountSummary } from '@renderer/features/integrations/use-integration-accounts';
@@ -62,6 +64,8 @@ export type IntegrationItem = {
 const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean; initialConnectorId?: string; marketQuery?: string }> = ({ inSettings = false, inlineDetail = false, initialConnectorId, marketQuery }) => {
   const {
     connectionStatus,
+    checkedConnections,
+    hasConfiguredConnections,
     configuredConnections,
     isCheckingConfiguredConnections,
     disconnectIntegration,
@@ -308,10 +312,42 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
   return (
     <TooltipProvider delay={150}>
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />}
-      <div className="space-y-8">
-        {connectedIntegrations.length > 0 && (
-          <IntegrationSection title={translate('integrations.sectionAdded')}>
-            {connectedIntegrations.map((integration) => (
+      {marketQuery !== undefined ? (
+        listError && !hasList ? (
+          <div className="mk-status" role="alert">
+            {translate('extensions.connectorDirectoryUnavailable')}
+          </div>
+        ) : (
+          <ConnectorMarketCatalog
+            apps={integrations.map((item) => ({
+              ...item,
+              catalog: integrationMetadata.find(({ id }) => id === item.id)?.catalog,
+              saved: item.isConfigured,
+              state: connectorState(hasConfiguredConnections ? item.isConfigured : undefined, checkedConnections[item.id]),
+            }))}
+            query={marketQuery}
+            isConnectionKnown={() => hasConfiguredConnections}
+            icon={(app, size) => <IntegrationIcon provider={app.id} icon={app.icon} size={size} />}
+            open={setSelectedProvider}
+          />
+        )
+      ) : (
+        <div className="space-y-8">
+          {connectedIntegrations.length > 0 && (
+            <IntegrationSection title={translate('integrations.sectionAdded')}>
+              {connectedIntegrations.map((integration) => (
+                <IntegrationGridCard
+                  key={integration.id}
+                  integration={integration}
+                  selected={integration.id === selectedProvider}
+                  onSelect={() => setSelectedProvider(integration.id)}
+                />
+              ))}
+            </IntegrationSection>
+          )}
+
+          <IntegrationSection title={translate('integrations.sectionAvailable')}>
+            {availableIntegrations.map((integration) => (
               <IntegrationGridCard
                 key={integration.id}
                 integration={integration}
@@ -320,35 +356,24 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
               />
             ))}
           </IntegrationSection>
-        )}
 
-        <IntegrationSection title={translate('integrations.sectionAvailable')}>
-          {availableIntegrations.map((integration) => (
-            <IntegrationGridCard
-              key={integration.id}
-              integration={integration}
-              selected={integration.id === selectedProvider}
-              onSelect={() => setSelectedProvider(integration.id)}
-            />
-          ))}
-        </IntegrationSection>
-
-        {uiOnlyIntegrations.length > 0 && (
-          <IntegrationSection
-            title={translate('integrations.sectionUiOnly')}
-            hint={translate('integrations.sectionUiOnlyHint')}
-          >
-            {uiOnlyIntegrations.map((integration) => (
-              <IntegrationGridCard
-                key={integration.id}
-                integration={integration}
-                selected={integration.id === selectedProvider}
-                onSelect={() => setSelectedProvider(integration.id)}
-              />
-            ))}
-          </IntegrationSection>
-        )}
-      </div>
+          {uiOnlyIntegrations.length > 0 && (
+            <IntegrationSection
+              title={translate('integrations.sectionUiOnly')}
+              hint={translate('integrations.sectionUiOnlyHint')}
+            >
+              {uiOnlyIntegrations.map((integration) => (
+                <IntegrationGridCard
+                  key={integration.id}
+                  integration={integration}
+                  selected={integration.id === selectedProvider}
+                  onSelect={() => setSelectedProvider(integration.id)}
+                />
+              ))}
+            </IntegrationSection>
+          )}
+        </div>
+      )}
 
       {marketDetail}
       {!market && !inlineDetail && <Sheet open={!!detail} onOpenChange={(open) => !open && closeSheet()}>

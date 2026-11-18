@@ -645,6 +645,7 @@ export default {
       "phone": "这台手机",
       "passwords": "密码",
       "permissions": "本机控制",
+      "prompts": "提示词",
       "sessions": "项目",
       "subscriptions": "订阅",
       "usage": "用量"
@@ -817,7 +818,6 @@ export default {
     },
     "tasks": "项目",
     "sessionView": "会话",
-    "library": "资源库",
     "apps": "市场",
     "appDockFailed": "左栏没能改动",
     "moreApps": "更多应用",
