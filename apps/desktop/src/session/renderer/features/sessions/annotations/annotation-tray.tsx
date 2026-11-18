@@ -54,29 +54,38 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
             <MessageSquare className="size-4" />{translate('annotations.count', { count: draft.items.length })}
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="max-h-[60vh] w-80 max-w-[calc(100vw-32px)] gap-0 overflow-y-auto p-0">
-            {draft.items.map(item => (
+            {draft.items.map(item => {
+              const place = item.kind === 'browser' ? item.url : item.path;
+              const position = item.kind === 'browser' ? item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')
+                : item.kind === 'file' ? item.startLine === item.endLine
+                  ? translate('annotations.line', { line: item.startLine })
+                  : translate('annotations.lines', { first: item.startLine, last: item.endLine })
+                  : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
+                    item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');
+              return (
               <div key={item.id} className="flex flex-col gap-2 border-b border-border px-3 py-3 last:border-b-0">
                 <div className="flex min-w-0 items-start gap-2 text-xs text-foreground-muted">
-                  <AnnotationThumbnail {...item} />
+                  {item.kind === 'browser' && <AnnotationThumbnail {...item} />}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
                       <span className="shrink-0 tabular-nums">{item.number}</span>
-                      <span className="min-w-0 truncate" title={item.url}>{item.url}</span>
+                      <span className="min-w-0 truncate" title={place}>{place}</span>
                     </div>
-                    <span className="block truncate">{item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')}</span>
+                    <span className="block truncate">{position}</span>
                   </div>
-                  <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
-                    onClick={() => setEditing(item.id)}><Pencil className="size-3.5" /></Button>
+                  {item.kind === 'browser' && <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
+                    onClick={() => setEditing(item.id)}><Pencil className="size-3.5" /></Button>}
                   <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.delete')}
                     onClick={() => draft.remove(item.id)}><Trash2 className="size-3.5" /></Button>
                 </div>
                 {item.text && <blockquote className="line-clamp-3 whitespace-pre-wrap text-xs text-foreground-muted">{item.text}</blockquote>}
-                {editing === item.id ? (
+                {item.kind === 'browser' && editing === item.id ? (
                   <AnnotationEditor number={item.number} initialValue={item.annotation}
                     onSave={value => { draft.update(item.id, value); setEditing(null); }} onCancel={() => setEditing(null)} />
                 ) : <p className="whitespace-pre-wrap break-words text-sm">{item.annotation}</p>}
               </div>
-            ))}
+              );
+            })}
           </PopoverContent>
         </Popover>
         <Button type="button" size="icon" variant="ghost" className="size-7 rounded-l-none rounded-r-xl"

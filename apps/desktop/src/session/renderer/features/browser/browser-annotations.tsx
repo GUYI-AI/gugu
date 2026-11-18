@@ -7,7 +7,7 @@ import { events, rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { rendererLogger } from '@/lib/log';
-import { AnnotationEditor } from '../sessions/annotations/annotation-editor';
+import { AnnotationEditor, AnnotationMarker } from '../sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 import { markedAnnotationScreenshot } from './annotation-screenshot';
 
@@ -49,7 +49,8 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   const busyRef = useRef(false);
   const [error, setError] = useState(false);
   const [page, setPage] = useState<BrowserAnnotationTarget | null>(null);
-  const editing = editingId ? draft.items.find(item => item.id === editingId) : undefined;
+  const browserItems = draft.items.filter(item => item.kind === 'browser');
+  const editing = editingId ? browserItems.find(item => item.id === editingId) : undefined;
   const editorTarget = editing ?? selection?.target;
   const editorOpen = Boolean(editorTarget);
   const closeEditor = () => {
@@ -181,15 +182,10 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
         setDrag(null);
         void select(query.width * size.width > 4 || query.height * size.height > 4 ? query : { ...from, width: 0, height: 0 });
       }} onPointerCancel={() => { start.current = null; setDrag(null); }}>
-      {!markersHidden && draft.items.filter(item => item.browserId === browserId && item.url === page?.url && item.viewport.scrollX === page.viewport.scrollX && item.viewport.scrollY === page.viewport.scrollY).map(item =>
-        <button key={item.id} type="button" data-annotation-marker={item.number}
-          aria-label={translate('annotations.editMarker', { number: item.number })}
-          className="absolute z-[1] flex size-6 cursor-pointer items-center justify-center rounded-full bg-[var(--live-light)] text-xs text-[var(--color-white)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+      {!markersHidden && browserItems.filter(item => item.browserId === browserId && item.url === page?.url && item.viewport.scrollX === page.viewport.scrollX && item.viewport.scrollY === page.viewport.scrollY).map(item =>
+        <AnnotationMarker key={item.id} number={item.number} className="absolute z-[1]"
           style={{ left: `clamp(0px, ${item.rect.x / item.viewport.width * 100}%, calc(100% - 24px))`, top: `clamp(0px, ${item.rect.y / item.viewport.height * 100}%, calc(100% - 24px))` }}
-          onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
-          onClick={() => { if (!busy) { setHover(null); setSelection(null); setEditingId(item.id); } }}>
-          {item.number}
-        </button>)}
+          onClick={() => { if (!busy) { setHover(null); setSelection(null); setEditingId(item.id); } }} />)}
       {target && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={box(target)} />}
       {drag && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={{ left: `${drag.x * 100}%`, top: `${drag.y * 100}%`, width: `${drag.width * 100}%`, height: `${drag.height * 100}%` }} />}
       {editorTarget && <div data-browser-annotation-input className="absolute z-[2] w-80 max-w-[calc(100%_-_16px)]"

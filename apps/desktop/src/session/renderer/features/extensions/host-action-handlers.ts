@@ -10,6 +10,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { desktopIpc } from '@/platform/desktopIpc';
 import { EXTENSION_BRIDGE_CHANNEL, type ExtensionBridgeResponse } from '@shared/extensions/bridge-protocol';
+import { EXTENSION_FILE_ANNOTATION_METHOD, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
 import type { AppModalHostAction } from '@shared/extensions/app-modal';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 
@@ -468,6 +469,13 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
    * API 54/55 Send, over the page that asked, at its selection (into its session, or its chat): the page's CSS px scaled to its guest's box here (its zoom
    * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
    */
+  [EXTENSION_FILE_ANNOTATION_METHOD]: async (params: unknown) => {
+    const ask = params as FileAnnotationAsk;
+    const guest = pageElement(ask.webContentsId);
+    if (!guest) return false;
+    const { openGuestFileAnnotation } = await import('../sessions/annotations/guest-file-annotation');
+    return openGuestFileAnnotation(guest, auxWindows.layerOf(guest.ownerDocument), ask, INSTALL_CONSENT_HUMAN_WINDOW_MS);
+  },
   [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
     const { to, webContentsId, open } = params as SelectionSendAsk;
     const guest = pageElement(webContentsId);
