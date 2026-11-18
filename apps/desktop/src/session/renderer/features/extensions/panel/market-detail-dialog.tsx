@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Ellipsis, Trash2 } from '@/lib/icons';
+import { Ellipsis, Trash2, XIcon } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@renderer/lib/ui/dropdown-menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -109,7 +109,13 @@ export function MarketDetailCard({
   const { translate } = useSessionMessages();
   return (
     <>
-      <DialogHeader className="relative gap-4 pr-16 pb-0 [&_[data-slot=dialog-close]]:absolute [&_[data-slot=dialog-close]]:right-6 [&_[data-slot=dialog-close]]:top-6">
+      <div data-slot="dialog-header" className="relative shrink-0 pt-6 pr-16 pl-6">
+        <DialogClose
+          render={<Button variant="ghost" size="icon" className="absolute top-4 right-4 text-foreground-muted" />}
+          aria-label={translate('common.close')}
+        >
+          <XIcon aria-hidden />
+        </DialogClose>
         <div className="flex min-w-0 gap-4">
           <div className="size-[68px] shrink-0 overflow-hidden rounded-2xl [&>*]:!size-full">{icon}</div>
           <div className="min-w-0">
@@ -134,7 +140,7 @@ export function MarketDetailCard({
             </div>
           </div>
         </div>
-      </DialogHeader>
+      </div>
       <div className="min-h-0 space-y-6 overflow-y-auto px-6 pt-5 pb-6">
         {notice}
         {subtitle && <div className="leading-relaxed text-foreground-muted [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">{subtitle}</div>}
