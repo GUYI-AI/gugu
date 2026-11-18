@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
 
 export const desktopWorkers = {
+  'git-status': {
+    entry: 'main/core/git/status/worker.ts',
+    file: 'git-status.js',
+  },
   'turn-text-backfill': {
     entry: 'main/db/turn-text-backfill-worker.ts',
     file: 'turn-text-backfill.js',
