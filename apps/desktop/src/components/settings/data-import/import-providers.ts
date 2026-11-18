@@ -24,6 +24,21 @@ export type ImportProvider = {
   ): Promise<ImportResult>
 }
 
+// Counts come from a single scan per device, even when both source cards ask together.
+const scans = new Map<string | null, ReturnType<typeof readTranscriptCounts>>()
+
+function readTranscriptCounts(deviceId: string | null) {
+  return rpcOn(deviceId).sessionHistory.list({ status: 'not-imported', limit: 0 })
+}
+
+function scanTranscripts(deviceId: string | null) {
+  const previous = scans.get(deviceId)
+  if (previous) return previous
+  const scan = readTranscriptCounts(deviceId).finally(() => { scans.delete(deviceId) })
+  scans.set(deviceId, scan)
+  return scan
+}
+
 function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
   const query = { source: engine, status: 'not-imported' } as const
   return {
@@ -31,8 +46,8 @@ function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
     label: LOCAL_SESSION_ENGINE_LABEL[engine],
     iconId: LOCAL_SESSION_ENGINE_PROVIDER[engine],
     async scan(deviceId) {
-      const page = await rpcOn(deviceId).sessionHistory.list({ ...query, limit: 0 })
-      return page.local ? { count: page.matched, pending: page.local.pending > 0 } : null
+      const page = await scanTranscripts(deviceId)
+      return page.local ? { count: page.countsBySource[engine], pending: page.local.pending > 0 } : null
     },
     async importAll(deviceId, onProgress, signal) {
       const result: ImportResult = { imported: [], existing: 0, failed: 0 }

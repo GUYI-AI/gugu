@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next'
+import { importSourceCounts } from './import-replicas'
 import { notify } from '@/lib/notices'
 import { sessionCoordinator } from '@/lib/sessionCoordinator'
 import type { ImportedSession, ImportProvider } from './import-providers'
@@ -128,6 +129,7 @@ async function runNext(): Promise<void> {
     if (ownsImport()) notify({ key, tier: 'error', title: t('settings.dataImport.failed') })
   } finally {
     unsubscribe()
+    if (ownsImport()) void importSourceCounts.refresh(job.provider.id)
     current = undefined
     void runNext()
   }

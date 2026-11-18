@@ -1,5 +1,6 @@
 .gg-data-import {
   --import-ease: cubic-bezier(.4, 0, .2, 1);
+  --settings-col-w: 640px;
   display: grid;
   gap: var(--spacing-lg);
 }
@@ -14,7 +15,7 @@
 .gg-import-toolbar {
   display: flex;
   align-items: start;
-  justify-content: space-between;
+  justify-content: end;
   gap: var(--spacing-sm);
   padding-inline-end: var(--spacing-2xl);
 }
@@ -32,7 +33,18 @@
   padding-inline: var(--spacing-xs);
   color: var(--text-secondary);
   font-size: var(--font-caption);
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--font-weight-regular);
+}
+
+.gg-import-device[data-remote]::after {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-inline-start: var(--spacing-xs);
+  border-radius: var(--radius-circle);
+  background: var(--agent-tone-online);
+  content: '';
+  vertical-align: middle;
 }
 
 .gg-import-stack {
@@ -44,7 +56,7 @@
 .gg-import-history-list,
 .gg-import-empty {
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--radius-xl);
 }
 
 .gg-import-card,
@@ -55,7 +67,7 @@
   padding: var(--spacing-md);
 }
 
-.gg-import-card:has(.gg-import-action):is(:hover, :focus-within) {
+.gg-import-card[data-cancellable]:is(:hover, :focus-within) {
   background: var(--hover);
 }
 
@@ -72,7 +84,7 @@
 .gg-import-copy {
   display: grid;
   flex: 1;
-  gap: var(--spacing-2xs);
+  gap: var(--spacing-xs);
   min-width: 0;
   text-align: start;
 }
@@ -115,7 +127,7 @@
   pointer-events: none;
 }
 
-.gg-import-card:has(.gg-import-action):is(:hover, :focus-within) .gg-import-progress { opacity: 0; }
+.gg-import-card[data-cancellable]:is(:hover, :focus-within) .gg-import-progress { opacity: 0; }
 .gg-import-card:is(:hover, :focus-within) .gg-import-cancel { opacity: 1; pointer-events: auto; }
 
 .gg-import-empty {

@@ -11,6 +11,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { importDeviceChoices } from '@renderer/features/session-import/import-device'
 import { ImportSourceIcon, ImportSourceRows } from './ImportSourceRows'
+import { importSourceCounts } from './import-replicas'
 import { importJobs, type ImportedEntry, type ImportJob } from './import-queue'
 import './data-import.css'
 
@@ -26,6 +27,7 @@ function HistoryEntry({ job, onClose }: { job: ImportJob; onClose: () => void })
     try {
       if (job.provider.openImportedSession) {
         await job.provider.openImportedSession(session, session.deviceId)
+        return
       } else if (session.projectId) {
         await openLink({ kind: 'session', projectId: session.projectId, sessionId: session.sessionId,
           ...(session.deviceId ? { deviceId: session.deviceId } : {}) })
@@ -69,7 +71,6 @@ function HistoryEntry({ job, onClose }: { job: ImportJob; onClose: () => void })
 export const DataImportSection = observer(function DataImportSection({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation('main')
   const { user } = useAuth()
-  const [refresh, setRefresh] = useState(0)
   const jobs = useSyncExternalStore(importJobs.subscribe, importJobs.getSnapshot)
   const ownerJobs = jobs.filter(({ ownerId }) => ownerId === user?.id)
   useEffect(() => { remoteHostsStore.start() }, [])
@@ -82,12 +83,12 @@ export const DataImportSection = observer(function DataImportSection({ onClose }
     <div className="gg-data-import">
       <IconButton shape="pill" size="lg" className="gg-import-close bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={onClose}><X /></IconButton>
       <div className="gg-import-toolbar">
-        <h2>{t('settings.nav.data-import')}</h2>
-        <IconButton aria-label={t('settings.dataImport.refresh')} title={t('settings.dataImport.refresh')} onClick={() => setRefresh((n) => n + 1)}>
+        <h2 className="sr-only">{t('settings.nav.data-import')}</h2>
+        <IconButton aria-label={t('settings.dataImport.refresh')} title={t('settings.dataImport.refresh')} onClick={() => { void importSourceCounts.refresh() }}>
           <RefreshCw size={16} />
         </IconButton>
       </div>
-      {user && <ImportSourceRows machines={machines} ownerId={user.id} jobs={ownerJobs} refresh={refresh} />}
+      {user && <ImportSourceRows machines={machines} ownerId={user.id} jobs={ownerJobs} />}
       {history.length > 0 && (
         <section className="gg-import-history">
           <h3>{t('settings.dataImport.history')}</h3>

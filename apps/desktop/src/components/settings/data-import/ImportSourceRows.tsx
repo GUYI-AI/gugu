@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Clock, X } from '@/lib/icons'
+import { useReplicas } from '@/lib/replica'
+import { importSourceCounts } from './import-replicas'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
 import { AgentIcon } from '@renderer/lib/components/agent-icon'
@@ -8,33 +10,22 @@ import type { MachineChoice } from '@renderer/features/remote-hosts/machine-choi
 import { importProviders, type ImportProvider } from './import-providers'
 import { cancelImport, enqueueImport, isActiveImport, type ImportDevice, type ImportJob } from './import-queue'
 
-type Scan = NonNullable<Awaited<ReturnType<ImportProvider['scan']>>>
-type DeviceReading = { device: ImportDevice; scan: Scan | null; failed?: boolean }
-
-function useSourceReadings(provider: ImportProvider, devices: readonly ImportDevice[], revision: string) {
-  const [readings, setReadings] = useState<DeviceReading[] | null>(null)
+function useSourceReadings(provider: ImportProvider, devices: readonly ImportDevice[]) {
+  const readings = useReplicas(importSourceCounts, devices.map(({ deviceId }) => [provider.id, deviceId]))
+  const results = readings.map((reading, index) => ({
+    device: devices[index]!,
+    scan: reading.state === 'value' ? reading.value : null,
+    failed: reading.state === 'error' || (reading.state === 'value' && !!reading.error),
+  }))
+  const pending = readings.some((reading) => reading.state === 'unknown') ||
+    results.some(({ scan }) => scan?.pending)
+  const needsIndex = results.some(({ scan }) => scan?.pending)
   useEffect(() => {
-    let stopped = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    setReadings(null)
-    async function read(previous?: DeviceReading[]) {
-      const results = await Promise.all(devices.map(async (device, index): Promise<DeviceReading> => {
-        const existing = previous?.[index]
-        if (existing && !existing.scan?.pending) return existing
-        try {
-          return { device, scan: await provider.scan(device.deviceId) }
-        } catch {
-          return { device, scan: null, failed: true }
-        }
-      }))
-      if (stopped) return
-      setReadings(results)
-      if (results.some(({ scan }) => scan?.pending)) timer = setTimeout(() => { void read(results) }, 1200)
-    }
-    void read()
-    return () => { stopped = true; clearTimeout(timer) }
-  }, [provider, devices, revision])
-  return readings
+    if (!needsIndex) return
+    const timer = setInterval(() => { void importSourceCounts.refresh(provider.id) }, 1200)
+    return () => clearInterval(timer)
+  }, [needsIndex, provider.id])
+  return { results, pending }
 }
 
 export function ImportSourceIcon({ provider }: { provider: ImportProvider }) {
@@ -72,25 +63,22 @@ function ImportProgress({ job, label }: { job: ImportJob; label: string }) {
   )
 }
 
-function ImportSourceCard({ devices, provider, ownerId, job, refresh }: {
+function ImportSourceCard({ devices, provider, ownerId, job }: {
   devices: readonly ImportDevice[]
   provider: ImportProvider
   ownerId: string
   job: ImportJob | undefined
-  refresh: number
 }) {
   const { t } = useTranslation('main')
-  const [picked, setPicked] = useState(0)
   const [picking, setPicking] = useState(false)
   const [pickFailed, setPickFailed] = useState(false)
-  const readings = useSourceReadings(provider, devices, `${refresh}:${picked}:${job?.finishedAt ?? ''}`)
-  const pending = !readings || readings.some(({ scan }) => scan?.pending)
-  const targets = (readings ?? []).flatMap(({ device, scan }) => scan && scan.count > 0 ? [{ ...device, count: scan.count }] : [])
+  const { results, pending } = useSourceReadings(provider, devices)
+  const targets = results.flatMap(({ device, scan }) => scan && scan.count > 0 ? [{ ...device, count: scan.count }] : [])
   const count = targets.reduce((sum, device) => sum + device.count, 0)
-  const pickTarget = readings?.find(({ scan }) => scan?.needsSource)?.device
-  const failed = readings?.some((reading) => reading.failed) ?? false
-  const supported = readings?.some(({ scan }) => scan !== null)
-  if (readings && !supported && !failed && !job) return null
+  const pickTarget = results.find(({ scan }) => scan?.needsSource)?.device
+  const failed = results.some((reading) => reading.failed)
+  const supported = results.some(({ scan }) => scan !== null)
+  if (!pending && !supported && !failed && !job) return null
   const status = pickFailed || (failed && !supported) ? t('settings.dataImport.readFailed')
     : pending ? t('settings.dataImport.reading') : t('settings.dataImport.available', { count })
   const showProgress = job && (isActiveImport(job) || (count === 0 && (job.state === 'cancelled' || job.state === 'finished')))
@@ -101,7 +89,7 @@ function ImportSourceCard({ devices, provider, ownerId, job, refresh }: {
     setPickFailed(false)
     try {
       await provider.pickSource(pickTarget.deviceId)
-      setPicked((n) => n + 1)
+      await importSourceCounts.refresh(provider.id)
     } catch {
       setPickFailed(true)
     } finally {
@@ -110,11 +98,11 @@ function ImportSourceCard({ devices, provider, ownerId, job, refresh }: {
   }
 
   return (
-    <article className="gg-import-card">
+    <article className="gg-import-card" data-cancellable={job?.state === 'running' || job?.state === 'queued' || undefined}>
       <ImportSourceIcon provider={provider} />
       <div className="gg-import-copy">
         <div className="gg-import-name">{provider.label}
-          {targets.map((device) => <span className="gg-import-device" key={device.deviceId ?? 'local'}>{device.deviceName}</span>)}
+          {targets.map((device) => <span className="gg-import-device" data-remote={device.deviceId !== null || undefined} key={device.deviceId ?? 'local'}>{device.deviceName}</span>)}
         </div>
         <div className="gg-import-meta">{status}</div>
         {failed && supported && <div className="gg-import-meta">{t('settings.dataImport.partialRead')}</div>}
@@ -134,20 +122,18 @@ function ImportSourceCard({ devices, provider, ownerId, job, refresh }: {
   )
 }
 
-export function ImportSourceRows({ machines, ownerId, jobs, refresh }: {
+export function ImportSourceRows({ machines, ownerId, jobs }: {
   machines: readonly MachineChoice[]
   ownerId: string
   jobs: readonly ImportJob[]
-  refresh: number
 }) {
-  const machineKey = JSON.stringify(machines
+  const devices = machines
     .filter((machine) => machine.isOnline && !machine.cloudComputer)
-    .map((machine) => ({ deviceId: machine.isLocal ? null : machine.id, deviceName: machine.label, count: 0 })))
-  const devices: ImportDevice[] = useMemo(() => JSON.parse(machineKey), [machineKey])
+    .map((machine) => ({ deviceId: machine.isLocal ? null : machine.id, deviceName: machine.label, count: 0 }))
   return (
     <div className="gg-import-stack">
       {importProviders.map((provider) => (
-        <ImportSourceCard key={provider.id} provider={provider} devices={devices} ownerId={ownerId} refresh={refresh}
+        <ImportSourceCard key={provider.id} provider={provider} devices={devices} ownerId={ownerId}
           job={jobs.find((job) => job.provider.id === provider.id)} />
       ))}
     </div>
