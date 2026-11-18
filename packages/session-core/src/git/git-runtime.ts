@@ -15,6 +15,7 @@ import type { CloneRepositoryError } from './errors';
 import { createGitExec } from './git-env';
 import { GitRepository, type GitOnError } from './git-repository';
 import { GitWorktree } from './git-worktree';
+import type { GitStatusReader } from './status-reader';
 import type {
   EnsureRepositoryError,
   EnsureRepositoryOptions,
@@ -47,6 +48,7 @@ export type GitRuntimeOptions = {
   executable?: string;
   env?: NodeJS.ProcessEnv;
   exec?: BoundExec;
+  statusReader?: GitStatusReader;
   onError?: GitOnError;
 };
 
@@ -55,12 +57,14 @@ export class GitRuntime implements IGitRuntime {
   private readonly worktrees: ResourceMap<WorktreeResource>;
   private readonly mutex: KeyedMutex;
   private readonly exec: BoundExec;
+  private readonly statusReader?: GitStatusReader;
   private readonly watcher: IWatchService;
   private readonly ownsWatcher: boolean;
   private readonly onError: GitOnError;
   private disposeRequested = false;
 
   constructor(options: GitRuntimeOptions = {}) {
+    this.statusReader = options.statusReader;
     this.onError = options.onError ?? (() => {});
     this.ownsWatcher = !options.watcher;
     this.watcher =
@@ -179,6 +183,7 @@ export class GitRuntime implements IGitRuntime {
       const repositoryLease = await this.acquireRepository(identity);
       try {
         const worktree = new GitWorktree({
+          statusReader: this.statusReader,
           worktree: identity.topLevel,
           gitDir: identity.gitDir,
           repository: repositoryLease.value,

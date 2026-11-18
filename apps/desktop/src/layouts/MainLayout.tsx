@@ -191,6 +191,7 @@ function InnerLayout({
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   // @@@1507 设置面板初始 section;侧栏「额度」直接开到 quota,齿轮入口回 account。
   const [settingsSection, setSettingsSection] = useState<ActiveSection>('account')
+  const [addCustomModel, setAddCustomModel] = useState(false)
   useBackgroundUsageSync(user?.id ?? null, effectsActive)
   // 手机上「我的」是推进来的一层(owner 10-26:页头左上角自己的头像进),nav / detail 两层都没有底栏;桌面走设置弹窗。
   const [settingsPane, setSettingsPane] = useState<'nav' | 'detail'>('nav')
@@ -533,12 +534,11 @@ function InnerLayout({
   }, [])
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
-  const openSettingsSection = useCallback((asked: ActiveSection, ownerConnections = false) => {
+  const openSettingsSection = useCallback((asked: ActiveSection) => {
     let section = asked
     // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App. A phone
     // with no assistant has the person's own connected apps as a row of Settings (SettingsPanel): a route to them goes there.
-    const ownDesktopConnections = ownerConnections && section === 'connectors' && !mobile && sessionHostAvailable
-    if (isAssistantSettingsSection(section) && !ownDesktopConnections) {
+    if (isAssistantSettingsSection(section)) {
       if (!mobile) {
         setSettingsModalOpen(false)
         openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
@@ -559,14 +559,18 @@ function InnerLayout({
       return
     }
     setSettingsModalOpen(true)
-  }, [setActiveTab, mobile, phoneAssistant.available, sessionHostAvailable])
+  }, [setActiveTab, mobile, phoneAssistant.available])
 
   // 会话页要打开设置(⌘, / 应用菜单 / 命令面板 / 浏览器工具栏「管理配置」):设置只有这一个弹窗(product spec)。
   // 指了格就落到那一格;没指就照原样打开(上次停在哪一格就是哪一格)。
   useEffect(() => {
     const open = (event: Event) => {
-      const detail = (event as CustomEvent<{ section?: ActiveSection; ownerConnections?: boolean }>).detail
-      if (detail?.section) openSettingsSection(detail.section, detail.ownerConnections)
+      const { section, action } = (event as CustomEvent<{
+        section?: ActiveSection
+        action?: 'add-custom-model'
+      }>).detail ?? {}
+      setAddCustomModel(section === 'model' && action === 'add-custom-model')
+      if (section) openSettingsSection(section)
       else setSettingsModalOpen(true)
     }
     // Feedback replaces the settings modal; sibling modal focus layers otherwise block its form.
@@ -1187,6 +1191,8 @@ function InnerLayout({
               <SettingsPanel
                 mobile
                 appDetail={appDetail}
+                addCustomModel={addCustomModel}
+                onCustomModelDialogClose={() => setAddCustomModel(false)}
                 inline
                 section={settingsSection}
                 onSectionChange={setSettingsSection}
@@ -1241,7 +1247,9 @@ function InnerLayout({
       </div>
 
       <ResourceMonitorHost />
-      {settingsModalOpen && <SettingsPanel mobile={mobile} section={settingsSection} onSectionChange={setSettingsSection} onClose={() => setSettingsModalOpen(false)} />}
+      {settingsModalOpen && <SettingsPanel mobile={mobile} section={settingsSection} onSectionChange={setSettingsSection}
+        addCustomModel={addCustomModel} onCustomModelDialogClose={() => setAddCustomModel(false)}
+        onClose={() => { setAddCustomModel(false); setSettingsModalOpen(false) }} />}
       {cameraPermissionSheetOpen && <CameraPermissionSheet onClose={() => setCameraPermissionSheetOpen(false)} />}
       <RemoteMachinesHost enabled={sessionHostAvailable} openSettingsSection={openSettingsSection} />
 

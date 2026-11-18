@@ -22,6 +22,7 @@ import type { LibraryMcpProvidedServer, LibraryMcpServer } from '@shared/mcp-lib
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { GuguToolGroups } from './gugu-tool-groups';
 import { McpLibraryRow } from './mcp-library-row';
+import { useAddMcpServer } from './use-add-mcp-server';
 import { useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 
@@ -54,12 +55,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
     toast({ title: translate('mcpLibrary.saveFailed'), description: messageForUser(failure), variant: 'destructive' });
   };
 
-  const openAdd = async () =>
-    showServerModal({
-      existing: library.servers,
-      harnessNames: await library.harnessNames(),
-      onSuccess: (servers) => void library.add(servers.map((server) => ({ ...server, enabledByDefault: true }))).catch(fail),
-    });
+  const openAdd = useAddMcpServer(library);
   const openEdit = async (server: LibraryMcpServer) =>
     showServerModal({
       initial: server,

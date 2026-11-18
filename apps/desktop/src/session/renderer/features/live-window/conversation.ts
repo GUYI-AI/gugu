@@ -144,13 +144,20 @@ export class LiveWindowConversation {
         const next = document.createElement('div');
         next.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;visibility:hidden';
         picture.element.append(next);
-        let painted = false;
+        let painted = false, closedDuringOpen = false;
         picture.viewPainted = false;
         let mounted: Awaited<ReturnType<typeof mountProjection>>;
         try { mounted = await mountProjection(host, next, picture.descriptor.id, {
           decorations: true,
           interactive: false,
           localTouchViewing: this.model.platform === 'phone' && picture.source.kind === 'computer',
+          state: state => {
+            // A browser may close before the agent finishes its surrounding turn.
+            // Re-read host resources; a stopped viewer alone does not prove the source was removed.
+            if (state !== 'closed' || this.disposed || epoch !== picture.epoch) return;
+            if (picture.view) void this.refresh();
+            else closedDuringOpen = true;
+          },
           painted: frame => {
             if (frame && !this.disposed && picture.present && this.pictures.get(picture.source.id) === picture && epoch === picture.epoch) {
               if (!painted) {
@@ -174,6 +181,7 @@ export class LiveWindowConversation {
           return;
         }
         picture.view = view; this.inputState();
+        if (closedDuringOpen && epoch === picture.epoch) void this.refresh();
       })().catch(error => { if (!this.disposed && epoch === picture.epoch) this.report(error); }).finally(() => { picture.opening = null;
         if (!this.disposed && this.context.shown && this.operating && picture.present && epoch !== picture.epoch) this.startPictures();
       });

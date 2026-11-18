@@ -17,6 +17,8 @@ export type RunError = {
   step: 'queue' | 'create_session' | 'launch_session' | 'start_agent' | 'deliver';
   code: string;
   message?: string; // supplementary context (branch name, timeout ms, etc.)
+  /** Durable startup reservations, charged before start; a crash can consume one without starting. Busy waits do not count. */
+  deliveryRecoveryAttempts?: number;
 };
 
 export type AutomationRun = {

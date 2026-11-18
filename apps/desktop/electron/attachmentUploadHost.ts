@@ -28,7 +28,11 @@ export function createAttachmentUploadHost(deps: {
       endpoint: async () => {
         const now = await deps.account()
         if (now?.id !== account.id) throw new Error('Attachment upload account changed')
-        return now.endpoint()
+        return { ...await now.endpoint(), getAccessToken: async () => {
+          const fresh = await deps.account()
+          if (fresh?.id !== account.id) throw new Error('Attachment upload account changed')
+          return (await fresh.endpoint()).token
+        } }
       },
       copyOf: sha => storedCopy(account.home, sha), warn: deps.warn,
       progress: (messageId, progress) => {

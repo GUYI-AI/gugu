@@ -1,3 +1,4 @@
+import { customModelRefFromOption, customModelRuntimeOption, runtimeModelId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import type { LiveSettingCapability } from '@gugu/session-core/agents/plugins';
 import { runtimeOptionForPlatformModelId } from '@/session/shared/platform-model-id';
 import type { ComposerModelSelection } from './use-composer-model-options';
@@ -73,13 +74,23 @@ export interface ModelSwitchInputs {
   runningOn: 'platform' | 'own';
   /** Provider-declared runtime contract for model changes. */
   liveSetting?: LiveSettingCapability;
+  runningCustomModel?: CustomModelRef | null;
+  currentModel?: string | null;
 }
 
 export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
   // 比对与下发都用**裸**的那个 id —— harness 收到的就是它,带前缀发出去它会原样收下。
   const { source, modelId } = input.selection;
+  const custom = source === 'own' ? customModelRefFromOption(modelId) : null;
+  const displayName = runtimeModelId(modelId) ?? '';
+  const sameCredentials = custom
+    ? custom.connectionId === input.runningCustomModel?.connectionId && input.runningOn === 'own'
+    : !input.runningCustomModel && source === input.runningOn;
   if (input.liveSetting?.recovery === 'unsupported' || input.liveSetting?.channel === 'unsupported') {
-    return { kind: 'unsupported', modelId, displayName: modelId };
+    return { kind: 'unsupported', modelId, displayName };
+  }
+  if (source === 'own' && !sameCredentials) {
+    return { kind: 'reload', modelId, displayName, source: 'harness' };
   }
   // A provider that declares reload-session cannot be treated as hot merely because the
   // requested model is present in a catalog. The adapter owns that decision; the UI must enter
@@ -91,7 +102,7 @@ export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
         ? { kind: 'reload', modelId, displayName: catalogEntry.displayName, source: 'platform' }
         : { kind: 'unavailable', modelId };
     }
-    return { kind: 'reload', modelId, displayName: modelId, source: 'harness' };
+    return { kind: 'reload', modelId, displayName, source: 'harness' };
   }
   // 没声明模型这一维 = 这一家**没有活通道**(cell 以 `LiveSettingUndeclared` 拒,与这里同一个事实)。
   // ⇒ 同一条计费路上的「当场换」不成立,❌ 不摆成能选 —— 那正是 #6182 copilot 那格:菜单里点得到,
@@ -107,10 +118,14 @@ export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
   }
 
   // BYOK 同一条计费路 + 在活清单里 = 当场换得成。跨路的一律往下走 reload。
-  if (source === input.runningOn && input.advertised.includes(modelId)) {
-    if (!liveDeclared) return { kind: 'unsupported', modelId, displayName: modelId };
+  const nativeId = custom?.modelId ?? modelId;
+  const wireValue = custom
+    ? customModelRuntimeOption(input.runningCustomModel!, nativeId, input.currentModel, input.advertised)
+    : input.advertised.find((id) => id === nativeId);
+  if (sameCredentials && wireValue) {
+    if (!liveDeclared) return { kind: 'unsupported', modelId, displayName };
     // BYOK:清单里那条**就是**下发值,不需要平台寻址那一层翻译。
-    return { kind: 'hot', modelId, wireValue: modelId };
+    return { kind: 'hot', modelId, wireValue };
   }
 
   if (source === 'platform') {
@@ -123,7 +138,7 @@ export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
   // harness 自家的模型:不在活清单里 = 这条会话当前的进程说不了它(它是按另一套注入起来的),
   // 换过去要重开。名字用 id 本身 —— 我们对 harness 自家模型没有第二份权威名字,
   // ❌ 不去猜一个好看的显示名。
-  return { kind: 'reload', modelId, displayName: modelId, source: 'harness' };
+  return { kind: 'reload', modelId, displayName, source: 'harness' };
 }
 
 /** 这条会话此刻**当场换得成**的那些(用于给下拉分档)。清单就是真值,不另算。 */
