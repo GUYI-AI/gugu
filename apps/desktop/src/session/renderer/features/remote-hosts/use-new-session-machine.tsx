@@ -14,7 +14,7 @@ const LOCAL_DEVICE = 'local';
 
 export type NewSessionMachineTarget = { deviceId: string };
 
-export function useNewSessionMachine(initialDeviceId?: string): {
+export function useNewSessionMachine(initialDeviceId?: string | null): {
   /** null = 本机。 */
   remote: NewSessionMachineTarget | null;
   machineContext: MachineCreateContext | null;
@@ -22,7 +22,11 @@ export function useNewSessionMachine(initialDeviceId?: string): {
 } {
   const { translate } = useSessionMessages();
   useEffect(() => remoteHostsStore.start(), []);
-  const [remote, setRemote] = useState<NewSessionMachineTarget | null>(() => initialDeviceId ? { deviceId: initialDeviceId } : remoteHostsStore.takeNewSessionTarget());
+  const [remote, setRemote] = useState<NewSessionMachineTarget | null>(() => {
+    const pending = remoteHostsStore.takeNewSessionTarget();
+    if (initialDeviceId === undefined) return pending;
+    return initialDeviceId === null ? null : { deviceId: initialDeviceId };
+  });
   // 已经停在新建页时又来一次「在那台机器上新建」(设置里装好机器后的「在这台机器上新建任务」等):
   // 上面的初值只在挂载时取一次,之后来的意图在这里接住,❌ 点了之后新建页还停在原来那台机器上。
   const pendingTarget = remoteHostsStore.newSessionTarget;

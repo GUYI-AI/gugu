@@ -777,7 +777,8 @@ describe('NewSessionPage', () => {
     }
   });
 
-  it('uses the agent chosen in Apps for the new task composer', async () => {
+  it('uses the agent and device chosen in Apps for the new task composer', async () => {
+    remoteHostsStore.requestNewSession('a-previous-device');
     await act(async () => {
       root.render(localized(React.createElement(NewSessionPage, { agentSelection: { agentId: 'claude' } })));
     });

@@ -282,7 +282,7 @@ export const NewSessionPage = observer(function NewSessionPage({
   // 环境与分支,信息密度换的是"发任务前一眼确认跑在哪"。
   // gugu #2525: 控件本体抽到 composer-context-tray.tsx,与项目页、对话里派任务共用一份。
   // 项目选择器列账号下的全部项目,与机器无关;没选项目时机器选择器定在哪台的任务工作区里跑。
-  const { remote, machineContext, devicePicker } = useNewSessionMachine(agentSelection?.deviceId);
+  const { remote, machineContext, devicePicker } = useNewSessionMachine(agentSelection ? agentSelection.deviceId ?? null : undefined);
   const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={openProject} />;
 
   return (
