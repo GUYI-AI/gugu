@@ -49,8 +49,6 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   const busyRef = useRef(false);
   const [error, setError] = useState(false);
   const [page, setPage] = useState<BrowserAnnotationTarget | null>(null);
-  const inspectRef = useRef(inspect);
-  inspectRef.current = inspect;
   const editing = editingId ? draft.items.find(item => item.id === editingId) : undefined;
   const editorTarget = editing ?? selection?.target;
   const editorOpen = Boolean(editorTarget);
@@ -86,16 +84,14 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     return () => { request.current++; stop(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
   }, [browserId, editorOpen, onExit]);
 
-  // Resolve the visible page on entry and after browsing so saved markers are clickable
-  // even before the next pointer move.
-  useEffect(() => {
-    if (browsing) return;
+  // Focusing the annotation surface resolves the visible page before any pointer move.
+  const readViewport = () => {
+    if (busyRef.current) return;
     const own = ++request.current;
-    void inspectRef.current({ x: 0.5, y: 0.5, width: 0, height: 0 }, false).then(result => {
+    void inspect({ x: 0.5, y: 0.5, width: 0, height: 0 }, false).then(result => {
       if (request.current === own) setPage(result.target);
     }, () => {});
-    return () => { request.current++; };
-  }, [browserId, browsing]);
+  };
 
   const point = (event: PointerEvent<HTMLDivElement>): Point => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -140,6 +136,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     width: `${target.rect.width / target.viewport.width * 100}%`, height: `${target.rect.height / target.viewport.height * 100}%` });
   return <>
     {!browsing && <div ref={root} tabIndex={-1} data-occludes-browser-page data-browser-annotation-layer className="absolute inset-0 z-10 touch-none cursor-crosshair overflow-hidden outline-none"
+      onFocus={event => { if (event.target === event.currentTarget) readViewport(); }}
       onPointerDown={event => { if (editorOpen || busy || event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = point(event); setDrag(null); setHover(null); }}
       onPointerMove={event => {
         if (editorOpen || busy) return;
