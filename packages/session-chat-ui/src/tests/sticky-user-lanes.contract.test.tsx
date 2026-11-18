@@ -17,8 +17,8 @@ import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
 import type { SelfIdentity } from '@session-chat/lib/self-identity';
-import { afterEach, describe, expect, it } from 'vitest';
-import { page } from 'vitest/browser';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cdp, page } from 'vitest/browser';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
@@ -26,8 +26,15 @@ import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown
 const PIN_LINE = UNIT_REGISTRY.message!.margin!.top!;
 
 const teardown: Array<() => void> = [];
-afterEach(() => {
-  while (teardown.length) teardown.pop()?.();
+// Geometry and front-layer sweeps below exercise the ordinary reversible push-out.
+// The host's accessibility preference must not silently select the other paint contract.
+beforeEach(async () => {
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(false);
+});
+afterEach(async () => {
+  try { while (teardown.length) teardown.pop()?.(); }
+  finally { await cdp().send('Emulation.setEmulatedMedia', { features: [] }); }
 });
 
 /** A user message and enough replies that its row leaves the virtualizer's overscan while they fill the screen. */
@@ -94,6 +101,28 @@ async function mount(
 }
 
 describe('sticky user lanes', () => {
+  it.each(['no-preference', 'reduce'] as const)('honors %s while a pinned summary leaves and returns', async motion => {
+    await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motion }] });
+    expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(motion === 'reduce');
+    const t = await mount([longTurn('a', 0, 4), longTurn('b', 1, 20)]);
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
+    const summary = t.summary('a-user')!;
+    const laneEnd = t.scrollEl.scrollTop + lane.getBoundingClientRect().bottom - t.scrollEl.getBoundingClientRect().top;
+    const leavingAt = laneEnd - summary.getBoundingClientRect().height - PIN_SUMMARY_GAP - PIN_LINE;
+    await t.scrollTo(leavingAt - 8);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 1);
+    expect(lane.dataset.pinLeaving).toBe('false');
+    expect(pinnedSummaryShown(summary), 'both modes keep a fully stuck summary readable').toBe(true);
+    await t.scrollTo(leavingAt + 5);
+    expect(t.pinTop('a-user'), 'the browser still computes the same partial push-out').toBeCloseTo(PIN_LINE - 5, 1);
+    expect(lane.dataset.pinLeaving).toBe('true');
+    expect(getComputedStyle(summary).visibility).toBe(motion === 'reduce' ? 'hidden' : 'visible');
+    expect(pinnedSummaryShown(summary), 'reduced motion hides at push-out; ordinary motion stays in front').toBe(motion !== 'reduce');
+    await t.scrollTo(leavingAt - 8);
+    expect(lane.dataset.pinLeaving).toBe('false');
+    expect(pinnedSummaryShown(summary), 'scrolling back restores the summary in both modes').toBe(true);
+  });
+
   it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
     const committed = longTurn('a', 0, 1);
     committed.items = [{ kind: 'message', id: 'a-user', seq: 0, role: 'user', text: '',
