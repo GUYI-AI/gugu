@@ -70,7 +70,7 @@ describe('#3005 cache-aware scheduler', () => {
     vi.useFakeTimers();
     const policy = claudeCacheIdleCompaction();
     const compact = vi.fn(async () => undefined);
-    let state = { idle: true, contextTokens: 250_000, revision: 1, lastWorkEndedAt: Date.now() as number | null };
+    const state = { idle: true, contextTokens: 250_000, revision: 1, lastWorkEndedAt: Date.now() as number | null };
     const scheduler = new IdleCompaction(() => state, compact, undefined, policy);
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     scheduler.update();
