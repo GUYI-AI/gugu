@@ -198,6 +198,7 @@ const startClaudeRendezvous: HostStart = async (ctx, info, platformPromise, { st
         userSettingsProvided: info.userSettingsProvided === true,
         platformSettingsPath: platform.settingsDocumentPath,
         fastMode: info.fastMode === true, effort: info.effort,
+        reviewerModel: bundle.env.CLAUDE_CODE_AUTO_MODE_MODEL,
       }),
       env: {
         ...(capabilities.spawnEnv ?? {}),

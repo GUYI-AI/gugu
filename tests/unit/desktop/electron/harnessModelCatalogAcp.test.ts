@@ -262,7 +262,7 @@ function handle(msg) {
 }
 `)
     expect(await probeHarnessModelCatalog(providerId, 'acp')).toEqual({
-      kind: 'ready',
+      kind: 'ready', autoReview: false, reviewerAvailable: false,
       models: [
         { id: selected, name: 'First', description: 'Provider-owned value' },
         { id: other, name: 'Second' },

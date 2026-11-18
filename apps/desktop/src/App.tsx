@@ -19,11 +19,13 @@ import { AgentPresencePrewarm } from './components/AgentPresencePrewarm'
 import { AgentStatusFeedBridge } from './components/AgentStatusFeedBridge'
 import { ImagePreviewProvider } from './components/ImagePreviewProvider'
 import { SessionExpiredNotice } from './components/SessionExpiredNotice'
+import { AndroidChatBackgroundWatch } from './mobile/AndroidChatBackgroundWatch'
 import { FullScreenLoader } from './components/FullScreenLoader'
 import { FirstRunGate } from './components/firstRun/FirstRunGate'
 import { ShellErrorBoundary } from './components/ShellErrorBoundary'
 import { ReleaseNotesOpener } from './components/ReleaseNotesOpener'
 import { AppModalHost } from './components/appModal/AppModalHost'
+import { ConversationDeleteConfirmationHost } from './components/chat/ConversationDeleteConfirmationHost'
 import { ContentContextMenuHost } from './components/ContentContextMenuHost'
 import { ThemeProvider } from './store/theme'
 import { rendererCommandEventName } from './lib/rendererCommandProtocol'
@@ -32,6 +34,7 @@ import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
 import { installConnectionHost } from './components/connections/connection-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
+import { useAndroidNotificationReminder } from './lib/useAndroidNotificationReminder'
 import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
 import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
@@ -44,6 +47,7 @@ if (typeof window !== 'undefined') { installAssistantPanelHost(); installConnect
 
 function AuthenticatedProduct({ user }: { user: AuthUser }) {
   const [effectsActive, setEffectsActive] = useState(false)
+  useAndroidNotificationReminder(effectsActive)
   const onShellCommitted = useCallback(() => setEffectsActive(true), [])
   useEffect(() => {
     if (!effectsActive || platform.kind !== 'electron' || !platform.capabilities.sessionHost) return
@@ -80,8 +84,10 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
         <ShareIntakeHost active={effectsActive} />
         <UnfinishedAgentCreateSweeper active={effectsActive} />
         <SessionExpiredNotice />
+        <AndroidChatBackgroundWatch active={effectsActive} />
         <ReleaseNotesOpener />
         <AppModalHost />
+        <ConversationDeleteConfirmationHost />
       </ImagePreviewProvider>
     </ChatProvider>
   )

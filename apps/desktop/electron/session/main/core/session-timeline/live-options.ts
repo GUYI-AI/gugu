@@ -37,7 +37,7 @@ export class SessionOptionsError extends Error {
 }
 
 function toGroup(
-  source: { selected: string | null; available: ReadonlyArray<{ id: string; name: string; description?: string }> } | null | undefined
+  source: { selected: string | null; available: ReadonlyArray<{ id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean }> } | null | undefined
 ): SessionOptionGroup | null {
   if (!source) return null;
   if (source.available.length === 0) return null;
@@ -47,6 +47,8 @@ function toGroup(
       id: choice.id,
       name: choice.name,
       ...(choice.description !== undefined ? { description: choice.description } : {}),
+      ...(choice.disabled ? { disabled: true } : {}),
+      ...(choice.reviewByHaiku ? { reviewByHaiku: true } : {}),
     })),
   };
 }

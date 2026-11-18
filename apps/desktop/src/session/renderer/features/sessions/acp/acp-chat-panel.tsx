@@ -1,3 +1,4 @@
+import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
@@ -833,12 +834,14 @@ const ComposerForStore = observer(function ComposerForStore({
   const reloadPermission = providerCapabilities?.acp.liveSettings?.permission?.channel === 'reload-session'
     ? detachedPermissionModeOptions(store.recordedPermissionTier, providerPermissionModeMap)
     : null;
+  const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
+  const route = sessionBillingRoute(platformCatalog.sessionSelection);
   const sessionPermissionOptions = sessionPermissionModeOptions(
     store.permissionModeOptions ?? detachedPermission?.options ?? reloadPermission?.options ?? null,
     providerCapabilities?.acp.liveSettings?.permission,
     providerCapabilities?.acp.sessionModes,
+    { route, modeMap: providerPermissionModeMap },
   );
-  const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
 
   /**
    * 这条会话的**计费路**,三态 —— 唯一写者是会话自己记下的那个决定
@@ -848,7 +851,6 @@ const ComposerForStore = observer(function ComposerForStore({
    * 并进 `own` 会让菜单在目录到达前(以及目录取不到时的**永远**)照那份被票裁过的活清单画,
    * #5808 原样复发。理由全文在 @@@own-model-tier。
    */
-  const route = sessionBillingRoute(platformCatalog.sessionSelection);
   // #6264 会话在别的机器上:这条登录读数也问那台机器(一套工作台)。
   const { auth: authStatus } = useAgentAuthStatus(route === 'own' ? providerId : null, undefined, {
     machine: machineRegistry.machineOf(store.projectId),
@@ -1501,12 +1503,12 @@ const ComposerForStore = observer(function ComposerForStore({
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
         onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
         renderFastModeHint={renderFastModeHint}
-        permissionModeOptions={localizePermissionModeOptions(
+        permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
           agents?.find((agent) => agent.id === providerId)?.name ?? providerId ?? '',
           providerPermissionModeMap
-        )}
+        ), providerId, runningCustomModel ? 'api-key' : costSource, providerPermissionModeMap)}
         selectedPermissionMode={selectedPermissionModeId(
           store.permissionMode ?? detachedPermission?.selected ?? reloadPermission?.selected,
           sessionPermissionOptions,

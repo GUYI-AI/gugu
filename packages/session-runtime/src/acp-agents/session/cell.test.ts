@@ -65,6 +65,27 @@ async function flushDrains(): Promise<void> {
 }
 
 describe('SessionCell prompts', () => {
+  it('publishes an explicit provider retry without changing work or cancellation, and clears it at its cycle end', () => {
+    const { cell } = makeCell();
+    try {
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running' });
+      cell.push({ kind: 'message', role: 'user', messageId: 'one', text: 'work' });
+      const active = cell.sessionState.activeTurnId;
+      const retrying = { since: 1234, message: 'Reconnecting: tls handshake eof' };
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running', retrying });
+      expect(cell.sessionState).toMatchObject({ lifecycle: 'working', isGenerating: true, canCancel: true, activeTurnId: active, retrying });
+      cell.push({ kind: 'message', role: 'user', messageId: 'two', text: 'incoming message', steering: true });
+      cell.push({ kind: 'session_notice', code: 'provider-notice', title: 'Another notice', detail: 'Another notice' });
+      expect(cell.sessionState.retrying).toEqual(retrying);
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running', retrying: null });
+      expect(cell.sessionState).toMatchObject({ lifecycle: 'working', canCancel: true, retrying: null });
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running', retrying });
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'idle', stopReason: 'error', error: { message: 'provider failed' } });
+      expect(cell.sessionState).toMatchObject({ lifecycle: 'ready', isGenerating: false, retrying: null });
+      expect(cell.history().committed.at(-1)?.outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed' });
+    } finally { cell.dispose(); }
+  });
+
   it('gives repeated runtime turn IDs distinct durable reference identities across restarts', async () => {
     const first = makeCell().cell, restarted = makeCell().cell;
     try {
@@ -3193,4 +3214,32 @@ describe('task file context stays separate from the person words', () => {
       expect(JSON.stringify(item)).not.toContain('promptText');
     } finally { cell.dispose(); }
   });
+});
+
+it.each(['platform', 'unknown', undefined] as const)('hides and refuses an own-only reviewer on route %s', async billingRoute => {
+  const { cell, agent } = makeCell(new FakeAcpAgent(), {
+    billingRoute,
+    permissionModeMap: { edit: { id: ':workspace' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } },
+  });
+  cell.applySessionMeta({ modes: { currentModeId: ':workspace', availableModes: [
+    { id: ':workspace', name: 'Edit' }, { id: 'auto-review', name: 'AI review' },
+  ] } });
+  expect(cell.config.modeOptions?.available.map(mode => mode.id)).toEqual([':workspace']);
+  expect(isOk(await cell.setMode('auto-review'))).toBe(false);
+  expect(agent.setSessionMode).not.toHaveBeenCalled();
+  expect(agent.setSessionConfigOption).not.toHaveBeenCalled();
+});
+
+it('keeps the own-account reviewer selectable through the native authority', async () => {
+  const { cell, agent } = makeCell(new FakeAcpAgent(), {
+    billingRoute: 'own',
+    permissionModeMap: { edit: { id: ':workspace' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } },
+  });
+  cell.applySessionMeta({ modes: { currentModeId: ':workspace', availableModes: [
+    { id: ':workspace', name: 'Edit' }, { id: 'auto-review', name: 'AI review' },
+  ] } });
+  agent.setSessionMode = vi.fn().mockResolvedValue({});
+  expect(cell.config.modeOptions?.available.map(mode => mode.id)).toContain('auto-review');
+  expect(isOk(await cell.setMode('auto-review'))).toBe(true);
+  expect(agent.setSessionMode).toHaveBeenCalledWith({ sessionId: 'session-1', modeId: 'auto-review' });
 });

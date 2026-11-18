@@ -7,6 +7,8 @@ import { forgetUnconfirmedReads } from '../lib/readWriter'
 import type { AccountImRepository } from '../lib/imRepository'
 import { rendererLogger } from '../lib/log'
 import { forgetMessageAgentWakes } from '../lib/messageAgentWakes'
+import { desktopIpc } from '../platform/desktopIpc'
+import { nativePersonalPublicationChannel } from '../session/shared/core/sessions/sessionEvents'
 
 const revisionLog = rendererLogger('chat/account-revision')
 const storeLog = rendererLogger('chat/store')
@@ -62,9 +64,19 @@ export function useAccountStartBeat(userId: string | null | undefined, ports: {
       else if (registrationsRef.current.size > 0) void getRevisionCoordinator().catch((error) => revisionLog.error({ error }, 'coordinator failed'))
     }
     const stopBeat = watchRendererRevisionReconcile(beat)
+    const onPublication = (data: unknown) => {
+      const hint = data as { accountId?: unknown; revision?: unknown } | null
+      if (hint?.accountId !== userId || typeof hint.revision !== 'string' || !/^(0|[1-9]\d*)$/.test(hint.revision)) return
+      open()
+      if (coordinatorRef.current) coordinatorRef.current.wake(hint.revision)
+      else beat()
+    }
+    const stopNative = desktopIpc()?.eventOn(nativePersonalPublicationChannel.name, onPublication)
+    const onPhone = (event: Event) => onPublication((event as CustomEvent).detail)
+    window.addEventListener(nativePersonalPublicationChannel.name, onPhone)
     // A failed backend write asks for this same beat now; the beat's pull is what tells the backend came back.
     const unbindProbe = bindBackendProbe(beat)
     // Reads this account could not write, and wakes it read, are this account's: they never carry over to the next one.
-    return () => { cancelled = true; stopBeat(); unbindProbe(); forgetUnconfirmedReads(); forgetMessageAgentWakes() }
+    return () => { cancelled = true; stopBeat(); stopNative?.(); window.removeEventListener(nativePersonalPublicationChannel.name, onPhone); unbindProbe(); forgetUnconfirmedReads(); forgetMessageAgentWakes() }
   }, [coordinatorRef, getImRepository, getRevisionCoordinator, loadChats, paintLocal, registrationsRef, setChats, setChatsLoad, userId])
 }

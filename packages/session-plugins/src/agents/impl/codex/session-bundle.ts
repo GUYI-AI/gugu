@@ -612,7 +612,7 @@ function modelArgs(
 
 function codexPermissionMode(bundle: SessionCapabilityBundle): CodexPermissionMode {
   const explicit = bundle.autonomy?.permissionMode;
-  if (explicit === 'read-only' || explicit === 'edit' || explicit === 'full-access') {
+  if (explicit === 'read-only' || explicit === 'edit' || explicit === 'ai-review' || explicit === 'full-access') {
     return explicit;
   }
   // `plan` is intentionally not interpreted here; its unsupported-provider fallback remains #5623's
@@ -621,7 +621,7 @@ function codexPermissionMode(bundle: SessionCapabilityBundle): CodexPermissionMo
 }
 
 function codexPermissionProfile(mode: CodexPermissionMode): string {
-  const profile = CODEX_PERMISSION_MODES[mode]?.id;
+  const profile = CODEX_PERMISSION_MODES[mode === 'ai-review' ? 'edit' : mode]?.id;
   if (!profile) throw new Error(`Codex permission mode '${mode}' has no declared native profile`);
   return profile;
 }
@@ -639,6 +639,7 @@ function codexThreadPermission(bundle: SessionCapabilityBundle): {
     // here also makes the boundary explicit for the ACP adapter's session metadata.
     threadStart: {
       approvalPolicy: autonomy.approvalPolicy,
+      approvalsReviewer: autonomy.approvalsReviewer,
       sandbox: autonomy.sandboxMode,
     },
   };

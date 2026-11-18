@@ -5,8 +5,8 @@ import { useAuth } from '../store/auth'
 import { membershipSettingsSection } from '../lib/billing/settingsDestination'
 import { AboutSection } from './settings/AboutSection'
 import { AccountSection } from './settings/AccountSection'
-import { ConnectorsSection } from './settings/ConnectorsSection'
-import { useConnectionAuthority } from '@/lib/connectionBridge'
+import type { PhoneAssistantState } from '../mobile/assistant/usePhoneAssistant'
+import { Button } from './ui/Button'
 import { DevicesSection } from './settings/DevicesSection'
 import { FileStorageSection } from './settings/FileStorageSection'
 import { GeneralSection } from './settings/GeneralSection'
@@ -40,25 +40,24 @@ import { useTranslation } from 'react-i18next'
  * - 「App」只在手机壳上:那里的 App 由这一页自己的 App 仓管(L9);桌面在最左栏的「App」里管,网页不装 App;
  * - 「这台手机」由原生动作或 Agent 宿主能力开放；平台各自保管动作协议与宿主生命周期;
  * - 会话页那几格只在有会话页宿主的桌面形态上(它们是会话页的组件);手机「我的」不画。
- * 咕咕的资料、连接应用不在这里:它们在它的 App 里(owner 11-12)。
- * - 「连接应用」管理用户自己的连接，仅在手机的账户级连接模式下显示。
+ * - 手机的连接应用入口在市场的连接器页。
  */
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
-      (section !== 'apps' || platform.capabilities.mobileApps) &&
+      (section !== 'apps' || (mobile && platform.capabilities.mobileApps)) &&
       (section !== 'data-import' || (!mobile && platform.capabilities.sessionHost)) &&
       (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
-      (section !== 'connectors' || mobile) &&
+      section !== 'connectors' &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
 const DESKTOP_SECTIONS_FOR_PLATFORM = sectionsFor(false)
 /** 内页自己没有一句话说明的几页:由这里补在最上面(其余各页自己有,❌ 重复)。 */
 const DataImportSection = lazy(() => import('./settings/data-import/DesktopDataImportSection').then((module) => ({ default: module.DesktopDataImportSection })))
-const MobileAppsSection = lazy(() => import('./settings/MobileAppsSection').then((module) => ({ default: module.MobileAppsSection })))
+const PhoneMarketplace = lazy(() => import('../mobile/market/PhoneMarketplace').then((module) => ({ default: module.PhoneMarketplace })))
 
 /**
  * 会话页那几格的浮层(下拉、提示、确认框)落在 SessionSettingsSection 的浮层层里,不在壳的层栈(sheetStack)上:
@@ -69,10 +68,15 @@ const sessionOverlayOpen = (): boolean =>
 
 // ─── SettingsPanel ────────────────────────────────────────────────────────────
 
-export function SettingsPanel({ mobile = false, inline = false, onClose, initialSection = 'account', section, onSectionChange, pane, onPaneChange, appDetail, addCustomModel, onCustomModelDialogClose }: {
+export function SettingsPanel({
+  mobile = false, inline = false, onClose, initialSection = 'account', section, onSectionChange, pane, onPaneChange,
+  appDetail, onHandledAppDetail, marketAssistant, addCustomModel, onCustomModelDialogClose,
+}: {
   addCustomModel?: boolean
   onCustomModelDialogClose?: () => void
   appDetail?: import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink
+  marketAssistant?: PhoneAssistantState
+  onHandledAppDetail?: () => void
   mobile?: boolean
   // @@@1787 owner:「我的」是底部 tab 之一 → 移动端作 tab 页内联渲染(无 Sheet 壳),nav 层保留底部 tab 栏
   inline?: boolean
@@ -88,26 +92,24 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 }) {
   const { user, updateUser, logout } = useAuth()
   const { t } = useTranslation('main')
-  // On phones, hide the user's connected apps while connections are still kept in the assistant's home.
-  const { route: connectionRoute } = useConnectionAuthority()
-  const sections = mobile
-    ? MOBILE_SECTIONS_FOR_PLATFORM.filter((s) => s !== 'connectors' || connectionRoute?.mode !== 'legacy')
-    : DESKTOP_SECTIONS_FOR_PLATFORM
+  const sections = mobile ? MOBILE_SECTIONS_FOR_PLATFORM : DESKTOP_SECTIONS_FOR_PLATFORM
 
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)
   const requestedSection = section ?? internalSection
-  // The assistant's App keeps its own routes. On the phone, the old channels route can also land on the user's connections.
-  const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || (mobile && requestedSection === 'channels'))
-  const unsupportedPhoneSection = (requestedSection === 'apps' && !platform.capabilities.mobileApps)
-    || (requestedSection === 'data-import' && !sections.includes('data-import'))
-    || (requestedSection === 'prompts' && !sections.includes('prompts'))
-    || (requestedSection === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
-  const activeSection = unsupportedPhoneSection ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
+  const marketConnections = mobile && (requestedSection === 'connectors' || requestedSection === 'channels')
+  const destination = marketConnections ? 'apps' : requestedSection
+  const unsupportedSection = (destination === 'data-import' && !sections.includes('data-import'))
+    || (destination === 'apps' && !sections.includes('apps'))
+    || (destination === 'prompts' && !sections.includes('prompts'))
+    || (destination === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
+  const activeSection = unsupportedSection || (isAssistantSettingsSection(destination) && !sections.includes(destination))
+    ? 'account' : destination
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
   const mobilePane = pane ?? internalPane
   const setMobilePane = onPaneChange ?? setInternalPane
+  const [marketInstalled, setMarketInstalled] = useState(false)
   const [detailPage, setDetailPage] = useState<SettingsDetailState>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const passwordActions = useRef<HTMLDivElement>(null)
@@ -124,7 +126,6 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 
   function renderSection() {
     switch (activeSection) {
-      case 'connectors': return <ConnectorsSection />
       case 'prompts': return <div><SessionSettingsSection section="prompts" /></div>
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
@@ -137,7 +138,9 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       case 'about':    return <AboutSection />
       case 'permissions': return <PermissionsSection />
       case 'passwords': return PASSWORD_BETA_ENABLED ? <PasswordSection actionsHost={() => passwordActions.current} /> : null
-      case 'apps':     return <Suspense fallback={null}><MobileAppsSection appDetail={appDetail} /></Suspense>
+      case 'apps':     return <Suspense fallback={null}><PhoneMarketplace key={requestedSection}
+        initialArea={marketConnections ? 'connectors' : 'agents'} appDetail={appDetail} onHandledAppDetail={onHandledAppDetail}
+        assistant={marketAssistant} showMarketTabs={!detailPage} installedOpen={marketInstalled} onCloseInstalled={() => setMarketInstalled(false)} /></Suspense>
       case 'phone':    return <PhoneDeviceActionsPage />
       case 'sessions':
       case 'interface':
@@ -194,6 +197,10 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
                   <X />
                 </IconButton>
                 </>
+              ) : activeSection === 'apps' && !detailPage ? (
+                <Button size="sm" variant="ghost" data-testid="phone-market-show-installed" onClick={() => setMarketInstalled(true)}>
+                  {t('phoneMarket.installed')}
+                </Button>
               ) : undefined}
             />}
             {/* @@@6436 内页排版(桌面与手机的内边距差别也在内)全在 settings/settings.css。 */}

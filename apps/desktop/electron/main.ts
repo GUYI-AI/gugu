@@ -5194,7 +5194,11 @@ app.whenReady().then(async () => {
     // @@@task-shell-port (#5012) 「给会话开账号」的口与网页版无头宿主共用(sessionpage-identity-host.ts);
     // 这里只喂它桌面版的四样:登录态、设备 id、项目名、会话事实。
     const sessionpageIdentityHost = createSessionpageIdentityHost({
-      beforeIdentityRemoval: id => assistantPanelRuntime?.pauseRemoval(id) ?? (() => {}),
+      beforeIdentityRemoval: async id => {
+        const settlePanel = assistantPanelRuntime?.pauseRemoval(id)
+        const settleRuntime = await deviceRuntimeHost?.beginAgentRemoval(id)
+        return removed => { settleRuntime?.(removed); settlePanel?.(removed) }
+      },
       getAuth: getSessionpageAuth,
       // #4320② 锁内解析:localDeviceId 不起 tick,不会派发要同一把锁的设备命令。
       resolveDeviceId: localDeviceId,
@@ -5232,7 +5236,7 @@ app.whenReady().then(async () => {
       failed: (error) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting cloud task names failed'),
     })
     const nativeInbox = emdash.startNativeConversationInboxHost({
-      open: async target => (await sessionpageIdentityHost.ensureAgentAddress(target)).chatId,
+      open: async target => (await sessionpageIdentityHost.ensureAgentAddress(target)).chatId, publication: sessionpageIdentityHost.nativePublication,
       failed: error => createLogger('sessionpage/personal-inbox').warn({ error: String(error) }, 'Personal conversation address remains pending'),
     })
     app.once('will-quit', () => { nativeInbox.dispose(); assistantPanelRuntime?.dispose() })
