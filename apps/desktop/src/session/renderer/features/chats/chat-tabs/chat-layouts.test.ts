@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { folderItem, type PanelItem } from './chat-panel-item';
-import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
+import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, revealChatWorkspaceMessage, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
 import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
 import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
@@ -250,6 +250,35 @@ describe('chat tool state is scoped to the conversation ID', () => {
       closeChatTab(id, extra);
       closeChatTab(id, tab);
       expect(layout.chatToolLayout).toBe('empty');
+    }
+  });
+
+  it('reveals a selected topic from a hidden group and reveals its own message from full view', () => {
+    const sourceId = 'workspace-source-navigation';
+    const topicId = 'workspace-topic-navigation';
+    const source = chatLayoutOf(sourceId);
+    const topic = chatLayoutOf(topicId);
+    const stopSource = source.attachChatWorkspace();
+    const stopTopic = topic.attachChatWorkspace();
+    try {
+      const groupTool = openPanelItem(sourceId, file('group-tool'))!;
+      source.setChatToolLayout('hidden');
+      openTopicTab(sourceId, { topicChatId: topicId, name: '打开话题' });
+      expect(source.chatWorkspaceMode).toBe('split');
+      expect(topicTabOf(sourceId)?.shown).toBe(true);
+      expect(panelTabsOf(sourceId).map((tab) => tab.tabId)).toEqual([groupTool]);
+
+      const topicTool = openPanelItem(topicId, file('topic-tool'))!;
+      const directionAndWidth = topic.layout;
+      topic.setChatToolLayout('full');
+      revealChatWorkspaceMessage(topicId);
+      expect(topic.chatWorkspaceMode).toBe('split');
+      expect(topic.layout).toBe(directionAndWidth);
+      expect(panelTabsOf(topicId).map((tab) => tab.tabId)).toEqual([topicTool]);
+      expect(topicTabOf(sourceId)?.topic.topicChatId).toBe(topicId);
+    } finally {
+      stopTopic();
+      stopSource();
     }
   });
 

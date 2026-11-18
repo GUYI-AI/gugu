@@ -25,7 +25,7 @@ vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({
   useToast: () => ({ toast: toastMock }),
 }))
 const mobileShellState = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobileShellState.enabled }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobileShellState.enabled, readMobileShell: () => mobileShellState.enabled }))
 let container: HTMLDivElement
 let harness: ReturnType<typeof createReactHarness>
 async function flush() {
