@@ -36,7 +36,7 @@ export function InvitationPanel() {
         {data && <p className="gg-referral-note">{t(`referrals.condition.${data.policy.success_condition}`)} {offer && t(`referrals.offer.${offer.key}`, offer)}</p>}
         <div className="gg-referral-copy">
           <Button variant="secondary" size="sm" disabled={!data?.code_enabled} onClick={() => { if (data) void copy(data.code) }}>{t('referralPreview.copyCode')}</Button>
-          <Button size="sm" disabled={!data?.code_enabled} onClick={() => { if (data) void copy(createReferralLinkForApp(data.code, betaBuild ? platform.authCallbacks?.redirectTo : undefined)) }}>{t('referralPreview.copyLink')}</Button>
+          <Button variant="primary" size="sm" disabled={!data?.code_enabled} onClick={() => { if (data) void copy(createReferralLinkForApp(data.code, betaBuild ? platform.authCallbacks?.redirectTo : undefined)) }}>{t('referralPreview.copyLink')}</Button>
         </div>
         {data && !data.code_enabled && <p role="status">{t('referrals.codeDisabled')}</p>}
         {copyStatus && <p role="status" className="gg-referral-note">{copyStatus}</p>}

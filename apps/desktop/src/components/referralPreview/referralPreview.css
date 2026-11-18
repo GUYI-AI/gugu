@@ -11,7 +11,7 @@
 .gg-referral-dialog-heading{display:flex;flex:none;align-items:center;justify-content:space-between;padding:20px 20px 0 24px}
 .gg-referral-dialog-heading h2{margin:0;font-size:var(--font-title);font-weight:600}
 .gg-referral-panel{display:flex;flex-direction:column;gap:16px;min-height:0;height:100%;overflow:hidden;padding:20px 24px 24px}
-.gg-referral-code-card{flex:none;border-radius:var(--radius-surface);background:var(--bg);padding:18px 16px 16px;text-align:center}
+.gg-referral-code-card{flex:none;border-radius:var(--radius-surface);background:var(--muted);padding:18px 16px 16px;text-align:center}
 .gg-referral-code{display:block;font-size:30px;font-weight:600;letter-spacing:3px;overflow-wrap:anywhere}
 .gg-referral-note{margin:6px 0 0;font-size:var(--font-caption);line-height:1.5;color:var(--muted-fg)}
 .gg-referral-copy{display:flex;justify-content:center;gap:8px;margin-top:14px}
