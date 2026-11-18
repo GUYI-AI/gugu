@@ -1,13 +1,17 @@
-/** Upload deadlines are shared by every device host; renderer timing only observes this runner. */
-export const ATTACHMENT_UPLOAD_TIMEOUT_MS = 120_000
-export const ATTACHMENT_UPLOAD_IDLE_MS = 15_000
-export const ATTACHMENT_UPLOAD_START_MS = 30_000
-export const ATTACHMENT_UPLOAD_RESPONSE_MS = 20_000
-// A completed write can still be buffered in the network stack. Allow the request body to drain at 64 KiB/s
-// before the response grace period, with the signed plan expiry still capping the attempt.
-const ATTACHMENT_UPLOAD_DRAIN_BYTES_PER_SECOND = 64 * 1024
+/** Upload writes use the same inactivity window on every device host. */
+// Chromium and fetch do not expose a socket idle event. Allow a minute between observed writes,
+// on the scale of HTTP socket idle timeouts, without imposing a throughput or response deadline.
+export const ATTACHMENT_UPLOAD_IDLE_MS = 60_000
 export class AttachmentDeadlineError extends Error {
   constructor(readonly stage: string, message = 'Attachment send timed out') { super(message) }
+}
+export function waitForAttachmentRetry(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const aborted = () => { clearTimeout(timer); signal?.removeEventListener('abort', aborted); reject(signal?.reason) }
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', aborted); resolve() }, ms)
+    signal?.addEventListener('abort', aborted, { once: true })
+  })
 }
 export function linkedAttachmentSignal(signals: readonly AbortSignal[]): AbortSignal {
   const controller = new AbortController()
@@ -21,30 +25,26 @@ export function linkedAttachmentSignal(signals: readonly AbortSignal[]): AbortSi
   if (aborted) controller.abort(aborted.reason)
   return controller.signal
 }
-export type AttachmentStageOperation<T> = (signal: AbortSignal, capDeadline: (expiresAt: string | undefined) => void, progress: (sent?: number, total?: number) => void) => Promise<T>
+export type AttachmentStageOperation<T> = (signal: AbortSignal, capDeadline: (expiresAt: string | undefined) => void, progress: (sent: number, total?: number) => void) => Promise<T>
 export async function runAttachmentStage<T>(stage: string, operation: AttachmentStageOperation<T>, parent?: AbortSignal,
   options: { timeoutMs: number | null; timeoutError?: () => Error; watchUpload?: boolean } = { timeoutMs: null }): Promise<T> {
   const controller = new AbortController(), signal = parent ? linkedAttachmentSignal([parent, controller.signal]) : controller.signal
-  const watchUpload = stage === 'upload' && options.watchUpload !== false
   let deadline = options.timeoutMs === null ? Infinity : Date.now() + options.timeoutMs
-  let uploadDeadline = Date.now() + ATTACHMENT_UPLOAD_START_MS, lastSent = 0
+  let idleDeadline = options.watchUpload ? Date.now() + ATTACHMENT_UPLOAD_IDLE_MS : Infinity
+  let lastSent = 0
   let timeout: ReturnType<typeof setTimeout> | undefined
   const arm = () => {
     clearTimeout(timeout)
-    const next = Math.min(deadline, watchUpload ? uploadDeadline : Infinity)
-    if (Number.isFinite(next)) timeout = setTimeout(() => controller.abort(options.timeoutError?.() ?? new AttachmentDeadlineError(stage)), Math.max(0, next - Date.now()))
+    const next = Math.min(deadline, idleDeadline)
+    if (Number.isFinite(next)) timeout = setTimeout(() => {
+      if (next > Date.now()) arm()
+      else controller.abort(options.timeoutError?.() ?? new AttachmentDeadlineError(stage))
+    }, Math.min(2 ** 31 - 1, Math.max(0, next - Date.now())))
   }
-  const progress = (sent?: number, total?: number) => {
-    if (signal.aborted || sent !== undefined && (!Number.isFinite(sent) || sent <= lastSent)) return
-    if (sent === undefined) {
-      if (lastSent === 0) uploadDeadline = Date.now() + ATTACHMENT_UPLOAD_START_MS
-    } else {
-      lastSent = sent
-      const complete = total !== undefined && Number.isFinite(total) && total > 0 && sent >= total
-      uploadDeadline = Date.now() + (complete
-        ? ATTACHMENT_UPLOAD_RESPONSE_MS + Math.ceil(total * 1000 / ATTACHMENT_UPLOAD_DRAIN_BYTES_PER_SECOND)
-        : ATTACHMENT_UPLOAD_IDLE_MS)
-    }
+  const progress = (sent: number, total?: number) => {
+    if (signal.aborted || !Number.isFinite(idleDeadline) || !Number.isFinite(sent) || sent <= lastSent) return
+    lastSent = sent
+    idleDeadline = total !== undefined && total > 0 && sent >= total ? Infinity : Date.now() + ATTACHMENT_UPLOAD_IDLE_MS
     arm()
   }
   const capDeadline = (expiresAt: string | undefined) => {

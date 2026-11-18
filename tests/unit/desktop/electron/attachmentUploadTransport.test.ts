@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { uploadAttachmentPlan } from '@gugu/core/cloud/attachmentsApi'
-import { AttachmentDeadlineError, ATTACHMENT_UPLOAD_IDLE_MS, ATTACHMENT_UPLOAD_START_MS } from '@gugu/core/cloud/attachmentDeadline'
+import { AttachmentDeadlineError, ATTACHMENT_UPLOAD_IDLE_MS } from '@gugu/core/cloud/attachmentDeadline'
 import { net } from '../../../../apps/desktop/electron/server/server-electron-shim'
 import { hostAttachmentsEndpoint } from '../../../../apps/desktop/electron/attachmentUploadTransport'
 
@@ -65,7 +65,7 @@ it('keeps a slow headless upload alive beyond the first-progress deadline while 
   const uploaded = uploadPutWithDeadline(progress)
   const finished = expect(uploaded).resolves.toBeUndefined()
   await readFirst.promise
-  await vi.advanceTimersByTimeAsync(ATTACHMENT_UPLOAD_START_MS)
+  await vi.advanceTimersByTimeAsync(ATTACHMENT_UPLOAD_IDLE_MS)
   expect(progress.mock.calls.length).toBeGreaterThan(1)
   await vi.runAllTimersAsync()
   await finished
@@ -73,9 +73,9 @@ it('keeps a slow headless upload alive beyond the first-progress deadline while 
 })
 
 it.each([
-  ['before its first byte', false, ATTACHMENT_UPLOAD_START_MS],
-  ['after its first chunk', true, ATTACHMENT_UPLOAD_IDLE_MS],
-])('aborts a headless upload stalled %s', async (_phase, readChunk, timeout) => {
+  ['before its first byte', false],
+  ['after its first chunk', true],
+])('aborts a headless upload stalled %s', async (_phase, readChunk) => {
   vi.useFakeTimers()
   const stalled = Promise.withResolvers<AbortSignal>()
   vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
@@ -94,13 +94,15 @@ it.each([
   const failed = expect(uploaded).rejects.toBeInstanceOf(AttachmentDeadlineError)
   const signal = await stalled.promise
   expect(progress).toHaveBeenCalledTimes(readChunk ? 1 : 0)
-  await vi.advanceTimersByTimeAsync(timeout - 1)
+  await vi.advanceTimersByTimeAsync(ATTACHMENT_UPLOAD_IDLE_MS - 1)
   expect(signal.aborted).toBe(false)
   await vi.advanceTimersByTimeAsync(1)
+  expect(signal.aborted).toBe(true)
+  await vi.runAllTimersAsync()
   await failed
 })
 
-it('bounds the wait for storage after the body of an individual part is consumed', async () => {
+it('waits for storage until the signed plan expires after the body of a part is consumed', async () => {
   vi.useFakeTimers()
   const waiting = Promise.withResolvers<AbortSignal>()
   const partBytes = 256 * 1024
@@ -120,11 +122,12 @@ it('bounds the wait for storage after the body of an individual part is consumed
     })
   })
   const endpoint = await headlessEndpoint()
-  const uploaded = uploadAttachmentPlan(endpoint, { url, fields: {}, max_bytes: bytes.size,
+  const expires_at = new Date(Date.now() + 300_000).toISOString()
+  const uploaded = uploadAttachmentPlan(endpoint, { url, fields: {}, max_bytes: bytes.size, expires_at,
     staging_key: 'pending', parts: { part_bytes: partBytes, count: 2 } }, { bytes, name: 'slow.bin', contentType: 'application/octet-stream' })
-  const failed = expect(uploaded).rejects.toBeInstanceOf(AttachmentDeadlineError)
+  const failed = expect(uploaded).rejects.toMatchObject({ code: 'expired' })
   const signal = await waiting.promise
-  await vi.advanceTimersByTimeAsync(23_999) // 20 s plus one 256 KiB part at 64 KiB/s.
+  await vi.advanceTimersByTimeAsync(299_999)
   expect(signal.aborted).toBe(false)
   await vi.advanceTimersByTimeAsync(1)
   await failed
