@@ -1,4 +1,4 @@
-import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
+import { customClaudeReviewSource, type ClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta } from '@gugu/session-plugins/agents';
@@ -6,12 +6,16 @@ import { writeSessionSettingsFile } from '../../../../sessionpage/session-settin
 import { resolveCustomModel, type ResolvedCustomModel } from './custom-models';
 import { CLAUDE_CONNECTION_UNSET_ENV, CODEX_CONNECTION_UNSET_ENV, claudeApiKeyEnv, codexApiKeyConnectionArgs } from './harness-connection-launch';
 
-async function claudeModelEnv(custom: ResolvedCustomModel): Promise<Record<string, string>> {
-  const reviewer = customClaudeReviewSource({
+async function reviewSource(custom: ResolvedCustomModel): Promise<ClaudeReviewSource> {
+  return customClaudeReviewSource({
     connectionId: custom.connectionId, endpoint: custom.upstreamEndpoint,
     selectedModel: custom.models[0], models: custom.entries, removed: custom.removed,
     preference: await appSettingsService.get('autoReviewModel'),
   });
+}
+
+async function claudeModelEnv(custom: ResolvedCustomModel, selected?: ClaudeReviewSource): Promise<Record<string, string>> {
+  const reviewer = selected ?? await reviewSource(custom);
   return {
     ...claudeApiKeyEnv(custom.apiKey, custom.endpoint, custom.models[0]),
     // The cross-connection fallback is reserved, not connected in the first release.
@@ -24,10 +28,10 @@ async function claudeModelEnv(custom: ResolvedCustomModel): Promise<Record<strin
 // Stable loopback credentials let both Claude surfaces reuse this protected file until the host exits.
 const claudeSettingsFiles = new Map<string, Promise<string>>();
 
-async function claudeModelSettings(custom: ResolvedCustomModel): Promise<string> {
+async function claudeModelSettings(custom: ResolvedCustomModel, selected?: ClaudeReviewSource): Promise<string> {
   const document = {
     apiKeyHelper: `echo ${custom.apiKey}`,
-    env: { ...await claudeModelEnv(custom), ANTHROPIC_API_KEY: '' },
+    env: { ...await claudeModelEnv(custom, selected), ANTHROPIC_API_KEY: '' },
   };
   const key = JSON.stringify(document);
   const existing = claudeSettingsFiles.get(key);
@@ -53,11 +57,14 @@ export async function resolveCustomModelRunContext(providerId: string, sessionId
   const model = custom.models[0];
   const marker = { connectionId: custom.connectionId, customModel: { endpoint: custom.endpoint, ...(model ? { model } : {}) } };
   if (providerId === 'claude') {
+    const reviewer = await reviewSource(custom);
     return {
       ...marker,
-      autoReviewAllowed: Boolean(model?.trim()),
-      credentialEnv: await claudeModelEnv(custom),
-      ...(acp ? {} : { extraArgs: ['--settings', await claudeModelSettings(custom)] }),
+      autoReviewAllowed: Boolean(model?.trim()) && reviewer.kind === 'own',
+      ...(model?.trim() && reviewer.kind !== 'own' ? { autoReviewUnavailable: true } : {}),
+      ...(reviewer.kind === 'own' && reviewer.byHaiku ? { autoReviewByHaiku: true } : {}),
+      credentialEnv: await claudeModelEnv(custom, reviewer),
+      ...(acp ? {} : { extraArgs: ['--settings', await claudeModelSettings(custom, reviewer)] }),
       unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV, 'ANTHROPIC_MODEL'],
     };
   }

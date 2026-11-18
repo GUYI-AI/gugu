@@ -561,7 +561,7 @@ export class LocalSessionProvider implements SessionProvider {
         const { probeHarnessModelCatalog } = await import('@main/core/agents/harness-model-catalog');
         const catalog = await probeHarnessModelCatalog(session.providerId, 'tui',
           !platformModelForSpawn && !runContext.customModel ? runtimeModelId(session.model) : undefined);
-        const available = catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
+        const available = runContext.autoReviewAllowed !== false && catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
           { ...catalog, cliVersion: runContext.cliVersion },
           platformModelForSpawn ? 'platform' : platformModelForSpawn === null ? runContext.customModel ? 'custom' : 'own' : 'unknown',
           platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null));

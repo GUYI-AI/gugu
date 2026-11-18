@@ -65,3 +65,18 @@ it.each([
 ] as const)('labels the actual %s %s payer', (provider, source, label) => {
   expect(withAutoReviewHint({ auto: { name: '自动模式' } }, provider, source, { 'ai-review': { id: 'auto' } })?.auto?.detail).toBe(label)
 })
+
+it('keeps an unavailable Auto row visible, explains it on hover and never emits selection', async () => {
+  const options = withAutoReviewHint({ edit: { name: '编辑' }, 'ai-review': { name: '自动模式', disabled: true } }, 'claude', 'api-key');
+  root.render(<SessionLocalizationProvider><ChatComposer permissionModeOptions={options} selectedPermissionMode="edit"
+    onPermissionModeChange={changed} onSubmit={() => {}} onStop={() => {}} /></SessionLocalizationProvider>);
+  await until('permission trigger', () => container.querySelector('[data-slot="composer-permission-mode"]') != null);
+  await page.getByText('编辑', { exact: true }).click();
+  await until('permission menu mounted', () => document.querySelector('[data-slot="combobox-content"]') != null);
+  const row = page.getByRole('option', { name: '自动模式', exact: true });
+  await expect.element(row).toHaveAttribute('aria-disabled', 'true');
+  await row.hover();
+  await until('unavailable reason shown', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent === '这条连接没有能用来审查的模型');
+  row.element().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(changed).not.toHaveBeenCalled();
+});

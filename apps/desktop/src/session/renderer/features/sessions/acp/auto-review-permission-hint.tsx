@@ -19,6 +19,11 @@ export function withAutoReviewHint(
     : source === 'subscription' && providerId === 'codex' ? 'taskConfig.reviewCostChatGPT' : null;
   return Object.fromEntries(Object.entries(options).map(([id, option]) => {
     const auto = modeMap ? classifyProviderPermissionMode(id, modeMap) === 'ai-review' : id === 'ai-review';
-    return [id, auto ? { ...option, icon: <ShieldCheck />, detail: key ? translateSessionMessage(key) : undefined } : option];
+    return [id, auto ? { ...option, icon: <ShieldCheck />,
+      ...(option.disabled ? { description: translateSessionMessage('taskConfig.reviewUnavailable') } : {}),
+      detail: option.disabled ? undefined : option.reviewByHaiku
+        ? <>{translateSessionMessage('taskConfig.reviewByHaiku')}<br />{key ? translateSessionMessage(key) : null}</>
+        : key ? translateSessionMessage(key) : undefined,
+    } : option];
   }));
 }

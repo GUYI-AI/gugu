@@ -72,7 +72,7 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     }
   }
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
-  const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description }])) : null
+  const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description, disabled: item.disabled, reviewByHaiku: item.reviewByHaiku }])) : null
   const reviewAuth = options?.modelMenu?.ownAuth?.status
   const reviewCostSource: ReviewCostSource = options?.modelMenu?.conversationSelection ? 'platform'
     : options?.modelMenu?.customModel ? 'api-key'
@@ -86,7 +86,7 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
       if (plan?.kind === 'hot') void pick('model', plan.wireValue)
       else if (plan?.kind === 'reload') setRestart({ modelId: plan.modelId, label: plan.displayName, source: plan.source === 'platform' ? 'platform' : 'own' })
     },
-    effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage, mobile ? 'known' : 'all-or-none'),
+    effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description, disabled: item.disabled, reviewByHaiku: item.reviewByHaiku }])) : null, translateSessionMessage, mobile ? 'known' : 'all-or-none'),
     selectedEffort: options?.effort?.selected ?? undefined,
     onEffortChange: id => { void pick('effort', id) },
     // The host filters this group by the current model's acknowledged native capability.

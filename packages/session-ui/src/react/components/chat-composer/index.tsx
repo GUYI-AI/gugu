@@ -950,6 +950,7 @@ export function ChatComposer({
                   onValueChange={(id) => onPermissionModeChange?.(id)}
                   itemToKey={(item) => item.id}
                   itemToLabel={(item) => item.name}
+                  isItemDisabled={(item) => item.disabled === true}
                   disabled={disabled}
                   searchPlaceholder={translate('common.search')}
                   className={permissionModeIsFirst ? styles.permissionModeTrigger : undefined}

@@ -425,6 +425,8 @@ export const enUSSessionWorkflowMessages = {
   // 中文侧一直就是「完全访问」,英文只是没跟上。
   'taskConfig.permissionAiReview': 'Auto mode',
   'taskConfig.permissionAiReviewHint': 'Send actions that need approval to an AI reviewer. Repeated denials can require your help.',
+  'taskConfig.reviewUnavailable': 'This connection has no model that can review actions',
+  'taskConfig.reviewByHaiku': 'Reviewed by Haiku',
   'taskConfig.reviewCostClaude': 'Uses your Claude subscription allowance',
   'taskConfig.reviewCostChatGPT': 'Uses your ChatGPT subscription allowance',
   'taskConfig.reviewCostApiKey': 'Uses your API Key',
@@ -1012,6 +1014,8 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'taskConfig.permissionEditHint': 'agent 可以在工作区内改文件、跑命令。',
   'taskConfig.permissionAiReview': '自动模式',
   'taskConfig.permissionAiReviewHint': '需要授权时交给 AI 审查，连续被拒会停下来找你。',
+  'taskConfig.reviewUnavailable': '这条连接没有能用来审查的模型',
+  'taskConfig.reviewByHaiku': '由 Haiku 审查',
   'taskConfig.reviewCostClaude': '用你的 Claude 订阅额度审',
   'taskConfig.reviewCostChatGPT': '用你的 ChatGPT 订阅额度审',
   'taskConfig.reviewCostApiKey': '用你的 API Key 审',

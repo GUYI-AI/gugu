@@ -161,3 +161,16 @@ it('rejects forged Auto when the host has no explicit custom main model, even if
   await expect(api.setSessionConfigOption!({ sessionId: 'session', configId: 'mode', value: 'auto' })).rejects.toThrow('unavailable');
   expect(mock.set).not.toHaveBeenCalled();
 });
+
+it('advertises an unavailable reviewer as disabled while rejecting both native setting channels', async () => {
+  const api = connectClaudeWithReview({} as AcpProcessIo,
+    () => ({ sessionEvent: mock.publish, requestPermission: mock.permission }) as unknown as AcpClient, '2.1.310', false, true);
+  const result = await api.newSession(start);
+  const mode = result.configOptions!.find(option => option.category === 'mode')!;
+  expect(mode.type === 'select' && flattenSelectOptions(mode.options).find(option => option.value === 'auto')?._meta)
+    .toMatchObject({ 'gugu:auto-review-disabled': true });
+  await expect(api.setSessionMode!({ sessionId: 'session', modeId: 'auto' })).rejects.toThrow('unavailable');
+  await expect(api.setSessionConfigOption!({ sessionId: 'session', configId: 'mode', value: 'auto' })).rejects.toThrow('unavailable');
+  expect(mock.mode).not.toHaveBeenCalled();
+  expect(mock.set).not.toHaveBeenCalled();
+});

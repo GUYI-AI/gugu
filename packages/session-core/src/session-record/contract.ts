@@ -683,7 +683,7 @@ export type UnreachedMachine = { deviceId: string | null; label: string | null; 
  * 界面上**不摆不存在的档**（@@@permission-three-modes 那条规矩）：摆一个按下去必失败的
  * 选择器，比不摆更糟。
  */
-export type SessionOptionChoice = { id: string; name: string; description?: string };
+export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean };
 
 export type SessionOptionGroup = {
   selected: string | null;
@@ -952,7 +952,7 @@ export type SessionpageSessionCreateModelChoice = {
  */
 export type SessionpageSessionCreateModels = {
   /** Verified on this model and selected host executable; absent on old/unknown hosts. */
-  autoReview?: { model: string };
+  autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
   customModels?: CustomModelConnection[];
   modelProtocols?: readonly ModelProtocol[];
   customModel?: { modelOptional: true };

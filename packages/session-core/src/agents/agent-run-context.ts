@@ -41,6 +41,8 @@ export const agentRunContextSchema = z.object({
   vendorKeyAccount: z.boolean().optional(),
   /** Host admission can disable native review for an unresolved custom main model. */
   autoReviewAllowed: z.boolean().optional(),
+  autoReviewUnavailable: z.boolean().optional(),
+  autoReviewByHaiku: z.boolean().optional(),
   /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。

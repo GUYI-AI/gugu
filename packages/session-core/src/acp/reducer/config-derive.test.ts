@@ -62,3 +62,10 @@ describe('deriveConfigGroups', () => {
   });
 
 });
+
+it('retains host review admission and same-connection Haiku facts through the config snapshot', () => {
+  const groups = deriveConfigGroups([{ id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: 'acceptEdits',
+    options: [{ value: 'auto', name: 'Auto', _meta: { 'gugu:auto-review-disabled': true, 'gugu:auto-review-haiku': true } }],
+  }]);
+  expect(groups.modeOptions?.available).toEqual([{ id: 'auto', name: 'Auto', disabled: true, reviewByHaiku: true }]);
+});

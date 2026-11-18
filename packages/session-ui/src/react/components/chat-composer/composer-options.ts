@@ -238,6 +238,8 @@ export interface ComposerPermissionModeOption {
   description?: string;
   detail?: ReactNode;
   icon?: ReactNode;
+  disabled?: boolean;
+  reviewByHaiku?: boolean;
   /**
    * Marks a mode that lets the agent act without asking (bypass / full-access / yolo).
    * The trigger then renders in warning color with an alert icon instead of the neutral
@@ -254,6 +256,8 @@ export interface ComposerPermissionModeItem {
   description?: string;
   detail?: ReactNode;
   icon?: ReactNode;
+  disabled?: boolean;
+  reviewByHaiku?: boolean;
   destructive?: boolean;
 }
 

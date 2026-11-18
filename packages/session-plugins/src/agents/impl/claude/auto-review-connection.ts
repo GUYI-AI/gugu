@@ -6,11 +6,11 @@ import { createClaudeSessionDecoder } from './acp-transform';
 import { claudeReviewConfig, claudeReviewModelAvailable } from './auto-review';
 
 /** A connection is pinned to the actual executable selected at launch, including after reconnect. */
-export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string, autoReviewAllowed?: boolean): AcpAgentApi {
+export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string, autoReviewAllowed?: boolean, unavailable?: boolean, byHaiku?: boolean): AcpAgentApi {
   const denied = new Map<string, Set<string>>();
   const configs = new Map<string, readonly SessionConfigOption[]>();
   const filter = (id: string, options: readonly SessionConfigOption[]) => {
-    const filtered = claudeReviewConfig(options, version, autoReviewAllowed);
+    const filtered = claudeReviewConfig(options, version, autoReviewAllowed, unavailable, byHaiku);
     configs.set(id, filtered);
     return filtered;
   };
@@ -42,6 +42,7 @@ export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFac
     } };
   }, createClaudeSessionDecoder());
   const assertAuto = (id: string) => {
+    if (autoReviewAllowed === false) throw new Error('AI review is unavailable for this connection');
     const mode = configs.get(id)?.find(option => option.category === 'mode' && option.type === 'select');
     if (mode?.type !== 'select' || !flattenSelectOptions(mode.options).some(option => option.value === 'auto')) {
       throw new Error('AI review is unavailable for this session executable and model');

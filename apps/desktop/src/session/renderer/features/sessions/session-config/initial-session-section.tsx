@@ -1,3 +1,4 @@
+import { useCustomAutoReview } from './use-custom-auto-review';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -252,6 +253,8 @@ export type InitialSessionState = {
   effort: string | null;
   setEffort: (effort: string | null) => void;
   autoReviewAvailable?: boolean;
+  autoReviewDisabled?: boolean;
+  autoReviewByHaiku?: boolean;
   autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
@@ -1109,9 +1112,9 @@ export function useInitialSessionState(
       ? modelOverride
       : resolvedDefaultModel;
   const selectedCustom = customModelRefFromOption(customSelection);
-  const customFeatures = selectedCustom && customReading.state === 'value'
-    ? customReading.value.find((record) => record.id === selectedCustom.connectionId)?.models.find(({ id }) => id === selectedCustom.modelId)
-    : undefined;
+  const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
+  const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
+  const customReview = useCustomAutoReview(providerId === 'claude' ? customConnection : undefined, selectedCustom?.modelId, machine);
   const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
     !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
@@ -1148,9 +1151,13 @@ export function useInitialSessionState(
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
     : reviewAuth?.status.kind === 'authenticated' ? reviewAuth.status.credentialKind ?? 'unknown' : 'unknown';
   const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
-  const autoReviewAvailable = !unattended && catalogAllowsAutoReview(
+  const reviewQualified = !unattended && catalogAllowsAutoReview(
     capabilities?.autoApprove.modes, reviewCatalog, platformModel ? 'platform' : selectedCustom ? 'custom' : 'own', platformModel ?? runtimeModel,
   );
+  const needsCustomReview = providerId === 'claude' && !!selectedCustom;
+  const autoReviewAvailable = reviewQualified && (!needsCustomReview || customReview?.kind === 'own');
+  const autoReviewDisabled = reviewQualified && needsCustomReview && customReview?.kind === 'platform-fallback';
+  const autoReviewByHaiku = customReview?.kind === 'own' && customReview.byHaiku === true;
   const autoApproveSupported = agentSupportsAutoApprove(capabilities);
   const grokStructuralFullAccess = providerId === 'grok';
   // @@@5597-draft-decides — **草稿上显示的档 = 落库的档 = 进程里生效的档**,三者同一个事实。
@@ -1285,6 +1292,8 @@ export function useInitialSessionState(
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
     autoReviewAvailable,
+    autoReviewDisabled,
+    autoReviewByHaiku,
     autoReviewCostSource,
     fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
@@ -1637,9 +1646,11 @@ export function InitialSessionField({
                     },
                   }
                 : {}),
-              ...((state.autoReviewAvailable) ? { 'ai-review': {
+              ...((state.autoReviewAvailable || state.autoReviewDisabled) ? { 'ai-review': {
                 name: translate('taskConfig.permissionAiReview'),
                 description: translate('taskConfig.permissionAiReviewHint'),
+                disabled: state.autoReviewDisabled,
+                reviewByHaiku: state.autoReviewByHaiku,
               } } : {}),
               'full-access': {
                 name: translate('taskConfig.permissionFullAccess'),

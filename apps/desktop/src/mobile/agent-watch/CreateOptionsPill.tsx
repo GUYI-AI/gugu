@@ -130,7 +130,8 @@ export function CreateOptionsPill({
                 choices={(harnessOption?.permissionModes ?? []).map((m) => ({
                   id: m,
                   name: t(`agentWatch.create.permission.${m}.name`),
-                  desc: t(`agentWatch.create.permission.${m}.desc`),
+                  desc: m === 'ai-review' && models?.autoReview?.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : t(`agentWatch.create.permission.${m}.desc`),
+                  disabled: m === 'ai-review' && models?.autoReview?.disabled,
                 }))}
                 selected={selection.permissionMode}
                 onPick={(id) => {
@@ -304,12 +305,12 @@ function ChoiceList({
   onPick,
 }: {
   dimension: string
-  choices: Array<{ id: string; name: string; desc?: string }>
+  choices: Array<{ id: string; name: string; desc?: string; disabled?: boolean }>
   selected: string | null
   defaultChoice?: { name: string; desc: string }
   onPick: (id: string | null) => void
 }) {
-  const rows: Array<{ id: string | null; name: string; desc?: string }> = defaultChoice
+  const rows: Array<{ id: string | null; name: string; desc?: string; disabled?: boolean }> = defaultChoice
     ? [{ id: null, ...defaultChoice }, ...choices]
     : choices
   return (
@@ -324,6 +325,7 @@ function ChoiceList({
             className="gg-aw-choice"
             role="radio"
             aria-checked={isSelected}
+            disabled={row.disabled}
             data-testid="agent-watch-create-choice"
             data-dimension={dimension}
             data-option-id={row.id ?? ''}
