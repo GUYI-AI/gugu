@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageFilePreview, type PreviewFile } from '../../../../apps/desktop/src/components/chat/MessageFilePreview'
-import { FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/fileResolver'
+import { FileReadError, FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/fileResolver'
 import type { FileReadState } from '@gugu/core/shared/fileReads'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
@@ -41,6 +41,12 @@ describe('file preview missing-object actions', () => {
     expect(download()?.disabled ?? true).toBe(true)
     expect(external()?.disabled ?? true).toBe(true)
   }
+  it.each([['gone', 'attachmentView.fileGone'], ['expired', 'attachmentView.fileExpired']] as const)('uses the localized %s reason from the reader', async (code, key) => {
+    io.bytes.mockRejectedValue(new FileReadError(code, 'Unavailable'))
+    await render()
+    await settled(translate(key))
+    expect(io.bytes).toHaveBeenCalledTimes(1)
+  })
   it('draws how far the bytes have come while they are read', async () => {
     let finish!: () => void, report!: (state: FileReadState) => void
     io.bytes.mockImplementation((_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, options: { onState: typeof report }) => {

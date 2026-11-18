@@ -32,8 +32,7 @@ const INLINE_MAX = 280
 
 // @@@inline-image-decision - 画不画成图只看「浏览器能不能画」(mime ∪ 扩展名,shared/imageMime.mjs),
 // 不看写进正文的 [Kind]:历史上 agent 不带 mime_type 发的 PNG 被记成 file,这里让它们自愈。
-// 字节一律经 lib/attachmentBytes；设备读取宿主负责续传和临时故障重试，
-// 条目删了说「文件已删除」。
+// 字节经 lib/attachmentBytes，设备读取宿主负责续传和临时故障重试。
 export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, senderName, chatId, onDownload }: { meta: ParsedAttachment; messageId: string; isMine: boolean; onOpenFile?: (meta: ParsedAttachment) => void; senderName?: string; chatId?: string; onDownload?: () => void }) {
   const { t } = useTranslation('messaging')
   const { user } = useAuth()
