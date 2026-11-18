@@ -164,6 +164,7 @@ export type AgentHostLoginCommand = {
 
 export type AgentHostAcpSpawn = AcpSpawnResult & {
   cliVersion?: string;
+  autoReviewAllowed?: boolean;
   env: Record<string, string>;
   cwd: string;
 };
@@ -739,6 +740,7 @@ export class AgentPluginHost {
     return ok({
       ...spawn,
       ...(ctx.runContext.cliVersion ? { cliVersion: ctx.runContext.cliVersion } : {}),
+      ...(ctx.runContext.autoReviewAllowed !== undefined ? { autoReviewAllowed: ctx.runContext.autoReviewAllowed } : {}),
       env: composeAgentSpawnEnv(ctx.runContext, {
         providerEnv: {
           ...(await this.deps.resolveProviderEnv?.(providerId)),

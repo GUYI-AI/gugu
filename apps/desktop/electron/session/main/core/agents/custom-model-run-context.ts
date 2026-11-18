@@ -55,6 +55,7 @@ export async function resolveCustomModelRunContext(providerId: string, sessionId
   if (providerId === 'claude') {
     return {
       ...marker,
+      autoReviewAllowed: Boolean(model?.trim()),
       credentialEnv: await claudeModelEnv(custom),
       ...(acp ? {} : { extraArgs: ['--settings', await claudeModelSettings(custom)] }),
       unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV, 'ANTHROPIC_MODEL'],

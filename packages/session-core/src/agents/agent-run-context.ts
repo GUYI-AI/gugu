@@ -39,6 +39,8 @@ export const agentRunContextSchema = z.object({
   /** The session's chosen custom model, delivered through the host's credential forwarder. */
   customModel: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
   vendorKeyAccount: z.boolean().optional(),
+  /** Host admission can disable native review for an unresolved custom main model. */
+  autoReviewAllowed: z.boolean().optional(),
   /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。

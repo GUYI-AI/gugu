@@ -168,7 +168,7 @@ export async function createAcpAgentConnection(
   let connection: AcpAgentApi;
   try {
     connection = behavior.connect({ stdin: handle.stdin, stdout: handle.stdout }, (agent) =>
-      buildClient(agent, handle), { cliVersion: (spawn as { cliVersion?: string }).cliVersion }
+      buildClient(agent, handle), { cliVersion: spawn.cliVersion, autoReviewAllowed: spawn.autoReviewAllowed }
     );
   } catch (e) {
     await connectionScope.dispose();

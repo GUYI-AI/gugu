@@ -29,9 +29,9 @@ export function claudeReviewModelAvailable(options: readonly SessionConfigOption
 }
 
 /** Preserve the producer's mode list, removing auto when either prerequisite is unknown. */
-export function claudeReviewConfig(options: readonly SessionConfigOption[], version?: string): SessionConfigOption[] {
+export function claudeReviewConfig(options: readonly SessionConfigOption[], version?: string, autoReviewAllowed = true): SessionConfigOption[] {
   const model = options.find(option => option.category === 'model' && option.type === 'select');
-  const available = claudeReviewModelAvailable(options, version, model?.type === 'select' ? model.currentValue : null);
+  const available = autoReviewAllowed && claudeReviewModelAvailable(options, version, model?.type === 'select' ? model.currentValue : null);
   return options.map(option => option.category === 'mode' && option.type === 'select'
     ? { ...option, options: flattenSelectOptions(option.options).filter(choice => choice.value !== 'auto' || available) }
     : option);

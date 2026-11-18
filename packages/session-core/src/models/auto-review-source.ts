@@ -21,7 +21,7 @@ export function customClaudeReviewSource(input: {
 }
 
 /** Native subscriptions retain the supplier's classifier. Only an official API key gets Haiku. */
-export function nativeClaudeReviewEnv(env: Record<string, string>): Record<string, string> {
+export function nativeClaudeReviewEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
   if (!env.ANTHROPIC_API_KEY || env.CLAUDE_CODE_OAUTH_TOKEN
     || new URL(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').hostname !== 'api.anthropic.com') return {};
   return { CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER };

@@ -151,3 +151,13 @@ it.each(['allow', 'deny', 'cancelled'])('preserves the native permission callbac
   expect(mock.permission).toHaveBeenCalledExactlyOnceWith(request);
   expect(mock.set).not.toHaveBeenCalled();
 });
+
+it('rejects forged Auto when the host has no explicit custom main model, even if the native default qualifies', async () => {
+  const api = connectClaudeWithReview({} as AcpProcessIo,
+    () => ({ sessionEvent: mock.publish, requestPermission: mock.permission }) as unknown as AcpClient, '2.1.310', false);
+  await api.newSession(start);
+  await expect(api.setSessionMode!({ sessionId: 'session', modeId: 'auto' })).rejects.toThrow('unavailable');
+  expect(mock.mode).not.toHaveBeenCalled();
+  await expect(api.setSessionConfigOption!({ sessionId: 'session', configId: 'mode', value: 'auto' })).rejects.toThrow('unavailable');
+  expect(mock.set).not.toHaveBeenCalled();
+});

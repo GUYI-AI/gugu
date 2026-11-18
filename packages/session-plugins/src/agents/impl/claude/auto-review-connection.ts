@@ -6,11 +6,11 @@ import { createClaudeSessionDecoder } from './acp-transform';
 import { claudeReviewConfig, claudeReviewModelAvailable } from './auto-review';
 
 /** A connection is pinned to the actual executable selected at launch, including after reconnect. */
-export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string): AcpAgentApi {
+export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string, autoReviewAllowed?: boolean): AcpAgentApi {
   const denied = new Map<string, Set<string>>();
   const configs = new Map<string, readonly SessionConfigOption[]>();
   const filter = (id: string, options: readonly SessionConfigOption[]) => {
-    const filtered = claudeReviewConfig(options, version);
+    const filtered = claudeReviewConfig(options, version, autoReviewAllowed);
     configs.set(id, filtered);
     return filtered;
   };

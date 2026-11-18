@@ -427,8 +427,8 @@ export const provider = registerPluginBehavior(plugin, {
       };
     },
     // ACP v2:一轮在前台 idle 处结束,后台子智能体不再扣住这一轮的结局(子智能体在跑时下一句不进队列)。
-    filterPermissionConfig: (options, context) => claudeReviewConfig(options, context.cliVersion),
-    connect: (io, toClient, context) => connectClaudeWithReview(io, toClient, context?.cliVersion),
+    filterPermissionConfig: (options, context) => claudeReviewConfig(options, context.cliVersion, context.autoReviewAllowed),
+    connect: (io, toClient, context) => connectClaudeWithReview(io, toClient, context?.cliVersion, context?.autoReviewAllowed),
   },
   auth: {
     checkStatus: claudeAuthStatus,

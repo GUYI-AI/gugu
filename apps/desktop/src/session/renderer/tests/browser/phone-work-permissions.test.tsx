@@ -143,7 +143,7 @@ it('retains the phone composer permission selector when there is no Work owner',
 it('retains the desktop composer permission selector even when Work ownership is requested', async () => {
   await mount({ width: 1100 })
   await until('desktop permission selector visible', () => !!document.querySelector('[data-slot="composer-permission-mode"]'))
-  expect(document.querySelector('[data-slot="composer-permission-mode"]')?.textContent).toContain('全部放行')
+  expect(document.querySelector('[data-slot="composer-permission-mode"]')?.textContent).toContain('完全访问')
   expect(host.set).not.toHaveBeenCalled()
 })
 

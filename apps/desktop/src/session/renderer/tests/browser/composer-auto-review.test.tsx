@@ -41,7 +41,8 @@ it('shows names in the menu, details to its right, and a shield in selected Auto
   const trigger = container.querySelector<HTMLElement>('[data-slot="composer-permission-mode"]')!
   expect(trigger.textContent).toBe('自动模式')
   expect(getComputedStyle(trigger.querySelector('svg')!.parentElement!).display).not.toBe('none')
-  await page.getByRole('button', { name: '自动模式', exact: true }).click()
+  await page.getByText('自动模式', { exact: true }).click()
+  await until('permission menu mounted', () => document.querySelector('[data-slot="combobox-content"]') != null)
   const menu = document.querySelector<HTMLElement>('[data-slot="combobox-content"]')!
   expect(menu.textContent).not.toContain('需要授权')
   expect(menu.textContent).not.toContain('编辑说明')

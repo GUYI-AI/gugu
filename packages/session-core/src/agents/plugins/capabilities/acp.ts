@@ -512,8 +512,8 @@ export interface IAcpBehavior {
    * Wrap an app-owned process's stdio into an ACP client connection.
    * The plugin owns adapter/SDK wiring; the app owns the process lifecycle.
    */
-  filterPermissionConfig?(options: readonly SessionConfigOption[], context: { cliVersion?: string }): SessionConfigOption[];
-  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string }): AcpAgentApi;
+  filterPermissionConfig?(options: readonly SessionConfigOption[], context: { cliVersion?: string; autoReviewAllowed?: boolean }): SessionConfigOption[];
+  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean }): AcpAgentApi;
 
 }
 
