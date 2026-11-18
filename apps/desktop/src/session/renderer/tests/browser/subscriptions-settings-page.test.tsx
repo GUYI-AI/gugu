@@ -19,6 +19,7 @@ import type { AgentHomeScan, HarnessConnection } from '@gugu/session-core/worksp
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
+import '@/components/settings/ModelSettings.css';
 
 const CLAUDE = { id: 'claude', name: 'Claude Code', reading: 'installed', status: 'available', capabilities: { auth: { kind: 'supported', methods: [{ kind: 'cli-login', id: 'claude-login', name: 'Claude', args: ['auth', 'login'] }] } } };
 // #2507 其他家:Kimi 能在产品里登录(cli-login),Pi 没有任何登录方法。
@@ -760,14 +761,26 @@ it.each([
 
 
 it.each(['claude', 'codex'])('the model page puts an expired %s account directly into the existing login flow', async provider => {
+  const capture = provider === 'claude' && import.meta.env.VITE_DESIGN5_CAPTURE === '1';
+  if (capture) setLocalePreference('zh-CN');
   control.codex = true;
   control.signedOut = true;
   control.expired = true;
-  control.connectionsByProvider[provider] = [{ id: 'expired-model-account', kind: 'account', name: 'Saved plan', current: true }];
-  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
+  control.connectionsByProvider[provider] = [{ id: 'expired-model-account', kind: 'account', name: capture ? 'Claude Max' : 'Saved plan', current: true }];
+  if (capture) {
+    control.connectionsByProvider.codex = [];
+    host.style.cssText = 'width: 940px; padding: 24px; background: var(--model-settings-page);';
+  }
+  root.render(<>
+    {capture && <p style={{ marginBottom: 20, fontSize: 14 }}>组件测试夹具，非真实账号</p>}
+    <div className="gg-settings-detail"><div className="gg-settings-page gg-model-page">
+      <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>
+    </div></div>
+  </>);
   await until('the expired account is on the model list', () => !!host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`));
   const row = host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`)!;
-  expect(row.textContent).toContain('Sign-in expired');
+  expect(row.textContent).toContain(capture ? '登录已失效' : 'Sign-in expired');
+  if (capture) await page.screenshot({ element: host, path: '__screenshots__/design5-models/expired-subscription-fixture.png' });
   await userEvent.click(page.getByTestId('model-sign-in-expired-model-account'));
   expect(modalStore.activeModalId).toBe('agentSignInModal');
   expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'expired-model-account' });
