@@ -11,7 +11,7 @@ import { installedExtensionsStore } from '@/session/renderer/features/extensions
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host'
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere'
 import { setExtensionEnabled } from '@renderer/features/extensions/set-extension-enabled'
-import { rpcOn } from '@renderer/lib/ipc'
+import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc'
 import { AppManagePage } from '@/session/renderer/features/extensions/panel/app-manage-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { InstalledRowNotice } from '@/session/renderer/features/extensions/panel/installed-extension-row'
@@ -97,7 +97,7 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
           if (phoneApps.unreadable()) throw new Error('Unreadable phone App inventory')
           return installedExtensionsStore.manifests.map(app => app.id)
         }
-        const result = await rpcOn(deviceId).extensions.list()
+        const result = await machineRpc(deviceId).extensions.list()
         if (!result.success || !result.data) throw new Error(result.error ?? 'Unreadable App inventory')
         return result.data.extensions.map(app => app.id)
       },

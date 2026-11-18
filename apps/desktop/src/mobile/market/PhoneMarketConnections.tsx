@@ -5,12 +5,11 @@ import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 import { assistantConnectedApps, type AssistantConnectedApp } from '@/components/assistant/assistant-app-connections'
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon'
 import { builtinConnectionCatalog } from '@/components/connections/builtin-connection-catalog'
-import { IntegrationIcon } from '@renderer/features/integrations/integration-icon'
 import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary'
 import { SettingsNote } from '@/components/settings/SettingsPrimitives'
 import { useSettingsDetail } from '@/components/settings/SettingsDetailNavigation'
 import { SessionSettingsSection } from '@/components/sessionpage/SessionSettingsSection'
-import { PhoneConnectorDetail, PhoneConnectorsPage, type PhoneConnectorScope } from '../assistant/PhoneConnectors'
+import { ConnectorIcon, PhoneConnectorDetail, PhoneConnectorsPage, type PhoneConnectorScope } from '../assistant/PhoneConnectors'
 import { PhoneConnectorSetupPage } from '../assistant/PhoneConnectorSetup'
 import { usePhoneMachine } from '../assistant/phoneMachine'
 import { parseConnectorSub } from '../assistant/phoneConnectorFlow'
@@ -83,7 +82,7 @@ function ReadOnlyConnectorCatalog() {
   return <div className="phone-market">
     <SettingsNote role="status">{t('phoneMarket.assistantRequired')}</SettingsNote>
     <PhoneMarketConnectorCatalog mode="market" apps={apps} connectionKnown={false}
-      icon={(app, size) => app.integration ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
+      icon={(app, size) => app.integration ? <ConnectorIcon integration={app.integration} size={size} />
         : <ChannelBrandIcon kind="wechat" size={size} />} />
   </div>
 }
