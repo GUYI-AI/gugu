@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "2c9cb6a9b0ef47f2cdb2860f66bb8f1193494833",
-  "status": "Paired draft #267 candidate: personal hiding, history deletion and idempotent native activity. Isolated CI fixture only; not deployed."
+  "ref": "c5627505af8d2db8c6100f8eb612d15d97046d13",
+  "status": "Backend #267 merged on dev: personal hiding, history clear and undo. Isolated CI fixture; staging deployment acceptance is pending."
 }
