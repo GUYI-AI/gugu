@@ -91,7 +91,8 @@ function InstalledMarket({ initialArea, devices, thisPhone, assistant, onClose }
   const [deviceId, setDeviceId] = useState('')
   const [detail, setDetail] = useState<SettingsDetailState>(null)
   const selected = devices.find(device => device.device_id === deviceId)
-  const selectedId = selected?.device_id ?? thisPhone?.device_id ?? null
+  const scope = selected?.device_id ?? (area === 'connectors' && deviceId !== 'this-phone' ? 'account' : 'this-phone')
+  const selectedId = scope === 'account' ? null : selected?.device_id ?? thisPhone?.device_id ?? null
   const back = detail ? detail.back : onClose
   return <Sheet fullScreenMobile onClose={back} ariaLabel={t('phoneMarket.installed')} testId="phone-market-installed">
     <Pane paneRole="detail" mobile className="gg-settings-detail">
@@ -100,10 +101,11 @@ function InstalledMarket({ initialArea, devices, thisPhone, assistant, onClose }
           <ChevronLeft />
         </IconButton>} />
       <div className="gg-settings-body phone-market">
-        {!detail && devices.length > 0 && <label className="phone-market-device">
+        {!detail && (devices.length > 0 || area === 'connectors' && thisPhone) && <label className="phone-market-device">
           {t('phoneMarket.device')}
-          <select value={selected?.device_id ?? ''} onChange={event => setDeviceId(event.currentTarget.value)}>
-            <option value="">{t('phoneMarket.thisPhone')}</option>
+          <select value={scope} onChange={event => setDeviceId(event.currentTarget.value)}>
+            {area === 'connectors' && <option value="account">{t('phoneMarket.accountConnections')}</option>}
+            <option value="this-phone">{t('phoneMarket.thisPhone')}</option>
             {devices.map(device => <option key={device.device_id} value={device.device_id}>{device.label || device.hostname}</option>)}
           </select>
         </label>}

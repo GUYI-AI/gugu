@@ -66,7 +66,7 @@ function LegacyMarketConnections({ assistant, mode, installedDeviceId }: Props) 
   const { t } = useTranslation('main')
   if (!assistant?.assistant || !assistant.chatId) return mode === 'market' ? <ReadOnlyConnectorCatalog />
     : <SettingsNote role="status">{t('phoneMarket.assistantRequired')}</SettingsNote>
-  if (mode === 'installed' && installedDeviceId !== assistant.homeDeviceId) {
+  if (mode === 'installed' && installedDeviceId && installedDeviceId !== assistant.homeDeviceId) {
     return <SettingsNote role="status">{t('phoneMarket.connectionsOnAssistantHome')}</SettingsNote>
   }
   return <LegacyAssistantConnections
