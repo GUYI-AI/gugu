@@ -3,20 +3,16 @@
 import { createElement } from 'react'
 import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getSupabaseUrl } from '@gugu/core/cloud/config'
 import { createReactHarness } from '../../../support/testHarness'
 import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import type { FileMetadata } from '@gugu/core/shared/fileResolver'
 
-const f = vi.hoisted(() => ({ resolve: vi.fn(), store: new Map<string, unknown>() }))
-vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
+const f = vi.hoisted(() => ({ resolve: vi.fn(), store: new Map<string, NodeBlob>() }))
+vi.mock('../../../../apps/desktop/src/lib/fileAccess', async original => ({
+  ...await original<typeof import('../../../../apps/desktop/src/lib/fileAccess')>(),
   resolveFile: f.resolve,
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
-  fileReadSignal: () => undefined,
-  // Holds node:buffer Blobs: jsdom's Blob (and a Response's, here) has no stream(); the renderer's does.
-  attachmentCache: async () => ({ match: async (key: string) => f.store.has(key) ? { blob: async () => f.store.get(key) } : undefined,
-    put: async (key: string, response: Response) => { f.store.set(key, new NodeBlob([await response.arrayBuffer()])) } }),
-  putAttachment: async (key: string, body: Blob) => { f.store.set(key, new NodeBlob([await body.arrayBuffer()])) },
-  attachmentCacheOrigin: 'https://attachments.gugu.invalid',
   // Where a version is kept, asked after a failed read: these files are not on a machine.
   fileMetadata: async () => ({ status: 'gone' }),
 }))
@@ -43,17 +39,26 @@ describe('a sent image after its commit', () => {
   let harness: ReturnType<typeof createReactHarness>
   beforeEach(() => {
     attachmentQueryClient.clear(); f.store.clear(); shownText = null
+    // Use Node Blobs to exercise the real cache hashing; jsdom's Blob has no stream().
+    vi.stubGlobal('caches', { open: async () => ({
+      keys: async () => [...f.store.keys()].map(url => new Request(url)),
+      match: async (request: string | Request) => {
+        const hit = f.store.get(typeof request === 'string' ? request : request.url)
+        return hit ? { blob: async () => hit } : undefined
+      },
+      put: async (key: string, response: Response) => { f.store.set(key, new NodeBlob([await response.arrayBuffer()])) },
+    }) })
     f.resolve.mockReset().mockImplementation(async () => { throw new Error('network read') })
     URL.createObjectURL = vi.fn((blob: Blob) => { shownText = blob.text(); return 'blob:thumb' })
     URL.revokeObjectURL = vi.fn()
     harness = createReactHarness()
   })
-  afterEach(() => harness.cleanup())
+  afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
   const status = () => harness.container.querySelector('span')?.getAttribute('data-status')
 
   it('draws the kept local copy: no file resolve, no download', async () => {
     await keepSentAttachment(file)
-    expect([...f.store.keys()]).toEqual([`https://attachments.gugu.invalid/account/account-1/sha256/${sha256}`])
+    expect([...f.store.keys()]).toEqual([`https://attachments.gugu.invalid/backend/${encodeURIComponent(getSupabaseUrl())}/account/account-1/sha256/${sha256}`])
     await harness.render(createElement(Thumb, { metadata: metadataFor(sha256) }))
     await vi.waitFor(() => expect(status()).toBe('ready'))
     expect(await shownText).toBe('local png bytes')
