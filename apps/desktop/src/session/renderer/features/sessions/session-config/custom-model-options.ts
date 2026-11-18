@@ -25,7 +25,9 @@ export function customComposerOptions(
       const preset = providerPresets.find(({ id }) => id === connection.preset);
       const name = model.id ? ('label' in model && model.label || model.id) : translate('customModels.cliDefault', { provider: connection.name });
       return [customModelOptionId({ connectionId: connection.id, modelId: model.id }), {
-        name, shortName: name, groupLabel: translate('customModels.title'), providerLabel: connection.name,
+        name,
+        shortName: model.id && name !== connection.name ? `${name} · ${connection.name}` : name,
+        groupLabel: translate('customModels.title'), providerLabel: connection.name,
         icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : null),
         description: `${connection.name} · ${actual}`,
         ...(reason ? { disabled: true, disabledReason: reason } : {}),

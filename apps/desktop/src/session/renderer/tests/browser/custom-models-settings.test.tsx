@@ -8,8 +8,12 @@ import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { CustomModelDialog } from '@/components/settings/CustomModelDialog';
 import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { ChatComposer } from '@gugu/session-ui/react/components';
 import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
+import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
+import { composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
@@ -52,4 +56,18 @@ it('edits an address with the saved key and saves multiple manual models without
   expect(state.saved).toMatchObject({ id: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [{ id: 'model:a' }, { id: 'provider/model:b' }] });
   expect(state.saved).not.toHaveProperty('apiKey'); expect(closed).toHaveBeenCalledOnce();
   expect(state.reads).toContainEqual(expect.objectContaining({ connectionId: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }] }));
+});
+
+it('shows the bound provider and model when reopening a migrated Pi task', async () => {
+  const existing = { ...record(), keySaved: true, models: [{ id: 'glm-5.3-flash' }] };
+  const duplicate = { ...existing, id: '48937c18-1219-460e-9f40-e08d70de94a5', name: 'Other provider' };
+  const models = customComposerOptions([duplicate, existing], {
+    id: 'pi', name: 'Pi', capabilities: { modelProtocols: ['openai-responses'], customModel: undefined },
+  }, 'This device', translateSessionMessage);
+  const selectedModel = composerSelectedOptionId({
+    model: 'gugu-' + existing.id + '/glm-5.3-flash',
+    customModel: { kind: 'custom', connectionId: existing.id, modelId: 'glm-5.3-flash' },
+  });
+  render(<ChatComposer modelOptions={models} selectedModel={selectedModel} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
+  await expect.element(page.getByTestId('composer-model-trigger')).toHaveTextContent('glm-5.3-flash · Existing provider');
 });
