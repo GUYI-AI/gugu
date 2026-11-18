@@ -1,5 +1,7 @@
 import { useDndContext } from '@dnd-kit/core';
-import { Fragment, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
+import { trackRecentTools } from '../browser/workspace-recent-tools';
+import { Fragment, useContext, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useGroupRef } from 'react-resizable-panels';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
@@ -34,6 +36,8 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
 }) {
   const treeId = useId().replace(/[^\w-]/g, '');
   const withChatChrome = !!chatChrome;
+  const workspaceShown = useContext(SurfaceShownContext);
+  useEffect(() => withChatChrome && workspaceShown ? trackRecentTools(layout) : undefined, [layout, withChatChrome, workspaceShown]);
   useLayoutEffect(() => withChatChrome ? layout.attachChatWorkspace() : undefined, [layout, withChatChrome]);
   const scopedChrome = chatChrome && layout.chatWorkspaceMode !== undefined ? chatChrome : undefined;
   const single = layout.chatWorkspaceSinglePaneId;

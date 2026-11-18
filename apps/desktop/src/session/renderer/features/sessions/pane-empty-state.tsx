@@ -194,6 +194,7 @@ export interface WorkspacePanelAction {
   icon: ReactNode;
   section?: WorkspacePanelSection;
   shortcutSettingsKey?: CommandId;
+  trailing?: ReactNode;
   disabled?: boolean;
   title?: string;
   onClick: () => void;
@@ -332,9 +333,9 @@ export function PaneEmptyStateAction({
         className
       )}
     >
-      <div className="flex items-center gap-2 text-sm">
-        {icon}
-        {label}
+      <div className="flex min-w-0 items-center gap-2 text-sm">
+        <span className="shrink-0">{icon}</span>
+        <span className="min-w-0 truncate">{label}</span>
       </div>
       {shortcutSettingsKey && <BoundShortcut commandId={shortcutSettingsKey} variant="keycaps" />}
     </button>

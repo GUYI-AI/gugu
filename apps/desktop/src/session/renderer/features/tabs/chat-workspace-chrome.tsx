@@ -3,6 +3,10 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
+import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
+import { folderItem } from '../chats/chat-tabs/chat-panel-item';
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
+import { openChatWorkspaceNewTab } from './chat-workspace-new-tab';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { escapeIsFree } from '@shared/escape-is-free';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
@@ -31,6 +35,28 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const { focused } = useScreenBlock();
   const dragging = useDndContext().active !== null;
   const header = useRef<HTMLDivElement>(null);
+  useCommandProvider({
+    scopeId: 'session-sub',
+    isActive: (element) => {
+      const workspace = header.current?.closest('[data-chat-tool-workspace]');
+      if (!workspace || !focused) return false;
+      const target = element?.isConnected ? element : workspace.ownerDocument.activeElement;
+      const from = target?.closest('[data-chat-tool-workspace]');
+      return embedded ? from === workspace : !from || from === workspace;
+    },
+    getCommands: () => {
+      if (!layout.mainGroup.pane.registry.has('browser')) return [];
+      const open = () => { openChatWorkspaceNewTab(layout); };
+      const place = layout.mainGroup.pane.ctx.place;
+      return [
+        { id: 'session.openAddMenu', execute: open },
+        ...(place?.kind === 'chat' ? [
+          { id: 'session.openBrowser' as const, execute: open },
+          { id: 'session.sidebarFiles' as const, execute: () => { openPanelItem(place.chatId, folderItem()); } },
+        ] : []),
+      ];
+    },
+  });
   useEffect(() => {
     if (!focused || dragging || mode !== 'full') return;
     const workspace = header.current?.closest('[data-chat-tool-workspace]');

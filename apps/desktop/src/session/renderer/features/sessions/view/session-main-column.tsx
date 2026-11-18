@@ -30,6 +30,7 @@ import { isTaskOwnedTab } from '../../extensions/task-owned-tab';
 import { openSessionInSessionWhenReady } from '../open-session-in-session';
 import { PaneEmptyState } from '../pane-empty-state';
 import { keepBlockFilled } from './keep-block-filled';
+import { ChatWorkspaceNewTab } from '@renderer/features/tabs/chat-workspace-new-tab';
 import { SplitPaneHotkey, TabBarAddMenu } from '../tab-bar-actions';
 import { TabBarActionRow } from '../titlebar-actions';
 import { useSessionViewContext, useWorkspaceViewModel } from '../session-view-context';
@@ -149,7 +150,7 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
         <div className="h-full min-h-0 min-w-0" data-session-panes="">
           <PaneTreeView layout={paneLayout} chatChrome={{
             actions: <SessionBlockActions atScreenEdge={false} />,
-            addTab: <TabBarAddMenu />,
+            addTab: <ChatWorkspaceNewTab layout={paneLayout} />,
             leading: <SessionGrip />,
             atWindowEdge: place.topRight,
             reserveShellRestoreLane: place.topLeft && !windowId && shellRestoreLaneTaken(),

@@ -19,6 +19,7 @@ import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { ContextMenu } from '@/components/ui/Menu';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
+import { ChatWorkspaceNewTab } from '@renderer/features/tabs/chat-workspace-new-tab';
 import { ChatWorkspaceTabContext } from '@renderer/features/tabs/chat-workspace-context';
 import { chatBlockContentOf, chatLayoutOf, closeChatTab } from './chat-layouts';
 import { CHAT_TAB_KIND, ChatTabHostContext, type ChatTabHost } from './chat-tab-providers';
@@ -85,7 +86,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
         <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
           <PaneTreeView layout={layout} chatChrome={{
             actions: chromeActionsSlot,
-            addTab,
+            addTab: <ChatWorkspaceNewTab layout={layout} />,
             reserveShellRestoreLane,
             atWindowEdge: !embedded && block.topRight,
             embedded,

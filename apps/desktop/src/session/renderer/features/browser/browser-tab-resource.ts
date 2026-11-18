@@ -28,6 +28,7 @@ import type { BrowserState } from './browser-tab-provider';
  */
 export class BrowserTabResource implements TabResource {
   readonly browserId: string;
+  readonly workspaceStart: boolean;
   private readonly _unsubscribeOpenInNewTab: () => void;
   private readonly _disposeSessionSync: () => void;
   private readonly _unsubscribePageState: () => void;
@@ -45,6 +46,7 @@ export class BrowserTabResource implements TabResource {
   ) {
     const payload = entry.state;
     this.browserId = payload.browserId;
+    this.workspaceStart = payload.workspaceStart === true;
 
     // Restore the session if it doesn't exist yet (snapshot restore path).
     // On fresh open, the session was already created in onBeforeOpen().
