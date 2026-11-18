@@ -77,7 +77,6 @@
   "apps/desktop/src/mobile/agent-watch/useSessionLifeView.ts": 1,
   "apps/desktop/src/mobile/agent-watch/useSessionRestart.ts": 2,
   "apps/desktop/src/mobile/assistant/usePhoneToday.ts": 1,
-  "apps/desktop/src/mobile/chat/PhoneNewTask.tsx": 2,
   "apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPanel.tsx": 1,
   "apps/desktop/src/mobile/local-agent/PhoneAgentSetupGate.tsx": 1,
   "apps/desktop/src/mobile/local-agent/PhoneTaskSkillsButton.tsx": 1,
