@@ -301,7 +301,8 @@ describe('the App page market: the index in hand at once, the download site behi
     await act(async () => reread.resolve(h.listing(['one', 'two', 'three'], T2)));
     await until('the new read drawn', tileIds, (ids) => ids.join() !== 'one,two');
     await turn();
-    expect(tileIds()).toEqual(['one', 'three', 'two']);
+    // Desktop browsing uses the order of the host catalog.
+    expect(tileIds()).toEqual(['one', 'two', 'three']);
     expect(tiles()[0]).toBe(before);
     expect(skeletonsAfterTiles).toBe(0);
     expect(h.api.market).toHaveBeenCalledTimes(2);
@@ -325,7 +326,7 @@ describe('the App page market: the index in hand at once, the download site behi
     await until('the push of a later moment read', () => h.api.market.mock.calls.length, (n) => n >= 3);
     await turn();
     expect(h.api.market).toHaveBeenCalledTimes(3);
-    expect(tileIds()).toEqual(['four', 'one']);
+    expect(tileIds()).toEqual(['one', 'four']);
   });
 
   it('the download site not reached → the index in hand stays, one quiet line 「上次更新于 …」; ❌ an alert, ❌ a toast', async () => {
