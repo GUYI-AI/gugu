@@ -36,11 +36,11 @@ const HIDDEN_BY_ATTRIBUTE = '[hidden], [inert], [aria-hidden="true"]'
 export function useFirstRunHintTargets(device: HintDevice, enabled: boolean): readonly HintTarget[] {
   const [targets, setTargets] = useState<readonly HintTarget[]>([])
   useEffect(() => {
-    if (!enabled) {
+    const entries = enabled ? HINT_ENTRIES[device].flatMap(({ id, anchor }) => anchor === null ? [] : [{ id, anchor }]) : []
+    if (entries.length === 0) {
       setTargets((current) => current.length ? [] : current)
       return
     }
-    const entries = HINT_ENTRIES[device].flatMap(({ id, anchor }) => anchor === null ? [] : [{ id, anchor }])
     const shown = new Map<HTMLElement, boolean>()
     const publish = () => {
       const next = entries.flatMap(({ id, anchor }) => {
