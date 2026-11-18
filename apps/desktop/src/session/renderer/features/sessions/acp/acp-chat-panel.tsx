@@ -77,7 +77,9 @@ import {
   asProvisioned,
   getRegisteredSessionData,
   getSessionPageStore,
+  getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
+import { sessionConversationTabId } from '../view/session-pane-policy';
 import {
   chatMentionProvider,
   clearLocalSessionMentions,
@@ -2181,6 +2183,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           return;
         }
         makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenFile(arg.path, arg.at);
+      },
+      onOpenFileChange: (change) => {
+        if (!store) return;
+        const { projectId, sessionId } = store;
+        const layout = getSessionView(projectId, sessionId)?.paneLayout;
+        if (!layout) return;
+        layout.open('recorded-diff', { ...change, sessionId }, {
+          from: sessionConversationTabId(layout, sessionId),
+          intent: 'beside',
+        });
       },
       onOpenOutput: ({ output }) => {
         if (!store) return;

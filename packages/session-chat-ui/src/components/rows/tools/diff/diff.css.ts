@@ -169,6 +169,11 @@ export const pdiffLine = style({
   // so it cannot drift from the measured value via a CSS variable.
 });
 
+export const diffMarker = style({
+  color: vars.fgMuted,
+  paddingInlineStart: '8px',
+});
+
 globalStyle(`${pdiffLine} span`, {
   color: 'var(--shiki-light)',
 });
