@@ -159,7 +159,8 @@ it('keeps another backend and CDN independent of a remembered outage', async () 
   value(await finish(f.cloud.managed(revision, context)))
   const other = fixture({ origin: true, session: f.session })
   other.endpoint.supabaseUrl = 'https://other-signer.invalid'
-  other.api.mockImplementation(async (_url, init) => {
+  other.api.mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/file-resolve')) return Response.json({ ...revision, status: 'ready' })
     const body = JSON.parse(String(init?.body)); other.requests.push(body)
     return Response.json({ status: 'ready', url: 'https://other-cdn.invalid/file', download_id: body.request_id,
       size_bytes: bytes.length, sha256: revision.sha256, origin_available: true })

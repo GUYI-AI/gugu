@@ -99,6 +99,9 @@ describe('device file reads', () => {
     const failure = expect(refused.result).rejects.toMatchObject({ code: 'gone' })
     expect(await (await fileBlob((await good.result).file)).bytes()).toEqual(body)
     await failure
+    const retry = await reads.request(message, account, { purpose: 'bytes' }).result
+    expect(retry.reused).toBe('chunks')
+    await retry.file.dispose()
     expect(options.gets).toBe(1)
   })
 

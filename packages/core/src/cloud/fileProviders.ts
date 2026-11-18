@@ -197,6 +197,8 @@ export function cloudFileProviders(deps: {
       } finally { dataKey?.fill(0); await source.dispose() }
     }
     const file = context.reads && !destination ? await context.reads.acquire(backendScope, 'oss', revision, context, acquire) : await acquire(context)
+    // This reader's refusal or failed ACK cannot invalidate another reader's content-addressed chunks.
+    const clearAfterRefusal = (error: unknown) => !context.reads || error instanceof FileReadRevokedError && error.reason === 'revision'
     const afterSave = () => deps.cache.clear(key)
     const snapshot = { size: file.size, read: (offset: number, length: number) => file.read(offset, length), dispose: () => file.dispose(), saved: afterSave }
     const saved = async (sink: FileSink) => { const bytes = await sink.commit(); await deps.cache.clear(key); return bytes }
@@ -229,7 +231,7 @@ export function cloudFileProviders(deps: {
         // acknowledgement follows; whoever shows them takes them down if it fails (`acknowledged`).
         if (destination) { await acknowledge(); return await saved(destination) }
         const acknowledged = acknowledge().catch(async error => {
-          if (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) await deps.cache.clear(key)
+          if ((error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) && clearAfterRefusal(error)) await deps.cache.clear(key)
           throw error
         })
         acknowledged.catch(() => undefined)
@@ -245,7 +247,7 @@ export function cloudFileProviders(deps: {
     } catch (error) {
       await file.dispose()
       await destination?.abort()
-      if (!context.signal?.aborted) await deps.cache.clear(key)
+      if (!context.signal?.aborted && clearAfterRefusal(error)) await deps.cache.clear(key)
       throw error
     }
   }
