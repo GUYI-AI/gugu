@@ -524,6 +524,98 @@ describe('session orchestration', () => {
       expect(mocks.lifeRecover).not.toHaveBeenCalled();
     });
 
+    it('keeps a scheduled prompt pending through the default delivery path and resumes one input after restart', async () => {
+      const { SessionLife } = await vi.importActual<typeof import('./session-life')>('./session-life');
+      const { lifeStore } = await import('./session-pending');
+      const actual = await vi.importActual<typeof import('./sendMessage')>('./sendMessage');
+      const { noopLogger } = await import('@gugu/session-shared/logger');
+      const { AutomationScheduler } = await import('../automations/automation-scheduler');
+      const { createAgentSchedule, getAutomation } = await import('../automations/repo');
+      type Adapter = import('./session-life-adapter').LegAdapter;
+      type Stage = import('@gugu/core/local/session-life/types').StageName;
+      type Out = import('@gugu/core/local/session-life/types').StageOut;
+      const dispatch = vi.fn<Adapter['dispatch']>(async () => ({ result: 'accepted', nativeReceiptId: 'scheduled-input' }));
+      function runtime(platform: () => Promise<void>) {
+        const owner = new SessionLife({ logger: noopLogger, sessions: () => ['caller'], store: () => lifeStore,
+          adapter: () => ({ leg: 'acp', timing: 'next-tool-call',
+            async run<K extends Stage>(at: K, _have: unknown, ctx: { gen: import('@gugu/core/local/session-life/types').Gen }): Promise<Out[K]> {
+              if (at === 'platform') await platform();
+              return (at === 'identity' ? { kind: 'bound', agentUserId: 'agent' } : { at, gen: ctx.gen, timing: 'next-tool-call' }) as Out[K];
+            }, dispatch, teardown: async () => {}, onExit: () => () => {} }),
+          forks: () => [], allForks: () => [], parentOf: () => null, ownedBy: async () => true,
+          markRead: async () => {}, reportFailure: async () => {}, publish: () => {}, removed: () => {}, failed: vi.fn(), now: Date.now });
+        mocks.lifeEnqueue.mockImplementation(input => owner.enqueue(input as Parameters<typeof owner.enqueue>[0]));
+        mocks.lifeRecover.mockImplementation((...args) => owner.recoverQueuedDelivery(...args));
+        return owner;
+      }
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const now = Date.now();
+      let failStartup = true;
+      const before = runtime(async () => {
+        if (failStartup) throw new Error('controlled platform startup failure');
+        await new Promise(() => {}); // A lost process never completes this continuation or signs out.
+      });
+      let after: InstanceType<typeof SessionLife> | undefined;
+      let scheduler = new AutomationScheduler({ onRunStep: () => {}, onScheduledRunChanged: () => {} });
+      mocks.sendMessage.mockImplementation(actual.sendMessage);
+      mocks.readAcceptedMessage.mockImplementation(actual.readAcceptedMessage);
+      try {
+        await before.signIn('owner');
+        const { automation, nextRun } = await createAgentSchedule({ agentSessionId: 'caller', projectId: 'project-1',
+          name: 'Reliable reminder', prompt: 'Resume this task once', provider: 'codex',
+          triggerConfig: { expr: '', tz: 'UTC', at: now + 120_000 } });
+        const runRow = () => fixture.sqlite.prepare('SELECT status, error FROM automation_runs WHERE id=?').get(nextRun!.id) as { status: string; error: string | null };
+        vi.setSystemTime(now + 120_000);
+        scheduler.start();
+        await vi.waitFor(() => expect(runRow(), JSON.stringify(runRow())).toMatchObject({ status: 'queued' }));
+        await before.quiescent('caller');
+        expect(before.read('caller').kind).toBe('failed');
+        expect((await getAutomation(automation.id))?.enabled).toBe(true);
+        expect(dispatch).not.toHaveBeenCalled();
+        failStartup = false;
+        vi.setSystemTime(now + 122_000);
+        await scheduler.drainQueue();
+        await vi.waitFor(() => expect(JSON.parse(runRow().error ?? '{}').deliveryRecoveryAttempts).toBe(1));
+        await vi.waitFor(() => expect(before.read('caller').stage?.at).toBe('platform'));
+        // The old scheduler has returned its queued receipt before reconstructing its owner.
+        await vi.waitFor(() => expect(runRow(), JSON.stringify(runRow())).toMatchObject({ status: 'queued' }));
+        await scheduler.reload();
+        scheduler.stop();
+
+        const ready = Promise.withResolvers<void>();
+        after = runtime(() => ready.promise);
+        await after.signIn('owner');
+        scheduler = new AutomationScheduler({ onRunStep: () => {}, onScheduledRunChanged: () => {} });
+        scheduler.start();
+        await scheduler.reload();
+        await vi.waitFor(() => expect(runRow(), JSON.stringify(runRow())).toMatchObject({ status: 'queued' }));
+        expect(JSON.parse(runRow().error!).deliveryRecoveryAttempts).toBe(1);
+        expect((await getAutomation(automation.id))?.enabled).toBe(true);
+        expect(dispatch).not.toHaveBeenCalled();
+        ready.resolve();
+        await after.quiescent('caller');
+        vi.setSystemTime(now + 124_000);
+        await scheduler.drainQueue();
+        await vi.waitFor(() => expect(runRow()).toEqual({ status: 'done', error: null }));
+        await vi.waitFor(async () => expect((await getAutomation(automation.id))?.enabled).toBe(false));
+        expect(dispatch).toHaveBeenCalledOnce();
+        const sent = mocks.sendMessage.mock.calls.map(([input]) => input as { clientMessageId: string; text: string });
+        expect(sent.length).toBeGreaterThanOrEqual(3);
+        expect(new Set(sent.map(input => input.clientMessageId)).size).toBe(1);
+        expect(new Set(sent.map(input => input.text)).size).toBe(1);
+        expect(sent[0].text).toContain('Resume this task once');
+        expect(dispatch.mock.calls[0][1].message.id).toBe(sent[0].clientMessageId);
+        expect(fixture.sqlite.prepare('SELECT count(*) FROM session_pending').pluck().get()).toBe(1);
+        expect(fixture.sqlite.prepare('SELECT count(*) FROM messages').pluck().get()).toBe(1);
+        expect(fixture.sqlite.prepare('SELECT count(*) FROM sessions').pluck().get()).toBe(1);
+      } finally {
+        scheduler.stop();
+        await after?.signOut();
+        mocks.readAcceptedMessage.mockReset();
+        vi.useRealTimers();
+      }
+    });
+
     it('recovers the same host update twice through real orchestration and persists one accepted notice', async () => {
       const actual = await vi.importActual<typeof import('./sendMessage')>('./sendMessage');
       mocks.sendMessage.mockImplementation(actual.sendMessage);

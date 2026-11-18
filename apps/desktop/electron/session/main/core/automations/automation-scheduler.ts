@@ -72,7 +72,7 @@ export class AutomationScheduler {
   private bootstrapTail: Promise<void> = Promise.resolve();
   private recoveryTail: Promise<void> = Promise.resolve();
   private readonly deliveryRetryAfter = new Map<string, number>();
-  private readonly inFlight = new Set<string>(); // automation IDs currently executing
+  private readonly inFlight = new Map<string, string>(); // automation ID → the run currently executing
   private readonly deletingAutomationIds = new Set<string>();
   private readonly slotPool = new SlotPool(MAX_CONCURRENT_RUNS, () => {
     void this.drainQueue();
@@ -364,6 +364,13 @@ export class AutomationScheduler {
         }
 
         if (this.inFlight.has(entry.automation.id)) {
+          // A pending delivery returns this same run to queued before its worker releases the slot.
+          // Reloads must wait for that handoff, not mistake it for a newer overlapping occurrence.
+          if (this.inFlight.get(entry.automation.id) === entry.run.id) {
+            attempted.add(entry.run.id);
+            madeProgress = true;
+            continue;
+          }
           const skipped = await markRunSkipped(entry.run.id, {
             step: 'queue',
             code: 'previous_running',
@@ -379,7 +386,7 @@ export class AutomationScheduler {
         madeProgress = true;
         attempted.add(run.id);
         this.callbacks.onRunStep(run);
-        this.inFlight.add(entry.automation.id);
+        this.inFlight.set(entry.automation.id, run.id);
         this.slotPool.start(() => this.runWorker(entry.automation, run));
       }
 
@@ -401,7 +408,7 @@ export class AutomationScheduler {
         runId: run.id,
       });
     }
-    this.inFlight.add(automation.id);
+    this.inFlight.set(automation.id, run.id);
     void this.runWorker(automation, run).catch((error) => {
       log.error('AutomationScheduler.executeNow worker failed', {
         automationId: automation.id,
@@ -461,7 +468,7 @@ export class AutomationScheduler {
           });
         }
       }
-      this.inFlight.delete(automation.id);
+      if (this.inFlight.get(automation.id) === run.id) this.inFlight.delete(automation.id);
     }
   }
 }
