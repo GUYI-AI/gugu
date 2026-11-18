@@ -210,7 +210,7 @@ describe('final group toolbar v4', () => {
   it('a centered phone group keeps direct creation and members in More', async () => {
     await header('group', { mobile: true, create: true, menu: true })
     expect(button('成员列表')).toBeUndefined()
-    await clickElement(button('新建 Agent')!)
+    await clickElement(button('创建智能体')!)
     expect(onCreateAgent).toHaveBeenCalledOnce()
     await clickElement(menuItem('成员列表 (3)')!)
     expect(onOpenInfo).toHaveBeenCalledWith('members')

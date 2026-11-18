@@ -265,7 +265,6 @@ export default {
     }
   },
   "chatList": {
-    "createGroupAgent": "新建 Agent",
     "createAgent": "创建智能体",
     "addContact": "添加联系人",
     "clearSearch": "清除搜索",

@@ -73,6 +73,7 @@ async function mount(chooseFolder = true, projectGroup = true) {
 
 it('shows the destination and opens the project folder picker from the Project control', async () => {
   await mount(false)
+  expect(sheet()?.querySelector('h2')?.textContent).toBe('创建智能体')
   expect(sheet()?.textContent).toContain('Project group')
   expect(document.querySelector('[data-testid="phone-task-folder-card"]')).toBeNull()
   await openFolder()

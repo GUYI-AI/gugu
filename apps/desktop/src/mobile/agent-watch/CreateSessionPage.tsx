@@ -98,7 +98,7 @@ export function CreateSessionPage(props: CreateSessionPageProps) {
 export function CreateSessionSheet({ group, onClose, onCreated }: GroupSheet & Pick<CreateSessionPageProps, 'onCreated'>) {
   const { t } = useTranslation('messaging')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
-  return <PhoneComposerSheet open onClose={onClose} title={t('chatList.createGroupAgent')}
+  return <PhoneComposerSheet open onClose={onClose} title={t('chatList.createAgent')}
     testId="phone-group-agent-sheet" className="gg-phone-group-agent-sheet">
     <div className="gg-phone-group-agent-destination" data-testid="phone-group-agent-destination">
       <span>{tFlow('sendToGroup')}</span><span>{group.name}</span>

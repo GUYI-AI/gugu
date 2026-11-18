@@ -19,6 +19,6 @@ export function PhoneProjectEmpty({ chatId }: { chatId: string }) {
   return <div className="gg-phone-project-empty" data-testid="phone-project-empty">
     <ChatGroupAvatar chatId={chatId} name={project.name} size={64} />
     <span>{project.name}</span>
-    <Button variant="secondary" size="sm" className="gg-phone-project-empty-start" onClick={() => requestGroupAgentCreation(chatId)}>{t('composer.phoneTask.action')}</Button>
+    <Button variant="secondary" size="sm" className="gg-phone-project-empty-start" onClick={() => requestGroupAgentCreation(chatId)}>{t('chatList.createAgent')}</Button>
   </div>
 }
