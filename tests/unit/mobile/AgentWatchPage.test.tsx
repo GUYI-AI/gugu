@@ -435,11 +435,10 @@ describe('AgentWatchPage native back routing', () => {
     expect(props.onExit).toHaveBeenCalledOnce()
   })
 
-  it('Back from the group creation shortcut exits to the calling chat', async () => {
+  it('Back from an external creation shortcut exits the watch layer', async () => {
     const onExit = vi.fn()
-    const taskInGroup = { chatId: 'product-group', name: '产品讨论' }
     await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 0 }))
-    await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 1, taskInGroup }))
+    await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 1 }))
     await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
 
     await act(async () => { (harness.container.querySelector('[data-testid="create-back"]') as HTMLButtonElement).click() })

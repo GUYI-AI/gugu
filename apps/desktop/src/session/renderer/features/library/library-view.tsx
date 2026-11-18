@@ -7,7 +7,7 @@ import { libraryDeviceStore } from '@renderer/features/remote-hosts/device-scope
 import { AgentsSettingsPage } from '@renderer/features/settings/agents-page/AgentsSettingsPage';
 import { PageContent, PageLayout, PageSidebarMenu } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
-import { useParams } from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { LibraryHostProvider } from './library-host';
@@ -85,7 +85,7 @@ function useLibraryTab() {
 
 export const LibraryMainPanel = observer(function LibraryMainPanel() {
   const { tab, onTabChange } = useLibraryTab();
-  const { params, setParams } = useParams('library');
+  const { navigate } = useNavigate();
   const { translate } = useSessionMessages();
   /**
    * #6264 **整个资源库**是分机器的(owner:「整个资源库或者其他的都是分设备的,而不是说智能体中分设备」):
@@ -98,8 +98,8 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
     prompts: <PromptLibraryView />,
     agents: (
       <AgentsSettingsPage
-        selectedAgentId={params.agentId ?? null}
-        onSelectAgent={(agentId) => setParams({ agentId: agentId ?? undefined })}
+        selectedAgentId={null}
+        onSelectAgent={(agentId) => agentId && navigate('apps', { agentDetail: { kind: 'agent-app-detail', agentId, deviceId: host.remote?.deviceId } })}
       />
     ),
     integrations: <RoutedIntegrationsLibraryPage host={host} />,

@@ -1,8 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { isPhoneDevice } from '@gugu/core/cloud/devices'
-import { Check, ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
+import { ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
 import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { Button } from '@/components/ui/Button'
@@ -17,6 +17,7 @@ import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
+import { PhoneComposerChoice as Choice } from '../composer/PhoneComposerChoice'
 import { PhoneThinkingOptions } from '../composer/PhoneThinkingOptions'
 import { creationThinking } from './creation-thinking'
 
@@ -42,7 +43,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   controlsExtra?: ReactNode
   conversationKey?: string
   /** An in-place project task already owns its project; its folder determines the run device. */
-  projectTask?: { onFolder: () => void; open: boolean }
+  projectTask?: { onFolder: (anchor: RefObject<HTMLButtonElement | null>) => void; open: boolean }
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const { t: tm } = useTranslation('main')
@@ -80,9 +81,9 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
       {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={workOpen} disabled={busy}
         menuExpanded={workOpen}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />}
-      {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
+      {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('project')} icon={<Folder />} disabled={busy}
           menuExpanded={projectTask.open}
-          testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
+          testId="agent-watch-create-folder" buttonRef={projectButton} onClick={() => projectTask.onFolder(projectButton)} />
       : menu.includes('project') && <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
         menuExpanded={view === 'project'}
         testId="agent-watch-create-project" buttonRef={projectButton} onClick={() => setView('project')} />}
@@ -163,16 +164,6 @@ function DeviceIcon({ device }: { device: CreateMachine['device'] | undefined })
   return device?.cloud_computer ? <Cloud /> : <Monitor />
 }
 
-function Choice({ id, dimension, name, description, icon, selected, disabled, onClick }: {
-  id: string; dimension: string; name: string; description?: string | null; icon?: ReactNode
-  selected?: boolean; disabled?: boolean; onClick: () => void
-}) {
-  return <Button variant="ghost" className="gg-phone-composer-choice" role="radio" aria-checked={!!selected} disabled={disabled}
-    data-testid="agent-watch-create-target-choice" data-dimension={dimension} data-option-id={id} data-selected={selected || undefined} onClick={onClick}>
-    {icon}<span className="gg-phone-composer-choice-body"><span className="gg-phone-composer-choice-name">{name}</span>
-      {description && <span className="gg-phone-composer-choice-description">{description}</span>}</span>{selected && <Check />}
-  </Button>
-}
 function Summary({ dimension, title, value, disabled, readOnly, onClick }: { dimension: string; title: string; value: string; disabled?: boolean; readOnly?: boolean; onClick: () => void }) {
   if (readOnly) return <div className="gg-phone-composer-choice gg-phone-existing-readonly" data-testid="agent-watch-create-readonly" data-dimension={dimension}>
     <span>{title}</span><span className="gg-phone-composer-summary-value">{value}</span>

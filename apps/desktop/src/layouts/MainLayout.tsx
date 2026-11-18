@@ -199,7 +199,6 @@ function InnerLayout({
   const [watchCreateRequest, setWatchCreateRequest] = useState(0)
   const [watchCreateFromCurrentRoute, setWatchCreateFromCurrentRoute] = useState(false)
   // 手机上非项目群输入框的「新任务」:与 watchCreateRequest 一起递进去,null = 不进群。
-  const [watchTaskGroup, setWatchTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
   const [openedPhoneApp, setOpenedPhoneApp] = useState<{ kind: string; name: string } | null>(null)
   const [watchParentTab, setWatchParentTab] = useState<SidebarTab | null>(null)
   const watchOpenRequest = useAppShowSession(() => {
@@ -242,7 +241,7 @@ function InnerLayout({
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
-  useSessionpageAgentInstallNavigation(sessionHostAvailable, setSessionCreateOpen, setActiveTab)
+  useSessionpageAgentInstallNavigation(sessionHostAvailable, sessionCreateOpen, setSessionCreateOpen, setActiveTab)
   useOpenNewSessionOnDeviceHost(sessionHostAvailable && !mobile, setSettingsModalOpen, setActiveTab)
   // @@@create-entry-is-not-a-task-host-capability (#4287) — sessionHost 只选**用哪套装配**(常驻会话页 composer /
   // ACP-only composer),❌ 不回答「这里能不能建 agent」:并成一个布尔就凭空多出「两套都不给」的第三档,而安卓
@@ -317,7 +316,7 @@ function InnerLayout({
     if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
     return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
   }, [enterChat, openChatBlock, setActiveChatId, readChats])
-  const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').AppDetailLink>()
+  const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
     openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
@@ -387,7 +386,6 @@ function InnerLayout({
       const from = shellTab.under()
       if (from !== 'tasks') setWatchParentTab(from)
       setWatchCreateFromCurrentRoute(from === 'tasks')
-      setWatchTaskGroup(null)
       setActiveTab('tasks')
       setWatchCreateRequest((n) => n + 1)
       return
@@ -666,29 +664,19 @@ function InnerLayout({
   useEffect(() => platform.subscribeNotificationClicks?.(({ chatId }) => openNotificationRef.current(chatId)), [])
 
 
-  // 群输入框的「新任务」(gugu-dev#181):桌面把那个群的输入框换成新任务框;手机(非项目群,项目群是浮起的文件夹卡
-  // PhoneNewTask)进会话页选机器 —— 两边都是首句落成这个群里的任务卡、agent 进群、人回到群。
+  // On phones the visible group handles the creation event in its own sheet.
   useEffect(() => {
+    if (mobile) return
     const onCreateInGroup = (event: Event) => {
       const { chatId } = (event as CustomEvent<{ chatId?: unknown }>).detail ?? {}
       if (typeof chatId !== 'string' || chatId.length === 0) return
       const name = readChats().chats.find((chat) => chat.id === chatId)?.name || t('group.settings.groupFallback', { ns: 'messaging' })
-      if (mobile) {
-        const from = shellTab.under()
-        if (from !== 'tasks') setWatchParentTab(from)
-        setWatchCreateFromCurrentRoute(from === 'tasks')
-        setWatchTaskGroup({ chatId, name })
-        setActiveTab('tasks')
-        setWatchCreateRequest((n) => n + 1)
-        return
-      }
-      // 桌面上:那个群的输入框换成「新任务」,把那个群摆出来 —— 建好的 agent 进这个群,结果回到这里。
       setComposerVerb(chatId, 'task', undefined, { name, joinable: true, inGroup: true })
       openChatBlock(chatId)
     }
     window.addEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
     return () => window.removeEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
-  }, [setActiveTab, mobile, openChatBlock, readChats, t, shellTab])
+  }, [mobile, openChatBlock, readChats, t])
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
@@ -1186,7 +1174,6 @@ function InnerLayout({
                   onExit={exitPhoneSessions}
                   createRequest={watchCreateRequest}
                   createFromCurrentRoute={watchCreateFromCurrentRoute}
-                  taskInGroup={watchTaskGroup}
                   openRequest={watchOpenRequest}
                   onOpenGroupChat={handleReturnToGroup}
                 />

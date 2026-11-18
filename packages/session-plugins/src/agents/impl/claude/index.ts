@@ -119,6 +119,7 @@ export const plugin = definePlugin(
   {
     id: 'claude',
     name: 'Claude Code',
+    publisher: 'Anthropic',
     description:
       'CLI that uses Anthropic Claude for code edits, explanations, and structured refactors in the terminal.',
     websiteUrl: 'https://code.claude.com/docs/en/quickstart',

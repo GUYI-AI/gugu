@@ -5,7 +5,7 @@ import { observer } from 'mobx-react-lite'
 import { createReactHarness } from '../../../support/testHarness'
 import { installShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { folderItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, infoTabOf, openInfoTab, openPanelItem, openTopicTab, showChatOnly, showChatTab } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, infoTabOf, openInfoTab, openPanelItem, openTopicTab, showChatOnly, showChatTab, topicTabOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { ChatTabHostContext } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-tab-providers'
 import { ChatTabPage, ChatTabPortals } from '../../../../apps/desktop/src/components/appSlot/ChatTabHosts'
 import { PaneContent } from '../../../../apps/desktop/src/session/renderer/features/tabs/pane-content'
@@ -18,21 +18,59 @@ vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessag
 vi.mock('@/components/markdown/Markdown', () => ({ Markdown: () => null }))
 vi.mock('@/components/chat/DocumentPreviewContent', () => ({ DocumentPreviewContent: () => null }))
 
+const originalVisibility = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'checkVisibility')
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { vi.stubGlobal('CSS', { escape: (id: string) => id }); installShellSlots(); harness = createReactHarness() })
-afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
+const shellPointer = vi.fn()
+beforeEach(() => { Object.defineProperty(HTMLElement.prototype, 'checkVisibility', { configurable: true, value(this: HTMLElement) { return !this.closest('[hidden], [style*="content-visibility: hidden"], [style*="visibility: hidden"], [style*="display: none"]') } }); vi.stubGlobal('CSS', { escape: (id: string) => id }); installShellSlots(); shellPointer.mockClear(); harness = createReactHarness() })
+afterEach(() => { harness.cleanup(); vi.unstubAllGlobals(); if (originalVisibility) Object.defineProperty(HTMLElement.prototype, 'checkVisibility', originalVisibility); else Reflect.deleteProperty(HTMLElement.prototype, 'checkVisibility') })
 const slots = () => [...harness.container.querySelectorAll('[data-chat-tab-slot]')].map((element) => element.getAttribute('data-chat-tab-slot'))
 const Panels = observer(function Panels({ chatId }: { chatId: string }) {
-  return <>{chatLayoutOf(chatId).groups.map(group => <PaneContext.Provider key={group.paneId} value={{ paneId: group.paneId, pane: group.pane, isFocusedPane: true }}><PaneContent hideTabBar /></PaneContext.Provider>)}</>
+  return <>{chatLayoutOf(chatId).groups.map(group => <PaneContext.Provider key={group.paneId} value={{ paneId: group.paneId, pane: group.pane, isFocusedPane: true }}><div data-test-pane={group.paneId} onPointerDownCapture={shellPointer}><PaneContent hideTabBar /></div></PaneContext.Provider>)}</>
 })
 const portal = (chatId: string) => <><Panels chatId={chatId} /><ChatTabPortals chatId={chatId} panel={tab => <textarea data-draft={tab.tabId} defaultValue={tab.item.title} />} topic={() => <textarea data-topic-draft defaultValue="topic" />} info={() => <textarea data-info-draft defaultValue="info" />} /></>
 
 describe('chat slots follow actual panes and navigation contexts', () => {
+  it('keeps opener pointer and focus events from changing the current topic through a real portal', async () => {
+    const id = 'opener-focus'
+    const layout = chatLayoutOf(id)
+    const conversation = layout.focusedPane.resolvedActiveTabId!
+    const file = openPanelItem(id, { kind: null, itemId: 'first', title: 'first.html' })!
+    openTopicTab(id, { topicChatId: 'focused-topic', name: 'Topic' })
+    const topic = topicTabOf(id)!.tabId
+    layout.pairWith(topic, file)
+    showChatTab(id, topic)
+    await harness.render(<><Panels chatId={id} /><ChatTabPortals chatId={id}
+      panel={() => <><button data-pane-opener="" onClick={() => openPanelItem(id, { kind: null, itemId: 'next', title: 'next.html' }, { from: conversation })}>Open file</button><button data-ordinary>Menu</button></>}
+      topic={() => <textarea data-topic-draft defaultValue="unfinished" />} info={() => null} /></>)
+    const draft = harness.container.querySelector<HTMLTextAreaElement>('[data-topic-draft]')!
+    await act(async () => draft.focus())
+    const paneId = layout.activePaneId
+    const opener = harness.container.querySelector<HTMLButtonElement>(`[data-chat-tab-slot="${file}"] [data-pane-opener]`)!
+    await act(async () => {
+      opener.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+      opener.focus()
+    })
+    expect(layout.activePaneId).toBe(paneId)
+    expect(shellPointer).not.toHaveBeenCalled()
+    const slot = opener.closest<HTMLElement>('[data-chat-tab-slot]')!
+    await act(async () => slot.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })))
+    expect(shellPointer).toHaveBeenCalledTimes(1)
+    await act(async () => opener.click())
+    expect(layout.activePaneId).toBe(paneId)
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(topic)
+    expect(harness.container.querySelector('[data-topic-draft]')).toBe(draft)
+    expect(draft.value).toBe('unfinished')
+    const next = layout.groups.find(group => group.paneId !== paneId)!.pane.resolvedActiveTabId!
+    const ordinary = harness.container.querySelector<HTMLButtonElement>(`[data-chat-tab-slot="${next}"] [data-ordinary]`)!
+    await act(async () => ordinary.focus())
+    expect(layout.activePaneId).not.toBe(paneId)
+  })
+
   it.each(['private-card', 'group-folder'])('carries the owning pane through the real %s portal into the shared file toolbar', async origin => {
     const id = `native-toolbar-${origin}`
     const layout = chatLayoutOf(id)
     layout.focusedPane.setDimensions(390, 620)
-    layout.setNarrow(true)
+    layout.setSinglePaneHost(true)
     const from = origin === 'group-folder' ? openPanelItem(id, folderItem(), { intent: 'newTab' }) : undefined
     openPanelItem(id, { kind: null, title: 'notes.txt', itemId: `notes-${origin}` }, from ? { from } : undefined)
     await harness.render(<><Panels chatId={id} /><ChatTabPortals chatId={id} panel={tab => <MessageFilePreviewPanel fill tabbed file={{ fileName: tab.item.title, sizeBytes: 12, mimeType: 'text/plain' }} kind="text" content="notes" loading={false} onClose={() => closeChatTab(id, tab.tabId)} />} topic={() => null} info={() => null} /></>)
@@ -73,9 +111,10 @@ describe('chat slots follow actual panes and navigation contexts', () => {
   })
   it('bounds hidden slots while leaving each explicitly open context in the model', async () => {
     const id = 'bound-v3'; const folder = openPanelItem(id, folderItem())!
+    showChatTab(id, folder)
     await harness.render(portal(id))
-    for (let i = 0; i < KEPT_HIDDEN_TABS + 2; i++) await act(async () => openPanelItem(id, { kind: 'workspace.main', itemId: `f-${i}`, title: `f-${i}` }, { from: folder, intent: 'newTab' }))
-    expect(slots()).toHaveLength(KEPT_HIDDEN_TABS + 1)
+    for (let i = 0; i < 2 * (KEPT_HIDDEN_TABS + 2); i++) await act(async () => openPanelItem(id, { kind: 'workspace.main', itemId: `f-${i}`, title: `f-${i}` }, { from: folder, intent: 'newTab' }))
+    for (const pane of harness.container.querySelectorAll('[data-test-pane]')) expect(pane.querySelectorAll('[data-chat-tab-slot]').length).toBeLessThanOrEqual(KEPT_HIDDEN_TABS + 1)
     expect(harness.container.querySelector(`[data-draft="${folder}"]`)).toBeNull()
     expect(chatPaneOf(id, folder)?.entries.has(folder)).toBe(true)
   })

@@ -611,45 +611,36 @@ describe('MainLayout', () => {
       expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
     }
   })
-  it.each(['list', 'chat', 'contacts', 'project', 'settings'] as const)('captures the actual %s shell origin for phone creation and restores it on exit', async source => {
+  it('restores the message list after standalone phone creation', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
     chatStoreMock.chats = [{ id: 'original-chat', kind: 'group' }] as never
     chatStoreMock.activeChatId = 'original-chat'
     await renderMainLayoutWithToast()
-    if (source === 'chat') await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
-    if (source === 'contacts' || source === 'project') {
-      await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
-      if (source === 'project') await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-push"]') as HTMLElement)
-    }
-    if (source === 'settings') await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileProfileNav}"]`) as HTMLElement)
     for (const method of ['header', 'native'] as const) {
-      if (source === 'list') await clickElement(harness.container.querySelector('[data-testid="mock-chat-create-agent"]') as HTMLElement)
-      else await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId: 'original-chat' } })) })
+      await clickElement(harness.container.querySelector('[data-testid="mock-chat-create-agent"]') as HTMLElement)
       expect(layerOpen('mobile-sessions-layer')).toBe(true)
       expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-create-from-current-route')).toBe('false')
       if (method === 'header') await clickElement(harness.container.querySelector('[data-testid="mock-session-back"]') as HTMLElement)
       else await nativeBack()
       expect(layerOpen('mobile-sessions-layer')).toBe(false)
-      expect(layerOpen('mobile-settings-layer')).toBe(source === 'settings')
       expect(chatStoreMock.activeChatId).toBe('original-chat')
-      expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
-      if (source === 'contacts' || source === 'project') expect(harness.container.querySelector('[data-mobile-tab-page="contacts"]')?.hasAttribute('inert')).toBe(false)
-      expect(Boolean(harness.container.querySelector('nav'))).toBe(source === 'list' || source === 'contacts')
+      expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe('true')
+      expect(harness.container.querySelector('nav')).not.toBeNull()
     }
   })
-  it('keeps the original outer shell parent when creation starts inside an already open Agent layer', async () => {
+
+  it('leaves the phone shell in the group when the group creation event is raised', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
+    chatStoreMock.chats = [{ id: 'original-chat', kind: 'group' }] as never
+    chatStoreMock.activeChatId = 'original-chat'
     await renderMainLayoutWithToast()
-    await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileProfileNav}"]`) as HTMLElement)
-    await act(async () => { window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, { detail: { deviceId: 'host', session: { conversationId: 'task-session', supported: true } } })) })
-    expect(layerOpen('mobile-sessions-layer')).toBe(true)
+    await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
     await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId: 'original-chat' } })) })
-    expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-create-from-current-route')).toBe('true')
-    await clickElement(harness.container.querySelector('[data-testid="mock-session-back"]') as HTMLElement)
     expect(layerOpen('mobile-sessions-layer')).toBe(false)
-    expect(layerOpen('mobile-settings-layer')).toBe(true)
+    expect(chatStoreMock.activeChatId).toBe('original-chat')
+    expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe('false')
   })
   it.each(['messages', 'contacts', 'project', 'notification'] as const)('adds one session layer from %s and returns to the retained source', async source => {
     platformMock.kind = 'capacitor'
@@ -913,8 +904,9 @@ describe('MainLayout', () => {
     expect(agentWatchProbe.rootMounts, 'mounted on the chats tab, before the tasks layer was ever opened').toBe(1)
     const nav = (id: string) => harness.container.querySelector(`[data-testid="${id}"]`) as HTMLElement
     await clickElement(nav(AUTOMATION_TEST_IDS.mobileContactsNav))
-    // 伙伴页上没有「新建 Agent」(#446);群成员的「新建 Agent 并加入本群」照样推进任务那一层。
-    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId: 'group-1' } })) })
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, { detail: { deviceId: 'host', session: { conversationId: 'task-session', supported: true } } }))
+    })
     expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-active'), 'positive control: the tasks layer did open').toBe('true')
     await nativeBack()
     // 推进来的一层退回后常驻只藏,只被告知已离开、自己回到根上。

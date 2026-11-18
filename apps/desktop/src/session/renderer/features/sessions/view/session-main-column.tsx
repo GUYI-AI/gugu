@@ -16,6 +16,7 @@ import {
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneProvider } from '@renderer/features/tabs/pane-context';
+import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation';
 import { edgeFirst, PANE_EDGES, PaneEdgeDropZones } from '@renderer/features/tabs/pane-edge-drop';
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -189,7 +190,7 @@ const PaneCell = observer(function PaneCell({
   return (
     <PaneProvider group={group} isFocusedPane={focused}>
       <SplitPaneHotkey />
-      <div className="h-full min-h-0 min-w-0" onPointerDown={() => paneLayout.setActiveGroup(paneId)} data-pane-cell={paneId}>
+      <div className="h-full min-h-0 min-w-0" onPointerDown={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} onFocusCapture={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} data-pane-cell={paneId}>
         <PaneContent
           part={part}
           emptyState={<PaneEmptyState />}
