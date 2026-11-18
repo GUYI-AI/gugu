@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { createReferralLink } from '@gugu/core/shared/referralLink'
+import { createReferralLinkForApp } from '@gugu/core/shared/referralLink'
 import { guguLinkScheme } from '@gugu/core/shared/ui/guguLink'
 import { platform } from '@/platform'
 import { useAuth } from '../../store/auth'
@@ -12,10 +12,10 @@ import { useReferralActivity } from './useReferralActivity'
 import { referralOffer } from './referralOffer'
 
 declare const __GUGU_TIER__: string | undefined
-// Only a packaged Beta marks personal links; stable and source-launched links keep their existing bytes.
-const referralChannel = guguLinkScheme({
-  tier: typeof __GUGU_TIER__ === 'string' ? __GUGU_TIER__ : undefined, devLaunch: import.meta.env.DEV,
-}) === 'gugu-beta' ? 'beta' : 'stable'
+// Stable keeps its existing path; Beta confirms the running native scheme when copying.
+const betaBuild = guguLinkScheme({
+  tier: typeof __GUGU_TIER__ === 'string' ? __GUGU_TIER__ : undefined, devLaunch: false,
+}) === 'gugu-beta'
 
 export function InvitationPanel() {
   const { user } = useAuth()
@@ -23,8 +23,8 @@ export function InvitationPanel() {
   const { data, failed, reload } = useReferral(user?.id)
   const activity = useReferralActivity(user?.id)
   const [copyStatus, setCopyStatus] = useState<string | null>(null)
-  const copy = async (value: string) => {
-    try { await platform.writeClipboardText(value); setCopyStatus(t('referrals.copied')) }
+  const copy = async (value: string | Promise<string>) => {
+    try { await platform.writeClipboardText(await value); setCopyStatus(t('referrals.copied')) }
     catch { setCopyStatus(t('referrals.copyFailed')) }
   }
   const offer = data ? referralOffer(data) : null
@@ -36,7 +36,7 @@ export function InvitationPanel() {
         {data && <p className="gg-referral-note">{t(`referrals.condition.${data.policy.success_condition}`)} {offer && t(`referrals.offer.${offer.key}`, offer)}</p>}
         <div className="gg-referral-copy">
           <Button variant="secondary" size="sm" disabled={!data?.code_enabled} onClick={() => { if (data) void copy(data.code) }}>{t('referralPreview.copyCode')}</Button>
-          <Button size="sm" disabled={!data?.code_enabled} onClick={() => { if (data) void copy(createReferralLink(data.code, referralChannel)) }}>{t('referralPreview.copyLink')}</Button>
+          <Button size="sm" disabled={!data?.code_enabled} onClick={() => { if (data) void copy(createReferralLinkForApp(data.code, betaBuild ? platform.authCallbacks?.redirectTo : undefined)) }}>{t('referralPreview.copyLink')}</Button>
         </div>
         {data && !data.code_enabled && <p role="status">{t('referrals.codeDisabled')}</p>}
         {copyStatus && <p role="status" className="gg-referral-note">{copyStatus}</p>}

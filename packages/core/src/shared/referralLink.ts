@@ -10,6 +10,12 @@ export function createReferralLink(value: string, channel: 'stable' | 'beta' = '
   return `https://gugu.nextmind.space/j/?r=${code}${channel === 'beta' ? '&channel=beta' : ''}`
 }
 
+/** Use the running host's scheme: a built renderer can still be launched from source. */
+export async function createReferralLinkForApp(value: string, readAppCallback?: () => Promise<string>): Promise<string> {
+  const callback = await readAppCallback?.()
+  return createReferralLink(value, callback && new URL(callback).protocol === 'gugu-beta:' ? 'beta' : 'stable')
+}
+
 export function parseReferralLink(value: string): string | null {
   try {
     const url = new URL(value)
