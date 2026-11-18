@@ -507,6 +507,9 @@
   font-size: var(--font-size-sm);
   transition: background var(--xp-fast);
 }
+.xp-history-row.xp-history-row-compact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
 .xp-history-row:hover {
   background: var(--xp-hover);
 }

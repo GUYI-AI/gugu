@@ -24,18 +24,18 @@ import { useConnectionMutationAllowed } from './connection-mutation-context'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 
 /** Both settings shells use the same controller without resolving an assistant. */
-export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings({ panelNavigation = false,deviceId,route,initialConnectorId }: { panelNavigation?: boolean; deviceId?: string | null; route: ConnectionRoute; initialConnectorId?: string }) {
+export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings({ panelNavigation = false,deviceId,route,initialConnectorId,marketQuery }: { panelNavigation?: boolean; deviceId?: string | null; route: ConnectionRoute; initialConnectorId?: string; marketQuery?: string }) {
   const devices = useDevicesStore()
   const selectedId = deviceId === undefined ? settingsDeviceStore.selected : deviceId
   const device = selectedId === LOCAL_DEVICE_SCOPE ? devices.devices.find(row => row.is_current_device) ?? null
     : devices.devices.find(row => row.device_id === selectedId) ?? null
   const host = useOwnerLibraryHost(device,route)
   return <LibraryHostProvider value={host} key={host.key}><IntegrationsProvider>
-    <OwnerConnectorList host={host} selectedDeviceId={device?.device_id ?? null} panelNavigation={panelNavigation} showDevicePicker={deviceId === undefined} initialConnectorId={initialConnectorId} />
+    <OwnerConnectorList host={host} selectedDeviceId={device?.device_id ?? null} panelNavigation={panelNavigation} showDevicePicker={deviceId === undefined} initialConnectorId={initialConnectorId} marketQuery={marketQuery} route={route} />
   </IntegrationsProvider></LibraryHostProvider>
 })
 
-function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string }) {
+function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId,marketQuery,route }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string; marketQuery?: string; route: ConnectionRoute }) {
   const { t,i18n } = useTranslation('assistant'),copy = useTranslation('connections').t,settings = useTranslation('settings').t
   const mobile = useMobileShell(),devices = useDevicesStore(),channels = useChatChannels()
   const data = useIntegrationsContext()
@@ -51,7 +51,10 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
     }),[data,host.connectionMetadata,i18n.language,channels.list,settings,t,copy])
   const selected = openId ? apps.find(app => app.id === openId) : null
-  if (selected) return <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation} onBack={() => setOpenId(null)} />
+  const market = marketQuery !== undefined;
+  const detail = selected && <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation}
+    market={market} route={route} onBack={() => setOpenId(null)} />;
+  if (!market && detail) return detail;
   return <SettingsPage data-testid="owner-connectors">
     {showDevicePicker ? <label className="flex items-center justify-between gap-3 text-sm">{copy('device')}
       <select aria-label={copy('device')} value={selectedDeviceId ?? 'connections:all'}
@@ -64,5 +67,6 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
       connectionRead={data.hasConfiguredConnections ? 'ready' : 'pending'}
       icon={(app,size) => app.integration ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
         : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null} />
+    {market && detail}
   </SettingsPage>
 }
