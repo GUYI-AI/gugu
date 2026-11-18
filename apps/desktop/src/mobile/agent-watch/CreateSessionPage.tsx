@@ -367,6 +367,10 @@ function CreateOnMachine({
           ...(creationThinking(models, selection).fastMode !== undefined ? { fastMode: creationThinking(models, selection).fastMode } : {}),
           ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
+        if (!phone) {
+          const { ensureAgentHomeImported } = await import('@renderer/features/settings/subscriptions/ensure-agent-home')
+          await ensureAgentHomeImported(request.harness, device.device_id)
+        }
         if (phone && !files.length) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
           submittedPhoneRequest = request

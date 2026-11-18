@@ -302,9 +302,7 @@ export function fetchCreateModels(
 }
 
 /** **在那台机器上开一条新会话。**只在用户点了发送之后调 —— 它会在对方机器上起一个 agent 进程。 */
-export async function createSession(deviceId: string, request: SessionpageSessionCreateRequest): Promise<SessionpageSessionCreateResult> {
-  const { ensureAgentHomeImported } = await import('@renderer/features/settings/subscriptions/ensure-agent-home')
-  await ensureAgentHomeImported(request.harness, deviceId)
+export function createSession(deviceId: string, request: SessionpageSessionCreateRequest): Promise<SessionpageSessionCreateResult> {
   return value(rpc(deviceId).sessionTimeline.sessionCreate(request))
 }
 
