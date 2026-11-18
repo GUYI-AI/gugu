@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { Fragment, type ReactNode } from 'react';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
-import { MoreHorizontal } from '@/lib/icons';
+import { ExternalLink, MoreHorizontal } from '@/lib/icons';
 import { ContextMenu, DropdownMenu, MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { Button } from '@renderer/lib/ui/button';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -108,7 +108,10 @@ export const TabContextMenu = observer(function TabContextMenu({
     splitCommands.push({ id: 'engine:open-in-window', label: translate('tabs.openInWindow'), group: 'split' as const, run: openInWindow });
   }
 
-  const groups = (titleMenu ? [kindCommands, engineCommands.slice(0, 1)] : [engineCommands, splitCommands, kindCommands])
+  const conversationWindow: TabCommand[] = titleMenu && openInWindow
+    ? [{ id: 'engine:open-conversation-in-window', label: translate('tabs.openConversationInWindow'), icon: ExternalLink, group: 'split', run: openInWindow }]
+    : [];
+  const groups = (titleMenu ? [conversationWindow, kindCommands, engineCommands.slice(0, 1)] : [engineCommands, splitCommands, kindCommands])
     .map((commands) => commands.filter((c) => c.isAvailable?.() !== false))
     .filter((commands) => commands.length > 0);
 

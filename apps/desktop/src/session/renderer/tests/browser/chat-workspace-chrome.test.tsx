@@ -1,6 +1,6 @@
 import { DndContext } from '@dnd-kit/core';
 import { act } from 'react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -42,6 +42,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   });
   workspace.open('conversation', { id: 'chat' }, { from: null, intent: 'newTab' });
   workspace.setViewActive(true);
+  const openWindow = vi.fn();
+  workspace.setWindowOpener((id) => id === workspace.primaryChatTabId ? openWindow : null);
   await act(() => view.render(<DndContext>
     <div style={{ width: 800, height: '100%' }} data-chat-workspace-test-main="">
       <PaneTreeView layout={workspace} chatChrome={{
@@ -67,6 +69,10 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(inside('[data-chat-workspace-header]')?.getBoundingClientRect().height).toBe(44);
   expect(inside('[data-chat-workspace-header] [data-tab-label]')).toBeNull();
   expect(tool()).toBeNull();
+  expect(page.getByRole('button', { name: '单独成窗' }).query()).toBeNull();
+  await userEvent.click(page.getByRole('button', { name: /^(?:More|更多)$/ }));
+  await userEvent.click(page.getByRole('menuitem', { name: '单独成窗' }));
+  expect(openWindow).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   await until('the split produces two measurable pages', () => width(chat()) > 0 && width(tool()) > 0 && width(tool()) < 800);
