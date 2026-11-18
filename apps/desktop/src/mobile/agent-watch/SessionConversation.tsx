@@ -389,7 +389,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel || composerControls ? {} : lockedHarness(harness))}
       permissionModeOptions={workOwnsPermissions || appPanel ? null : options.props.permissionModeOptions}
       renderPhoneHeader={composerControls ? modelControl => composerControls(modelControl, {
-        options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange,
+        options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange, onOpen: options.props.onModelMenuOpen,
         effortOptions: options.props.effortOptions, selectedEffort: options.props.selectedEffort, defaultEffort: options.props.defaultEffort,
         onEffortChange: options.props.onEffortChange, fastMode: options.props.fastMode, onFastModeChange: options.props.onFastModeChange,
         ...(workOwnsPermissions ? { permissionModeOptions: options.props.permissionModeOptions,

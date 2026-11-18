@@ -46,7 +46,7 @@ const REMOTE_STALE_MS = 30_000;
  *
  * `staleTime: Infinity` 是刻意的：**作废这件事归主进程管**，那里有两把闸（harness 版本变更
  * 为主、TTL 兜底），渲染层再叠一层自己的过期判断只会让两套规则打架 —— 界面以为该刷了，主进程
- * 说缓存还新鲜，于是每次都白跑一趟 IPC。要立刻重读走 `refresh()`（它带 force）。
+ * 说缓存还新鲜，于是每次都白跑一趟 IPC。打开模型菜单时主动问一次，由宿主决定是否重探。
  * 但「问」本身不能省：面挂上来时照样问主进程一次（`refetchOnMount: 'always'`，#7081），新不新鲜由它答。
  *
  * ❌ 不 `refetchOnWindowFocus`：探一次要起一个 harness 进程、2–3s，切个窗口就重来一遍纯浪费。
@@ -102,13 +102,14 @@ export function useHarnessModelCatalog(
   const host = useLibraryHost().remote;
   const machine = host?.deviceId ?? null;
   const remote = machine !== null;
+  const enabled = !!providerId && host?.online !== false;
   const query = useQuery<HarnessCatalogLookup>({
     queryKey: machine
       ? [...HARNESS_MODEL_CATALOG_QUERY_KEY, providerId ?? '', leg, 'remote', machine]
       : [...HARNESS_MODEL_CATALOG_QUERY_KEY, providerId ?? '', leg],
     queryFn: () => rpcOn(machine).agents.modelCatalog(providerId as string, leg) as Promise<HarnessCatalogLookup>,
     // 那台机器没连上就不问:问不到只会落一个「读取失败」,而那不是这家 agent 的问题;连上时变回 true、自己重取。
-    enabled: !!providerId && host?.online !== false,
+    enabled,
     // ⚠️ 远端**不能**是 Infinity(#6264 实撞):本机那份作废归主进程管,可那台机器上的变化(人在它的终端里
     // 装了、登了)这边的主进程一无所知 —— Infinity 会把第一次读到的「没登录」钉到重启 app 为止。
     // 远端按 30s 过期、切回窗口时重问(人多半是去那台机器的终端里登完回来);在咕咕里登完的那条路另有作废。
@@ -147,6 +148,7 @@ export function useHarnessModelCatalog(
   return {
     /** 还没探完时是 `unknown` —— 界面据此显示「读取中」，❌ 不显示「没有模型」。 */
     state,
+    refresh: () => { if (enabled) void query.refetch({ cancelRefetch: false }); },
     // 后台还在探也算「在读」—— 手上这份可能是陈的,调用方有权知道它还会变。
     isLoading: query.isPending || query.isFetching || (query.data?.refreshing ?? false),
   };

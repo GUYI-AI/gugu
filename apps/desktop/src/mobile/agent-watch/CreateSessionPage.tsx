@@ -197,6 +197,8 @@ function CreateOnMachine({
   const [modelCatalog, setModelCatalog] = useState<{ key: string; value: SessionpageSessionCreateModels } | null>(null)
   const models = modelCatalog?.key === catalogKey ? modelCatalog.value : null
   const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  const [modelRetry, setModelRetry] = useState(0)
+  const modelListRead = useRef<Promise<SessionpageSessionCreateModels> | null>(null)
   /** 正在建的那句话;建成或失败后清空。它同时也是线程里唯一那条(乐观显示的)用户消息。 */
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -248,8 +250,29 @@ function CreateOnMachine({
         setSelection((current) => attempt ? submittedCreationSelection(attempt) : reconcileModel(current, next, modelTouched.current, options?.lastUsed))
       })
       .catch(() => { if (!cancelled) setModelsState('failed') })
-    return () => { cancelled = true }
-  }, [device.device_id, online, harness, model, reloadKey, phone, options, catalogKey, ownerId])
+    return () => { cancelled = true; modelListRead.current = null }
+  }, [device.device_id, online, harness, model, reloadKey, phone, options, catalogKey, ownerId, modelRetry])
+
+  const refreshModelList = () => {
+    if (!online || !options || !harness || modelsState === 'loading' || modelListRead.current) return
+    if (!models || models.harness !== harness) { setModelRetry(value => value + 1); return }
+    // The menu only needs the list. Passing the selected model would run its effort probe again.
+    const readModels = phone ? fetchPhoneCreateModels : fetchCreateModels
+    const request = readModels(device.device_id, harness, null, null)
+    modelListRead.current = request
+    void request.then(next => {
+      if (modelListRead.current !== request) return
+      setModelCatalog(current => current?.key === catalogKey && current.value.harness === harness ? {
+        key: catalogKey, value: {
+          ...current.value, models: next.models, harnessState: next.harnessState,
+          harnessReason: next.harnessReason, guguReason: next.guguReason,
+        },
+      } : current)
+      setModelsState('ready')
+    }, () => { if (modelListRead.current === request) setModelsState('failed') }).finally(() => {
+      if (modelListRead.current === request) modelListRead.current = null
+    })
+  }
 
   const blocker = options ? createBlocker(options, selection) : null
   const readingModelDefault = !modelTouched.current && (!models || models.harness !== harness) && modelsState !== 'failed'
@@ -513,6 +536,7 @@ function CreateOnMachine({
                   {taskGroupNotice}
                   {target(creating || pendingAttempt !== null, {
                     options, selection, models, modelsState, skills: skillDraft.skills, onSkills: skillDraft.update,
+                    onOpenModels: refreshModelList,
                     onChange: (next, modelPicked) => {
                       modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
                       setTouched(true)

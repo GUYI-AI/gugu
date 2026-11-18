@@ -858,15 +858,18 @@ const ComposerForStore = observer(function ComposerForStore({
 
   // 「你的 X 模型」那一档的成员,见 @@@own-model-tier —— 平台会话看不见用户自己那条凭据路,
   // 只有这趟 BYOK 探针看得见。主进程按 provider 缓存,新建页读的是同一份(react-query 同 key)。
-  // ⚠️ 只在**需要**时才问:`own` 那条路的成员来自活会话本身,问一趟等于白起一个 harness 进程
-  //    (冷缓存时这趟会 spawn,实测数秒)。明确 BYOK 的会话一次都不问。
+  // 活 BYOK 会话先用自己的清单。打开模型菜单才问宿主，以便发现本次启动后新增的模型。
   // #6552 会话还在起(活会话还没报清单)时 BYOK 那一路也问:那段里探针目录就是唯一看得见这份清单的人。
   // #7342 停下了(宿主停掉进程、起不来)同理 —— 没有活会话就没有活清单,触发器连模型名都对不上。
   //   开销:主进程按 provider 缓存、不等 harness(冷缓存在后台探);远端按会话所在那台机器问(hook 自己选线)。
-  const harnessCatalog = useHarnessModelCatalog(
-    route === 'own' && store.session ? null : providerId,
-    'acp'
-  );
+  const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
+  const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
+  const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const onModelMenuOpen = () => {
+    platformCatalog.refresh();
+    if (readOwnCatalog) harnessCatalog.refresh();
+    else setCatalogMenuSession(store.sessionId);
+  };
 
   /**
    * 这条会话是不是跑在咕咕代付的模型上 —— 判据是它**自己记录的模型**在目录里,
@@ -1470,7 +1473,7 @@ const ComposerForStore = observer(function ComposerForStore({
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
-        onModelMenuOpen={platformCatalog.refresh}
+        onModelMenuOpen={onModelMenuOpen}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}

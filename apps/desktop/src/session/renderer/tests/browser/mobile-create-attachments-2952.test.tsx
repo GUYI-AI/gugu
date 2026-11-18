@@ -26,7 +26,7 @@ import '@/mobile/phone-look.css'
 const fixture = vi.hoisted(() => ({
   owner: 'attachment-page-owner',
   device: { device_id: 'attachment-device', label: 'Test device', hostname: 'fixture', platform: 'linux', status: 'online', is_online: true, last_seen_at: '2026-11-17T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } },
-  legacyCreate: vi.fn(), created: vi.fn(), skills: vi.fn(),
+  legacyCreate: vi.fn(), created: vi.fn(), skills: vi.fn(), models: vi.fn(),
   ports: { assertAccount: vi.fn(), describe: vi.fn(), create: vi.fn(), place: vi.fn(), admit: vi.fn() },
 }))
 vi.mock('@/store/auth', async original => ({ ...(await original<typeof import('@/store/auth')>()), useAuth: () => ({ user: { id: fixture.owner } }) }))
@@ -38,17 +38,21 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
   machineRpc: (deviceId: string) => ({ sessionTimeline: { sessionCreateSkills: (input: unknown) => fixture.skills(deviceId, input) } }),
   fetchCreateOptions: async () => ({ projects: [], lastUsed: null, harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),
-  fetchCreateModels: async () => ({ harness: 'codex', transport: 'acp', selected: 'native-model', selectedEffort: null, efforts: [],
-    harnessState: 'ready', harnessAuth: 'signed-in', selectedCredential: 'credentialed', models: [{ id: 'native-model', name: 'Native model', source: 'harness' }] }),
+  fetchCreateModels: (...args: unknown[]) => fixture.models(...args),
   createSession: fixture.legacyCreate,
   fetchPhoneCreateOptions: vi.fn(), fetchPhoneCreateModels: vi.fn(), createPhoneSession: fixture.legacyCreate,
 }))
 vi.mock('@/mobile/agent-watch/create-attachment-rpc', () => ({ creationAttachmentPorts: () => fixture.ports }))
 let root: Root | null = null, host: HTMLDivElement | null = null, sequence = 0
 let receipt: SessionCreateAttachmentDraftResult
+const originalModels = {
+  harness: 'codex', transport: 'acp', selected: 'native-model', selectedEffort: null, efforts: [],
+  harnessState: 'ready', harnessAuth: 'signed-in', selectedCredential: 'credentialed', models: [{ id: 'native-model', name: 'Native model', source: 'harness' }],
+}
 beforeEach(() => {
   fixture.owner = `attachment-page-owner-${++sequence}`
   for (const mock of [fixture.created, fixture.legacyCreate, fixture.skills, ...Object.values(fixture.ports)]) mock.mockReset()
+  fixture.models.mockReset().mockResolvedValue(originalModels)
   fixture.skills.mockResolvedValue({ ok: false, error: { code: 'unknown_method', message: "No handler registered for 'sessionTimeline.sessionCreateSkills'" } })
   fixture.legacyCreate.mockRejectedValue(new Error('The caption-only creation route must not receive attachments'))
   fixture.ports.assertAccount.mockResolvedValue(undefined)
@@ -97,6 +101,23 @@ async function send() {
   await until('real send control ready', () => host?.querySelector<HTMLButtonElement>('[data-phone-send]')?.disabled === false)
   await page.elementLocator(host!.querySelector<HTMLElement>('[data-phone-send]')!).click()
 }
+it('opening the new task model list refreshes the directory without re-probing the selected model', async () => {
+  await mount('light')
+  await page.getByTestId('agent-watch-create-model-device').click()
+  const modelButton = () => document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!
+  await page.elementLocator(modelButton()).click()
+  const modelRow = '[data-dimension="model"][data-option-id="native-model"]'
+  await until('the current native model is offered', () => !!document.querySelector(modelRow))
+  await page.elementLocator(document.querySelector<HTMLElement>(modelRow)!).click()
+  await until('the explicitly selected model and its options have been read', () => fixture.models.mock.calls.some(([, , , model]) => model === 'native-model'))
+  fixture.models.mockClear().mockResolvedValue({
+    ...originalModels, models: [...originalModels.models, { id: 'new-model', name: 'New Model', source: 'harness' }],
+  })
+  await page.elementLocator(modelButton()).click()
+  await until('the new host model appears', () => !!document.querySelector('[data-option-id="new-model"]'))
+  expect(fixture.models.mock.calls).toEqual([[fixture.device.device_id, 'codex', null, null]])
+  expect(document.querySelector('[data-option-id="native-model"]')?.getAttribute('aria-checked')).toBe('true')
+})
 it.each(['light', 'dark'] as const)('%s: real two-line New task input opens its picker, retains a File and removes it without creating', async theme => {
   await mount(theme)
   const attach = host!.querySelector<HTMLElement>('[data-phone-attachment]')!

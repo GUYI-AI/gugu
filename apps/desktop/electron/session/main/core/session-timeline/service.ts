@@ -46,6 +46,7 @@ import {
   type AnsweredAsk,
   type SessionpageSessionsListResult,
   type SessionpageSessionOptions,
+  type SessionpageSessionOptionsRequest,
   type SessionpageSessionsEvent,
   type SessionpageSessionSetOptionRequest,
   type SessionpageSessionReloadModelRequest,
@@ -994,9 +995,7 @@ async function recordedSessionOptions(row: SessionRow) {
 }
 
 /** 读这条会话此刻可改的选项。哪一步读不到都报 `options_failed`,❌ 给一份「没在跑」的选项充数。 */
-export async function sessionOptions(input: {
-  conversationId: string;
-}): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
+export async function sessionOptions(input: SessionpageSessionOptionsRequest): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
   const row = readSessionRow(input.conversationId);
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
   try {
@@ -1006,9 +1005,9 @@ export async function sessionOptions(input: {
     // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
     // 只读,❌ 为了问一句把它拉起来。
     if (row.runtime === 'acp' && !(await acpSessionLive(row.id))) {
-      return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row)) };
+      return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row), input.includeOwnModelCatalog) };
     }
-    return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId)) };
+    return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId), input.includeOwnModelCatalog) };
   } catch (error) {
     return optionsFailure(error);
   }
@@ -1064,11 +1063,12 @@ export async function reloadSessionModel(
  */
 async function withModelMenu(
   row: SessionRow,
-  options: SessionpageSessionOptions
+  options: SessionpageSessionOptions,
+  includeOwnModelCatalog?: true
 ): Promise<SessionpageSessionOptionsWithMenu> {
   if (!row.provider) return options;
   const modeMap = options.mode ? declaredModeMap(row.provider) : undefined;
-  const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider) : undefined;
+  const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider, includeOwnModelCatalog) : undefined;
   const permissionAgentName = options.mode ? modelMenu?.agentName ?? await readSessionPermissionAgentName(row.provider) : undefined;
   return { ...options, ...(modelMenu ? { modelMenu } : {}), ...(modeMap ? { modeMap } : {}), ...(permissionAgentName ? { permissionAgentName } : {}) };
 }
