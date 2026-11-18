@@ -18,18 +18,17 @@ export function useConnectionPanel() {
     press(origin, { agent, machine });
   }, [press]);
   const request = trigger.last;
+  const menu = request && <SubscriptionConnections
+    key={`${request.value.machine ?? 'local'}:${request.value.agent.id}`}
+    agent={request.value.agent} machine={request.value.machine} trigger={null}
+    open={request.open} onOpenChange={trigger.onOpenChange} anchor={request.anchor}
+  />;
+  const login = signIn && <SubscriptionConnections key={`sign-in:${signIn.machine ?? 'local'}:${signIn.agent.id}`}
+    agent={signIn.agent} machine={signIn.machine} trigger={null} signInRequested={signIn} />;
   return {
     show,
     signIn: useCallback((agent: AgentPayload, machine: string | null) => setSignIn({ agent, machine }), []),
     // The last request stays mounted after the menu closes, while its add/login dialog finishes.
-    panel: <>{request && (
-      <SubscriptionConnections
-        key={`${request.value.machine ?? 'local'}:${request.value.agent.id}`}
-        agent={request.value.agent} machine={request.value.machine} trigger={null}
-        open={request.open} onOpenChange={trigger.onOpenChange}
-        anchor={request.anchor}
-      />
-    )}{signIn && <SubscriptionConnections key={`sign-in:${signIn.machine ?? 'local'}:${signIn.agent.id}`}
-      agent={signIn.agent} machine={signIn.machine} trigger={null} signInRequested={signIn} />}</>,
+    panel: menu && login ? <>{menu}{login}</> : menu || login,
   };
 }
