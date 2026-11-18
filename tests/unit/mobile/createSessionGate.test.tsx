@@ -10,6 +10,10 @@ import { createNode, createReactHarness, deferred } from '../../support/testHarn
 import { readComposer, writeComposer } from '../../support/composerEditor'
 
 const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn() }))
+vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
+  ensureAgentHomeImported: async () => undefined,
+}))
+
 vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
   ...(await original<typeof import('../../../apps/desktop/src/store/auth')>()),
   useAuth: () => ({ user: { id: 'create-gate-owner' } }),
