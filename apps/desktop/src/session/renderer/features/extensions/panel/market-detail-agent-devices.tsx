@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { managedInstallOption, resolveManagedSourceUpdate } from '@renderer/features/settings/agents-page/agent-source-actions';
 import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
-import type { InstallMethod } from '@shared/core/agents/agent-payload';
+import type { AgentPayload, InstallMethod } from '@shared/core/agents/agent-payload';
 import { MarketDevicePicker, useMarketDevicePicker } from './market-detail-devices';
 
 type AgentPlan = { kind: 'install' | 'update'; method: InstallMethod; registry?: string };
@@ -11,7 +11,7 @@ type AgentPlan = { kind: 'install' | 'update'; method: InstallMethod; registry?:
 export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId }: { agentId: string }) {
   const { translate } = useSessionMessages();
   const client = useQueryClient();
-  const picker = useMarketDevicePicker({
+  const picker = useMarketDevicePicker<AgentPayload | null, AgentPlan>({
     itemKey: `agent:${agentId}`,
     read: ({ host }) => host.agents.getManagement(agentId),
     describe: (agent) => {
