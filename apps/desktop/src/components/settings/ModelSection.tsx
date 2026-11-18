@@ -68,11 +68,11 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
     <SettingsPage className="gg-model-page" data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
       <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} />
       <SessionSettingsSection section="auxiliary-models" />
-      <SettingsGroup data-platform-models="" data-expanded={String(showProvided)} title={<button type="button" className="gg-provided-model-toggle"
+      <SettingsGroup data-platform-models="" data-expanded={String(showProvided)} title={<Button variant="ghost" size="option" className="gg-provided-model-toggle"
         aria-expanded={showProvided} data-testid="settings-model-provided-toggle" onClick={() => setShowProvided(open => !open)}>
         <span><span className="gg-model-card-title">{t('model.provided')}</span><span className="gg-model-card-description">{t('model.description')}</span></span>
         {showProvided ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-      </button>} footer={saveFailed ? <SettingsNote tone="danger">{saveFailed}</SettingsNote> : undefined}>
+      </Button>} footer={saveFailed ? <SettingsNote tone="danger">{saveFailed}</SettingsNote> : undefined}>
         {showProvided && <>
         <SearchField value={query} onChange={event => setQuery(event.target.value)} placeholder={t('model.search')}
           clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />

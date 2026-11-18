@@ -2368,3 +2368,22 @@ body.barcode-scanner-active #root {
 @keyframes gg-unknown-appear { to { opacity: 1; } }
 .gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
 @media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
+
+
+/* Model settings: approved light palette, with the existing dark theme surfaces. */
+:root {
+  --model-settings-page: var(--page);
+  --model-settings-description: var(--text-secondary);
+  --model-settings-source: var(--muted-fg);
+  --model-settings-separator: var(--border);
+  --model-sign-in-expired-bg: var(--danger-bg);
+  --model-sign-in-expired-fg: var(--danger-fg);
+}
+[data-theme='light'] {
+  --model-settings-page: #f7f7f7;
+  --model-settings-description: rgba(0, 0, 0, .7);
+  --model-settings-source: rgba(0, 0, 0, .45);
+  --model-settings-separator: #f2f2f2;
+  --model-sign-in-expired-bg: #fbf1f1;
+  --model-sign-in-expired-fg: #b42c3f;
+}
