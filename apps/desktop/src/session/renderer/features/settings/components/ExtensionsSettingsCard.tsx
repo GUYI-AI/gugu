@@ -988,6 +988,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         );
 
   const extensionCount = extensionRows.length + invalidRows.length;
+  const installedCount = agentCount + extensionCount;
   const extensionShelf: ShelfState = shelf.status === 'ready' && shelf.query !== debouncedQuery
     ? { status: 'loading' }
     : shelf;
