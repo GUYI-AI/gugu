@@ -10,15 +10,33 @@ import { IconButton } from '@/components/ui/IconButton'
 import { Sheet } from '@/components/ui/Sheet'
 import { Switch } from '@/components/ui/Switch'
 import { SettingsGroup, SettingsRow } from '../SettingsPrimitives'
-import { EMPTY_IMPORT_SETTINGS, updateImportSettings } from './import-sync-preferences'
+import { importSettingsForOwner, updateImportSettings } from './import-sync-preferences'
 import { cancelAutomaticImports } from './import-queue'
 import { syncImports } from './import-sync'
 
 export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
   const { t } = useTranslation('main')
   const { settings, refresh } = useAppSettingsKey('dataImport')
-  const reading = settings.state === 'value' ? settings.value.value.owners[ownerId] ?? EMPTY_IMPORT_SETTINGS : null
-  const available = !!reading?.sources.length
+  if (settings.state !== 'value') {
+    return (
+      <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
+        <SettingsRow title={t('settings.dataImport.autoSync')}
+          control={settings.state === 'error' ? (
+            <Button variant="secondary" size="sm" onClick={() => { void refresh() }}>{t('settings.dataImport.refresh')}</Button>
+          ) : <LoadingIndicator size="inline" />} />
+      </SettingsGroup>
+    )
+  }
+  const reading = importSettingsForOwner(settings.value.value, ownerId)
+  return <ReadyImportSyncSettings ownerId={ownerId} reading={reading} />
+}
+
+function ReadyImportSyncSettings({ ownerId, reading }: {
+  ownerId: string
+  reading: ReturnType<typeof importSettingsForOwner>
+}) {
+  const { t } = useTranslation('main')
+  const available = reading.sources.length > 0
   const [customizing, setCustomizing] = useState(false)
   const [sessions, setSessions] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -35,17 +53,6 @@ export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
     }
   }
 
-  if (!reading) {
-    return (
-      <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
-        <SettingsRow title={t('settings.dataImport.autoSync')}
-          control={settings.state === 'error' ? (
-            <Button variant="secondary" size="sm" onClick={() => { void refresh() }}>{t('settings.dataImport.refresh')}</Button>
-          ) : <LoadingIndicator size="inline" />} />
-      </SettingsGroup>
-    )
-  }
-
   return (
     <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
       <SettingsRow title={t('settings.dataImport.autoSync')}
@@ -58,7 +65,7 @@ export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
         </Button>} />
       {customizing && (
         <Sheet ariaLabel={t('settings.dataImport.chooseScope')} onClose={() => setCustomizing(false)}
-          zIndex="var(--z-overlay)">
+          dimNested zIndex="var(--z-settings-modal)">
           <div className="gg-import-scope">
             <div className="gg-import-scope-header">
               <h3>{t('settings.dataImport.chooseScope')}</h3>

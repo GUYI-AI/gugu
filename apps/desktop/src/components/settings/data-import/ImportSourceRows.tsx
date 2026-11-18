@@ -181,13 +181,21 @@ function RemoteImportDevice({ machine, providers, ownerId, jobs }: RowsProps & {
   })
   const active = jobs.filter((job) => isActiveImport(job) && job.devices.some((device) => device.deviceId === machine.id))
   const total = targets.reduce((sum, { device }) => sum + device.count, 0)
+  const activeProgress = active.reduce((progress, job) => ({
+    done: progress.done + job.done,
+    total: progress.total + (job.total || job.devices.find((device) => device.deviceId === machine.id)?.count || 0),
+  }), { done: 0, total: 0 })
+
   const scanning = visible.some(({ reading }) => !reading || reading.state === 'unknown' || (reading.state === 'value' && reading.value?.pending))
   return (
     <div className="gg-import-remote-content" data-offline={!online || undefined}>
       {!online ? <p className="gg-import-unavailable">{t('settings.dataImport.deviceUnavailable')}</p> : (
         <>
           <ImportRow summary label={t('settings.dataImport.allCount', { count: total })}>
-            {active.length > 0 ? <span className="gg-import-progress" role="status">{t('settings.dataImport.remoteRunning')}<LoadingIndicator size="inline" /></span> : (
+            {active.length > 0 ? <span className="gg-import-progress" role="status">
+              {activeProgress.total > 0 ? `${activeProgress.done}/${activeProgress.total}` : t('settings.dataImport.remoteRunning')}
+              <LoadingIndicator size="inline" />
+            </span> : (
               <Button variant="secondary" size="sm" disabled={scanning || total === 0}
                 onClick={() => targets.forEach(({ provider, device }) => enqueueImport(ownerId, { provider, devices: [device] }, t))}>
                 {t('settings.dataImport.importAll')}

@@ -57,7 +57,7 @@ function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
       const history = rpcOn(deviceId).sessionHistory
       // Read one stable snapshot before inserting anything. Paginating only after
       // each insertion would skip entries as they drop out of the source list.
-      const page = await history.list({ ...query, mode: 'cached', limit: Number.MAX_SAFE_INTEGER })
+      const page = await history.list({ ...query, mode: 'fresh', limit: Number.MAX_SAFE_INTEGER })
       const rows = page.rows.flatMap(({ local }) => local?.engine === engine ? [local] : [])
       const source = resolveImportSource(deviceId ?? LOCAL_IMPORT_DEVICE)
       onProgress(0, rows.length)
