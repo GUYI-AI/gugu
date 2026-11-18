@@ -72,7 +72,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   const innerColumn = !mobile && activeChatId !== null && innerChat === activeChatId
   return <Popover.Root open={popup.kind === 'apps' && !mobile} modal={false} onOpenChange={(open) => open ? openPopup('apps') : closePopup()}>
     {onCreateAgent ? (
-      <IconButton aria-label={t('chatList.createAgent')} title={t('chatList.createAgent')} onClick={onCreateAgent}>
+      <IconButton aria-label={t('chatList.createGroupAgent')} title={t('chatList.createGroupAgent')} onClick={onCreateAgent}>
         <SquarePen />
       </IconButton>
     ) : null}

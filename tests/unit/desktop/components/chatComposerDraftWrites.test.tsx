@@ -15,8 +15,7 @@ import { MobileAssistantApp } from '../../../../apps/desktop/src/mobile/assistan
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { InChatSlot } from '../../../../apps/desktop/src/lib/shellSlots'
 import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
-import { startPhoneNewTask } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
-import * as taskDispatch from '../../../../apps/desktop/src/mobile/agent-watch/createTaskInGroup'
+import { PhoneGroupAgentCreation, startPhoneNewTask } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
 import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
 import { runInAction } from 'mobx'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
@@ -108,10 +107,10 @@ describe('chat editor draft writes', () => {
     expect(readComposer(input())).toBe('')
   })
 
-  it('clears the same live editor after a phone task is accepted', async () => {
+  it('keeps the live group message draft when the separate creation sheet sends a task', async () => {
     const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 412 })
-    const created = vi.spyOn(taskDispatch, 'createTaskInGroup').mockResolvedValue({ sessionId: 'session' })
+    const created = vi.spyOn(sessionRpc, 'createSession').mockResolvedValue({ conversationId: 'session', projectId: 'project', title: 'Task', taskMessageId: 'card' })
     vi.spyOn(sessionRpc, 'fetchCreateOptions').mockResolvedValue({ projects: [], lastUsed: null, harnesses: [
       { id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: ['full-access'] },
     ] })
@@ -121,16 +120,22 @@ describe('chat editor draft writes', () => {
       return <DevicesContext.Provider value={{ ...base, devices: [device('machine', [], { projects: [{
         localProjectId: 'project', name: 'Project', rootPath: '/project', createdAt: '2026-10-26T00:00:00Z', chatId: 'chat',
         folders: [{ workspaceId: 'workspace', kind: 'root', path: '/project', attachedAt: null }],
-      }] })] }}><ChatMessageComposer chatId="chat" isGroupChat onSend={async () => {}} /></DevicesContext.Provider>
+      }] })] }}><ChatMessageComposer chatId="chat" isGroupChat onSend={async () => {}} /><PhoneGroupAgentCreation chatId="chat" name="Project group" /></DevicesContext.Provider>
     }
     try {
+      await import('@/mobile/agent-watch/CreateSessionPage')
       await renderWithAppProviders(harness, <Host />)
-      await act(async () => { writeComposer(input(), 'phone task draft'); startPhoneNewTask('chat') })
+      const chatInput = input()
+      await act(async () => { writeComposer(chatInput, 'group message draft'); startPhoneNewTask('chat') })
+      const sheet = document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')!
+      await clickElement(sheet.querySelector<HTMLElement>('[data-testid="agent-watch-create-folder"]')!)
       await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!)
-      await send()
-      expect(created).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'chat', prompt: 'phone task draft' }))
-      expect(readComposer(input())).toBe('')
-      expect(harness.container.querySelector('[data-testid="phone-task-tag"]')).toBeNull()
+      await act(async () => { writeComposer(sheet.querySelector<HTMLElement>('[contenteditable="true"]')!, 'phone task draft') })
+      await clickElement(sheet.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')!)
+      expect(created).toHaveBeenCalledWith('machine', expect.objectContaining({ chatId: 'chat', taskChatId: 'chat', prompt: 'phone task draft' }))
+      expect(document.querySelector('[data-testid="phone-group-agent-sheet"]')).toBeNull()
+      expect(input()).toBe(chatInput)
+      expect(readComposer(chatInput)).toBe('group message draft')
     } finally { Object.defineProperty(window, 'innerWidth', width) }
   })
 
