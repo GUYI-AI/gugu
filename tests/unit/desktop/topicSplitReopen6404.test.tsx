@@ -5,7 +5,8 @@
 // splitChatId 没变、拉取 effect 不重跑 ⇒ 分栏开着但一条消息都没有(owner 实测「偶数次点击都是消失的」)。
 // closeRightSurfaces 在这里与 ChatAreaPanel 同形:它会调 closeSplit —— 不这样接,本判据是死的。
 import { renderWithConversations } from '../../support/conversationAccountStub'
-import { act } from 'react'
+import { act, createElement } from 'react'
+import { ChatTabPage } from '../../../apps/desktop/src/components/appSlot/ChatTabHosts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { createNode, createReactHarness, message } from '../../support/testHarness'
@@ -39,7 +40,7 @@ function Probe() {
     onCreateFailed: () => {},
     embedded: false,
   })
-  return null
+  return createElement(ChatTabPage, { chatId: 'chat-A', panel: () => null, topic: () => null, info: () => null })
 }
 
 let harness: ReturnType<typeof createReactHarness>

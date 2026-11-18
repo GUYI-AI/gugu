@@ -38,6 +38,27 @@ describe.each(['chat', 'session'] as const)('%s pane placement', (place) => {
     expect(layout.activePaneId).toBe(side.paneId);
   });
 
+  it('reveals a hidden side tab beside the topic currently using that side pane', () => {
+    const { layout, main, side, conversation, topic, file } = setup(place);
+    const b = file('b.html');
+    layout.open('topic', { id: 'topic' }, { from: conversation, intent: 'navigate' });
+    expect(side.pane.entries.has(b)).toBe(true);
+    layout.setActiveGroup(side.paneId);
+    file('a.html');
+    side.pane.setActiveTab(b);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(main.pane.resolvedActiveTabId).toBe(b);
+  });
+
+  it('reveals the topic on the first request after another page displaced it', () => {
+    const { layout, main, side, conversation, topic, file } = setup(place);
+    file('b.html');
+    expect(side.pane.resolvedActiveTabId).not.toBe(topic);
+    main.pane.setActiveTab(conversation);
+    layout.open('topic', { id: 'topic' }, { from: conversation, intent: 'navigate' });
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+  });
+
   it('keeps two visible files in place when one is opened again from a conversation', () => {
     const { layout, side, main, file } = setup(place);
     const a = file('a.html');

@@ -160,7 +160,6 @@ export const openPanelItem = action(function openPanelItem(
     && (opts?.wait ? tab.item.waitId === opts.wait : isWaitingItem(item) || tab.item.itemId === item.itemId));
   if (waiting) {
     replacePanelItem(chatId, waiting.tabId, item);
-    showChatTab(chatId, waiting.tabId);
     return waiting.tabId;
   }
   // Its waiting page is behind or ahead in a tab's history: the person went back from it.

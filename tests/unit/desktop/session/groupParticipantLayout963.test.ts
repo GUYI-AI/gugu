@@ -73,7 +73,7 @@ describe('a participant beside the group leaves the group\'s own tabs and pairs 
       expect(() => showGroupParticipant(chatId, participant(chatId))).toThrow();
     } finally { screenLayout.canPlaceAt = canPlaceAt; }
     expect(topicTabOf(chatId)).toMatchObject({ tabId: topicId, shown: true });
-    expect(focusedChatTab(chatId)?.kind).toBe('topic');
+    expect(focusedChatTab(chatId)?.kind).toBe('chat');
   });
 
   it('a folder/App beside the group is kept the same way', () => {

@@ -14,7 +14,7 @@ import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/render
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, isWaitingItem, waitingItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, showChatTab, panelTabsOf, chatPaneOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, panelTabsOf, chatPaneOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
@@ -160,7 +160,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         const { waitId, itemId, fileName, message, from, intent } = ask.waiting
         const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === itemId)
         if (open) {
-          showChatTab(chatId, open.tabId)
+          openPanelItem(chatId, open.item, { ...(from ? { from } : {}), intent: 'navigate' })
           void Promise.resolve(onShow?.(chatId, open.tabId)).catch(error => log.warn({ error: String(error) }, 'the open file could not be shown'))
         } else void show(chatId, waitingItem(itemId, fileName || translateSessionMessage('task.loading'), waitId, message), { ...(message ? { message } : {}), ...(from ? { from } : {}), ...(intent ? { intent } : {}) })
           .catch(error => log.warn({ error: String(error) }, 'the waiting page could not be shown'))
