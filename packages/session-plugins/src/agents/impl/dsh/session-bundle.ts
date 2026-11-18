@@ -67,6 +67,7 @@ export const dshSessionBundleDescriptor = {
     evidence: 'https://www.npmjs.com/package/@deepseek-ai/dsh-base 0.2.1-rc.5: DSH_TELEMETRY_DISABLED, any non-empty value turns the OTel feedback export off',
   },
   platform: harnessPlatform,
+  customModel: { modelOptional: true, evidence: 'DSH can use DEEPSEEK_BASE_URL and DEEPSEEK_API_KEY with the CLI default model.' },
   credentialLifecycle: {
     'acp': {
       delivery: 'process-config',

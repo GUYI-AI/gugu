@@ -1,3 +1,4 @@
+import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
@@ -109,7 +110,6 @@ import {
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
 import { buildProbePlatformCredentials } from './harness-catalog-probe-env'
-import { createProbeConnectionCredentials } from './harness-catalog-probe-connection'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
@@ -4432,18 +4432,6 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
-    // #2507 选中走模型注入的 API Key 连接(pi / opencode / CodeBuddy)时,目录照那把连接读:输入框列出并默认选中它的模型。
-    emdashBridge.setProbeConnectionModelResolver(createProbeConnectionCredentials(
-      async (providerId) => {
-        const { resolveConnectionModel } = await import('./session/main/core/agents/harness-connections')
-        return resolveConnectionModel(providerId)
-      },
-      // key 走环境变量的家(Qwen、Copilot、ZCode、Hermes、Antigravity):菜单列出连接勾选的全部模型。
-      async (providerId) => {
-        const { currentConnectionMenuModels } = await import('./session/main/core/agents/harness-connections')
-        return currentConnectionMenuModels(providerId)
-      },
-    ))
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)
@@ -4529,6 +4517,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
         createLogger('sessionpage/platform-model').error({ err: error }, '退出时读不出 tmux 会话;候选票全部保留交给下次启动判定')
         return null
       })
+      releaseCustomModelForwarders()
       await releasePlatformModelsAtExit(live)
     }, reportShutdownPhase),
   ])
@@ -5310,18 +5299,18 @@ app.whenReady().then(async () => {
       onPlatformCredentialObservation: (sessionId, observation) => {
         sessionpagePlatformRecovery?.recordObservation(sessionId, observation)
       },
-      onPlatformSessionEnded: (sessionId) => sessionpagePlatformRecovery?.forget(sessionId),
+      onPlatformSessionEnded: (sessionId) => { sessionpagePlatformRecovery?.forget(sessionId) },
       onHostResume: resumeAllCodexAppServerTurnWaiters,
-      // #2507 不上平台时,这一家选中的那把「走模型注入」的 API Key 连接(pi / opencode / CodeBuddy)。
+      // A session binds its own custom provider independently of harness account defaults.
       // 动态 import:连接那一层在加载时读库,与 agent-run-context 里同一个理由。
-      connectionModel: async ({ providerId, surface, sessionId }) => {
-        const { resolveConnectionModel } = await import('./session/main/core/agents/harness-connections')
-        const connection = await resolveConnectionModel(providerId, sessionId)
+      connectionModel: async ({ providerId, surface, sessionId, sourceSessionId }) => {
+        const { resolveCustomModelLaunch } = await import('./session/main/core/agents/custom-models')
+        const connection = await resolveCustomModelLaunch(providerId, sessionId, sourceSessionId)
         if (!connection) return null
         const { connectionModelLaunch } = await import('./sessionpage/connection-model-launch')
         createLogger('sessionpage/platform').info(
           { providerId, surface, connectionId: connection.connectionId },
-          '2507: API key connection injected as the session model',
+          'Custom model bound to session',
         )
         return connectionModelLaunch({ providerId, surface, ...connection })
       },
@@ -5519,7 +5508,7 @@ app.whenReady().then(async () => {
     // spec agent-provisioning:显式命名过的会话用那个名字开户;缺席才落到「<引擎 label> <序号>」。
     emdash.setEmdashIdentityProvisioner(request =>
       provisionSessionpageAgentForSession({ ...request, surface: 'acp' }, sessionpageIdentityDeps))
-    emdash.setEmdashMcpInjector(async (info, provisioned) => {
+    emdash.setEmdashMcpInjector(async (info, provisioned, applyMaterialization = (apply) => apply()) => {
       const persistedSessionId = info.sourceSessionId ?? info.sessionId
       if (!provisioned) {
         if (!authProvider) throw new Error('[sessionpage] MCP injector: runtime auth provider not ready')
@@ -5621,11 +5610,11 @@ app.whenReady().then(async () => {
             cwd: info.cwd,
             lifecycle: info.lifecycle,
           })
-          await applySessionMaterialization({
+          await applyMaterialization(() => applySessionMaterialization({
             cwd: info.cwd,
             guguHome: forkBundle.env.GUGU_HOME ?? '',
             materialization: forkCapabilities,
-          })
+          }))
           createLogger('sessionpage').info(
             { sessionId: info.sessionId, sourceSessionId: info.sourceSessionId, agentUserId: forkSource.agentUserId },
             '[sessionpage] runtime fork inherits caps from its source (IM registered but refused)'
@@ -5703,11 +5692,11 @@ app.whenReady().then(async () => {
           promptBlocks: { platform: GUGU_PLATFORM_BLOCK },
           packages: PRODUCT_CAPABILITY_PACKAGES,
         }, { cwd: info.cwd, lifecycle: info.lifecycle })
-        await applySessionMaterialization({
+        await applyMaterialization(() => applySessionMaterialization({
           cwd: info.cwd,
           guguHome: resolveGuguHome(process.env),
           materialization: sessionCapabilities,
-        })
+        }))
         await writeCapabilityLoadReport(
           { kind: 'sessionpage', sessionId: info.sessionId },
           sessionCapabilities.report,

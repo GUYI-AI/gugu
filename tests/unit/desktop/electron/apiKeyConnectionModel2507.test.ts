@@ -48,7 +48,7 @@ const {
 } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-platform-model')
 const { createSessionpagePlatformHooks } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-platform-hooks')
 const { connectionModelLaunch, notOnPlatform } = await import('../../../../apps/desktop/electron/sessionpage/connection-model-launch')
-const { createProbeConnectionCredentials } = await import('../../../../apps/desktop/electron/harness-catalog-probe-connection')
+
 
 const SESSION = 'conv-2507'
 const ENDPOINT = 'https://gateway.example/api/v1'
@@ -131,26 +131,22 @@ describe('connectionModelLaunch: a connection in the platform launch shape, neve
   })
 
   it('an address that only speaks Chat Completions: pi writes `openai-completions`, opencode the openai-compatible package', async () => {
-    const { readFileSync } = await import('node:fs')
     const chat = { name: NAME, endpoint: ENDPOINT, apiKey: KEY, models: ['m-1', 'm-2'], protocol: 'openai-chat-completions' as const }
     const opencode = JSON.parse(connectionModelLaunch({ providerId: 'opencode', surface: 'cui', ...chat }).spawnEnv.OPENCODE_CONFIG_CONTENT!)
     expect(opencode.provider['api-key-connection'].npm).toBe('@ai-sdk/openai-compatible')
     const responses = JSON.parse(connectionModelLaunch({ providerId: 'opencode', surface: 'cui', ...chat, protocol: 'openai-responses' }).spawnEnv.OPENCODE_CONFIG_CONTENT!)
     expect(responses.provider['api-key-connection'].npm).toBe('@ai-sdk/openai')
-    // pi:与探针同一条写法(models.json 落进临时目录)。
-    const scratch = mkdtempSync(join(tmpdir(), 'gugu-2507-pi-'))
-    const credentials = await createProbeConnectionCredentials(async () => ({ connectionId: 'c', ...chat }))('pi', scratch)
-    const provider = JSON.parse(readFileSync(join(credentials!.env.PI_CODING_AGENT_DIR!, 'models.json'), 'utf8')).providers[NAME]
-    expect(provider.api).toBe('openai-completions')
-    expect(provider.models.map((model: { id: string; api: string }) => [model.id, model.api])).toEqual([
-      ['m-1', 'openai-completions'],
-      ['m-2', 'openai-completions'],
-    ])
+
   })
 
   it('refuses an agent with no platform model writer', () => {
     expect(() => connectionModelLaunch({ providerId: 'kiro', surface: 'cui', name: NAME, endpoint: ENDPOINT, apiKey: KEY, models: ['m'] }))
-      .toThrow(/platform model writer/)
+      .toThrow(/custom models need this harness's model writer/)
+  })
+
+  it('feeds the Gemini writer its native endpoint and local token', () => {
+    const launch = connectionModelLaunch({ providerId: 'gemini', surface: 'cui', name: NAME, endpoint: ENDPOINT, apiKey: KEY, protocol: 'gemini-generate-content', models: ['custom-gemini'] })
+    expect(launch.spawnEnv).toMatchObject({ GOOGLE_GEMINI_BASE_URL: ENDPOINT, GEMINI_API_KEY: KEY, GEMINI_MODEL: 'custom-gemini' })
   })
 })
 
@@ -226,62 +222,5 @@ describe('platform hooks: the connection only where the session is not on platfo
     const plain = await hooks().acpPlatformModel(acpInfo(null))
     expect(acp).toEqual(plain)
     expect(notOnPlatform(acp)).toBe(true)
-  })
-})
-
-describe('model catalog probe sees the selected model-injection connection (what the composer lists and preselects)', () => {
-  const connectionFor = (providerId: string) => async (id: string) =>
-    id === providerId ? { connectionId: 'conn-1', name: NAME, endpoint: ENDPOINT, apiKey: KEY, models: ['user-model'] } : null
-
-  it('no model-injection connection selected: nothing, so the probe reads as before', async () => {
-    const build = createProbeConnectionCredentials(async () => null)
-    expect(await build('pi', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))).toBeNull()
-  })
-
-  it('pi: models.json in the probe scratch names the connection; the key only in the process env', async () => {
-    const { readFileSync } = await import('node:fs')
-    const scratch = mkdtempSync(join(tmpdir(), 'gugu-2507-probe-'))
-    const credentials = await createProbeConnectionCredentials(connectionFor('pi'))('pi', scratch)
-    expect(credentials?.env.GUGU_PI_API_KEY).toBe(KEY)
-    const agentDir = credentials!.env.PI_CODING_AGENT_DIR!
-    expect(agentDir.startsWith(scratch)).toBe(true)
-    const models = readFileSync(join(agentDir, 'models.json'), 'utf8')
-    expect(models).toContain(ENDPOINT)
-    expect(models).toContain('user-model')
-    expect(models).not.toContain(KEY)
-    // pi 的界面显示提供方 id ⇒ id 就是连接的名字;启动模型钉在它下面。
-    expect(Object.keys(JSON.parse(models).providers)).toEqual([NAME])
-    expect(models).not.toMatch(/gugu-platform|Gugu platform quota/)
-    expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8'))).toMatchObject({ defaultProvider: NAME, defaultModel: 'user-model' })
-    // 输入框里只叫模型名。
-    expect(credentials?.modelNames).toEqual(['user-model'])
-  })
-
-  it('opencode: the process config document carries the connection provider and model', async () => {
-    const credentials = await createProbeConnectionCredentials(connectionFor('opencode'))('opencode', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))
-    // 它自己的目录就报得出连接的模型(`api-key-connection/<模型>`) ⇒ 不替它说;只把名字改成模型名。
-    expect(credentials?.sessionModel).toBeUndefined()
-    expect(credentials?.modelNames).toEqual(['user-model'])
-    const document = JSON.parse(credentials!.env.OPENCODE_CONFIG_CONTENT!)
-    expect(document.provider['api-key-connection']).toMatchObject({ name: NAME, options: { baseURL: ENDPOINT, apiKey: KEY } })
-    expect(document.model).toBe('api-key-connection/user-model')
-  })
-
-  it('a key-through-environment agent (qwen): the run context already carries the key, so only the menu models', async () => {
-    const build = createProbeConnectionCredentials(async () => null, async (id) => (id === 'qwen' ? ['q-1', 'q-2'] : null))
-    expect(await build('qwen', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))).toEqual({
-      env: {},
-      sessionModel: { id: 'q-1', only: true, others: ['q-2'] },
-      modelNames: ['q-1', 'q-2'],
-    })
-    expect(await build('copilot', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))).toBeNull()
-  })
-
-  it('codebuddy: the settings env block, in the process env', async () => {
-    const credentials = await createProbeConnectionCredentials(connectionFor('codebuddy'))('codebuddy', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))
-    expect(credentials?.env).toMatchObject({ CODEBUDDY_BASE_URL: ENDPOINT, CODEBUDDY_API_KEY: KEY, CODEBUDDY_MODEL: 'user-model' })
-    // 它的目录只报自家模型,而任何模型的请求都去连接地址 ⇒ 会话跑的模型由这里说,清单只留它。
-    expect(credentials?.sessionModel).toEqual({ id: 'user-model', only: true, others: [] })
-    expect(credentials?.modelNames).toEqual(['user-model'])
   })
 })

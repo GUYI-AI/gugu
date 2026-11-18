@@ -1,4 +1,4 @@
-import { AttachmentsError, type AttachmentsEndpoint, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
+import { retryableAttachmentError as retryableAttachmentFailure, type AttachmentsEndpoint, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { chatService } from './chat'
@@ -11,8 +11,7 @@ export type ObserveAttachmentMessage = (id: string, receive: (row: MessageItem) 
 const MAX_ATTEMPTS = 3
 const NATIVE_OBSERVATION_MS = 10 * 60_000
 export function retryableAttachmentError(error: unknown): boolean {
-  return error instanceof AttachmentStageTimeout || error instanceof TypeError
-    || error instanceof AttachmentsError && (error.status === 408 || error.status === 429 || error.status >= 500)
+  return error instanceof AttachmentStageTimeout || retryableAttachmentFailure(error)
 }
 export async function retryAttachmentUpload<T>(run: (attempt: number) => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {

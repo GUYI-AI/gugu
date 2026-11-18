@@ -13,8 +13,18 @@ export async function countFileLines(
   const stat = await fs.stat(filePath);
   const handle = await fs.open(filePath, 'r');
   try {
-    const buffer = Buffer.alloc(options.maxBytes + 1);
-    const { bytesRead } = await handle.read(buffer, 0, options.maxBytes + 1, 0);
+    const limit = options.maxBytes + 1;
+    // 大多数未跟踪文件只有几行。按文件大小取 buffer,不能为每个小文件都分配并清零 512KiB。
+    // 多留一字节用于发现 stat 与 read 之间的增长;读满时再读到原来的截断边界,不能漏行或误报未截断。
+    let buffer = Buffer.allocUnsafe(Math.min(stat.size + 1, limit));
+    let { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead === buffer.length && buffer.length < limit) {
+      const grown = Buffer.allocUnsafe(limit);
+      buffer.copy(grown, 0, 0, bytesRead);
+      const rest = await handle.read(grown, bytesRead, limit - bytesRead, bytesRead);
+      bytesRead += rest.bytesRead;
+      buffer = grown;
+    }
     const truncated = bytesRead > options.maxBytes;
     const content = buffer.subarray(0, truncated ? options.maxBytes : bytesRead);
     return {

@@ -1,6 +1,6 @@
 import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/agent-config';
 import {
-  agentConnectionForm,
+  agentAccountForm,
   type AgentCapabilities,
   type AgentPayload,
   type DependencyStatus,
@@ -168,13 +168,12 @@ export function agentOffersConnections(
 /** The ways the connection panel offers, in its order; empty = no panel. */
 export function agentAccessMethods(
   agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
-): Array<'account' | 'api-key' | 'endpoint'> {
+): Array<'account' | 'api-key'> {
   if (!agent) return [];
-  const form = agentConnectionForm(agent);
-  const methods: Array<'account' | 'api-key' | 'endpoint'> = [];
+  const form = agentAccountForm(agent);
+  const methods: Array<'account' | 'api-key'> = [];
   if (form?.accounts || resolveAccountTargets(agent).length > 0) methods.push('account');
-  if (form) methods.push('api-key');
-  if (form && form.endpoint !== 'none') methods.push('endpoint');
+  if (form?.vendorKey) methods.push('api-key');
   return methods;
 }
 

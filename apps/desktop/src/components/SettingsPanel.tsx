@@ -69,7 +69,9 @@ const sessionOverlayOpen = (): boolean =>
 
 // ─── SettingsPanel ────────────────────────────────────────────────────────────
 
-export function SettingsPanel({ mobile = false, inline = false, onClose, initialSection = 'account', section, onSectionChange, pane, onPaneChange, appDetail }: {
+export function SettingsPanel({ mobile = false, inline = false, onClose, initialSection = 'account', section, onSectionChange, pane, onPaneChange, appDetail, addCustomModel, onCustomModelDialogClose }: {
+  addCustomModel?: boolean
+  onCustomModelDialogClose?: () => void
   appDetail?: import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink
   mobile?: boolean
   // @@@1787 owner:「我的」是底部 tab 之一 → 移动端作 tab 页内联渲染(无 Sheet 壳),nav 层保留底部 tab 栏
@@ -132,7 +134,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
       // This is a primary page now; keep its content while opting out of nested-page navigation.
       case 'files':    return <SettingsDetailNavigation.Provider value={null}><FileStorageSection onBack={back} /></SettingsDetailNavigation.Provider>
-      case 'model':    return <ModelSection />
+      case 'model':    return <ModelSection addRequested={addCustomModel} onAddClose={onCustomModelDialogClose} />
       case 'usage':    return <UsageSection />
       case 'about':    return <AboutSection />
       case 'permissions': return <PermissionsSection />
