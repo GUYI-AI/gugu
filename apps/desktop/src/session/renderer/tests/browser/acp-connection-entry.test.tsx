@@ -2,17 +2,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { runInAction } from 'mobx'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { MessageProvider } from '@gugu/session-ui/react/components'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { registerSessionLocaleResources, translateSessionMessage } from '@renderer/localization/locale-store'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { queryClient as replicaClient } from '@/lib/replica'
+import { modalStore } from '@renderer/lib/modal/modal-store'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
 
-const active = vi.hoisted(() => ({ store: null as unknown, provider: '', source: null as unknown, agents: [] as AgentPayload[] }))
+const active = vi.hoisted(() => ({ store: null as unknown, provider: '', source: null as unknown, agents: [] as AgentPayload[], expired: false }))
+vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
+  useAgentAuthStatus: () => ({ auth: active.expired ? { status: { kind: 'unauthenticated', reason: 'expired' }, login: null } : null, refresh: async () => {} }),
+  useAgentAuthStatuses: () => ({ auths: [], refresh: async () => {} }),
+  useExpiredAgentIds: () => new Set(),
+}))
 vi.mock('@renderer/features/tabs/pane-context', () => ({
   PaneContext: React.createContext(null),
   PaneProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -40,7 +47,11 @@ let host: HTMLDivElement | null = null
 let store: InstanceType<typeof AcpChatStore> | null = null
 let client: QueryClient | null = null
 
+beforeEach(() => { replicaClient.clear() })
+
 afterEach(() => {
+  modalStore.closeModal()
+  active.expired = false
   root?.unmount()
   host?.remove()
   store?.dispose()
@@ -68,19 +79,20 @@ function harness(id: string, declared: boolean): AgentPayload {
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
     refreshAuthStatus: async () => ({ success: true, data: { kind: 'unauthenticated' } }),
-    listConnections: async () => ({ success: true, data: [{ id: 'native', kind: 'native', name: 'CLI', current: true }] }),
+    listConnections: async () => ({ success: true, data: [active.expired ? { id: 'saved-expired', kind: 'account', name: 'Saved plan', current: true } : { id: 'native', kind: 'native', name: 'CLI', current: true }] }),
     readSubscription: async () => ({ success: true, data: { payer: 'not-signed-in' } }),
   }),
 }))
 
 // 「重新登录」/「去登录」打开的都是这一家的连接面板(#2507);一个连接都没有(没登上的「现有 CLI 配置」不列)
 // 就直接是「添加连接」表单 —— ❌ 先弹一个只有占位的菜单(owner 2026-11-12)。关掉回到原会话、原草稿。
-it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }, { provider: 'opencode', declared: false }])('the real $provider declared=$declared session sign-in action opens connections and returns to the same unsent draft', async ({ provider, declared }) => {
+it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }, { provider: 'opencode', declared: false }].map(item => ({ ...item, expired: false })).concat([{ provider: 'claude', declared: true, expired: true }, { provider: 'codex', declared: true, expired: true }]))('the real $provider declared=$declared expired=$expired login action keeps the same unsent draft', async ({ provider, declared, expired }) => {
   registerSessionLocaleResources()
   setLocalePreference('en-US')
   await page.viewport(1100, 740)
   const id = `connection-${provider}`
   active.provider = provider
+  active.expired = expired
   active.agents = [harness(provider, declared)]
   active.source = { sessions: new Map([[id, { status: 'idle', markSeen: async () => {}, data: { id, providerId: provider, firstUtterance: 'Original task', platformModel: null } }]]) }
   store = new AcpChatStore(id, 'project')
@@ -89,6 +101,7 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   const submit = vi.spyOn(current, 'submitPrompt').mockResolvedValue()
   current.chatState.transcript.history.seed([{
     id: 'old-turn', seq: 0, initiator: 'user',
+    ...(expired ? { outcome: { kind: 'error' as const, signInRequired: true } } : {}),
     items: [{ kind: 'message', id: 'old-user', seq: 0, role: 'user', text: 'Original task' }],
   }])
   const internals = current as unknown as { _bootstrapped: boolean }
@@ -96,7 +109,7 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
     internals._bootstrapped = true
     current.historyLoading = false
     current.messageCount = 1
-    current.loadError = { kind: 'auth_required', message: 'Configure the provider connection' }
+    current.loadError = expired ? null : { kind: 'auth_required', message: 'Configure the provider connection' }
     current.setDraftText('Unsent session draft')
   })
   host = document.createElement('div')
@@ -108,16 +121,22 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   root = createRoot(host, { onUncaughtError: error => errors.push(error) })
   root.render(<LocalizationProvider><QueryClientProvider client={client}><MessageProvider locale="en-US" translate={translateSessionMessage}><AcpChatPanel /></MessageProvider></QueryClientProvider></LocalizationProvider>)
   const href = location.href
-  const signIn = page.getByRole('button', { name: translateSessionMessage('transcript.condition.signIn'), exact: true })
+  const signIn = page.getByRole('button', { name: translateSessionMessage(expired ? 'chat.signInAgain' : 'transcript.condition.signIn'), exact: true })
   await until('session sign-in is visible or its real tree failed', () => errors.length > 0 || signIn.query() !== null)
   expect(errors).toEqual([])
   await userEvent.click(signIn)
-  await expect.element(page.getByRole('dialog', { name: `Add a ${provider} connection`, exact: true })).toBeVisible()
-  expect(document.querySelector('.subscription-connection-menu[data-open]')).toBeNull()
-  expect(document.querySelector('.subscription-connection-form [role="tab"], .subscription-connection-form input[type="password"]')).toBeNull()
-  await expect.element(page.getByRole('button', { name: provider === 'opencode' ? 'Sign in' : 'Add and sign in', exact: true })).toBeVisible()
-  await userEvent.click(page.getByRole('button', { name: 'Close', exact: true }))
-  await until('the connection form has closed', () => document.querySelector('.subscription-connection-form') === null)
+  if (expired) {
+    await until('the saved account opens the existing login dialog directly', () => modalStore.activeModalId === 'agentSignInModal')
+    expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'saved-expired' })
+    expect(document.querySelector('.subscription-connection-menu[data-open], .subscription-connection-form')).toBeNull()
+  } else {
+    await expect.element(page.getByRole('dialog', { name: `Add a ${provider} connection`, exact: true })).toBeVisible()
+    expect(document.querySelector('.subscription-connection-menu[data-open]')).toBeNull()
+    expect(document.querySelector('.subscription-connection-form [role="tab"], .subscription-connection-form input[type="password"]')).toBeNull()
+    await expect.element(page.getByRole('button', { name: provider === 'opencode' ? 'Sign in' : 'Add and sign in', exact: true })).toBeVisible()
+    await userEvent.click(page.getByRole('button', { name: 'Close', exact: true }))
+    await until('the connection form has closed', () => document.querySelector('.subscription-connection-form') === null)
+  }
   expect(current.sessionId).toBe(id)
   expect(active.store).toBe(current)
   expect(current.draftText).toBe('Unsent session draft')
