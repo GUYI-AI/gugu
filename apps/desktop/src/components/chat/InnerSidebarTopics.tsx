@@ -1,3 +1,4 @@
+import type { PersonalConversationHiding } from '../../lib/hideListedConversation'
 import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
@@ -35,7 +36,7 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const closeTopic = useCloseTopic()
-  const { pinChat, setChatNotificationLevel } = useChatStore('pinChat', 'setChatNotificationLevel')
+  const { pinChat, hideConversation, setChatNotificationLevel } = useChatStore('pinChat', 'hideConversation', 'setChatNotificationLevel')
   // Only this chat's topics: a message elsewhere must not redraw these rows.
   const topics = useStoreValueBy(
     (store) => topicsOfChat(store.chats, chatId),
@@ -75,22 +76,24 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   })
   const close = useStableHandler((topic: ChatItem) => closeTopic(topic.id, topic.name ?? ''))
   const setLevel = useStableHandler((topicId: string, notificationLevel: NotificationLevel) => setChatNotificationLevel(topicId, notificationLevel))
+  const remove = useStableHandler((topicId: string) => hideConversation(topicId))
 
   return (
     <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
       {rows.shown.map((topic) => (
-        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} />
+        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} />
       ))}
     </div>
   )
 }
 
-const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onClose, onSetLevel }: {
+const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onClose, onSetLevel, onRemove }: {
   topic: ChatItem
   active: boolean
   onOpen: (topic: ChatItem, beside: boolean) => void
   onPin: (topic: ChatItem) => void
   onClose?: (topic: ChatItem) => void
+  onRemove: (topicId: string) => Promise<PersonalConversationHiding | undefined>
   onSetLevel: (topicId: string, level: NotificationLevel) => void
 }) {
   const { t } = useTranslation('messaging')
@@ -136,6 +139,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
           onClose={menu.closeMenu}
           onPin={() => onPin(topic)}
           onSetNotificationLevel={(level) => onSetLevel(topic.id, level)}
+          onHide={() => onRemove(topic.id)}
         />
       )}
     </>

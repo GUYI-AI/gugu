@@ -1,4 +1,5 @@
 import type { RpcRouter } from '@main/rpc'
+import type { RemoteLibraryTransport } from '@renderer/features/extensions/extensions-host'
 import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission'
 import { invokePhoneHost } from '../local-agent/phoneHostRpc'
 import type { ToolImage } from '@gugu/session-core/acp/client'
@@ -131,6 +132,11 @@ function rpc(deviceId: string) {
 /** `local`: the session lives on this computer, so its own host answers over IPC (assistant task pane on the desktop). */
 export function machineRpc(deviceId: string, local = false) {
   return local ? rpcOn(null) : rpc(deviceId)
+}
+
+/** Marketplace and task screens use the same authenticated phone pipe to the selected computer. */
+export function phoneLibraryTransport(deviceId: string): RemoteLibraryTransport {
+  return { rpc: machineRpc(deviceId), onEvent: (event, listener) => onMachineEvent(deviceId, event, listener) }
 }
 
 /**

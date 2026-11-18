@@ -70,6 +70,9 @@ export const browserController = createRPCController({
   measurePage: async (browserId: string) => ({ layout: await measureBrowserPage(browserId) }),
   snapshotPage: async (browserId: string) => ({ dataUrl: await snapshotBrowserPage(browserId) }),
   inspectAnnotation: inspectBrowserAnnotation,
+  setAnnotationBrowsing: (args: { browserId: string; browsing: boolean }) => ({
+    success: browserWebContentsRegistry.setAnnotationBrowsing(args.browserId, args.browsing),
+  }),
   /**
    * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
    * input goes to that page directly, as their click into a page on this computer does; no App is involved.

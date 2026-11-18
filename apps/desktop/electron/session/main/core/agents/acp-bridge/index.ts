@@ -53,3 +53,11 @@ export async function resolveHostAcpAdapterEntry(
   if (!bridge) return undefined;
   return resolveAcpBridgeEntry(bridge, { role, cli, env, ...(wait ? { wait } : {}) }, realDeps);
 }
+
+
+/** Version of the selected executable used by a version-paired bridge. Missing stays unknown. */
+export async function resolveHostAcpCliVersion(providerId: string, cli: AgentRunContext['cli'], env: Record<string, string>): Promise<string | undefined> {
+  const bridge = getPlugin(providerId).behavior.acp?.bridge;
+  if (cli.kind !== 'resolved' || bridge?.kind !== 'package' || bridge.pairWith !== 'claude') return undefined;
+  return await realClaudeBridgeDeps.probeCliVersion(cli.path, env).catch(() => undefined) ?? undefined;
+}

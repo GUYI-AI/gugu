@@ -897,6 +897,11 @@ export function codexTuiPermissionArgs(threadStart?: Readonly<Record<string, unk
   const args: string[] = []
   for (const [key, value] of Object.entries(threadStart ?? {})) {
     if (value === undefined || value === null) continue
+    if (key === 'approvalsReviewer') {
+      if (value !== 'user' && value !== 'auto_review') throw new Error('Invalid Codex approvals reviewer');
+      args.push('-c', `approvals_reviewer=${JSON.stringify(value)}`)
+      continue
+    }
     const flag = FLAGS[key]
     if (!flag) {
       throw new Error(
@@ -1002,6 +1007,7 @@ export function codexThreadConfigProcessArgs(opts: {
 }): string[] {
   const THREAD_START_CONFIG_KEYS: Readonly<Record<string, string>> = {
     approvalPolicy: 'approval_policy',
+    approvalsReviewer: 'approvals_reviewer',
     sandbox: 'sandbox_mode',
   }
   const isScalar = (value: unknown): boolean =>

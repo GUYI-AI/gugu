@@ -1,3 +1,4 @@
+import type { PersonalConversationHiding } from '../../lib/hideListedConversation'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,9 +22,11 @@ import { closeIfMyAssistant } from '../../lib/assistantClose'
 import { confirmConversationAction } from '../../lib/confirmDanger'
 import { AliasSheet } from '../contacts/AliasSheet'
 
+import { PersonalConversationRowMenu } from './PersonalConversationRowMenu'
+
 const log = rendererLogger('chat/row-menu')
 
-export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotificationLevel, onDelete, ...menu }: {
+function LegacyChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotificationLevel, onDelete, ...menu }: {
   x: number
   y: number
   chat: ChatItem
@@ -112,4 +115,9 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
       notifications: () => onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none'),
       'leave-group': leave,
     }} />
+}
+
+/** Personal list maintenance is independent of the task/identity lifecycle menu. */
+export function ChatRowContextMenu(props: Parameters<typeof LegacyChatRowContextMenu>[0] & { onHide?: () => Promise<PersonalConversationHiding | undefined> }) {
+  return props.onHide ? <PersonalConversationRowMenu {...props} onHide={props.onHide} /> : <LegacyChatRowContextMenu {...props} />
 }

@@ -55,7 +55,10 @@ const h = vi.hoisted(() => {
   return { item, listing, api, heard, host, listManagement };
 });
 
-vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
+vi.mock('@/lib/supabase', () => ({
+  chatDb: { rpc: async () => ({ data: [], error: null }) },
+  getCurrentAuthUserId: async () => 'test-account',
+}));
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, app: {}, agents: { listIcons: async () => ({}) } },

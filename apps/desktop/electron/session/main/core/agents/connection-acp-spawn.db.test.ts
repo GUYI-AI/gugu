@@ -47,6 +47,7 @@ vi.mock('@main/core/acp/transport/local-acp-process-host', () => ({ resolveLocal
 vi.mock('@main/core/agents/acp-bridge', () => ({ resolveHostAcpAdapterEntry: async (providerId: string) => `/bridge/${providerId}-acp.mjs` }));
 vi.mock('@main/core/settings/provider-settings-service', () => ({ providerOverrideSettings: { getItem: () => undefined } }));
 
+const { appSettingsService } = await import('../settings/settings-service');
 const { resolveLocalAgentRunContext } = await import('./agent-run-context');
 const { createHarnessConnection } = await import('./harness-connections');
 const { saveCustomModel, resolveCustomModelLaunch } = await import('./custom-models');
@@ -90,6 +91,7 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
+  await appSettingsService.reset('autoReviewModel');
   vi.unstubAllEnvs();
   releaseCustomModelForwarders();
   await scope.dispose();
@@ -199,4 +201,57 @@ it('the OpenCode writer and process receive the upstream model ID from the store
   expect(config.model).toBe(`api-key-connection/${modelId}`);
   expect(config.provider['api-key-connection'].models).toHaveProperty([modelId]);
   expect(JSON.stringify(spawn)).not.toMatch(/opencode-secret|custom:/);
+});
+
+it.each(['default', 'same', 'other', 'deleted'] as const)('delivers the global reviewer through the same API connection (%s)', async selection => {
+  const connection = await saveCustomModel({ name: 'Compatible', apiKey: 'fixture-upstream-key', preset: null,
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://compatible.example/v1' }],
+    models: [{ id: 'claude-sonnet-5' }, { id: 'reviewer-v1' }],
+  });
+  if (selection !== 'default') await appSettingsService.update('autoReviewModel', {
+    kind: 'custom', connectionId: selection === 'other' ? '00000000-0000-4000-8000-000000000001' : connection.id,
+    modelId: selection === 'deleted' ? 'no-longer-listed' : 'reviewer-v1',
+  });
+  state.fixture!.sqlite.exec("INSERT INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)')
+    .run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: connection.id, modelId: 'claude-sonnet-5' }) }));
+  const reviewer = selection === 'same' ? 'reviewer-v1' : 'claude-sonnet-5';
+  const spawn = await acpSpawn('claude');
+  expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(reviewer);
+  expect(spawn.env.ANTHROPIC_MODEL).toBe('claude-sonnet-5');
+  expect(spawn.autoReviewAllowed).toBe(true);
+  const meta = (await claudeCustomModelSessionMeta('session-1'))!;
+  const settings = JSON.parse(await readFile(meta.claudeCode.options.settings!, 'utf8'));
+  expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(reviewer);
+  expect(settings.env.ANTHROPIC_MODEL).toBe('claude-sonnet-5');
+  expect(settings.env.ANTHROPIC_BASE_URL).toContain(`/r/${connection.id}/`);
+  expect(JSON.stringify(spawn)).not.toContain('fixture-upstream-key');
+});
+
+it('carries the missing-main-model review veto through the host spawn contract', async () => {
+  const connection = await saveCustomModel({ name: 'Default-only compatible', apiKey: 'fixture-upstream-key', preset: null,
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://compatible.example/v1' }], models: [],
+  });
+  state.fixture!.sqlite.exec("INSERT INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)')
+    .run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: connection.id }) }));
+  const spawn = await acpSpawn('claude');
+  expect(spawn.autoReviewAllowed).toBe(false);
+  expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
+});
+
+it.each([false, true])('resolves a blocked classifier main model before native spawn (listed Haiku=%s)', async hasHaiku => {
+  const connection = await saveCustomModel({ name: 'Compatible', apiKey: 'fixture-upstream-key', preset: null,
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://compatible.example/v1' }],
+    models: [{ id: 'claude-opus-5' }, ...(hasHaiku ? [{ id: 'claude-haiku-5-5' }] : [])],
+  });
+  state.fixture!.sqlite.exec("INSERT INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)')
+    .run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: connection.id, modelId: 'claude-opus-5' }) }));
+  const spawn = await acpSpawn('claude');
+  expect(spawn.env.ANTHROPIC_MODEL).toBe('claude-opus-5');
+  expect(spawn.autoReviewAllowed).toBe(hasHaiku);
+  expect(spawn.autoReviewByHaiku).toBe(hasHaiku ? true : undefined);
+  expect(spawn.autoReviewUnavailable).toBe(hasHaiku ? undefined : true);
+  expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(hasHaiku ? 'claude-haiku-5-5' : undefined);
 });

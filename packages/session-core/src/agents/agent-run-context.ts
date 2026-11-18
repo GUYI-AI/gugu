@@ -26,6 +26,8 @@ import { hostCliKey, hostCliSchema } from './host-cli';
 export const agentRunContextSchema = z.object({
   /** 选中的那一份二进制(解析失败也是一个答案,带着诊断原文)。 */
   cli: hostCliSchema,
+  /** Actual selected host executable, probed with its launch environment. Unknown stays absent. */
+  cliVersion: z.string().optional(),
   /** Host-owned credential selection, pinned on first session launch. */
   connectionId: z.string().optional(),
   /** Home-shaped root for reading the selected connection's credential files. */
@@ -37,6 +39,10 @@ export const agentRunContextSchema = z.object({
   /** The session's chosen custom model, delivered through the host's credential forwarder. */
   customModel: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
   vendorKeyAccount: z.boolean().optional(),
+  /** Host admission can disable native review for an unresolved custom main model. */
+  autoReviewAllowed: z.boolean().optional(),
+  autoReviewUnavailable: z.boolean().optional(),
+  autoReviewByHaiku: z.boolean().optional(),
   /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。
@@ -106,6 +112,7 @@ const KEY_ITEM_SEP = String.fromCharCode(1);
 export function agentRunContextKey(ctx: AgentRunContext): string {
   return [
     hostCliKey(ctx.cli),
+    ctx.cliVersion ?? '',
     envKey(ctx.env),
     envKey(ctx.configRootEnv),
     envKey(ctx.credentialEnv ?? {}),

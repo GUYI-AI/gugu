@@ -39,7 +39,10 @@ const h = vi.hoisted(() => {
   return { manifest, api, agentList: vi.fn(async (): Promise<unknown[]> => []), showConfirm: vi.fn(), pickFolder: vi.fn(async () => '/tmp/notes-next') };
 });
 
-vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
+vi.mock('@/lib/supabase', () => ({
+  chatDb: { rpc: async () => ({ data: [], error: null }) },
+  getCurrentAuthUserId: async () => 'test-account',
+}));
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, agents: { listIcons: async () => ({}) }, viewState: { save: vi.fn(async () => ({ success: true })) } },

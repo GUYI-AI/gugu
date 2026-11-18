@@ -70,6 +70,7 @@ export interface SessionCellDeps {
    * ❌ 说成「这家在这台机器上的登录已失效」(#6264)。
    */
   platformCredentials?: boolean;
+  billingRoute?: 'own' | 'platform' | 'unknown';
   agent?: AcpAgentApi;
   /** Provider-declared live setting contract. Missing declarations are an explicit runtime error. */
   liveSettings?: LiveSettingsCapability;

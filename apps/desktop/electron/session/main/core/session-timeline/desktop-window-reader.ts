@@ -1,3 +1,4 @@
+import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import type {
   RecordCursor, SessionpageSessionBodyReadRequest, SessionpageSessionEvent,
   SessionpageSessionOlderRequest, SessionpageSessionSubscribeRequest,
@@ -23,12 +24,13 @@ function page(result: WindowResult): WindowPage {
   if (result.kind === 'cache_miss') throw new Error(`Window cache unresolved: ${result.reason}`);
   return result;
 }
-function project(value: WindowPage): TimelineSnapshot {
+function project(raw: WindowPage, floor?: string | null): TimelineSnapshot {
+  const value = clearedHistoryResult(raw, floor);
   const { kind: _kind, scope: _scope, commitSeq: _commit, io: _io, turns, ...fields } = value;
   const seq = Math.max(0, ...value.coveredRanges.map(range => range.end), ...value.pendingLongRecords.map(ticket => ticket.pinnedEnd));
   // A byte endpoint is not an event revision: same-size rewrites must replace the
   // client window. Append rebasing requires a separately verified source anchor.
-  return { ...fields, cursor: { epoch: `${value.sourceLineage}:${value.snapshotRevision}`, seq }, turns, settlements: [], hasOlder: value.moreBefore !== 'no' };
+  return { ...fields, cursor: { epoch: `${value.sourceLineage}:${value.snapshotRevision}${floor ? historyClearEpoch(floor) : ''}`, seq }, turns, settlements: [], hasOlder: value.moreBefore !== 'no' };
 }
 function afterPage(snapshot: TimelineSnapshot, cursor: RecordCursor | null): TimelineAfterResult {
   if (!cursor || cursor.epoch !== snapshot.cursor.epoch) return { ok: false, reset: 'epoch_changed', snapshot };
@@ -46,7 +48,7 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
   }
   async function readWindowSnapshot(request: WindowReadRequest): Promise<TimelineSnapshot> {
     const signal = request.signal;
-    const value = project(page(await io.openRecent(request)));
+    const value = project(page(await io.openRecent(request)), request.historyFloor);
     signal?.throwIfAborted();
     return value;
   }
@@ -58,7 +60,7 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
     const request = await io.request(input.conversationId, input.limit, signal);
     const value = page(await io.readOlder({ ...request, cursor: input.cursor }));
     signal?.throwIfAborted();
-    const snapshot = project(value);
+    const snapshot = project(value, request.historyFloor);
     const { cursor, settlements: _settlements, ...fields } = snapshot;
     return { ...fields, epoch: cursor.epoch };
   }

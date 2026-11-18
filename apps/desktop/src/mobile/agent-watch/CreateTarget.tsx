@@ -1,3 +1,4 @@
+import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
@@ -12,7 +13,7 @@ import type { CreationSkill } from './create-skills'
 import type { ChatComposerProps, ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
 import { phoneModelName } from './phone-model-copy'
-import { harnessBlockReason, harnessUsable, selectHarness, selectedModelName, type CreateSelection } from './create-session-form'
+import { createPermissionModes, harnessBlockReason, harnessUsable, selectHarness, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
@@ -53,7 +54,8 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const modelButton = useRef<HTMLButtonElement>(null)
   const projectButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
-  const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const baseSelectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const selectedHarness = baseSelectedHarness && configuration ? { ...baseSelectedHarness, permissionModes: createPermissionModes(baseSelectedHarness, configuration.models, configuration.modelsState, configuration.selection) } : baseSelectedHarness
   const existingPermissions = existingSession?.model?.onPermissionModeChange
     ? Object.entries(existingSession.model.permissionModeOptions ?? {}) : []
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
@@ -145,12 +147,14 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
           setView('device')
         }} />}
       {view === 'permission' && existingPermissions.length > 0 ? <div role="radiogroup" aria-label={t('permission')}>
-        {existingPermissions.map(([id, option]) => <Choice key={id} id={id} dimension="permission" name={option.name} description={option.description}
-          selected={existingSession?.model?.selectedPermissionMode === id} disabled={busy}
+        {existingPermissions.map(([id, option]) => <Choice key={id} id={id} dimension="permission" name={option.name} description={option.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : option.description}
+          selected={existingSession?.model?.selectedPermissionMode === id} disabled={busy || option.disabled}
           onClick={() => { existingSession?.model?.onPermissionModeChange?.(id); setView('device') }} />)}
       </div> : view === 'permission' && configuration && <div role="radiogroup">
         <Choice id="" dimension="permission" name={tm('agentWatch.create.modelDefault')} selected={!configuration.selection.permissionMode} onClick={() => select({ ...configuration.selection, permissionMode: null })} />
         {selectedHarness?.permissionModes.map((mode) => <Choice key={mode} id={mode} dimension="permission" name={tm(`agentWatch.create.permission.${mode}.name`)}
+          description={mode === 'ai-review' && configuration.models?.autoReview?.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : undefined}
+          disabled={mode === 'ai-review' && configuration.models?.autoReview?.disabled}
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}
       </div>}
       {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} deviceLabel={machine ? label(machine.device) : undefined} deviceVersion={machine?.device.capabilities.app_version} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.localProjectId ?? null} search={search}
