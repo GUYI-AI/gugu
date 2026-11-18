@@ -64,6 +64,15 @@ it.each(['light', 'dark'] as const)('%s: configure first, then a text draft hide
   await page.getByRole('radio', { name: 'Cloud' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByTestId('agent-watch-create-project').click()
+  const panel = document.querySelector<HTMLElement>('[data-testid="agent-watch-create-controls-sheet"]')!
+  const project = host!.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-project"]')!
+  const work = host!.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!
+  await Promise.all(panel.getAnimations().map(animation => animation.finished))
+  expect(panel.getBoundingClientRect().width).toBe(320)
+  expect(project.getBoundingClientRect().top - panel.getBoundingClientRect().bottom).toBeCloseTo(8)
+  expect(panel.querySelector('.gg-phone-composer-sheet-handle')).toBeNull()
+  expect(project.getAttribute('aria-expanded')).toBe('true')
+  expect(work.getAttribute('aria-expanded')).toBe('false')
   await page.getByRole('radio', { name: '一个用于窄屏验收的长项目名称' }).click()
   await page.getByTestId('agent-watch-create-skills').click()
   await page.getByRole('checkbox', { name: /会议记录/ }).click()

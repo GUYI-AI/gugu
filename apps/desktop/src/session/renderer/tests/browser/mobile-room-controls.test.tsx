@@ -61,6 +61,12 @@ it('marks a topic that calls you in red and other unread with the grey dot, then
  await mount();expect(document.querySelector('.gg-phone-composer-control-dot')?.getAttribute('data-tone')).toBe('call')
  await page.getByTestId('phone-room-topics').click()
  await expect.element(page.getByRole('radio',{name:'群聊',exact:true})).toBeVisible()
+ const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
+ const button=harness!.container.querySelector<HTMLButtonElement>('[data-testid="phone-room-topics"]')!
+ await Promise.all(panel.getAnimations().map(animation=>animation.finished))
+ expect(panel.getBoundingClientRect().width).toBe(320)
+ expect(button.getBoundingClientRect().top-panel.getBoundingClientRect().bottom).toBeCloseTo(8)
+ expect(panel.querySelector('.gg-phone-composer-sheet-handle')).toBeNull()
  const called=document.querySelector('[data-topic-id="topic-0"] .gg-chip')!,news=document.querySelector('[data-topic-id="topic-1"] .gg-chip')!
  expect([called.getAttribute('data-tone'),called.textContent]).toEqual(['danger','@1'])
  expect([news.getAttribute('data-shape'),news.getAttribute('aria-label')]).toEqual(['dot','有新消息，但没有叫到你'])
@@ -143,7 +149,7 @@ it.each([['zh-CN','话题','智能体'],['en-US','Topics','Agents']] as const)('
  expect(document.querySelector('[data-topic-id="topic-1"]')?.getAttribute('aria-checked')).toBe('false')
 })
 
-it.each(['light','dark'] as const)('%s: the room sheet covers the editor at every opening frame',async theme=>{
+it.each(['light','dark'] as const)('%s: the room Agent sheet covers the editor at every opening frame',async theme=>{
  await mount(theme)
  const samples: { opacity: string; alpha: number; coversEditor: boolean }[]=[]
  const observer=new MutationObserver(()=>{
@@ -163,7 +169,7 @@ it.each(['light','dark'] as const)('%s: the room sheet covers the editor at ever
   sample()
  })
  observer.observe(document.body,{childList:true,subtree:true})
- await page.getByTestId('phone-room-topics').click()
+ await page.getByTestId('phone-room-agents').click()
  await until('the sheet has painted its first three frames',()=>samples.length>=3)
  observer.disconnect()
  expect(samples.every(frame=>frame.opacity==='1')).toBe(true)

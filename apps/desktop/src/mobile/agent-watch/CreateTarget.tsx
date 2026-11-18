@@ -49,6 +49,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const [view, setView] = useState<View | null>(null)
   const [search, setSearch] = useState('')
   const modelButton = useRef<HTMLButtonElement>(null)
+  const projectButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
   const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
   const existingPermissions = existingSession?.model?.onPermissionModeChange
@@ -68,26 +69,27 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const thinking = existingSession?.model ?? (configuration ? creationThinking(configuration.models, configuration.selection) : null)
   const title = t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
-  const compact = !!existingSession || view !== 'project'
+  const workOpen = view !== null && view !== 'project' && view !== 'skills'
+  const panelAnchor = view === 'project' ? projectButton : view === 'skills' ? skillsButton : modelButton
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow conversationKey={conversationKey ?? scopeChatId ?? undefined}>
-      {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
-        menuExpanded={!!view && compact && view !== 'skills'}
+      {menu.includes('work') && <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={workOpen} disabled={busy}
+        menuExpanded={workOpen}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />}
       {menu.includes('folder') && projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
           menuExpanded={projectTask.open}
           testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
       : menu.includes('project') && <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
         menuExpanded={view === 'project'}
-        testId="agent-watch-create-project" onClick={() => setView('project')} />}
+        testId="agent-watch-create-project" buttonRef={projectButton} onClick={() => setView('project')} />}
       {menu.includes('skills') && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
         menuExpanded={view === 'skills'}
         testId="agent-watch-create-skills" buttonRef={skillsButton} onClick={() => { setSearch(''); setView('skills') }} />}
       {controlsExtra}
     </PhoneComposerControlRow></div>
     <PhoneComposerSheet open={view !== null && !(phone && view === 'skills' && !existingSession)} onClose={() => setView(null)} title={title} titleCount={view === 'skills' ? skillCount ?? undefined : undefined}
-      onBack={view && compact && view !== 'device' && view !== 'skills' ? () => setView('device') : undefined}
-      anchor={compact ? view === 'skills' ? skillsButton : modelButton : undefined} testId="agent-watch-create-controls-sheet"
+      onBack={workOpen && view !== 'device' ? () => setView('device') : undefined}
+      anchor={panelAnchor} testId="agent-watch-create-controls-sheet"
       footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
       {view === 'device' && <>
         {existingSession ? <Summary dimension="machine" title={t('device')} value={machine ? label(machine.device) : tf('noMachine')} readOnly onClick={() => {}} /> : <>

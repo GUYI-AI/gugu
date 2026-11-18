@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import { Avatar } from '@/components/Avatar'
@@ -20,8 +20,6 @@ import { PhoneNavigationPicker } from './PhoneNavigationPicker'
 export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof creationSkillInput>; nativeSkills?: ReactNode }) {
   const { t } = useTranslation('mobileRoomControls')
   const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
-  const agentsButton = useRef<HTMLButtonElement>(null)
-  const topicsButton = useRef<HTMLButtonElement>(null)
   const current = directory.find(row => row.session.conversationId === sessionId)
   const device = devices.find(one => one.device_id === current?.deviceId)
   const machine = device ? { device, localProjectId: current?.session.projectId ?? '', path: '', available: device.is_online } : undefined
@@ -41,10 +39,10 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
       configuration={{ options: null, selection: { harness, model: null, effort: null, permissionMode: null }, onChange: () => {}, models: null, modelsState: 'ready', skills: skillDraft?.skills ?? [], onSkills: next => skillDraft?.update(next) }}
       controlsExtra={<>
       {nativeSkills}
-      {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
-      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
+      {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} testId="phone-room-topics" onClick={() => setView('topics')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" onClick={() => setView('agents')} />}
       </>} />
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'agents' ? <PhoneNavigationPicker key={`agents:${sessionId}`} kind="agents" items={agents} nameOf={row => row.name}>
         {shown => shown.map(({ agent, identity, name }) => <Button key={agent.id} variant="ghost" className="gg-phone-room-choice gg-phone-room-agent" data-testid="phone-sidebar-agent" data-session-id={agent.id}
           onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus}
