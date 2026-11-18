@@ -13,7 +13,7 @@ function fixture() {
     calls.push(refs)
     if (failing) throw Error('file-resolve 503')
     if (malformed) return { error: 'not_configured' }
-    return { files: refs.map(ref => ({ ref, ...(hidden.has('item_id' in ref ? ref.item_id : 'message_id' in ref ? ref.message_id : ref.attachment_id) ? { status: 'gone', sha256: null } : { status: 'ready', ...revision }) })) }
+    return { files: refs.map(ref => ({ ref, ...(hidden.has('item_id' in ref ? ref.item_id : 'message_id' in ref ? ref.message_id : ref.attachment_id) ? { status: 'gone', sha256: null } : { status: 'ready', ...revision, ...('item_id' in ref ? { item_id: ref.item_id, version: ref.version } : {}) }) })) }
   })
   const bytes = vi.fn(async () => { throw Error('Metadata must not sign or read') })
   const cloud = cloudFileProviders({ metadata, endpoint: bytes, sink: bytes, cache: { get: async () => null, put: bytes, clear: bytes } })

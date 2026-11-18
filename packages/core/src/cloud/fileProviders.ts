@@ -174,7 +174,9 @@ export function cloudFileProviders(deps: {
     // A key still requires the current download ACL, even if every ciphertext chunk is cached.
     if ((encrypted || context.reads) && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256
-    const key = cacheKey(backendScope, context.actor.accountId, encrypted, digest, revision.size_bytes)
+    const key = context.reads
+      ? cacheKey(backendScope, context.actor.accountId, encrypted, digest, revision.size_bytes)
+      : cacheKey(backendScope, context.actor, fileRefKey(ref), encrypted, digest, revision.size_bytes)
     const acquire = async (transfer: FileContext) => {
       const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache,
         async (renew, origin) => renew || origin ? sign(renew, origin, transfer) : lease ? { lease, direct } : sign(false, false, transfer),
@@ -253,6 +255,7 @@ export function cloudFileProviders(deps: {
   }
   const metadata = async (context: FileContext) => {
     if (!deps.metadata) return request(context, 'file-resolve', { ref: context.ref, as: context.actor.actorId })
+    if (context.backend === undefined) return deps.metadata(context)
     checkEndpoint(context, await deps.endpoint(context))
     const row = await deps.metadata(context)
     checkEndpoint(context, await deps.endpoint(context))
