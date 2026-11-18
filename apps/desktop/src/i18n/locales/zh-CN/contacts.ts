@@ -66,14 +66,14 @@ export default {
   "confirmations": {
     "archiveAgent": "归档 Agent「{{name}}」的任务？保留对话历史、文件和配置。",
     "archiveAgentNoTask": "这个 Agent 已没有任务；此次只将它移出群和联系人。",
-    "deleteAgent": "归档任务",
+    "deleteAgent": "归档会话",
     "deleteContact": "删除联系人「{{name}}」？删除后将解除好友关系。",
     "dissolveGroup": "解散后所有成员将退出，确认解散群聊？",
     "leaveGroup": "确认退出该群聊？"
   },
   "contextMenu": {
     "more": "更多",
-    "deleteAgent": "归档任务",
+    "deleteAgent": "归档会话",
     "deleteContact": "删除联系人",
     "disableNotifications": "关闭通知",
     "dissolveGroup": "解散群聊",
@@ -395,9 +395,9 @@ export default {
     "titleWithCount_other": "标签（{{count}} 个对象）"
   },
   "toast": {
-    "deleteAgentFailed": "归档任务失败",
+    "deleteAgentFailed": "归档会话失败",
     "deleteContactFailed": "删除联系人失败",
-    "deletedAgent": "任务已归档",
+    "deletedAgent": "会话已归档",
     "deletedContact": "已删除联系人",
     "dissolvedGroup": "已解散群聊",
     "dissolveFailed": "解散群聊失败",

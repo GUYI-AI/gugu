@@ -35,7 +35,7 @@ function setup(options: { publish?: ReturnType<typeof vi.fn> } = {}) {
   }
   const context = { supabaseUrl: '', anonKey: '', agentId: 'agent-1', chatId: CHAT, threadRootId: null, guguHome: dir,
     getAccessToken: async () => 'token', ...(options.publish ? { publishFile: options.publish } : {}) }
-  return { send: (args: Record<string, unknown>) => callToolImpl(context, 'message_send_file', { chat_id: CHAT, ...args }, deps), uploads }
+  return { send: (args: Record<string, unknown>) => callToolImpl(context, 'message_send', { chat_id: CHAT, ...args }, deps), uploads }
 }
 
 describe('message_send_file in a project chat', () => {

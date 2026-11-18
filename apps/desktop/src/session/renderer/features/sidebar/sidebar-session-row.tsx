@@ -45,7 +45,6 @@ export type SessionRowShellProps = {
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
-  needsAttention: boolean;
   treeSummary?: SessionBranchSummary;
   onToggle?: () => void;
   title: string;
@@ -111,7 +110,6 @@ export function SessionRowShell({
   depth,
   hasChildren,
   expanded,
-  needsAttention,
   treeSummary,
   onToggle,
   title,
@@ -150,7 +148,6 @@ export function SessionRowShell({
   const scheduleAtRest =
     schedule != null &&
     presentationAttention(presentation) === null &&
-    !needsAttention &&
     !statusUnavailable &&
     presentation?.tone !== 'running' && presentation?.tone !== 'parked';
   const leadingClass = cn('flex shrink-0 items-center', disabled && 'opacity-60');
@@ -183,7 +180,6 @@ export function SessionRowShell({
           data-depth={depth}
           data-join={join?.pos}
           data-join-on={join?.onScreen || undefined}
-          data-needs-attention={needsAttention || undefined}
           data-agent-tone={presentation?.tone}
           data-disabled={disabled || undefined}
           aria-disabled={disabled || undefined}
@@ -298,18 +294,9 @@ export function SessionRowShell({
               </span>
             ) : null}
             <span className={sidebarRowRestActionsClass}>
-              {/* 自己的「需要你」先于子树汇总:否则一条出错的会话只显示「树里有事」那颗黄点,红点永远轮不到。 */}
               {presentation && presentationAttention(presentation) ? (
                 <span className="flex size-5 items-center justify-center">
                   <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" />
-                </span>
-              ) : needsAttention ? (
-                <span className="flex size-5 items-center justify-center">
-                  <span
-                    className="size-2 rounded-full bg-[var(--agent-tone-needs-user)]"
-                    aria-label={translate('sidebar.sessionTreeNeedsAttention')}
-                    title={translate('sidebar.sessionTreeNeedsAttention')}
-                  />
                 </span>
               ) : statusUnavailable ? (
                 <span className="flex size-5 items-center justify-center">

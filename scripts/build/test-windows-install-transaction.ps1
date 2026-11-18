@@ -14,6 +14,9 @@ $backup = "$target.gugu-backup-$app"
 $powershell = (Get-Process -Id $PID).Path
 $results = @()
 $links = Join-Path $root 'links.ini'
+$failLog = Join-Path $root 'installer\fixture.log'
+# The installer runs the helper from its plugin directory, next to NSIS's 32-bit System.dll; run it from such a directory.
+$plugins = Join-Path $root 'plugins'
 $oldLink = Join-Path $root 'old.lnk'
 $newLink = Join-Path $root 'new-menu\new.lnk'
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
@@ -21,9 +24,10 @@ function Invoke-Phase($phase, [int]$expected = 0) {
   $prior=$ErrorActionPreference
   try {
     $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
-    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links
+    Push-Location $plugins
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links -FailureLog $failLog
     $code=$LASTEXITCODE
-  } finally { $ErrorActionPreference=$prior }
+  } finally { Pop-Location; $ErrorActionPreference=$prior }
   Assert ($code -eq $expected) "$phase returned $code, expected $expected"
 }
 function Payload($dir, $text) {
@@ -39,6 +43,8 @@ function Registration($version) {
 }
 try {
   New-Item -ItemType Directory -Path $root | Out-Null
+  New-Item -ItemType Directory -Path $plugins | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $plugins 'System.dll'), [byte[]](@(0x4D, 0x5A) + @(0) * 126)) # not a .NET assembly
   [IO.File]::WriteAllText($links, "[links]`r`nold=$oldLink`r`nnew=$newLink`r`n", [Text.Encoding]::Unicode)
   $data = Join-Path $root 'user-data-must-survive'
   [IO.File]::WriteAllText($data, 'preserved')
@@ -99,6 +105,35 @@ try {
   try { Invoke-Phase commit 2 } finally { $locked.Dispose() }
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Locked old application was changed'
   $results += 'locked old executable fails without losing installation'
+  $failures = @(Get-Content -LiteralPath $failLog -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
+  Assert ($failures.Count -eq 2) "Expected 2 recorded failures, found $($failures.Count)"
+  Assert ($failures[0].phase -eq 'finish' -and $failures[0].error -match 'registration') 'Registration failure was not recorded'
+  Assert ($failures[1].phase -eq 'commit' -and $failures[1].version -eq '0.3.5' -and $failures[1].cause) 'Locked-tree failure was not recorded with its cause'
+  $results += 'every failure is recorded for the next app start; successes record nothing'
+  Assert ($failures[1].step -like "$target -> *") 'Locked-tree failure did not name the refused rename'
+  Assert (@($failures[1].holders | Where-Object { $_ -match "^$PID .*\[handle .*fixture\.exe\]" }).Count -eq 1) "Locked-tree failure did not name this process as the holder: $($failures[1].holders -join ' | ')"
+  $results += 'a refused rename names its step and the process holding the tree'
+
+  # A process whose working directory is inside the old tree is a holder too, and is named as one.
+  Invoke-Phase prepare
+  Payload $stage 'cwd-held'
+  $holder = Start-Process -FilePath $powershell -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -WorkingDirectory (Join-Path $target 'resources') -WindowStyle Hidden -PassThru
+  try { Invoke-Phase commit 2 } finally { Stop-Process -Id $holder.Id -Force; $holder.WaitForExit() }
+  $last = Get-Content -LiteralPath $failLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
+  Assert (@($last.holders | Where-Object { $_ -match "^$($holder.Id) .*\[handle .*\\resources\]" }).Count -eq 1) "Working-directory holder was not named: $($last.holders -join ' | ')"
+  $results += 'a process working inside the old tree is named as the holder'
+
+  # A holder that lets go within the retry window (antivirus, indexer, an exiting process) no longer aborts the install.
+  Invoke-Phase prepare
+  Payload $stage 'transient'
+  $brief = Start-Process -FilePath $powershell -ArgumentList '-NoProfile','-Command',"`$f=[IO.File]::Open('$(Join-Path $target 'fixture.exe')','Open','Read','Read'); Start-Sleep 4; `$f.Dispose()" -WindowStyle Hidden -PassThru
+  Start-Sleep -Milliseconds 1500
+  Invoke-Phase commit
+  $brief.WaitForExit()
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'transient') 'Transient holder still aborted the commit'
+  Registration '0.3.5'
+  Invoke-Phase finish
+  $results += 'a transient holder is waited out instead of aborting'
 
   Invoke-Phase prepare
   Payload $stage 'committed'

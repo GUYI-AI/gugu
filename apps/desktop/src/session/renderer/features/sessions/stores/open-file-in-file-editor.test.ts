@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   showModal: vi.fn(),
+  revealLiveWindow: vi.fn(),
   openWithDefaults: {} as Record<string, string>,
   activePaneOpen: vi.fn(),
   fileExists: vi.fn(),
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     contributes: { tabs: Array<{ name: string; title: string; opensFiles?: { session?: string[]; group?: string[] } }> };
   }>,
 }));
+vi.mock('../../live-window/reveal-live-window', () => ({ revealLiveWindow: mocks.revealLiveWindow }));
 
 vi.mock('@renderer/features/extensions/register-extension-tabs', () => ({
   registerInstalledExtensionTabs: mocks.registerInstalledExtensionTabs,
@@ -85,6 +87,17 @@ vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
 
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 
+/** The shared image viewer and the working copy's byte reads, as the open asks them. */
+const viewer = vi.hoisted(() => ({
+  open: vi.fn(async (_items: Array<{ alt: string; read: () => Promise<Blob> }>, _index: number, _box?: unknown) => {}),
+  read: vi.fn(async () => new Blob(['png'])),
+}));
+vi.mock('@/lib/attachmentBytes', () => ({
+  workingCopyImageItem: (alt: string, read: () => Promise<Blob>) => ({ alt, read }),
+  openViewerFromClick: viewer.open,
+}));
+vi.mock('../workspace-backend/read-workspace-bytes', () => ({ readWorkspaceFileBytes: viewer.read }));
+
 const {
   makeFileLinkHandlers,
   openExternalFilePath,
@@ -125,6 +138,7 @@ describe('task file preview routing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.showModal.mockReset();
+    mocks.revealLiveWindow.mockReset().mockResolvedValue(undefined);
     mocks.showPage.mockReset();
     mocks.installedManifests.length = 0;
     mocks.openWithDefaults = {};
@@ -183,6 +197,54 @@ describe('task file preview routing', () => {
     expect(mocks.paneLayoutOpen).toHaveBeenCalledTimes(1);
     expect(Object.values(mocks.paneLayoutOpen.mock.calls[0]![1] as Record<string, unknown>)).toContain('/repo/notes.md');
     expect(mocks.statExternalFile).not.toHaveBeenCalled();
+  });
+
+  describe('an image nothing claims, opened by the person or an App: the image viewer over the session', () => {
+    it('a person\'s click: the viewer, its bytes read from the working copy; no tab', async () => {
+      await makeFileLinkHandlers('project-1', 'session-1', { beside: true }).onOpenFile('shots/a.png');
+      expect(viewer.open).toHaveBeenCalledTimes(1);
+      const [items, index, box] = viewer.open.mock.calls[0]!;
+      expect(items.map((item) => item.alt)).toEqual(['a.png']);
+      expect([index, box]).toEqual([0, undefined]);
+      await items[0]!.read();
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true);
+      expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
+      expect(mocks.toastError).not.toHaveBeenCalled();
+    });
+
+    it('an App\'s open pages through the images it showed, from the clicked picture', async () => {
+      const origin = { x: 1, y: 2, width: 30, height: 30 };
+      await openFileInSessionEditor('project-1', 'session-1', 'shots/a.png', { byHost: true, among: ['shots/x.png', 'shots/a.png', 'notes.md', 'shots/b.webp'], origin });
+      const [items, index, box] = viewer.open.mock.calls[0]!;
+      expect(items.map((item) => item.alt)).toEqual(['x.png', 'a.png', 'b.webp']);
+      expect([index, box]).toEqual([1, origin]);
+      await items[2]!.read();
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true);
+      expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
+    });
+
+    it('outside the working copy: the viewer too, read as an outside file', async () => {
+      await openFileInSessionEditor('project-1', 'session-1', '/Volumes/SSD/photo.jpg');
+      const [items] = viewer.open.mock.calls[0]!;
+      await items[0]!.read();
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/Volumes/SSD/photo.jpg', false);
+      expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
+    });
+
+    it('a tab asked for, an App that claims it, an agent\'s open: a tab, as before', async () => {
+      await openFileInSessionEditor('project-1', 'session-1', 'shots/a.png', { intent: 'newTab' });
+      expect(mocks.paneLayoutOpen).toHaveBeenLastCalledWith('file-view', { path: '/repo/shots/a.png' }, expect.objectContaining({ intent: 'newTab' }));
+      mocks.installedManifests.push({ id: 'paint', defaultLocale: 'en', contributes: { tabs: [{ name: 'edit', title: 'Paint', opensFiles: { session: ['.png'] } }] } });
+      await openFileInSessionEditor('project-1', 'session-1', 'shots/a.png');
+      expect(mocks.paneLayoutOpen).toHaveBeenLastCalledWith('paint.edit', { filePath: '/repo/shots/a.png' }, expect.anything());
+      mocks.installedManifests.length = 0;
+      const onResult = vi.fn();
+      const dispose = openHostRequestedFileInSessionWhenReady({ projectId: 'project-1', sessionId: 'session-1', path: 'shots/a.png', external: false, intent: 'navigate', onResult });
+      await vi.waitFor(() => expect(onResult).toHaveBeenCalledWith({ success: true, openedWith: null }));
+      expect(mocks.paneLayoutOpen).toHaveBeenLastCalledWith('file-view', { path: 'shots/a.png' }, expect.objectContaining({ activate: false }));
+      dispose();
+      expect(viewer.open).not.toHaveBeenCalled();
+    });
   });
 
   it('工作区外的普通文件照原路径打开', async () => {
@@ -716,7 +778,7 @@ describe('task file preview routing', () => {
     dispose();
   });
 
-  it('#7317 opens a tab the host brings up on its own only where the task has none; one already there is left alone', async () => {
+  it('routes an automatic Computer Use preview into its admitted live picture without a duplicate App pane', async () => {
     mocks.registeredKinds.add('computer-use.preview');
     const open = (onResult: (result: { success: boolean }) => void) =>
       openHostRequestedExtensionInSessionWhenReady({
@@ -730,8 +792,8 @@ describe('task file preview routing', () => {
     const first = vi.fn();
     const disposeFirst = open(first);
     await vi.waitFor(() => expect(first).toHaveBeenCalledWith({ success: true }));
-    // Beside the conversation, and the tab the person is looking at stays in front.
-    expect(mocks.paneLayoutOpen).toHaveBeenCalledWith('computer-use.preview', {}, { from: null, intent: 'beside', activate: false });
+    expect(mocks.revealLiveWindow).toHaveBeenCalledWith('project-1', 'session-1', 'computer');
+    expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
 
     mocks.paneLayoutOpen.mockClear();
     mocks.openKinds.push('computer-use.preview');
@@ -741,6 +803,14 @@ describe('task file preview routing', () => {
     expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
     disposeFirst();
     disposeAgain();
+  });
+  it('does not acknowledge or open a legacy preview when the live source is refused', async () => {
+    mocks.revealLiveWindow.mockRejectedValue(new Error('source refused'));
+    const onResult = vi.fn();
+    const dispose = openHostRequestedExtensionInSessionWhenReady({ projectId: 'project-1', sessionId: 'session-1',
+      tabKind: 'computer-use.preview', intent: 'newTab', ifAbsent: true, onResult });
+    await vi.waitFor(() => expect(onResult).toHaveBeenCalledWith({ success: false, error: 'source refused' }));
+    expect(mocks.paneLayoutOpen).not.toHaveBeenCalled(); dispose();
   });
 
   it('registers newly installed extension tabs before opening one', async () => {

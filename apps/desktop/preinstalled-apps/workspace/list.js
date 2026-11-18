@@ -22,32 +22,6 @@ function suffixOf(entry) {
   return suffix.toLowerCase()
 }
 
-// Families a mark is coloured by: the suffix says it, then the content type (a file named without one).
-const FAMILIES = [
-  ['pdf', /^\.pdf$/, /pdf/],
-  ['word', /^\.(docx?|odt|rtf|pages)$/, /msword|wordprocessing|opendocument\.text/],
-  ['sheet', /^\.(xlsx?|csv|tsv|ods|numbers)$/, /excel|spreadsheet|csv/],
-  ['slides', /^\.(pptx?|odp|key)$/, /powerpoint|presentation/],
-  ['archive', /^\.(zip|rar|7z|tar|gz|tgz|bz2|xz)$/, /zip|compressed|x-tar|gzip/],
-  ['image', /^\.(png|jpe?g|gif|webp|bmp|svg|heic|avif|ico)$/, /^image\//],
-  ['video', /^\.(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],
-  ['audio', /^\.(mp3|wav|m4a|aac|flac|ogg|opus)$/, /^audio\//],
-  ['code', /^\.(js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|sh|rb|php|swift|kt|sql)$/, /javascript|typescript|x-python|x-sh/],
-  ['text', /^\.(md|txt|json|ya?ml|xml|html?|log)$/, /^text\/|json/],
-]
-
-/** A file's mark (Telegram's, QQ's): its suffix on a square coloured by its family — `{ label: 'PDF', family: 'pdf' }`. */
-export function markOf(entry) {
-  // A claim's long suffix (`.vote.json`) is marked by its last part, what the file is.
-  const suffix = suffixOf(entry).replace(/^.*(?=\.[^.]+$)/, '')
-  const type = (entry.contentType || '').toLowerCase()
-  const family = FAMILIES.find(([, bySuffix, byType]) => (suffix ? bySuffix.test(suffix) : false) || (!suffix && byType.test(type)))?.[0]
-    ?? FAMILIES.find(([, , byType]) => byType.test(type))?.[0]
-    ?? 'other'
-  const label = suffix ? suffix.slice(1, 5).toUpperCase() : (family === 'other' ? '' : family.slice(0, 4).toUpperCase())
-  return { label, family }
-}
-
 /** Bytes in words: 820 B, 19.6 KB, 2.4 GB. */
 export function sizeOf(bytes) {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return ''

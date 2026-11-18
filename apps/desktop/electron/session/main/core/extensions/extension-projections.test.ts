@@ -43,6 +43,17 @@ afterEach(() => {
 });
 
 describe('App/session scoped picture and input', () => {
+  it('describes only authorized sources in the requested session with their actual geometry', async () => {
+    const s = setup();
+    expect(s.resources.describeSession('task-b')).toEqual([]);
+    expect(s.resources.describeSession('task-a')).toEqual([expect.objectContaining({ id: s.resource.id, size: null })]);
+    s.publish(1);
+    expect(s.resources.describeSession('task-a')).toEqual([expect.objectContaining({ size: { width: 640, height: 480 } })]);
+    s.authorize.mockImplementation(() => { throw new Error('revoked'); });
+    expect(() => s.resources.describeSession('task-a')).toThrow('revoked');
+    await s.resource.close();
+    expect(s.resources.describeSession('task-a')).toEqual([]);
+  });
   it('releases a held key when its fresh-frame keyup is explicitly rejected by the driver', async () => {
     let held = false;
     const disconnect = vi.fn(async () => { held = false; });

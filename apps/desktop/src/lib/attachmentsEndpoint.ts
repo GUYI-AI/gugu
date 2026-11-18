@@ -1,9 +1,11 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
-import { commitAttachment, configuredEndpoint, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type AttachmentUploadPlan, type AttachmentByteProgress } from '@gugu/core/cloud/attachmentsApi'
+import { commitAttachment, configuredEndpoint, declareAttachment, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
+import { beginAttachmentUpload } from './attachmentUploads'
 import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { isHeicLikeFile, mustCopyRatherThanReference } from '@renderer/lib/pty/terminal-image-paths'
 import { getRendererAccessToken } from './sessionPublication'
+import { rendererLogger } from './log'
 import { i18n } from '../i18n'
 import type { AttachmentUploadContext } from './taskAttachmentUpload'
 import { pathOfFile } from './fileOnDisk'
@@ -17,29 +19,52 @@ export async function attachmentsEndpoint(): Promise<AttachmentsEndpoint> {
   return configuredEndpoint(token)
 }
 
-/** Planning does not publish a file. The ordered commit invokes the same publisher as group-file Apps. */
-export type PreparedChatAttachment = { staging_key: string } | { local: File }
+/**
+ * Preparing does not publish a file. A cloud file is declared, not uploaded: its sha256 and size go into the message's
+ * commit and its bytes go up behind it (attachmentUploads). A project chat's file is published by the ordered commit
+ * with the same publisher as group-file Apps; its bytes stay on this device.
+ */
+export type PreparedChatAttachment = { staging_key: string; sha256: string; size_bytes: number } | { local: File }
 async function publishNative(args: Record<string, unknown>) {
   try { return await window.electronAPI!.invoke('files:publish', args) }
   catch { throw new Error(i18n.t('attachmentView.fileUnavailable', { ns: 'messaging' })) }
 }
-const cloudChatAttachment = async (endpoint: AttachmentsEndpoint, file: File, chatId: string, actor: string, requestId?: string, onPlan?: (plan: AttachmentUploadPlan) => void, retry = false, onProgress?: (progress: AttachmentByteProgress) => void): Promise<PreparedChatAttachment> => ({
-  staging_key: await uploadAttachmentBytes(endpoint, { bytes: file, name: file.name || 'file', contentType: resolveFileMimeType(file) }, { chat_id: chatId, as: actor, ...(requestId ? { request_id: requestId } : {}) }, { onPlan, retry, onProgress }),
-})
-export async function prepareChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; is_whisper?: boolean; request_id?: string }, onPlan?: (plan: AttachmentUploadPlan) => void, retry = false, onProgress?: (progress: AttachmentByteProgress) => void): Promise<PreparedChatAttachment> {
+async function cloudChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; message_id: string }, signal?: AbortSignal): Promise<PreparedChatAttachment> {
+  const name = file.name || 'file', contentType = resolveFileMimeType(file)
+  const native = globalThis.window?.electronAPI
+  const path = native ? pathOfFile(file) : ''
+  signal?.throwIfAborted()
+  const drop = () => { void native?.invoke('attachments:drop', { messageId: scope.message_id }).catch(error => rendererLogger('chat/attachment-uploads').warn({ error: String(error) }, 'Attachment upload cancellation failed')) }
+  signal?.addEventListener('abort', drop, { once: true })
+  let declared: DeclaredAttachment
+  try {
+    declared = native
+      ? await native.invoke('attachments:declare', { file: { name, path, size: file.size, contentType, ...(!path ? { data: await file.arrayBuffer() } : {}) },
+        chatId: scope.chat_id, as: scope.as, messageId: scope.message_id }) as DeclaredAttachment
+      : await declareAttachment(endpoint, { bytes: file, contentType }, { chat_id: scope.chat_id, as: scope.as, request_id: scope.message_id }, signal)
+    signal?.throwIfAborted()
+  } finally { signal?.removeEventListener('abort', drop) }
+  // Renderer keeps a display copy; the native host owns the durable upload copy on desktop.
+  try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
+  catch (error) { drop(); throw error }
+  if (signal?.aborted) { drop(); signal.throwIfAborted() }
+  if (!native) void beginAttachmentUpload({ sha256: declared.sha256, messageId: scope.message_id, chatId: scope.chat_id, as: scope.as, pendingKey: declared.staging_key, name, contentType, size: file.size }, file, declared.plan ?? null)
+  return { staging_key: declared.staging_key, sha256: declared.sha256, size_bytes: declared.size_bytes }
+}
+export async function prepareChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; is_whisper?: boolean; message_id: string }, signal?: AbortSignal): Promise<PreparedChatAttachment> {
   const native = globalThis.window?.electronAPI
   if (native && !scope.is_whisper && await publishNative({ chatId: scope.chat_id }) === true) return { local: file }
-  return cloudChatAttachment(endpoint, file, scope.chat_id, scope.as, scope.request_id, onPlan, retry, onProgress)
+  return cloudChatAttachment(endpoint, file, scope, signal)
 }
 export async function commitPreparedChatAttachment(endpoint: AttachmentsEndpoint, prepared: PreparedChatAttachment, args: Omit<CommitArgs, 'staging_key'>): Promise<Record<string, unknown>> {
-  if ('staging_key' in prepared) return commitAttachment(endpoint, { ...args, staging_key: prepared.staging_key })
+  if ('staging_key' in prepared) return commitAttachment(endpoint, { ...args, staging_key: prepared.staging_key, sha256: prepared.sha256, size_bytes: prepared.size_bytes })
   if (args.is_whisper || !window.electronAPI) throw new Error('Project file audience changed')
   const file = prepared.local
   // A pasted file is memory-backed and has no disk path: hand main its bytes instead.
   const path = pathOfFile(file), data = path ? undefined : await file.arrayBuffer()
   const row = await publishNative({ chatId: args.chat_id, file: { name: file.name, path, size: file.size, contentType: resolveFileMimeType(file), ...(data && { data }) }, message: args }) as { id: string; version: number; message?: Record<string, unknown> } | null
   // This account's file storage setting changed after planning: the same cloud provider must authorize any upload afresh.
-  if (!row) return commitPreparedChatAttachment(endpoint, await cloudChatAttachment(endpoint, file, args.chat_id, args.sender_user_id), args)
+  if (!row) return commitPreparedChatAttachment(endpoint, await cloudChatAttachment(endpoint, file, { chat_id: args.chat_id, as: args.sender_user_id, message_id: args.message_id }), args)
   const message = row.message
   if (!message || message.id !== args.message_id || message.sender_user_id !== args.sender_user_id || message.chat_id !== args.chat_id || message.file_item_id !== row.id || message.file_version !== row.version) throw new Error('Project attachment was not committed')
   return message

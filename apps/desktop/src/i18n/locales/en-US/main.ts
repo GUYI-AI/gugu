@@ -1,4 +1,17 @@
 export default {
+  "controlWatch": {
+    "picture": "Control picture",
+    "enlarge": "Enlarge",
+    "shrink": "Shrink",
+    "landscape": "Landscape",
+    "portrait": "Portrait",
+    "dock": "Dock to edge",
+    "restore": "Show picture, drag to either edge",
+    "close": "Hide picture",
+    "sources": "Picture source",
+    "web": "Browser",
+    "computer": "Computer"
+  },
   "referralPreview": {
     "contactCaption": "Scan to add me as a contact",
     "contactFooter": "Connect your AI collaboration network with Gugu",
@@ -135,10 +148,7 @@ export default {
       "exportMarkdown": "Export as Markdown"
     },
     "attachment": {
-      "add": "Add attachment",
-      "remove": "Remove {{name}}",
-      "cancel": "Cancel upload of {{name}}",
-      "retry": "Retry"
+      "add": "Add attachment"
     },
     "tool": {
       "groupCount_one": "{{count}} tool call",
@@ -187,8 +197,6 @@ export default {
       "menu": "More",
       "cancel": "Cancel",
       "stop": "Stop current task",
-      "pin": "Pin",
-      "unpin": "Unpin",
       "pinned": "Pinned",
       "expandChildren_one": "Show 1 child task",
       "expandChildren_other": "Show {{count}} child tasks",
@@ -205,8 +213,7 @@ export default {
       "showMore_one": "Show 1 more",
       "showMore_other": "Show {{count}} more",
       "showLess": "Collapse",
-      "renameSave": "Save",
-      "archive": "Archive"
+      "renameSave": "Save"
     },
     "output": {
       "machineOnly": "Opens only on that computer",
@@ -670,6 +677,7 @@ export default {
     "library": "Library",
     "apps": "Apps",
     "appDockFailed": "The left rail could not be changed",
+    "moreApps": "More Apps",
     "appOpen": "Open",
     "appOpenInWindow": "Open in New Window",
     "appSettings": "App settings",

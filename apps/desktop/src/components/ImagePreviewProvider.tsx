@@ -85,7 +85,7 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   })
 }
 
-type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; loadingStarted?: boolean }
+type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean }
 
 function slideFor(item: ImageViewerItem): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
@@ -158,13 +158,17 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
 function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
   wireReadingZoom(pswp)
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
-  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点
-  const upgrade = (index: number) => {
+  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点。
+  // Its neighbours are warmed with their thumbnails only (`current` false), so paging to one shows pixels at once, never
+  // an original nobody looks at (an item whose only bytes are its original is not warmed); what fails there is said once
+  // it is the one looked at.
+  const upgrade = (index: number, current = true) => {
     if (!pswp.opener.isOpen) return
     const slides = pswp.options.dataSource
     const data = (Array.isArray(slides) ? slides[index] : undefined) as ViewerSlide | undefined
-    if (!data || data.loadingStarted || (!data.item.preview && !data.item.full)) return
-    data.loadingStarted = true
+    if (!data || (!data.item.preview && !data.item.full) || data.upgraded || (!current && (data.warmed || !data.item.preview || !data.item.full))) return
+    if (current) data.upgraded = true
+    else data.warmed = true
     const replace = (url: string) => {
       if (pswp.isDestroying || !pswp.isOpen) return
       if (data.src === url) return
@@ -182,9 +186,9 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
         }
         if (pswp.isDestroying || !pswp.isOpen) return
       }
-      if (data.item.full) replace(await data.item.full())
+      if (current && data.item.full) replace(await data.item.full())
     })().catch((error: unknown) => {
-      if (pswp.isDestroying || !pswp.isOpen) return
+      if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
       if (data.item.preview) {
         if (!data.src) {
@@ -195,8 +199,19 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
       }
     })
   }
-  pswp.on('openingAnimationEnd', () => upgrade(pswp.currIndex))
-  pswp.on('change', () => upgrade(pswp.currIndex))
+  const upgradeAround = () => {
+    upgrade(pswp.currIndex)
+    upgrade(pswp.currIndex - 1, false)
+    upgrade(pswp.currIndex + 1, false)
+  }
+  pswp.on('openingAnimationEnd', upgradeAround)
+  pswp.on('change', upgradeAround)
+  // A slide with no pixels yet (its bytes are being read) is not loaded: an <img> without a source is drawn broken.
+  pswp.on('contentLoadImage', (event) => {
+    if (!event.content.data.src) event.preventDefault()
+  })
+  // Nor is a placeholder box drawn for it: until its pixels come, the slide is the viewer's own background.
+  pswp.addFilter('useContentPlaceholder', (use, content) => use && Boolean(content.data.src || content.data.msrc))
   // 几何只定一次:尺寸已知(文件记录或打开前解码好的原图)就从不改;未知的,第一份像素到了按它定。之后换源只换像素
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
@@ -222,12 +237,13 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     const data = itemData as ViewerSlide
     const thumb = data.item.thumb
     const img = thumb instanceof HTMLImageElement ? thumb : thumb?.querySelector('img')
-    if (!img || !data.sizeKnown) return undefined as unknown as Bounds
+    const box = data.item.thumbRect
+    if ((!img && !box) || !data.sizeKnown) return undefined as unknown as Bounds
     const size = { width: data.width ?? 0, height: data.height ?? 0 }
-    const rect = img.getBoundingClientRect()
+    const rect = img ? img.getBoundingClientRect() : new DOMRect(box!.x, box!.y, box!.width, box!.height)
     const top = viewerTop()
     const inViewer = new DOMRect(rect.x, rect.y - top, rect.width, rect.height)
-    return thumbBoundsFor(inViewer, getComputedStyle(img).objectFit, size, { width: innerWidth, height: innerHeight - top }) as Bounds
+    return thumbBoundsFor(inViewer, img ? getComputedStyle(img).objectFit : 'cover', size, { width: innerWidth, height: innerHeight - top }) as Bounds
   })
 
   // 指针点 = pageY - offset.y:根下移了,offset 也跟着下移。PhotoSwipe 的 init 在派发 updateScrollOffset 之后
@@ -408,6 +424,8 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
     const unregister = registerImageViewerHost((request) => {
       if (holding) return request.items.forEach(item => item.release?.())
       holding = true
+      // What had the keys before (an App page's <webview>, a list): it has them again once the viewer is closed.
+      const focused = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
       import('photoswipe')
         .then(({ default: PhotoSwipeCtor }) => {
           if (disposed) return
@@ -449,6 +467,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
             holding = false
             setViewer((open) => (open?.pswp === pswp ? null : open))
             setEditing(null)
+            if (focused?.isConnected) focused.focus({ preventScroll: true })
           })
           active = pswp
           pswp.init()

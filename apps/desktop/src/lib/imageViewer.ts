@@ -2,7 +2,17 @@
 // 入口是模块函数而不是 React context:会话页是另一棵 React 树,context 伸不过去。
 
 import type { ResourceContext } from '@/session/shared/resource-actions'
+import type { TabOpenIntent } from '@/session/shared/view-state'
 import { savedFileName } from '@/session/shared/extensions/app-runtime-protocol'
+import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
+
+/**
+ * A file the person opens (a click, a link, an App page's `files.openWith`) that no App claims opens here when it is an
+ * image this viewer draws — unless a tab was asked for (「在新标签页打开」, 「在旁边打开」). What an agent opens is not this.
+ */
+export function opensInImageViewer(name: string, contentType: string | null | undefined, intent: TabOpenIntent | undefined): boolean {
+  return (intent === undefined || intent === 'navigate') && isRenderableImage(name, contentType ?? undefined)
+}
 
 export interface ImageViewerItem {
   /** Actual origin, never inferred from whichever conversation is behind the viewer. */
@@ -18,6 +28,11 @@ export interface ImageViewerItem {
   file?: { name: string; contentType?: string | null }
   /** 页面上那张缩略图:从它放大进入、关闭时缩回去,并提前知道原图尺寸;没有就淡入淡出。 */
   thumb?: HTMLElement | null
+  /**
+   * The picture's box on the window when it is not an element of this document (an App page's cell, `openingViewOf`):
+   * opened from and closed back to as `thumb` is, drawn cropped to fill it (object-fit: cover).
+   */
+  thumbRect?: { x: number; y: number; width: number; height: number }
   /** 气泡里画的是缩略图时:取原图(object URL)。查看器先用 url 打开,翻到这一张再换成原图。 */
   full?: () => Promise<string>
   /** 原图的像素尺寸,取自文件记录。查看器从打开到关闭都按它排版:缩略图、原图只是画进同一个框的像素。 */

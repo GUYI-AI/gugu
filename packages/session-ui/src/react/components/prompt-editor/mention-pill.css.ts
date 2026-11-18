@@ -13,7 +13,6 @@ export const pill = style({
   cursor: 'default',
   userSelect: 'none',
   alignItems: 'center',
-  gap: '0.25rem',
   borderRadius: tokenVars.radiusSm,
   paddingLeft: '0.25rem',
   paddingRight: '0.25rem',
@@ -23,6 +22,11 @@ export const pill = style({
   fontWeight: 500,
   color: vars.foreground,
   verticalAlign: 'baseline',
+});
+
+export const skillPill = style({
+  border: `1px solid ${vars.border}`,
+  backgroundColor: vars.surfaceBaseEmphasis,
 });
 
 export const pillPlain = style({
@@ -53,6 +57,7 @@ export const pillIconArea = style({
   display: 'flex',
   width: '0.875rem',
   height: '0.875rem',
+  marginInlineEnd: '0.25rem',
   flexShrink: 0,
   alignItems: 'center',
   justifyContent: 'center',
@@ -94,6 +99,9 @@ export const pillName = style({
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 });
+
+/** A file's place (` (Lines 3–4)`), right after the name with its own leading space; the name gives way, never it. */
+export const pillPlace = style({ flexShrink: 0, whiteSpace: 'pre' });
 
 export const pillAnnotation = style({ marginInlineStart: '0.375rem', fontSize: tokenVars.textTiny, color: vars.foregroundMuted });
 

@@ -6,7 +6,8 @@
 <title>文件</title>
 <link rel="stylesheet" href="style.css" />
 </head>
-<body data-state="message" data-mode="split">
+<!-- `reading`: nothing drawn until the page knows what it shows, so the host's loading mark stays (app.js `reveal`). -->
+<body class="reading" data-state="message" data-mode="split">
   <aside class="files" aria-label="files" tabindex="0">
     <header class="files-toolbar files-tools">
       <div id="place-switch" class="place-switch" role="group">
@@ -70,6 +71,7 @@
     <div class="panes">
       <div id="editor" class="editor"></div>
       <article id="preview" class="preview" tabindex="-1"></article>
+      <nav id="outline" class="outline" hidden></nav>
       <!-- An empty document, where its preview would be: what can be done here. -->
       <gugu-empty id="doc-empty" class="doc-empty" icon="file-text" hidden><strong id="doc-empty-title"></strong><small id="doc-empty-hint"></small><span class="row"><button id="empty-write" class="primary" type="button"><gugu-icon name="pencil"></gugu-icon><span id="empty-write-label"></span></button><button id="empty-draft" type="button"><gugu-icon name="sparkles"></gugu-icon><span id="empty-draft-label"></span></button></span></gugu-empty>
     </div>
@@ -110,7 +112,7 @@
     </span>
     <button id="copy-sel" type="button"></button>
     <button id="cite-sel" type="button"></button>
-    <button id="annotate-sel" type="button" hidden></button>
+    <button id="send-sel" type="button" hidden></button>
   </div>
   <script type="module" src="app.js"></script>
 </body>

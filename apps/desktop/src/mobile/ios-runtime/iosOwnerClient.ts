@@ -22,6 +22,7 @@ const nativeOwner = registerPlugin<{
   publishSession(input: { ownerId: string; accessToken: string }): Promise<unknown>
   getBinding(input: { ownerId: string }): Promise<unknown>
   prepareSignOut(input: { ownerId: string }): Promise<unknown>
+  cancelSignOut(input: { ownerId: string; localOperationId: string }): Promise<unknown>
   retireSession(input: { ownerId: string }): Promise<unknown>
 }>('GuguIOSOwner')
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -73,4 +74,12 @@ export async function prepareIOSSignOut(ownerId: string): Promise<void> {
   requireNative(ownerId)
   const reply = await nativeOwner.prepareSignOut({ ownerId })
   if (!reply || typeof reply !== 'object' || (reply as Record<string, unknown>).prepared !== true) throw invalidReply()
+}
+
+/** Release only the preparation round captured with this removed closure receipt. */
+export async function cancelIOSSignOut(ownerId: string, localOperationId: string): Promise<void> {
+  requireNative(ownerId)
+  if (typeof localOperationId !== 'string' || !localOperationId || new TextEncoder().encode(localOperationId).length > 256) throw invalidReply()
+  const reply = await nativeOwner.cancelSignOut({ ownerId, localOperationId })
+  if (!reply || typeof reply !== 'object' || (reply as Record<string, unknown>).cancelled !== true) throw invalidReply()
 }

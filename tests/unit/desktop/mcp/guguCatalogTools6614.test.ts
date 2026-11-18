@@ -10,7 +10,7 @@ import {
   type DesktopGuguMcpHost,
   type GuguMcpContext,
 } from '../../../../apps/desktop/electron/acp-engine-utils'
-import { GUGU_ASSISTANT_LISTED_TOOLS, GUGU_LISTED_TOOLS, registerGuguCatalogTools, unlistedTools, type CatalogTool } from '../../../../apps/desktop/electron/mcp/gugu-catalog-tools'
+import { GUGU_ASSISTANT_LISTED_TOOLS, GUGU_LISTED_TOOLS, RETIRED_TOOLS, registerGuguCatalogTools, unlistedTools, type CatalogTool } from '../../../../apps/desktop/electron/mcp/gugu-catalog-tools'
 import type { AppSearchHit } from '../../../../apps/desktop/electron/mcp/gugu-app-search-tool'
 import { GUIDE_TOPICS } from '../../../../apps/desktop/electron/mcp/gugu-guide-tool'
 import { ACTIVITY_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-activity-tool'
@@ -81,7 +81,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     for (const name of ['contact_friend', 'message_invite', 'topic_open']) {
       expect(listed).not.toContain(name)
       expect(catalog).toContain(name)
-      expect(JSON.parse(text(await client.callTool({ name: 'catalog_describe', arguments: { tool: name } })))).toMatchObject({ name })
+      expect(JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: name } })))).toMatchObject({ name })
       const invalid = await client.callTool({ name: 'catalog_call', arguments: { tool: name, args: {} } })
       expect(invalid).toMatchObject({ isError: true })
       expect(text(invalid)).not.toContain('not a catalog entry')
@@ -91,7 +91,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       expect(catalog).not.toContain(name)
       const searched = JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name } }))) as { items: Array<{ call: string; native?: boolean }> }
       expect(searched.items.find(item => nameOfCall(item.call) === name)?.native).toBe(true)
-      expect(text(await client.callTool({ name: 'catalog_describe', arguments: { tool: name } }))).toContain('call it directly')
+      expect(text(await client.callTool({ name: 'catalog_call', arguments: { tool: name, args: {} } }))).toContain('call it directly')
     }
   })
 
@@ -106,7 +106,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       ...ACTIVITY_TOOL_DEFS.map((def) => def.name),
       ...SCHEDULE_TOOL_DEFS.map((def) => def.name),
       ...EXTENSION_TOOL_DEFS.map((def) => def.name),
-      'guide_topics', 'guide_read', 'catalog_list', 'catalog_describe', 'catalog_call', 'app_search', 'widget_send', 'widget_get',
+      'guide_read', 'catalog_list', 'catalog_call', 'app_search', 'widget_send', 'widget_get',
     ]
     for (const name of listed) expect(GUGU_LISTED_TOOLS.has(name), name).toBe(true)
     for (const name of catalog) expect(GUGU_LISTED_TOOLS.has(name), name).toBe(false)
@@ -127,12 +127,14 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       expect(catalog).not.toContain(name)
     }
     expect(listed).toContain('message_send')
-    expect(listed).toContain('message_send_as_owner')
-    expect(listed).toContain('message_send_file_as_owner')
+    // Acting for the owner is in the catalog (MCP surface review 11-16), and the retired names are nowhere.
+    expect(catalog).toContain('message_send_as_owner')
+    expect([...listed, ...catalog]).not.toContain('message_send_file')
+    expect([...listed, ...catalog]).not.toContain('message_send_file_as_owner')
   })
 
   // L5 S1 复跑:29 次调用里 2 次 catalog_describe 只是为了知道参数名。每行带上调用签名,list 完就能 call。
-  it('catalog_list 每行带参数签名:必填在前,可选带 ?,与 catalog_describe 的 schema 对得上', async () => {
+  it('catalog_list 每行带参数签名:必填在前,可选带 ?,与按精确名字给出的 schema 对得上', async () => {
     const client = await connectTo(social({ runSessionAction: async () => ({}), runExtensionAction: async () => ({}) }))
     const items = (JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { rows: '1-200' } }))) as {
       items: Array<{ call: string; about: string }>
@@ -151,7 +153,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     // 判据:每一行的签名都由 describe 出来的 schema 推得出 —— describe 给的就是 call 要的;写出来的 enum 就是 schema 里的那几个值。
     expect(rows.length).toBeGreaterThan(8)
     for (const row of rows) {
-      const described = JSON.parse(text(await client.callTool({ name: 'catalog_describe', arguments: { tool: row.name } }))) as {
+      const described = JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: row.name } }))) as {
         inputSchema: { properties?: Record<string, { enum?: unknown[] }>; required?: string[] }
       }
       const required = described.inputSchema.required ?? []
@@ -187,13 +189,13 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     expect(items[0]!.about).toMatch(/files, sessions and history.*never deleted/i)
     // The summary cannot promise unconditional deletion: the full definition keeps the visibility condition and undo.
     const definition = JSON.parse(text(await client.callTool({
-      name: 'catalog_describe', arguments: { tool: 'project_remove_folder' },
+      name: 'catalog_list', arguments: { name: 'project_remove_folder' },
     }))) as { description: string }
     expect(definition.description).toContain('only without folders or unarchived sessions')
     expect(definition.description).toContain('Returns undo')
   })
 
-  it('catalog_describe 给出的定义与不做披露时 tools/list 广告的一字不差(含宽注册的消息写入工具)', async () => {
+  it('catalog_list 按精确名字给出的定义与不做披露时 tools/list 广告的一字不差(含宽注册的消息写入工具)', async () => {
     const bare = createGuguImServer(() => social(), { trackRequest: <T,>(work: Promise<T>) => work })
     serveToolsList(bare, () => social())
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -204,11 +206,11 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
 
     const client = await connectTo(social())
     for (const name of ['topic_invite', 'group_list', 'message_invitations']) {
-      const described = JSON.parse(text(await client.callTool({ name: 'catalog_describe', arguments: { tool: name } })))
+      const described = JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: name } })))
       expect(described, name).toEqual(advertised.find((tool) => tool.name === name))
     }
     // topic_invite 注册的是宽 schema;目录里必须是它的真 schema,不是一个无字段的 object。
-    const invite = JSON.parse(text(await client.callTool({ name: 'catalog_describe', arguments: { tool: 'topic_invite' } })))
+    const invite = JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: 'topic_invite' } })))
     expect(invite.inputSchema.required).toContain('chat_id')
   })
 
@@ -324,14 +326,36 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
   // 「no tool named catalog_list in the catalog; catalog_list shows what is there」— true, and no help.
   it('经 catalog 找一个原生列出的工具:告诉它那是它自己的工具,直接调', async () => {
     const client = await connectTo({ kind: 'session-only', expectedOwnerUserId: 'owner-1', subjectId: 'agent-1', runSessionAction: async () => ({}) })
-    for (const tool of ['catalog_list', 'catalog_call', 'catalog_describe', 'message_send']) {
+    for (const tool of ['catalog_list', 'catalog_call', 'message_send']) {
       expect(GUGU_LISTED_TOOLS.has(tool)).toBe(true)
-      for (const via of ['catalog_call', 'catalog_describe'] as const) {
-        const result = await client.callTool({ name: via, arguments: via === 'catalog_call' ? { tool, args: {} } : { tool } })
-        expect(result.isError, `${via} ${tool}`).toBe(true)
-        expect(text(result)).toContain(`${tool} is one of your own tools, not a catalog entry: call it directly`)
+      const result = await client.callTool({ name: 'catalog_call', arguments: { tool, args: {} } })
+      expect(result.isError, tool).toBe(true)
+      expect(text(result)).toContain(`${tool} is one of your own tools, not a catalog entry: call it directly`)
+    }
+  })
+
+  // MCP surface review 11-16: retired names are refused with what does their job now, never served by a second path.
+  it('a retired tool name, through catalog_call or catalog_list, says what replaced it', async () => {
+    const client = await connectTo(social({ runSessionAction: async () => ({}) }))
+    for (const [tool, now] of Object.entries(RETIRED_TOOLS)) {
+      for (const result of [
+        await client.callTool({ name: 'catalog_call', arguments: { tool, args: {} } }),
+        await client.callTool({ name: 'catalog_list', arguments: { name: tool } }),
+      ]) {
+        expect(result.isError, tool).toBe(true)
+        expect(text(result)).toContain(`${tool} was retired: use ${now}`)
       }
     }
+    const listed = (await client.listTools()).tools.map(t => t.name)
+    for (const tool of Object.keys(RETIRED_TOOLS)) expect(listed).not.toContain(tool)
+  })
+
+  it('catalog_call with wrong arguments to one of its tools answers with that tool\'s inputSchema', async () => {
+    const client = await connectTo(social({ runSessionAction: async () => ({}) }))
+    const result = await client.callTool({ name: 'catalog_call', arguments: { tool: 'session_stop', args: {} } })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('Its inputSchema: {')
+    expect(text(result)).toContain('"session_id"')
   })
 
   it('鉴权与原生一致:缺那一半分派器的 grant、运行时分叉,经 catalog_call 得到同一句拒绝', async () => {
@@ -368,7 +392,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     const listed = async (name: string) => (JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name } }))) as { items: unknown[] }).items
     expect(await listed('probe')).toEqual([{ call: 'ext-a__probe()', about: 'ext-a__probe.', native: true }, { call: 'ext-b__probe()', about: 'ext-b__probe.' }])
     expect(await listed('  ')).toEqual([{ call: 'ext-b__probe()', about: 'ext-b__probe.' }])
-    expect(JSON.parse(text(await client.callTool({ name: 'catalog_describe', arguments: { tool: 'ext-a__probe' } }))).name).toBe('ext-a__probe')
+    expect(JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: 'ext-a__probe' } }))).name).toBe('ext-a__probe')
     expect(text(await client.callTool({ name: 'catalog_call', arguments: { tool: 'ext-a__probe', args: {} } }))).toBe('ran ext-a__probe')
   })
 
@@ -391,7 +415,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     const client = new Client({ name: 'catalog-probe', version: '1' })
     clients.push(client)
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
-    const rows = (JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: 'ext__fetch' } }))) as { items: { call: string }[] }).items
+    const rows = (JSON.parse(text(await client.callTool({ name: 'catalog_list', arguments: { name: 'fetch' } }))) as { items: { call: string }[] }).items
     expect(rows.map((row) => row.call)).toEqual(['ext__fetch(level: low|high, mode?: crawl|map, provider?, long?, odd?, url?)'])
   })
 
@@ -411,7 +435,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     }
     const reason = 'extension todo-panel, program todos: [ { "expected": "array", "path": [ "tools" ] } ]'
     const withOne = await connectWith([reason])
-    for (const [name, args] of [['catalog_call', { tool: 'todo-panel-todos__add_todo', args: {} }], ['catalog_describe', { tool: 'todo-panel-todos__add_todo' }]] as const) {
+    for (const [name, args] of [['catalog_call', { tool: 'todo-panel-todos__add_todo', args: {} }]] as const) {
       const result = await withOne.callTool({ name, arguments: args })
       expect(result.isError).toBe(true)
       expect(text(result)).toContain('no tool named todo-panel-todos__add_todo in the catalog; catalog_list shows what is there')
@@ -463,7 +487,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     })
     try {
       const session = await connectTo(social({ grantKey: 'taskpage:conv-1' }))
-      expect(JSON.parse(text(await session.callTool({ name: 'catalog_describe', arguments: { tool: 'group_list' } }))).name).toBe('group_list')
+      expect(JSON.parse(text(await session.callTool({ name: 'catalog_list', arguments: { name: 'group_list' } }))).name).toBe('group_list')
       expect(text(await session.callTool({ name: 'catalog_call', arguments: { tool: 'other-app__probe', args: {} } }))).toBe('ran other-app__probe')
       expect(asked).toEqual(['other-app__probe'])
     } finally {
@@ -535,15 +559,18 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     }
   })
 
-  it('guide_topics 列出主题,guide_read 交出全文', async () => {
+  it('guide_read 不带主题列出主题,带主题交出全文;移走的主题说去了哪', async () => {
     const client = await connectTo(social())
-    expect(JSON.parse(text(await client.callTool({ name: 'guide_topics', arguments: {} }))))
+    expect(JSON.parse(text(await client.callTool({ name: 'guide_read', arguments: {} }))))
       .toEqual(GUIDE_TOPICS.map(({ topic, about }) => ({ topic, about })))
+    const moved = await client.callTool({ name: 'guide_read', arguments: { topic: 'apps-bindings' } })
+    expect(moved.isError).toBe(true)
+    expect(text(moved)).toContain('docs/guides/apps/apps-bindings.md')
     const guide = text(await client.callTool({ name: 'guide_read', arguments: { topic: 'apps' } }))
     expect(guide).toBe(GUIDE_TOPICS.find((entry) => entry.topic === 'apps')?.text)
     expect(guide).toContain('window.gugu')
     const missing = await client.callTool({ name: 'guide_read', arguments: { topic: 'nope' } })
     expect(missing.isError).toBe(true)
-    expect(text(missing)).toContain('guide_topics')
+    expect(text(missing)).toContain('guide_read without a topic lists them')
   })
 })

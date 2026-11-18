@@ -825,7 +825,7 @@ export function ChatComposer({
   );
 
   return (
-    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
+    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-attachment-row={phoneEditor.attachmentRow || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
       if (queueEdit && event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229) {
         event.preventDefault(); finishQueueEdit(null);
       }
@@ -908,7 +908,7 @@ export function ChatComposer({
             ) : promptEditor}
           </div>
 
-          {phoneCapsule && (phoneEditor.multiline || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
+          {phoneCapsule && (phoneEditor.attachmentRow || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
             data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
             aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
             onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}

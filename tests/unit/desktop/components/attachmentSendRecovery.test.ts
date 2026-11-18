@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { attachmentAttemptEndpoint, retryAttachmentUpload } from '../../../../apps/desktop/src/lib/attachmentSendRecovery'
+import { retryAttachmentUpload } from '../../../../apps/desktop/src/lib/attachmentSendRecovery'
+import { attachmentAttemptEndpoint } from '../../../../apps/desktop/src/lib/attachmentSendTiming'
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
 afterEach(() => { vi.useRealTimers() })
 it('retries upload transport loss but not a permanent authorization error', async () => {

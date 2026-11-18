@@ -87,7 +87,7 @@ function ContactRow({ contact, currentUserId, selected, multiSelected, selection
         onKeyDown={rowKeyActivate(canSelect ? onToggleSelection : onSelect)}
         onContextMenu={hasRowMenu ? onContextMenu : undefined}
       />
-      {hasRowMenu && menuPos ? <ContactRowContextMenu x={menuPos.x} y={menuPos.y} removeLabel={removeLabel} onClose={closeMenu} onRemove={() => onRemove?.(contact)} onStartChat={onStartChat ? () => onStartChat(contact) : undefined} isPinned={isPinned} notifMuted={notifMuted} onPin={() => onPin?.(contact)} onMarkUnread={() => onMarkUnread?.(contact)} onToggleNotif={() => onToggleNotif?.(contact)} /> : null}
+      {hasRowMenu && menuPos ? <ContactRowContextMenu x={menuPos.x} y={menuPos.y} removeLabel={removeLabel} contact={contact} onClose={closeMenu} onRemove={() => onRemove?.(contact)} onStartChat={onStartChat ? () => onStartChat(contact) : undefined} isPinned={isPinned} notifMuted={notifMuted} onPin={() => onPin?.(contact)} onMarkUnread={() => onMarkUnread?.(contact)} onToggleNotif={() => onToggleNotif?.(contact)} /> : null}
     </>
   )
 }

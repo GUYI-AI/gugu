@@ -3,6 +3,7 @@ import { Menu, MenuItem } from '@/components/ui/Menu';
 import { useRowContextMenu } from '@/hooks/useRowContextMenu';
 import { Trash } from '@/lib/icons';
 import { dismissSampleProject } from '@/lib/sampleProject';
+import { confirmDanger } from '@/lib/confirmDanger';
 import { messageForUser } from '@/lib/userFacingError';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -13,6 +14,8 @@ function useRemoveSampleProject(userId: string): { busy: boolean; remove: () => 
   const [busy, setBusy] = useState(false);
   const remove = async () => {
     if (busy) return;
+    const title = translate('projects.sample.remove');
+    if (!(await confirmDanger({ title, description: translate('projects.sample.removeConfirm'), confirmLabel: title }))) return;
     setBusy(true);
     try {
       await dismissSampleProject(userId);

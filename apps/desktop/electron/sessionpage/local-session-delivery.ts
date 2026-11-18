@@ -9,6 +9,7 @@ export type LocalSessionMessage = {
 
 export type LocalSessionSender = (
   message: LocalSessionMessage,
+  beforeAdmission?: () => void,
 ) => Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }>
 
 export type LocalSessionBinding = {
@@ -52,6 +53,7 @@ export interface LocalSessionDeliveryBridge {
   tryInjectSessionMessage(
     sessionId: string,
     message: LocalSessionMessage,
+    beforeAdmission?: () => void,
   ): Promise<boolean>
   recordDeliveryFailure?(entry: {
     sessionId: string
@@ -197,6 +199,7 @@ function internalUnregisterAgent(agentUserId: string, sessionId?: string): void 
 async function internalTryInjectSessionMessage(
   sessionId: string,
   message: LocalSessionMessage,
+  beforeAdmission?: () => void,
 ): Promise<boolean> {
   const agentUserId = agentsBySession.get(sessionId)
   const binding = agentUserId ? bindingsByAgent.get(agentUserId) : undefined
@@ -206,7 +209,8 @@ async function internalTryInjectSessionMessage(
     if (integration.identity !== 'addressable' || integration.messageTransport !== 'local-session') {
       throw new Error(`session ${sessionId} does not declare a local-session message transport`)
     }
-    const accepted = await binding.sendMessage(message)
+    beforeAdmission?.()
+    const accepted = await (beforeAdmission ? binding.sendMessage(message, beforeAdmission) : binding.sendMessage(message))
     if (accepted.status !== 'accepted') return false
     recordLocalSessionInjectionAuditForTest({
       sessionId,

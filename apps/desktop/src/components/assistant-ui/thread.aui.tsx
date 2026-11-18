@@ -1,7 +1,7 @@
 import { notify } from '@/lib/notices';
+import { PhoneAttachmentMenuBar } from '@/mobile/composer/PhoneAttachmentMenuBar';
 import { messageForUser } from '@/lib/userFacingError';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { UserMessageAttachments } from "./attachment.aui";
 import { MAX_ATTACHMENT_BYTES } from "@gugu/session-core/session-record/contract";
 import { ChatComposer, MessageProvider, formatAttachmentSize, type ComposerAttachment, type PromptEditorRef } from "@gugu/session-ui/react/components";
 import { SessionUiTheme } from "@/components/sessionpage/SessionUiTheme";
@@ -12,9 +12,7 @@ import { createLocalSessionMentionProvider } from "@/session/renderer/lib/chat/l
 import { useSessionAgentCreationTools } from "@/session/renderer/lib/chat/use-session-agent-creation-tools";
 import { useSessionMentionDrop } from "@/session/renderer/lib/chat/use-session-mention-drop";
 import { translateSessionMessage } from "@/session/renderer/localization/locale-store";
-import { File as FilePart } from "./file";
 import { ThreadFollowupSuggestions } from "./follow-up-suggestions.aui";
-import { Image } from "./image";
 import { MarkdownText } from "./markdown-text";
 import { MessageCopyButton } from "./message-copy-button";
 import {
@@ -31,7 +29,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "./tool-group.aui";
-import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerPlaceholder, useComposerStop } from "./composer-extras";
+import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerAttachmentPlacement, useComposerEditorRef, useComposerPlaceholder, useComposerStop } from "./composer-extras";
 import { useAuiCopy } from "./copy";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { Button } from "./ui/button";
@@ -48,8 +46,6 @@ import {
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
-  type FileMessagePartComponent,
-  type ImageMessagePartComponent,
   type ToolCallMessagePartComponent,
   useAuiState,
   useAui,
@@ -373,8 +369,14 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const fileSelection = useAttachmentFileSelection(attachments, composer);
   const { isRunning, isDisabled, capabilities } = useAuiState((s) => s.thread);
   const hostStop = useComposerStop();
+  const attachmentPlacement = useComposerAttachmentPlacement();
   const placeholder = useComposerPlaceholder() ?? c.placeholder;
   const editor = useRef<PromptEditorRef | null>(null);
+  const hostEditor = useComposerEditorRef();
+  const receiveEditor = useCallback((handle: PromptEditorRef | null) => {
+    editor.current = handle;
+    if (hostEditor) hostEditor.current = handle;
+  }, [hostEditor]);
   const picker = useRef<HTMLInputElement>(null);
   const previews = useRef(new Map<File, string>());
   const { byEngine, renderMentionIcon } = useSessionAgentCreationTools();
@@ -418,12 +420,13 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
     <SessionUiTheme theme={theme}>
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
         {capabilities.attachments && <input ref={picker} type="file" multiple hidden onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />}
-        <ChatComposer editorApiRef={editor} mobile={mobile} placeholder={placeholder}
+        <ChatComposer editorApiRef={receiveEditor} mobile={mobile} placeholder={placeholder}
+          renderPhoneHeader={mobile && capabilities.attachments && attachmentPlacement === 'menu' ? () => <PhoneAttachmentMenuBar disabled={isDisabled} onOpen={() => picker.current?.click()} /> : undefined}
           editorOptions={{ enterBehavior: submitOnEnter ? 'submit' : 'newline', clearOnSubmit: false }}
           disabled={isDisabled} canSubmit={!sendDisabled && canSend && (!isRunning || capabilities.queue)}
           isWorking={!!hostStop && isEmpty} stopDisabled={hostStop?.stopping}
           onStop={hostStop?.onStop} onInputChange={(value) => composer.setText(value)} onSubmit={() => composer.send()}
-          onAttach={capabilities.attachments ? () => picker.current?.click() : undefined}
+          onAttach={capabilities.attachments && (!mobile || attachmentPlacement === 'input') ? () => picker.current?.click() : undefined}
           onFilesDropped={capabilities.attachments ? addFiles : undefined} onImageFilesDropped={capabilities.attachments ? addFiles : undefined}
           attachments={chips} onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
           onRetryAttachment={(id) => { const file = attachments.find((attachment) => attachment.id === id)?.file; if (file) void composer.attachment({ id }).remove().then(() => composer.addAttachment(file)); }}
@@ -519,18 +522,6 @@ export const AssistantMessage: FC = () => {
                 return part.toolUI ?? <ToolFallbackComponent {...part} />;
               case "data":
                 return part.dataRendererUI;
-              case "file":
-                return (
-                  <div data-slot="aui_assistant-message-file" className="py-1">
-                    <FilePart {...part} />
-                  </div>
-                );
-              case "image":
-                return (
-                  <div data-slot="aui_assistant-message-image" className="py-1">
-                    <Image {...part} />
-                  </div>
-                );
               case "indicator":
                 return (
                   <span
@@ -596,18 +587,6 @@ const AssistantActionBar: FC = () => {
   );
 };
 
-const UserFilePart: FileMessagePartComponent = (part) => (
-  <div data-slot="aui_user-message-file" className="py-1">
-    <FilePart {...part} />
-  </div>
-);
-
-const UserImagePart: ImageMessagePartComponent = (part) => (
-  <div data-slot="aui_user-message-image" className="py-1">
-    <Image {...part} />
-  </div>
-);
-
 // 咕咕没有分支、也没有重发:官方模板里的分支切换器(BranchPicker)、编辑重发、重新生成都删了。
 // 消息下面冒出「‹ 2/2 ›」只会是仓库里多了一份幽灵行(#6901);上游重新拷这个文件时 ❌ 把它们带回来。
 export const UserMessage: FC = () => {
@@ -618,13 +597,9 @@ export const UserMessage: FC = () => {
       className={cn(enters && "fade-in slide-in-from-bottom-1 animate-in duration-150", "grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 [&:where(>*)]:col-start-2")}
       data-role="user"
     >
-      <UserMessageAttachments />
-
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-[var(--radius-thread)] px-4 py-2 wrap-break-word empty:hidden">
-          <MessagePrimitive.Parts
-            components={{ File: UserFilePart, Image: UserImagePart }}
-          />
+          <MessagePrimitive.Parts />
         </div>
       </div>
     </MessagePrimitive.Root>

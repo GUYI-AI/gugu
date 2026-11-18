@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { receivePhoneDeviceFile } from '../../desktop/electron/phone-device-file.ts'
-import { uploadAttachmentBytes, commitAttachment } from '../../../packages/core/src/cloud/attachmentsApi.ts'
+import { commitAttachment, declareAttachment, finishDeclaredAttachment } from '../../../packages/core/src/cloud/attachmentsApi.ts'
 import { parseAttachmentContent } from '../../../packages/core/src/shared/ui/attachmentModels.ts'
 import { parseGroupFileLink } from '../../../packages/core/src/shared/ui/guguLink.ts'
 import { turnAttachmentText } from '../../../packages/core/src/shared/attachmentFolderLine.ts'
@@ -47,13 +47,20 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
     cached.set(key, artifact.file_path)
     return artifact.file_path
   }
-  const turn = async (agent, refs, signal) => {
+  const turn = async (agent, refs, signal, options = {}) => {
     const parts = []
     for (const ref of refs) {
       let localPath = null
       try {
+        if (options.requireComplete) {
+          const expected = options.expectedFileDigests?.find(value => value.itemId === ref.itemId && value.version === ref.version)
+          if (!expected) throw new Error('The original first-input file digest is missing')
+          const actual = await turn.placementFact(agent, ref, signal)
+          if (actual.sha256 !== expected.sha256 || actual.sizeBytes !== expected.sizeBytes) throw new Error('The first-input attachment bytes changed')
+        }
         localPath = await localPathOf(agent, ref, signal)
       } catch (error) {
+        if (options.requireComplete) throw error
         warn(`Task attachment could not be saved: sessionId=${agent.sessionId} itemId=${ref.itemId} reason=${error instanceof Error ? error.message : String(error)}`)
       }
       parts.push(turnAttachmentText(ref, localPath ? { localPath } : null))
@@ -64,6 +71,22 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
     try { await localPathOf(agent, ref, signal); return { itemId: ref.itemId, ok: true } }
     catch (error) { return { itemId: ref.itemId, ok: false, error: error instanceof Error ? error.message : String(error), code: error?.code } }
   }))
+  turn.placementFact = async (agent, ref, signal) => {
+    const full = await files({ item_id: ref.itemId, version: ref.version }, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
+    if (full.status !== 'ready') throw new Error('The placed file is not available yet')
+    try {
+      const revision = full.revision
+      if (full.reader.accountId !== store.state.ownerId || full.reader.actorId !== agent.agentUserId
+        || revision.chat_id !== agent.chatId || revision.item_id !== ref.itemId || revision.version !== ref.version) throw new Error('The placed file does not belong to this task DM/version')
+      const saved = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), ref.name)
+      const artifact = await registerArtifact({ store, agent, groups: [], file: {
+        file_path: saved.file_path, name: saved.file_name, size: saved.size_bytes, sha256: saved.sha256, mime_type: saved.content_type,
+      } })
+      cached.set(keyOf(agent, ref), artifact.file_path)
+      return { agentUserId: agent.agentUserId, chatId: revision.chat_id, itemId: revision.item_id, version: revision.version,
+        sizeBytes: saved.size_bytes, sha256: saved.sha256 }
+    } finally { await full.dispose() }
+  }
   return turn
 }
 
@@ -120,19 +143,30 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
         await store.save()
         let endpoint = await cloud.attachmentEndpoint()
         const contentType = resolveAttachmentMimeType(name, args.mime_type ?? file.mime_type)
-        if (!entry.stagingKey) {
-          entry.stagingKey = await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, { chat_id: id, as: agent.agentUserId })
+        // The message goes with the file's index; its bytes follow it (one path for every sender). A restart that finds the
+        // message committed only uploads them, under a new plan.
+        let declared = entry.stagingKey ? { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes } : null
+        if (!declared) {
+          declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: id, as: agent.agentUserId })
+          Object.assign(entry, { stagingKey: declared.staging_key, sha256: declared.sha256, sizeBytes: declared.size_bytes })
           await store.save()
         }
-        // Upload is not delivery. Recheck after uploading and refresh the short owner token before commit.
+        if (entry.status === 'committed') return await finishSend()
+        // Declaring is not delivery. Recheck and refresh the short owner token before commit.
         await authorize(groups, file); await access.beforeWrite(id, recipients)
         endpoint = await cloud.attachmentEndpoint()
-        const message = await commitAttachment(endpoint, { staging_key: entry.stagingKey, message_id: messageId, chat_id: id, sender_user_id: agent.agentUserId, file_name: name, content_type: contentType, to_user_ids: recipients, reply_to_message_id: args.reply_to_message_id ? uuid(args.reply_to_message_id.replace(/^msg:/, ''), 'reply source') : null, thread_root_id: job.route?.chatId === id ? job.route.threadRootId ?? null : null, is_thread_root: false, is_whisper: false, caption: args.caption })
+        const message = await commitAttachment(endpoint, { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes, message_id: messageId, chat_id: id, sender_user_id: agent.agentUserId, file_name: name, content_type: contentType, to_user_ids: recipients, reply_to_message_id: args.reply_to_message_id ? uuid(args.reply_to_message_id.replace(/^msg:/, ''), 'reply source') : null, thread_root_id: job.route?.chatId === id ? job.route.threadRootId ?? null : null, is_thread_root: false, is_whisper: false, caption: args.caption })
         if (message.id !== messageId) throw new Error('文件发送回执与请求不一致，请先查看消息历史再重试')
-        entry.status = 'sent'; entry.sentAt = new Date().toISOString()
+        entry.status = 'committed'; entry.sentAt = new Date().toISOString()
         job.sent = [...new Set([...(job.sent ?? []), messageId])]
         await store.save(); emit({ type: 'file_sent', sessionId: agent.sessionId, agentUserId: agent.agentUserId, messageId, chatId: id })
-        return result({ ok: true, message_id: `msg:${messageId}`, chat_id: id, file_name: name, size: file.size })
+        return await finishSend()
+        async function finishSend() {
+          // An entry kept from before declarations uploaded its bytes first: there is nothing to finish.
+          if (entry.sha256) await finishDeclaredAttachment(await cloud.attachmentEndpoint(), declared, { bytes, name, contentType }, { id: messageId, chat_id: id, as: agent.agentUserId })
+          entry.status = 'sent'; await store.save()
+          return result({ ok: true, message_id: `msg:${messageId}`, chat_id: id, file_name: name, size: file.size })
+        }
       },
     },
     {

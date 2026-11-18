@@ -18,6 +18,7 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
+const locator=(unread:number,addressed:number)=>({stream_id:'s',stream_kind:'main' as const,thread_root_id:null,message_id:null,message_seq:null,unread_count:unread,addressed_count:addressed,cursor_seq:0,version:1,is_marked_unread:false})
 const topics: TopicSummary[]=['设计讨论','一个用于检验窄屏与长名称的完整话题名称'].map((name,i)=>({chat_id:'topic-'+i,name,source_message_id:'anchor-'+i,creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}))
 const member: MemberProfileCardModel={id:'peer-agent',displayName:'协作智能体',avatar:null,email:null,type:'agent',ownerUserId:'another-owner',role:'member',membership:'current',profileScope:'group',agentStatus:'offline'}
 let harness: ReturnType<typeof createReactHarness> | null=null
@@ -27,22 +28,22 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
  const [handle]=useState(()=>Popover.createHandle<ActiveMemberProfile>())
  const [current,setCurrent]=useState(selected);showTopicExternally=setCurrent
  return <>
-  <PhoneRoomComposerControls chatId="room" topics={topics} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={onPick} members={state==='ready'?[member]:[]}
+  <PhoneRoomComposerControls chatId="room" topics={topics} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={topic=>{onPick(topic);setCurrent(topic)}} members={state==='ready'?[member]:[]}
    roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle,openedFrom:'main'}} onOpenAgent={onOpen} />
   <ChatComposer mobile editorOptions={{inputTestId:'room-editor'}} onSubmit={vi.fn()} />
   <MemberProfileRoot handle={handle}>{profile=><MemberProfilePopover profile={profile} onClose={()=>handle.close()} />}</MemberProfileRoot>
  </>
 }
-async function mount(theme:'light'|'dark'='dark',state:'ready'|'loading'|'failed'='ready',selected:TopicSummary|null=null){
- await page.viewport(360,780);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
+async function mount(theme:'light'|'dark'='dark',state:'ready'|'loading'|'failed'='ready',selected:TopicSummary|null=null,locale:'zh-CN'|'en-US'='zh-CN'){
+ await page.viewport(360,780);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference(locale)
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'8px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3}),chat({id:'topic-1',kind:'topic',unread_count:1})]},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Content state={state} selected={selected}/></MessageProvider></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats:[chat({id:'room',kind:'group'}),chat({id:'topic-0',kind:'topic',unread_count:3,unread_locator:locator(3,1)}),chat({id:'topic-1',kind:'topic',unread_count:1,unread_locator:locator(1,0)})]},contacts:{contacts:[]}})
  await until('real composer',()=>!!harness?.container.querySelector('[contenteditable]'))
  return harness.container.querySelector<HTMLElement>('[contenteditable]')!
 }
 afterEach(()=>{harness?.cleanup();harness=null;document.documentElement.removeAttribute('data-phone-shell');onPick=vi.fn();onOpen=vi.fn();retry=vi.fn()})
 
-it.each(['light','dark'] as const)('%s: topic and Agent sheets preserve the composing editor and caret',async theme=>{
+it.each(['light','dark'] as const)('%s: topic and Agent sheets dismiss keyboard focus while preserving the editor and caret',async theme=>{
  const editor=await mount(theme);await page.getByTestId('room-editor').fill('正在输入中文')
  const text=document.createTreeWalker(editor,NodeFilter.SHOW_TEXT).nextNode()!
  const selection=getSelection()!,range=document.createRange();range.setStart(text,2);range.collapse(true);selection.removeAllRanges();selection.addRange(range)
@@ -51,16 +52,19 @@ it.each(['light','dark'] as const)('%s: topic and Agent sheets preserve the comp
  editor.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'ni'}))
  await page.getByTestId('phone-room-topics').click();await page.getByRole('heading',{name:'话题',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
  await page.getByTestId('phone-room-agents').click();await page.getByRole('heading',{name:'智能体',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
- expect(harness!.container.querySelector('[contenteditable]')).toBe(editor);expect(document.activeElement).toBe(editor)
+ expect(harness!.container.querySelector('[contenteditable]')).toBe(editor);expect(document.activeElement).not.toBe(editor)
  expect(selection.anchorNode).toBe(before.node);expect(selection.anchorOffset).toBe(before.offset);expect(editor.textContent).toBe(before.text)
- expect(blur).not.toHaveBeenCalled();expect(end).not.toHaveBeenCalled()
+ expect(blur).toHaveBeenCalledTimes(1);expect(end).not.toHaveBeenCalled()
 })
 
-it('lists the main room and every topic with real unread values and dispatches the selected topic',async()=>{
- await mount();await page.getByTestId('phone-room-topics').click()
+it('marks a topic that calls you in red and other unread with the grey dot, then dispatches the selected topic',async()=>{
+ await mount();expect(document.querySelector('.gg-phone-composer-control-dot')?.getAttribute('data-tone')).toBe('call')
+ await page.getByTestId('phone-room-topics').click()
  await expect.element(page.getByRole('radio',{name:'群聊',exact:true})).toBeVisible()
- await expect.element(page.getByLabelText('3 条未读',{exact:true})).toBeVisible()
- await expect.element(page.getByLabelText('1 条未读',{exact:true})).toBeVisible()
+ const called=document.querySelector('[data-topic-id="topic-0"] .gg-chip')!,news=document.querySelector('[data-topic-id="topic-1"] .gg-chip')!
+ expect([called.getAttribute('data-tone'),called.textContent]).toEqual(['danger','@1'])
+ expect([news.getAttribute('data-shape'),news.getAttribute('aria-label')]).toEqual(['dot','有新消息，但没有叫到你'])
+ expect(document.querySelector('[data-testid="phone-room-main"] .gg-chip')).toBeNull()
  await page.getByRole('radio',{name:/设计讨论/}).click()
  expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(topics[0]!));await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
 })
@@ -73,8 +77,8 @@ it('opens the existing profile card for another person’s Agent without enterin
  expect(onOpen).not.toHaveBeenCalled()
 })
 
-it('shows the current topic name and does not toggle it closed when selected again',async()=>{
- await mount('dark','ready',topics[0]);await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('设计讨论')
+it('keeps the short Topics trigger and does not toggle the current topic closed when selected again',async()=>{
+ await mount('dark','ready',topics[0]);await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('话题')
  await page.getByTestId('phone-room-topics').click();await page.getByRole('radio',{name:/设计讨论/}).click()
  expect(onPick).not.toHaveBeenCalled();await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
  await page.getByTestId('phone-room-topics').click();await page.getByRole('radio',{name:'群聊',exact:true}).click()
@@ -102,8 +106,40 @@ it('closes a retained room sheet when the host switches to another topic',async(
  await mount();await page.getByTestId('phone-room-topics').click()
  await expect.element(page.getByRole('heading',{name:'话题',exact:true})).toBeVisible()
  showTopicExternally?.(topics[1]!)
- await until('external topic name',()=>document.querySelector('[data-testid="phone-room-topics"]')?.textContent?.includes(topics[1]!.name)===true)
+ await until('external topic is active',()=>document.querySelector('[data-testid="phone-room-topics"]')?.getAttribute('data-active')==='true')
  await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+ await expect.element(page.getByTestId('phone-room-topics')).toHaveTextContent('话题')
+ await page.getByTestId('phone-room-topics').click()
+ expect(document.querySelector('[data-topic-id="topic-1"]')?.getAttribute('aria-checked')).toBe('true')
+})
+
+it.each([['zh-CN','话题','智能体'],['en-US','Topics','Agents']] as const)('%s: long topic names stay inside the menu and do not widen the trigger',async(locale,label,agents)=>{
+ await mount('dark','ready',topics[1],locale)
+ const trigger=harness!.container.querySelector<HTMLButtonElement>('[data-testid="phone-room-topics"]')!
+ expect(trigger.textContent).toBe(label)
+ expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
+ expect(trigger.getAttribute('aria-expanded')).toBe('false')
+ expect(trigger.querySelectorAll('svg')).toHaveLength(1)
+ await expect.element(page.getByRole('button',{name:agents,exact:true})).toBeVisible()
+ const box=trigger.getBoundingClientRect(),icon=trigger.querySelector('svg')!.getBoundingClientRect()
+ await page.elementLocator(trigger).click({position:{x:icon.left+icon.width/2-box.left,y:icon.top+icon.height/2-box.top}})
+ expect(trigger.getAttribute('aria-expanded')).toBe('true')
+ const selected=document.querySelector<HTMLElement>('[data-topic-id="topic-1"]')!
+ const name=selected.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
+ expect(name.textContent).toBe(topics[1]!.name)
+ expect(getComputedStyle(name).whiteSpace).toBe('normal')
+ expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth)
+ expect(selected.getAttribute('aria-checked')).toBe('true')
+ await page.elementLocator(selected).click()
+ expect(onPick).not.toHaveBeenCalled()
+ await until('current choice closes the menu',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+ await page.getByTestId('phone-room-topics').click()
+ await page.getByRole('radio',{name:/设计讨论/}).click()
+ expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(topics[0]!))
+ await until('chosen topic applied and menu closed',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
+ await page.getByTestId('phone-room-topics').click()
+ expect(document.querySelector('[data-topic-id="topic-0"]')?.getAttribute('aria-checked')).toBe('true')
+ expect(document.querySelector('[data-topic-id="topic-1"]')?.getAttribute('aria-checked')).toBe('false')
 })
 
 it.each(['light','dark'] as const)('%s: the room sheet covers the editor at every opening frame',async theme=>{

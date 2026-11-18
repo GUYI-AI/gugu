@@ -264,7 +264,7 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to the main chat (never its info), its hover 「+」 adds members or starts a new agent there (no pen)', async () => {
+  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to the main chat (never its info), its hover 「+」 adds members or starts a new agent there; the second-line create action shares that route', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
@@ -293,15 +293,19 @@ describe('inner sidebar', () => {
     const add = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-group-add-menu]');
     expect(add, 'the 「+」 sits in the hover slot').not.toBeNull();
 
-    // No pen beside it: 新建 Agent only comes through the 「+」.
+    // The direct second-line entry and the existing add menu share the same group/project route.
     const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
     expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'plus' : 'fold')).toEqual(['plus', 'fold']);
+    const create = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-create]')!;
+    expect(create, 'the group head has a direct creation entry').not.toBeNull();
+    await act(async () => create.click());
+    expect(readComposerVerb('group')).toBe('task');
     await pickNewAgent('group');
     expect(readComposerVerb('group')).toBe('task');
 
     openProject('p-shop');
     await render();
-    await pickNewAgent('shop-chat');
+    await act(async () => host.querySelector<HTMLElement>('[data-inner-head="shop-chat"] [data-inner-head-create]')!.click());
     expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
     expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
@@ -400,7 +404,7 @@ describe('inner sidebar', () => {
     await act(async () => restoreRoot.render(<InnerSidebarRestore />));
     openChat('group');
     await render();
-    expect(shellRestoreLaneTaken(true, 72)).toBe(false);
+    expect(shellRestoreLaneTaken()).toBe(false);
     expect(restore.querySelector('button')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
     expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
@@ -417,7 +421,7 @@ describe('inner sidebar', () => {
     // Still attached: the list keeps the group lit.
     expect(innerSidebarChat.get()).toEqual({ kind: 'group', chatId: 'group' });
     // The leftmost strip leaves the expand button its lane even with the list open beside it.
-    expect(shellRestoreLaneTaken(true, 72)).toBe(true);
+    expect(shellRestoreLaneTaken()).toBe(true);
     const expand = restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!;
     expect(expand, 'the list column toggle, in the restore lane').not.toBeNull();
     expect(expand.closest('[data-shell-restore-lane]')).not.toBeNull();
@@ -433,7 +437,7 @@ describe('inner sidebar', () => {
     await render();
     expect(innerSidebarFoldedAway.get()).toBe(false);
     expect(restore.querySelector('button')).toBeNull();
-    expect(shellRestoreLaneTaken(true, 72)).toBe(false);
+    expect(shellRestoreLaneTaken()).toBe(false);
 
     openChat('group');
     await render();

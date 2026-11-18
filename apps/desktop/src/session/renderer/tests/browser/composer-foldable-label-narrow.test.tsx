@@ -127,6 +127,30 @@ describe('窄框里宿主塞进来的「新任务」收成标', () => {
     expect(visible.at(-1)!.right).toBeLessThanOrEqual(bar.right + 0.5)
   })
 
+  it('narrowed in one step (a fold landing), the row folds before that frame paints: no labels over each other', async () => {
+    await renderComposer(640, { tag: false })
+    expect(document.querySelector(TOOLBAR)!.getAttribute('data-disclosure')).toBe('0')
+    // Observers run in creation order, after the composer's own and before paint: what this one sees is what gets painted.
+    const painted = await new Promise<{ level: string | null; overlaps: number }>((resolve) => {
+      const observer = new ResizeObserver(() => {
+        observer.disconnect()
+        const visible = [...document.querySelectorAll<HTMLElement>(`${TOOLBAR} button`)]
+          .map((el) => el.getBoundingClientRect())
+          .filter((box) => box.width > 0 && box.height > 0)
+          .sort((a, b) => a.left - b.left)
+        const bar = document.querySelector(TOOLBAR)!.getBoundingClientRect()
+        let overlaps = visible.at(-1)!.right > bar.right + 0.5 ? 1 : 0
+        for (let i = 1; i < visible.length; i++) if (visible[i].left < visible[i - 1].right - 1) overlaps++
+        resolve({ level: document.querySelector(TOOLBAR)!.getAttribute('data-disclosure'), overlaps })
+      })
+      requestAnimationFrame(() => {
+        container!.style.width = '213px'
+        observer.observe(document.querySelector(TOOLBAR)!)
+      })
+    })
+    expect(painted.overlaps, `buttons over each other in the painted frame (level ${painted.level})`).toBe(0)
+  })
+
   it('会话底排宽:「新智能体」照旧写着字', async () => {
     await renderComposer(640, { tag: false })
     expect(shown(document.querySelector('[data-testid="session-verb-task"] [data-slot="composer-foldable-label"]'))).toBe(true)

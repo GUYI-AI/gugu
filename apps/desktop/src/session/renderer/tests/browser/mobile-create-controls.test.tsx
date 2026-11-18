@@ -17,6 +17,7 @@ import type { CreateMachine } from '@/mobile/agent-watch/create-target'
 import type { CreateSelection } from '@/mobile/agent-watch/create-session-form'
 import type { SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { revealPhoneControl } from '../../../../../../../tests/support/phoneControlTargets'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -35,7 +36,7 @@ function Harness({ projectTask = false }: { projectTask?: boolean }) {
   const projects = [{ chatId: 'project', name: '一个用于窄屏验收的长项目名称', homes: new Map<string, string>() }]
   return <><CreateTarget machines={machines} machine={machines.find((m) => m.device.device_id === machineId)} machineLabel={(d) => d.label}
     onMachine={setMachine} projects={projects} project={projects.find((p) => p.chatId === projectId) ?? null} onProject={setProject} busy={false}
-    projectTask={projectTask ? { onFolder: () => undefined } : undefined}
+    projectTask={projectTask ? { open: false, onFolder: () => undefined } : undefined}
     configuration={{ options, selection, onChange: setSelection, models: null, modelsState: 'ready', skills, onSkills: setSkills }} />
     <div style={{ flex: '0 0 auto' }}><ChatComposer mobile editorOptions={{ inputTestId: 'chat-composer' }} onSubmit={vi.fn()} inputHeader={<SelectedCreationSkills skills={skills} onChange={setSkills} />} /></div>
   </>
@@ -54,29 +55,28 @@ async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US'
   await until('configuration controls visible', () => !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   return host.querySelector<HTMLElement>('[contenteditable]')!
 }
-it.each(['light', 'dark'] as const)('%s: configuration transitions and a skill tag preserve the same editor and draft', async (theme) => {
+// Owner 2026-11-16 13:27: configuration is available before typing;
+// keyboard editing hides the whole row; after blur, a draft retains the disclosure control.
+it.each(['light', 'dark'] as const)('%s: configure first, then a text draft hides controls without replacing the editor', async theme => {
   const editor = await mount(theme)
-  await page.getByTestId('chat-composer').fill('正在输入中文\n第二行'); editor.blur()
-  const s = getSelection()!, range = document.createRange(); range.setStart(editor.lastElementChild!.firstChild!, 2); range.collapse(true); s.removeAllRanges(); s.addRange(range)
-  const before = { node: s.anchorNode, offset: s.anchorOffset, text: editor.textContent }
-  editor.blur()
-  await until('configuration controls visible', () => !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   await page.getByTestId('agent-watch-create-model-device').click()
-  await page.getByRole('heading', { name: '工作', exact: true }).click()
   await page.getByRole('radio', { name: 'Cloud' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByTestId('agent-watch-create-project').click()
   await page.getByRole('radio', { name: '一个用于窄屏验收的长项目名称' }).click()
   await page.getByTestId('agent-watch-create-skills').click()
   await page.getByRole('checkbox', { name: /会议记录/ }).click()
-  await until('skill tag', () => !!host?.querySelector('[data-testid="agent-watch-create-skill-tags"]'))
+  await until('skill tag alone does not hide the menu', () => !!host?.querySelector('[data-testid="agent-watch-create-skill-tags"]') && !host?.querySelector('[data-phone-composer-controls][data-editing]'))
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
-  expect(document.activeElement).not.toBe(editor); expect(s.anchorNode).toBe(before.node); expect(s.anchorOffset).toBe(before.offset)
-  expect(editor.textContent).toBe(before.text); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
+  await page.getByTestId('chat-composer').fill('正在输入中文\n第二行')
+  await until('text draft hides the menu', () => !!host?.querySelector('[data-phone-composer-controls][data-editing]'))
+  expect(editor.textContent).toBe('正在输入中文第二行')
   expect(editor.closest('[data-slot="composer-input"]')!.querySelector('[data-testid="agent-watch-create-skill-tags"]')).not.toBeNull()
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
+  expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
   await page.getByRole('button', { name: '移除技能 会议记录' }).click()
-  expect(host!.querySelector('[contenteditable]')).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
+  expect(editor.textContent).toBe('正在输入中文第二行')
 })
 it('search is intentional, filters the real catalog and keeps a narrow sheet in the visible viewport', async () => {
   await mount(); await page.viewport(320, 640)
@@ -103,13 +103,12 @@ it('does not reserve an attachment gutter when creation has no attachment adapte
 })
 it('hides the skills entry for a phone target and restores it for a computer without replacing the input', async () => {
   const editor = await mount()
-  await page.getByTestId('chat-composer').fill('保留这段草稿'); editor.blur()
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.getByRole('radio', { name: 'Phone' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   expect(host!.querySelector('[data-testid="agent-watch-create-skills"]')).toBeNull()
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
-  expect(editor.textContent).toBe('保留这段草稿')
+  expect(editor.textContent?.trim()).toBe('')
   expect(document.body.textContent).not.toContain('暂不提供')
   await page.getByTestId('agent-watch-create-model-device').click()
   await page.getByRole('radio', { name: 'Mac', exact: true }).click()
@@ -121,7 +120,7 @@ it('hides the skills entry for a phone target and restores it for a computer wit
 it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'light']] as const)('%s %s: three complete fixed labels fit at 390px without scrolling', async (locale, theme) => {
   await mount(theme, locale)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll<HTMLButtonElement>('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(buttons.map((button) => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) {
@@ -132,15 +131,23 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   }
 })
 
-it('keeps narrow English controls on one line without unnecessary scrolling', async () => {
+it('keeps narrow English controls on one line without unnecessary scrolling and opens the final control', async () => {
   await mount('dark', 'en-US')
   await page.viewport(320, 640)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
+  const items = row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+  expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-  for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
-  row.scrollLeft = row.scrollWidth
-  await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1)
+  for (const button of buttons) {
+    expect(button.querySelectorAll('svg')).toHaveLength(1)
+    await revealPhoneControl(items, button)
+    expect(button.getBoundingClientRect().top).toBe(buttons[0]!.getBoundingClientRect().top)
+    const label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
+  }
+  await page.elementLocator(buttons.at(-1)!).click()
+  await expect.element(page.getByRole('searchbox', { name: 'Search skills' })).toBeVisible()
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
 })
 
@@ -150,7 +157,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '文件夹', '技能'] : ['Work', 'Folder', 'Skills'])
   expect(host!.querySelector('[data-testid="agent-watch-create-agent"]')).toBeNull()
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
@@ -188,9 +195,9 @@ it.each([360, 390])('%ipx: four shared controls retain equal padding and fit wit
   root!.render(<PhoneComposerControlRow>{[
     ['工作', <Monitor />], ['技能', <Sparkles />], ['话题', <Hash />], ['智能体', <Users />],
   ].map(([label, icon], index) => <PhoneComposerControl key={index} label={String(label)} icon={icon} testId={`shared-control-${index}`} onClick={() => {}} />)}</PhoneComposerControlRow>)
-  await until('four shared controls', () => host!.querySelectorAll('[data-phone-composer-controls] button').length === 4)
+  await until('four shared controls', () => host!.querySelectorAll('[data-phone-composer-controls] .gg-phone-composer-control').length === 4)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  const buttons = [...row.querySelectorAll('button')]
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const [index, button] of buttons.entries()) {
     const box = button.getBoundingClientRect(), style = getComputedStyle(button)
@@ -217,6 +224,10 @@ it.each([false, true])('project task=%s: controls fade on editor focus and retur
   await until('controls hidden for editing', () => row.hasAttribute('data-editing'))
   await Promise.all(row.getAnimations().map(animation => animation.finished))
   expect(getComputedStyle(row).opacity).toBe('0')
+  expect(row.getBoundingClientRect().height).toBe(0)
+  expect(getComputedStyle(row).marginBottom).toBe('0px')
+  expect(getComputedStyle(row).paddingTop).toBe('0px')
+  expect(getComputedStyle(row).paddingBottom).toBe('0px')
   expect(row.inert).toBe(true)
   expect(input.getBoundingClientRect().top).toBe(top)
   editor.blur()

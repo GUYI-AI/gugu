@@ -5,6 +5,7 @@ export type BrowserPageLease = {
   ready: Promise<void>;
   setActive(active: boolean): void;
   capture(params: Record<string, unknown>): Promise<unknown>;
+  snapshot(): Promise<NativeImage>;
   dispose(): void;
 };
 
@@ -187,6 +188,7 @@ export class BrowserPageRuntime {
       capture: params => disposed
         ? Promise.reject(new Error('the browser connection was closed'))
         : this.capture(() => this.contents.debugger.sendCommand('Page.captureScreenshot', params), lifetime.signal),
+      snapshot: () => disposed ? Promise.reject(new Error('the browser connection was closed')) : this.snapshot(lifetime.signal),
       dispose: () => {
         if (disposed) return;
         disposed = true;
@@ -198,8 +200,8 @@ export class BrowserPageRuntime {
     };
   }
 
-  snapshot(): Promise<NativeImage> {
-    return this.capture(() => this.contents.capturePage(undefined, { stayHidden: true }));
+  snapshot(consumer?: AbortSignal): Promise<NativeImage> {
+    return this.capture(() => this.contents.capturePage(undefined, { stayHidden: true }), consumer);
   }
 
   close(): void { this.finish(true); }

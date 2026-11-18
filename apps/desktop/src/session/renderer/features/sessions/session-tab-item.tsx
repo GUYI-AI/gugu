@@ -1,3 +1,4 @@
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { observer } from 'mobx-react-lite';
 import type { TabBarItemProps, ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
@@ -40,7 +41,7 @@ export const SessionTabBarItem = observer(function SessionTabBarItem({
           : [
               {
                 id: 'session:rename',
-                label: 'Rename',
+                label: translateSessionMessage('task.rename'),
                 group: 'edit',
                 shortcut: 'session.tabRename',
                 run: () => host.requestRename(tab.tabId),

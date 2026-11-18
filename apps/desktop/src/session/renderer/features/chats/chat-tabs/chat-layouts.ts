@@ -1,4 +1,5 @@
 import { UI_EVENTS } from '@/lib/uiEvents';
+import { OpenSuperseded } from '@/lib/guguLinks';
 import { action, reaction, runInAction } from 'mobx';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { AppOpenWithDetail } from '@shared/extensions/app-runtime-protocol';
@@ -15,7 +16,7 @@ import { TabViewPersistor } from '@renderer/features/tabs/tab-view-persistor';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { groupParticipantPanes } from '../group-participant-panes';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
-import { groupPageSlot, type PanelItem } from './chat-panel-item';
+import { groupPageSlot, isWaitingItem, type PanelItem } from './chat-panel-item';
 import { keepRestore, takeRestore } from './chat-tab-restores';
 import {
   CHAT_INFO_TAB_KIND,
@@ -149,21 +150,36 @@ export function chatPaneOf(chatId: string, tabId: string): PaneStore | null {
 export const openPanelItem = action(function openPanelItem(
   chatId: string,
   item: PanelItem,
-  opts?: { from?: string; restore?: () => void; intent?: TabOpenIntent },
+  opts?: { from?: string; restore?: () => void; intent?: TabOpenIntent; wait?: string },
 ): string | undefined {
   const layout = chatLayoutOf(chatId);
   if (opts?.restore) keepRestore(chatId, item, opts.restore);
+  // A waiting page becomes what was asked, in place: the one this open put up (`wait`); else, for a waiting page asked
+  // again, the chat's waiting page (the later ask takes it over); else the one waiting for this same file.
+  const waiting = panelTabsOf(chatId).find((tab) => isWaitingItem(tab.item)
+    && (opts?.wait ? tab.item.waitId === opts.wait : isWaitingItem(item) || tab.item.itemId === item.itemId));
+  if (waiting) {
+    replacePanelItem(chatId, waiting.tabId, item);
+    showChatTab(chatId, waiting.tabId);
+    return waiting.tabId;
+  }
+  // Its waiting page is behind or ahead in a tab's history: the person went back from it.
+  if (opts?.wait && waitingTabOf(chatId, opts.wait)) throw new OpenSuperseded();
   // Opened from a message (or a link) of the topic open here: from that topic, so it goes beside the topic (owner 11-05 §6.7).
   const topic = topicTabOf(chatId);
   const fromTopic = topic && (item.message?.chat_id ?? item.topicChatId) === topic.topic.topicChatId ? topic.tabId : undefined;
   return layout.open(CHAT_PANEL_TAB_KIND, item, { from: opts?.from ?? fromTopic ?? chatTabOf(layout) ?? null, intent: opts?.intent ?? 'navigate' });
 });
 
-/** An App installed while its kind of file is open takes the file over in place: the same tab, now in that App. */
+/** The page on screen in a tab, taken over in place (an App installed for its file, a waiting page answered). */
 export const replacePanelItem = action(function replacePanelItem(chatId: string, tabId: string, item: PanelItem): void {
-  const entry = paneHolding(chatLayoutOf(chatId), tabId)?.entries.get(tabId);
-  if (entry) entry.state = item;
+  paneHolding(chatLayoutOf(chatId), tabId)?.replaceCurrentPage(tabId, item);
 });
+
+/** The tab whose history holds this waiting page. */
+function waitingTabOf(chatId: string, waitId: string): string | undefined {
+  return panelTabsOf(chatId).find((tab) => chatPaneOf(chatId, tab.tabId)?.navigationOf(tab.tabId)?.pages.some((page) => (page.state as PanelItem | undefined)?.waitId === waitId))?.tabId;
+}
 
 /**
  * What an App tab of this chat is as a block of its own (dragged to a block's edge, its menu's 「单独一块」): that chat's
@@ -337,16 +353,30 @@ export const updateFileNames = action(function updateFileNames(
 export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): void };
 export type ChatOpenAsk =
   | { app: string; tab?: string }
-  | { itemId: string; at?: Record<string, string>; opener?: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
+  | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt }
+  | { waiting: FileWait & { waitId: string } };
+type FileWait = { itemId: string; fileName?: string; message?: MessageItem; from?: string; intent?: TabOpenIntent };
 
 const asks = new Map<string, ChatOpenAsk>();
+/**
+ * The order the person asked chats for things in (#7257), across every way in: it answers one question — while a link
+ * waited on its host, did the person ask this chat for something else (`askedSince`)? Marked only where a person asks:
+ * `askChat`, and a chat's opener opening a file directly (`openWith`, an App's list). Not a panel's own count: a chat's
+ * opener mounting or going away is no ask, and its own pending results it orders itself (`useChatOpener`'s `asking`).
+ */
+let asksMade = 0;
+const lastAsked = new Map<string, number>();
+export const asksSoFar = (): number => asksMade;
+export function noteAsk(chatId: string): number { lastAsked.set(chatId, ++asksMade); return asksMade; }
+export const askedSince = (chatId: string, mark: number): boolean => (lastAsked.get(chatId) ?? 0) > mark;
 /**
  * Something asked of a chat (a link, a card, an App, a page's `files.openWith`): the chat answers it when it is on
  * screen — what opens it is found by the shell (its Apps, its prompts), asked while the chat may not be drawn yet.
  */
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
-  if (previous && 'itemId' in previous) previous.receipt?.reject(new Error('The file opening was superseded'));
+  if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
+  noteAsk(chatId);
   asks.set(chatId, what);
 }
 /** Links acknowledge the consumer's result, rather than merely putting an item in its mailbox. */
@@ -356,6 +386,22 @@ export function askChatFile(chatId: string, what: Omit<Extract<ChatOpenAsk, { it
     window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }));
   });
 }
+/** A file asked for before its host answered: its waiting page asked of the chat (`waitingItem`); the open's id returned. */
+export function beginWait(chatId: string, file: FileWait): string {
+  const waitId = crypto.randomUUID();
+  askChat(chatId, { waiting: { ...file, waitId } });
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }));
+  return waitId;
+}
+
+/** The open is over: its waiting page, if it did not become the file, goes (from the mailbox, or from its tab's history). */
+export const endWait = action(function endWait(chatId: string, waitId: string): void {
+  const pending = asks.get(chatId);
+  if (pending && 'waiting' in pending && pending.waiting.waitId === waitId) asks.delete(chatId);
+  const tabId = waitingTabOf(chatId, waitId);
+  if (tabId && chatPaneOf(chatId, tabId)?.discardPage(tabId, (state) => (state as PanelItem | undefined)?.waitId === waitId) === 'alone') closeChatTab(chatId, tabId);
+});
+
 /** What was asked of this chat, once: taken by the chat that answers it. */
 export function takeChatAsk(chatId: string | null | undefined): ChatOpenAsk | null {
   if (!chatId) return null;

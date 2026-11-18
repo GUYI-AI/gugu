@@ -12,6 +12,7 @@ import { followLink } from '@/lib/guguLinks'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { messageForUser } from '@/lib/userFacingError'
 import { askTaskReveal } from '@/hooks/useSourceMessageReveal'
+import { askFlashWords } from '@/lib/sourceMessageReveal'
 import { conversationLink } from '@gugu/core/shared/ui/guguLink'
 import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
 import { matchRanges } from '@shared/core/search'
@@ -83,8 +84,8 @@ function formatWhen(iso: string): string {
 }
 
 /** Go to where a hit was said: a chat message through its conversation link, a task turn through the task's reveal. */
-export function openHit(hit: SearchHit): void {
-  if (hit.kind === 'message') { followLink(conversationLink(hit.chatId, hit.messageId)); return }
+export function openHit(hit: SearchHit, words = ''): void {
+  if (hit.kind === 'message') { askFlashWords(hit.messageId, words); followLink(conversationLink(hit.chatId, hit.messageId)); return }
   askTaskReveal(hit.taskId, messageQuoteLink({ kind: 'session', sessionId: hit.taskId, itemId: hit.itemId }))
   followLink({ kind: 'session', sessionId: hit.taskId, projectId: hit.projectId })
   window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
@@ -138,12 +139,9 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   useEffect(() => { if (selectedLine >= 0) lineWindowRef.current?.scrollToIndex(selectedLine, { align: 'auto' }) }, [selectedLine])
 
   const open = (hit: SearchHit) => {
-    if (hit.kind === 'message') {
-      const hits = ordered.flatMap((one) => one.kind === 'message' ? [{ chatId: one.chatId, messageId: one.messageId }] : [])
-      updateSearchSession({ selectedId: hit.id, trail: { hits, index: hits.findIndex((one) => one.messageId === hit.messageId), query: view.query } })
-    }
+    if (hit.kind === 'message') updateSearchSession({ selectedId: hit.id })
     if (view.query) rememberSearch(recentScope, view.query)
-    onOpen(); openHit(hit)
+    onOpen(); openHit(hit, view.query)
   }
   const addKind = (type: SearchKind) => { if (!chips.some((chip) => chip.kind === 'type' && chip.type === type)) setChips([...chips, { kind: 'type', type }]) }
   // 「日期」 alone goes straight to that day's first message in this conversation.
@@ -233,7 +231,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{translate('globalSearch.indexingTasksFailed')}</div>
         )}
         {!hasQuery && (
-          <div className="grid grid-cols-3 gap-1 border-t border-foreground/[0.08] px-1 pt-2" data-testid="global-search-quick">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(max(8em,calc((100%_-_0.5rem)/3)),1fr))] gap-1 border-t border-foreground/[0.08] px-1 pt-2 text-[length:var(--font-body)]" data-testid="global-search-quick">
             {quick.filter((item) => !item.scoped || inChat).map((item) => (
               <span key={item.key} className="relative">
                 <button type="button" data-quick={item.key} onClick={(event) => item.run(event.currentTarget)}

@@ -15,6 +15,7 @@ interface RendererRpcCommand {
 interface RendererRpcErrorResult {
   __rendererRpcError: true
   error: string
+  code?: string
 }
 
 export async function handleRendererRpcEvent(
@@ -35,6 +36,7 @@ export async function handleRendererRpcEvent(
     result = {
       __rendererRpcError: true,
       error: err instanceof Error ? err.message : 'Unknown error',
+      ...(typeof (err as { code?: unknown } | null)?.code === 'string' ? { code: (err as { code: string }).code } : {}),
     } satisfies RendererRpcErrorResult
   }
 

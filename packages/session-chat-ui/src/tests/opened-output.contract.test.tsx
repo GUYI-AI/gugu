@@ -20,6 +20,9 @@ import {
 } from '@session-chat/components/rows/opened-output/opened-output.def';
 import type { ChatMessage, OpenedOutputItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
+import { FILE_MARKS } from '@gugu/session-shared/file-marks';
+/** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
+const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML;
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 import { makeContractCtx, renderAndMeasureUnit, type ContractInspector } from './contract';
 
@@ -106,6 +109,23 @@ describe('opened-output card geometry contract', () => {
     expect(reading.computed).toBe(height);
     expect(reading.dom).toBe(height);
     expect(reading.inspected.cardHeight).toBe(OPENED_OUTPUT_ROW_H);
+  });
+
+  // The file tile the Files App draws too (file-tile.css): an xlsx is a sheet here as there, ❌ a grey document; a page
+  // is not a file and keeps its globe.
+  it.each([
+    { output: { kind: 'file' as const, path: '/r/Q3 预算.xlsx' }, tiles: 1, sheet: 1 },
+    { output: pageCard.output, tiles: 0, sheet: 0 },
+  ])('draws a file by its family\'s tile, a page by its globe ($output.kind)', async ({ output, tiles, sheet }) => {
+    const reading = await renderAndMeasureUnit(openedOutputUnitDef, { ...documentCard, output }, makeContractCtx({ width: 420 }), (host) => {
+      const tile = host.querySelector<HTMLElement>('.gg-file-tile');
+      return {
+        tiles: host.querySelectorAll('.gg-file-tile').length,
+        sheet: tile?.style.getPropertyValue('--gg-file-tile') === FILE_MARKS.sheet.color && tile.querySelector('svg')!.innerHTML === drawn(FILE_MARKS.sheet.glyph) ? 1 : 0,
+        tileWidth: tile?.getBoundingClientRect().width ?? 40,
+      };
+    }, openable);
+    expect(reading.inspected).toEqual({ tiles, sheet, tileWidth: 40 });
   });
 
   it('a very long name wraps in full at phone width, including its extension', async () => {
