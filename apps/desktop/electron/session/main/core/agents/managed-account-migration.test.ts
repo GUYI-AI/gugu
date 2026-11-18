@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { activateCodexAccount, codexAuthIdentity, restoreCodexTerminalForMigration, type CodexAuthSlotPaths } from './codex-auth-slot';
+import { activateCodexAccount, codexAuthIdentity, copyCodexUpgradeSignIn, restoreCodexTerminalForMigration, type CodexAuthSlotPaths } from './codex-auth-slot';
 import { activateClaudeAccount, restoreClaudeTerminalForMigration, type ClaudeAuthSlotPaths } from './claude-auth-slot';
 import { createClaudeCredentialStore } from './claude-credential-store';
 
@@ -48,6 +48,24 @@ it('moves the latest Gugu Codex token through its vault while restoring the term
   await put(managed.nativeRoot, 'auth.json', codexAuth('gugu-a', 'a-rotated-again'));
   expect(await fileHash(old.nativeRoot, 'auth.json')).toBe(terminalBefore);
 });
+it('copies the verified Codex vault account when the terminal is already restored', async () => {
+  const dir = await root(), old = codexPaths(dir), ids = ['native', 'gugu-a'];
+  const terminal = codexAuth('terminal-b', 'b-current');
+  const account = codexAuth('gugu-a', 'a-current');
+  await put(old.nativeRoot, 'auth.json', terminal);
+  await put(old.vaultRoot('gugu-a'), 'auth.json', account);
+  await activateCodexAccount(old, ids, 'gugu-a', 'native');
+  const restored = await restoreCodexTerminalForMigration(old, ids);
+  const previous = { ...old, nativeRoot: old.vaultRoot('gugu-a') };
+  const managed = { ...old, nativeRoot: join(dir, 'managed'), liveStateFile: join(dir, 'managed-live.json') };
+
+  await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', 'unverified-identity')).resolves.toBe(false);
+  await expect(readFile(join(managed.nativeRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', restored.moved!.identity)).resolves.toBe(true);
+  expect(codexAuthIdentity(JSON.parse(await readFile(join(managed.nativeRoot, 'auth.json'), 'utf8')))).toBe(restored.moved!.identity);
+  expect(await readFile(join(old.nativeRoot, 'auth.json'), 'utf8')).toBe(terminal);
+});
+
 it('keeps an unrecognized terminal Codex sign-in untouched', async () => {
   const dir = await root(), old = codexPaths(dir);
   await put(old.nativeRoot, 'auth.json', codexAuth('terminal-c', 'c-current'));
@@ -185,7 +203,7 @@ it('handles an originally signed-out Codex terminal and does not restore the ter
   const latest = codexAuth('gugu-a', 'a-current');
   await put(old.nativeRoot, 'auth.json', latest);
   await writeFile(old.liveStateFile, JSON.stringify({ connectionId: 'gugu-a', identity: codexAuthIdentity(JSON.parse(latest)) }));
-  expect(await restoreCodexTerminalForMigration(old, ids)).toEqual({ terminalNeedsSignIn: true, relogin: null });
+  expect(await restoreCodexTerminalForMigration(old, ids)).toMatchObject({ terminalNeedsSignIn: true, relogin: null, moved: { connectionId: 'gugu-a' } });
   await expect(readFile(join(old.nativeRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   expect(await readFile(join(old.vaultRoot('gugu-a'), 'auth.json'), 'utf8')).toBe(latest);
   expect(await restoreCodexTerminalForMigration(old, ids)).toEqual({ terminalNeedsSignIn: true, relogin: null });
@@ -195,7 +213,7 @@ it('keeps the latest owned Claude sign-in when the terminal had no native accoun
   const dir = await root(), old = claudePaths(dir), ids = ['native', 'gugu-a'];
   await claudeSignIn(old.nativeRoot, 'gugu-a', 'a-current', 10);
   await writeFile(old.liveStateFile, JSON.stringify({ connectionId: 'gugu-a', identity: 'gugu-a' }));
-  expect(await restoreClaudeTerminalForMigration(old, ids)).toEqual({ terminalNeedsSignIn: true, relogin: null });
+  expect(await restoreClaudeTerminalForMigration(old, ids)).toMatchObject({ terminalNeedsSignIn: true, relogin: null, moved: { connectionId: 'gugu-a' } });
   expect(JSON.parse(await readFile(join(old.nativeRoot, '.credentials.json'), 'utf8'))).toEqual({ mcpLogin: 'fixture-mcp' });
   expect(JSON.parse(await readFile(join(old.vaultRoot('gugu-a'), '.credentials.json'), 'utf8')).claudeAiOauth.refreshToken).toBe('a-current');
   expect(await restoreClaudeTerminalForMigration(old, ids)).toEqual({ terminalNeedsSignIn: true, relogin: null });
