@@ -28,6 +28,7 @@ type MarketConnectorProps = {
   playbooks: readonly { title: string; prompt: string }[];
   local: ConnectorTarget;
   readDevice?: (target: ConnectorTarget) => Promise<boolean>;
+  authorizationOwnDialog?: boolean;
   authorize?: (target: ConnectorTarget, done: (ok: boolean) => void) => ReactNode;
   onConnected?: () => void;
   onDisconnect?: () => void | Promise<void>;
@@ -46,7 +47,7 @@ export function MarketConnectorDetail(props: MarketConnectorProps) {
 
 function MarketConnectorCard({
   id, name, description, icon, connected, readOnly, status, abilities, playbooks,
-  local, readDevice, authorize, onConnected, onDisconnect, disconnectDescription, onTryPlaybook, onClose,
+  local, readDevice, authorizationOwnDialog, authorize, onConnected, onDisconnect, disconnectDescription, onTryPlaybook, onClose,
 }: MarketConnectorProps) {
   const { translate } = useSessionMessages();
   const confirm = useMarketDetailConfirmation();
@@ -136,7 +137,8 @@ function MarketConnectorCard({
           </section>
         )}
       </MarketDetailCard>
-      {authorization && (
+      {authorization && authorizationOwnDialog && authorize?.(authorization, finishConnect)}
+      {authorization && !authorizationOwnDialog && (
         <Dialog open onOpenChange={(open) => { if (!open) finishConnect(false); }}>
           <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]">
             {authorize

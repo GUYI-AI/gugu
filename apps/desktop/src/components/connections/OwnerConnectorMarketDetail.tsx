@@ -1,6 +1,7 @@
 import type { AssistantConnectedApp } from '@/components/assistant/assistant-app-connections';
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon';
-import { WechatAppConnection } from '@/components/settings/channels/WechatAppConnection';
+import { useChatChannels } from '@/components/settings/channels/useChatChannels';
+import { WechatConnectDialog } from '@/components/settings/channels/WechatConnectDialog';
 import { useOwnerConnectionStore } from '@/lib/connectionBridge';
 import { useDevicesStore } from '@/store/devicesContext';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';
@@ -11,7 +12,6 @@ import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessio
 import { MarketConnectorAuthorization, MarketConnectorDetail, type ConnectorTarget } from '@renderer/features/extensions/panel/market-detail-connector';
 import type { LibraryHost } from '@renderer/features/library/library-host';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
-import { DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useOwnerLibraryHost } from './useOwnerLibraryHost';
 
@@ -26,8 +26,10 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const data = useIntegrationsContext();
+  const channels = useChatChannels();
   const metadata = app.integration;
   const platform = keptByPlatform(metadata);
+  const wechatReady = !!channels.client && !!channels.list?.kinds.includes('wechat');
   const ownerConnections = useOwnerConnectionStore(null, route, route?.mode === 'owner' && !platform);
   const readDevice = ownerConnections && metadata ? async ({ deviceId }: ConnectorTarget) => {
     const rows = await ownerConnections.collection('integrations');
@@ -35,12 +37,15 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
       && (item.source?.scopeKey === 'platform' || item.device_id === deviceId));
   } : undefined;
   const authorize = (target: ConnectorTarget, done: (ok: boolean) => void) => {
-    if (!metadata) return (
-      <>
-        <DialogHeader><DialogTitle>{app.name}</DialogTitle></DialogHeader>
-        <div className="px-6 pb-6"><WechatAppConnection /></div>
-      </>
-    );
+    if (!metadata) return channels.client && channels.list ? (
+      <WechatConnectDialog
+        client={channels.client}
+        list={channels.list}
+        refresh={channels.refresh}
+        apply={channels.apply}
+        onClose={() => done(channels.list?.channels.some(({ kind }) => kind === 'wechat') ?? false)}
+      />
+    ) : null;
     return target.deviceId === deviceId
       ? <MarketConnectorAuthorization host={host} id={app.id} done={done} key={host.key} />
       : <OwnerRemoteAuthorization deviceId={target.deviceId} id={app.id} route={route} done={done} key={target.deviceId} />;
@@ -55,12 +60,16 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
     playbooks={metadata?.playbooks ?? []}
     connected={app.state === 'connected'}
     status={app.connectionStatus}
-    readOnly={readOnly}
+    readOnly={readOnly || !metadata && !wechatReady}
     local={{ host, deviceId }}
     readDevice={readDevice}
+    authorizationOwnDialog={!metadata}
     authorize={authorize}
     onConnected={() => { ownerConnections?.invalidate(); data.reloadConnections(); }}
-    onDisconnect={app.saved && metadata ? async () => { await data.disconnectIntegration(app.id); } : undefined}
+    onDisconnect={app.saved ? async () => {
+      if (metadata) await data.disconnectIntegration(app.id);
+      else if (channels.client) channels.apply(await channels.client.disconnect('wechat'));
+    } : undefined}
     disconnectDescription={platform ? translate('integrations.platformDisconnectNotice', { name: app.name, credential: metadata?.disconnectCredentialLabel ?? app.name }) : undefined}
     onTryPlaybook={metadata?.playbooks?.length ? (prompt) => {
       composerDrafts.set(NEW_SESSION_DRAFT_KEY, prompt);
