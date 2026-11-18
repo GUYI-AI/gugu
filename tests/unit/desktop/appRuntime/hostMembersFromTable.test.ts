@@ -29,7 +29,7 @@ const BINDING_RESOURCES = ['bindings.resources', 'bindings.resource', 'bindings.
 const VOICE_NOTE = ['voiceNote.start', 'voiceNote.pause', 'voiceNote.resume', 'voiceNote.stop', 'voiceNote.retry', 'voiceNote.openMicSettings', 'voiceNote.status', 'voiceNote.watch', 'onVoiceNote']
 const MODAL = ['modal.open', 'modal.close', 'modal.key', 'onModalFocus']
 const PROJECTION_VIEWER = ['projection.watch', 'projection.unwatch', 'projection.send', 'onProjection']
-const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
+const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.present', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
 // #1607 shared task resources (API 36): a page mounts a task page, views projection media and posts its surface; a
 // program leases task pages, opens surfaces and shows the task's pages.
 const TASK_PAGE_VIEWER = ['pages.mount', 'pages.unmount', 'projectionMedia.open', 'projectionMedia.answer', 'projectionMedia.sign', 'projectionMedia.close', 'surfaces.post', 'taskMessage']
@@ -79,6 +79,15 @@ describe('one table, the members each host had', () => {
       ['filesUpload', { place: { chat: 'c' }, pick: true, sourceMessageIds: undefined }],
     ])
     expect(call.mock.calls).toEqual(sent)
+  })
+
+  it('an App program can send picture feedback over its real host channel', () => {
+    const posted: unknown[] = []
+    const host = messageHost({ post: message => posted.push(message), listen: () => undefined }, { program: true }) as {
+      projection: { present(value: unknown): Promise<unknown> }
+    }
+    void host.projection.present({ id: 'owned-picture', presentation: null })
+    expect(posted).toMatchObject([{ method: 'projectionPresent', args: { id: 'owned-picture', presentation: null } }])
   })
 
   it('a link that came before the page subscribed is held for its first subscriber — on either transport', () => {

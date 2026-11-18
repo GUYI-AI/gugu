@@ -1,4 +1,5 @@
 import type { ProjectionFrame, ProjectionInput, ProjectionHostPacket, ProjectionSourceEvent, ProjectionViewerPacket, ProjectionInputOutcome } from '@shared/extensions/projection-protocol';
+import type { ProjectionPresentation } from '@shared/extensions/projection-presentation';
 
 export interface ProjectionHost {
   getContext?(): Promise<{ workspace?: { deviceId?: string } }>;
@@ -11,10 +12,11 @@ export interface ProjectionHost {
   projection?: {
     create(args: Record<string, never>): Promise<{ id: string }>;
     publish(args: { id: string; frame: ProjectionFrame }): Promise<void>;
+    present?(args: { id: string; presentation: ProjectionPresentation | null }): Promise<void>;
     close(args: { id: string }): Promise<void>;
     closed(args: { id: string; error?: string }): Promise<void>;
     inputResult(args: { id: string; requestId: string; outcome?: ProjectionInputOutcome; error?: string }): Promise<void>;
-    watch(args: { id: string; watchId: string }): Promise<void>;
+    watch(args: { id: string; watchId: string; presentation?: 1 }): Promise<void>;
     unwatch(args: { watchId: string }): Promise<void>;
     send(args: { watchId: string; packet: ProjectionViewerPacket }): Promise<ProjectionInputOutcome | void>;
   };
@@ -91,6 +93,11 @@ export function projectionSources(host: ProjectionHost) {
           const published = ++sequence;
           await bridge.publish({ id, frame: { ...frame, sequence: published } });
           return published;
+        },
+        async present(presentation: ProjectionPresentation | null): Promise<void> {
+          if (source.closing) throw new Error('Projection closed');
+          if (!bridge.present) throw new Error('This host does not support projection presentation');
+          await bridge.present({ id, presentation });
         },
         close: () => bridge.close({ id }),
       });

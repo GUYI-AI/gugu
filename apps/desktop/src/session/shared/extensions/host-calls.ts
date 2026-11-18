@@ -38,6 +38,7 @@ export const HOST_CALLS = {
   'pages.unmount': { verb: 'taskPageUnmount' },
   'projection.create': { verb: 'projectionCreate' },
   'projection.publish': { verb: 'projectionPublish' },
+  'projection.present': { verb: 'projectionPresent' },
   'projection.close': { verb: 'projectionClose' },
   'projection.closed': { verb: 'projectionClosed' },
   'projection.inputResult': { verb: 'projectionInputResult' },

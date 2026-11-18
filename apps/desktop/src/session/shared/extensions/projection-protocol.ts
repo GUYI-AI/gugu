@@ -1,3 +1,5 @@
+import { projectionTarget, type ProjectionTarget, type ProjectionPresentationPacket } from './projection-presentation';
+
 /** Local preview feed and shared input semantics. Remote video uses the media track, never this bitmap feed. */
 export const PROJECTION_FRAME_BYTES = 512 * 1024;
 export const PROJECTION_TEXT_LENGTH = 64 * 1024;
@@ -12,6 +14,8 @@ export type ProjectionFrame = {
   height: number;
   mime: 'image/png' | 'image/jpeg' | 'image/webp';
   data: string;
+  /** App-owned identity of the actual captured target. Absent on legacy producers. */
+  target?: ProjectionTarget;
 };
 
 /** Rejected means the driver did not apply it; unknown must never be automatically replayed. */
@@ -33,8 +37,9 @@ export type ProjectionViewerPacket =
   | { type: 'input'; generation: string; frame: number; sequence: number; input: ProjectionInput };
 
 export type ProjectionHostPacket =
-  | { type: 'state'; generation: string; state: 'connecting' | 'live' | 'closed'; reason?: string }
-  | { type: 'frame'; generation: string; frame: ProjectionFrame };
+  | { type: 'state'; generation: string; state: 'connecting' | 'live' | 'closed'; reason?: string; sourceId?: string }
+  | { type: 'frame'; generation: string; frame: ProjectionFrame }
+  | ProjectionPresentationPacket;
 
 export type ProjectionSourceEvent =
   | { type: 'refresh'; id: string }
@@ -70,7 +75,8 @@ export function projectionFrame(raw: unknown): ProjectionFrame {
     || !value.data.length || value.data.length % 4 !== 0 || bytes > PROJECTION_FRAME_BYTES
     || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.data)) throw new Error('Invalid projection frame');
   // Snapshot the scalar fields: a producer retaining its object cannot change an admitted frame.
-  return { sequence: value.sequence, width: value.width, height: value.height, mime: value.mime as ProjectionFrame['mime'], data: value.data };
+  return { sequence: value.sequence, width: value.width, height: value.height, mime: value.mime as ProjectionFrame['mime'], data: value.data,
+    ...(value.target === undefined ? {} : { target: projectionTarget(value.target) }) };
 }
 
 export function projectionInput(raw: unknown): ProjectionInput {

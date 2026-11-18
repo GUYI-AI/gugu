@@ -46,10 +46,10 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
     list: async sessionId => (await import('../extensions/live-window-sources')).readLiveWindowSources(sessionId),
     observe: (sessionId, changed) => observeLiveWindowSources(sessionId, changed),
     connect: async (input, send) => (await import('../extensions/projection-remote-admit')).admitRemoteProjection(input, send),
-    page: async (session, send, state) => {
+    page: async (session, send, state, presentation) => {
       const [{ connectTaskPageScreen }, { taskPageForScreen }] = await Promise.all([
         import('../browser/task-page-screen'), import('../extensions/task-page-host')]);
-      return connectTaskPageScreen(session, () => taskPageForScreen(session), send, state);
+      return connectTaskPageScreen(session, () => taskPageForScreen(session), send, state, presentation);
     },
   }));
 

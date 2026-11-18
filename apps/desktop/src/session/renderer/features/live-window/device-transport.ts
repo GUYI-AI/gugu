@@ -39,10 +39,21 @@ export function deviceLiveWindowTransport(deviceId: string): LiveWindowTransport
       let watch: string | null = null, generation = '', switching = false;
       const body = source.type === 'task-page' ? { session: source.sessionId, page: true as const }
         : { session: source.sessionId, app: source.appId, version: source.appVersion, source: source.id };
+      let legacy = false;
+      const join = async (watchId: string, presentation?: 1) => {
+        if (!presentation || legacy) return ask(PROJECTION_REMOTE_RPC.watch, { watch: watchId, ...body });
+        try { return await ask(PROJECTION_REMOTE_RPC.watch, { watch: watchId, ...body, presentation }); }
+        catch (error) {
+          if ((error as { code?: string }).code !== 'invalid_payload') throw error;
+          legacy = true;
+          return ask(PROJECTION_REMOTE_RPC.watch, { watch: watchId, ...body });
+        }
+      };
+      let presentation: 1 | undefined;
       return {
         projection: {
           ...viewerOnly,
-          watch: async ({ watchId }) => { watch = watchId; await ask(PROJECTION_REMOTE_RPC.watch, { watch: watchId, ...body }); },
+          watch: async args => { watch = args.watchId; presentation = args.presentation; await join(args.watchId, presentation); },
           unwatch: async ({ watchId }) => { if (watch === watchId) watch = null; await ask(PROJECTION_REMOTE_RPC.unwatch, { watch: watchId }); },
           send: async ({ watchId, packet }) => await ask(PROJECTION_REMOTE_RPC.send, { watch: watchId, packet }) as ProjectionInputOutcome,
         },
@@ -56,7 +67,7 @@ export function deviceLiveWindowTransport(deviceId: string): LiveWindowTransport
           onChannelResubscribed: rejoin => {
             if ((!rejoin && !switching) || !watch) return;
             switching = false; const current = watch;
-            void ask(PROJECTION_REMOTE_RPC.watch, { watch: current, ...body }).catch(error => {
+            void join(current, presentation).catch(error => {
               log.warn({ error }, 'Could not rejoin a live picture');
               if (watch === current) handler(current, { type: 'state', generation, state: 'closed', reason: 'The live picture connection ended' });
             });

@@ -41,6 +41,7 @@ public class GuguAgentHostService extends Service {
     private static final Map<String, JSObject> STATES = new HashMap<>();
     private static volatile GuguAgentHostService active;
     private static volatile String reservedOwner;
+    static final PhoneAgentOwnerRuns OWNED_RUNS = new PhoneAgentOwnerRuns();
     private static final String ACTION_CANCEL_NOTIFICATION_TASK = "app.gugu.chat.action.CANCEL_PHONE_AGENT_TASK";
     private volatile String notificationSignature;
     private final ExecutorService work = Executors.newCachedThreadPool();
@@ -77,6 +78,7 @@ public class GuguAgentHostService extends Service {
         }
         try {
             String owner = GuguAgentHostPolicy.owner(intent.getStringExtra("ownerId"));
+            AccountClosurePreparation.requireOpen(this, owner);
             JSObject config = GuguAgentHostStore.read(this, owner);
             if (config == null) throw new IllegalStateException("手机宿主尚未配置");
             HostRun running = current;
@@ -95,6 +97,8 @@ public class GuguAgentHostService extends Service {
                 } else {
                     previous = run;
                     configured = new HostRun(owner, config, startId);
+                    HostRun owned = configured;
+                    OWNED_RUNS.add(owner, owned.exited, () -> { owned.closingAuth = true; owned.stop(); });
                     current = configured;
                     launch = true;
                 }
@@ -218,15 +222,17 @@ public class GuguAgentHostService extends Service {
         PendingCall(String signature) { this.signature = signature; }
     }
 
+    static boolean ownerIsBusy(String owner) {
+        return owner.equals(reservedOwner) || OWNED_RUNS.busy(owner);
+    }
+    static void forgetClosedOwner(String owner) { synchronized (LOCK) { STATES.remove(owner); } }
+
     static CompletableFuture<Void> stopOwnerAndWait(Context context, String owner, boolean clearCredentials) throws Exception {
-        GuguAgentHostService service = active;
-        HostRun run = service == null ? null : service.current;
-        if (run == null || !run.owner.equals(owner)) { stopOwner(context, owner, clearCredentials); return CompletableFuture.completedFuture(null); }
+        GuguAgentHostPolicy.owner(owner);
         var grants = GuguAgentService.permissions(context);
         if (owner.equals(grants.getString("owner", ""))) { grants.edit().clear().commit(); GuguNotificationListener.setCollecting(false); }
-        run.closingAuth = true;
-        run.stop();
-        return run.exited.thenRun(() -> {
+        releaseReservation(owner);
+        return OWNED_RUNS.stopAndAwait(owner).thenRun(() -> {
             try { if (clearCredentials) GuguAgentHostStore.clear(context, owner); }
             catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
             finally { releaseReservation(owner); }
@@ -609,19 +615,20 @@ public class GuguAgentHostService extends Service {
         void persist(JSObject next) {
             if (current != this && !"stopped".equals(next.optString("status"))) return;
             synchronized (LOCK) {
-                next.put("ownerId", owner).put("deviceId", config.optString("deviceId")).put("updatedAt", System.currentTimeMillis());
-                JSObject previous = STATES.get(owner);
-                if (!next.has("sessions")) {
-                    next.put("sessions", previous == null ? new JSONArray() : previous.optJSONArray("sessions"));
+                synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+                    try {
+                        AccountClosurePreparation.requireWritableState(GuguAgentHostService.this, owner);
+                        next.put("ownerId", owner).put("deviceId", config.optString("deviceId")).put("updatedAt", System.currentTimeMillis());
+                        JSObject previous = STATES.get(owner);
+                        if (!next.has("sessions")) next.put("sessions", previous == null ? new JSONArray() : previous.optJSONArray("sessions"));
+                        if (!next.has("project") && previous != null && previous.has("project")) next.put("project", previous.optJSONObject("project"));
+                        if (!next.has("taskTimeline") && previous != null && previous.has("taskTimeline")) next.put("taskTimeline", previous.optBoolean("taskTimeline"));
+                        STATES.put(owner, next);
+                        File target = stateFile(GuguAgentHostService.this, owner);
+                        target.getParentFile().mkdirs();
+                        DurableFile.write(target, next.toString().getBytes(StandardCharsets.UTF_8));
+                    } catch (Exception error) { android.util.Log.e("GuguAgentHost", "Cannot persist phone host state"); }
                 }
-                if (!next.has("project") && previous != null && previous.has("project")) next.put("project", previous.optJSONObject("project"));
-                if (!next.has("taskTimeline") && previous != null && previous.has("taskTimeline")) next.put("taskTimeline", previous.optBoolean("taskTimeline"));
-                STATES.put(owner, next);
-                try {
-                    File target = stateFile(GuguAgentHostService.this, owner);
-                    target.getParentFile().mkdirs();
-                    DurableFile.write(target, next.toString().getBytes(StandardCharsets.UTF_8));
-                } catch (Exception error) { android.util.Log.e("GuguAgentHost", "Cannot persist phone host state"); }
             }
         }
 
