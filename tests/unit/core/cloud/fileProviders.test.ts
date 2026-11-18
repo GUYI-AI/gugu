@@ -363,7 +363,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
   it.each([['same', 1], ['flaky', 2], ['down', 2], ['revision', 1], ['access', 1], ['gone', 1]] as const)('a combined server shows an encrypted copy after one call and settles the read ACK behind it (%s)', async (outcome, acks) => {
     const { local, a, c, cloud, answer } = await combined(outcome)
     const decoded = await cloud.temporary(local, context)
-    expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete'])
+    await vi.waitFor(() => expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete']))
     expect(digest(Buffer.concat([await decoded.read(0, 524288), await decoded.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
     expect(c.chunks.size).toBeGreaterThan(0)
     answer()
