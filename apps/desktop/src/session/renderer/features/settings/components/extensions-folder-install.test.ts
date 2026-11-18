@@ -46,7 +46,7 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, agents: { listIcons: async () => ({}) }, viewState: { save: vi.fn(async () => ({ success: true })) } },
-  rpcOn: () => ({}),
+  rpcOn: () => ({ agents: { list: async () => [] } }),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
 }));
@@ -65,7 +65,15 @@ vi.mock('@renderer/features/library/library-host', async () => {
     local: true,
     pickFolder: h.pickFolder,
   };
-  return { LOCAL_HOST_KEY: 'local', useLibraryHost: () => ({ key: 'local', extensions, agents: { listManagement: h.agentList } }) };
+  return {
+    LOCAL_HOST_KEY: 'local',
+    useLibraryHost: () => ({
+      key: 'local',
+      agents: { listManagement: h.agentList, listAgentInstallationStatus: async () => [] },
+      extensions,
+      remote: undefined,
+    }),
+  };
 });
 
 vi.mock('@renderer/features/settings/agents-page/AgentDetailModal', () => ({
@@ -423,7 +431,11 @@ describe('Desktop marketplace tabs and app details', () => {
       data: { extensions, invalid: [], errorKind: null, error: null, total: extensions.length, page: 0, hasMore: false, fetchedAt: null },
     } as never);
     h.agentList.mockResolvedValue([
-      { id: 'claude', name: 'Claude Code', publisher: 'Anthropic', description: 'CLI', reading: 'installed' },
+      {
+        id: 'claude', name: 'Claude Code', publisher: 'Anthropic', description: 'CLI', reading: 'installed',
+        status: 'available', installations: [], used: { kind: 'auto' }, installOptions: [],
+        version: '1.0.0', capabilities: { hostDependency: { updates: { kind: 'none' } } },
+      },
       { id: 'kilocode', name: 'Kilo', publisher: '开源', description: 'CLI', reading: 'not-detected' },
     ]);
     await render('agents');
