@@ -150,6 +150,11 @@ export class LiveWindowConversation {
         try { mounted = await mountProjection(host, next, picture.descriptor.id, {
           interactive: false,
           localTouchViewing: this.model.platform === 'phone' && picture.source.kind === 'computer',
+          state: state => {
+            // A browser may close before the agent finishes its surrounding turn.
+            // Re-read host resources; a stopped viewer alone does not prove the source was removed.
+            if (state === 'closed' && !this.disposed && epoch === picture.epoch) void this.refresh();
+          },
           painted: frame => {
             if (frame && !this.disposed && picture.present && this.pictures.get(picture.source.id) === picture && epoch === picture.epoch) {
               if (!painted) {

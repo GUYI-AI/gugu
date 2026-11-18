@@ -43,6 +43,7 @@ export class LiveWindowModel {
   observe(context: LiveWindowContext, incoming: readonly LiveWindowSource[]): void {
     const id = key(context);
     let entry = this.entries.get(id);
+    const wasConnected = entry?.context.connected !== false;
     if (!entry) {
       entry = { context: { ...context }, sources: [], presentation: initial(), opened: false };
       this.entries.set(id, entry);
@@ -50,7 +51,11 @@ export class LiveWindowModel {
     const accepted = context.privateAgentChat ? incoming.filter(source => bound(context, source) && !!source.id) : [];
     const next = accepted.map(source => ({ ...source, size: source.size && { ...source.size } }))
       .sort((a, b) => Number(a.kind === 'computer') - Number(b.kind === 'computer'));
-    // A completed turn still has its resource. A successful empty host list means it was actually closed.
+    // Resource lifetime outlives a turn; desktop presentation ends with the turn, not the resource.
+    // Losing the device connection is not evidence that its run ended.
+    const completed = this.platform === 'desktop' && context.connected !== false
+      && (entry.sources.some(source => source.status === 'operating') || !wasConnected)
+      && !next.some(source => source.status === 'operating');
     const newcomers = next.filter(source => source.status === 'operating' && !entry!.presentation.dismissedSourceIds.includes(source.id)
       && !entry!.sources.some(old => old.id === source.id && old.status === 'operating'));
     const previousActivity = Math.max(0, ...entry.sources.map(source => source.activity ?? 0));
@@ -68,7 +73,7 @@ export class LiveWindowModel {
     if (!next.some(source => source.id === entry!.presentation.selectedSourceId) && next.length) {
       entry.presentation = { ...entry.presentation, selectedSourceId: next[0]!.id };
     }
-    if (!next.length && entry.presentation.mode !== 'closed') {
+    if ((completed || !next.length) && entry.presentation.mode !== 'closed') {
       entry.presentation = { ...entry.presentation, mode: 'closed', selectedSourceId: null, selectedTab: 'chat', controlsRevealed: false };
     }
     if (id === this.active) this.publish();

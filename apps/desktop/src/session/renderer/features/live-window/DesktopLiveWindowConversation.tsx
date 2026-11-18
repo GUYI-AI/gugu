@@ -22,8 +22,8 @@ export const DesktopLiveWindowConversation = observer(function DesktopLiveWindow
   const surface = useRef<HTMLDivElement>(null);
   const context = pane.ctx as SessionTabContext;
   const entries = [...pane.entries.values()].filter(entry => entry.kind === kind);
-  return <div ref={surface} className="relative h-full min-h-0" data-live-window-conversation>
-    <div className="h-full min-w-0" style={{ marginRight: reserved }}>{children}</div>
+  return <div ref={surface} className="relative isolate h-full min-h-0" data-live-window-conversation>
+    <div className="isolate h-full min-w-0" style={{ marginRight: reserved }}>{children}</div>
     {entries.map(entry => <BoundWindow key={entry.tabId} chatTabId={entry.tabId}
       sessionId={(entry.state as { sessionId: string }).sessionId} projectId={context.projectId}
       shown={pane.resolvedTabs.some(tab => tab.tabId === entry.tabId && tab.isActive)} onWidth={setReserved} surface={surface} />)}
