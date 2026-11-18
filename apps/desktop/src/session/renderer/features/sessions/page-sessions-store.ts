@@ -1,4 +1,5 @@
 import type { IDisposable } from '@gugu/session-shared';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { action, computed, makeObservable, observable, reaction, runInAction } from 'mobx';
 // TODO(conversations-extraction): Inject file-link handlers instead of importing task editor plumbing.
 import { makeFileLinkHandlers } from '@renderer/features/sessions/stores/open-file-in-file-editor';
@@ -169,7 +170,10 @@ export class PageSessionsStore implements IDisposable {
         Object.assign(store.data, rest);
         if ('providerSessionId' in event.changes) store.data.providerSessionId = providerSessionId ?? undefined;
         // 模型与档位同一个形状:`null` = 删了键,会话模型里是缺席。
-        if ('model' in event.changes) store.data.model = model ?? undefined;
+        if ('model' in event.changes) {
+          store.data.model = runtimeModelId(model);
+          store.data.customModel = customModelRefFromOption(model) ?? undefined;
+        }
         if ('effort' in event.changes) store.data.effort = effort ?? undefined;
         if ('contextUsage' in event.changes) store.data.contextUsage = contextUsage ?? undefined;
         // 引擎那边的状态同一个形状:`null` = 去掉了(#7223)。
@@ -438,6 +442,7 @@ export class SessionStore {
   applySession(session: Session): void {
     this.statusRevision += 1;
     Object.assign(this.data, session);
+    if (session.customModel === undefined) delete this.data.customModel;
     // This is a complete host row: an absent reason clears the cached interruption.
     if (session.interruptedBy === undefined) delete this.data.interruptedBy;
     this.status = session.agentStatus ?? null;

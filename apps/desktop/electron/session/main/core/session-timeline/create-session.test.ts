@@ -1,3 +1,4 @@
+vi.mock('@main/core/agents/custom-models', () => ({ listCustomModels: async () => [] }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*

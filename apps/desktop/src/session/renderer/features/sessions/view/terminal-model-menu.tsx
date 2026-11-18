@@ -1,3 +1,4 @@
+import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ComposerModelMenu,
@@ -92,6 +93,7 @@ export function TerminalModelMenu({
     sessionSelection: platformCatalog.sessionSelection,
     platformModelIds: platformCatalog.models.map((model) => model.id),
     recordedModel,
+    customModel: sessionRegistry.get(sessionId)?.sessions.get(sessionId)?.data.customModel,
   });
   const selectedOptionId = applied.optionId ?? recordedSelected;
   // 正在用的那个平台模型要会员了、或被他在设置里关掉了,也照列 —— 触发器写的就是它(见 `composerModelOptions`)。

@@ -1,3 +1,4 @@
+import { customModelRefFromOption, customModelRuntimeOption, runtimeModelId } from '@gugu/session-core/models/custom-model'
 import { sessionBootTasks } from './core/boot-tasks'
 import { hasAgentInstallsInProgress } from './core/agents/install-progress-ledger'
 // @@@sessionpage — the session backend's EMBEDDED-MODULE entry. The session backend is a cohesive
@@ -283,9 +284,7 @@ import { checkpointEmdashPlatformSession } from '@main/core/acp/emdash-platform-
 // capability-bundle),会话页这边只留注入口。不注册 = 第二遍与第一遍完全一样,目录退回「未登录」。
 export {
   setProbePlatformEnvResolver,
-  setProbeConnectionModelResolver,
   type ProbePlatformEnvResolver,
-  type ProbeConnectionModelResolver,
 } from '@main/core/agents/harness-model-catalog'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
@@ -507,6 +506,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
   firstRun.noteProfile(app.getPath('userData'))
+  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  migrateCustomModelConnections()
   // --- Electron-28 API gap shim FIRST — before any code path can touch a Session (index.ts:0). ---
   if (browserFeatures) installSessionClearDataShim()
 
@@ -1723,7 +1724,7 @@ async function recordReportedDefaultModel(
  * 会话不在跑时读不到清单 —— 那时 `setModelOption` 本身也不会成,调用方照旧走重开。
  */
 async function liveWireValue(sessionId: string, modelId: string, source: 'platform' | 'own'): Promise<string> {
-  if (source !== 'platform') return modelId
+  if (source !== 'platform') return runtimeModelId(modelId) ?? ''
   const options = await readSessionOptions(sessionId).catch((error: unknown) => {
     if (error instanceof SessionOptionsError && error.code === 'session_not_live') return null
     throw error
@@ -1769,13 +1770,19 @@ export async function applyEmdashSessionModelSelection(input: {
     return reloadOutcome(await reloadEmdashSession({ sessionId, reason, resetModel: true }))
   }
   const target: 'platform' | 'own' = selection.source === 'platform' ? 'platform' : 'own'
-  if (target === input.runningOn) {
+  const row = (await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)))[0]
+  const runningCustom = customModelRefFromOption(row?.config?.model)
+  const requestedCustom = customModelRefFromOption(selection.modelId)
+  const sameConnection = runningCustom?.connectionId === requestedCustom?.connectionId
+  if (target === input.runningOn && sameConnection) {
     const client = await peekAcpRuntimeClient()
     const hot = client
       ? await client.setModelOption({
           sessionId,
           dimension: 'model',
-          value: await liveWireValue(sessionId, selection.modelId, target),
+          value: requestedCustom && runningCustom
+            ? customModelRuntimeOption(runningCustom, requestedCustom.modelId ?? '', (await readSessionOptions(sessionId)).model?.selected, (await readSessionOptions(sessionId)).model?.available.map((choice) => choice.id) ?? []) ?? runtimeModelId(selection.modelId) ?? ''
+            : await liveWireValue(sessionId, selection.modelId, target),
         })
       : null
     // 只有活会话**确认生效**才算热切:`restart_required` / `pending_next_turn` 也是 success,
