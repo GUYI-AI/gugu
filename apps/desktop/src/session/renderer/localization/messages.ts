@@ -197,6 +197,7 @@ const enUSCoreMessages = {
   'settings.agents': 'Agents',
   'settings.refreshAgents': 'Refresh agent detection',
   'settings.integrations': 'Integrations',
+  'settings.desktopConnectionsDescription': 'Agents on this machine can use the apps you connect.',
   // ── extensions: sandboxed tab surfaces ─────────────────────────────────
   'extensions.preparing': 'Preparing App',
   'extensions.activationFailed': 'This App could not be started',
@@ -1429,6 +1430,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'settings.agents': '智能体',
   'settings.refreshAgents': '刷新智能体检测',
   'settings.integrations': '集成',
+  'settings.desktopConnectionsDescription': '接上后，这台机器上的智能体都能用。',
   // ── extensions: sandboxed tab surfaces ─────────────────────────────────
   'extensions.preparing': '正在准备 App',
   'extensions.activationFailed': '这个 App 没能启动',

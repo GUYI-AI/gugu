@@ -36,6 +36,7 @@ import { DeviceSettingsScope } from './DeviceSettingsScope';
 import { SubscriptionsSettingsPage } from '../subscriptions/SubscriptionsSettingsPage';
 import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
 import { HomeConnectorsSettings,CloudConnectorsSettings } from '../../assistant/assistant-connectors-settings';
+import { DesktopConnectionsSettings } from './DesktopConnectionsSettings';
 import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';
 
@@ -121,6 +122,7 @@ export type SessionSettingsContext = {
   panelNavigation?: boolean;
   connectionRoute?: ConnectionRoute;
   initialConnectorId?: string;
+  desktopConnections?: boolean;
 };
 
 function RoutedConnectors(context: SessionSettingsContext) {
@@ -139,7 +141,7 @@ const SECTION_CONTENT: Record<SessionSettingsSection, (context: SessionSettingsC
   browser: () => <BrowserSettingsPage />,
   // 订阅与任务里的机器组共用一份机器选择。
   subscriptions: () => <DeviceScopeProvider store={settingsDeviceStore}><SubscriptionsSettingsPage /></DeviceScopeProvider>,
-  connectors: context => <RoutedConnectors {...context} />,
+  connectors: context => context.desktopConnections ? <DesktopConnectionsSettings /> : <RoutedConnectors {...context} />,
 };
 
 /**

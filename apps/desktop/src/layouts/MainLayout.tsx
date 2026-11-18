@@ -533,11 +533,12 @@ function InnerLayout({
   }, [])
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
-  const openSettingsSection = useCallback((asked: ActiveSection) => {
+  const openSettingsSection = useCallback((asked: ActiveSection, ownerConnections = false) => {
     let section = asked
     // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App. A phone
     // with no assistant has the person's own connected apps as a row of Settings (SettingsPanel): a route to them goes there.
-    if (isAssistantSettingsSection(section)) {
+    const ownDesktopConnections = ownerConnections && section === 'connectors' && !mobile && sessionHostAvailable
+    if (isAssistantSettingsSection(section) && !ownDesktopConnections) {
       if (!mobile) {
         setSettingsModalOpen(false)
         openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
@@ -558,14 +559,14 @@ function InnerLayout({
       return
     }
     setSettingsModalOpen(true)
-  }, [setActiveTab, mobile, phoneAssistant.available])
+  }, [setActiveTab, mobile, phoneAssistant.available, sessionHostAvailable])
 
   // 会话页要打开设置(⌘, / 应用菜单 / 命令面板 / 浏览器工具栏「管理配置」):设置只有这一个弹窗(product spec)。
   // 指了格就落到那一格;没指就照原样打开(上次停在哪一格就是哪一格)。
   useEffect(() => {
     const open = (event: Event) => {
-      const section = (event as CustomEvent<{ section?: ActiveSection }>).detail?.section
-      if (section) openSettingsSection(section)
+      const detail = (event as CustomEvent<{ section?: ActiveSection; ownerConnections?: boolean }>).detail
+      if (detail?.section) openSettingsSection(detail.section, detail.ownerConnections)
       else setSettingsModalOpen(true)
     }
     // Feedback replaces the settings modal; sibling modal focus layers otherwise block its form.
