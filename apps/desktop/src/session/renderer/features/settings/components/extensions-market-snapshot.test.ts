@@ -409,7 +409,10 @@ describe('the App page market: the index in hand at once, the download site behi
     await act(async () => tab.click());
 
     const testId = (id: string) => doc().querySelector(`[data-testid="${id}"]`);
-    await until('both sections drawn', () => tab.querySelector('.mk-seg-count')?.textContent, (count) => count === '3');
+    await until('both installed sections drawn', () => [
+      testId('installed-apps-agents')?.querySelectorAll('li').length,
+      testId('installed-apps-extensions')?.querySelectorAll('li').length,
+    ], ([agents, extensions]) => agents === 2 && extensions === 1);
     const agents = testId('installed-apps-agents')!;
     const extensions = testId('installed-apps-extensions')!;
     expect([...agents.querySelectorAll('li')].map((row) => row.dataset.testid)).toEqual([
