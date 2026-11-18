@@ -18,7 +18,7 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
+import { FileReadError } from '@gugu/core/shared/fileReads'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
@@ -53,6 +53,7 @@ const log = createLogger('gugu-mcp-host')
  * @property {string|null} threadRootId
  * @property {string} guguHome
  * @property {(signal?: AbortSignal) => Promise<string>} getAccessToken
+ * @property {((ref: import('@gugu/core/shared/fileResolver').FileRef, actorId: string, options: import('@gugu/core/shared/fileReads').FileReadOptions) => import('@gugu/core/shared/fileReads').FileReadRequest)=} requestFile
  * @property {((action: object, signal?: AbortSignal) => Promise<unknown>)=} runHostAction
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -525,6 +526,10 @@ function createDeps(context, injected = {}, state = createSessionState()) {
     resolveFile: (ref, actor = context.agentId) => {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
       return context.resolveFile(ref, actor)
+    },
+    requestFile: (ref, actor, options) => {
+      if (!context.requestFile) throw new Error('Device file read host is not installed')
+      return context.requestFile(ref, actor, options)
     },
     ...injected,
     context,
@@ -2402,35 +2407,28 @@ async function downloadSourceOf(args, deps) {
   return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
 }
 
-// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:harness 的工具超时到了下载也不停,再调一次就接上。
-const downloading = new Map()
-
-/** message_download_file:唯一取字节的门。判读者 → resolver(字节从哪来由它定)→ 本机 file-store 的只读副本。 */
+/** Each tool call authorizes its reader through the device host, then saves the pinned file as a read-only copy. */
 async function downloadFile(args, deps) {
+  const signal = deps.signal
+  signal?.throwIfAborted()
   const source = await downloadSourceOf(args, deps)
-  const key = `${source.reader}\n${fileRefKey(source.ref)}`
-  let saving = downloading.get(key)
-  if (!saving) {
-    saving = (async () => {
-      // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
-      const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
-      let file = await deps.resolveFile(source.ref, source.reader)
-      while (file.status === 'pending' && Date.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
-        file = await deps.resolveFile(source.ref, source.reader)
-      }
-      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
-      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
-      if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
-      const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
-      if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
-      const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
-      return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
-    })().finally(() => downloading.delete(key))
-    downloading.set(key, saving)
+  signal?.throwIfAborted()
+  const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
+  if (!home) throw new Error('gugu MCP context has no guguHome; cannot save the file')
+  const { file, route, reused, waited_ms } = await deps.requestFile(source.ref, source.reader, { purpose: 'save', signal }).result
+  try {
+    signal?.throwIfAborted()
+    const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
+    const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+    signal?.throwIfAborted()
+    return JSON.stringify({
+      ...source.echo, ...saved, route, reused, waited_ms,
+      ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}),
+      ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}),
+    })
+  } finally {
+    await file.dispose()
   }
-  return JSON.stringify({ ...source.echo, ...await saving })
 }
 
 /** message_send 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */
@@ -3121,11 +3119,17 @@ export function createGuguImServer(getContext, deps = {}) {
           : {}),
       }
       const fetchImpl = deps.fetch ?? fetch
-      const out = await dispatchTool(context, def.name, toolArgs, {
-        ...deps,
-        fetch: (input, init) => fetchImpl(input, { ...init, signal }),
-      }, state)
-      return { content: [{ type: 'text', text: String(out) }] }
+      try {
+        const out = await dispatchTool(context, def.name, toolArgs, {
+          ...deps,
+          signal,
+          fetch: (input, init) => fetchImpl(input, { ...init, signal }),
+        }, state)
+        return { content: [{ type: 'text', text: String(out) }] }
+      } catch (error) {
+        if (error instanceof FileReadError) throw new Error(`${error.code}: ${error.message}`, { cause: error })
+        throw error
+      }
     }, deps.trackRequest)
   }
   // tools/list 由组装这台 server 的宿主装一次(acp-engine-utils:session_* / app_* 等域注册完之后),❌ 在这里先装一个

@@ -90,8 +90,13 @@ function fakeDb({ staleOnce }: { staleOnce?: string } = {}) {
   const restInsert = async (_table: string, row: unknown) => { inserts.push(row) }
   const signedAs: unknown[] = []
   // Preserve the reader boundary: owner-friend DMs resolve as the owner; the agent's own chats as the agent.
-  const resolveFile = async (_ref: unknown, asUserId: string) => { signedAs.push(asUserId); return verifiedFileHandle(Buffer.from('bytes')) }
-  return { deps: { restRpc, restGet, restInsert, resolveFile }, rpcs, reads, inserts, signedAs }
+  const requestFile = (_ref: unknown, asUserId: string) => {
+    signedAs.push(asUserId)
+    return { result: verifiedFileHandle(Buffer.from('bytes')).then(file => ({
+      file, route: 'oss', reused: null, sha256: file.revision.sha256, waited_ms: 0,
+    })) }
+  }
+  return { deps: { restRpc, restGet, restInsert, requestFile }, rpcs, reads, inserts, signedAs }
 }
 
 describe('owner DMs with friends (#84)', () => {
