@@ -169,14 +169,15 @@ export const codexSessionBundleDescriptor = {
     ...CODEX_NATIVE_HOME,
     credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
     importGroups: [
-      { id: 'settings', paths: ['config.toml'], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
+      // A whole-document projection lets first import preserve CLI-generated project trust alongside user settings.
+      { id: 'settings', paths: [{ path: 'config.toml', omitKeys: [] }], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
       { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
       { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
     ],
     carryExclusions: [
       { path: 'sessions', evidence: 'Native session transcripts; imported separately when migrating Gugu tasks.' },
       ...['log', 'logs', 'tmp', '.tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl',
-        'thread-writer-locks', 'installation_id', '.sandbox_migration'].map((path) => ({ path, evidence: 'Codex regenerates runtime files, caches, locks and installation state in its active root.' })),
+        'thread-writer-locks', 'installation_id', '.sandbox_migration', '.sqlite-maintenance.lock', 'skills/.system'].map((path) => ({ path, evidence: 'Codex regenerates runtime files, caches, locks and installation state in its active root.' })),
     ],
   },
   platform: harnessPlatform,
