@@ -279,6 +279,7 @@ export default {
     "deleteChat": "删除聊天",
     "deleteChatConfirm": "删除和「{{name}}」的这条聊天？聊天记录将一并删除。",
     "deleteTopic": "删除话题",
+    "closeTopic": "关闭话题",
     "deleteTopicConfirm": "删除话题「{{name}}」？它会从所有成员的列表里收起。",
     "dissolveGroup": "解散群聊",
     "leaveGroup": "退出群聊",
