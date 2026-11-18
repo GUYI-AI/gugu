@@ -142,7 +142,7 @@ it.each(['light', 'dark'] as const)('%s: existing session Work separates model c
   const label = row('native-model').querySelector<HTMLElement>('.gg-aw-choice-label')!
   const detail = row('native-model').querySelector<HTMLElement>('.gg-aw-choice-desc')!
   expect(label.textContent).toBe('GPT-6.1-Sol')
-  expect(detail.textContent).toBe('Latest workhorse model for coding and everyday work.')
+  expect(detail.textContent).toBe('适合编程和日常任务')
   expect(getComputedStyle(label.parentElement!).flexDirection).toBe('row')
   expect(Math.abs(detail.getBoundingClientRect().top - label.getBoundingClientRect().top)).toBeLessThanOrEqual(4)
   expect(getComputedStyle(label).whiteSpace).toBe('nowrap')
@@ -174,10 +174,11 @@ it.each(['light', 'dark'] as const)('%s: normal production catalog at the real e
   const row = (id: string) => document.querySelector<HTMLElement>(`[data-dimension="model"][data-option-id="${id}"]`)!
   await openModels()
   await until('normal native ID is selected in existing Work', () => row(normalCodexSelectedId)?.getAttribute('aria-checked') === 'true')
-  for (const model of normalCodexModelRows) {
+  const localizedDetails = ['适合复杂编程任务', '适合日常编程']
+  for (const [index, model] of normalCodexModelRows.entries()) {
     const label = row(model.id).querySelector<HTMLElement>('.gg-aw-choice-label')!
     const detail = row(model.id).querySelector<HTMLElement>('.gg-aw-choice-desc')!
-    expect(label.textContent).toBe(model.name); expect(detail.textContent).toBe(model.description)
+    expect(label.textContent).toBe(model.name); expect(detail.textContent).toBe(localizedDetails[index])
     expect(getComputedStyle(label.parentElement!).flexDirection).toBe('row')
     expect(Math.abs(detail.getBoundingClientRect().top - label.getBoundingClientRect().top)).toBeLessThanOrEqual(4)
     expect(getComputedStyle(label).whiteSpace).toBe('nowrap')

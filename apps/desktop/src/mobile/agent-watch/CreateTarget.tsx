@@ -11,6 +11,7 @@ import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
 import type { ChatComposerProps, ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
+import { phoneModelName } from './phone-model-copy'
 import { harnessBlockReason, harnessUsable, selectHarness, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
@@ -57,6 +58,9 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
       ? tm('agentWatch.create.modelLoading') : tm('agentWatch.create.modelDefault')))
+  const activeModelId = existingSession ? existingSession.model?.selected : configuration?.selection.model
+  const activeModel = existingSession?.model?.options?.[activeModelId ?? '']
+  const modelLabel = existingSession ? activeModel?.shortName ?? activeModel?.name : modelName
   const phone = !!machine && isPhoneDevice(machine.device)
   const menu = phoneMenuBar(existingSession ? 'agent' : projectTask ? 'projectTask' : 'create', {
     work: !existingSession || !!machine || !!existingSession.model?.options || existingPermissions.length > 0,
@@ -100,9 +104,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         {!machines.length && <p className="gg-phone-composer-sheet-status">{tf('noMachine')}</p>}
         </>}
         {(!phone || existingSession) && <Summary dimension="harness" title={t('agent')} value={existingSession?.agentName ?? selectedHarness?.name ?? tf('noMachine')} readOnly={!!existingSession} disabled={!configuration?.options} onClick={() => setView('harness')} />}
-        <Summary dimension="model" title={t('model')} value={existingSession
-          ? existingSession.model?.options?.[existingSession.model.selected ?? '']?.shortName ?? existingSession.model?.options?.[existingSession.model.selected ?? '']?.name ?? tm('agentWatch.create.modelDefault')
-          : modelName || tm('agentWatch.create.modelDefault')}
+        <Summary dimension="model" title={t('model')} value={phoneModelName(activeModelId ?? '', modelLabel || tm('agentWatch.create.modelDefault'), t)}
           disabled={existingSession ? !Object.keys(existingSession.model?.options ?? {}).length : !configuration?.options} onClick={() => {
             setView('model')
             if (existingSession) existingSession.model?.onOpen?.()
