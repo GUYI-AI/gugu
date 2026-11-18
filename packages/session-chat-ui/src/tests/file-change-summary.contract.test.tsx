@@ -11,6 +11,7 @@ import { fileChangeSummaryUnitDef } from '../components/rows/file-change-summary
 import type { FileChangeSummaryItem } from '../model'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
 import { FILE_MARKS } from '@gugu/session-shared/file-marks'
+import { mountRecordedFileDiff } from '../components/rows/tools/diff/recorded-file-diff'
 /** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
 const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 const item: FileChangeSummaryItem = {
@@ -40,6 +41,7 @@ describe('an Edited row has the output card\'s Open with', () => {
   it.each([240, 800])('its menu button stays inside the row at %ipx, and opens the menu for that file, not the row', async (width) => {
     const onOpenFile = vi.fn()
     const onOutputMenu = vi.fn()
+    const onOpenFileChange = vi.fn()
     const reading = await renderAndMeasureUnit(
       fileChangeSummaryUnitDef,
       single,
@@ -49,14 +51,67 @@ describe('an Edited row has the output card\'s Open with', () => {
         const mode = row.querySelector<HTMLElement>('[data-slot="opened-output-mode"]')!
         const inside = mode.getBoundingClientRect().right <= row.getBoundingClientRect().right + 0.5 ? 1 : 0
         mode.click()
-        return { inside, menu: onOutputMenu.mock.calls.length, opened: onOpenFile.mock.calls.length }
+        return { inside, menu: onOutputMenu.mock.calls.length, opened: onOpenFile.mock.calls.length + onOpenFileChange.mock.calls.length }
       },
-      { onOpenFile, onOutputMenu, outputOpenMode: () => 'Open with' }
+      { onOpenFile, onOpenFileChange, onOutputMenu, outputOpenMode: () => 'Open with' }
     )
     expect(reading.dom).toBe(reading.computed)
     expect(reading.inspected).toEqual({ inside: 1, menu: 1, opened: 0 })
     expect(onOutputMenu.mock.calls[0]![0].output).toEqual({ kind: 'file', path: single.files[0].path })
+    expect(onOutputMenu.mock.calls[0]![0].fromFileChange).toBe(true)
   })
+
+  it('opens just the selected file’s recorded patches on hosts that support a diff view', async () => {
+    const onOpenFile = vi.fn()
+    const onOpenFileChange = vi.fn()
+    const file = single.files[0]!
+    const actual = file.diffs[0]!.patches[0]!
+    const other = textFilePatch('/workspace/unrelated.txt', 'before', 'after')
+    const later = textFilePatch(file.path, 'hello', 'hello again')
+    const files = [{ ...file, diffs: [
+      { ...file.diffs[0]!, patches: [actual, other] },
+      { ...file.diffs[0]!, id: 'later', patches: [later] },
+    ] }]
+    await renderAndMeasureUnit(fileChangeSummaryUnitDef, { ...single, files }, makeContractCtx({ width: 800 }),
+      (host) => {
+        host.querySelector<HTMLElement>('[role="button"][title]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        return {}
+      },
+      { onOpenFile, onOpenFileChange }
+    )
+    expect(onOpenFileChange).toHaveBeenCalledExactlyOnceWith({
+      turnId: single.turnId, path: file.path, patches: [actual, later]
+    })
+    expect(onOpenFile).not.toHaveBeenCalled()
+  })
+})
+
+it('renders all recorded hunks for the selected file and reports missing patch text', () => {
+  const context = createChatContext({ locale: () => 'en-US' })
+  const host = document.createElement('div')
+  const path = '/workspace/target.txt'
+  const target = textFilePatch('target.txt', 'old text', Array.from({ length: 15 }, (_, i) => `line ${i + 1}`).join('\n'))
+  const other = textFilePatch('other.txt', null, 'other file')
+  const multiFile = {
+    ...target,
+    changes: [{ operation: 'modify', path }, ...other.changes],
+    patch: { format: 'git_patch', text: other.patch!.text + target.patch!.text },
+  }
+  const later = textFilePatch(path, 'previous context', 'later edit')
+  const recorded = mountRecordedFileDiff(host, context, {
+    turnId: 't', path, patches: [multiFile, later, { ...later, patch: null }],
+  })
+  try {
+    expect(recorded).toMatchObject({ available: true, partial: true })
+    expect(host.querySelectorAll('[data-patch-row="add"]')).toHaveLength(16)
+    expect(host.querySelectorAll('[data-patch-row="remove"]')).toHaveLength(2)
+    expect(host.textContent).toContain('line 15')
+    expect(host.textContent).toContain('later edit')
+    expect(host.textContent).not.toContain('other file')
+  } finally {
+    recorded.dispose()
+    context.dispose()
+  }
 })
 
 // The output card's file tile, by each file's family: a sheet and a script, ❌ the same grey document twice.
