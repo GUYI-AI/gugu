@@ -169,6 +169,7 @@ export default {
     "unreadAbove_one": "↑ {{count}} 条新消息",
     "unreadAbove_other": "↑ {{count}} 条新消息",
     "noMessages": "暂无消息，发一条开始聊天",
+    "mobileEmpty": { "title": "还没有消息", "hint": "发出的消息会显示在这里" },
     "notificationLevel": {
       "all": "全部",
       "important": "仅重要",

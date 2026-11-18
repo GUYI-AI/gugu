@@ -1,3 +1,4 @@
+import { PhoneMessagesEmpty } from '@/mobile/chat/PhoneMessagesEmpty'
 import { useUnreadLocatorNavigation } from '@/hooks/useUnreadLocatorNavigation'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -384,8 +385,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
           {loading && messages.length === 0 && <MessageListSkeleton />}
           {history.messagesError && !(loading && messages.length === 0) && <MessageLoadFailure error={history.messagesError}
             inline={messages.length > 0} onRetry={() => history.refreshMessages()} />}
-          {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={TOPIC_SPLIT_EMPTY_STYLE}>
-            {t('topic.pane.empty')}
+          {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={mobile ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : TOPIC_SPLIT_EMPTY_STYLE}>
+            {mobile ? <PhoneMessagesEmpty /> : t('topic.pane.empty')}
           </div>}
           {rows.length > 0 && (
             // @@@5856 用主线那一份消息列表,❌ 不再自己 map + 手写贴底。

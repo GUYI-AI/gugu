@@ -480,6 +480,7 @@ export default {
       "notificationsChat": "聊天消息通知",
       "notificationsChatAria": "开启聊天消息通知",
       "notificationsChatDescription": "私聊的新消息，和群里叫到你的消息",
+      "notificationsEmpty": { "title": "还没有通知", "hint": "有人找你、智能体做完事，会在这里提醒你" },
       "notificationsScope": "这里只管咕咕这边的消息。项目页里智能体的通知在「项目」那一页。",
       "notificationsBlocked": "系统没放行，咕咕的通知弹不出来。",
       "notificationsBlockedAction": "去「本机控制」里开",
