@@ -9,7 +9,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
 import { cloudFileProviders } from '../../cloud/fileProviders'
 import { createFileResolver, openFileBytes, type FileProviders, type FileContext, type FileHandle, type SavedFile } from '../../shared/fileResolver'
-import type { FileReadStore } from '../../shared/fileReads'
+import { createFileReads, type FileReadStore } from '../../shared/fileReads'
 import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
@@ -130,11 +130,19 @@ export async function createFileSink(tempRoot: string, size: number, destination
   }
 }
 
-/** All Node hosts configure the same resolver; desktop adds its existing local and held-SSH providers. */
-export function createNodeFileResolver(root: string, endpoint: (context: FileContext) => Promise<AttachmentsEndpoint>) {
+type NodeFileEndpoint = (context: FileContext) => Promise<AttachmentsEndpoint>
+function nodeFileProviders(root: string, endpoint: NodeFileEndpoint) {
   const providers: FileProviders = { ...cloudFileProviders({ endpoint, cache: createFileChunkCache(root), sink: size => createFileSink(root, size) }), local: async () => null, ssh: async () => null }
   providers.saveTo = createFileSaver(providers)
-  return createFileResolver(providers)
+  return providers
+}
+
+export function createNodeFileResolver(root: string, endpoint: NodeFileEndpoint) {
+  return createFileResolver(nodeFileProviders(root, endpoint))
+}
+
+export function createNodeFileReads(root: string, endpoint: NodeFileEndpoint, store?: FileReadStore) {
+  return createFileReads(nodeFileProviders(root, endpoint), store)
 }
 
 const readReceipt = (directory: string, backend: string, account: string, sha: string) =>
