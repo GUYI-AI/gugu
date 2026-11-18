@@ -15,7 +15,9 @@ const calls = vi.hoisted(() => ({
   connect: vi.fn(),
   notice: vi.fn(),
 }))
-vi.mock('@/lib/notices', () => ({ notify: calls.notice }))
+vi.mock('@/lib/notices', async (load) => ({
+  ...await load<typeof import('@/lib/notices')>(), notify: calls.notice,
+}))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async (machine: string | null) => {
     calls.connect(machine)
