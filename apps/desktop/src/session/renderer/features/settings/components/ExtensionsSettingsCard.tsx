@@ -1064,6 +1064,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           entry.dirName.toLowerCase().includes(query.trim().toLowerCase())
         );
 
+  const extensionShelf: ShelfState = shelf.status === 'ready' && shelf.query !== debouncedQuery
+    ? { status: 'loading' }
+    : shelf;
   const marketRows = shelf.status === 'ready' ? shelf.items : [];
   const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID)
     ?? lastShelf.get(host.key)?.items.find((item) => item.manifest.id === ASSISTANT_APP_ID);
@@ -1409,13 +1412,13 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 <span>{translate('extensions.marketOfflineUnreachable')}</span>
               </div>
             ) : null}
-            {!machineOffline && shelf.status === 'loading' && (
+            {!machineOffline && extensionShelf.status === 'loading' && (
               <div className="mk-sec">
                 <ShelfSkeleton label={translate('extensions.loading')} />
               </div>
             )}
 
-            {!machineOffline && shelf.status === 'error' && (
+            {!machineOffline && extensionShelf.status === 'error' && (
               <div className="mk-status" role="alert">
                 <CircleAlert className="size-4 shrink-0" />
                 <span className="min-w-0">{translate('extensions.marketUnavailable')}</span>
@@ -1426,8 +1429,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             )}
 
             {!machineOffline &&
-              shelf.status === 'ready' &&
-              (shelf.errorKind ? (
+              extensionShelf.status === 'ready' &&
+              (extensionShelf.errorKind ? (
                 // 连不上下载站:只说这一句和「重试」—— 市场只有这一个来源,已装的 App 照常能用(App 市场方案 10-07);
                 // ❌ 再画「这里还没有 App」:读不到清单和清单是空的是两件事。
                 <div className="mk-status" role="status" data-testid="extension-market-offline">
@@ -1438,8 +1441,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </div>
               ) : (
                 <DesktopExtensionMarket
-                  shelf={shelf}
-                  query={debouncedQuery}
+                  shelf={extensionShelf}
+                  query={extensionShelf.query}
                   category={chip}
                   onCategoryChange={setChip}
                   installedIds={new Set(installedById.keys())}

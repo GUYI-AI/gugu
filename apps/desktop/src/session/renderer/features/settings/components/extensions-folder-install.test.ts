@@ -472,7 +472,10 @@ describe('Desktop marketplace tabs and app details', () => {
       data: { extensions: results, invalid: [], errorKind: null, error: null, total: 1, page: 0, hasMore: false, fetchedAt: null },
     } as never);
     await searchFor('arxiv');
-    await until('extension search results', () => Boolean(document.querySelector('[data-testid="extensions-market-section-results"]')));
+    await until('only matching extension cards are drawn', () =>
+      document.querySelector('[data-testid="extensions-market-section-results"] [data-testid="extension-card-arxiv"]') !== null
+      && document.querySelector('[data-testid="extension-card-pomo"]') === null
+    );
     expect(h.api.market).toHaveBeenCalledWith({ page: 0, query: 'arxiv' });
     expect(document.querySelector('[data-testid="extension-card-arxiv"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="extension-card-pomo"]')).toBeNull();
