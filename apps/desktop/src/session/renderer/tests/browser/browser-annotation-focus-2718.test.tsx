@@ -35,7 +35,7 @@ afterEach(async () => {
 function Fixture() {
   const annotation = useBrowserAnnotations({ sessionId: 'focus-test', browserId: 'page', visible: true, available: true,
     inspect: async () => { throw new Error('This keyboard test does not inspect the page'); } });
-  return <><input aria-label="Composer draft" defaultValue="Draft" />{annotation.toolbar}<div>{annotation.overlay}</div></>;
+  return <><input aria-label="Composer draft" defaultValue="Draft" />{annotation.toolbar}<div style={{ position: 'relative', height: 400 }}>{annotation.overlay}</div></>;
 }
 
 it('keeps the canvas ready for another Space browse after native focus returns, while letting the composer accept typing', async () => {
@@ -94,12 +94,12 @@ it('reopens a saved marker at its anchor, preserves its number and deletes from 
   expect(field()?.value).toBe('Original note');
   expect(editor()!.getBoundingClientRect().left).toBeCloseTo(markerBox.left);
   expect(editor()!.getBoundingClientRect().bottom).toBeLessThan(markerBox.top + 1);
-  await act(async () => { await userEvent.keyboard('{ControlOrMeta+a}Updated note{Enter}'); });
+  await act(async () => { field()!.select(); await userEvent.keyboard('Updated note{Enter}'); });
   expect(draft.items[0]).toMatchObject({ id: item.id, number: 7, annotation: 'Updated note' });
   expect(editor()).toBeNull();
 
   await act(async () => { await userEvent.click(marker()!); });
-  await act(async () => { await userEvent.keyboard('{ControlOrMeta+a}Discarded edit{Escape}'); });
+  await act(async () => { field()!.select(); await userEvent.keyboard('Discarded edit{Escape}'); });
   expect(draft.items[0]?.annotation).toBe('Updated note');
   expect(marker()).not.toBeNull();
   await act(async () => { await userEvent.click(marker()!); });
