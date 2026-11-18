@@ -12,7 +12,10 @@ import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { RefreshFailed } from '../ui/RefreshFailed'
+import { ChevronDown, ChevronRight } from '@/lib/icons'
 import { CustomModelsGroup } from './CustomModelsGroup'
+import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
+import './ModelSettings.css'
 
 /**
  * 模型 pane(#7056)—— 照 Cursor 的 Settings › Models:列出咕咕提供的全部模型,开关决定**哪些出现在模型下拉里**。
@@ -37,6 +40,7 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
   const [saveFailed, setSaveFailed] = useState('')
   // 列表顶上一格搜索(Cursor 那页同款):按名字或 id 筛,两组一起筛。
   const [query, setQuery] = useState('')
+  const [showProvided, setShowProvided] = useState(false)
 
   const load = () => { void platformModels.refresh() }
 
@@ -61,68 +65,34 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
   })()
 
   return (
-    <SettingsPage data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
+    <SettingsPage className="gg-model-page" data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
       <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} />
-      <SettingsNote>{t('model.description')}</SettingsNote>
-      {loadFailed ? (
-        <SettingsGroup title={t('model.provided')}>
-          <SettingsRow
-            description={loadFailed}
-            control={<Button variant="secondary" size="sm" onClick={load}>{t('model.retry')}</Button>}
-          />
-        </SettingsGroup>
-      ) : groups === null ? (
-        <Unknown className="h-64 w-full" />
-      ) : (
-        <>
-          {catalog.state === 'value' ? <RefreshFailed error={catalog.error} onRetry={load} /> : null}
-          <SearchField
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('model.search')}
-            clearLabel={t('model.searchClear')}
-            onClear={() => setQuery('')}
-            data-testid="settings-model-search"
-          />
-          {needle && groups.usable.length === 0 && groups.locked.length === 0 && (
-            <SettingsNote>{t('model.noMatch')}</SettingsNote>
-          )}
-          {groups.usable.length > 0 && (
-            <SettingsGroup
-              title={t('model.provided')}
-              data-testid="settings-model-usable"
-              footer={saveFailed ? <SettingsNote tone="danger">{saveFailed}</SettingsNote> : undefined}
-            >
-              {groups.usable.map((model) => (
-                <SettingsRow
-                  key={model.id}
-                  data-model-id={model.id}
-                  title={model.displayName}
-                  control={(
-                    <Toggle
-                      checked={!model.hidden}
-                      onChange={(shown) => toggle(model, shown)}
-                      ariaLabel={t('model.toggleAria', { model: model.displayName })}
-                    />
-                  )}
-                />
-              ))}
-            </SettingsGroup>
-          )}
-          {groups.locked.length > 0 && (
-            <SettingsGroup title={t('model.membersOnly')} data-testid="settings-model-locked">
-              {/* 一处去路,❌ 每行一枚按钮:那是同一句话说 N 遍。买会员只在网页面板(GUGU_BILLING_URL 抬头写了为什么)。 */}
-              {billingLinksAvailable() && <SettingsRow
-                description={t('model.upgradeHint')}
-                control={<Button variant="secondary" size="sm" onClick={openBillingPage}>{t('model.upgrade')}</Button>}
-              />}
-              {groups.locked.map((model) => (
-                <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName} />
-              ))}
-            </SettingsGroup>
-          )}
-        </>
-      )}
+      <SessionSettingsSection section="auxiliary-models" />
+      <SettingsGroup data-platform-models="" data-expanded={String(showProvided)} title={<Button variant="ghost" size="option" className="gg-provided-model-toggle"
+        aria-expanded={showProvided} data-testid="settings-model-provided-toggle" onClick={() => setShowProvided(open => !open)}>
+        <span><span className="gg-model-card-title">{t('model.provided')}</span><span className="gg-model-card-description">{t('model.description')}</span></span>
+        {showProvided ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+      </Button>} footer={saveFailed ? <SettingsNote tone="danger">{saveFailed}</SettingsNote> : undefined}>
+        {showProvided && <>
+        <SearchField value={query} onChange={event => setQuery(event.target.value)} placeholder={t('model.search')}
+          clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />
+        {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={load}>{t('model.retry')}</Button>} />
+          : groups === null ? <Unknown className="h-64 w-full" /> : <>
+            {catalog.state === 'value' ? <RefreshFailed error={catalog.error} onRetry={load} /> : null}
+            {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
+            <div className="gg-model-rows" data-testid="settings-model-usable">
+              {groups.usable.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName}
+                control={<Toggle checked={!model.hidden} onChange={shown => toggle(model, shown)} ariaLabel={t('model.toggleAria', { model: model.displayName })} />} />)}
+            </div>
+            {groups.locked.length > 0 && <div className="gg-model-rows" data-testid="settings-model-locked">
+              <SettingsNote>{t('model.membersOnly')}</SettingsNote>
+              {billingLinksAvailable() && <SettingsRow description={t('model.upgradeHint')}
+                control={<Button variant="secondary" size="sm" onClick={openBillingPage}>{t('model.upgrade')}</Button>} />}
+              {groups.locked.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName} />)}
+            </div>}
+          </>}
+        </>}
+      </SettingsGroup>
     </SettingsPage>
   )
 }

@@ -19,9 +19,11 @@ import { connectionActionNoticeScope,reportConnectionActionFailure } from './con
 import { connectionReadOptions } from './connection-read-policy'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
+import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
+import { OwnerConnectorMarketDetail } from './OwnerConnectorMarketDetail'
 
-export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack }: {
-  host: LibraryHost; app: AssistantConnectedApp; deviceId: string | null; panelNavigation: boolean; onBack(): void
+export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,market = false,route,onBack }: {
+  host: LibraryHost; app: AssistantConnectedApp; deviceId: string | null; panelNavigation: boolean; market?: boolean; route?: ConnectionRoute; onBack(): void
 }) {
   const { t } = useTranslation('assistant'),copy = useTranslation('connections').t
   const devices = useDevicesStore(),data = useIntegrationsContext()
@@ -29,7 +31,7 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
   const allowed = canMutate && !(app.connectionStatus && app.state === 'checking')
   const [busy,setBusy] = useState<string | null>(null)
   const showSetup = useShowModal('integrationSetupModal'),showGithub = useShowModal('githubConnectModal'),showConfirm = useShowModal('confirmActionModal')
-  const accounts = useQuery({ queryKey: ['owner-connection-accounts',host.key,app.id],enabled: !!host.connectionMetadata,
+  const accounts = useQuery({ queryKey: ['owner-connection-accounts',host.key,app.id],enabled: !market && !!host.connectionMetadata,
     queryFn: async () => (await host.connectionMetadata!.collection('integrations')).filter(row => row.data.providerId === app.id && typeof row.data.accountId === 'string'),
     initialData: () => host.connectionMetadata?.peekSnapshot?.()?.items.filter(row => !row.deleted_at && row.data.providerId === app.id && typeof row.data.accountId === 'string'),
     refetchOnWindowFocus: true,...connectionReadOptions })
@@ -51,6 +53,7 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
     if (app.id === 'github') showGithub({ host })
     else showSetup({ integration: app.id,host })
   }
+  if (market) return <OwnerConnectorMarketDetail app={app} host={host} route={route} deviceId={deviceId} readOnly={!allowed || !!busy} onClose={onBack} />
   return <SettingsPage data-testid="owner-connector-detail">
     {!panelNavigation ? <div><Button size="sm" variant="ghost" onClick={onBack}><ChevronLeft size={16} />{t('connectors.title')}</Button></div> : null}
     <PageHead title={app.name} />

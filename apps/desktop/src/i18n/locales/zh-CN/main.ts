@@ -1,4 +1,44 @@
 export default {
+  "installedManager": {
+    "confirmRemove": "确认卸载",
+    "title": "已安装",
+    "thisComputer": "这台电脑",
+    "grid": "网格",
+    "list": "列表",
+    "manage": "管理",
+    "update": "更新",
+    "updateAvailable": "有可用更新",
+    "remove": "卸载",
+    "done": "完成",
+    "selectAll": "全选",
+    "clearSelection": "取消全选",
+    "selected_other": "已选 {{count}} 项",
+    "section": {
+      "agents": "智能体",
+      "apps": "应用",
+      "connectors": "连接器"
+    },
+    "names": {
+      "agents": "智能体",
+      "apps": "应用",
+      "connectors": "连接器"
+    },
+    "searchLocal": "搜索已安装的{{section}}",
+    "searchRemote": "搜索 {{device}} 上的{{section}}",
+    "offline": "这台设备离线，无法查看已安装内容。",
+    "readFailed": "无法读取已安装内容。请重新打开后重试。",
+    "empty": "没有已安装的{{section}}",
+    "noResults": "没有匹配的结果",
+    "removeTitle": "确认卸载已选{{section}}？",
+    "removeDescription_other": "你已选择 {{count}} 个{{section}}。卸载后，这些{{section}}将从{{device}}的已安装列表中移除。",
+    "cancel": "取消",
+    "batchFailed_other": "有 {{count}} 项操作未完成，请重试。",
+    "online": "在线",
+    "offlineStatus": "离线",
+    "sectionsBack": "返回连接器",
+    "connectorEditFailed": "无法保存连接器设置，请重试。",
+    "manageConnections": "管理连接"
+  },
   "agentHome": {
   "mcpCount": "含 {{count}} 个 MCP 服务器",
   "unmarkedMcp": "这些 MCP 没有来源标记，保留在本机配置里：{{names}}",
@@ -606,6 +646,7 @@ export default {
       "phone": "这台手机",
       "passwords": "密码",
       "permissions": "本机控制",
+      "prompts": "提示词",
       "sessions": "项目",
       "subscriptions": "订阅",
       "usage": "用量"
@@ -778,7 +819,6 @@ export default {
     },
     "tasks": "项目",
     "sessionView": "会话",
-    "library": "资源库",
     "apps": "市场",
     "appDockFailed": "左栏没能改动",
     "moreApps": "更多应用",

@@ -26,7 +26,7 @@ const CONFIGURED_PAYERS: ReadonlySet<SubscriptionPayer> = new Set(['subscription
  */
 export function nativeConfigured(details: ConnectionDetails | undefined): boolean {
   if (!details) return false
-  if (details.status.kind === 'authenticated') return true
+  if (details.status.kind === 'authenticated' || details.status.kind === 'unauthenticated' && details.status.reason === 'expired') return true
   return !!details.plan && CONFIGURED_PAYERS.has(details.plan.payer)
 }
 

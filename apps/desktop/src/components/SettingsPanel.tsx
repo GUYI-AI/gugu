@@ -41,7 +41,7 @@ import { useTranslation } from 'react-i18next'
  * - 「这台手机」由原生动作或 Agent 宿主能力开放；平台各自保管动作协议与宿主生命周期;
  * - 会话页那几格只在有会话页宿主的桌面形态上(它们是会话页的组件);手机「我的」不画。
  * 咕咕的资料、连接应用不在这里:它们在它的 App 里(owner 11-12)。
- * - 「连接应用」管理用户自己的连接，桌面按机器，手机仅在账户级连接模式下显示。
+ * - 「连接应用」管理用户自己的连接，仅在手机的账户级连接模式下显示。
  */
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
@@ -51,13 +51,13 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
       (section !== 'apps' || platform.capabilities.mobileApps) &&
       (section !== 'data-import' || (!mobile && platform.capabilities.sessionHost)) &&
       (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
-      (section !== 'connectors' || mobile || platform.capabilities.sessionHost) &&
+      (section !== 'connectors' || mobile) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
 const DESKTOP_SECTIONS_FOR_PLATFORM = sectionsFor(false)
 /** 内页自己没有一句话说明的几页:由这里补在最上面(其余各页自己有,❌ 重复)。 */
-const DataImportSection = lazy(() => import('./settings/data-import/DataImportSection').then((module) => ({ default: module.DataImportSection })))
+const DataImportSection = lazy(() => import('./settings/data-import/DesktopDataImportSection').then((module) => ({ default: module.DesktopDataImportSection })))
 const MobileAppsSection = lazy(() => import('./settings/MobileAppsSection').then((module) => ({ default: module.MobileAppsSection })))
 
 /**
@@ -99,8 +99,9 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   const requestedSection = section ?? internalSection
   // The assistant's App keeps its own routes. On the phone, the old channels route can also land on the user's connections.
   const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || (mobile && requestedSection === 'channels'))
-  const unsupportedPhoneSection = (requestedSection === 'data-import' && !sections.includes('data-import'))
-    || (requestedSection === 'apps' && !platform.capabilities.mobileApps)
+  const unsupportedPhoneSection = (requestedSection === 'apps' && !platform.capabilities.mobileApps)
+    || (requestedSection === 'data-import' && !sections.includes('data-import'))
+    || (requestedSection === 'prompts' && !sections.includes('prompts'))
     || (requestedSection === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
   const activeSection = unsupportedPhoneSection ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
@@ -123,11 +124,8 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 
   function renderSection() {
     switch (activeSection) {
-      case 'connectors': return mobile ? <ConnectorsSection /> : (
-        <div>
-          <SessionSettingsSection section="connectors" context={{ desktopConnections: true }} />
-        </div>
-      )
+      case 'connectors': return <ConnectorsSection />
+      case 'prompts': return <div><SessionSettingsSection section="prompts" /></div>
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
       case 'data-import': return <Suspense fallback={null}><DataImportSection onClose={() => onClose?.()} /></Suspense>
