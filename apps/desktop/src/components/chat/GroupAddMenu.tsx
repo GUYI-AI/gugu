@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../session/renderer/
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
 
-/** The composer's 「新任务」 outside a block (ComposerVerbs): the shell puts that group up with its new-agent composer. */
+/** The shell opens the creation composer for this group. */
 const newAgentInGroup = (chatId: string) => window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
 
 /**
