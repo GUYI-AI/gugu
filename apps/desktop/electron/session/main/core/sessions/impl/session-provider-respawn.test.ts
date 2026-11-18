@@ -122,7 +122,8 @@ vi.mock('@main/core/sessions/platform-model-selection', () => ({
   // 非平台会话(上面恒 undefined)下,启动档位原样透传 —— 与真实实现在这一格等价。
 }));
 
-// This lifecycle fixture has no persisted sessions; connection binding is covered by the DB suite.
+// This lifecycle fixture has no persisted sessions; account and custom binding are covered by DB launch tests.
+vi.mock('@main/core/agents/custom-model-run-context', () => ({ resolveCustomModelRunContext: vi.fn(async () => ({})) }));
 vi.mock('@main/core/agents/harness-connections', () => ({
   resolveHarnessConnection: vi.fn(async () => ({ connectionId: 'native' })),
 }));

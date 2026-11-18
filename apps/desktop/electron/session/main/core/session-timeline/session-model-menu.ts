@@ -1,3 +1,4 @@
+import type { CustomModelConnection, CustomModelRef, ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
 import type { ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { LiveSettingCapability } from '@gugu/session-core/agents/plugins';
@@ -14,6 +15,11 @@ import { log } from '@main/lib/logger';
  * ❌ 宿主不替它排菜单、不判能不能热切 —— 那是第二份判据。
  */
 export type SessionModelMenu = {
+  providerId?: string;
+  customModels?: CustomModelConnection[];
+  customModel?: CustomModelRef;
+  modelProtocols?: readonly ModelProtocol[];
+  customModelCapability?: { modelOptional: true };
   steers?: boolean;
   /** 这条会话记下的计费路决定(`sessionPlatformModel`);缺席 = 没做过这个决定。 */
   conversationSelection?: { modelId: string } | null;
@@ -65,7 +71,12 @@ export async function readSessionModelMenu(sessionId: string, providerId: string
   ]);
   const agent = agents.find((entry) => entry.id === providerId);
   const liveSetting = agent?.capabilities?.acp?.liveSettings?.model;
+  const [{ listCustomModels }, { db }, { sessions }, { eq }, { customModelRefFromOption }] = await Promise.all([import('@main/core/agents/custom-models'), import('@main/db/client'), import('@main/db/schema'), import('drizzle-orm'), import('@gugu/session-core/models/custom-model')]);
+  const records = await listCustomModels();
+  const customModel = customModelRefFromOption(db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get()?.config?.model);
   return {
+    providerId, customModels: records, ...(customModel ? { customModel } : {}), modelProtocols: agent?.capabilities.modelProtocols,
+    customModelCapability: agent?.capabilities.customModel,
     ...(selection !== undefined ? { conversationSelection: selection } : {}),
     agentName: agent?.name ?? providerId,
     steers: agentSteersActiveAcpTurn(agent?.capabilities),

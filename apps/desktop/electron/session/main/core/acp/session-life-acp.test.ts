@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   registered: true,
   identityCwd: null as string | null,
   startSession: vi.fn(),
+  provider: 'claude',
+  piPrepared: vi.fn(),
+  piWrites: vi.fn(async (_id: string) => {}),
   /** The session's queue as the channel stage reads it when it is admitted. */
   pending: { queued: [] as number[], dispatching: [] as number[] },
 }));
@@ -35,6 +38,13 @@ vi.mock('./runtime-process/host', () => ({
   stopAcpSessionAndSettle: h.stopAndSettle,
   readSessionInjectionFacts: async () => ({ agentDisplayName: undefined, platformModel: h.platformModel }),
   provisionStartIdentity: async (input: { cwd: string }) => { h.identityCwd = input.cwd; return h.identity; },
+  withEmdashMcpInjection: async (command: { input: { sessionId: string } }, _lifecycle: unknown, _facts: unknown, _identity: unknown, _text: unknown, _files: unknown, apply?: (write: () => Promise<void>) => Promise<void>) => {
+    if (apply) {
+      h.piPrepared(command.input.sessionId);
+      await apply(() => h.piWrites(command.input.sessionId));
+    }
+    return { command };
+  },
 }));
 vi.mock('../session-timeline/turn-files', () => ({ turnFileText: h.turnFiles }));
 vi.mock('./inject-prompt', () => ({ injectEmdashPromptDetached: h.inject }));
@@ -43,14 +53,15 @@ vi.mock('./emdash-platform-injector', () => ({ releaseEmdashPlatformSession: h.r
 vi.mock('@main/core/sessions/runtime-fork-ownership', () => ({ recordRuntimeForkOwnership: vi.fn() }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ localAgentForSession: async () => h.parentAgent }));
 vi.mock('@main/core/projects/utils', () => ({ resolveWorkspace: () => (h.registered ? { path: '/repo' } : null), persistedWorkspacePath: () => '/repo' }));
-vi.mock('@main/core/sessions/getSessions', () => ({ getSessions: async () => [{ id: 's', runtime: 'acp', providerId: 'claude', projectId: 'p', workspaceId: 'w', providerSessionId: null }] }));
+vi.mock('@main/core/sessions/getSessions', () => ({ getSessions: async () => ['s', 'first', 'queued', 'next'].map(id => ({ id, runtime: 'acp', providerId: h.provider, projectId: 'p', workspaceId: 'w', providerSessionId: null })) }));
+vi.mock('@main/embedded-boot', () => ({ acpStartInputFor: (row: { id: string; providerId: string; projectId: string }, _workspace: string, cwd: string) => ({ sessionId: row.id, providerId: row.providerId, projectId: row.projectId, cwd }) }));
 vi.mock('@main/core/sessions/session-service', () => ({ sessionService: {} }));
 vi.mock('./runtime-process/resume-history', () => ({ resumeHistoryFacts: vi.fn() }));
 vi.mock('../sessions/session-pending', () => ({ lifeStore: { pending: () => h.pending, unaccepted: () => [] } }));
 vi.mock('./runtime-process/session-persistence-policy', () => ({ persistAcpStartResult: vi.fn() }));
 
 import { acpWorkerLease } from './runtime-process/host';
-import { createAcpLegAdapter } from './session-life-acp';
+import { createAcpLegAdapter, PI_STARTUP_TIMEOUT_MS } from './session-life-acp';
 import { firstTurnFilesPlaced, holdFirstTurnForPlacement } from '../sessions/first-turn-placement';
 
 const gen = { auth: 1, attempt: 1 } as unknown as Gen;
@@ -65,7 +76,100 @@ async function boundAdapter() {
   return adapter;
 }
 
-beforeEach(() => { h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; vi.clearAllMocks(); });
+beforeEach(() => { h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; h.provider = 'claude'; vi.clearAllMocks(); });
+
+async function piAttempt(id: string) {
+  h.provider = 'pi';
+  h.identity = { guguAgentUserId: 'pi-agent', chatId: 'dm' };
+  const controller = new AbortController();
+  const context = { gen, signal: controller.signal };
+  const adapter = createAcpLegAdapter(id, null);
+  await adapter.run('identity', {}, context);
+  const capabilities = () => adapter.run('capabilities', { workspace: { workspaceId: 'w', path: '/repo' } } as never, context);
+  return { adapter, controller, context, capabilities };
+}
+
+function piChannel(attempt: Awaited<ReturnType<typeof piAttempt>>) {
+  return attempt.adapter.run('channel', {
+    process: { client: { startSession: h.startSession } },
+    cli: { command: { input: { providerId: 'pi', projectId: 'p', cwd: '/repo' } } },
+    capabilities: { injection: {}, facts: {} },
+    platform: { injected: false },
+  } as never, attempt.context);
+}
+
+describe('Pi ACP shared startup settings', () => {
+  it.each([true, false])('lets the next writer proceed after a start result with success=%s', async (success) => {
+    const first = await piAttempt('first');
+    const next = await piAttempt('next');
+    await first.capabilities();
+    const subsequent = next.capabilities();
+    await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('next'));
+    const handshake = Promise.withResolvers<unknown>();
+    h.startSession.mockReturnValueOnce(handshake.promise);
+    const admission = piChannel(first);
+    expect(h.piWrites.mock.calls).toEqual([['first']]);
+    if (success) {
+      handshake.resolve({ success: true, data: { providerSessionId: 'native' } });
+      await expect(admission).resolves.toMatchObject({ gen });
+    } else {
+      const failure = expect(admission).rejects.toThrow('adapter rejected');
+      handshake.resolve({ success: false, error: { type: 'initialize_failed', message: 'adapter rejected' } });
+      await failure;
+    }
+    await subsequent;
+    await next.adapter.teardown({} as StageOut, { gen });
+    expect(h.piWrites.mock.calls).toEqual([['first'], ['next']]);
+  });
+
+  it('cancels a queued writer and releases the holder on teardown before channel', async () => {
+    const first = await piAttempt('first');
+    const queued = await piAttempt('queued');
+    const next = await piAttempt('next');
+    await first.capabilities();
+    const reason = new Error('owner cancelled');
+    const cancelled = queued.capabilities().catch((error: unknown) => error);
+    try {
+      await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('queued'));
+      const subsequent = next.capabilities();
+      await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('next'));
+      queued.controller.abort(reason);
+      expect(await cancelled).toBe(reason);
+      expect(h.piWrites.mock.calls).toEqual([['first']]);
+      await first.adapter.teardown({} as StageOut, { gen });
+      await subsequent;
+      expect(h.piWrites.mock.calls).toEqual([['first'], ['next']]);
+    } finally {
+      queued.controller.abort(reason);
+      next.controller.abort(reason);
+      await first.adapter.teardown({} as StageOut, { gen });
+      await next.adapter.teardown({} as StageOut, { gen });
+    }
+  });
+
+  it('fails a hung handshake at the deadline and lets the next write proceed after teardown', async () => {
+    vi.useFakeTimers();
+    try {
+      const first = await piAttempt('first');
+      const next = await piAttempt('next');
+      await first.capabilities();
+      const subsequent = next.capabilities();
+      await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('next'));
+      h.startSession.mockReturnValueOnce(new Promise(() => {}));
+      const failed = expect(piChannel(first)).rejects.toThrow('Pi startup timed out');
+      await vi.advanceTimersByTimeAsync(PI_STARTUP_TIMEOUT_MS);
+      await failed;
+      expect(h.piWrites.mock.calls).toEqual([['first']]);
+      await first.adapter.teardown({ process: await processLease() } as StageOut, { gen });
+      expect(h.stopAndSettle).toHaveBeenCalledWith(h.client, 'first');
+      await subsequent;
+      await next.adapter.teardown({} as StageOut, { gen });
+      expect(h.piWrites.mock.calls).toEqual([['first'], ['next']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('session-life ACP leg', () => {
   it('starts platform preparation once identity is bound, before waiting for workspace or capability work', async () => {

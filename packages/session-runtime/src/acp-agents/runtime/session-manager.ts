@@ -636,6 +636,11 @@ export class SessionManager implements InboundRouter {
           });
         });
     }
+    // A stop while preparation had not opened the connection has no process to invalidate yet.
+    if (this.abandonedStarts.has(input.sessionId)) {
+      this.removeRecord(input.sessionId, false, false, true);
+      return acpErr.invalidState('Session stopped during startup');
+    }
     this.deps.logger.warn('SessionManager: starting provider process', { sessionId: input.sessionId, providerId: input.providerId, reason: this.reconnectingSessions.get(input.sessionId)?.kind ?? (input.providerSessionId ? 'resume-unspecified' : 'startup'), hostPid: process.pid, model: input.platformModel ?? null });
     const acquire = await acquireAsResult(
       this.connections,
@@ -1432,7 +1437,7 @@ export class SessionManager implements InboundRouter {
    *
    * - `input.model` — a harness-native id (the user's own model), or, with an API key connection
    *   that names its model through the process environment, the connection's model name — which
-   *   that spawn already runs (`runContext.apiKeyConnection.model`), so there is nothing to assert.
+   *   that spawn already runs (`runContext.customModel.model`), so there is nothing to assert.
    * - `input.platformModel` — the Gugu platform model this start pinned (canonical id). Its wire
    *   form is taken from the list the live session itself advertises (`gugu-platform/<id>` on
    *   pi / opencode, the bare id where nothing is advertised — copilot), never spelled here.
@@ -1608,7 +1613,7 @@ export class SessionManager implements InboundRouter {
       // 而这次 spawn 的环境点名的正是它 ⇒ 进程起来就跑它。这一家的 id 是自己的写法(qwen `$runtime|openai|<名>(openai)`),
       // 拿名字去设只会被拒、再报一条「模型不可用」的假警报。❌ 不按前缀拼它的 id —— 各家写法不同,同一条规则对五家都成立的
       // 是「环境已经点名就不设」。续接同理:记录与环境点名同一个模型,这家记着的也是它。
-      if (input.runContext?.apiKeyConnection?.model === input.model) return null;
+      if (input.runContext?.customModel?.model === input.model) return null;
       return { kind: 'assert', requested: input.model, wireValue: input.model };
     }
     // 平台模型:spawn 的注入已经带着它,只有续接一条带会话记忆的 provider 会话时才可能被顶掉。

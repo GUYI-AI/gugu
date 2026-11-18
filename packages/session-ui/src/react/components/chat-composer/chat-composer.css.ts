@@ -1695,6 +1695,9 @@ export const modelPanelItemCompact = style({
   alignItems: 'center',
   paddingTop: '0.375rem',
   paddingBottom: '0.375rem',
+  selectors: {
+    '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
+  },
 });
 
 // 单行之后 logo 跟名字同一条中线,`composerPanelItemIcon` 那 3px 下压只属于两段式的行。
