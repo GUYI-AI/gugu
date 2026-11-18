@@ -170,6 +170,7 @@ export default {
     "unreadAbove_one": "↑ {{count}} new message",
     "unreadAbove_other": "↑ {{count}} new messages",
     "noMessages": "No messages yet. Send one to start chatting.",
+    "mobileEmpty": { "title": "No messages yet", "hint": "Messages will appear here after they are sent" },
     "notificationLevel": {
       "all": "All",
       "important": "Important only",

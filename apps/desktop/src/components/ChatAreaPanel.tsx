@@ -50,7 +50,7 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { MessageList, type MessageListRowProps } from './chat/MessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
+import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
@@ -702,8 +702,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         activeAgentActivity ? (
           <div data-testid={AUTOMATION_TEST_IDS.chatMessageList} style={{ flex: 1 }} />
         ) : (
-          <div style={{ flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
-            {mobile && isGroupChat ? <PhoneProjectEmpty chatId={activeChat.id} /> : t('chatArea.noMessages')}
+          <div style={mobile && isRoomChatSurface ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : { flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
+            {mobile && isRoomChatSurface ? isGroupChat ? <PhoneProjectEmpty chatId={activeChat.id} /> : <PhoneMessagesEmpty /> : t('chatArea.noMessages')}
           </div>
         )
       )}

@@ -486,6 +486,7 @@ export default {
       "notificationsChat": "Chat message notifications",
       "notificationsChatAria": "Enable chat message notifications",
       "notificationsChatDescription": "New direct messages, and group messages addressed to you",
+      "notificationsEmpty": { "title": "No notifications yet", "hint": "See alerts here when someone needs you or an agent finishes a task" },
       "notificationsScope": "These cover Gugu messages only. Notifications for agents on the task page are under Tasks.",
       "notificationsBlocked": "The system is blocking Gugu's notifications.",
       "notificationsBlockedAction": "Open Device control",
