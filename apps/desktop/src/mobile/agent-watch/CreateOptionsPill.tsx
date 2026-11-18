@@ -22,6 +22,7 @@ import {
 } from './create-session-form'
 import { createModelOptions } from './session-model-menu'
 import { allGuguHidden, offeredInCreateMenu } from '@/lib/createModelDefault'
+import { PhoneComposerChoice } from '../composer/PhoneComposerChoice'
 import { ModelMenuFooter } from './ModelMenuFooter'
 import { phoneModelDescription, phoneModelName } from './phone-model-copy'
 import { composerModelSelection, composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
@@ -404,33 +405,11 @@ export function ModelChoices({
     { source: 'harness', reason: models ? harnessEmptyText(models) : null },
     { source: 'gugu', reason: guguEmptyText(models?.guguReason) },
   ]
-  const choice = (id: string | null, name: string, desc?: string, extra?: Record<string, string>, disabled = false) => {
-    const selected = selection.model === id
-    return (
-      <Button
-        key={id ?? '__default__'}
-        variant="ghost"
-        size="option"
-        className="gg-aw-choice"
-        disabled={disabled}
-        role="radio"
-        aria-checked={selected}
-        data-testid="agent-watch-create-choice"
-        data-dimension="model"
-        data-option-id={id ?? ''}
-        {...extra}
-        onClick={() => onPick(id)}
-      >
-        <span className="gg-aw-choice-radio" data-on={selected ? 'true' : undefined}>
-          {selected ? <Check /> : null}
-        </span>
-        <span className="gg-aw-choice-body">
-          <span className="gg-aw-choice-label">{name}</span>
-          {desc ? <span className="gg-aw-choice-desc">{desc}</span> : null}
-        </span>
-      </Button>
-    )
-  }
+  const choice = (id: string | null, name: string, description?: string, source?: 'harness' | 'gugu', disabled = false) => (
+    <PhoneComposerChoice key={id ?? '__default__'} id={id ?? ''} dimension="model" name={name}
+      description={description} selected={selection.model === id} disabled={disabled}
+      testId="agent-watch-create-choice" source={source} onClick={() => onPick(id)} />
+  )
   if (sessionOptions) return <div className="gg-aw-model-choices">{searchField}
     <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state="ready">
       {sessionRows.map((option) => choice(option.id, option.name, option.disabledReason ?? option.description, undefined, option.disabled))}
@@ -461,7 +440,7 @@ export function ModelChoices({
                   {composerTierLabel(source === 'gugu' ? 'platform' : 'own', harnessName)}
                 </div>
                 {rows.length > 0
-                  ? rows.map((m) => choice(m.id, m.name, m.description, { 'data-source': m.source }))
+                  ? rows.map((m) => choice(m.id, m.name, m.description, m.source))
                   : (
                     <div className="gg-aw-choice-desc gg-aw-choice-note" data-testid="agent-watch-create-models-empty" data-source={source}>
                       {source === 'gugu' && allGuguHidden(models)

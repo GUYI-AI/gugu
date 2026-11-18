@@ -5,6 +5,7 @@ import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { ChatNotificationLevelControl } from './ChatNotificationLevelControl'
+import { managementSettingsDangerRowStyle, managementSettingsRowStyle } from './groupSettingsStyles'
 import { COLOR_MUTED } from './chatPresentation'
 import { rendererLogger } from '../../lib/log'
 
@@ -48,11 +49,6 @@ const CONFIRM_STYLE: CSSProperties = { padding: '10px 14px' }
 const CONFIRM_TEXT_STYLE: CSSProperties = { fontSize: 'var(--font-body)', color: COLOR_MUTED, margin: '0 0 8px' }
 const CONFIRM_ACTIONS_STYLE: CSSProperties = { display: 'flex', gap: '8px' }
 const CONFIRM_BUTTON_STYLE: CSSProperties = { flex: 1 }
-const SETTINGS_ROW_STYLE: CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-  margin: '0 -8px', padding: '13px 8px', borderRadius: 'var(--radius-control)', cursor: 'pointer',
-  fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--text-primary)',
-}
 // 通知档位那一行:三段控件不收缩,标签 + 控件放不进一行(英文、窄抽屉)时控件整块换到下一行、仍贴右 ——
 // ❌ 撑宽这一行,那会让外层滚动容器出横向滚动条。标签的 auto 右边距在一行时把控件推到行尾。
 const WRAP_ROW: CSSProperties = { flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: 16, rowGap: 8 }
@@ -67,9 +63,9 @@ const APPEARANCE = {
     error: ERROR_STYLE,
   },
   settings: {
-    staticRow: { ...SETTINGS_ROW_STYLE, cursor: 'default' } as CSSProperties,
-    wrapRow: { ...SETTINGS_ROW_STYLE, cursor: 'default', ...WRAP_ROW } as CSSProperties,
-    dangerRow: { ...SETTINGS_ROW_STYLE, color: 'var(--danger-fg)' } as CSSProperties,
+    staticRow: { ...managementSettingsRowStyle, cursor: 'default' } as CSSProperties,
+    wrapRow: { ...managementSettingsRowStyle, cursor: 'default', ...WRAP_ROW } as CSSProperties,
+    dangerRow: managementSettingsDangerRowStyle,
     divider: null as CSSProperties | null,
     confirm: { padding: '10px 0' } as CSSProperties,
     error: { ...ERROR_STYLE, margin: '8px 0 0' } as CSSProperties,

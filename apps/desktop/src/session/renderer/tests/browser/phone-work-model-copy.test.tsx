@@ -139,8 +139,12 @@ it.each(['light', 'dark'] as const)('%s: existing session Work separates model c
   const row = (id: string) => document.querySelector<HTMLElement>(`[data-dimension="model"][data-option-id="${id}"]`)!
   await until('selected native row in the actual Work sheet', () => row('native-model')?.getAttribute('aria-checked') === 'true')
   expect(row('native-model').closest('.gg-aw')).toBeNull()
-  const label = row('native-model').querySelector<HTMLElement>('.gg-aw-choice-label')!
-  const detail = row('native-model').querySelector<HTMLElement>('.gg-aw-choice-desc')!
+  expect(row('native-model').hasAttribute('data-selected')).toBe(true)
+  expect(row('native-model').querySelector(':scope > svg')).not.toBeNull()
+  expect(row('sonnet').hasAttribute('data-selected')).toBe(false)
+  expect(row('sonnet').querySelector(':scope > svg')).toBeNull()
+  const label = row('native-model').querySelector<HTMLElement>('.gg-phone-composer-choice-name')!
+  const detail = row('native-model').querySelector<HTMLElement>('.gg-phone-composer-choice-description')!
   expect(label.textContent).toBe('GPT-6.1-Sol')
   expect(detail.textContent).toBe('适合编程和日常任务')
   expect(getComputedStyle(label.parentElement!).flexDirection).toBe('row')
@@ -163,7 +167,7 @@ it('keeps an undeclared live model channel disabled with its actual reason', asy
   await page.elementLocator(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
   const row = document.querySelector<HTMLButtonElement>('[data-dimension="model"][data-option-id="native-model"]')!
   await until('undeclared live channel is disabled', () => row?.disabled === true)
-  expect(row.querySelector('.gg-aw-choice-desc')?.textContent).toBe(translateSessionMessage('chat.modelSwitchUnsupportedHint'))
+  expect(row.querySelector('.gg-phone-composer-choice-description')?.textContent).toBe(translateSessionMessage('chat.modelSwitchUnsupportedHint'))
   expect(host.set).not.toHaveBeenCalled()
 })
 
@@ -176,8 +180,8 @@ it.each(['light', 'dark'] as const)('%s: normal production catalog at the real e
   await until('normal native ID is selected in existing Work', () => row(normalCodexSelectedId)?.getAttribute('aria-checked') === 'true')
   const localizedDetails = ['适合复杂编程任务', '适合日常编程']
   for (const [index, model] of normalCodexModelRows.entries()) {
-    const label = row(model.id).querySelector<HTMLElement>('.gg-aw-choice-label')!
-    const detail = row(model.id).querySelector<HTMLElement>('.gg-aw-choice-desc')!
+    const label = row(model.id).querySelector<HTMLElement>('.gg-phone-composer-choice-name')!
+    const detail = row(model.id).querySelector<HTMLElement>('.gg-phone-composer-choice-description')!
     expect(label.textContent).toBe(model.name); expect(detail.textContent).toBe(localizedDetails[index])
     expect(getComputedStyle(label.parentElement!).flexDirection).toBe('row')
     expect(Math.abs(detail.getBoundingClientRect().top - label.getBoundingClientRect().top)).toBeLessThanOrEqual(4)
