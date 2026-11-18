@@ -287,7 +287,7 @@ export default {
       "title": "新建任务",
       "pickMachine": "在哪台机器上",
       "welcome": "在 {{machine}} 上开始新任务",
-      "placeholder": "第一句话…",
+      "placeholder": "随心输入",
       "project": "项目",
       "harness": "Harness",
       "model": "模型",

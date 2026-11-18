@@ -293,7 +293,7 @@ export default {
       "title": "New task",
       "pickMachine": "On which machine",
       "welcome": "Start a new task on {{machine}}",
-      "placeholder": "First message…",
+      "placeholder": "Write anything…",
       "project": "Project",
       "harness": "Harness",
       "model": "Model",
