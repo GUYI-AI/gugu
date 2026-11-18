@@ -18,6 +18,8 @@ import { customModels } from '@renderer/features/sessions/session-config/custom-
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
 import { Unknown } from '@/components/ui/Unknown';
+import { AppIcon } from '@renderer/lib/components/app-icon';
+import { ChevronDownIcon } from '@/lib/icons';
 import { SettingsNote, Toggle } from './SettingsPrimitives';
 
 export function CustomModelDialog({ machine, connection, group = 'custom', onClose }: { machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom'; onClose: () => void }) {
@@ -29,6 +31,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', onClo
   const { data: agents, error: agentsError, refetch: refetchAgents } = useAgents();
   const accountAgent = agents?.find(agent => agent.id === accountProvider);
   const labelOf = (id: string) => id === 'claude-subscription' ? translate('customModels.claudeAccount') : id === 'chatgpt-subscription' ? translate('customModels.codexAccount') : providerPresets.find(item => item.id === id)?.name ?? translate('customModels.custom');
+  const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
   const [models, setModels] = useState(connection?.models.map(({ id }) => id) ?? []);
@@ -91,7 +94,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', onClo
       <DialogContentArea>
         <div className="subscription-connection-form">
           {group !== 'custom' && <label className="flex flex-col gap-2">
-            <span className="flex items-center justify-between">{translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.platform')}{(preset || accountProvider) && <Button type="button" size="sm" variant="link" onClick={() => openExternalLinkInBrowser(accountProvider === 'claude' ? 'https://claude.ai/upgrade' : accountProvider === 'codex' ? 'https://chatgpt.com/pricing' : preset!.docsUrl)}>{translate(accountProvider ? 'customModels.purchasePlan' : 'customModels.docs')} ↗</Button>}</span>
+            <span className="flex items-center justify-between">{translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.platform')}{(preset || accountProvider) && <Button type="button" size="sm" variant="link" className="gg-model-provider-link" onClick={() => openExternalLinkInBrowser(accountProvider === 'claude' ? 'https://claude.ai/upgrade' : accountProvider === 'codex' ? 'https://chatgpt.com/pricing' : preset!.docsUrl)}>{translate(accountProvider ? 'customModels.purchasePlan' : 'customModels.docs')} ↗</Button>}</span>
             <Combobox
               value={presetId}
               disabled={accountCreating || !!busy}
@@ -111,8 +114,8 @@ export function CustomModelDialog({ machine, connection, group = 'custom', onClo
                 aria-label={translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.platform')}
                 className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left"
               >
-                {labelOf(presetId)}
-                <span aria-hidden="true">⌄</span>
+                {providerLabel(presetId)}
+                <ChevronDownIcon aria-hidden="true" className="pointer-events-none size-4 text-foreground-muted" />
               </ComboboxTrigger>
               <ComboboxContent className="min-w-(--anchor-width)">
                 <ComboboxInput showTrigger={false} placeholder={translate('customModels.searchProviders')} />
@@ -120,7 +123,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', onClo
                   {(group: { label: string | null; items: string[] }) => <ComboboxGroup key={group.label ?? 'custom'} items={group.items}>
                     {group.label && <ComboboxLabel>{group.label}</ComboboxLabel>}
                     <ComboboxCollection>
-                      {(id: string) => <ComboboxItem key={id} value={id}>{labelOf(id)}</ComboboxItem>}
+                      {(id: string) => <ComboboxItem key={id} value={id}>{providerLabel(id)}</ComboboxItem>}
                     </ComboboxCollection>
                   </ComboboxGroup>}
                 </ComboboxList>
