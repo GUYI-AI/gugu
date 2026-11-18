@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { attachmentSha256 } from '@gugu/core/cloud/attachmentsApi'
+import { attachmentSha256, pendingAttachmentUploads } from '@gugu/core/cloud/attachmentsApi'
 import { storeBytes, storedCopy } from '@gugu/core/local/files/fileSnapshots'
 const hosts = vi.hoisted(() => [] as import('@gugu/core/cloud/declaredUploads').DeclaredUploadHost[])
 const queues = vi.hoisted(() => [] as { begin: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; drop: ReturnType<typeof vi.fn>; retry: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[])
@@ -67,4 +67,20 @@ it('switching accounts disposes the old queue and cannot use its endpoint', asyn
   await expect(hosts[0]!.endpoint()).rejects.toThrow('account changed')
   id = null; await host.resume()
   expect(queues[1]!.dispose).toHaveBeenCalledOnce()
+})
+it('each service request reads fresh matching credentials, and a switched account cannot use the old endpoint', async () => {
+  let id = 'one', token = 'before-refresh'
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ uploads: [] })))
+  const host = createAttachmentUploadHost({ account: async () => ({ id, home: '/unused', endpoint: async () => ({
+    supabaseUrl: 'https://db.test', anonKey: 'a', token, fetch: fetcher,
+  }) }), progress: vi.fn(), warn: vi.fn() })
+  await host.resume()
+  const endpoint = await hosts[0]!.endpoint()
+  token = 'after-refresh'
+  await pendingAttachmentUploads(endpoint)
+  expect(fetcher).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer after-refresh' }) }))
+  id = 'two'
+  await expect(pendingAttachmentUploads(endpoint)).rejects.toThrow('account changed')
+  expect(fetcher).toHaveBeenCalledOnce()
+  host.dispose()
 })
