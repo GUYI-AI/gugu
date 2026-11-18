@@ -40,6 +40,8 @@ const h = vi.hoisted(() => {
   return { manifest, api, agentList: vi.fn(async (): Promise<unknown[]> => []), showConfirm: vi.fn(), pickFolder: vi.fn(async () => '/tmp/notes-next') };
 });
 
+vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
+
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, agents: { listIcons: async () => ({}) }, viewState: { save: vi.fn(async () => ({ success: true })) } },
   rpcOn: () => ({}),
@@ -419,7 +421,7 @@ describe('Desktop marketplace tabs and app details', () => {
       data: { extensions, invalid: [], errorKind: null, error: null, total: extensions.length, page: 0, hasMore: false, fetchedAt: null },
     } as never);
     h.agentList.mockResolvedValue([
-      { id: 'claude', name: 'Claude Code', publisher: 'Anthropic', description: 'CLI', reading: 'used-ok' },
+      { id: 'claude', name: 'Claude Code', publisher: 'Anthropic', description: 'CLI', reading: 'installed' },
       { id: 'kilocode', name: 'Kilo', publisher: '开源', description: 'CLI', reading: 'not-detected' },
     ]);
     await render('agents');
@@ -441,6 +443,37 @@ describe('Desktop marketplace tabs and app details', () => {
     expect(document.querySelector('[data-testid="extension-card-gugu-assistant"]')).toBeNull();
     await press('[data-testid="extensions-tab-installed"]');
     expect(document.querySelector('[data-testid="extensions-installed-panel"]')).not.toBeNull();
+  });
+
+  it('searches the current catalog with the same search field', async () => {
+    h.agentList.mockResolvedValue([
+      { id: 'claude', name: 'Claude Code', description: 'CLI', reading: 'installed' },
+      { id: 'kilocode', name: 'Kilo', description: 'CLI', reading: 'not-detected' },
+    ]);
+    await render('agents');
+    const document = dom.window.document;
+    const searchFor = async (value: string) => {
+      const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      });
+    };
+    await searchFor('Kilo');
+    expect(document.querySelector('[data-testid="agent-market-card-claude"]')).toBeNull();
+    expect(document.querySelector('[data-testid="agent-market-card-kilocode"]')).not.toBeNull();
+
+    await press('[data-testid="extensions-section-market"]');
+    const results = [listing[0]!];
+    h.api.market.mockResolvedValue({
+      success: true,
+      data: { extensions: results, invalid: [], errorKind: null, error: null, total: 1, page: 0, hasMore: false, fetchedAt: null },
+    } as never);
+    await searchFor('arxiv');
+    await until('extension search results', () => Boolean(document.querySelector('[data-testid="extensions-market-section-results"]')));
+    expect(h.api.market).toHaveBeenCalledWith({ page: 0, query: 'arxiv' });
+    expect(document.querySelector('[data-testid="extension-card-arxiv"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="extension-card-pomo"]')).toBeNull();
   });
 
   it('draws every extension once and filters by category without a sorting bar', async () => {

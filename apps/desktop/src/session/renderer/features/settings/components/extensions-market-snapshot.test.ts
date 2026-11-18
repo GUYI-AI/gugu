@@ -53,6 +53,8 @@ const h = vi.hoisted(() => {
   return { item, listing, api, heard, host };
 });
 
+vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
+
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, app: {} },
   rpcOn: () => ({}),
