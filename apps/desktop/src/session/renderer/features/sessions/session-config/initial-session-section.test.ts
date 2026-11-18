@@ -1709,7 +1709,7 @@ describe('InitialSessionField', () => {
     ]);
   });
 
-  it('routes an uninstalled agent action to its agent detail in the library', async () => {
+  it('routes an uninstalled agent action to the agent product page', async () => {
     await renderField();
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
@@ -1719,9 +1719,8 @@ describe('InitialSessionField', () => {
       props.onAgentAction?.('claude');
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', {
-      tab: 'agents',
-      agentId: 'claude',
+    expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });
 

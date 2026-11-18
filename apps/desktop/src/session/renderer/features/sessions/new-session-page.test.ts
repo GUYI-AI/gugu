@@ -26,6 +26,7 @@ import { cancelComposerVerb } from './composer-verb-tag';
 import { readComposerVerb, setComposerVerb, takeComposerCarry } from '@/lib/composerVerbBridge';
 
 const mocks = vi.hoisted(() => ({
+  preferredProvider: undefined as string | undefined,
   notify: vi.fn(),
   dismissNotice: vi.fn(),
   showAddProjectModal: vi.fn(),
@@ -147,11 +148,12 @@ vi.mock('./implicit-session-home-project', () => ({
 
 vi.mock('@renderer/features/sessions/session-config/initial-session-section', () => ({
   useInitialSessionState: (...args: unknown[]) => {
-    const options = args[3] as { initialPrompt?: string; draft?: ReturnType<typeof composerDrafts.forKey> } | undefined;
+    const options = args[3] as { initialPrompt?: string; preferredProvider?: string; draft?: ReturnType<typeof composerDrafts.forKey> } | undefined;
     if (options?.draft && mocks.prompt !== null) options.draft.setPrompt(mocks.prompt);
     mocks.initialPrompt = options?.draft?.prompt ?? options?.initialPrompt;
+    mocks.preferredProvider = options?.preferredProvider;
     return {
-      provider: 'codex',
+      provider: options?.preferredProvider ?? 'codex',
       prompt: mocks.prompt ?? mocks.initialPrompt ?? '',
       issueContextEditorOpen: false,
       // 「这一轮带了内容」把待发附件一并算上,所以这份替身也必须有附件。
@@ -773,6 +775,13 @@ describe('NewSessionPage', () => {
       device.mockRestore();
       connection.mockRestore();
     }
+  });
+
+  it('uses the agent chosen in Apps for the new task composer', async () => {
+    await act(async () => {
+      root.render(localized(React.createElement(NewSessionPage, { agentSelection: { agentId: 'claude' } })));
+    });
+    expect(mocks.preferredProvider).toBe('claude');
   });
 
   // #2412 review ②: a machine picked on New task goes with the project only when it holds that project's folder.

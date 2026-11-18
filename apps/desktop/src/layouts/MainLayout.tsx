@@ -242,7 +242,7 @@ function InnerLayout({
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
-  useSessionpageAgentInstallNavigation(sessionHostAvailable, setSessionCreateOpen, setActiveTab)
+  useSessionpageAgentInstallNavigation(sessionHostAvailable, sessionCreateOpen, setSessionCreateOpen, setActiveTab)
   useOpenNewSessionOnDeviceHost(sessionHostAvailable && !mobile, setSettingsModalOpen, setActiveTab)
   // @@@create-entry-is-not-a-task-host-capability (#4287) — sessionHost 只选**用哪套装配**(常驻会话页 composer /
   // ACP-only composer),❌ 不回答「这里能不能建 agent」:并成一个布尔就凭空多出「两套都不给」的第三档,而安卓
@@ -317,7 +317,7 @@ function InnerLayout({
     if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
     return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
   }, [enterChat, openChatBlock, setActiveChatId, readChats])
-  const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').AppDetailLink>()
+  const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
     openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
