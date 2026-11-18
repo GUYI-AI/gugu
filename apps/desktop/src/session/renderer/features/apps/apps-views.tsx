@@ -3,7 +3,7 @@ import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -36,7 +36,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  * the machine picker in its title (it has no column of its own to carry one). A place of its own on the rail, so no task
  * list beside it, like 消息 and 通讯录.
  */
-const AppsMainPanel = observer(function AppsMainPanel() {
+const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const host = useSelectedLibraryHost();
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();

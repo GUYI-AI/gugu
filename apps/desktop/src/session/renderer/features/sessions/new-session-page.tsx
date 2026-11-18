@@ -2,7 +2,7 @@ import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
 import { useCreateSessionCallback } from '@renderer/features/sessions/create-session-modal/use-create-session-callback';
 import { useCreateSessionState } from '@renderer/features/sessions/create-session-modal/use-create-session-state';
@@ -220,13 +220,15 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   );
 });
 
+type NewSessionPageProps = {
+  agentSelection?: { agentId: string; deviceId?: string };
+  onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
+};
+
 export const NewSessionPage = observer(function NewSessionPage({
   onSessionCreated,
   agentSelection,
-}: {
-  agentSelection?: { agentId: string; deviceId?: string };
-  onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
-} = {}) {
+}: NewSessionPageProps) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
@@ -326,7 +328,7 @@ function NewSessionViewWrapper({ children }: { children: ReactNode } & NewSessio
   return <>{children}</>;
 }
 
-function NewSessionMainPanel() {
+function NewSessionMainPanel(): ReactElement {
   const { params: { agentId, deviceId } } = useParams('new-session');
   return <NewSessionPage key={agentId} agentSelection={agentId ? { agentId, deviceId } : undefined} />;
 }
