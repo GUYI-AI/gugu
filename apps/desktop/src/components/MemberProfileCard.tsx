@@ -14,11 +14,12 @@ import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
 import { useAgentContactStatusLabel } from './contactAgentTone'
 import { useAgentDisplayStatus } from '../hooks/useAgentDisplayStatus'
-import { Button } from './ui/Button'
+import { Button, type ButtonProps } from './ui/Button'
+import { Hint } from './ui/Tooltip'
 import { Unknown } from './ui/Unknown'
 import { FieldList } from './contactsDetailControls'
 import { cn } from '@/lib/cn'
-import { Search } from '@/lib/icons'
+import { Hash, Search, Users } from '@/lib/icons'
 import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useAgentSessionRow } from '@/mobile/agent-watch/useAgentSessionRow'
@@ -35,16 +36,22 @@ const profileHeaderTextClass = 'gg-pop-ph-text flex min-w-0 flex-col'
 const profileNameClass = 'gg-pop-pn min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[var(--text-primary)]'
 const profileActionsClass = 'gg-pop-pacts flex flex-wrap gap-2 px-4 pb-3 pt-3'
 const profileButtonClass = 'gg-pop-pbtn flex-[1_1_auto] text-[length:var(--font-body)] [&_svg]:shrink-0'
+const agentProfileActionsClass = 'gg-pop-pacts flex gap-2 px-4 pb-3 pt-4'
+const agentProfileActionsMobileClass = 'flex-wrap'
+const agentPrimaryActionClass = 'min-w-0 flex-1 px-2'
+const agentPrimaryActionMobileClass = 'min-h-[var(--control-h-touch)] basis-full'
+const agentSecondaryActionClass = 'h-[var(--control-h-lg)] w-[var(--control-h-lg)] shrink-0 bg-[var(--muted)] px-0'
+const agentSecondaryActionMobileClass = 'min-h-16 min-w-0 flex-1 flex-col gap-1.5 bg-[var(--muted)] px-1.5 py-2 text-center text-xs leading-snug whitespace-normal'
 const profileFieldsClass = 'gg-pop-fields gap-x-2 gap-y-1.5 px-4 pb-3.5'
 const profileFieldRowClass = 'gg-pop-field-row col-span-2 grid grid-cols-subgrid items-start text-[length:var(--font-caption)] leading-[var(--lh-caption)]'
 const profileFieldLabelClass = 'gg-pop-field-label whitespace-nowrap text-[var(--text-tertiary)]'
 const profileFieldValueClass = 'gg-pop-field-value min-w-0 [overflow-wrap:anywhere] text-[var(--text-secondary)]'
 const profileAgentMetaClass = 'mt-[3px] flex flex-wrap gap-x-2.5 gap-y-0.5 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-tertiary)] [&>*]:max-w-full [&>*]:truncate'
-const profileListenClass = 'gg-pop-lm px-4 pb-4 pt-1'
-const profileListenLabelClass = 'gg-pop-lml mb-[7px] text-[length:var(--font-body)] text-[var(--text-secondary)]'
+const profileListenClass = 'gg-pop-lm mx-4 border-t border-[var(--border-subtle)] pb-4 pt-3'
+const profileListenLabelClass = 'gg-pop-lml flex min-w-0 items-center gap-1.5 text-[length:var(--font-body)] text-[var(--text-secondary)]'
 // @@@1344(b) — 倾听模式分段壳:椭圆/胶囊(rounded-full)→圆角矩形(rounded-lg=8px,对齐 SSOT 基础圆角 `--r`)。
-const profileListenSegmentClass = 'gg-pop-lmseg flex gap-1.5 rounded-lg bg-[var(--listen-mode-bg)] p-[3px]'
-const profileListenButtonBaseClass = 'gg-pop-lmseg-btn flex-1 rounded-md border-none px-0 py-1.5 font-[inherit] text-xs font-medium !transition-[background,color] !duration-[var(--dur-fast)] !ease-[var(--ease)]'
+const profileListenSegmentClass = 'gg-pop-lmseg flex h-[30px] w-32 shrink-0 gap-1 rounded-lg bg-[var(--listen-mode-bg)] p-[3px]'
+const profileListenButtonBaseClass = 'gg-pop-lmseg-btn flex-1 rounded-md border-none px-0 font-[inherit] text-xs font-medium !transition-[background,color] !duration-[var(--dur-fast)] !ease-[var(--ease)]'
 const profileListenButtonActiveClass = 'gg-pop-lmseg-btn--on bg-[var(--listen-mode-active-bg)] text-[var(--listen-mode-active-fg)] shadow-[var(--listen-mode-active-shadow)]'
 const profileListenButtonInactiveClass = 'bg-transparent text-[var(--listen-mode-fg)]'
 
@@ -210,6 +217,37 @@ function DataRow({ field, label, value }: { field: string; label: string; value:
   )
 }
 
+
+export type MemberProfileListenRoom = { kind: 'group' | 'topic'; name: string }
+
+function ProfileSecondaryAction({ isAgent, phone, label, unavailableLabel, children, ...props }: {
+  isAgent: boolean
+  phone: boolean
+  label: string
+  unavailableLabel?: string
+  'data-testid'?: string
+  children: ReactNode
+} & Pick<ButtonProps, 'onClick' | 'disabled'>) {
+  if (!isAgent) {
+    return <Button size="sm" className={profileButtonClass} title={unavailableLabel} {...props}>{children}{label}</Button>
+  }
+
+  const button = (
+    <Button
+      {...props}
+      size="lg"
+      variant="ghost"
+      aria-label={phone ? undefined : label}
+      title={props.disabled ? unavailableLabel : undefined}
+      className={phone ? agentSecondaryActionMobileClass : agentSecondaryActionClass}
+    >
+      {children}{phone ? <span>{label}</span> : null}
+    </Button>
+  )
+
+  return phone || props.disabled ? button : <Hint label={label} side="bottom">{button}</Hint>
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function MemberProfileCard({
@@ -217,6 +255,7 @@ export function MemberProfileCard({
   onOpenChat,
   onWhisper,
   onFindMessages,
+  listenRoom,
   editControls,
   aliasControls,
   fill = false,
@@ -227,6 +266,7 @@ export function MemberProfileCard({
   onWhisper?: (target: MemberProfileChatTarget) => void
   /** 「查找 TA 的消息」:这个会话的全局搜索,带 in: 和 from: 两枚可删的标签。 */
   onFindMessages?: () => void
+  listenRoom?: MemberProfileListenRoom
   editControls?: MemberProfileEditControls
   aliasControls?: MemberProfileAliasControls
   fill?: boolean
@@ -292,7 +332,10 @@ export function MemberProfileCard({
   }
 
   // Keep the actual avatar at the card's size; badges must remain outside its bounds.
-  const avatarSize = 52
+  const avatarSize = isAgent ? (phone ? 64 : 60) : 52
+  const agentNameClass = phone ? 'text-xl font-semibold' : 'text-lg font-semibold'
+  const listenRoomName = listenRoom?.name || t('profile.listenModeDescription')
+  const ListenRoomIcon = listenRoom?.kind === 'topic' ? Hash : Users
 
   return (
     <>
@@ -310,7 +353,7 @@ export function MemberProfileCard({
           />
         </div>
         <div className={profileHeaderTextClass} style={{ flex: 1, minWidth: 0 }}>
-          {isAgent ? <OwnedAgentNameEditor key={member.id} agentId={member.id} name={member.displayName} ownerUserId={member.ownerUserId} status={status} membership={member.membership} className="text-base font-semibold"><span className={profileNameClass}>{shownName}</span></OwnedAgentNameEditor> : <div className={profileNameClass}>{member.displayName}</div>}
+          {isAgent ? <OwnedAgentNameEditor key={member.id} agentId={member.id} name={member.displayName} ownerUserId={member.ownerUserId} status={status} membership={member.membership} className={agentNameClass}><span className={cn(profileNameClass, agentNameClass)}>{shownName}</span></OwnedAgentNameEditor> : <div className={profileNameClass}>{member.displayName}</div>}
           {/* One metadata line, the same cells-with-gap idiom as the agent's row in the member list. */}
           {isAgent ? (
             <div data-profile-agent-meta className={profileAgentMetaClass}>
@@ -322,25 +365,27 @@ export function MemberProfileCard({
       </div>
 
       {/* ── Action buttons (prototype .pacts, lines 450-452) ─────────── */}
-      <div className={profileActionsClass}>
+      <div className={isAgent ? cn(agentProfileActionsClass, phone && agentProfileActionsMobileClass) : profileActionsClass}>
         {/* 发消息 — wired to existing onOpenChat handler */}
         {canOpenChat ? (
           <Button
-            size="sm"
+            size={isAgent ? 'lg' : 'sm'}
+            variant={isAgent ? 'primary' : 'secondary'}
             data-testid="member-profile-send-message-button"
-            className={profileButtonClass}
+            className={isAgent ? cn(agentPrimaryActionClass, phone && agentPrimaryActionMobileClass) : profileButtonClass}
             onClick={handleOpenChat}
           >
             <IconMsg />
-            {t('common.sendMessage')}
+            <span className="truncate">{t('common.sendMessage')}</span>
           </Button>
         ) : null}
 
         {/* 悄悄话 — 群聊模式且父组件提供 onWhisper 时显示（对标设计稿 .pbtn.hide-single）。 */}
         {isGroupProfile && onWhisper ? (
-          <Button
-            size="sm"
-            className={profileButtonClass}
+          <ProfileSecondaryAction
+            isAgent={isAgent}
+            phone={phone}
+            label={t('profile.whisper')}
             onClick={() => {
               onWhisper({
                 id: member.id,
@@ -353,28 +398,32 @@ export function MemberProfileCard({
             }}
           >
             <IconWhisper />
-            {t('profile.whisper')}
-          </Button>
+          </ProfileSecondaryAction>
         ) : null}
 
         {onFindMessages ? (
-          <Button size="sm" data-testid="member-profile-find-messages-button" className={profileButtonClass} onClick={onFindMessages}>
+          <ProfileSecondaryAction
+            isAgent={isAgent}
+            phone={phone}
+            label={t('profile.findMessages')}
+            data-testid="member-profile-find-messages-button"
+            onClick={onFindMessages}
+          >
             <Search size={14} />
-            {t('profile.findMessages')}
-          </Button>
+          </ProfileSecondaryAction>
         ) : null}
 
         {/* 分享 — prototype line 822. #1111: 接既有 contact QR 分享卡（SharePosterDialog）。 */}
-        <Button
-          size="sm"
-          className={profileButtonClass}
+        <ProfileSecondaryAction
+          isAgent={isAgent}
+          phone={phone}
+          label={t('common.share')}
           disabled={!canShare}
-          title={canShare ? undefined : t('profile.shareUnavailable')}
+          unavailableLabel={canShare ? undefined : t('profile.shareUnavailable')}
           onClick={() => { if (canShare) setShowShare(true) }}
         >
           <IconShare />
-          {t('common.share')}
-        </Button>
+        </ProfileSecondaryAction>
       </div>
 
       {/* ── Data fields (咕咕号 / 群角色 / etc) ─────
@@ -413,20 +462,26 @@ export function MemberProfileCard({
           or a current source-group manager. Other viewers retain the read-only projection. ── */}
       {showListenMode ? (
         <div className={profileListenClass}>
-          <div className={profileListenLabelClass}>{t('profile.listenModeDescription')}</div>
-          <div className={profileListenSegmentClass}>
-            {rosterUnknown ? <Unknown /> : LISTEN_MODES.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={listenModeButtonClass(listenMode === mode)}
-                disabled={canEditListenMode ? editBusy : undefined}
-                style={{ cursor: canEditListenMode ? 'pointer' : 'default' }}
-                onClick={canEditListenMode ? () => { void editControls?.onChangeListenMode?.(mode) } : undefined}
-              >
-                {mode === 'passive' ? t('profile.listenModes.passive') : t('profile.listenModes.proactive')}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-2">
+            <div className={profileListenLabelClass}>
+              {listenRoom ? <ListenRoomIcon className="size-4 shrink-0" aria-hidden /> : null}
+              <span className="truncate" title={listenRoomName}>{listenRoomName}</span>
+            </div>
+            <div className={profileListenSegmentClass} role="group" aria-label={listenRoom ? `${t('profile.listenModeDescription')} ${listenRoomName}` : listenRoomName}>
+              {rosterUnknown ? <Unknown /> : LISTEN_MODES.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={listenModeButtonClass(listenMode === mode)}
+                  aria-pressed={listenMode === mode}
+                  disabled={canEditListenMode ? editBusy : undefined}
+                  style={{ cursor: canEditListenMode ? 'pointer' : 'default' }}
+                  onClick={canEditListenMode ? () => { void editControls?.onChangeListenMode?.(mode) } : undefined}
+                >
+                  {mode === 'passive' ? t('profile.listenModes.passive') : t('profile.listenModes.proactive')}
+                </button>
+              ))}
+            </div>
           </div>
           {/* 只接了档位的卡(消息头像 / 话题)没有下面那块管理区,没改成的原因就写在分段下面。 */}
           {!showEdits && editControls?.editError ? (

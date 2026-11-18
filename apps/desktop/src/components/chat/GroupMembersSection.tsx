@@ -165,7 +165,7 @@ export function GroupMembersSection({
   const subHead = (title: ReactNode, action?: ReactNode) => <SettingsPageHead title={title} action={action} onBack={canPop ? pop : undefined} onClose={mobileShell ? onClose : undefined} mobile={mobileShell} />
   let content: ReactNode
   if (page === 'members') {
-    content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
+    content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" chatName={chat.alias?.trim() || groupName} snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
   } else if (page === 'announcement') {
     content = <AnnouncementDrawer chatId={chatId} isAdmin={viewerIsManager} head={subHead} />
   } else if (page === 'manage' && settings) {
