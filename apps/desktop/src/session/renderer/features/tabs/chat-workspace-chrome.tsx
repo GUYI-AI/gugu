@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Maximize2, MessageSquare, Minimize2, PanelRightClose, PanelRightOpen } from '@/lib/icons';
+import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { escapeIsFree } from '@shared/escape-is-free';
@@ -78,6 +78,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   );
   const show = translate('tabs.showToolTabs');
   const hide = translate('tabs.hideToolTabs');
+  const tabsVisible = mode === 'split';
+  const toggleLabel = tabsVisible ? hide : show;
   const exit = translate('tabs.exitToolFullView');
   const maximize = translate('tabs.enterToolFullView');
   const returnToChat = translate('tabs.returnToChat');
@@ -97,19 +99,18 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       {!toolsFirst && toolTabs}
       <TabBarActionRow atWindowEdge={!!atWindowEdge}>
         {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
-        {mode === 'hidden' && (
-          <Button size="icon-sm" variant="ghost" title={show} aria-label={show} onClick={() => layout.setChatToolLayout('split')}>
-            <PanelRightOpen className="size-3.5" />
-          </Button>
-        )}
-        {mode === 'split' && tools && <>
+        {tabsVisible && tools && (
           <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>
             <Maximize2 className="size-3.5" />
           </Button>
-          <Button size="icon-sm" variant="ghost" title={hide} aria-label={hide} onClick={() => layout.setChatToolLayout('hidden')}>
-            <PanelRightClose className="size-3.5" />
+        )}
+        {tools && (tabsVisible || mode === 'hidden') && (
+          <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
+            className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
+            onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
+            <PanelRight className="size-3.5" />
           </Button>
-        </>}
+        )}
         {full && (
           <Button size="sm" variant="ghost" className="gap-1 text-xs" title={exit} onClick={() => layout.setChatToolLayout('split')}>
             <Minimize2 className="size-3.5" />{exit}

@@ -81,11 +81,20 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(chip.getBoundingClientRect().height).toBe(32);
   expect(getComputedStyle(chip).borderBottomLeftRadius).toBe('8px');
   expect(hideButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
+  expect(getComputedStyle(hideButton).borderRadius).toBe('8px');
+  expect(hideButton.getAttribute('aria-pressed')).toBe('true');
+  const panelIcon = hideButton.querySelector('svg')?.innerHTML;
+  expect(panelIcon).toBeTruthy();
   const firstTool = tool();
   const chatWidth = width(chat());
 
   await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
   await mode('hidden');
+  const showButton = inside('button[aria-label="显示标签页"]')!;
+  expect(showButton.getAttribute('aria-pressed')).toBe('false');
+  expect(showButton.querySelector('svg')?.innerHTML).toBe(panelIcon);
+  expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
+  expect(getComputedStyle(showButton).borderRadius).toBe('8px');
   await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
   expect(firstTool?.closest('[inert]')).not.toBeNull();
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
