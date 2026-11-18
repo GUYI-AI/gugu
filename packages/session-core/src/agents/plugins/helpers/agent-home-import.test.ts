@@ -53,6 +53,24 @@ it('requires explicit consent, imports projections, excludes credentials and ret
   expect(await ensureAgentHome(home)).toBe('already-present');
 });
 
+it('imports the chosen groups after Skip even if the CLI initialized its own defaults', async () => {
+  const { home, source } = await fixture();
+  await source('settings.json', '{"theme":"terminal","hooks":{"Stop":[]}}');
+  const skipped = await importAgentHome(home, { groups: new Set(), skip: true });
+  expect(skipped.marker).toMatchObject({ groups: [], skipped: true });
+  await writeFile(join(home.configRoot, 'settings.json'), '{"theme":"generated","hooks":{"Stop":[{"command":"managed"}]}}');
+
+  const imported = await importAgentHome(home, { groups: new Set(['settings']) });
+  expect(imported.marker).toMatchObject({ groups: ['settings'] });
+  expect(imported.marker.skipped).toBeUndefined();
+  expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({
+    theme: 'terminal', hooks: { Stop: [{ command: 'managed' }] },
+  });
+  expect(JSON.parse(await readFile(join(home.userConfigRoot, 'settings.json'), 'utf8'))).toEqual({
+    theme: 'terminal', hooks: { Stop: [] },
+  });
+});
+
 it('merges separately selected projections and keeps hook-only changes in the hooks group', async () => {
   const { home, source } = await fixture();
   await source('settings.json', '{"theme":"dark","hooks":{"Stop":[]}}');

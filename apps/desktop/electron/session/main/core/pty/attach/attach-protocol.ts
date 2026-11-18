@@ -93,8 +93,9 @@ export type AttachError = {
  * #6264 一问一答里「这台机器上的程序要打开网页」那一问(`gugu-server open-url` → 账号进程,见
  * session-timeline/remote-open-external.ts)。只走本机套接字,❌ 进云端设备 RPC 那张表。
  */
-export const AGENT_HOME_CALL = 'machine.agentHome';
 export const OPEN_EXTERNAL_CALL = 'machine.openExternal';
+/** The local operator manages this account’s harness configuration. */
+export const AGENT_HOME_CALL = 'machine.agentHome';
 /** Local controller signals an already-running account after host suspension. */
 export const HOST_RESUME_CALL = 'host.resume';
 

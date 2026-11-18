@@ -336,7 +336,7 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
   let copied = 0;
   const { items, issues } = options.groups.size ? await collect(home, async (snapshots) => {
     for (const entries of byTarget(snapshots.filter((item) => options.groups.has(item.group)))) {
-      await writeItem(home, entries, false);
+      await writeItem(home, entries, existing?.skipped === true);
       copied += (await disk.stat(join(home.configRoot, entries[0]!.target))).size;
     }
   }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
