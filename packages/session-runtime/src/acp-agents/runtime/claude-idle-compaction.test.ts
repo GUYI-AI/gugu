@@ -66,7 +66,7 @@ describe('#3005 Claude idle compaction settings', () => {
 });
 
 describe('#3005 cache-aware scheduler', () => {
-  it('fires 54 minutes after the last live model cycle, not after the session was last seen idle', async () => {
+  it('fires 50 minutes after the last live model cycle, not after the session was last seen idle', async () => {
     vi.useFakeTimers();
     const policy = claudeCacheIdleCompaction();
     const compact = vi.fn(async () => undefined);

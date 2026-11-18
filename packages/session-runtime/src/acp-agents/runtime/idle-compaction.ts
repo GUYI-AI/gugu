@@ -4,12 +4,12 @@ export const ASSISTANT_IDLE_COMPACT_TOKENS = 120_000;
 export const ASSISTANT_IDLE_COMPACT_MS = 60_000;
 
 /**
- * #3005 Claude Code's own idle compaction, which its stream-json/ACP mode never runs: about an hour after
- * the last request, before the one-hour prompt cache expires. 54 min leaves the compaction request itself
- * time to land on a still-warm cache.
+ * #3005 Claude Code's own idle compaction, which its stream-json/ACP mode never runs: before the one-hour prompt
+ * cache expires. 50 min idle, and no compaction once the last real request is over 55 min old: the compaction
+ * request itself needs a still-warm cache with room to spare (owner 11-18: 59 min was too tight).
  */
-export const CLAUDE_CACHE_IDLE_COMPACT_MS = 54 * 60_000;
-export const CLAUDE_PROMPT_CACHE_TTL_MS = 60 * 60_000;
+export const CLAUDE_CACHE_IDLE_COMPACT_MS = 50 * 60_000;
+export const CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS = 55 * 60_000;
 /** Claude Code's default `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`, and its floor. */
 export const CLAUDE_CACHE_IDLE_COMPACT_TOKENS = 200_000;
 export const CLAUDE_CACHE_IDLE_COMPACT_MIN_TOKENS_FLOOR = 100_000;

@@ -32,6 +32,7 @@ export const SETTINGS_DEFAULTS = {
     autoApproveByDefault: DEFAULT_SESSION_AUTO_APPROVE,
     autoTrustWorktrees: true,
     preserveNameCapitalization: false,
+    idleCompaction: true,
     includeIssueContextByDefault: true,
     titleModel: SESSION_TITLE_DEFAULT_MODEL,
     titleInstructions: ''

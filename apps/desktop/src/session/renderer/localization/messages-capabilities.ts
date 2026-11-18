@@ -39,6 +39,9 @@ export const enUSCapabilityMessages = {
   'taskDefaults.preserveCapitalization': 'Preserve task name capitalization',
   'taskDefaults.preserveCapitalizationDescription':
     'Keep uppercase letters in generated and manually entered task names. Defaults to lowercase.',
+  'taskDefaults.idleCompaction': 'Compact long conversations while you are away',
+  'taskDefaults.idleCompactionDescription':
+    'Claude Code conversations are summarized before the prompt cache expires, so your next message costs less and replies sooner.',
   'taskDefaults.enableTmux': 'Enable tmux',
   'taskDefaults.enableTmuxDescription':
     'Use tmux for agent tasks and terminals unless the project has its own setting.',
@@ -1010,6 +1013,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'taskDefaults.preserveCapitalization': '保留会话名大小写',
   'taskDefaults.preserveCapitalizationDescription':
     '在生成和手动输入的会话名中保留大写字母，默认转小写。',
+  'taskDefaults.idleCompaction': '离开时压缩长对话',
+  'taskDefaults.idleCompactionDescription': 'Claude Code 的长对话在提示缓存过期前先压缩成摘要，回来再发消息更省也更快。',
   'taskDefaults.enableTmux': '启用 tmux',
   'taskDefaults.enableTmuxDescription': '除非项目有单独设置，否则在 tmux 会话中运行智能体会话和终端。',
 
