@@ -78,11 +78,11 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
   return (
     <TooltipProvider delay={150}>
       <div data-slot="mcp-library" className="flex flex-col text-foreground">
-        <PageHeader
-          sticky={!inSettings}
-          title={translate('mcpLibrary.title')}
-          showTitleInSettings={inSettings}
-        />
+        {inSettings ? (
+          <SectionLabel role="heading" aria-level={2}>{translate('mcpLibrary.title')}</SectionLabel>
+        ) : (
+          <PageHeader sticky title={translate('mcpLibrary.title')} />
+        )}
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={library.reload} />}
         {library.isLoading ? (
           <PageLoading />

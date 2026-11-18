@@ -15,7 +15,9 @@ export const DesktopConnectionsSettings = observer(function DesktopConnectionsSe
     <SettingsPage data-testid="desktop-connected-apps">
       <SettingsNote>{translate('settings.desktopConnectionsDescription')}</SettingsNote>
       <div className="flex items-center gap-2">
-        <DeviceScopePicker store={libraryDeviceStore} variant="sidebar" />
+        <div className="w-36 shrink-0">
+          <DeviceScopePicker store={libraryDeviceStore} variant="sidebar" />
+        </div>
         <DeviceScopeStatus store={libraryDeviceStore} />
       </div>
       <DeviceScopeProvider store={libraryDeviceStore} inTitle={false}>

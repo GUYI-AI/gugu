@@ -118,7 +118,11 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 
   function renderSection() {
     switch (activeSection) {
-      case 'connectors': return mobile ? <ConnectorsSection /> : <SessionSettingsSection section="connectors" context={{ desktopConnections: true }} />
+      case 'connectors': return mobile ? <ConnectorsSection /> : (
+        <div>
+          <SessionSettingsSection section="connectors" context={{ desktopConnections: true }} />
+        </div>
+      )
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
