@@ -115,7 +115,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
         assistant={installedAssistant} hideEmpty={hideInstalledEmpty} />
       : !unreadable ? <ShelfSkeleton label={translate('extensions.loading')} /> : null)}
     {mode === 'market' && <div className="phone-market" data-testid="phone-app-market">
-      <PhoneMarketFilters search={t('phoneMarket.searchApps')} query={query} onQueryChange={setQuery}
+      <PhoneMarketFilters<'all' | MarketCategory> search={t('phoneMarket.searchApps')} query={query} onQueryChange={setQuery}
         choices={categories} category={chip} onCategoryChange={setChip} />
       {catalog.data ? <div>
         {rows.map(item => {

@@ -95,7 +95,7 @@ function LegacyAssistantConnections({ assistant, chatId, homeDeviceId, home, mod
   const page = parseConnectorSub(sub)
   const machine = usePhoneMachine(homeDeviceId, assistant.id, chatId)
   const integrations = usePhoneIntegrations(machine, true)
-  const props = { assistant, home, homeDeviceId, machine, integrations, go: (next?: string) => setSub(next ?? null) }
+  const props = { assistant, home, homeDeviceId, machine, integrations, go: setSub }
   const name = integrations.data?.items.find(app => app.id === page?.id)?.name
   const back = () => setSub(page?.view === 'connect' ? `connector:${page.id}` : null)
   useSettingsDetail(page ? `market-${sub}` : null, name ?? t('phoneMarket.connectors'), back)

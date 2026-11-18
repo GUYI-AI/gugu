@@ -30,7 +30,7 @@ export function PhoneMarketConnectorCatalog({ apps, connectionKnown, mode, open,
   }, i18n.language).results
   if (mode === 'installed' && !connectionKnown) return <AppConnectionListPlaceholder />
   return <div className="phone-market" data-testid="phone-market-connectors">
-    <PhoneMarketFilters search={t('phoneMarket.searchConnectors')} query={query} onQueryChange={setQuery}
+    <PhoneMarketFilters<'all' | AppCategoryId> search={t('phoneMarket.searchConnectors')} query={query} onQueryChange={setQuery}
       choices={choices} category={activeCategory} onCategoryChange={setCategory} />
     <div>
       {rows.map(app => <PhoneMarketRow key={app.id} name={app.name} description={app.description} icon={icon(app, 40)}

@@ -55,7 +55,7 @@ export const PhoneMarketAgents = observer(function PhoneMarketAgents({ device, t
     value, label: value === 'all' ? t('phoneMarket.all') : translate(`extensions.agentCategory.${value}`),
   }))
   return <div className="phone-market" data-testid={installed ? 'phone-market-installed-agents' : 'phone-market-agents'}>
-    {!installed && <PhoneMarketFilters search={t('phoneMarket.searchAgents')} query={query} onQueryChange={setQuery}
+    {!installed && <PhoneMarketFilters<Category> search={t('phoneMarket.searchAgents')} query={query} onQueryChange={setQuery}
       choices={choices} category={category} onCategoryChange={setCategory} />}
     <div>
       {assistant && assistantText && onOpenApp && <PhoneMarketRow testId="phone-market-agent-assistant" name={assistantText.name}
