@@ -1,9 +1,9 @@
-import { ASSISTANT_APP_ID } from './assistant-entry';
 import {
   compareExtensionVersions,
   type ExtensionCapability,
   type ExtensionManifest,
 } from './manifest';
+import { ASSISTANT_APP_ID } from './assistant-entry';
 import { queryScore, queryWords } from './query-score';
 
 /**
