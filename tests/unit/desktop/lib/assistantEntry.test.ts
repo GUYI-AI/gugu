@@ -20,7 +20,6 @@ import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stor
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } from '../../../../apps/desktop/src/lib/appHostLayerBridge'
 import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
 import { appConversationPanelCollapsed, setAppConversationPanelCollapsed } from '../../../../apps/desktop/src/session/renderer/features/apps/app-conversation-panel'
-import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
 // Where Apps are (a task host): the no-App 开通 opens the Apps page there; the web build has none.
@@ -219,7 +218,7 @@ describe('openAssistantEntry', () => {
 /**
  * Owner 11-12「设置里面不应该有咕咕设置吧?」: every route of the shell's that used to open Settings' 咕咕 group (资料, 连接应用:
  * notifications, connection prompts, old section links — MainLayout sends them all here) lands in the App: its page, with that
- * page of the assistant over its panel; never a Settings event.
+ * page of the assistant over its panel. The user's fallback connections use Settings.
  */
 describe('openAssistantPageInApp', () => {
   const opened: unknown[] = []
@@ -319,14 +318,9 @@ describe('openAssistantPageInApp', () => {
     expect(opened).toEqual([{ kind: 'app-detail', extensionId: ASSISTANT_APP_ID }])
     expect(revealed).toEqual([true])
     opened.length = 0
-    const settings = vi.fn()
-    window.addEventListener(UI_EVENTS.openSettings, settings, { once: true })
-    try {
-      expect(openAssistantPageInApp('connected-apps')).toBe(true)
-      expect(settings).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'connectors', ownerConnections: true } }))
-    } finally {
-      window.removeEventListener(UI_EVENTS.openSettings, settings)
-    }
+    expect(openAssistantPageInApp('connected-apps')).toBe(true)
+    expect(settings).toEqual([{ section: 'connectors', ownerConnections: true }])
+    settings.length = 0
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')
