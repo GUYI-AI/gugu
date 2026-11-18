@@ -1,4 +1,5 @@
 import { createFailureLogFields } from './create-failure-log-fields';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -123,10 +124,10 @@ function offeredSessionViews(agent: AgentPayload): SessionpageSessionView[] {
  */
 function declaredPermissionModes(agent: AgentPayload): GuguPermissionMode[] {
   const legs = offeredSessionViews(agent).map(sessionpageLegOfView);
-  return GUGU_PERMISSION_MODES.filter((mode) =>
+  return GUGU_PERMISSION_MODES.filter((mode) => mode !== 'ai-review' && (
     legs.length === 0
       ? agentSupportsPermissionMode(agent.capabilities, mode)
-      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg)));
+      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg))));
 }
 
 /**
@@ -328,6 +329,9 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
+        ...(catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : 'own', requestedModel ?? (state.kind === 'ready' ? state.selected : null))
+          ? { autoReview: { model: platformModel ? requestedModel! : state.kind === 'ready' ? state.selected! : '' } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,

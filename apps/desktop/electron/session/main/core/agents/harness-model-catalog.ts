@@ -51,7 +51,7 @@ import { errorDetail } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
-import { flattenSelectOptions, type AcpPlatformInjection } from '@gugu/session-core/acp';
+import { flattenSelectOptions, decodeConfigOptions, type AcpPlatformInjection } from '@gugu/session-core/acp';
 import type { SessionConfigSelectOptions } from '@agentclientprotocol/sdk';
 import { mergeTrustedSessionMeta } from '../acp/runtime-process/session-meta';
 import { createLogger } from '../../../../lib/logger';
@@ -168,6 +168,9 @@ export type HarnessCatalogState =
     efforts: HarnessModelChoice[];
     selectedEffort: string | null;
     /** Native Fast option for this snapshot's selected model only. */
+    autoReview?: boolean;
+    reviewerAvailable?: boolean;
+    cliVersion?: string;
     fastMode?: { configId: string; selected: string | null; available: HarnessModelChoice[] };
     /**
      * 这份目录照一把 API Key 连接读(#2507)时:连接勾选的每个模型在这家目录里的 id(这家自己的写法,起步模型在前)。
@@ -198,6 +201,8 @@ export type HarnessCatalogState =
    */
   | {
       kind: 'auth-required';
+      reviewerAvailable?: boolean;
+      cliVersion?: string;
       authMethods: HarnessAuthMethod[];
       efforts: HarnessModelChoice[];
       selectedEffort: string | null;
@@ -218,6 +223,7 @@ export type HarnessCatalogState =
  * 注入之后这个模块只做「起进程 + 说协议」，在任何 node 环境里都能测。
  */
 export type AcpSpawnSpec = {
+  reviewPermission?: { id: string; cliVersion?: string; filter?: (options: readonly import('@agentclientprotocol/sdk').SessionConfigOption[], context: { cliVersion?: string }) => import('@agentclientprotocol/sdk').SessionConfigOption[] };
   command: string;
   args: string[];
   env: Record<string, string>;
@@ -876,7 +882,7 @@ async function probeOnce(
         const state = await Promise.race([
           rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised,
             // Own route only: a placeholder or connection pass runs on credentials that are not this account.
-            probeCredentials ? undefined : spec.readSignIn),
+            probeCredentials ? undefined : spec.readSignIn, spec.reviewPermission),
           processFailed,
           watchdog.stalled,
         ]);
@@ -968,7 +974,7 @@ export async function probeHarnessModelCatalog(
     const second = await probeOnce(pluginId, leg, probeCredentials, model);
     if (second.kind === 'ready') {
       log.info(`${pluginId}: 未登录,但占位凭据那趟读到 ${second.efforts.length} 档推理强度`);
-      return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort };
+      return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort, reviewerAvailable: second.reviewerAvailable, cliVersion: second.cliVersion };
     }
     return second.kind === 'auth-required' ? first : second;
   } finally {
@@ -1118,6 +1124,7 @@ class AcpProbeClient {
     modelsInConfigUpdate?: boolean,
     authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
     readSignIn?: AcpSpawnSpec['readSignIn'],
+    reviewPermission?: AcpSpawnSpec['reviewPermission'],
   ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,
@@ -1248,6 +1255,10 @@ class AcpProbeClient {
     const fastMode = fastOption && ['on', 'off'].every((id) => fastChoices.some((choice) => choice.id === id))
       ? { configId: 'fast', selected: typeof fastOption.currentValue === 'string' ? fastOption.currentValue : null, available: fastChoices }
       : undefined;
+    const reviewOptions = decodeConfigOptions(options);
+    const filteredReviewOptions = reviewPermission?.filter?.(reviewOptions, { cliVersion: reviewPermission.cliVersion }) ?? reviewOptions;
+    const reviewerAvailable = !!reviewPermission && reviewOptions.some(option => option.category === 'mode' && option.type === 'select' && flattenSelectOptions(option.options).some(choice => choice.value === reviewPermission.id));
+    const autoReview = !!reviewPermission && filteredReviewOptions.some(option => option.category === 'mode' && option.type === 'select' && flattenSelectOptions(option.options).some(choice => choice.value === reviewPermission.id));
     const effortOption = options.find((o) => o.category === 'thought_level');
     const efforts = toChoices(effortOption);
     const selectedEffort = typeof effortOption?.currentValue === 'string'
@@ -1276,6 +1287,8 @@ class AcpProbeClient {
             : null,
       efforts,
       selectedEffort,
+      autoReview, reviewerAvailable,
+      ...(reviewPermission?.cliVersion ? { cliVersion: reviewPermission.cliVersion } : {}),
       ...(fastMode ? { fastMode } : {}),
     };
   }

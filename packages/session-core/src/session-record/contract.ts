@@ -864,7 +864,7 @@ export type SessionpageScheduleDigest = {
  */
 /** 展示(产品词):编程 = 终端腿,通用 = 聊天腿。与桌面 composer 的 SessionView 同一套词。 */
 export type SessionpageSessionView = 'code' | 'general';
-export type SessionpagePermissionMode = 'plan' | 'read-only' | 'edit' | 'full-access';
+export type SessionpagePermissionMode = 'plan' | 'read-only' | 'edit' | 'ai-review' | 'full-access';
 
 export type SessionpageHarnessOption = {
   id: string;
@@ -950,6 +950,8 @@ export type SessionpageSessionCreateModelChoice = {
  * 空列表要说得出为什么：两段 reason 各自解释自己那一组为什么缺席。
  */
 export type SessionpageSessionCreateModels = {
+  /** Verified on this model and selected host executable; absent on old/unknown hosts. */
+  autoReview?: { model: string };
   harness: string;
   transport: 'acp' | 'pty';
   models: SessionpageSessionCreateModelChoice[];

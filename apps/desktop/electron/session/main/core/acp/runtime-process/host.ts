@@ -549,6 +549,7 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
   const stripped = { ...input, input: stripUntrustedSessionAuthority(input.input) };
   const trustedInput = {
     ...stripped.input,
+    billingRoute: facts.platformModel === null ? 'own' : facts.platformModel ? 'platform' : 'unknown',
     // Renderer start payloads can be an older snapshot than the row created by the composer.
     // The conversation facts read above are the shared persisted source for every ACP injection
     // leg, so the provider receives the same effort that platformModelForSession materializes.

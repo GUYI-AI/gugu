@@ -41,7 +41,7 @@ it('keeps the protected platform document and clamps Fast off without exposing c
   await writeFile(path, JSON.stringify({ model: 'gateway-model', env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-secret' } }), { mode: 0o600 })
   const args = await claudeTuiSessionArgs({ ...defaults, fastMode: true, platformSettingsPath: path,
     baseArgs: ['--settings', '{"fastMode":true}'], extraArgs: ['--settings', path] })
-  expect((await document(args)).value).toEqual({ model: 'gateway-model', env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-secret' }, fastMode: false })
+  expect((await document(args)).value).toEqual({ model: 'gateway-model', env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-secret', CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-haiku-5-5' }, fastMode: false })
   expect(args.join(' ')).not.toContain('fixture-only-secret')
   await releaseClaudeTuiSettings(sessionId)
   expect((await stat(path)).isFile()).toBe(true)
@@ -49,13 +49,13 @@ it('keeps the protected platform document and clamps Fast off without exposing c
 
 it.each([false, true])('copies explicit user settings without modifying its source (equals=%s)', async (equals) => {
   dir = await mkdtemp(join(tmpdir(), 'fast-user-settings-'))
-  const path = join(dir, 'settings.json'), original = '{"custom":42,"fastMode":true,"env":{"PRIVATE_KEY":"fixture-secret"}}'
+  const path = join(dir, 'settings.json'), original = '{"custom":42,"fastMode":true,"env":{"PRIVATE_KEY":"fixture-secret","CLAUDE_CODE_AUTO_MODE_MODEL":"user-reviewer"}}'
   await writeFile(path, original)
   const args = await claudeTuiSessionArgs({ ...defaults, userSettingsProvided: true,
     baseArgs: equals ? [`--settings=${path}`] : ['--settings', path] })
   const actual = await document(args)
   expect(actual.path).not.toBe(path)
-  expect(actual.value).toEqual({ custom: 42, fastMode: false, env: { PRIVATE_KEY: 'fixture-secret' } })
+  expect(actual.value).toEqual({ custom: 42, fastMode: false, env: { PRIVATE_KEY: 'fixture-secret', CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-haiku-5-5' } })
   expect(await readFile(path, 'utf8')).toBe(original)
   expect(args.join(' ')).not.toContain('fixture-secret')
 })

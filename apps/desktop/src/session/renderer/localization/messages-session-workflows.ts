@@ -423,6 +423,8 @@ export const enUSSessionWorkflowMessages = {
   // owner 2026-09-07:「agent full access 这个名字也太长了」。底排那颗按钮上,
   // 「Agent」是废字 —— 这一排每一个控件都是在说 agent,权限说的是**范围**。
   // 中文侧一直就是「完全访问」,英文只是没跟上。
+  'taskConfig.permissionAiReview': 'AI reviews for me',
+  'taskConfig.permissionAiReviewHint': 'Send actions that need approval to an AI reviewer. Repeated denials can require your help.',
   'taskConfig.permissionFullAccess': 'Full Access',
   'taskConfig.permissionFullAccessHint': 'Let the agent auto-approve supported actions.',
   // 推理档的词表 —— 与上面的权限四档同一条路(@@@permission-four-rungs)。
@@ -1004,6 +1006,8 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'taskConfig.permissionReadOnlyHint': '修改文件和运行命令前需要确认（已在 {agent} 设置里放行的除外）',
   'taskConfig.permissionEdit': '编辑',
   'taskConfig.permissionEditHint': 'agent 可以在工作区内改文件、跑命令。',
+  'taskConfig.permissionAiReview': 'AI 帮我审',
+  'taskConfig.permissionAiReviewHint': '需要授权时交给 AI 审查。连续被拒达到上限时会停下来请你处理。',
   'taskConfig.permissionFullAccess': '完全访问',
   'taskConfig.permissionFullAccessHint': '允许 agent 自动批准支持的操作。',
   'taskConfig.effortNone': '关闭',

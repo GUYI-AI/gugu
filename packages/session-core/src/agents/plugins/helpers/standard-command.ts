@@ -54,6 +54,7 @@ export type StandardCommandSpec = {
    * agent 什么都改不了,而用户以为自己给了写权限。默认行为是哪一档,得去它自己的文档核实。
    */
   editFlag?: string;
+  aiReviewFlag?: string;
   /**
    * Flag for initial prompt, e.g. '-i' or '--prompt'. Empty string = positional
    * (prompt appended as last arg without a flag). Leave undefined to skip prompt injection.
@@ -224,7 +225,8 @@ export function buildStandardCommand(ctx: CommandContext, spec: StandardCommandS
       ? spec.planFlag
       : mode === 'read-only'
         ? spec.readOnlyFlag
-        : spec.editFlag;
+        : mode === 'ai-review' ? spec.aiReviewFlag : spec.editFlag;
+  if (mode === 'ai-review' && !permissionFlag) throw new Error('This harness cannot route approvals to an AI reviewer');
   if (permissionFlag) args.push(...splitFlag(permissionFlag));
 
   // Model selection

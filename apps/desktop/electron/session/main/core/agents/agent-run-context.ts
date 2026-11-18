@@ -71,6 +71,9 @@ export async function resolveLocalAgentRunContext(
     options.bridgeWait
   );
 
+  const cliVersion = await import('@main/core/agents/acp-bridge').then(({ resolveHostAcpCliVersion }) =>
+    resolveHostAcpCliVersion(providerId, cli, { ...env, ...configRootEnv, ...pinned })).catch(() => undefined);
+
   // Claude / Codex 的账号与 API 连接;其余家声明了 `apiKeyConnection` 的,选中的 API Key 连接(#2507)。
   const connection: Partial<AgentRunContext> = providerId === 'claude' || providerId === 'codex'
     || getPlugin(providerId).capabilities.apiKeyConnection?.kind === 'supported'
@@ -85,6 +88,7 @@ export async function resolveLocalAgentRunContext(
     : {};
   return {
     cli,
+    ...(cliVersion ? { cliVersion } : {}),
     env,
     pinnedEnv: pinned,
     // 这一家要不要另一个 node 跑(打包机上的 electron 不带 import attributes 时用它)。

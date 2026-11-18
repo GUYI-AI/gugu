@@ -12,7 +12,7 @@ import type { CreationSkill } from './create-skills'
 import type { ChatComposerProps, ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
 import { phoneModelName } from './phone-model-copy'
-import { harnessBlockReason, harnessUsable, selectHarness, selectedModelName, type CreateSelection } from './create-session-form'
+import { createPermissionModes, harnessBlockReason, harnessUsable, selectHarness, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
@@ -53,7 +53,8 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const modelButton = useRef<HTMLButtonElement>(null)
   const projectButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
-  const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const baseSelectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const selectedHarness = baseSelectedHarness && configuration ? { ...baseSelectedHarness, permissionModes: createPermissionModes(baseSelectedHarness, configuration.models, configuration.modelsState, configuration.selection) } : baseSelectedHarness
   const existingPermissions = existingSession?.model?.onPermissionModeChange
     ? Object.entries(existingSession.model.permissionModeOptions ?? {}) : []
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)

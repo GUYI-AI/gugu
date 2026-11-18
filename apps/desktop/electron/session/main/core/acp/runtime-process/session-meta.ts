@@ -61,6 +61,7 @@ export function stripUntrustedSessionAuthority<T extends Record<string, unknown>
   delete stripped.platform;
   delete stripped.platformAccessSessionId;
   delete stripped.platformModel;
+  delete stripped.billingRoute;
   delete stripped.sessionPrompt;
   delete stripped.mcpServers;
   delete stripped.capabilitySpawnEnv;

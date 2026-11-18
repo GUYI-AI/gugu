@@ -263,7 +263,7 @@ function handle(msg) {
 }
 `)
     expect(await probeHarnessModelCatalog(providerId, 'acp')).toEqual({
-      kind: 'ready',
+      kind: 'ready', autoReview: false, reviewerAvailable: false,
       models: [
         { id: selected, name: 'First', description: 'Provider-owned value' },
         { id: other, name: 'Second' },
@@ -1447,7 +1447,7 @@ function handle(msg) {
     await useProviderPrefixedAgent()
     setProbeConnectionModelResolver(async () => ({ env: {}, modelNames: ['user-model'] }))
     expect(await probeHarnessModelCatalog('opencode', 'acp')).toEqual({
-      kind: 'ready',
+      kind: 'ready', autoReview: false, reviewerAvailable: false,
       models: [
         { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
         { id: 'api-key-connection/user-model', name: 'user-model' },
@@ -1489,7 +1489,7 @@ function handle(msg) {
 `)
     setProbeConnectionModelResolver(async () => ({ env: {}, sessionModel: { id: 'q-1', only: true, others: ['q-2', 'q-3'] }, modelNames: ['q-1', 'q-2', 'q-3'] }))
     expect(await probeHarnessModelCatalog('qwen', 'acp')).toEqual({
-      kind: 'ready',
+      kind: 'ready', autoReview: false, reviewerAvailable: false,
       models: [{ id: 'q-1', name: 'q-1' }, { id: 'q-2', name: 'q-2' }, { id: 'q-3', name: 'q-3' }],
       selected: 'q-1',
       efforts: [{ id: 'high', name: 'High' }],
