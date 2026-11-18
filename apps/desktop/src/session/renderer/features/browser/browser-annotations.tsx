@@ -106,6 +106,9 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     const up = (event: KeyboardEvent) => { if (event.code === 'Space') stopBrowsing(); };
     const blur = () => stopBrowsing();
     const stopPreview = subscribeSpaceRelease?.(() => {
+      // A host element can look focused while Chromium still routes keys to the iframe.
+      // Return to the host frame before focusing the rebuilt annotation canvas.
+      win.focus();
       stopBrowsing();
       win.requestAnimationFrame(() => root.current?.focus({ preventScroll: true }));
     });
