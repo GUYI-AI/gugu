@@ -1761,8 +1761,11 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const signInExpired = lastTurnSignIn && isAuthExpired(harnessAuth);
   // 同一个信号(这一轮因凭据不能用而失败),而这家在这台电脑上压根没登录过(MiMo 没 key 时):说「还没登录」。
   const signInMissing = lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
-  /** 与「去登录」同一个面板(见上):登录失效的那一家在这里重新登,或换一个连接。 */
-  const signInAgain = openAgentAccount;
+  // Expired credentials go directly to the existing login flow, scoped to this session's machine.
+  const signInAgain = useCallback((anchor?: HTMLElement) => {
+    if (signInExpired && agent) connections.signIn(agent, machine);
+    else openAgentAccount(anchor);
+  }, [signInExpired, agent, machine, connections.signIn, openAgentAccount]);
 
   // #4900 登录 ❌ 不自动发起。owner 2026-09-04:「我不登录也行啊」——自动弹登录终端会
   // 连带跑起厂商的 `<cli> login`,浏览器随即弹出授权页,这就是「强登」本身。
