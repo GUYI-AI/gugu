@@ -1065,8 +1065,7 @@ function InnerLayout({
                   {/* #2525 移动端全屏创建页:列表/会话/底部 tab 岛全部让位(display 隐藏而非卸载 ——
                       返回时列表滚动位置与会话状态原样还在),真正的 composer 由下面那份 fixed overlay
                       盖到本页正文槽上。 */}
-                  <ResizableChatListPane
-                    active={activeTab === 'chats'} mobile={mobile}
+                  <ResizableChatListPane mobile={mobile}
                     hidden={chatListHidden}
                     width={chatListPaneWidth}
                     onWidthChange={previewChatListPaneWidth}
@@ -1288,7 +1287,7 @@ function InnerLayout({
           WM_NCHITTEST 回 HTCAPTION,系统当标题栏吃掉点击,按钮**完全按不动**。
           实测(chole/Windows 11,真鼠标点击 + WM_NCHITTEST):挂最前 ht=2、点最小化窗口不动;
           挂最后 ht=1、点最小化窗口收起。❌ 别把它移回上面去。 */}
-      <WindowControls activeTab={activeTab} mobile={mobile} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
+      <WindowControls activeTab={activeTab} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
       {/* #7199 「助理」App 在壳这一侧的那一半:发布云电脑 / 个人助理,把壳的组件画进 App 留的格子(lib/assistantShellBridge.ts)。 */}
       <AssistantTaskChatOpener visible={mobile ? activeTab === 'assistant' : activeTab === 'tasks'} desktop={!mobile} />
       <FeedbackHost />

@@ -113,8 +113,6 @@ const COLOR_PLACEHOLDER = 'var(--muted-fg)'
 const NAV_PANE_STYLE: React.CSSProperties = { width: '100%', minWidth: 0, flex: '1 1 auto' }
 // 保留 macOS 交通灯让位逻辑(#1238):列头左内距在「基础内距」与「交通灯安全区」间取大值。
 const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset))' }
-// #6753 桌面上还要让开浮在左上角的列表栏开关(--list-toggle-lane;Windows 的开关在标题栏行,那里是 0)。
-const NAV_HEADER_STYLE_DESKTOP: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset), var(--list-toggle-lane))' }
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
 // 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
@@ -1135,7 +1133,7 @@ export function ChatListPanel({
         leading={headerLeading}
         mobile={mobile}
         titleLevel={mobile ? 'page' : undefined}
-        style={mobile ? NAV_HEADER_STYLE : NAV_HEADER_STYLE_DESKTOP}
+        style={NAV_HEADER_STYLE}
         actions={
           <>
             <NotificationSlot part="toggle" />

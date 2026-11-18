@@ -604,8 +604,6 @@ export default {
       }
     },
     "panelToggles": {
-      "collapseList": "收起左侧栏",
-      "expandList": "展开左侧栏",
       "noList": "这一页没有左侧栏"
     },
     "loading": "正在恢复登录状态",

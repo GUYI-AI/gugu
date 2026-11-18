@@ -610,8 +610,6 @@ export default {
       }
     },
     "panelToggles": {
-      "collapseList": "Collapse sidebar",
-      "expandList": "Expand sidebar",
       "noList": "No sidebar on this page"
     },
     "loading": "Restoring your session",
