@@ -171,8 +171,10 @@ describe('device file reads', () => {
     await encrypted.file.dispose()
     const acks: string[] = [], signed: string[] = [], admitted: string[] = [], resolutions: string[] = []
     const preparations = new Set<string>()
+    const permits = new Map<string, { actor: string; ref: unknown }>()
     let revoked = false, wrongGeneration = false, newGeneration = false
-    const bytes = gate(), object = vi.fn(async () => { await bytes.promise; return new Response(new Uint8Array(ciphertext)) })
+    let bytes = gate()
+    const object = vi.fn(async () => { await bytes.promise; return new Response(new Uint8Array(ciphertext)) })
     const cloud = cloudFileProviders({ fetch: object, cache: createFileChunkCache(root), sink: size => createFileSink(root, size),
       endpoint: async () => ({ supabaseUrl: 'https://backend.invalid', anonKey: 'test', token: 'test', fetch: async (url, init) => {
         const op = String(url).split('/').at(-1), request = JSON.parse(String(init?.body))
@@ -188,14 +190,15 @@ describe('device file reads', () => {
           }
           expect(preparations.has(request.request_id)).toBe(true)
           signed.push(request.as)
+          permits.set(request.download_request_id, { actor: request.as, ref: request.ref })
           return Response.json({ ...state, download: {
-            status: 'ready', url: 'https://store.invalid/file', download_id: 'grant-' + request.as, transfer_id: wrongGeneration ? 'other' : generation,
+            status: 'ready', url: 'https://store.invalid/file', download_id: request.download_request_id, transfer_id: wrongGeneration ? 'other' : generation,
             sha256: digest, codec: 'secretstream-v1', key: Buffer.from(key).toString('base64'),
             size_bytes: ciphertext.length, ciphertext_bytes: ciphertext.length, ciphertext_sha256: encrypted.ciphertextSha256,
           } })
         }
         if (op !== 'file-read-complete') throw Error(String(op))
-        expect(request.download_id).toBe('grant-' + request.as)
+        expect(permits.get(request.download_id)).toEqual({ actor: request.as, ref: request.ref })
         acks.push(request.as)
         return Response.json({ current, acknowledged: true })
       } }),
@@ -232,9 +235,20 @@ describe('device file reads', () => {
     expect(acks).toHaveLength(expected + extra)
     expect(admitted).toEqual(['owner', 'refused', 'owner'])
     await held.dispose()
+    if (retention === 'read-once') {
+      const previous = object.mock.calls.length
+      bytes = gate()
+      const byMessage = reads.request(message, account, { purpose: 'bytes' })
+      const byItem = reads.request({ item_id: 'item', version: 3 }, account, { purpose: 'bytes' })
+      await vi.waitFor(() => expect(object).toHaveBeenCalledTimes(previous + 2))
+      bytes.release()
+      await Promise.all([byMessage, byItem].map(async entry => (await entry.result).file.dispose()))
+      expect(acks).toHaveLength(previous + 2)
+    }
+    const getsBeforeMismatch = object.mock.calls.length
     newGeneration = true; wrongGeneration = true
     await expect(reads.request(message, account, { purpose: 'bytes' }).result).rejects.toMatchObject({ code: 'access_revoked' })
-    expect(object).toHaveBeenCalledTimes(expected + extra)
+    expect(object).toHaveBeenCalledTimes(getsBeforeMismatch)
     key.fill(0)
   })
 
