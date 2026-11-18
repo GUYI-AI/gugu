@@ -48,6 +48,7 @@ export type InstallSectionProps = {
   installOptions: InstallOption[];
   /** Link to installation documentation, null if not set. */
   installDocs?: string | null;
+  marketDevice?: string;
   renderPage?: (installation: AgentInstallationHeader, settings: ReactNode) => ReactNode;
 };
 
@@ -57,9 +58,10 @@ export const InstallSection = observer(function InstallSection({
   agentPayload,
   installOptions,
   installDocs,
+  marketDevice,
   renderPage,
 }: InstallSectionProps) {
-  const vm = useAgentInstallationStatus(agentId, agentPayload);
+  const vm = useAgentInstallationStatus(agentId, agentPayload, marketDevice);
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
   /**
    * 各下载源的「最新版本」。这一趟请求**本来就要发**(高级那一项要把版本列出来),

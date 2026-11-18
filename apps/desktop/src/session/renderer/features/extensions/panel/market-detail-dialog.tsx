@@ -98,12 +98,12 @@ export function MarketDetailCard({
   const [expanded, setExpanded] = useState(false);
   return (
     <>
-      <DialogHeader className="items-start gap-4 pb-0 [&>button]:mt-0.5">
+      <DialogHeader className="items-start gap-4 pb-0 [&>button]:mt-1">
         <div className="flex min-w-0 gap-4">
           <div className="size-[68px] shrink-0 overflow-hidden rounded-2xl [&>*]:!size-full">{icon}</div>
           <div className="min-w-0">
             <DialogTitle className="break-words text-xl font-semibold">{name}</DialogTitle>
-            {publisher && <p className="mt-0.5 text-sm text-foreground-muted">{publisher}</p>}
+            {publisher && <p className="mt-1 text-sm text-foreground-muted">{publisher}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {actions}
               {devices && (

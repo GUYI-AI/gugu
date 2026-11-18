@@ -102,7 +102,7 @@ export function MarketExtensionDetail({
           : translate('extensions.stripPermissionsNone') },
       ]}
       subtitle={about ? <MarkdownRenderer content={about} onOpenLink={(url) => { confirmOpenExternalLink(url); return true; }} /> : text.subtitle}
-      notice={versionNotice ? <p data-testid="market-detail-version-notice" className="w-fit rounded-md bg-background-2 px-2.5 py-1.5 text-sm text-foreground-muted">{versionNotice}</p> : undefined}
+      notice={versionNotice ? <p data-testid="market-detail-version-notice" className="w-fit rounded-md bg-background-2 px-3 py-2 text-sm text-foreground-muted">{versionNotice}</p> : undefined}
       onUninstall={onUninstall && !pending ? () => void uninstall() : undefined}
     >
       {permissions.length > 0 && (

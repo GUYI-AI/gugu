@@ -1,5 +1,5 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { messageForUser } from '@/lib/userFacingError';
+import { log } from '@renderer/utils/logger';
 import { Button } from '@renderer/lib/ui/button';
 import { Spinner } from '@renderer/lib/ui/spinner';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -68,11 +68,10 @@ function OtherDevice({ item, device, waking }: { item: MarketListItem; device: R
       void store.checkUpdates();
       toast({ title: translate('extensions.bundleCardInstalledOn', { machine: device.label }), tier: 'success' });
     },
-    onError: (error) => toast({
-      title: translate('extensions.installFailedOn', { machine: device.label }),
-      description: messageForUser(error),
-      tier: 'error',
-    }),
+    onError: (error) => {
+      log.error('extension market install on another computer failed:', { deviceId: device.id, error });
+      toast({ title: translate('extensions.installFailedOn', { machine: device.label }), tier: 'error' });
+    },
   });
   const start = (target: MarketListItem) => {
     if (!client.isMutating({ mutationKey, exact: true })) mutate(target);

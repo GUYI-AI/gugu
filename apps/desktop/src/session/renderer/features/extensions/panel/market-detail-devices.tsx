@@ -47,7 +47,7 @@ export function MarketDetailDeviceRow({ device, waking, status, action }: {
   const online = remoteHostReachable(device);
   const ago = !online && !waking ? formatAgo(device.lastSeenAt, Date.now(), translate) : null;
   return (
-    <li className={cn('flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5', !online && 'text-foreground-muted')} data-device-id={device.id}>
+    <li className={cn('flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2', !online && 'text-foreground-muted')} data-device-id={device.id}>
       <Monitor className="size-4 shrink-0" aria-hidden />
       <span className="font-medium">{device.label}</span>
       {!waking && (

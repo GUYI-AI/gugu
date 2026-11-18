@@ -202,7 +202,7 @@ export function useAgentInstallProgress(
  * Also subscribes to `agentInstallationStatusUpdatedChannel` to keep the cache
  * live-patched when the main process emits status changes.
  */
-export function useAgentInstallationStatuses() {
+export function useAgentInstallationStatuses(marketDevice?: string) {
   const queryClient = useQueryClient();
   const host = useLibraryHost();
   const agentsRpc = host.agents;
@@ -305,7 +305,11 @@ export function useAgentInstallationStatuses() {
       ?.installations;
 
   const failureToast = (title: string, description: ReactNode) =>
-    toast({ title, description, variant: 'destructive' });
+    toast({
+      title: marketDevice ? translate('extensions.installFailedOn', { machine: marketDevice }) : title,
+      description: marketDevice ? undefined : description,
+      variant: 'destructive',
+    });
 
   const diagnosticToastDescription = (presentation: {
     message: string;
@@ -515,6 +519,7 @@ export type HostDependencyInstallation = {
 export function useAgentInstallationStatus(
   id: string,
   agentPayload?: AgentPayload,
+  marketDevice?: string,
 ): HostDependencyInstallation {
   const { translate } = useSessionMessages();
   const host = useLibraryHost();
@@ -526,7 +531,7 @@ export function useAgentInstallationStatus(
     setUsedInstallation,
     refreshLatestVersion,
     probeAll,
-  } = useAgentInstallationStatuses();
+  } = useAgentInstallationStatuses(marketDevice);
 
   // Derive per-agent pending state from the global MutationCache so it
   // survives the sheet being closed and reopened while the operation runs.

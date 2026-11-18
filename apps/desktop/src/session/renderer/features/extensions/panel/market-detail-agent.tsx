@@ -116,6 +116,7 @@ function OtherAgent({ agentId, device, waking }: { agentId: string; device: Remo
     <InstallSection
       agentId={agentId}
       agentPayload={agent}
+      marketDevice={device.label}
       installOptions={agent.installOptions}
       renderPage={(installation) => <OtherAgentStatus device={device} installation={installation} />}
     />
