@@ -24,7 +24,7 @@ export function AnnotationEditor({ number, initialValue = '', busy = false, onSa
         }
         if (event.key === 'Escape') { event.stopPropagation(); onCancel(); }
       }}
-      onSubmit={event => { event.preventDefault(); if (!busy && text.trim()) onSave(text.trim()); }}>
+      onSubmit={event => { event.preventDefault(); if (!busy) onSave(text.trim()); }}>
       <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[var(--live-light)] text-xs font-medium text-[var(--color-white)]">{number}</span>
       <input autoFocus type="text" value={text} onChange={event => setText(event.target.value)}
         placeholder={translate('annotations.placeholder')} aria-label={translate('annotations.comment')}
@@ -33,7 +33,7 @@ export function AnnotationEditor({ number, initialValue = '', busy = false, onSa
         aria-label={translate('annotations.delete')} title={translate('annotations.delete')} onClick={onRemove}><Trash2 className="size-3.5" /></Button>}
       <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}
         aria-label={translate('annotations.cancel')} title={translate('annotations.cancel')} onClick={onCancel}><X className="size-3.5" /></Button>
-      <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" disabled={busy || !text.trim()}
+      <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" disabled={busy}
         aria-label={translate('annotations.save')} title={translate('annotations.save')}><Check className="size-3.5" /></Button>
     </form>
   );

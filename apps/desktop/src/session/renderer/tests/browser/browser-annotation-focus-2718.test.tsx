@@ -6,6 +6,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import { browserAnnotationSpaceChannel } from '@shared/events/browserEvents';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { useBrowserAnnotations } from '@renderer/features/browser/browser-annotations';
+import { AnnotationEditor } from '@renderer/features/sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations';
 import '@gugu/session-ui/styles/global';
 import '@gugu/session-ui/theme/theme.css';
@@ -30,6 +31,16 @@ afterEach(async () => {
   await act(async () => { await userEvent.keyboard('{/Space}'); });
   harness?.cleanup(); harness = null;
   native.listeners.clear(); native.focusHost.mockReset();
+});
+
+it('saves a selected target without requiring an optional comment', async () => {
+  const save = vi.fn();
+  harness = createReactHarness();
+  await harness.render(<SessionLocalizationProvider><AnnotationEditor number={1} onSave={save} onCancel={() => {}} /></SessionLocalizationProvider>);
+  const submit = harness.container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  expect(submit.disabled).toBe(false);
+  await act(async () => { await userEvent.click(submit); });
+  expect(save).toHaveBeenCalledExactlyOnceWith('');
 });
 
 function Fixture() {
