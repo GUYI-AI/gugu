@@ -1,5 +1,6 @@
 import z from 'zod';
 import { defineVersionedSchema } from '@shared/lib/versioned-schema/versioned-schema';
+import { customModelMetaSchema } from '@gugu/session-core/models/custom-model';
 
 // ---------------------------------------------------------------------------
 // v1 schema — initial version
@@ -28,6 +29,8 @@ const v1Schema = z.object({
    * `PLATFORM_CREDENTIAL_SOURCE`: the Gugu platform keeps it (#921); the row carries no secret.
    */
   credentialSource: z.string().optional(),
+  /** One device-owned provider connection, shared by all compatible harnesses. */
+  customModel: customModelMetaSchema.optional(),
   /** Harness credentials belong to this device; removed connections remain available to bound sessions. */
   harnessConnection: z.object({
     kind: z.enum(['native', 'account', 'api-key']),
@@ -40,6 +43,8 @@ const v1Schema = z.object({
     /** 建连接时按地址探出来的接口(这家讲得了不止一种时才有,#2507)。 */
     protocol: z.enum(['openai-responses', 'openai-chat-completions']).optional(),
     removed: z.boolean().optional(),
+    /** Retained for rollback; migration also deduplicates by credential_ref. */
+    migratedTo: z.string().optional(),
   }).optional(),
 });
 

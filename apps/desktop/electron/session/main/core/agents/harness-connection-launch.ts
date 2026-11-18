@@ -16,11 +16,12 @@ export const CLAUDE_CONNECTION_UNSET_ENV = [
  * Claude API 连接跑在用户自己的根上(#26):key 与端点只走环境变量,❌ 不再给它另起一个配置根 ——
  * 那样会话就得换根,对话历史跟着丢。官方端点用 API key 认证,兼容的第三方端点用 bearer。
  */
-export function claudeApiKeyEnv(apiKey: string, endpoint?: string): Record<string, string> {
+export function claudeApiKeyEnv(apiKey: string, endpoint?: string, model?: string): Record<string, string> {
   const bearer = Boolean(endpoint && new URL(endpoint).hostname !== 'api.anthropic.com');
   return {
     [bearer ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY']: apiKey,
     ...(endpoint ? { ANTHROPIC_BASE_URL: endpoint } : {}),
+    ...(model ? { ANTHROPIC_MODEL: model } : {}),
   };
 }
 
@@ -38,9 +39,10 @@ export const CODEX_CONNECTION_UNSET_ENV = [
  * Codex API 连接跑在用户自己的根上(#26):provider 用 `-c` 现给,key 走 `OPENAI_API_KEY`,
  * ❌ 不再写进某个独立根的 config.toml —— 那样会话就得换根,对话历史跟着丢。
  */
-export function codexApiKeyConnectionArgs(id: string, endpoint?: string): string[] {
+export function codexApiKeyConnectionArgs(id: string, endpoint?: string, model?: string): string[] {
   const provider = 'gugu_connection';
   return [
+    ...(model ? ['-c', `model=${JSON.stringify(model)}`] : []),
     '-c', `model_provider=${JSON.stringify(provider)}`,
     '-c', `model_providers.${provider}.name=${JSON.stringify(id)}`,
     '-c', `model_providers.${provider}.base_url=${JSON.stringify(endpoint ?? 'https://api.openai.com/v1')}`,

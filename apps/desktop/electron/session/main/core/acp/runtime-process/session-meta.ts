@@ -24,7 +24,7 @@ export function trustedPlatformInputPatch(
   switch (injection.kind) {
     case 'session-meta':
       return {
-        platformAccessSessionId: injection.platformAccessSessionId,
+        ...(injection.platformAccessSessionId ? { platformAccessSessionId: injection.platformAccessSessionId } : {}),
         ...(injection.model ? { platformModel: injection.model } : {}),
         sessionMeta: mergeTrustedSessionMeta(capability.sessionMeta, injection.sessionMeta),
         ...(injection.adapterEnv

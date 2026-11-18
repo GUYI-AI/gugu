@@ -147,6 +147,7 @@ export type ClaudeAcpPlatformSessionMeta = {
   claudeCode: {
     options: {
       settings?: string
+      model?: string
       env: Record<string, string>
     }
   }
@@ -155,11 +156,13 @@ export type ClaudeAcpPlatformSessionMeta = {
 export function claudeAcpPlatformSessionMeta(input: {
   settingsDocumentPath: string | null
   env: Record<string, string>
+  model?: string
 }): ClaudeAcpPlatformSessionMeta {
   return {
     claudeCode: {
       options: {
         ...(input.settingsDocumentPath ? { settings: input.settingsDocumentPath } : {}),
+        ...(input.model ? { model: input.model } : {}),
         env: input.env,
       },
     },

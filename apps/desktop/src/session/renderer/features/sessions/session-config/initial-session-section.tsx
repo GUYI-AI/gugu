@@ -1,4 +1,7 @@
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { useReplica } from '@/lib/replica';
+import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentAccessMethods, agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -182,6 +185,7 @@ export type InitialSessionState = {
    * would be a second, contradicting declaration.
    */
   model: string | null;
+  acceptsImageAttachments?: boolean;
   setModel: (model: string | null) => void;
   /**
    * 「咕咕提供的模型」目录;取不到就是空数组 —— 分组缺席而 harness 模型照常。
@@ -763,6 +767,15 @@ export function useInitialSessionState(
     harnessCatalogState,
     staticModelsCapability?.modelOptions
   );
+  const customReading = useReplica(customModels, [machine]);
+  const rememberedModel = lastStartedConfiguration?.provider === providerId ? lastStartedConfiguration?.model : undefined;
+  const rememberedCustom = customModelRefFromOption(rememberedModel);
+  const availableRememberedModel = rememberedCustom && customReading.state === 'value' &&
+    customReading.value.some((record) => record.id === rememberedCustom.connectionId && record.keySaved)
+    ? rememberedModel : undefined;
+  const requestedModel = modelOverride ?? availableRememberedModel;
+  const customSelection = !(providerId && platformModelOverrides[providerId]) && customModelRefFromOption(requestedModel)
+    ? requestedModel : undefined;
   // 从这里建终端起不来 ⇒ 不管偏好是哪头都锁在通用(❌ 等人点了终端才变灰);只在通用那条腿真能落时锁,
   // 锁显示的才等于这条会话真实的展示。
   const generalForcedHere = terminalUnstartable && sessionpageSurface === 'acp';
@@ -848,7 +861,7 @@ export function useInitialSessionState(
       harnessDefaultCredential === 'uncredentialed');
   // 聊天(ACP)与终端(pty)在这件事上没有分别:composer 是会话的唯一决策点,两种会话都
   // 照它跑。所以这里不看 sessionView —— 切展示既不撤走分组,也不动用户已经选好的模型。
-  const platformModel = resolvePlatformModel(
+  const platformModel = customSelection ? null : resolvePlatformModel(
     platformCatalog,
     providerId,
     providerId ? platformModelOverrides[providerId] : undefined,
@@ -1089,21 +1102,27 @@ export function useInitialSessionState(
   // 选了平台模型就没有 harness 模型可言:模型由网关签发的 token 钉死,这里再报一个只会打架。
   const model = platformModel
     ? null
+    : customSelection ? customSelection
     : modelOverride && modelOptions?.[modelOverride]
       ? modelOverride
       : resolvedDefaultModel;
+  const selectedCustom = customModelRefFromOption(customSelection);
+  const customFeatures = selectedCustom && customReading.state === 'value'
+    ? customReading.value.find((record) => record.id === selectedCustom.connectionId)?.models.find(({ id }) => id === selectedCustom.modelId)
+    : undefined;
+  const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
-    !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
+    !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
     sessionpageSurface,
-    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== model ? model : null,
+    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== runtimeModel ? runtimeModel : null,
   );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
-  const modelEfforts = resolveCreateEfforts({
+  const modelEfforts = selectedCustom && customFeatures?.thinking !== true ? null : resolveCreateEfforts({
     state: harnessCatalogState,
     effortCapability: capabilities?.effort,
     staticModelsCapability: staticModelsCapability,
-    model,
+    model: runtimeModel,
     platformModel: platformEffortFacts(platformModel, platformCatalog.models),
     leg: sessionpageSurface,
   });
@@ -1204,6 +1223,7 @@ export function useInitialSessionState(
 
 
   return {
+    acceptsImageAttachments: !selectedCustom || customFeatures?.image === true,
     provider: providerId,
     setProvider: (next) => {
       setFastModeDraft(false);
@@ -1260,7 +1280,7 @@ export function useInitialSessionState(
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
     autoReviewAvailable,
-    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
@@ -1646,13 +1666,15 @@ export function InitialSessionField({
   // ❌ 不往正文里插一条路径 pill —— 那是把传输方式摆到用户脸上。
   const remoteMachine = state.machine;
   const handleFiles = useCallback((files: File[]) => {
-    if (files.length === 0) return;
+    const accepted = state.acceptsImageAttachments === false ? files.filter((file) => !file.type.startsWith('image/')) : files;
+    if (accepted.length < files.length) toast({ title: translate('customModels.imagesUnsupported'), variant: 'destructive' });
+    if (accepted.length === 0) return;
     // ❌ 不写成裸 `void promise`:这条链里任何一步抛出都会变成一次没人看见的 unhandled rejection,
     // 屏幕上只表现为「文件掉进去了什么都没发生」。
-    state.enqueueAttachments(files).catch((error: unknown) => {
+    state.enqueueAttachments(accepted).catch((error: unknown) => {
       log.error('Failed to queue attachments', { error });
     });
-  }, [state]);
+  }, [state, translate]);
   const handleAttachPicked = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     handleFiles(Array.from(e.target.files ?? []));
     // 允许连续挑同一个文件:不清空的话第二次 change 不触发。

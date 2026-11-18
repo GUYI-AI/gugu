@@ -74,18 +74,20 @@ export async function resolveLocalAgentRunContext(
   const cliVersion = await import('@main/core/agents/acp-bridge').then(({ resolveHostAcpCliVersion }) =>
     resolveHostAcpCliVersion(providerId, cli, { ...env, ...configRootEnv, ...pinned })).catch(() => undefined);
 
-  // Claude / Codex 的账号与 API 连接;其余家声明了 `apiKeyConnection` 的,选中的 API Key 连接(#2507)。
-  const connection: Partial<AgentRunContext> = providerId === 'claude' || providerId === 'codex'
-    || getPlugin(providerId).capabilities.apiKeyConnection?.kind === 'supported'
-    ? await import('./harness-connections').then(({ resolveHarnessConnection }) =>
+  // Account credentials and the session's chosen model have separate owners.
+  const connection: Partial<AgentRunContext> = await import('./harness-connections').then(({ resolveHarnessConnection }) =>
         resolveHarnessConnection(providerId, {
           connectionId: options.connectionId,
           sessionId: options.sessionId,
           sourceSessionId: options.sourceSessionId,
           // 用户在 shell 里导出的 CLAUDE_CONFIG_DIR / CODEX_HOME 就在这份 env 里:「用户自己的配置根」按它算。
           nativeEnv: env,
-        }))
-    : {};
+        }));
+  if (options.sessionId) {
+    const { resolveCustomModelRunContext } = await import('./custom-model-run-context');
+    const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp');
+    Object.assign(connection, custom, { unsetEnv: [...(connection.unsetEnv ?? []), ...(custom.unsetEnv ?? [])] });
+  }
   return {
     cli,
     ...(cliVersion ? { cliVersion } : {}),

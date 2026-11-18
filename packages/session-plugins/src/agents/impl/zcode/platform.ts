@@ -7,6 +7,7 @@ export const harnessPlatform = {
   //   `openai-chat-completions` / `openai-responses` 三档,zai-org/ZCode `packages/provider/src/config/provider-data-schema.ts`),
   //   一个值 ⇒ 拧到 responses。./session-bundle.ts 的 `zcodePlatformEnv` 写表时直接读这里。
   wireProtocol: 'openai-responses',
+  protocols: ['openai-responses', 'openai-chat-completions'],
   dialect: 'zcode-provider-table',
   injection: {
     cui: {

@@ -1,3 +1,4 @@
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
@@ -288,7 +289,7 @@ export async function createModels(
     const [catalog, state] = await Promise.all([
       listLocalModels(request.harness, { transport: sessionRuntimeOfView(view.view) }),
       probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view),
-        request.model?.trim() && !request.model.trim().startsWith('platform:') ? request.model.trim() : undefined),
+        request.model?.trim() && !request.model.trim().startsWith('platform:') && !customModelRefFromOption(request.model) ? runtimeModelId(request.model.trim()) : undefined),
     ]);
     // 默认模型在这台机器上有没有凭据(#6264):远端创建框据此决定默认挪不挪到平台模型,与桌面同一个读数。
     const [selectedCredential, harnessAuth] = await Promise.all([
@@ -299,24 +300,30 @@ export async function createModels(
     // 在目录里认的档取交集(#6447)。
     const requestedModel = request.model?.trim() || null;
     const platformModel = !!requestedModel && requestedModel.startsWith('platform:');
-    const resolvedEfforts = resolveCreateEfforts({
+    const customRef = customModelRefFromOption(requestedModel);
+    const customRecords = await (await import('@main/core/agents/custom-models')).listCustomModels();
+    const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
+    const resolvedEfforts = customRef && customEntry?.thinking !== true ? null : resolveCreateEfforts({
       state,
       effortCapability: agent.capabilities?.effort,
       staticModelsCapability: agent.capabilities?.models,
-      model: platformModel ? null : (requestedModel ?? catalog.selected),
+      model: platformModel ? null : (runtimeModelId(requestedModel) ?? catalog.selected),
       platformModel: platformEffortFacts(
         platformModel ? requestedModel : null,
         catalog.models.map((m) => ({ id: m.id, reasoningEfforts: m.reasoning_efforts ?? null })),
       ),
       leg: sessionpageLegOfView(view.view),
     });
-    const fast = platformModel
+    const fast = customRef ? null : platformModel
       ? await platformCreationFastGroup(request.harness, requestedModel!)
       : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
     return {
       ok: true,
       value: {
         ...(fast ? { fast } : {}),
+        customModels: customRecords,
+        modelProtocols: agent.capabilities?.modelProtocols,
+        customModel: agent.capabilities?.customModel,
         harness: catalog.harness_id,
         transport: catalog.transport,
         models: catalog.models.map((m) => ({
@@ -370,7 +377,7 @@ export async function resolveCreateEffort(
   const effort = request.effort.trim();
   if (!effort) return fail('effort_rejected', 'Reasoning effort must not be empty');
   let options: { id: string }[];
-  if (request.model?.trim().startsWith('platform:')) {
+  if (request.model?.trim().startsWith('platform:') || customModelRefFromOption(request.model?.trim())) {
     const catalog = await createModels(request);
     if (!catalog.ok) return catalog;
     options = catalog.value.efforts;
@@ -385,7 +392,7 @@ export async function resolveCreateEffort(
     options = state.efforts;
   }
   if (!options.some((option) => option.id === effort)) {
-    return fail('effort_rejected', `${request.harness} does not offer reasoning effort '${effort}' for ${request.model ?? 'its default model'}; available: ${options.map((option) => option.id).join(', ')}`);
+    return fail('effort_rejected', `${request.harness} does not offer reasoning effort '${effort}' for ${runtimeModelId(request.model?.trim()) ?? 'its default model'}; available: ${options.map((option) => option.id).join(', ')}`);
   }
   return { ok: true, value: effort };
 }

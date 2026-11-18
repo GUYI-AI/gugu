@@ -1,3 +1,4 @@
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
 import { taskName, taskNameFor } from './task-name';
 import { sessionHostLocale } from '@main/core/host-locale';
@@ -713,6 +714,12 @@ export async function resolveSpawnModelSelection(
   requestedModel: string | undefined,
 ): Promise<{ kind: 'gugu'; modelId: string } | { kind: 'harness'; model: string | undefined }> {
   if (!requestedModel) return { kind: 'harness', model: undefined };
+  const custom = customModelRefFromOption(requestedModel);
+  if (custom) {
+    const { validateCustomModelSelection } = await import('@main/core/agents/custom-models');
+    await validateCustomModelSelection(provider, custom);
+    return { kind: 'harness', model: requestedModel };
+  }
   const platformModelId = platformModelIdFromOption(requestedModel);
   // 平台组先问一次。带前缀的只需平台目录；裸 id 只有在撞上平台同名项时，才需要再确认它
   // 是否也是这家 harness 自己明列的模型。这样普通的自家别名仍不因一次 spawn 而触发冷启探测。
@@ -798,7 +805,7 @@ export async function resolveCreateModelChoice(
 ): Promise<{ model: string | null; platformModel: { modelId: string } | null } | undefined> {
   const requested = requestedModel?.trim();
   if (!requested) return undefined;
-  if (!requested.startsWith('platform:')) {
+  if (!requested.startsWith('platform:') && !customModelRefFromOption(requested)) {
     const catalog = await listLocalModels(provider, { transport: transport as SessionTransport });
     if (isHarnessModelChoice(catalog, requested)) return { model: requested, platformModel: null };
   }

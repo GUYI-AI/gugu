@@ -337,10 +337,8 @@ describe('agentAccessMethods: what the connection panel offers, from the same de
   ] as const)('%s', (id, capabilities, expected) => {
     expect(agentAccessMethods(agent(id, capabilities))).toEqual(expected);
   });
-  it('an API-key connection lists its address field only when it has one', () => {
-    const keyed = (endpoint: 'none' | 'optional' | 'required') =>
-      agent('pi', { auth: { kind: 'none' }, apiKeyConnection: { kind: 'supported', endpoint, model: 'required', evidence: 'test' } } as Partial<AgentCapabilities>);
-    expect(agentAccessMethods(keyed('none'))).toEqual(['api-key']);
-    expect(agentAccessMethods(keyed('required'))).toEqual(['api-key', 'endpoint']);
+  it('a vendor account accepts a key but never an address or a model', () => {
+    const keyed = agent('kilocode', { auth: { kind: 'supported', methods: [], vendorKey: { envVars: ['KILO_API_KEY'], unsetEnv: ['KILO_API_KEY'] } } });
+    expect(agentAccessMethods(keyed)).toEqual(['api-key']);
   });
 });

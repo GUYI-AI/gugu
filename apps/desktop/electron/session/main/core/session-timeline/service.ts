@@ -1,3 +1,4 @@
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { prepareWindowLivePosition } from './window-live-position';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
@@ -988,7 +989,7 @@ async function recordedSessionOptions(row: SessionRow) {
   const { sessionPlatformModel } = await import('@main/core/sessions/platform-model-selection');
   const platform = await sessionPlatformModel(row.id);
   return notStartedSessionOptions({
-    model: row.config?.model,
+    model: runtimeModelId(row.config?.model),
     platformModelId: platform?.modelId,
     names: await modelNames(row.provider),
   });

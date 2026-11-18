@@ -1,4 +1,5 @@
 import { meetsReviewModeRequirements, permissionModeSupportsBillingRoute } from '@gugu/session-core/acp/client';
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { diskWindowsShimReader } from '@gugu/session-core/exec';
@@ -546,7 +547,7 @@ export class LocalSessionProvider implements SessionProvider {
 
       // #5331 台账:平台模型这一发从前是 sessionpage hook 的**参数表达式**,无法单独计时。
       const platformModelForSpawn = await sessionPlatformModel(session.id);
-      if (platformModelForSpawn === null && !runContext.credentialEnv && !runContext.apiKeyConnection) {
+      if (platformModelForSpawn === null && !runContext.credentialEnv && !runContext.customModel) {
         const { assertAgentHomeSignIn } = await import('@main/core/agents/agent-homes');
         await assertAgentHomeSignIn(session.providerId, runContext.connectionId);
       }
@@ -577,7 +578,7 @@ export class LocalSessionProvider implements SessionProvider {
         providerSessionId: session.providerSessionId ?? undefined,
         forkFromProviderSessionId: storageForkedProviderSessionId ? undefined : forkFromProviderSessionId,
         isResuming: commandResuming,
-        model: session.model ?? '',
+        model: runtimeModelId(session.model) ?? '',
         effort: launchEffort ?? '',
         fastMode: session.fastMode === true,
       });
@@ -677,7 +678,7 @@ export class LocalSessionProvider implements SessionProvider {
         isResuming: commandResuming,
         // A diverting host replaces the argv wholesale, so the user's picks have to travel separately —
         // otherwise the composer's model / effort controls silently do nothing on that path.
-        model: session.model ?? undefined,
+        model: runtimeModelId(session.model),
         effort: launchEffort ?? undefined,
         fastMode: session.fastMode === true,
         userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),

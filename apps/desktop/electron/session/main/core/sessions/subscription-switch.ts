@@ -1,3 +1,4 @@
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { and, eq } from 'drizzle-orm';
 import type { SessionSummary } from '@gugu/session-core/acp';
 import { acpAgentStatusBridge } from '@main/core/acp/agent-status-bridge';
@@ -31,7 +32,7 @@ function acpBusy(summary: SessionSummary | undefined): boolean {
     || summary.backgroundCommandCount > 0;
 }
 
-/** 此刻进程在跑的这一家的会话(两种腿);它们共享同一个活动配置根。 */
+/** 此刻进程在跑的这一家的会话(两种腿);自定义模型有独立的凭据,不参与账号切换。 */
 function liveSessions(providerId: SubscriptionProvider): LiveSession[] {
   const live = new Map<string, LiveSession>();
   // ACP: session-life says which sessions have a run; the runtime summary says only whether it is busy.
@@ -39,16 +40,18 @@ function liveSessions(providerId: SubscriptionProvider): LiveSession[] {
   // A side chat runs the same harness on the same config root as its session: it stops too.
   for (const { sessionId, parentId } of sessionLife().running()) {
     const recordId = parentId ?? sessionId;
-    const row = db.select({ projectId: sessions.projectId, provider: sessions.provider }).from(sessions).where(eq(sessions.id, recordId)).get();
+    const row = db.select({ projectId: sessions.projectId, provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, recordId)).get();
     if (!row) throw new Error(`subscription switch: running session ${recordId} has no row`);
-    if (row.provider !== providerId) continue;
+    if (row.provider !== providerId || customModelRefFromOption(row.config?.model)) continue;
     live.set(sessionId, { projectId: row.projectId, sessionId, busy: acpBusy(summaries.get(sessionId)), acp: true });
   }
   for (const pty of ptySessionRegistry.listActiveSessions()) {
     if (pty.metadata?.providerId !== providerId) continue;
     const parsed = parsePtySessionId(pty.ptySessionId);
     if (!parsed) continue;
-    const status = db.select({ status: sessions.agentStatus }).from(sessions).where(eq(sessions.id, parsed.leafId)).get()?.status;
+    const row = db.select({ status: sessions.agentStatus, config: sessions.config }).from(sessions).where(eq(sessions.id, parsed.leafId)).get();
+    if (customModelRefFromOption(row?.config?.model)) continue;
+    const status = row?.status;
     live.set(parsed.leafId, { projectId: parsed.projectId, sessionId: parsed.leafId, busy: status === 'working' || status === 'needs_user', acp: false });
   }
   return [...live.values()];
@@ -102,7 +105,7 @@ export async function switchSubscription(
   const terminals = live.filter((session) => !session.acp);
   // Every session-life session on this provider is held, resting ones too: a delivery in the middle of the swap
   // must not start one on half-swapped credentials.
-  const parents = db.select({ id: sessions.id }).from(sessions).where(and(eq(sessions.runtime, 'acp'), eq(sessions.provider, providerId))).all().map((row) => row.id);
+  const parents = db.select({ id: sessions.id, config: sessions.config }).from(sessions).where(and(eq(sessions.runtime, 'acp'), eq(sessions.provider, providerId))).all().filter((row) => !customModelRefFromOption(row.config?.model)).map((row) => row.id);
   const held = [...parents, ...parents.flatMap((id) => runtimeForksOf(id))];
   try {
     progress(0);
