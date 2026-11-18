@@ -45,7 +45,7 @@ export function createNativeFileHost(deps: {
       const epoch = epochOf(scope), owner = await deps.owner()
       if (!owner || !deps.attachments) throw new Error('Attachment uploader is unavailable')
       await check(scope, owner, epoch)
-      const result = request.op === 'declare' ? await deps.attachments.declare(request)
+      const result = request.op === 'declare' ? (await deps.attachments.declare(request)).declared
         : request.op === 'resume' ? await deps.attachments.resume() : await deps.attachments[request.op](request.messageId)
       await check(scope, owner, epoch)
       return result

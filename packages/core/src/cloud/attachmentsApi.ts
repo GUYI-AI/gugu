@@ -195,11 +195,15 @@ export type AttachmentUploadPlan = { expires_at?: string; url: string; fields: R
   /** A multipart plan (no url or fields): its staging key and the parts the server asks for. */
   staging_key?: string; parts?: { part_bytes: number; count: number } }
 
+function requireUploadSize(size: number, maximum: number, name = 'file'): void {
+  if (size > maximum) throw new AttachmentsError('upload', 413, 'too_large', `${name} is ${size} bytes; a file is at most ${maximum}`)
+}
+
 /** Ordinary and temporary uploads execute the same scoped provider plan; signing remains server-side. */
 export async function uploadAttachmentPlan(endpoint: AttachmentsEndpoint, form: AttachmentUploadPlan, file: { bytes: Uint8Array | Blob; name: string; contentType: string }, allowExisting = false, onProgress?: (progress: AttachmentByteProgress) => void, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()
   const size = file.bytes instanceof Blob ? file.bytes.size : file.bytes.byteLength
-  if (size > form.max_bytes) throw new AttachmentsError('upload', 413, 'too_large', `${file.name} is ${size} bytes; a file is at most ${form.max_bytes}`)
+  requireUploadSize(size, form.max_bytes, file.name)
   if (form.parts) {
     if (!form.staging_key) throw new AttachmentsError('upload', 502, 'invalid', 'a multipart upload plan without its staging key')
     return uploadAttachmentParts(endpoint, form.staging_key, form.parts, file, onProgress, signal)
@@ -241,6 +245,7 @@ export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { b
   scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<DeclaredAttachment> {
   const size = file.bytes instanceof Uint8Array ? file.bytes.byteLength : file.bytes.size
   const [sha256, plan] = await Promise.all([attachmentSha256(file.bytes), planAttachmentUpload(endpoint, { size, contentType: file.contentType }, scope, signal)])
+  requireUploadSize(size, plan.max_bytes)
   return { staging_key: plan.staging_key, sha256, size_bytes: size, plan }
 }
 
@@ -275,6 +280,7 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
       })
       break
     } catch (error) {
+      if (error instanceof AttachmentsError && (error.code === 'too_large' || error.status === 413)) throw error
       if (attempt >= UPLOAD_ATTEMPTS || hooks.stopped?.()) throw error
       // A multipart plan that is still alive is tried again as it is: the parts already stored are not sent again. One
       // whose permit lapsed, whose parts did not make the file, or whose upload is gone gets a new plan, like a form's.

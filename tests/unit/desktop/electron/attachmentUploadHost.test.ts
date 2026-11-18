@@ -29,7 +29,8 @@ it('stores verified original bytes before declaring, resumes only from that stor
     return new Response(JSON.stringify({ staging_key: 'pending', url: 'https://store.test', fields: {}, max_bytes: 100 }), { status: 200 })
   })
   const progress = vi.fn(), result = vi.fn(), host = createAttachmentUploadHost({ account: async () => ({ id: 'owner', home, endpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'a', token: 't', fetch: fetcher }) }), progress, result, warn: error => { throw error } })
-  const declared = await host.declare({ file: { name: 'file.txt', path: '', data: await bytes.arrayBuffer(), size: bytes.size, contentType: 'text/plain' }, chatId: 'chat', as: 'owner', messageId: 'm' })
+  const { declared, uploaded } = await host.declare({ file: { name: 'file.txt', path: '', data: await bytes.arrayBuffer(), size: bytes.size, contentType: 'text/plain' }, chatId: 'chat', as: 'owner', messageId: 'm' })
+  await uploaded
   expect(declared).toEqual({ staging_key: 'pending', sha256, size_bytes: bytes.size })
   expect(queues[0]!.begin).toHaveBeenCalledOnce()
   expect(await (queues[0]!.begin.mock.calls[0]![1] as Blob).text()).toBe('original')

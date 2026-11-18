@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, truncateSync, writeFileSync } from 'node:fs'
@@ -260,8 +261,10 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
       return bytes ? verifiedFileHandle(bytes) : { status: 'gone', sha256: null }
     },
   }
+  const attachments = testAttachmentUploads(deps.attachmentsEndpoint)
+  Object.assign(deps, { attachments })
   return {
-    setGroupPrompt: (v: string | null) => { currentGroupPrompt = v }, failCommit: (error: Error) => { commitError = error }, loseCommitAnswers: (n: number) => { lostAnswers = n }, commitBodies, deps, calls }
+    attachments, setGroupPrompt: (v: string | null) => { currentGroupPrompt = v }, failCommit: (error: Error) => { commitError = error }, loseCommitAnswers: (n: number) => { lostAnswers = n }, commitBodies, deps, calls }
 }
 async function connect(deps: Record<string, unknown>): Promise<Client> {
   const server = createGuguImServer(deps)

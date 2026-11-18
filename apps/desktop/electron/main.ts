@@ -5596,6 +5596,7 @@ app.whenReady().then(async () => {
               host: primaryGuguMcpHost,
               resolveFile: desktopFiles.resolve,
               publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+              attachments: attachmentUploads,
               // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
               grantKey: sessionpageSurfaceKey(info.sessionId),
               nativeSessionId: info.sessionId,
@@ -5869,6 +5870,7 @@ app.whenReady().then(async () => {
             host: primaryGuguMcpHost,
             resolveFile: desktopFiles.resolve,
             publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+            attachments: attachmentUploads,
             grantKey: sessionpageSurfaceKey(info.sessionId),
             nativeSessionId: info.sessionId,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
@@ -6030,6 +6032,7 @@ app.whenReady().then(async () => {
           runLocalSessionAction(auth, sessionContext, action, signal)
         return {
           host,
+          attachments: attachmentUploads,
           grantKey: sessionpageSurfaceKey(info.sessionId),
           nativeSessionId: info.sessionId,
           runHostAction: runAction,

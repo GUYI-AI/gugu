@@ -76,7 +76,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
     try {
       const endpoint = await host.endpoint()
       const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, size_bytes: task.size, ...(first ? { plan: first } : {}) },
-        { bytes: file, name: task.name, contentType: task.contentType }, { id: task.messageId, chat_id: task.chatId, as: task.as }, {
+        { bytes: file.slice(0, file.size, task.contentType), name: task.name, contentType: task.contentType }, { id: task.messageId, chat_id: task.chatId, as: task.as }, {
           attempt: async (attempt, run) => {
             const controller = new AbortController(); controllers.add(controller)
             const operation: AttachmentStageOperation<void> = async (signal, capDeadline, advance) => {
@@ -106,7 +106,18 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       host.progress(task.messageId)
     } catch (error) {
       if (closed || dropped.has(task.messageId)) return
-      const final = error instanceof AttachmentsError && error.code === 'upload_mismatch'
+      if (error instanceof AttachmentsError && error.code === 'upload_not_found') {
+        const pending = await host.endpoint().then(pendingAttachmentUploads).catch(pendingError => {
+          host.warn?.(pendingError); return null // A failed read cannot release the upload duty.
+        })
+        if (closed || dropped.has(task.messageId)) return
+        if (pending && !pending.some(upload => upload.message_id === task.messageId)) {
+          again.delete(task.messageId)
+          host.progress(task.messageId)
+          return
+        }
+      }
+      const final = error instanceof AttachmentsError && (error.code === 'upload_mismatch' || error.code === 'too_large' || error.status === 413)
       if (!final) {
         const delay = Math.min(again.has(task.messageId) ? again.get(task.messageId)!.delay * 2 : RETRY_FIRST_MS, RETRY_MAX_MS)
         const timer = setTimeout(() => { if (again.get(task.messageId)?.timer === timer) void begin(task, file, null) }, delay)
