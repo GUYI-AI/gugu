@@ -1,4 +1,66 @@
 export default {
+  "referrals": {
+    "accountCount": "已邀请 {{count}} 人",
+    "invite": "邀请",
+    "invited": "已邀请",
+    "received": "已到账",
+    "history": "邀请记录",
+    "people": "{{count}} 人",
+    "credits": "{{amount}} 积分",
+    "friend": "受邀朋友",
+    "emptyHistory": "还没有邀请记录。",
+    "historyUnavailable": "暂时读不到邀请记录，请重试。",
+    "more": "加载更多",
+    "offer": {
+        "both": "你和朋友各得 {{amount}} 积分",
+        "inviter": "邀请成功可得 {{amount}} 积分",
+        "invitee": "朋友可得 {{amount}} 积分",
+        "off": "奖励暂未开放"
+    },
+    "activity": {
+        "awaiting_message": "还没发消息",
+        "no_inviter_reward": "本次未向你发奖",
+        "pending": "等待发放",
+        "inactive": "暂不能发放",
+        "cap_reached": "待补发",
+        "budget_exhausted": "待补发",
+        "legacy_rewarded": "已按历史规则发放",
+        "failed": "等待重试",
+        "unpromised": "本次未发奖",
+        "paused": "发放已暂停",
+        "queued": "等待发放"
+    },
+    "accountNote": "个人邀请码、邀请成功人数与来源确认",
+    "loading": "正在读取…",
+    "unavailable": "暂时读不到邀请信息，请重试。",
+    "retry": "重试",
+    "refresh": "刷新人数",
+    "successCount": "邀请成功人数：{{count}}",
+    "earned": "已获得 {{amount}} 积分",
+    "codeDisabled": "邀请码已停用，暂不能分享。",
+    "copied": "已复制",
+    "copyFailed": "复制失败，请重试。",
+    "confirm": "确认邀请来源",
+    "confirming": "正在确认…",
+    "confirmedSource": "邀请来源已确认：{{code}}",
+    "claimUnavailable": "此账号当前不能补填邀请来源。",
+    "optionalNote": "填写后点“确认邀请来源”。也可以留空继续，稍后在账户中补填。",
+    "condition": {
+      "verified_login": "朋友首次验证登录并确认来源后计为成功。",
+      "first_message": "朋友首次验证登录、确认来源并发出一条消息后计为成功。"
+    },
+    "status": {
+      "attributed": "邀请来源已确认。",
+      "already_attributed": "邀请来源已确认。",
+      "source_locked": "邀请来源已确定，不能更换。",
+      "claim_expired": "已超过补填邀请来源的期限。",
+      "invalid_code": "邀请码无效或已停用，请检查后重试。",
+      "self_invite": "不能填写自己的邀请码。",
+      "not_eligible": "此账号当前不符合确认条件。",
+      "unavailable": "暂时无法确认，来源不会丢失，请重试。",
+      "storage_error": "本机草稿未保存，仍可确认来源或继续注册。"
+    }
+  },
   "installedManager": {
     "confirmRemove": "确认卸载",
     "title": "已安装",

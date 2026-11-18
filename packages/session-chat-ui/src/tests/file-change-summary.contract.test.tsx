@@ -11,7 +11,7 @@ import { fileChangeSummaryUnitDef } from '../components/rows/file-change-summary
 import type { FileChangeSummaryItem } from '../model'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
 import { FILE_MARKS } from '@gugu/session-shared/file-marks'
-import { mountRecordedFileDiff } from '../components/rows/tools/diff/recorded-file-diff'
+import { mountRecordedFileDiff, type RecordedDiffAnnotationSlot } from '../components/rows/tools/diff/recorded-file-diff'
 /** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
 const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 const item: FileChangeSummaryItem = {
@@ -98,9 +98,10 @@ it('renders all recorded hunks for the selected file and reports missing patch t
     patch: { format: 'git_patch', text: other.patch!.text + target.patch!.text },
   }
   const later = textFilePatch(path, 'previous context', 'later edit')
+  const slots: RecordedDiffAnnotationSlot[] = []
   const recorded = mountRecordedFileDiff(host, context, {
     turnId: 't', path, patches: [multiFile, later, { ...later, patch: null }],
-  })
+  }, slot => slots.push(slot))
   try {
     expect(recorded).toMatchObject({ available: true, partial: true })
     expect(host.querySelectorAll('[data-patch-row="add"]')).toHaveLength(16)
@@ -110,6 +111,12 @@ it('renders all recorded hunks for the selected file and reports missing patch t
     expect(host.textContent).toContain('line 15')
     expect(host.textContent).toContain('later edit')
     expect(host.textContent).not.toContain('other file')
+    expect(slots).toHaveLength(18)
+    const deleted = slots.find(slot => slot.patchIndex === 0 && slot.oldLine === 1)!
+    const added = slots.find(slot => slot.patchIndex === 1 && slot.newLine === 1)!
+    expect(deleted).toMatchObject({ text: 'old text', oldLine: 1, newLine: undefined })
+    expect(added).toMatchObject({ text: 'later edit', oldLine: undefined, newLine: 1 })
+    expect(added.editor.previousElementSibling).toBe(added.control.closest('[data-patch-row]'))
   } finally {
     recorded.dispose()
     context.dispose()

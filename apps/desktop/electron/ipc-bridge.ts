@@ -14,6 +14,7 @@ import {
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
 } from '../src/session/shared/extensions/host-actions'
+import { EXTENSION_FILE_ANNOTATION_METHOD } from '../src/session/shared/extensions/file-annotation-draft'
 import { rendererDrawingId } from './window-drawer'
 
 let _window: BrowserWindow | null = null
@@ -45,6 +46,7 @@ const HUMAN_DECISION_TIMEOUT_MS = new Map<string, number>([
   [EXTENSION_INSTALL_CONSENT_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_SELECTION_SEND_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
+  [EXTENSION_FILE_ANNOTATION_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   // #50 The assistant page's own question before a delete, and its save dialog: as long as the person takes.
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_EXPORT_VOICE_NOTE_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],

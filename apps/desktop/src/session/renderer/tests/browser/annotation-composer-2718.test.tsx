@@ -16,6 +16,24 @@ import '@/mobile/phone-shell.css';
 let harness: ReturnType<typeof createReactHarness> | null = null;
 afterEach(() => { harness?.cleanup(); harness = null; });
 
+it('offers deletion without editing for saved file and diff comments', async () => {
+  await page.viewport(390, 700);
+  const id = crypto.randomUUID();
+  const draft = sessionAnnotations.forSession(id);
+  const file = draft.add({ kind: 'file', path: 'notes.md', startLine: 2, endLine: 3, text: 'Source text', annotation: 'File note' });
+  draft.add({ kind: 'diff', path: 'sample.ts', turnId: 'turn', patchIndex: 0, rowIndex: 1, oldLine: 8, text: 'Old line', annotation: 'Diff note' });
+  harness = createReactHarness();
+  await harness.render(<SessionLocalizationProvider><AnnotationTray sessionId={id} onSend={() => {}} enabled /></SessionLocalizationProvider>);
+  await act(async () => { await userEvent.click(harness!.container.querySelector('[data-composer-annotations] button')!); });
+  const buttons = () => document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]');
+  await until('both file and diff comments are listed', () => buttons().length === 2);
+  expect(document.querySelector('button[aria-label="Edit annotation"],button[aria-label="修改批注"]')).toBeNull();
+  expect(document.querySelector('[data-annotation-editor]')).toBeNull();
+  await act(async () => { await userEvent.click(buttons()[0]!); });
+  expect(draft.items.some(item => item.id === file.id)).toBe(false);
+  expect(draft.items).toMatchObject([{ kind: 'diff', number: 2, annotation: 'Diff note' }]);
+});
+
 it('places one annotation attachment above the phone input with edit and delete for each comment', async () => {
   await page.viewport(390, 700);
   const id = crypto.randomUUID();

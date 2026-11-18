@@ -7,7 +7,7 @@ import type { ChatContext } from '../../../../chat-context';
 import type { RecordedFileChange } from '../../../../commands';
 import { vars } from '../../../../styles/theme.css';
 import { DiffLines } from './Diff';
-import { hasTextPatch } from './diff-lines';
+import { hasTextPatch, type DiffRow } from './diff-lines';
 import { langFromPath } from './lang';
 
 function headerPath(header: string): string {
@@ -46,7 +46,19 @@ function patchForFile(patch: SessionPatch, path: string): SessionPatch | undefin
 }
 
 /** Mount the same line renderer used in chat, with every hunk of each recorded edit. */
-export function mountRecordedFileDiff(parent: HTMLElement, context: ChatContext, change: RecordedFileChange) {
+export type RecordedDiffAnnotationSlot = {
+  patchIndex: number;
+  rowIndex: number;
+  oldLine?: number;
+  newLine?: number;
+  text: string;
+  control: HTMLElement;
+  editor: HTMLElement;
+};
+
+export function mountRecordedFileDiff(parent: HTMLElement, context: ChatContext, change: RecordedFileChange,
+  registerAnnotationSlot?: (slot: RecordedDiffAnnotationSlot) => void,
+) {
   const theme = context.theme;
   const lang = langFromPath(change.path);
   const sections = change.patches.map(patch => {
@@ -70,7 +82,11 @@ export function mountRecordedFileDiff(parent: HTMLElement, context: ChatContext,
           <Show when={rows.length > 0}>
             <div data-patch-section={index()}>
               <DiffLines layout={{ previewRows: rows, lang, truncated: false }} caches={context.sharedCaches}
-                codeLineHeight={() => theme.fonts.code.lineHeight} showMarkers />
+                codeLineHeight={() => theme.fonts.code.lineHeight} showMarkers
+                annotationSlots={registerAnnotationSlot && ((row: DiffRow, rowIndex, control, editor) =>
+                  registerAnnotationSlot({ patchIndex: index(), rowIndex, control, editor, text: row.text,
+                    oldLine: row.oldIdx === undefined ? undefined : row.oldIdx + 1,
+                    newLine: row.newIdx === undefined ? undefined : row.newIdx + 1 }))} />
             </div>
           </Show>
         )}</For>

@@ -17,7 +17,28 @@ export type BrowserAnnotationSelection = {
   /** The actual page capture, with this selection's number drawn on it. */
   screenshot: File;
 };
-export type SessionAnnotation = BrowserAnnotationSelection & { id: string; number: number };
+export type FileAnnotationSelection = {
+  kind: 'file';
+  path: string;
+  startLine: number;
+  endLine: number;
+  text: string;
+  annotation: string;
+};
+export type DiffAnnotationSelection = {
+  kind: 'diff';
+  path: string;
+  turnId: string;
+  patchIndex: number;
+  rowIndex: number;
+  oldLine?: number;
+  newLine?: number;
+  text: string;
+  annotation: string;
+};
+type AnnotationSelection = BrowserAnnotationSelection | FileAnnotationSelection | DiffAnnotationSelection;
+type AnnotationIdentity = { id: string; number: number };
+export type SessionAnnotation = AnnotationSelection & AnnotationIdentity;
 
 /** One conversation's unsent feedback; independent of the tab's annotation mode. */
 export class SessionAnnotations {
@@ -33,7 +54,7 @@ export class SessionAnnotations {
 
   reserveNumber(): number { return this.nextNumber++; }
 
-  add(selection: BrowserAnnotationSelection, number = this.reserveNumber()): SessionAnnotation {
+  add<T extends AnnotationSelection>(selection: T, number = this.reserveNumber()): T & AnnotationIdentity {
     const item = { ...selection, id: crypto.randomUUID(), number };
     this.items = [...this.items, item];
     return item;
@@ -96,7 +117,36 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
   const copy = (key: PromptKey, values: Readonly<Record<string, number>> = {}): string =>
     messages[key].replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? String(values[name]) : match);
   const sections: string[] = [];
-  sections.push(copy('annotations.prompt.browserComments') + '\n\n' + items.map(item => [
+  let previousHeading: PromptKey | undefined;
+  const append = (heading: PromptKey, entry: string) => {
+    if (previousHeading === heading) sections[sections.length - 1] += `\n\n${entry}`;
+    else sections.push(`${copy(heading)}\n\n${entry}`);
+    previousHeading = heading;
+  };
+  for (const item of items) {
+    if (item.kind === 'file') {
+      append('annotations.prompt.selectedText', [
+        copy('annotations.prompt.fileSelection', { number: item.number }),
+        JSON.stringify({ path: item.path, startLine: item.startLine, endLine: item.endLine, text: item.text, annotation: item.annotation }),
+      ].join('\n'));
+      continue;
+    }
+    if (item.kind === 'diff') {
+      append('annotations.prompt.allComments', [
+        copy('annotations.prompt.userComment', { number: item.number }),
+        copy('annotations.prompt.diff'),
+        `${copy('annotations.prompt.filePath')} ${JSON.stringify(item.path)}`,
+        copy('annotations.prompt.patch', { patch: item.patchIndex + 1 }),
+        ...(item.oldLine === undefined ? [] : [copy('annotations.prompt.oldLine', { line: item.oldLine })]),
+        ...(item.newLine === undefined ? [] : [copy('annotations.prompt.newLine', { line: item.newLine })]),
+        copy('annotations.prompt.sourceEvidence'),
+        ...item.text.split(/\r?\n/).map(line => `> ${line}`),
+        '',
+        copy('annotations.prompt.comment'), item.annotation,
+      ].join('\n'));
+      continue;
+    }
+    append('annotations.prompt.browserComments', [
     copy('annotations.prompt.browserComment', { number: item.number }), copy('annotations.prompt.browser'),
     copy('annotations.prompt.position', { x: item.rect.x, y: item.rect.y, width: item.viewport.width, height: item.viewport.height }),
     copy('annotations.prompt.untrusted'),
@@ -105,7 +155,8 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
     ...(!item.selector ? [copy('annotations.prompt.region', { ...item.rect, number: item.number })] : []),
     `${copy('annotations.prompt.screenshot')} ${item.screenshot.name}${copy('annotations.prompt.screenshotAttachment', { number: item.number })}`,
     copy('annotations.prompt.comment'), item.annotation,
-  ].join('\n')).join('\n\n'));
+    ].join('\n'));
+  }
   if (prompt.trim()) sections.push(`${copy('annotations.prompt.request')}\n${prompt.trim()}`);
   return sections.join('\n\n');
 }

@@ -186,6 +186,18 @@ describe('sticky user lanes', () => {
     const t = await mount([...[1, 2, 5, 6].map((n, i) => turn(ids[i]!, i, lines(n))), longTurn('z', 4, 150)], undefined, theme);
     const edge = () => t.scrollEl.getBoundingClientRect().top;
     const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const scrollAndSettle = async (st: number) => {
+      let dispatched = false;
+      const onScroll = () => { dispatched = true; };
+      t.scrollEl.addEventListener('scroll', onScroll);
+      try {
+        const before = t.scrollEl.scrollTop;
+        t.scrollEl.scrollTop = st;
+        // The pin paint scheduler is armed by scroll, not by the test's rAFs.
+        if (t.scrollEl.scrollTop !== before) await until('jump scroll event dispatched', () => dispatched);
+        await frames();
+      } finally { t.scrollEl.removeEventListener('scroll', onScroll); }
+    };
     const sweep = async (id: string) => {
       await t.view.scrollToItem(`${id}-user`);
       await until(`${id} on screen`, () => t.card(`${id}-user`), el => el != null);
@@ -216,8 +228,7 @@ describe('sticky user lanes', () => {
         seen.set(st, now.top);
       }
       for (const st of down.filter(st => st % 21 === 0).sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
-        t.scrollEl.scrollTop = st;
-        await frames();
+        await scrollAndSettle(st);
         const now = read(st);
         expect(now.top, `${id} scrollTop=${st}: the same place after a jump`).toBe(seen.get(st));
         // Pushed above the scroller, there is nothing left to hit.

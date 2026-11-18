@@ -1,4 +1,67 @@
 export default {
+  "referrals": {
+    "accountCount": "{{count}} invited",
+    "invite": "Invite",
+    "invited": "Invited",
+    "received": "Received",
+    "history": "Invitation history",
+    "people_one": "{{count}} person",
+    "people_other": "{{count}} people",
+    "credits": "{{amount}} credits",
+    "friend": "Invited friend",
+    "emptyHistory": "No invitations yet.",
+    "historyUnavailable": "Invitation history is unavailable. Please retry.",
+    "more": "Load more",
+    "offer": {
+        "both": "You and your friend each receive {{amount}} credits",
+        "inviter": "Receive {{amount}} credits for a successful invitation",
+        "invitee": "Your friend receives {{amount}} credits",
+        "off": "Rewards are currently off"
+    },
+    "activity": {
+        "awaiting_message": "No message yet",
+        "no_inviter_reward": "No reward for you",
+        "pending": "Awaiting payment",
+        "inactive": "Currently ineligible",
+        "cap_reached": "Awaiting backfill",
+        "budget_exhausted": "Awaiting backfill",
+        "legacy_rewarded": "Paid under previous rules",
+        "failed": "Awaiting retry",
+        "unpromised": "No reward promised",
+        "paused": "Payment paused",
+        "queued": "Awaiting payment"
+    },
+    "accountNote": "Personal code, successful invitations and source confirmation",
+    "loading": "Loading…",
+    "unavailable": "Invitation information is unavailable. Please retry.",
+    "retry": "Retry",
+    "refresh": "Refresh count",
+    "successCount": "Successful invitations: {{count}}",
+    "earned": "Credits received: {{amount}}",
+    "codeDisabled": "This code is disabled and cannot be shared.",
+    "copied": "Copied",
+    "copyFailed": "Copy failed. Please retry.",
+    "confirm": "Confirm invitation source",
+    "confirming": "Confirming…",
+    "confirmedSource": "Invitation source confirmed: {{code}}",
+    "claimUnavailable": "This account cannot currently add an invitation source.",
+    "optionalNote": "Use Confirm invitation source after entering a code. You can continue without one and add it later in Account.",
+    "condition": {
+      "verified_login": "A friend counts after their first verified login and source confirmation.",
+      "first_message": "A friend counts after their first verified login, source confirmation and one message."
+    },
+    "status": {
+      "attributed": "Invitation source confirmed.",
+      "already_attributed": "Invitation source is already confirmed.",
+      "source_locked": "The confirmed invitation source cannot be changed.",
+      "claim_expired": "The invitation confirmation window has ended.",
+      "invalid_code": "This code is invalid or disabled. Check it and retry.",
+      "self_invite": "You cannot use your own invitation code.",
+      "not_eligible": "This account is not currently eligible.",
+      "unavailable": "Confirmation is unavailable. Your source can be retried.",
+      "storage_error": "The local draft could not be saved. You can still confirm or continue."
+    }
+  },
   "installedManager": {
     "confirmRemove": "Confirm uninstall",
     "title": "Installed",
