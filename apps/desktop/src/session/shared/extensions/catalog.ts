@@ -1,4 +1,3 @@
-import { ASSISTANT_APP_ID } from './assistant-entry';
 import {
   compareExtensionVersions,
   type ExtensionCapability,
