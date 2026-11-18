@@ -1,3 +1,4 @@
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { join } from 'node:path';
 import {
   acpApiContract,
@@ -159,7 +160,7 @@ export async function readSessionInjectionFacts(input: {
     // GPT/Claude 上选的 xhigh/max 悄悄改回默认。
     effort: session ? session.effort : undefined,
     fastMode: session?.fastMode === true,
-    model: platformModel ? null : (session?.model ?? null),
+    model: platformModel ? null : (runtimeModelId(session?.model) ?? null),
     // 缺席(运行时视图没有自己的行,或行刚被删)= 没有可续的 provider 会话 ⇒ `null`,与「新开一条」同义。
     providerSessionId: session?.providerSessionId ?? null,
     // ⚠️ 原样带上,`[]` 也带 —— `[]` = 用户决定过、一台没关;缺席 = 从没碰过。
@@ -409,6 +410,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
   identity: EmdashSessionIdentity | null,
   firstTurnText?: string,
   firstTurnFiles?: import('@gugu/session-core/session-record/contract').TurnFileRef[],
+  applyMaterialization?: import('../emdash-mcp-injector').ApplyAcpMaterialization,
 ): Promise<{
   command: T;
   mcpServers?: EmdashSessionCapabilityInjection['mcpServers'];
@@ -468,7 +470,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     // 要不要再投一次 ⇒ 读错的后果是**开场白重投**或**启动被误拒**,而两者都不会指向真因。
     // 同一次 start 的两级注入必须看同一个值,❌ 不许一级读记录、另一级读渲染端。
     providerSessionId: facts.providerSessionId,
-  }, identity);
+  }, identity, applyMaterialization);
   if (process.env.GUGU_DEBUG_AUTONOMY === '1') {
     log.warn('autonomy-debug: ACP start input', {
       sessionId: input.input.sessionId,
@@ -617,7 +619,9 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
       }),
     },
   };
-  return { command: reportUnpinnedPlatformModel(command) as T, injected: true };
+  return injection.platformAccessSessionId
+    ? { command: reportUnpinnedPlatformModel(command) as T, injected: true }
+    : { command: command as T, injected: false };
 }
 
 /**
@@ -754,16 +758,16 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
 export async function callSessionStart<T extends { success: boolean }>(
   start: () => Promise<T>,
   sessionId: string,
-  platformInjected: boolean
+  credentialInjected: boolean
 ): Promise<T> {
   try {
     const result = await start();
-    if (platformInjected && !result.success) {
+    if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);
     }
     return result;
   } catch (error) {
-    if (platformInjected) await releaseEmdashPlatformSession(sessionId);
+    if (credentialInjected) await releaseEmdashPlatformSession(sessionId);
     throw error;
   }
 }

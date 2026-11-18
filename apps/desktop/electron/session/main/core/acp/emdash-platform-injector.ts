@@ -26,7 +26,8 @@ import type { EmdashSessionStartInfo } from './emdash-mcp-injector';
 export type EmdashPlatformInjection =
   | {
       kind: 'session-meta';
-      platformAccessSessionId: string;
+      /** A custom Claude settings document has the same carrier without a platform ticket. */
+      platformAccessSessionId?: string;
       sessionMeta: Record<string, unknown>;
       /** Model-only env for the private Claude adapter process; credentials stay session-scoped. */
       adapterEnv?: Record<string, string>;

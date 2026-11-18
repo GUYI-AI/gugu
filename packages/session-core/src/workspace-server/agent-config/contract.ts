@@ -1,13 +1,12 @@
 import { agentHomeDiffSchema, agentHomeGroupIdSchema, agentHomeImportResultSchema, agentHomeIssueSchema, agentHomeScanSchema } from './homes';
 import { defineContract, fallible, liveJob, liveLog, liveModel, liveState } from '@gugu/session-wire';
 import { z } from 'zod';
+import { customModelConnectionSchema, saveCustomModelSchema, testCustomModelSchema } from './custom-models';
 import {
   connectionModelListSchema,
   createHarnessConnectionSchema,
   harnessConnectionSchema,
   harnessConnectionSelectSchema,
-  listConnectionModelsSchema,
-  updateConnectionModelsSchema,
 } from './connections';
 import { agentRunContextSchema } from '../../agents/agent-run-context';
 import { agentAuthStatusSchema } from '../../agents/plugins/capabilities/auth';
@@ -43,12 +42,14 @@ import {
 const provider = z.object({ providerId: z.string() });
 
 const commonAgentConfigContract = defineContract({
+  listCustomModels: fallible({ input: z.void(), data: z.array(customModelConnectionSchema), error: agentConfigAuthErrorSchema }),
+  saveCustomModel: fallible({ input: saveCustomModelSchema, data: customModelConnectionSchema, error: agentConfigAuthErrorSchema }),
+  removeCustomModel: fallible({ input: z.object({ connectionId: z.string().min(1) }), data: z.void(), error: agentConfigAuthErrorSchema }),
+  testCustomModel: fallible({ input: testCustomModelSchema, data: connectionModelListSchema, error: agentConfigAuthErrorSchema }),
   listConnections: fallible({ input: provider, data: z.array(harnessConnectionSchema), error: agentConfigAuthErrorSchema }),
   createConnection: fallible({ input: createHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
   selectConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
   removeConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
-  listConnectionModels: fallible({ input: listConnectionModelsSchema, data: connectionModelListSchema, error: agentConfigAuthErrorSchema }),
-  updateConnectionModels: fallible({ input: updateConnectionModelsSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
   agents: liveModel({
     key: z.void().optional(),
     states: {

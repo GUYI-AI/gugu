@@ -4,6 +4,13 @@ import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { clickElement, createNode, createReactHarness, typeInto, waitForCondition } from '../../../support/testHarness'
 
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }))
+vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
+  getAgentConfigRuntimeClient: async () => ({
+    listCustomModels: async () => ({ success: true, data: [] }),
+  }),
+}))
+
 // #7056 设置「模型」页 = Cursor 的 Settings › Models:列出咕咕提供的全部模型,开关决定哪些出现在模型下拉里;
 // 要会员的那些另成一组、不给开关,一处「升级解锁」去网页面板。
 const fetchPlatformModelCatalog = vi.fn()

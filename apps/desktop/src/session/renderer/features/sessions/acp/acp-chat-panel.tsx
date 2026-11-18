@@ -1,3 +1,6 @@
+import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { useReplica } from '@/lib/replica';
+import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
@@ -391,6 +394,13 @@ const ComposerForStore = observer(function ComposerForStore({
   // D-31 The host's ask for this agent (an App install) is the session timeline's, not the runtime's: shown first — read only
   // while the session waits on an approval.
   const hostSession = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId);
+  const runningCustomModel = hostSession?.data.customModel;
+  const customReading = useReplica(customModels, runningCustomModel ? [machineRegistry.machineOf(store.projectId) ?? null] : null);
+  const customFeatures = runningCustomModel && customReading.state === 'value'
+    ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
+    : undefined;
+  const acceptsImages = !runningCustomModel || customFeatures?.image === true;
+  const acceptsThinking = !runningCustomModel || customFeatures?.thinking === true;
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession);
   const resolveHostAsk = hostBand?.resolve;
   const permissionRequest =
@@ -450,7 +460,9 @@ const ComposerForStore = observer(function ComposerForStore({
 
   /** 拖 / 粘 / 选进来的文件(图片也是):各上一枚 chip,当场开始放进私聊文件夹。 */
   const attachFiles = useCallback(async (files: File[], source?: 'paste' | 'drop') => {
-    const selected = fileSelection.choose(files);
+    const accepted = acceptsImages ? files : files.filter((file) => !file.type.toLowerCase().startsWith('image/'));
+    if (accepted.length < files.length) toast({ title: translate('customModels.imagesUnsupported'), variant: 'destructive' });
+    const selected = fileSelection.choose(accepted);
     try {
       for (const { id, file } of selected) {
         // 用户读的名字是 `file.name`,❌ 不从盘上的路径反推 —— 从前正是这一步把 `gugu-drop-<uuid>-` 漏到了用户脸上。
@@ -472,7 +484,7 @@ const ComposerForStore = observer(function ComposerForStore({
         }
       }
     } catch (error) { fileSelection.release(selected); throw error; }
-  }, [fileSelection, fileUploads, setAttachments]);
+  }, [acceptsImages, fileSelection, fileUploads, setAttachments, translate]);
 
   /**
    * 拖进来的文件夹。本机会话:落成正文里一条路径 pill(文件夹就在这台电脑上,agent 就地读)。
@@ -921,11 +933,11 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const ownTier = useMemo(
     () => ownModelTierOptions({
-      route,
+      route: runningCustomModel ? 'platform' : route,
       live: store.modelOptions ?? startupOwnOptions,
       catalog: harnessCatalog.state,
     }),
-    [route, store.modelOptions, startupOwnOptions, harnessCatalog.state]
+    [route, runningCustomModel, store.modelOptions, startupOwnOptions, harnessCatalog.state]
   );
   // 「这条会话现在切得动哪些」的清单:活会话报的;还在起的那段是启动那一步会设的那份(同上)。
   const advertisedModels = useMemo(
@@ -937,11 +949,12 @@ const ComposerForStore = observer(function ComposerForStore({
   const lockedForTurn = store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
   const sessionModelOptions = useMemo(() => {
     // 能力声明还没到 ⇒ 还答不出「哪些能当场换」:❌ 不拿「未声明」去判(那会把整张菜单暂时置灰)。
-    if ((!merged && !retiredModel) || !providerCapabilities) return null;
+    if ((!merged && !retiredModel && !runningCustomModel) || !providerCapabilities) return null;
     const catalog = platformCatalog.models;
-    const selectedOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model });
+    const selectedOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
     const options = Object.fromEntries(
       Object.entries(merged ?? {}).map(([id, option]) => {
+        if (option.disabled) return [id, option];
         // 四态见 @@@session-options-disabled。hot / reload 都是"能选",
         // unavailable / unsupported 才置灰 —— ❌ 别按 `platform:` 前缀判,那会把能重开换成的也灰掉。
         const plan = planModelSwitch({
@@ -949,6 +962,8 @@ const ComposerForStore = observer(function ComposerForStore({
           advertised: advertisedModels,
           catalog,
           runningOn,
+          runningCustomModel,
+          currentModel: store.model,
           liveSetting: providerCapabilities?.acp.liveSettings?.model,
         });
         // A hot switch this provider refuses during a turn: say so on the row, rather than offer one that can only fail.
@@ -975,6 +990,15 @@ const ComposerForStore = observer(function ComposerForStore({
       const recorded = platformOptionId(runningPlatformModel);
       if (!options[recorded]) options[recorded] = { name: runningPlatformModel, disabled: true, disabledReason: translate('composer.modelNotInCatalog') };
     }
+    if (runningCustomModel) {
+      const recorded = customModelOptionId(runningCustomModel);
+      options[recorded] ??= {
+        name: runningCustomModel.modelId ?? translate('customModels.noModel'),
+        groupLabel: translate('customModels.title'),
+        disabled: true,
+        disabledReason: translate('composer.modelNotInCatalog'),
+      };
+    }
     return options;
   }, [
     merged,
@@ -982,6 +1006,7 @@ const ComposerForStore = observer(function ComposerForStore({
     advertisedModels,
     platformCatalog.models,
     runningOn,
+    runningCustomModel,
     runningPlatformModel,
     providerCapabilities,
     lockedForTurn,
@@ -1080,7 +1105,7 @@ const ComposerForStore = observer(function ComposerForStore({
         void switchBeforeFirstStart({
           dimension: 'model',
           value: selection.modelId,
-          label: known?.displayName ?? selection.modelId,
+          label: known?.displayName ?? sessionModelOptions?.[optionId]?.name ?? runtimeModelId(selection.modelId) ?? '',
           source: selection.source,
         });
         return;
@@ -1090,6 +1115,8 @@ const ComposerForStore = observer(function ComposerForStore({
         advertised: advertisedModels,
         catalog: platformCatalog.models,
         runningOn,
+        runningCustomModel,
+        currentModel: store.model,
         liveSetting: providerCapabilities?.acp.liveSettings?.model,
       });
       if (plan.kind === 'hot') {
@@ -1112,7 +1139,7 @@ const ComposerForStore = observer(function ComposerForStore({
             setPendingReload({
               dimension: 'model',
               value: plan.modelId,
-              label: catalogName ?? plan.modelId,
+              label: catalogName ?? runtimeModelId(plan.modelId) ?? '',
               source,
             });
             return;
@@ -1132,7 +1159,7 @@ const ComposerForStore = observer(function ComposerForStore({
                 outcome.effectiveValue,
                 platformCatalog.models.map((entry) => entry.id),
               ) ?? plan.modelId
-            : outcome.effectiveValue;
+            : customModelRefFromOption(plan.modelId) ? plan.modelId : outcome.effectiveValue;
           try {
             await rpc.sessions.recordLiveModelSwitch({
               sessionId: store.sessionId,
@@ -1168,7 +1195,7 @@ const ComposerForStore = observer(function ComposerForStore({
         source: plan.source === 'platform' ? 'platform' : 'own',
       });
     },
-    [store, advertisedModels, platformCatalog.models, runningOn, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart]
+    [store, advertisedModels, platformCatalog.models, runningOn, runningCustomModel, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart]
   );
 
   /**
@@ -1274,6 +1301,7 @@ const ComposerForStore = observer(function ComposerForStore({
    * disabled until a reload supplies it.
    */
   const sessionEffortOptions = useMemo(() => {
+    if (!acceptsThinking) return null;
     const declaredOptions = declaredEffortOptions;
     const declared = declaredOptions
       ? { options: declaredOptions, defaultId: null }
@@ -1297,7 +1325,7 @@ const ComposerForStore = observer(function ComposerForStore({
       ])
     );
     return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
-  }, [store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
+  }, [acceptsThinking, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
   const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
@@ -1457,6 +1485,7 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedModel={composerSelectedOptionId({
           platformModel: runningPlatformModel,
           model: store.model,
+          customModel: runningCustomModel,
         })}
         onModelChange={handleModelChange}
         modelMenuOpenRequest={modelMenuRequest}

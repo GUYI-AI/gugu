@@ -129,7 +129,7 @@ export async function resolveHarnessSpawnIdentity(
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     // 选中的是一把 API Key 连接(#2507):走模型注入的那几家,连接不进这份 env(它随宿主造的模型声明进进程),
     // 但目录照它读 ⇒ 换一把连接就得作废。只在选了 API Key 连接时并进来,其余家的身份与改动前逐字相同。
-    const connection = runContext.apiKeyConnection ? { connection: runContext.connectionId ?? null } : {};
+    const connection = runContext.vendorKeyAccount ? { connection: runContext.connectionId ?? null } : {};
     // `host`: gugu's own bridge code runs in the probe, so an update must re-probe.
     return JSON.stringify({ cli, file: diskFileStamp(cli), host: diskFileStamp(process.execPath), env, ...connection });
   } catch {
