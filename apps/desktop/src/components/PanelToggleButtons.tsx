@@ -1,7 +1,7 @@
-import { PanelLeftClose, PanelLeftOpen } from '@/lib/icons'
+import { PanelLeft } from '@/lib/icons'
+import { Button } from '@renderer/lib/ui/button'
 import { useEffect, useRef, useState } from 'react'
 import { readPanelToggle, usePanelToggle, type PanelSlot } from '../lib/panelToggles'
-import { IconButton } from './ui/IconButton'
 
 function withShortcut(label: string, shortcut: string | undefined): string {
   return shortcut ? `${label} (${shortcut})` : label
@@ -27,10 +27,10 @@ export function ListColumnToggle({ slot, disabledLabel = '' }: { slot: PanelSlot
   const open = panel?.open ?? false
   const label = panel?.label ?? disabledLabel
   return (
-    <IconButton
-      size="sm"
-      // Keep the existing sidebar-control tone.
-      tone="strong"
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      className="window-no-drag-region"
       data-titlebar-sidebar-toggle=""
       aria-label={label}
       aria-expanded={panel ? open : undefined}
@@ -50,8 +50,7 @@ export function ListColumnToggle({ slot, disabledLabel = '' }: { slot: PanelSlot
         setJustClicked(false)
       }}
     >
-      {/* 图标随状态换形:一眼读出这一下是收起还是展开(Close/Open 是本仓库既有的面板开关词汇)。 */}
-      {open ? <PanelLeftClose /> : <PanelLeftOpen />}
-    </IconButton>
+      <PanelLeft className="size-3.5" />
+    </Button>
   )
 }

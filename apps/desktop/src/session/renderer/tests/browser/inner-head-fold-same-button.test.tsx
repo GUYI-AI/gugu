@@ -15,7 +15,7 @@ import '@renderer/index.css';
 /**
  * The inner column's head and the content's tab strip share one line: same top, same height. Folding the column swaps
  * its fold button for the restore lane's expand button —
- * both controls have a 28px target, so a click does not make it shrink (owner 11-14).
+ * both controls use the same arrow-free icon and 28px target.
  */
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -63,9 +63,11 @@ it('the head band and the tab strip line up, and the fold button is the expand b
 
   const fold = box('[data-inner-head-fold]');
   const expand = box('[data-shell-restore-lane] button');
-  const foldIcon = box('[data-inner-head-fold] svg');
+  const foldIcon = box('[data-inner-head-fold] svg.lucide-panel-left');
+  const expandIcon = box('[data-shell-restore-lane] svg.lucide-panel-left');
   expect([fold.width, fold.height]).toEqual([expand.width, expand.height]);
   expect([foldIcon.width, foldIcon.height]).toEqual([14, 14]);
+  expect([expandIcon.width, expandIcon.height]).toEqual([14, 14]);
   // Both centred on the band's middle line.
   expect(fold.top + fold.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
   expect(expand.top + expand.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
