@@ -45,12 +45,13 @@ it('explicitly imports physical ASAR files without changing Electron fs, then re
       assert(fs.statSync(archive).isDirectory());assert(physical.statSync(archive).isFile());
       physical.symlinkSync(archive,path.join(source,'archive-link'));
       physical.symlinkSync(path.join(source,'absent'),path.join(source,'broken-link'));
-      physical.writeFileSync(path.join(source,'settings.json'),'source');
+      const settings=JSON.stringify({setting:'unchanged'});
+      physical.writeFileSync(path.join(source,'settings.json'),settings);
       const bomb=path.join(source,'oversized-config');
       const fd=physical.openSync(bomb,'w');physical.ftruncateSync(fd,2*1024*1024*1024+1);physical.closeSync(fd);
       process.env.HOME=home;process.env.GEMINI_HOME=source;process.env.GUGU_HOME=path.join(__dirname,'managed');
       const target=path.join(process.env.GUGU_HOME,'agent-homes/antigravity/.gemini');
-      physical.mkdirSync(target,{recursive:true});physical.writeFileSync(path.join(target,'settings.json'),'owned');
+      physical.mkdirSync(target,{recursive:true});physical.writeFileSync(path.join(target,'settings.json'),settings);
       const host=require('./host.cjs');
       (async()=>{
         const failed=await Promise.allSettled([host.resolveAgentHomeEnv('antigravity'),host.resolveAgentHomeRoot('antigravity')]);
@@ -62,7 +63,7 @@ it('explicitly imports physical ASAR files without changing Electron fs, then re
         assert(imported.issues.some(x=>x.path==='oversized-config'&&x.reason==='tooLarge'));
         const [env,shadow]=await Promise.all([host.resolveAgentHomeEnv('antigravity'),host.resolveAgentHomeRoot('antigravity')]);
         assert.equal(env.GEMINI_HOME,target);assert.equal(shadow,path.dirname(target));
-        assert.equal(physical.readFileSync(path.join(target,'settings.json'),'utf8'),'owned');
+        assert.equal(physical.readFileSync(path.join(target,'settings.json'),'utf8'),settings);
         for(const p of [path.join(target,'antigravity/brain/project/scratch/app.asar')]){
           assert(physical.lstatSync(p).isFile());assert.deepEqual(physical.readFileSync(p),original);
         }

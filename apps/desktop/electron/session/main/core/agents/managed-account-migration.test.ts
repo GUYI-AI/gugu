@@ -61,7 +61,7 @@ it('copies the verified Codex vault account when the terminal is already restore
 
   await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', 'unverified-identity')).resolves.toBe(false);
   await expect(readFile(join(managed.nativeRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
-  await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', restored.moved!.identity)).resolves.toBe(true);
+  await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', restored.moved!.identity)).resolves.toBe('oauth');
   expect(codexAuthIdentity(JSON.parse(await readFile(join(managed.nativeRoot, 'auth.json'), 'utf8')))).toBe(restored.moved!.identity);
   expect(await readFile(join(old.nativeRoot, 'auth.json'), 'utf8')).toBe(terminal);
 });
