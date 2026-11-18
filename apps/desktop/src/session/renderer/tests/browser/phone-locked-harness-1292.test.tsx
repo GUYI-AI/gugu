@@ -301,7 +301,7 @@ it('1292 phone project attachment menu uses the real new-task action lightning',
     () => !!document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')
   )
   const task = document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')!
-  expect(task.textContent).toContain('新任务')
+  expect(task.textContent).toContain('创建智能体')
   expect(task.querySelector('svg')).not.toBeNull()
   expect(task.querySelector('svg')!.innerHTML).toBe(
     document.querySelector('[data-zap-control] svg')!.innerHTML

@@ -141,7 +141,7 @@ export default {
       "broadUseAnyway": "Use it anyway",
       "broadPickAnother": "Pick another"
     },
-    "title": "New Agent",
+    "title": "Create agent",
     "unfinishedSweep": {
       "cancelledWithWarning": "An Agent from last time was never finished and has been cancelled, but {{steps}} did not complete cleanly. Please create it again.",
       "pending": "An Agent from last time was never finished; cancelling it is not done yet ({{steps}} did not complete cleanly). It will be retried on next launch.",

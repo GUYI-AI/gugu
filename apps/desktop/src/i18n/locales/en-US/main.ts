@@ -290,7 +290,7 @@ export default {
       "byMobile": "the phone"
     },
     "create": {
-      "title": "New task",
+      "title": "Create agent",
       "pickMachine": "On which machine",
       "welcome": "Start a new task on {{machine}}",
       "placeholder": "First message…",
@@ -520,7 +520,7 @@ export default {
     "guguNumberCopied": "Gugu ID copied",
     "guguNumberUnassigned": "Gugu ID not assigned",
     "my": "Me",
-    "newAgent": "New Agent",
+    "newAgent": "Create agent",
     "newTask": "New task",
     "apps": {
       "intro": "Apps installed on this phone — from cards in chats and from the market. The ones that come with Gugu are not listed.",
@@ -590,7 +590,7 @@ export default {
         "help": "Help"
       },
       "items": {
-        "newAgent": "New agent",
+        "newAgent": "Create agent",
         "settings": "Settings",
         "exit": "Exit",
         "undo": "Undo",
@@ -651,7 +651,7 @@ export default {
     "mainNavigation": "Main navigation",
     "messages": "Messages (⌘1)",
     "my": "Me",
-    "newAgent": "New Agent",
+    "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
     "resizeChatList": "Resize chat list",
