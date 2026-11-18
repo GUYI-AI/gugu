@@ -179,6 +179,9 @@ export function registerExternalImportIpc(input: {
     return history().read(state.owner, id, offset)
   })
 
-  app.on('will-quit', () => store?.close())
+  app.on('will-quit', () => {
+    activeScope?.controller.abort()
+    store?.close()
+  })
   return { ownerChanged }
 }

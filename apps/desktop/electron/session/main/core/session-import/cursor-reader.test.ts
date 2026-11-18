@@ -25,6 +25,8 @@ it('hydrates a Cursor Composer conversation from SQLite without changing the sou
         name: 'A Cursor conversation',
         createdAt: start,
         lastUpdatedAt: start + 2000,
+        workspaceIdentifier: { uri: { fsPath: join(root, 'project') } },
+        fullConversationHeadersOnly: [{ bubbleId: 'user' }, { bubbleId: 'assistant' }],
       }))
       add.run(`bubbleId:${sourceId}:user`, JSON.stringify({
         type: 1, bubbleId: 'user', createdAt: new Date(start).toISOString(), text: 'A question',
