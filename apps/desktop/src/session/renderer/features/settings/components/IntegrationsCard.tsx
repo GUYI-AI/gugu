@@ -57,7 +57,7 @@ export type IntegrationItem = {
   onTryPlaybook?: (prompt: string) => void;
 };
 
-const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = false }) => {
+const IntegrationsCard: React.FC<{ inSettings?: boolean; initialConnectorId?: string }> = ({ inSettings = false, initialConnectorId }) => {
   const {
     connectionStatus,
     configuredConnections,
@@ -77,7 +77,7 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
     () => sortGitHubAccountsByDefault(githubAccounts),
     [githubAccounts]
   );
-  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings);
+  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings, initialConnectorId);
   const showIntegrationSetup = useShowModal('integrationSetupModal');
   const showConnectGitHub = useShowModal('githubConnectModal');
   const showConfirm = useShowModal('confirmActionModal');

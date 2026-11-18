@@ -3,7 +3,7 @@ import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import type { ReactElement, ReactNode } from 'react';
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -26,6 +26,8 @@ import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
+import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
 import { AgentAppDetailPage } from './agent-app-detail-page';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -40,8 +42,26 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const host = useSelectedLibraryHost();
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
+  const currentViewId = appState.navigation.currentViewId;
   const { translate } = useSessionMessages();
   const { agentDetail, agentDetailFrom } = params;
+  const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
+  const [installedDeviceId, setInstalledDeviceId] = useState<string>();
+  const requestedInstalled = 'installedSection' in params ? params.installedSection : undefined;
+  useEffect(() => {
+    if (requestedInstalled !== 'connectors') return;
+    setInstalledDeviceId(host.remote?.deviceId);
+    setInstalledSection('connectors');
+    setParams({ installedSection: undefined } as Partial<AppsViewParams> & { installedSection?: undefined });
+  }, [requestedInstalled, host.remote?.deviceId, setParams]);
+  useEffect(() => {
+    if (currentViewId !== 'apps') setInstalledSection(null);
+  }, [currentViewId]);
+  const launchInstalled = () => {
+    setInstalledDeviceId(undefined);
+    setInstalledSection('agents');
+  };
+
   const closeAgentDetail = () => {
     if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
       navigateBack(true);
@@ -60,6 +80,7 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
               <LibraryHostProvider value={host} key={host.key}>
                 <ExtensionsLibraryPage
                   detail={params.detail}
+                  openInstalled={launchInstalled}
                   onOpenAgentDetail={(agentId) => setParams({
                     agentDetail: { kind: 'agent-app-detail', agentId, deviceId: host.remote?.deviceId },
                     agentDetailFrom: 'apps',
@@ -70,6 +91,11 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
           </PageContent>
         </PageLayout>
       </div>
+      {installedSection && currentViewId === 'apps' && <InstalledManager key={`${installedSection}:${installedDeviceId ?? 'local'}`}
+        initialSection={installedSection} initialDeviceId={installedDeviceId}
+        onClose={() => setInstalledSection(null)}
+        onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
+        onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
         <PageLayout key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`}>
           <PageContent className="max-w-none">
