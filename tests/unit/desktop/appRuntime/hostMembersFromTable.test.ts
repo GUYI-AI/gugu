@@ -81,6 +81,15 @@ describe('one table, the members each host had', () => {
     expect(call.mock.calls).toEqual(sent)
   })
 
+  it('an App program can send picture feedback over its real host channel', () => {
+    const posted: unknown[] = []
+    const host = messageHost({ post: message => posted.push(message), listen: () => undefined }, { program: true }) as {
+      projection: { present(value: unknown): Promise<unknown> }
+    }
+    void host.projection.present({ id: 'owned-picture', presentation: null })
+    expect(posted).toMatchObject([{ method: 'projectionPresent', args: { id: 'owned-picture', presentation: null } }])
+  })
+
   it('a link that came before the page subscribed is held for its first subscriber — on either transport', () => {
     let deliver: (message: unknown) => void = () => undefined
     const host = messageHost({ post: vi.fn(), listen: (handler) => (deliver = handler) }, { framed: true }) as Record<string, (fn: (value: unknown) => void) => () => void>

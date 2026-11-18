@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BrowserPageFeedback } from '@shared/browser-page-feedback';
-import { TaskPageCapture } from './server-task-page-capture';
-import type { TaskPageScreenFrame } from './server-task-browser';
+import { TaskPageCapture } from '../../../../apps/desktop/electron/server/server-task-page-capture';
+import type { TaskPageScreenFrame } from '../../../../apps/desktop/electron/server/server-task-browser';
 
 afterEach(() => vi.useRealTimers());
 
