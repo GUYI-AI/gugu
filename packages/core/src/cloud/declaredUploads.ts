@@ -15,6 +15,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
   // False until a late prepare or running upload has observed the cancellation.
   const dropped = new Map<string, boolean>()
   const controllers = new Set<AbortController>()
+  const authWaiting = new Set<string>(), wakeAfterRun = new Set<string>()
   const retrying = new Set<string>(), terminal = new Set<string>(), requested = new Set<string>()
   let askAgain: ReturnType<typeof setTimeout> | null = null, retryDelay = 0, allRequested = false
   let resuming: Promise<void> | null = null, closed = false
@@ -33,14 +34,20 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
     if (dropped.has(task.messageId)) { dropped.set(task.messageId, true); return Promise.resolve() }
     const current = running.get(task.messageId)
     if (current) return current
-    const run = upload(task, file, plan).finally(() => { running.delete(task.messageId); if (dropped.has(task.messageId)) dropped.set(task.messageId, true) })
+    authWaiting.delete(task.messageId)
+    const run = upload(task, file, plan).finally(() => {
+      running.delete(task.messageId)
+      if (dropped.has(task.messageId)) dropped.set(task.messageId, true)
+      const woken = wakeAfterRun.delete(task.messageId)
+      if (woken && authWaiting.has(task.messageId) && !dropped.has(task.messageId)) void resume(task.messageId).catch(() => undefined)
+    })
     running.set(task.messageId, run)
     run.catch(() => undefined) // The caller and progress report the error; the server retains the pending duty.
     return run
   }
   function drop(messageId: string) {
     dropped.set(messageId, running.has(messageId))
-    retrying.delete(messageId); terminal.delete(messageId); clearRetry()
+    retrying.delete(messageId); terminal.delete(messageId); authWaiting.delete(messageId); wakeAfterRun.delete(messageId); clearRetry()
     host.progress(messageId)
   }
   function resume(messageId?: string): Promise<void> {
@@ -67,7 +74,8 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       for (const [id, observed] of dropped) if (observed && !pendingIds.has(id) && !running.has(id)) dropped.delete(id)
       for (const pending of uploads) {
         if (only && !only.has(pending.message_id)) continue
-        if (closed || running.has(pending.message_id) || dropped.has(pending.message_id) || terminal.has(pending.message_id)) continue
+        if (closed || dropped.has(pending.message_id) || terminal.has(pending.message_id)) continue
+        if (running.has(pending.message_id)) { wakeAfterRun.add(pending.message_id); continue }
         const file = await host.copyOf(pending.sha256)
         if (!file || closed || dropped.has(pending.message_id)) continue
         void begin({ messageId: pending.message_id, chatId: pending.chat_id, as: pending.as, pendingKey: pending.staging_key, sha256: pending.sha256,
@@ -109,6 +117,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       const missing = error instanceof AttachmentsError && error.code === 'upload_not_found'
       const retryable = missing || retryableAttachmentError(error)
       const final = error instanceof AttachmentsError && !retryable && error.status !== 401
+      if (error instanceof AttachmentsError && error.status === 401) authWaiting.add(task.messageId)
       if (final) { terminal.add(task.messageId); retrying.delete(task.messageId); clearRetry() }
       else if (retryable) { retrying.add(task.messageId); schedule() }
       host.progress(task.messageId, { ...progress, failed: true, final })

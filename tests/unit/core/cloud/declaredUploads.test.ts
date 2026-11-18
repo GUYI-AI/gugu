@@ -118,6 +118,24 @@ describe('attachment bytes go up behind their message', () => {
     expect(server.pending).toHaveBeenCalledTimes(2)
   })
 
+  it('resumes after refresh when its pending scan raced an older request that later returned 401', async () => {
+    let rejectOld!: (error: Error) => void
+    server.finish.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
+    server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+    server.plan.mockResolvedValue(plan('upload/refreshed'))
+    copies.set('a'.repeat(64), new Blob(['bytes']))
+    const old = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(error => error)
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledOnce())
+    await queue.resume() // The host has published refreshed credentials; the older request has not returned yet.
+    expect(server.store).toHaveBeenCalledOnce()
+    rejectOld(refuse(401, 'unauthorized'))
+    expect(await old).toBeInstanceOf(AttachmentsError)
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledTimes(2))
+    expect(server.pending).toHaveBeenCalledTimes(2)
+    expect(server.finish).toHaveBeenLastCalledWith(expect.objectContaining({ message_id: 'message-1', upload_key: 'upload/refreshed' }))
+    expect(progress.set).toHaveBeenLastCalledWith('message-1')
+  })
+
   it('automatically resumes a transient failed upload from the server duty and verified stored original', async () => {
     vi.useFakeTimers()
     try {
