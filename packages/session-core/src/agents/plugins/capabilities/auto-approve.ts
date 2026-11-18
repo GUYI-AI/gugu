@@ -10,6 +10,8 @@ const modeEntrySchema = z.object({
   id: z.string(),
   aliases: z.array(z.string()).optional(),
   legs: z.array(z.enum(['acp', 'tui'])).optional(),
+  reviewRequirements: z.object({ minimumCliVersion: z.string(), modelPattern: z.string() }).optional(),
+  billingRoutes: z.array(z.enum(['own', 'platform'])).optional(),
 });
 
 /**
@@ -39,6 +41,7 @@ export const autoApproveCapability = definePluginCapability()(
         plan: modeEntrySchema.optional(),
         'read-only': modeEntrySchema.optional(),
         edit: modeEntrySchema.optional(),
+        'ai-review': modeEntrySchema.optional(),
         'full-access': modeEntrySchema.optional(),
       })
       .optional(),

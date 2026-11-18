@@ -1,3 +1,4 @@
+import { nativeClaudeReviewEnv } from '@gugu/session-core/models/auto-review-source';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context';
 import { harnessPinnedEnv } from '@gugu/session-core/agents/plugins';
@@ -71,6 +72,9 @@ export async function resolveLocalAgentRunContext(
     options.bridgeWait
   );
 
+  const cliVersion = await import('@main/core/agents/acp-bridge').then(({ resolveHostAcpCliVersion }) =>
+    resolveHostAcpCliVersion(providerId, cli, { ...env, ...configRootEnv, ...pinned })).catch(() => undefined);
+
   // Account credentials and the session's chosen model have separate owners.
   const connection: Partial<AgentRunContext> = await import('./harness-connections').then(({ resolveHarnessConnection }) =>
         resolveHarnessConnection(providerId, {
@@ -85,8 +89,15 @@ export async function resolveLocalAgentRunContext(
     const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp');
     Object.assign(connection, custom, { unsetEnv: [...(connection.unsetEnv ?? []), ...(custom.unsetEnv ?? [])] });
   }
+  if (providerId === 'claude' && !connection.customModel) {
+    const credentialFacts = { ...env };
+    for (const key of connection.unsetEnv ?? []) delete credentialFacts[key];
+    const reviewerEnv = nativeClaudeReviewEnv({ ...credentialFacts, ...connection.credentialEnv });
+    if (Object.keys(reviewerEnv).length) connection.credentialEnv = { ...connection.credentialEnv, ...reviewerEnv };
+  }
   return {
     cli,
+    ...(cliVersion ? { cliVersion } : {}),
     env,
     pinnedEnv: pinned,
     // 这一家要不要另一个 node 跑(打包机上的 electron 不带 import attributes 时用它)。

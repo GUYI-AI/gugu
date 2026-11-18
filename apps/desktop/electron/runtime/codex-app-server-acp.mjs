@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
 
@@ -48,6 +49,7 @@ let historyCanRevert = false
  * **不**参与下发 —— 下发走 `thread/settings/update`,由 codex 自己持有生效状态。
  */
 let selectedPermissionProfile = null
+let autoReviewSupported = false
 /**
  * 线程当前的模型与推理档。
  * 来源是 `thread/start` / `thread/resume` / `thread/fork` 回包的**顶层** `model` /
@@ -425,7 +427,9 @@ function codexThreadPermissionFrom(params) {
   if (!approvalPolicy || !sandbox) {
     throw new Error('guguCodex session metadata has incomplete thread permission')
   }
-  return { profile, threadStart: { approvalPolicy, sandbox } }
+  const approvalsReviewer = threadStart.approvalsReviewer === 'auto_review' ? 'auto_review' : 'user'
+  if (approvalsReviewer === 'auto_review' && !autoReviewSupported) throw new Error('This Codex app-server does not expose verified Auto-review support')
+  return { profile, mode: approvalsReviewer === 'auto_review' ? 'auto-review' : profile, threadStart: { approvalPolicy, sandbox, approvalsReviewer } }
 }
 
 function permissionProfileId(profile) {
@@ -513,6 +517,7 @@ async function loadModelCatalog(timeoutMs = 45_000) {
     for (const raw of modelsFromResponse(response)) {
       if (!raw || typeof raw !== 'object') continue
       const id = String(raw.id ?? raw.model ?? '').trim()
+      if (!isUserFacingModelId(id)) continue
       if (!id) continue
       // `hidden` 的条目 codex 自己不给用户挑,我们也不放进下拉。
       if (raw.hidden === true) continue
@@ -726,6 +731,9 @@ async function loadPermissionModes(cwd, currentProfile, timeoutMs = 45_000) {
     safety += 1
     if (safety > 20) throw new Error('local Codex permissionProfile/list pagination did not terminate')
   } while (cursor)
+  if (autoReviewSupported && availableModes.some(mode => mode.id === ':workspace')) {
+    availableModes.push({ id: 'auto-review', name: 'Auto mode' })
+  }
   if (selected && !availableModes.some((mode) => mode.id === selected)) {
     availableModes.push({
       id: selected,
@@ -936,10 +944,12 @@ async function startAppOnce(servers) {
   appReader = createInterface({ input: app.stdout, crlfDelay: Infinity })
   appReader.on('line', onAppLine)
   try {
-    await appRequest('initialize', {
+    const initialized = await appRequest('initialize', {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
     })
+    const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
+    autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {
     throw new Error(
       `本机 Codex 无法启动 app-server；请升级 Codex 后重试。原始错误：${error.message || String(error)}`,
@@ -1452,13 +1462,20 @@ function onAppNotification(message) {
     if (title) sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(title) })
     return
   }
+  if (method === 'item/autoApprovalReview/completed' && params.review?.status === 'denied') {
+    const action = params.action ?? {}
+    const subject = action.command ?? action.toolName ?? action.host ?? action.reason ?? action.type ?? 'Action'
+    sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(`${subject}: ${params.review.rationale ?? 'Permission denied by the AI reviewer'}`) })
+    return
+  }
   if (method === 'thread/tokenUsage/updated') {
     emitUsageUpdate(params)
     return
   }
   if (method === 'thread/settings/updated') {
+    const settings = params.threadSettings ?? params
     const profile = permissionProfileId(
-      params.permissions ?? params.permissionProfile ?? params.activePermissionProfile,
+      settings.permissions ?? settings.permissionProfile ?? settings.activePermissionProfile,
     )
     if (!profile) {
       process.stderr.write(
@@ -1466,7 +1483,7 @@ function onAppNotification(message) {
       )
       return
     }
-    selectedPermissionProfile = profile
+    selectedPermissionProfile = settings.approvalsReviewer === 'auto_review' && profile === ':workspace' ? 'auto-review' : profile
     void (async () => {
       const modes = await probePermissionModes(null, selectedPermissionProfile)
       sessionUpdate({
@@ -2319,6 +2336,8 @@ async function handleAcpRequest(message) {
       await appRequest('thread/settings/update', {
         threadId: sessionId,
         permissions: requestedPermission.profile,
+        approvalsReviewer: requestedPermission.threadStart.approvalsReviewer,
+        approvalPolicy: requestedPermission.threadStart.approvalPolicy,
       })
     }
     historyCanRevert = forked?.thread?.historyMode === 'paginated' && !forked?.thread?.ephemeral
@@ -2326,10 +2345,10 @@ async function handleAcpRequest(message) {
     const activePermissionProfile = forked?.activePermissionProfile
       ?? forked?.thread?.activePermissionProfile
     const modes = await probePermissionModes(params.cwd, activePermissionProfile)
-    selectedPermissionProfile = requestedPermission?.profile
+    selectedPermissionProfile = requestedPermission?.mode
       ?? modes?.selected
       ?? permissionProfileId(activePermissionProfile)
-    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.profile)
+    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.mode)
     // 顶层的 `model` / `reasoningEffort` 才是这条线程当前生效的那一对(实测:`result.thread`
     // 那层没有这两项)。⚠️ 读出来叫 `reasoningEffort`,写回去只认 `effort` —— 名字不对称。
     selectedModel = String(forked?.model ?? '').trim() || null
@@ -2394,10 +2413,10 @@ async function handleAcpRequest(message) {
     const activePermissionProfile = started?.activePermissionProfile
       ?? started?.thread?.activePermissionProfile
     const modes = await probePermissionModes(params.cwd, activePermissionProfile)
-    selectedPermissionProfile = requestedPermission?.profile
+    selectedPermissionProfile = requestedPermission?.mode
       ?? modes?.selected
       ?? permissionProfileId(activePermissionProfile)
-    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.profile)
+    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.mode)
     // 顶层的 `model` / `reasoningEffort` 才是这条线程当前生效的那一对(实测:`result.thread`
     // 那层没有这两项)。⚠️ 读出来叫 `reasoningEffort`,写回去只认 `effort` —— 名字不对称。
     selectedModel = String(started?.model ?? '').trim() || null
@@ -2450,6 +2469,8 @@ async function handleAcpRequest(message) {
       await appRequest('thread/settings/update', {
         threadId: sessionId,
         permissions: requestedPermission.profile,
+        approvalsReviewer: requestedPermission.threadStart.approvalsReviewer,
+        approvalPolicy: requestedPermission.threadStart.approvalPolicy,
       })
     }
     historyCanRevert = resumed?.thread?.historyMode === 'paginated' && !resumed?.thread?.ephemeral
@@ -2488,11 +2509,11 @@ async function handleAcpRequest(message) {
       selectedEffort = resumedEffort
       // 只记 provider 确实回报的档；目录探测失败时保留 thread/resume 给出的已知值。
       // active profile 本身缺席则保持 null，模型与会话生命周期不依赖这项可选观测。
-      selectedPermissionProfile = requestedPermission?.profile
+      selectedPermissionProfile = requestedPermission?.mode
         ?? modes?.selected
         ?? permissionProfileId(activePermissionProfile)
     }
-    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.profile)
+    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.mode)
     const models = await modelCatalogOnce()
     const resumedTurnId = activeTurnIdFromThread(resumed)
     if (resumedTurnId) beginCycle(resumedTurnId)
@@ -2675,8 +2696,8 @@ async function handleAcpRequest(message) {
     const autonomy = CODEX_AUTONOMY_BY_MODE[mode]
     await appRequest('thread/settings/update', {
       threadId: sessionId,
-      permissions: wanted,
-      ...(autonomy ? { approvalPolicy: autonomy.approvalPolicy } : {}),
+      permissions: mode === 'ai-review' ? ':workspace' : wanted,
+      ...(autonomy ? { approvalPolicy: autonomy.approvalPolicy, approvalsReviewer: autonomy.approvalsReviewer } : {}),
     })
     selectedPermissionProfile = wanted || null
     // 切权限档的回包也要带上 model / thought_level 两组 —— 只回 mode 一组,

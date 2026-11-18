@@ -84,11 +84,12 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     expect((await reopened()).permissionMode).toBe('read-only');
   });
 
-  it('权限:咕咕故意不映射的档(claude `auto`)不写 —— 硬归一档重开时会切到另一个 id', async () => {
+  it('权限:原生 Claude auto 记录为 AI 审查，重开仍是同一档', async () => {
     await recordLiveSessionSetting(CONV, { dimension: 'permission', modeId: 'auto' });
     const session = await reopened();
-    expect(session.permissionMode).toBe('full-access');
-    expect(mocks.emit).not.toHaveBeenCalled();
+    expect(session.permissionMode).toBe('ai-review');
+    expect(session.model).toBe('opus');
+    expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: CONV, projectId: 'project-1', changes: { permissionMode: 'ai-review' } });
   });
 
   it('推理档:原样写回', async () => {

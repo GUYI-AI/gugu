@@ -21,7 +21,7 @@ vi.mock('@gugu/core/cloud/config', () => ({
   getSupabaseUrl: () => 'https://db.example.test',
 }))
 
-import { listPlatformModels, resolveAgentModelLaunch } from '../../../../apps/desktop/electron/model-access'
+import { issuePlatformModelAccess, listPlatformModels, resolveAgentModelLaunch } from '../../../../apps/desktop/electron/model-access'
 import { createLogger } from '../../../../apps/desktop/electron/lib/logger'
 import { parsePlatformReasoningEfforts } from '../../../../apps/desktop/src/session/shared/core/agents/platform-model'
 
@@ -181,6 +181,45 @@ describe('resolveAgentModelLaunch', () => {
   )
 })
 
+describe('issued reviewer model filtering', () => {
+  beforeEach(() => {
+    vi.stubEnv('GUGU_PLATFORM_MODELS_ENABLED', 'true')
+    vi.stubEnv('GUGU_HOME', mkdtempSync(join(tmpdir(), 'gugu-reviewer-filter-')))
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ accessToken: 'fixture-jwt', userId: 'fixture-owner' })
+  })
+
+  it.each([0, 1, 2])('preserves ordinary switchable models when the reviewer is at index %s', async index => {
+    const ordinary = [
+      { id: 'gpt-6.1-sol', alias: 'sol-route', display_name: 'Sol', reasoning_efforts: ['low', 'high'] },
+      { id: 'gpt-6-luna', alias: 'luna-route', display_name: 'Luna', reasoning_efforts: [] },
+    ]
+    const rows = [...ordinary]
+    rows.splice(index, 0, { id: 'codex-auto-review', alias: 'reviewer-route', display_name: 'Reviewer', reasoning_efforts: [] })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      session_id: 'fixture-access', relay_url: 'https://models.example.test', token: 'fixture-token',
+      model: 'sol-route', protocol: 'openai-responses', expires_at: '2026-11-17T00:00:00.000Z',
+      switchable_models: rows,
+    }))
+    const issued = await issuePlatformModelAccess({ authProvider: {} as never, agentUserId: 'fixture-agent',
+      engineId: 'codex', modelId: 'gpt-6.1-sol', protocol: 'openai-responses' })
+    expect(issued.switchableModels).toEqual([
+      { id: 'gpt-6.1-sol', alias: 'sol-route', displayName: 'Sol', contextWindow: null, reasoningEfforts: ['low', 'high'] },
+      { id: 'gpt-6-luna', alias: 'luna-route', displayName: 'Luna', contextWindow: null, reasoningEfforts: [] },
+    ])
+  })
+
+  it('keeps an all-reviewer switchable list empty', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      session_id: 'fixture-access', relay_url: 'https://models.example.test', token: 'fixture-token',
+      model: 'sol-route', protocol: 'openai-responses', expires_at: '2026-11-17T00:00:00.000Z',
+      switchable_models: [{ id: 'codex-auto-review', alias: 'reviewer-route' }],
+    }))
+    const issued = await issuePlatformModelAccess({ authProvider: {} as never, agentUserId: 'fixture-agent',
+      engineId: 'codex', modelId: 'gpt-6.1-sol', protocol: 'openai-responses' })
+    expect(issued.switchableModels).toEqual([])
+  })
+})
+
 describe('listPlatformModels', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -206,6 +245,15 @@ describe('listPlatformModels', () => {
       contextWindow: 1000000,
     })])
   })
+
+  it('does not expose the internal reviewer as a main model even when the gateway lists it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ models: [
+      { id: 'codex-auto-review', display_name: 'Reviewer', protocols: ['openai-responses'], enabled: true },
+      { id: 'gpt-6.1-sol', display_name: 'GPT-6.1 Sol', protocols: ['openai-responses'], enabled: true },
+    ] }));
+    const models = await listPlatformModels({} as never);
+    expect(models.map(model => model.id)).toEqual(['gpt-6.1-sol']);
+  });
 
   it('lists the catalog unchanged when the server sends no multipliers at all', async () => {
     // 倍率是 display-only:老服务端 / 网关问不到 → 空表,目录照常上架。
