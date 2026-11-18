@@ -17,10 +17,7 @@ import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
-import { ContextMenu, DropdownMenu } from '@/components/ui/Menu';
-import { Button } from '@renderer/lib/ui/button';
-import { MoreHorizontal } from '@/lib/icons';
-import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { ContextMenu } from '@/components/ui/Menu';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { ChatWorkspaceTabContext } from '@renderer/features/tabs/chat-workspace-context';
 import { chatBlockContentOf, chatLayoutOf, closeChatTab } from './chat-layouts';
@@ -97,7 +94,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
             const focused = !embedded && screenLayout.focusedBlockId === blockId && layout.activePaneId === paneId;
             const strip = { tabTrailingSlot: addTab, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
             if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
-            const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.splitBlocked(paneId, dragging, edge) === null);
+            const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.allowsTabEdgeDrop(paneId, dragging, edge));
             // This React tree owns the pane shell and its blank space; portaled content owns its input in ChatPaneContent.
             return <PaneProvider group={group} isFocusedPane={focused}>
               <SplitPaneHotkey chatLayout={layout} />
@@ -135,21 +132,14 @@ export const ChatTabChip = observer(function ChatTabChip({
   menu: ReactNode;
   [data: `data-${string}`]: string | undefined;
 }) {
-  const workspaceRole = useContext(ChatWorkspaceTabContext);
-  const { translate } = useSessionMessages();
+  const workspaceRole = useContext(ChatWorkspaceTabContext)?.role;
   if (workspaceRole === 'title') {
-    const more = translate('common.more');
     return (
       <div className="flex h-full min-w-0 flex-1 items-center gap-1" data-chat-workspace-title="" {...data}>
         <div className="flex min-w-0 flex-1 items-center px-1 text-sm font-medium">
           {labelSlot ?? <span className="truncate" title={label}>{label}</span>}
         </div>
-        {menu && <DropdownMenu.Root>
-          <DropdownMenu.Trigger render={<Button size="icon-sm" variant="ghost" aria-label={more} />}>
-            <MoreHorizontal className="size-3.5" />
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Content>{menu}</DropdownMenu.Content>
-        </DropdownMenu.Root>}
+
       </div>
     );
   }
@@ -168,16 +158,17 @@ export const ChatTabChip = observer(function ChatTabChip({
 });
 
 /** A topic is displayed in its source's slot, but its own tools and persisted layout belong to its ID. */
-export function TopicChatPanes({ chatId, title, body }: {
+export function TopicChatPanes({ chatId, title, actions, body }: {
   chatId: string;
   title: ReactNode;
+  actions: ReactNode;
   body: ReactNode;
 }) {
   return <LegacyChatPanes
     chatId={chatId}
     embedded
     body={body}
-    actionsSlot={null}
+    actionsSlot={actions}
     chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="" labelSlot={title} menu={null} focused={false} />}
   />;
 }

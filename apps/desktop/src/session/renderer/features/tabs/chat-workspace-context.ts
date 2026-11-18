@@ -1,3 +1,4 @@
 import { createContext } from 'react';
+import type { PaneLayoutStore } from './pane-layout-store';
 
-export const ChatWorkspaceTabContext = createContext<'title' | 'tool' | null>(null);
+export const ChatWorkspaceTabContext = createContext<{ role: 'title' | 'tool'; layout: PaneLayoutStore } | null>(null);

@@ -15,7 +15,7 @@ import { groupSettings } from './useGroupChatSettings'
 /** The same conversation menu in the chat header and the desktop group sidebar. */
 export function ChatHeaderMenu({
   chatId, isGroupChat, isRoomChat, open, onOpenChange, onSearch, onOpenFolder, onOpenInfo, onOpenGroupApps,
-  showOpenApps, buttonRef, mobile, sidebar, children,
+  showOpenApps, buttonRef, mobile, sidebar, compactButton, children,
 }: {
   chatId: string | null
   isGroupChat: boolean
@@ -30,6 +30,7 @@ export function ChatHeaderMenu({
   buttonRef?: RefObject<HTMLButtonElement | null>
   mobile?: boolean
   sidebar?: boolean
+  compactButton?: boolean
   children?: ReactNode
 }) {
   const { t } = useTranslation('messaging')
@@ -40,7 +41,7 @@ export function ChatHeaderMenu({
   return <DropdownMenu.Root open={open} modal={false} onOpenChange={onOpenChange}>
     <DropdownMenu.Trigger ref={buttonRef} data-testid={sidebar ? 'inner-head-more' : AUTOMATION_TEST_IDS.chatHeaderMoreButton}
       title={t('header.more')} aria-pressed={open}
-      render={<IconButton size={sidebar ? 'sm' : undefined} tone={sidebar ? 'strong' : undefined} on={open || undefined} aria-label={t('header.more')}><MoreHorizontal /></IconButton>} />
+      render={<IconButton size={sidebar || compactButton ? 'sm' : undefined} tone={sidebar ? 'strong' : undefined} on={open || undefined} aria-label={t('header.more')}><MoreHorizontal /></IconButton>} />
     {open && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220 }}>
       {children}
       {onOpenGroupApps && <MenuItem onClick={onOpenGroupApps} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>}

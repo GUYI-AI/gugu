@@ -185,7 +185,7 @@ const PaneCell = observer(function PaneCell({
   const group = paneLayout.groups.find((g) => g.paneId === paneId);
   if (!group) return null;
   // 拖到哪条边 = 在那一边并排(spec session-page「并排」);放不下两页的那一向不出落点。
-  const splitEdges = draggingTabId === null ? [] : PANE_EDGES.filter((edge) => paneLayout.splitBlocked(paneId, draggingTabId, edge) === null);
+  const splitEdges = draggingTabId === null ? [] : PANE_EDGES.filter((edge) => paneLayout.allowsTabEdgeDrop(paneId, draggingTabId, edge));
   const focused = sessionView.focusedRegion === 'main' && paneLayout.activePaneId === paneId;
   const strip = {
     tabLeadingSlot: atLeftEdge ? <SessionGrip /> : undefined,

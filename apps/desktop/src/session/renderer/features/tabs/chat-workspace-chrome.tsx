@@ -1,3 +1,4 @@
+import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
@@ -28,14 +29,15 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const panes = layout.chatWorkspacePanes;
   const mode = layout.chatWorkspaceMode;
   const { focused } = useScreenBlock();
+  const dragging = useDndContext().active !== null;
   const header = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!focused || mode !== 'full') return;
+    if (!focused || dragging || mode !== 'full') return;
     const workspace = header.current?.closest('[data-chat-tool-workspace]');
     const ownerDocument = workspace?.ownerDocument;
     if (!ownerDocument || !workspace) return;
     const keyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || ownerDocument.fullscreenElement || !escapeIsFree(event.target)) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || ownerDocument.fullscreenElement || ownerDocument.documentElement.hasAttribute('data-gugu-dragging') || !escapeIsFree(event.target)) return;
       const target = event.target instanceof Element ? event.target : ownerDocument.activeElement;
       const from = target?.closest('[data-chat-tool-workspace]');
       if (embedded ? from !== workspace : from && from !== workspace) return;
@@ -44,7 +46,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     };
     ownerDocument.addEventListener('keydown', keyDown, true);
     return () => ownerDocument.removeEventListener('keydown', keyDown, true);
-  }, [embedded, focused, layout, mode]);
+  }, [dragging, embedded, focused, layout, mode]);
   if (!panes || !mode) return null;
   const { chat, tools } = panes;
   const tab = chat.pane.resolvedTabs.find(({ tabId }) => tabId === layout.primaryChatTabId);
@@ -57,9 +59,9 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const splitWidth = divided ? `${layout.paneSizes[0]}%` : undefined;
 
   const chatTitle = !full && (
-    <div className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+    <div data-chat-workspace-chat-header="" className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
-        <ChatWorkspaceTabContext.Provider value="title">
+        <ChatWorkspaceTabContext.Provider value={{ role: 'title', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
@@ -70,7 +72,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const toolTabs = toolsShown && tools && (
     <div className="min-w-0" style={toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
       <PaneProvider group={tools} passive isFocusedPane>
-        <ChatWorkspaceTabContext.Provider value="tool">
+        <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
           <TabBar toolsOnly tabTrailingSlot={addTab} {...(toolsFirst ? leadingProps : {})} />
         </ChatWorkspaceTabContext.Provider>
       </PaneProvider>

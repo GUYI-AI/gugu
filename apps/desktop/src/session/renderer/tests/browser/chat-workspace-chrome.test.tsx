@@ -1,7 +1,7 @@
 import { DndContext } from '@dnd-kit/core';
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
@@ -12,7 +12,11 @@ import { PaneProvider } from '@renderer/features/tabs/pane-context';
 import { Button } from '@renderer/lib/ui/button';
 import { Plus } from '@/lib/icons';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
-import { GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
+import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
+import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context';
+import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
+import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
+import { edgeFirst } from '@renderer/features/tabs/pane-edge-drop';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
@@ -24,14 +28,24 @@ const provider = (kind: string) => createTabProvider({
   dispose() {},
   TabContent: () => <div data-chat-workspace-test-body={kind}>{kind === 'conversation' ? '聊天正文' : '工具正文'}</div>,
   TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx} label={kind === 'conversation' ? '聊天标题' : '工具页签'} />,
-  TabBarItemDragPreview: () => null,
+  TabBarItemDragPreview: () => <GenericTabDragPreview label="工具页签" />,
 });
 
 let harness: ReturnType<typeof createReactHarness> | undefined;
 let layout: PaneLayoutStore | undefined;
 afterEach(() => { harness?.cleanup(); layout?.dispose(); harness = undefined; layout = undefined; });
 
-it('opens the first tool into a split, hides/restores it and expands only its own block', async () => {
+function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children: ReactNode }) {
+  const drag = useTabDrag({ layout, blockId: null, contentOf: () => null, openWindow: () => null });
+  return <PaneLayoutProvider paneLayout={layout}>
+    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+      {children}
+      <TabDragOverlay />
+    </DndContext>
+  </PaneLayoutProvider>;
+}
+
+async function mountWorkspace() {
   await page.viewport(1220, 790);
   const view = harness = createReactHarness();
   view.container.classList.add('emlight', 'gugu-skin');
@@ -44,7 +58,7 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   workspace.setViewActive(true);
   const openWindow = vi.fn();
   workspace.setWindowOpener((id) => id === workspace.primaryChatTabId ? openWindow : null);
-  await act(() => view.render(<DndContext>
+  await act(() => view.render(<WorkspaceDrag layout={workspace}>
     <div style={{ width: 800, height: '100%' }} data-chat-workspace-test-main="">
       <PaneTreeView layout={workspace} chatChrome={{
         actions: <TabBarActionRow atWindowEdge={false}><span>聊天操作</span></TabBarActionRow>,
@@ -55,15 +69,19 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
       }} />
     </div>
     <aside style={{ width: 380, height: '100%' }} data-chat-workspace-test-neighbour="">另一条聊天</aside>
-  </DndContext>));
+  </WorkspaceDrag>));
   const inside = (selector: string) => view.container.querySelector<HTMLElement>(selector);
   const width = (element: HTMLElement | null | undefined) => element?.getBoundingClientRect().width ?? 0;
   const mode = (value: string) => until(`shows the ${value} chat header`, () => !!inside(`[data-chat-workspace-header="${value}"]`));
   const chat = () => inside('[data-chat-workspace-test-body="conversation"]');
   const tool = () => inside('[data-chat-workspace-test-body="tool"]');
   const neighbour = () => inside('[data-chat-workspace-test-neighbour]')!;
-  const neighbourBefore = neighbour().getBoundingClientRect().toJSON();
+  return { inside, width, mode, chat, tool, neighbour, workspace, openWindow };
+}
 
+it('opens the first tool into a split, hides/restores it and expands only its own block', async () => {
+  const { inside, width, mode, chat, tool, neighbour, openWindow } = await mountWorkspace();
+  const neighbourBefore = neighbour().getBoundingClientRect().toJSON();
   await mode('empty');
   expect(inside('[data-chat-workspace-title]')?.textContent).toContain('聊天标题');
   expect(inside('[data-chat-workspace-header]')?.getBoundingClientRect().height).toBe(44);
@@ -118,4 +136,159 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await mode('empty');
   await until('the chat fills its block after the last tool closes', () => width(chat()), (size) => size === 800);
   expect(tool()).toBeNull();
+});
+
+it('shrinks and scrolls the group strip with the selected tab still in view', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await act(() => {
+    for (let index = 0; index < 7; index += 1) {
+      workspace.open('tool', { id: `extra-${index}` }, { from: null, intent: 'newTab' });
+    }
+    workspace.setPaneSizes([59, 41]);
+  });
+  const activeTab = () => inside('[data-chat-workspace-header] [data-tab-active]');
+  const scroller = () => activeTab()?.closest<HTMLElement>('[data-tabstrip-scroller]');
+  await until('the active tool scrolls into view as the strip gets narrow', () => {
+    const active = activeTab()?.getBoundingClientRect();
+    const strip = scroller()?.getBoundingClientRect();
+    return !!active && !!strip && scroller()!.scrollLeft > 0 && active.left >= strip.left && active.right <= strip.right + 1;
+  });
+  expect(inside('[data-chat-workspace-header] [data-tabstrip-overflow]')).toBeNull();
+  expect(activeTab()!.getBoundingClientRect().width).toBeCloseTo(84, 0);
+});
+
+async function mouse(type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', x: number, y: number, pressed = false) {
+  for (let current: Window = window; current.frameElement; current = current.parent) {
+    const frame = current.frameElement as HTMLElement;
+    const box = frame.getBoundingClientRect();
+    const scale = box.width / frame.offsetWidth;
+    x = box.left + (frame.clientLeft + x) * scale;
+    y = box.top + (frame.clientTop + y) * scale;
+  }
+  await act(async () => {
+    await cdp().send('Input.dispatchMouseEvent', {
+      type, x, y, button: type === 'mouseMoved' && !pressed ? 'none' : 'left',
+      buttons: pressed ? 1 : 0, clickCount: type === 'mouseMoved' ? 0 : 1,
+    });
+  });
+}
+
+it('previews and drops the whole tool group on both sides and leaves it full if canceled', async () => {
+  const { inside, mode, workspace, chat, tool } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await act(() => { workspace.open('tool', { id: 'another' }, { from: null, intent: 'newTab' }); });
+  const before = workspace.chatWorkspacePanes!.tools!.pane.tabOrder.slice();
+
+  for (const [side, targetX, shouldCancel] of [['left', 90, false], ['right', 710, false], ['left', 90, true]] as const) {
+    await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
+    await until(`full view is ready for the ${side} drag (cancel: ${shouldCancel})`, () => workspace.chatWorkspaceMode === 'full');
+    const byId = side === 'left' ? before[0] : before[1];
+    const chip = inside(`[data-chat-workspace-header] [data-tabid="${byId}"]`)!;
+    const box = chip.getBoundingClientRect();
+    const startX = box.left + 20;
+    const startY = box.top + box.height / 2;
+    await mouse('mouseMoved', startX, startY);
+    await mouse('mousePressed', startX, startY, true);
+    await mouse('mouseMoved', startX, startY + 18, true);
+    await until('the tab keeps a drag position in the toolbar', () => !!inside('[data-tab-dragging]'));
+    await mouse('mouseMoved', targetX, 144, true);
+    await until(`the ${side} group landing is previewed`, () => !!inside(`[data-chat-tool-drop-preview="${side}"]`));
+    expect(workspace.chatWorkspaceMode).toBe('full');
+    if (shouldCancel) {
+      await userEvent.keyboard('{Escape}');
+      await until('cancel clears the active tab drag and group landing preview', () => !inside('[data-tab-dragging]') && !inside('[data-chat-tool-drop-preview]'));
+      await mouse('mouseReleased', targetX, 144);
+      await mode('full');
+      continue;
+    }
+    await mouse('mouseReleased', targetX, 144);
+    await mode('split');
+    const left = (el: HTMLElement | null) => el?.getBoundingClientRect().left ?? 0;
+    await until(`both panes occupy their ${side} drop positions`, () => side === 'left' ? left(tool()) < left(chat()) : left(tool()) > left(chat()));
+    expect(workspace.chatToolSide).toBe(side);
+    expect(workspace.chatWorkspacePanes!.tools!.pane.tabOrder).toEqual(before);
+    expect(workspace.chatWorkspacePanes!.tools!.pane.resolvedActiveTabId).toBe(byId);
+    await until('the tab overlay finishes landing', () => !inside('[data-tab-dragging]') && !inside('.cursor-grabbing'));
+  }
+  expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
+});
+
+it('moves the tool group from the tab menu and still lets two tools pair', async () => {
+  const { mode, workspace, inside } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await act(() => { workspace.open('tool', { id: 'another' }, { from: null, intent: 'newTab' }); });
+  const [first, second] = workspace.chatWorkspacePanes!.tools!.pane.tabOrder;
+  const tab = (id: string) => page.elementLocator(inside(`[data-chat-workspace-header] [data-tabid="${id}"]`)!);
+  await userEvent.click(tab(first), { button: 'right' });
+  await userEvent.click(page.getByRole('menuitem', { name: '移至左侧面板' }));
+  await until('the menu moves the whole group to the left', () => workspace.chatToolSide === 'left');
+  expect(workspace.chatWorkspacePanes!.tools!.pane.tabOrder).toEqual([first, second]);
+
+  await userEvent.click(tab(second), { button: 'right' });
+  await userEvent.click(page.getByRole('menuitem', { name: /^(?:向右分|Split right)/ }));
+  await until('the legacy two-tool strip appears', () => !!inside('[data-pane-strip]'));
+  expect(new Set([workspace.pair?.pinned, workspace.pair?.side])).toEqual(new Set([first, second]));
+});
+
+it('resizes and previews each collapse before release, and restores the split on cancellation', async () => {
+  const { inside, mode, width, chat, workspace } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  const separator = () => inside('[data-chat-tool-divider]')!.getBoundingClientRect();
+  const begin = async () => {
+    const rect = separator();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + 96;
+    await mouse('mouseMoved', x, y);
+    await mouse('mousePressed', x, y, true);
+    return y;
+  };
+
+  const y = await begin();
+  await mouse('mouseMoved', 443, y, true);
+  await mouse('mouseReleased', 443, y);
+  await until('the chat grows visibly as the divider moves', () => width(chat()), (w) => w > 435);
+  const before = workspace.paneSizes.slice();
+
+  await begin();
+  await mouse('mouseMoved', 91, y, true);
+  await until('the chat edge is previewed before release', () => !!inside('[data-chat-tool-collapse-preview="left"]'));
+  await mode('split');
+  await userEvent.keyboard('{Escape}');
+  await until('cancel restores the pre-drag split', () => workspace.paneSizes[0], (share) => share === before[0]);
+  await mouse('mouseReleased', 91, y);
+  await mode('split');
+  expect(inside('[data-chat-tool-collapse-preview]')).toBeNull();
+
+  await begin();
+  await mouse('mouseMoved', 173, y, true);
+  await until('the approach previews a collapse without arming it', () => !!inside('[data-chat-tool-collapse-preview="left"]:not([data-chat-tool-collapse-ready])'));
+  await mouse('mouseReleased', 173, y);
+  await mode('split');
+  expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
+
+  await begin();
+  await mouse('mouseMoved', 91, y, true);
+  await until('moving past the commit threshold arms the collapse', () => !!inside('[data-chat-tool-collapse-ready]'));
+  await mouse('mouseReleased', 91, y);
+  await mode('full');
+  expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
+  await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
+  await mode('split');
+  await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - 324) < 2);
+
+  await begin();
+  await mouse('mouseMoved', 749, y, true);
+  await until('the tool edge is previewed before release', () => !!inside('[data-chat-tool-collapse-preview="right"]'));
+  await mode('split');
+  await mouse('mouseReleased', 749, y);
+  await mode('hidden');
+  await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
+  await mode('split');
+  await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - 475) < 2);
+  expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });

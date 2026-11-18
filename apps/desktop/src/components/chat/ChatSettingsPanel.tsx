@@ -38,7 +38,7 @@ export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettin
   )
 }
 
-function TopicMembers({ topic, sourceChatId, onClose, mobile }: { topic: ChatTopicState; sourceChatId: string; onClose: () => void; mobile: boolean }) {
+export function TopicMembers({ topic, sourceChatId, onClose, mobile }: { topic: ChatTopicState; sourceChatId: string; onClose: () => void; mobile: boolean }) {
   const { t } = useTranslation('messaging')
   const closeTopic = useCloseTopic()
   const { snapshot, error, reload, authorityRevision } = useRoomCollab(topic.topicChatId, 'topic', sourceChatId)

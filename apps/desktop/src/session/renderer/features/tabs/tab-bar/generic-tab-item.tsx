@@ -70,7 +70,7 @@ export const GenericTabItem = observer(function GenericTabItem({
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
   const { isFocusedPane, pane } = usePaneContext();
-  const workspaceRole = useContext(ChatWorkspaceTabContext);
+  const workspaceRole = useContext(ChatWorkspaceTabContext)?.role;
   const [isEditing, setIsEditing] = useState(false);
   const committedRef = useRef(false);
 

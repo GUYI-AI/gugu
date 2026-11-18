@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTabProvider, createTabRegistry } from './core/tab-provider-registry';
+import { chatDividerAt, chatToolDropId } from './chat-tool-geometry';
 import { PaneLayoutStore } from './pane-layout-store';
 
 const provider = (kind: string) => createTabProvider({
@@ -187,6 +188,56 @@ describe('mounted chat workspace', () => {
     } finally {
       detachWorkspace();
     }
+  });
+
+  it('reopens the whole group on either side and keeps order, resources and remembered width', () => {
+    const layout = makeLayout('owner');
+    const owner = layout.open('chat', { id: 'owner' }, newTab)!;
+    const detach = layout.attachChatWorkspace();
+    try {
+      layout.setDimensions(1000, 600);
+      const first = layout.open('tool', { id: 'one' }, newTab)!;
+      const second = layout.open('tool', { id: 'two' }, newTab)!;
+      const panes = layout.chatWorkspacePanes!;
+      const tools = panes.tools!.pane;
+      const firstResource = tools._resources.get(first);
+      layout.setPaneSizes([38, 62]);
+      layout.setChatToolLayout('full');
+
+      layout.handleDragEnd(first, chatToolDropId('left', panes.chat.paneId));
+      expect(layout.chatWorkspaceMode).toBe('split');
+      expect(layout.chatToolSide).toBe('left');
+      expect(layout.paneSizes).toEqual([62, 38]);
+      expect(tools.tabOrder).toEqual([first, second]);
+      expect(tools.resolvedActiveTabId).toBe(first);
+      expect(tools._resources.get(first)).toBe(firstResource);
+
+      layout.collapseChatToolSide('left');
+      expect(layout.chatWorkspaceMode).toBe('hidden');
+      layout.toggleChatToolSplit();
+      expect(layout.paneSizes).toEqual([62, 38]);
+      layout.collapseChatToolSide('right');
+      expect(layout.chatWorkspaceMode).toBe('full');
+
+      layout.handleDragEnd(second, chatToolDropId('right', panes.chat.paneId));
+      expect(layout.chatToolSide).toBe('right');
+      expect(layout.paneSizes).toEqual([38, 62]);
+      expect(tools.resolvedActiveTabId).toBe(second);
+      expect(panes.chat.pane.tabOrder).toEqual([owner]);
+      expect(layout.pairDeclined).toBe(false);
+    } finally {
+      detach();
+    }
+  });
+
+  it('bounds the size while previewing each collapsing edge only after the pointer passes the threshold', () => {
+    const width = 1001;
+    const at = (offset: number) => chatDividerAt(offset, width, 320, 360);
+    expect(at(500)).toEqual({ sizes: [50, 50], preview: undefined, collapse: undefined });
+    expect(at(180)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
+    expect(at(115)).toEqual({ sizes: [32, 68], preview: 'left', collapse: 'left' });
+    expect(at(800)).toEqual({ sizes: [64, 36], preview: undefined, collapse: undefined });
+    expect(at(985)).toEqual({ sizes: [64, 36], preview: 'right', collapse: 'right' });
   });
 
   it('retains the existing two-tool pairing when both tool pages are explicitly paired', () => {
