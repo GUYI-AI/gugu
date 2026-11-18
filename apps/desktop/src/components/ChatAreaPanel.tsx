@@ -55,7 +55,7 @@ import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
 import { sessionComposerDockBandClassName } from '../session/renderer/features/sessions/session-composer-styles'
-import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useTabsReading } from './appSlot/useTabsReading'
+import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useTabsReading } from './appSlot/useTabsReading'
 import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
@@ -656,7 +656,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           position: 'relative',
         }}
       >
-        <div data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
+        <ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
         {opener.overlay}
         {emptyProject ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
           style={{
@@ -800,7 +800,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
 
         </div>}
-        </div>
+        </ChatPaneContent>
 
         {inTabs(topicPane, infoPage)}
 

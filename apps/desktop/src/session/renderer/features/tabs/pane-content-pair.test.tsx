@@ -219,7 +219,7 @@ describe('each actual pane owns its content', () => {
     const source = layout.open('conversation', { id: 'conversation' }, { from: null, intent: 'newTab' })!;
     layout.focusedPane.setDimensions(390, 620);
     layout.setViewActive(true);
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     const file = layout.open('page', { id: 'file' }, { from: source, intent: 'navigate' })!;
     expect(layout.pair).toEqual({ pinned: source, side: file });
     expect(layout.groups.filter(({ pane }) => pane.isVisible).map(({ pane }) => pane.resolvedActiveTabId)).toEqual([file]);

@@ -77,7 +77,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       </IconButton>
     ) : null}
     {hasMembers && !membersInMenu ? <>
-      <Button variant="ghost" size="md" className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} data-testid={AUTOMATION_TEST_IDS.chatHeaderMembersButton} aria-label={t('header.memberList')} title={t('header.memberList')} aria-pressed={infoShown}
+      <Button variant="ghost" size="md" className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} data-pane-opener="" data-testid={AUTOMATION_TEST_IDS.chatHeaderMembersButton} aria-label={t('header.memberList')} title={t('header.memberList')} aria-pressed={infoShown}
         onClick={toggleMembers}>
         <Users className="text-[var(--faint-fg)]" />{memberCount ?? <Unknown className="w-[1.5ch]" />}
       </Button>
@@ -101,14 +101,14 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       <DropdownMenu.Trigger ref={moreButtonRef} data-testid={AUTOMATION_TEST_IDS.chatHeaderMoreButton} title={t('header.more')} aria-pressed={showHeaderMenu}
         render={<IconButton on={showHeaderMenu || undefined} aria-label={t('header.more')}><MoreHorizontal /></IconButton>} />
       {showHeaderMenu && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220 }}>
-        {hasMembers && membersInMenu ? <MenuItem icon={<Users size={16} />} onClick={toggleMembers}>
+        {hasMembers && membersInMenu ? <MenuItem data-pane-opener="" icon={<Users size={16} />} onClick={toggleMembers}>
           {t('header.memberList')}{memberCount == null ? '' : ` (${memberCount})`}
         </MenuItem> : null}
         {groupId && narrow && <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>}
         <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat ? '⌘F' : undefined}>
           {t(isRoomChat ? 'header.searchHistory' : 'header.searchChat')}
         </MenuItem>
-        <MenuItem onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>
+        <MenuItem data-pane-opener="" onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>
         <ChatDetailsMenuItems isGroupChat={isGroupChat} onOpenInfo={() => isGroupChat ? onOpenInfo('main') : onOpenInfo()} />
         {activeChatId && !wideGroup && <OpenAppMenuItems chatId={activeChatId} separated />}
       </DropdownMenu.Content>}

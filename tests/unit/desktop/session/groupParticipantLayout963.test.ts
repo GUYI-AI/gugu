@@ -39,12 +39,12 @@ describe('a participant beside the group leaves the group\'s own tabs and pairs 
     const before = JSON.stringify(layout.snapshot);
     showGroupParticipant(chatId, participant(chatId));
     // What the block's tree does once the participant has taken its width (pane-tree-view measures it).
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     expect(focusedChatTab(chatId)?.kind).toBe('chat');
     expect(topicTabOf(chatId)).toMatchObject({ tabId: topicId, shown: false });
     expect(JSON.stringify(layout.snapshot)).toBe(before);
     leave(chatId);
-    layout.setNarrow(false);
+    layout.setSinglePaneHost(false);
     expect(screenLayout.order).toHaveLength(1);
     expect(topicTabOf(chatId)).toMatchObject({ tabId: topicId, shown: true });
     expect(layout.pair?.side).toBe(topicId);
@@ -55,11 +55,11 @@ describe('a participant beside the group leaves the group\'s own tabs and pairs 
     const chatId = 'participant-topic';
     const topicId = withTopic(chatId);
     showGroupParticipant(chatId, participant(chatId));
-    chatLayoutOf(chatId).setNarrow(true);
+    chatLayoutOf(chatId).setSinglePaneHost(true);
     showChatTab(chatId, topicId);
     expect(screenLayout.order).toHaveLength(1);
     expect(groupParticipantPanes.placements.has(chatId)).toBe(false);
-    chatLayoutOf(chatId).setNarrow(false);
+    chatLayoutOf(chatId).setSinglePaneHost(false);
     expect(topicTabOf(chatId)).toMatchObject({ tabId: topicId, shown: true });
     expect(shown(chatId)).toHaveLength(2);
   });
@@ -82,10 +82,10 @@ describe('a participant beside the group leaves the group\'s own tabs and pairs 
     openPanelItem(chatId, board);
     const tab = panelTabsOf(chatId)[0]!.tabId;
     showGroupParticipant(chatId, participant(chatId));
-    chatLayoutOf(chatId).setNarrow(true);
+    chatLayoutOf(chatId).setSinglePaneHost(true);
     expect(panelTabsOf(chatId)).toMatchObject([{ tabId: tab, shown: false }]);
     closeScreenBlock(screenLayout.order[1]!);
-    chatLayoutOf(chatId).setNarrow(false);
+    chatLayoutOf(chatId).setSinglePaneHost(false);
     expect(panelTabsOf(chatId)).toMatchObject([{ tabId: tab, shown: true }]);
     expect(shown(chatId)).toHaveLength(2);
   });

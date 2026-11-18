@@ -64,7 +64,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   it('repeated ordinary private file cards focus one existing tab in a narrow pane', () => {
     const id = 'private-repeat-card'; const layout = chatLayoutOf(id);
     layout.setDimensions(390, 620);
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     const conversation = layout.focusedPane.resolvedActiveTabId!;
     const first = openPanelItem(id, file('same-file'))!;
     const order = [...layout.focusedPane.tabOrder];
@@ -180,7 +180,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   it('closing topic members restores the topic on a phone-sized page', () => {
     const id = 'topic-members-phone';
     chatLayoutOf(id).setDimensions(390, 620);
-    chatLayoutOf(id).setNarrow(true);
+    chatLayoutOf(id).setSinglePaneHost(true);
     openTopicTab(id, { topicChatId: 'topic-members-phone', name: 'Topic' });
     const topicTab = topicTabOf(id)!.tabId;
     openInfoTab(id, 'members', memberTopicOf(id));

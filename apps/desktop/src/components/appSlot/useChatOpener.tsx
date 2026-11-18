@@ -14,7 +14,7 @@ import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/render
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, isWaitingItem, waitingItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, showChatTab, panelTabsOf, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, showChatTab, panelTabsOf, chatPaneOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
@@ -69,12 +69,11 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     const shown = { ...item, ...(from.message ? { message: from.message } : {}) }
     // A pending message is not tab state: neither JSON nor structured-clone snapshots carry it.
     if (item.takeOpening) Object.defineProperty(shown, 'takeOpening', { get: () => item.takeOpening, enumerable: false })
-    if (mobile) chatLayoutOf(target).setNarrow(true)
     const tabId = openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}), ...(from.wait ? { wait: from.wait } : {}) })
     if (!tabId) throw new Error('The file panel could not be opened')
     await onShow?.(target, tabId)
     if (item.itemId && !isWaitingItem(item)) noteOpened(item.itemId)
-  }, [onShow, mobile])
+  }, [onShow])
 
   // The file asked last is the one opened: a pill clicked, then another (or a file in an App's list), before the first's
   // answer is back — whichever answer comes last, the chat ends on the later ask (#7257). Each ask takes the next number.

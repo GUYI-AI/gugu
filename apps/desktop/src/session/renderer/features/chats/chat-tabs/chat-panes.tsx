@@ -79,6 +79,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
             const strip = { tabTrailingSlot: <ChatPartSlot chatId={chatId} part="tabs" className="flex h-full items-center" />, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
             if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
             const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.splitBlocked(paneId, dragging, edge) === null);
+            // This React tree owns the pane shell and its blank space; portaled content owns its input in ChatPaneContent.
             return <PaneProvider group={group} isFocusedPane={focused}>
               <SplitPaneHotkey />
               <div className="h-full min-h-0 min-w-0" data-pane-cell={paneId} data-chat-panes={chatId} onPointerDown={(event) => { if (makesPaneCurrent(event.target)) layout.setActiveGroup(paneId); }}>

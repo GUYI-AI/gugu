@@ -81,6 +81,25 @@ describe.each(['chat', 'session'] as const)('%s pane placement', (place) => {
     expect(initialize).not.toHaveBeenCalled(); expect(dispose).not.toHaveBeenCalled();
   });
 
+  it('separates the pair when its side tab is dropped at the end of the strip', () => {
+    const { layout, main, topic } = setup(place);
+    layout.handleDragEnd(topic, `pane-drop-${main.paneId}`);
+    expect(layout.pair).toBeNull();
+    expect(layout.groups).toHaveLength(1);
+    expect(main.pane.resolvedActiveTabId).toBe(topic);
+    expect(layout.stripTabIds.at(-1)).toBe(topic);
+  });
+
+  it('selects a hidden strip tab beside the current side pane', () => {
+    const { layout, main, side, topic } = setup(place);
+    const hidden = layout.open('file', { id: 'hidden.html' }, { from: null, intent: 'newTab', activate: false })!;
+    layout.setActiveGroup(side.paneId);
+    main.pane.setActiveTab(hidden);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(main.pane.resolvedActiveTabId).toBe(hidden);
+    expect(layout.activePaneId).toBe(main.paneId);
+  });
+
   it.each(['left', 'right'] as const)('places a file on the %s edge of the side page, keeping that page instead of the old main', (edge) => {
     const { layout, main, side, topic } = setup(place);
     const moving = layout.open('file', { id: 'another.html' }, { from: null, intent: 'newTab', activate: false })!;
@@ -94,7 +113,7 @@ describe.each(['chat', 'session'] as const)('%s pane placement', (place) => {
   it('reveals the opened target in a narrow window without discarding either pane', () => {
     const { layout, main, side, topic, file } = setup(place);
     layout.setActiveGroup(side.paneId);
-    layout.setNarrow(true);
+    layout.setDimensions(300, 800);
     const opened = file('preview.html');
     expect(layout.activePaneId).toBe(main.paneId);
     expect(main.pane.resolvedActiveTabId).toBe(opened);
@@ -109,5 +128,18 @@ describe.each(['chat', 'session'] as const)('%s pane placement', (place) => {
     layout.open('topic', { id: 'topic' }, { from: conversation, intent: 'navigate' });
     expect(layout.focusedPane.resolvedActiveTabId).toBe(topic);
     expect(layout.groups).toHaveLength(2);
+  });
+
+  it('reveals the opened target for a single-pane phone host even before it has measurements', () => {
+    const { layout, main, side, topic, file } = setup(place);
+    layout.dimensions = null;
+    layout.setSinglePaneHost(true);
+    layout.setActiveGroup(side.paneId);
+    const opened = file('phone.html');
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(opened);
+    expect(main.pane.resolvedActiveTabId).toBe(opened);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    layout.setDimensions(1200, 800);
+    expect(layout.narrow).toBe(true);
   });
 });

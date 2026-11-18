@@ -25,7 +25,7 @@ export function SystemMessageNotice({ message, senderName, onOpenTopic }: { mess
   // The marker supplies the topic's identity even if the topic is renamed or deleted.
   const topic = notice?.kind === 'topic-opened' && onOpenTopic ? topicOpenedParts(message.content ?? '') : null
   if (notice?.kind === 'topic-opened' && onOpenTopic && topic) {
-    return <div className="system-message-notice"><span>{topic.lead}<InlineAction testId="topic-opened-link" onClick={() => onOpenTopic(notice.topicChatId)}>{topic.name}</InlineAction></span></div>
+    return <div className="system-message-notice"><span data-pane-opener="">{topic.lead}<InlineAction testId="topic-opened-link" onClick={() => onOpenTopic(notice.topicChatId)}>{topic.name}</InlineAction></span></div>
   }
   return <div className="system-message-notice"><span>{systemNoticeText(notice, message.content ?? '')}</span>
     {message.local_send_state && <MessageSendStatus state={message.local_send_state} messageId={message.id} reason={message.local_send_error} retryable={message.local_send_retryable} />}

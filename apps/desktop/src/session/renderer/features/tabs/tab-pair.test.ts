@@ -154,9 +154,9 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
     open('A.md');
     layout.setViewActive(true);
     const before = JSON.stringify(layout.snapshot);
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     expect(layout.groups.filter(({ pane }) => pane.isVisible)).toHaveLength(1);
-    layout.setNarrow(false);
+    layout.setSinglePaneHost(false);
     expect(JSON.stringify(layout.snapshot)).toBe(before);
     expectOneStrip(layout);
   });
@@ -591,7 +591,7 @@ describe('closing what pushed a page out brings it back (§7)', () => {
     const { layout, open } = setup();
     open('A.md');
     const b = open('B.md');
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     close(layout, b);
     expect(paths(layout)).toEqual(['conversation', 'A.md']);
     expectOneStrip(layout);
@@ -633,7 +633,7 @@ it('1000 random steps keep one strip, at most one pair, and never bring back a c
       ({ layout } = setup());
       layout.restoreSnapshot(saved);
       conversation = all().find((id) => layout.mainGroup.pane.entries.get(id)?.kind === 'conversation')!;
-    } else if (op === 8) layout.setNarrow(random(2) === 0);
+    } else if (op === 8) layout.setSinglePaneHost(random(2) === 0);
     expectOneStrip(layout);
     for (const id of all()) expect(closed.has(id)).toBe(false);
     if (layout.pair) expect(layout.pair.pinned).not.toBe(layout.pair.side);

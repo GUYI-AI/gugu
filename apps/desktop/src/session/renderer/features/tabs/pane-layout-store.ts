@@ -78,7 +78,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return this._windowPanes;
   }
   activePaneId: string;
-  narrow = false;
+  private _singlePaneHost = false;
   /** The displayed side pane; a recorded background pair need not occupy it yet. */
   sidePaneId: string | null = null;
   private _pair: { pinnedTabId: string; sideTabId: string } | null = null;
@@ -101,7 +101,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
    */
   private readonly _sideShares = observable.map<string, number>({}, { deep: false });
 
-  setNarrow(narrow: boolean): void { this.narrow = narrow; }
+  /** Hosts that draw one pane, such as the phone, declare that independently of their size. */
+  setSinglePaneHost(singlePane: boolean): void { this._singlePaneHost = singlePane; }
+
+  get narrow(): boolean {
+    return this._singlePaneHost || !!this.dimensions && this.dimensions.width < minExtent(this.layout, 'width', this.paneMinWidth);
+  }
 
   /** The narrowest this pane is drawn: what the page in front of it asks for (`minWidth`), else MIN_PANE_WIDTH_PX. */
   paneMinWidth = (paneId: string): number => {
@@ -157,14 +162,15 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._lastPersistentActivePaneId = initial.paneId;
     this.layout = paneLeaf(initial.paneId);
 
-    makeObservable<this, '_pair'>(this, {
+    makeObservable<this, '_pair' | '_singlePaneHost'>(this, {
       groups: observable,
       activePaneId: observable,
-      narrow: observable,
+      _singlePaneHost: observable,
+      narrow: computed,
       sidePaneId: observable,
       _pair: observable.ref,
       pairDeclined: observable,
-      setNarrow: action,
+      setSinglePaneHost: action,
       dimensions: observable.ref,
       setDimensions: action,
       layout: observable.ref,
@@ -381,10 +387,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (this.splitBlocked(paneId, tabId, edge) !== null) return false;
     const moving = tabId ?? this.focusedPane.resolvedActiveTabId!;
     const pane = this.groups.find((group) => group.paneId === paneId)!.pane;
-    const current = pane.resolvedActiveTabId;
-    const beside = current && current !== moving ? current : pane.previousActiveTabId
-      ?? this.groups.find((group) => group.pane !== pane)?.pane.resolvedActiveTabId
-      ?? pane.tabOrder.find((id) => id !== moving);
+    const beside = [pane.resolvedActiveTabId, pane.previousActiveTabId,
+      this.groups.find((group) => group.pane !== pane)?.pane.resolvedActiveTabId, ...pane.tabOrder]
+      .find((id) => id && id !== moving);
     if (!beside) return false;
     this.pairDeclined = false;
     this.pairWith(beside, moving, { edge: edge as PairEdge, focus: true, by: 'user' });
@@ -471,6 +476,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       const opts = { by: 'restore' as const, activate: displayed };
       if (back.role === 'pinned') this.pairWith(back.tabId, remaining, opts);
       else this.pairWith(remaining, back.tabId, opts);
+      // A one-pane host returns to the page that stayed behind when its foreground destination closes.
+      if (displayed && this.narrow && this.activePaneId === paneId) this.activePaneId = this._groupOf(remaining)!.paneId;
       if (!displayed && wasActive && this.sidePaneId !== null) this._collapseDisplay(paneId === this.sidePaneId ? 'pinned' : 'side', after);
       return;
     }
@@ -573,7 +580,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       return;
     }
 
-    const dropPane = overId.startsWith('pane-drop-') ? overId.slice('pane-drop-'.length) : overId.startsWith('pane-content-') ? overId.slice('pane-content-'.length) : undefined;
+    const dropPane = overId.startsWith('pane-content-') ? overId.slice('pane-content-'.length) : undefined;
     if (dropPane !== undefined) {
       const target = this.groups.find((group) => group.paneId === dropPane);
       if (!target || target.pane.resolvedActiveTabId === draggedTabId) return;
@@ -598,7 +605,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
     const pane = this.mainGroup.pane;
     const fromIdx = pane.tabOrder.indexOf(draggedTabId);
-    const toIdx = pane.tabOrder.indexOf(overId);
+    const toIdx = overId.startsWith('pane-drop-') ? pane.tabOrder.length - 1 : pane.tabOrder.indexOf(overId);
     if (fromIdx !== -1 && toIdx !== -1) pane.reorderTabs(fromIdx, toIdx);
   }
 
@@ -764,11 +771,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       target.pane.setActiveTab(tabId);
     }
     // A narrow view draws one pane: an explicit open must reveal its destination there.
-    if (activate && beside && (this.narrow || (this.dimensions
-      ? this.dimensions.width < minExtent(this.layout, 'width', this.paneMinWidth)
-      : !this.roomToSplit()))) this.activePaneId = this._groupOf(tabId)!.paneId;
+    if (activate && beside && this.narrow) this.activePaneId = this._groupOf(tabId)!.paneId;
     if (config.viewState) this._groupOf(tabId)?.pane.setPageViewState(tabId, config.viewState);
-    if (activate) this._groupOf(tabId)?.pane.focusActiveContent();
+    if (activate) this.focusedPane.focusActiveContent();
     return tabId;
   }
 
@@ -970,7 +975,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
             return true;
           }
           if (this.sidePaneId !== null) {
-            const pinned = this.mainGroup.pane.resolvedActiveTabId;
+            const pinned = this.focusedPane.resolvedActiveTabId;
             if (pinned && pinned !== tabId) {
               this.pairWith(pinned, tabId, { focus: true });
               return true;
