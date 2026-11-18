@@ -113,6 +113,17 @@ it('a touch begun on pending Send cannot activate Stop after the outbox commits'
     expect(stop).toHaveBeenCalledTimes(1)
     await userEvent.keyboard('{Enter}')
     expect(stop).toHaveBeenCalledTimes(2)
+
+    // Some WebViews expose the click after a touch as a MouseEvent without pointerId.
+    const control = stopButton.element()
+    const mouseClick = () => new MouseEvent('click', { bubbles: true, detail: 1 })
+    control.dispatchEvent(mouseClick())
+    expect(stop).toHaveBeenCalledTimes(2)
+    const pointer = { bubbles: true, pointerId: 7, pointerType: 'touch' }
+    control.dispatchEvent(new PointerEvent('pointerdown', pointer))
+    control.dispatchEvent(new PointerEvent('pointerup', pointer))
+    control.dispatchEvent(mouseClick())
+    expect(stop).toHaveBeenCalledTimes(3)
     expect(submit).toHaveBeenCalledTimes(1)
   } finally {
     releaseWrite()

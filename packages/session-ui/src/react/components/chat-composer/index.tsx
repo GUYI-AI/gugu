@@ -1076,7 +1076,8 @@ export function ChatComposer({
                     onPointerCancel={phoneActions ? () => { stopPointer.current = null; } : undefined}
                     onClick={phoneActions ? (event) => {
                       // A touch begun on pending Send can be retargeted here when the commit ends.
-                      const startedHere = stopPointer.current === (event.nativeEvent as PointerEvent).pointerId;
+                      const pointerId = 'pointerId' in event.nativeEvent ? event.nativeEvent.pointerId : undefined;
+                      const startedHere = stopPointer.current !== null && (pointerId === undefined || stopPointer.current === pointerId);
                       stopPointer.current = null;
                       if (startedHere || event.detail === 0) onStop?.();
                     } : onStop}
