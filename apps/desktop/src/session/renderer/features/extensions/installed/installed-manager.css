@@ -1,0 +1,146 @@
+.gg-installed-modal-layer {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 1;
+}
+.gg-installed-frame {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 64px minmax(0, 1fr);
+}
+.gg-installed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--spacing-2xl);
+  border-bottom: 1px solid var(--border);
+}
+.gg-installed-header h2 {
+  font-size: var(--font-title);
+  font-weight: var(--font-weight-semibold);
+}
+.gg-installed-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 208px) minmax(0, 1fr);
+}
+.gg-installed-inventory {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--spacing-md);
+  padding: var(--spacing-xl);
+}
+.gg-installed-bar,
+.gg-installed-tools,
+.gg-installed-toggle,
+.gg-installed-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.gg-installed-tools { margin-inline-start: auto; }
+.gg-installed-toggle {
+  gap: 0;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.gg-installed-toggle [aria-pressed="true"] { background: var(--hover); }
+.gg-installed-items { min-height: 0; overflow: auto; }
+.gg-installed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 106px);
+  justify-content: start;
+  gap: var(--spacing-sm);
+}
+.gg-installed-entry {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm);
+  overflow: visible;
+  text-align: start;
+  justify-content: start;
+}
+.gg-installed-item[data-grid] .gg-installed-entry {
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.gg-installed-item:not([data-grid]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  min-height: 60px;
+  border-bottom: 1px solid var(--border);
+}
+.gg-installed-icon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.gg-installed-icon > img { object-fit: contain; border-radius: var(--radius-xl); }
+.gg-installed-item-text { min-width: 0; display: grid; gap: var(--spacing-xs); }
+.gg-installed-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-installed-version { color: var(--text-secondary); font-size: var(--font-caption); }
+.gg-installed-selection,
+.gg-installed-update-indicator {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-inline-start: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-circle);
+  background: var(--bg);
+}
+.gg-installed-icon .gg-installed-selection,
+.gg-installed-update-indicator {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--spacing-xs));
+  inset-inline-end: calc(-1 * var(--spacing-xs));
+}
+.gg-installed-selection[data-selected],
+.gg-installed-update-indicator {
+  color: var(--primary-fg);
+  background: var(--primary);
+}
+.gg-installed-empty {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--text-secondary);
+}
+.gg-installed-confirm { display: grid; gap: var(--spacing-md); padding: var(--spacing-xl); }
+.gg-installed-confirm .gg-installed-bar { justify-content: space-between; }
+.gg-installed-confirm h3 { font-weight: var(--font-weight-semibold); }
+.gg-installed-confirm p { color: var(--text-secondary); }
+@media (max-width: 780px) {
+  .gg-installed-body { grid-template-columns: minmax(0, 140px) minmax(0, 1fr); }
+  .gg-installed-bar { flex-wrap: wrap; }
+}
+
+.gg-installed-connector-pane {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.gg-installed-connector-footer { padding: var(--spacing-lg) var(--spacing-xl); border-top: 1px solid var(--border); }
+.gg-installed-connector-detail { min-height: 0; overflow-y: auto; padding: var(--spacing-xl); }
+.gg-installed-connector-detail > button { margin-block-end: var(--spacing-md); }
+.gg-installed-connector-icon {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+.gg-installed-danger { color: var(--danger); }

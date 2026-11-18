@@ -1,5 +1,7 @@
 import { UI_EVENTS } from '@/lib/uiEvents';
 import React, { useMemo } from 'react';
+import { MarketConnectorDetail } from '@renderer/features/extensions/panel/market-detail-connector';
+import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { integrationErrorText } from '@renderer/features/integrations/integration-display';
 import { keptByPlatform } from '@renderer/features/integrations/integration-setup-model';
 import { integrationSections } from '@renderer/features/integrations/integration-sections';
@@ -57,7 +59,7 @@ export type IntegrationItem = {
   onTryPlaybook?: (prompt: string) => void;
 };
 
-const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = false }) => {
+const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean; initialConnectorId?: string; marketQuery?: string }> = ({ inSettings = false, inlineDetail = false, initialConnectorId, marketQuery }) => {
   const {
     connectionStatus,
     configuredConnections,
@@ -68,6 +70,7 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
     listError,
     hasList,
     reloadList,
+    reloadConnections,
   } = useIntegrationsContext();
   // #6264 资源库看的是别的机器:连 / 断的是那台机器上的集成;弹窗带上它(弹窗挂在应用根上,自己拿不到)。
   const host = useLibraryHost();
@@ -77,7 +80,7 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
     () => sortGitHubAccountsByDefault(githubAccounts),
     [githubAccounts]
   );
-  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings);
+  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings, initialConnectorId);
   const showIntegrationSetup = useShowModal('integrationSetupModal');
   const showConnectGitHub = useShowModal('githubConnectModal');
   const showConfirm = useShowModal('confirmActionModal');
@@ -252,6 +255,42 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
     ? (integrations.find((integration) => integration.id === selectedProvider) ?? null)
     : null;
 
+  const market = marketQuery !== undefined;
+  const selectedMetadata = selectedIntegration && integrationMetadata.find(({ id }) => id === selectedIntegration.id);
+  const marketDetail = market && selectedIntegration && (
+    <MarketConnectorDetail
+      key={selectedIntegration.id}
+      id={selectedIntegration.id}
+      name={selectedIntegration.name}
+      description={selectedIntegration.description}
+      icon={<IntegrationIcon provider={selectedIntegration.id} icon={selectedIntegration.icon} size={68} />}
+      connected={connectionStatus[selectedIntegration.id]?.connected === true}
+      readOnly={selectedIntegration.readOnly || selectedIntegration.isMutating}
+      status={selectedIntegration.connectionError}
+      abilities={selectedIntegration.abilities}
+      playbooks={selectedIntegration.playbooks}
+      local={{ host, deviceId: host.remote?.deviceId ?? null }}
+      readDevice={keptByPlatform(selectedMetadata || undefined) ? undefined : async ({ host: target }) =>
+        (await target.integrations.checkConfiguredConnections())[selectedIntegration.id] === true}
+      onConnected={reloadConnections}
+      onDisconnect={selectedIntegration.id === 'github' ? async () => {
+        for (const { accountId } of sortedGithubAccounts) {
+          const result = await host.github.removeAccount(accountId);
+          if (!result.success) throw new Error(result.error);
+        }
+        reloadConnections();
+      } : async () => { await disconnectIntegration(selectedIntegration.id); }}
+      disconnectDescription={
+        selectedMetadata?.disconnectCredentialLabel || keptByPlatform(selectedMetadata || undefined)
+          ? translate('integrations.disconnectLoseAccess', { name: selectedIntegration.name })
+            + credentialNotice(selectedIntegration.name, selectedMetadata?.disconnectCredentialLabel, keptByPlatform(selectedMetadata || undefined))
+          : undefined
+      }
+      onTryPlaybook={selectedIntegration.onTryPlaybook}
+      onClose={closeSheet}
+    />
+  );
+
   function closeSheet() {
     setSelectedProvider(null);
   }
@@ -260,6 +299,11 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
   if (notice && !hasList) return <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />;
   // 清单还在读:画加载态(读到了才知道哪些连着)。
   if (!hasList && !listError) return <PageLoading />;
+
+  const detail = selectedIntegration && <IntegrationDetailSidebar
+    integration={selectedIntegration} githubAccounts={sortedGithubAccounts} onClose={closeSheet}
+  />;
+  if (!market && inlineDetail && detail) return <TooltipProvider delay={150}>{detail}</TooltipProvider>;
 
   return (
     <TooltipProvider delay={150}>
@@ -306,17 +350,10 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
         )}
       </div>
 
-      <Sheet open={selectedIntegration !== null} onOpenChange={(open) => !open && closeSheet()}>
-        <SheetContent showCloseButton={false}>
-          {selectedIntegration && (
-            <IntegrationDetailSidebar
-              integration={selectedIntegration}
-              githubAccounts={sortedGithubAccounts}
-              onClose={closeSheet}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+      {marketDetail}
+      {!market && !inlineDetail && <Sheet open={!!detail} onOpenChange={(open) => !open && closeSheet()}>
+        <SheetContent showCloseButton={false}>{detail}</SheetContent>
+      </Sheet>}
     </TooltipProvider>
   );
 };

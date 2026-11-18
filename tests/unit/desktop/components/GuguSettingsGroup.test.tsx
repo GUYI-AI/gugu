@@ -10,13 +10,13 @@ const authority = vi.hoisted(() => ({ mode: 'legacy' as 'legacy' | 'owner' }))
 vi.mock('@/lib/connectionBridge',() => ({ useConnectionAuthority: () => ({ route: { mode: authority.mode,epoch: '0',phase: 'stable',acceptingNewOperations: true } }) }))
 const mine = vi.hoisted(() => ({ value: { contact: null, agentId: null, loading: false, error: null } as Mine }))
 // 这台宿主有没有本机运行时(桌面 = 有;手机 / 网页 = 没有):会议提醒读的是桌面主进程的日历,手机壳里没有那一层。
-const runtime = vi.hoisted(() => ({ agentRuntime: true, sessionHost: true }))
+const runtime = vi.hoisted(() => ({ agentRuntime: true, sessionHost: true, mobileApps: false }))
 vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../apps/desktop/src/platform')>()
   return {
     ...actual,
     platform: new Proxy(actual.platform, {
-      get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, agentRuntime: runtime.agentRuntime, sessionHost: runtime.sessionHost } : Reflect.get(target, key)),
+      get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, ...runtime } : Reflect.get(target, key)),
     }),
   }
 })
@@ -74,6 +74,7 @@ afterEach(() => {
   invoke.mockClear()
   runtime.agentRuntime = true
   runtime.sessionHost = true
+  runtime.mobileApps = false
   authority.mode = 'legacy'
 })
 
@@ -246,23 +247,25 @@ describe('Settings has nothing of the assistant', () => {
   })
 })
 
-// 11-12 gap: on a phone with no assistant, Settings' 连接应用 was the only way to the person's own connected apps. They are
-// the person's: a plain row under 偏好 on the phone in account-level connection mode.
 describe('the person\'s own connected apps on the phone', () => {
-  it('a plain row under 偏好, beside 通用; a route to them (or its chat tools) draws them', async () => {
+  it('lists Marketplace after Devices and accepts existing connector routes', async () => {
     authority.mode = 'owner'
+    runtime.mobileApps = true
     await render(createNode(SettingsPanel, { inline: true, mobile: true, pane: 'nav' }), awake)
-    const row = q('settings-nav-connectors')!
-    expect(row.textContent).toContain('连接应用')
-    expect(row.closest('[role="group"]')?.getAttribute('data-group')).toBe('preferences')
-    expect([...row.closest('[role="group"]')!.querySelectorAll('[data-testid^="settings-nav-"]')].slice(0, 2).map((el) => el.getAttribute('data-testid'))).toEqual(['settings-nav-general', 'settings-nav-connectors'])
+    const row = q('settings-nav-apps')!
+    expect(row.textContent).toContain('市场')
+    const group = row.closest('[role="group"]')
+    expect(group?.getAttribute('data-group')).toBe('work')
+    const rows = [...group!.querySelectorAll('[data-testid^="settings-nav-"]')]
+    expect(rows[rows.indexOf(row) - 1]).toBe(q('settings-nav-devices'))
     expect([...harness.container.querySelectorAll('.gg-settings-nav-caption')].map((el) => el.textContent)).not.toContain('咕咕')
+    expect(q('settings-nav-connectors')).toBeNull()
     expect(q('settings-nav-assistant')).toBeNull()
     expect(harness.container.textContent).not.toMatch(/资料/)
     for (const section of ['connectors', 'channels'] as const) {
       harness.cleanup(); harness = createReactHarness(); sessionSection.props = null
       await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile: true, pane: 'detail' }), awake)
-      expect(q('settings-connectors')).not.toBeNull()
+      await vi.waitFor(() => expect(q('phone-market')?.querySelector('[role="tabpanel"][aria-label="连接器"]')).toBeTruthy())
       expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
     }
   })

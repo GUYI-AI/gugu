@@ -1007,15 +1007,16 @@ describe('MainLayout', () => {
     expect(harness.container.querySelector('nav')).not.toBeNull()
     expect(pages.filter((page) => !page.hasAttribute('inert')).map((page) => page.dataset.mobileTabPage)).toEqual(['chats'])
   })
-  it('opens the assistant layer when global settings requests its phone connectors', async () => {
+  it('opens the phone Marketplace connectors for the legacy assistant event', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = true
     phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
     await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
     await act(async () => { window.dispatchEvent(new Event(UI_EVENTS.openAssistantConnectors)) })
-    expect(layerOpen('mobile-assistant-layer')).toBe(true)
-    expect(harness.container.querySelector('[data-testid="mock-assistant-tab"]')?.getAttribute('data-visible')).toBe('true')
+    expect(layerOpen('mobile-assistant-layer')).toBe(false)
+    expect(layerOpen('mobile-settings-layer')).toBe(true)
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull()
   })
   // Owner 11-12「设置里面不应该有咕咕设置吧?」: on a computer an old route to its 资料 / 连接应用 never opens Settings (it goes to
   // the App: assistantEntry.test.ts `openAssistantPageInApp`); any other section still does.
@@ -1040,9 +1041,7 @@ describe('MainLayout', () => {
     expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull()
   })
 
-  // 11-12 gap: the person's own connected apps are not the assistant's. A phone with no assistant has them as a plain row of
-  // Settings (under 偏好, SettingsPanel): a route to them (or the chat tools, part of them) opens that page; its 资料 has none.
-  it.each(['owner','read-error'])('a phone with no assistant opens its own connected apps in Settings for %s',async state => {
+  it.each(['owner','read-error'])('a phone with no assistant routes connected apps into Marketplace for %s',async state => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = false
     connectionAuthority.mode = 'owner'; connectionAuthority.failed = state === 'read-error'
@@ -1051,11 +1050,12 @@ describe('MainLayout', () => {
     expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="assistant"]')).toBeNull()
     for (const section of ['connectors', 'channels']) {
       await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
-      await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull())
+      expect(layerOpen('mobile-settings-layer')).toBe(true)
+      expect(harness.container.querySelector(`[data-testid="mock-settings-panel"][data-section="${section}"]`)).not.toBeNull()
     }
     expect(layerOpen('mobile-assistant-layer')).toBe(false)
   })
-  it.each(['assistant', 'connectors', 'channels'] as const)('a %s Settings route on the phone opens the assistant layer, not Settings', async (section) => {
+  it('the assistant Settings route on the phone opens the assistant profile', async () => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = true
     phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
@@ -1064,13 +1064,24 @@ describe('MainLayout', () => {
     window.addEventListener(UI_EVENTS.openAssistantConnectors, hear)
     try {
       await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
-      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'assistant' } })) })
       expect(layerOpen('mobile-assistant-layer')).toBe(true)
       expect(harness.container.querySelector('[data-testid="mock-settings-panel"]:is([data-section="connectors"], [data-section="channels"], [data-section="assistant"])')).toBeNull()
-      expect(asked).toEqual([{ sub: section === 'assistant' ? 'settings' : 'connectors' }])
+      expect(asked).toEqual([{ sub: 'settings' }])
     } finally {
       window.removeEventListener(UI_EVENTS.openAssistantConnectors, hear)
     }
+  })
+  it.each(['connectors', 'channels'] as const)('a %s Settings route uses the phone Marketplace even with an assistant', async section => {
+    platformMock.kind = 'capacitor'
+    platformMock.capabilities.sessionHost = false
+    phoneAssistantMock.state.available = true
+    phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
+    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+    expect(layerOpen('mobile-assistant-layer')).toBe(false)
+    expect(layerOpen('mobile-settings-layer')).toBe(true)
+    expect(harness.container.querySelector(`[data-testid="mock-settings-panel"][data-section="${section}"]`)).not.toBeNull()
   })
   // owner 10-16「得考虑最开始没有创建咕咕的新用户」:没有它,那一行照样在,头像是淡一点的默认咕咕 + 小「+」,点进去是安家引导。
   it('keeps the 咕咕 row first for a new user with no assistant, and marks it as the place to set one up', async () => {

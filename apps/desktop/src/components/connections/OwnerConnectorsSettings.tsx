@@ -32,7 +32,7 @@ export type PhoneConnectorPresentation = {
 }
 
 /** Both settings shells use the same controller without resolving an assistant. */
-export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings({ panelNavigation = false,deviceId,route,initialConnectorId,phoneCatalog,connectOnly }: { panelNavigation?: boolean; deviceId?: string | null; route: ConnectionRoute; initialConnectorId?: string; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
+export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings({ panelNavigation = false,deviceId,route,initialConnectorId,marketQuery,phoneCatalog,connectOnly }: { panelNavigation?: boolean; deviceId?: string | null; route: ConnectionRoute; initialConnectorId?: string; marketQuery?: string; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
   const devices = useDevicesStore()
   const selectedId = deviceId === undefined ? settingsDeviceStore.selected : deviceId
   const endpoints = [...devices.devices, ...(devices.phones ?? [])]
@@ -40,11 +40,11 @@ export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings
     : endpoints.find(row => row.device_id === selectedId) ?? null
   const host = useOwnerLibraryHost(device,route)
   return <LibraryHostProvider value={host} key={host.key}><IntegrationsProvider>
-    <OwnerConnectorList host={host} selectedDeviceId={device?.device_id ?? null} panelNavigation={panelNavigation} showDevicePicker={deviceId === undefined} initialConnectorId={initialConnectorId} phoneCatalog={phoneCatalog} connectOnly={connectOnly} />
+    <OwnerConnectorList host={host} selectedDeviceId={device?.device_id ?? null} panelNavigation={panelNavigation} showDevicePicker={deviceId === undefined} initialConnectorId={initialConnectorId} market={marketQuery !== undefined} route={route} phoneCatalog={phoneCatalog} connectOnly={connectOnly} />
   </IntegrationsProvider></LibraryHostProvider>
 })
 
-function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId,phoneCatalog,connectOnly }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
+function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId,market,route,phoneCatalog,connectOnly }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string; market: boolean; route: ConnectionRoute; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
   const { t,i18n } = useTranslation('assistant'),copy = useTranslation('connections').t,settings = useTranslation('settings').t
   const mobile = useMobileShell(),devices = useDevicesStore(),channels = useChatChannels()
   const data = useIntegrationsContext()
@@ -60,7 +60,9 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
     }),[data,host.connectionMetadata,i18n.language,channels.list,settings,t,copy])
   const selected = openId ? apps.find(app => app.id === openId) : null
-  if (selected) return <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation} market={connectOnly} onBack={() => setOpenId(null)} />
+  const detail = selected && <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation}
+    market={market} connectOnly={connectOnly} route={route} onBack={() => setOpenId(null)} />
+  if (!market && detail) return detail
   const icon = (app: AssistantConnectedApp, size: number) => app.integration
     ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
     : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null
@@ -88,5 +90,6 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
     <ConnectedAppsCatalog apps={apps} scope={host.key} open={setOpenId} mobile={mobile} panelNavigation={panelNavigation}
       connectionRead={data.hasConfiguredConnections ? 'ready' : 'pending'}
       icon={icon} />
+    {market && detail}
   </SettingsPage>
 }

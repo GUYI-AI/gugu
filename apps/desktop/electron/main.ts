@@ -21,6 +21,7 @@ import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
+import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
@@ -2660,7 +2661,14 @@ function signedInAccountId(): string | null {
   return SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId()
 }
 
+const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
+  ipc: ipcMain,
+  getWindow: () => mainWindow,
+  getOwner: signedInAccountId,
+})
+
 function onHumanAuthSessionChanged(): void {
+  externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
   void emdashBridgeModule?.setTaskNameOwner(signedInAccountId())
