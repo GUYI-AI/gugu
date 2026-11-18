@@ -1,7 +1,7 @@
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { sendAddressesOf, type SendAddresses } from '@gugu/session-core/session-record/send-addresses';
 import type { RenderUnit, SegmentCtx } from '../core/units';
-import type { ChatMessage, TranscriptItem, TranscriptTurn } from '../model';
+import type { ChatMessage, TranscriptItem, TranscriptTurn, TurnCompletionItem } from '../model';
 import type { MessageSenderTarget } from '../lib/sender-target';
 
 export type ActivityActor = { id: string; name: string; target: MessageSenderTarget };
@@ -115,8 +115,9 @@ export function foldActivityUnits(units: readonly RenderUnit[], previous?: Agent
   };
   for (const unit of units) {
     const event = unit.activityEvent;
-    // The hover-only copy footer is part of this work, not a visible content boundary.
-    if (!event && !(current && unit.kind === 'turn-completion')) { finish(); result.push(unit); continue; }
+    // The tool-only copy footer follows its current activity. A reply footer carries its own activity.
+    const toolFooter = unit.kind === 'turn-completion' && !(unit.data as TurnCompletionItem).reply;
+    if (!event && !(current && toolFooter)) { finish(); result.push(unit); continue; }
     if (!current) {
       current = { id: activityId(event!.id), events: [] };
       header = { id: current.id, itemId: current.id, groupId: current.id, groupRole: 'solo', gapBefore: unit.gapBefore,

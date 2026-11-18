@@ -1961,7 +1961,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.effortReset': '恢复到模型默认档',
   'composer.effortUnset': '默认',
   'composer.fastModeHint': '更快，消耗更多额度',
-  'composer.fastModeLabel': '快速',
+  'composer.fastModeLabel': '快速模式',
   'composer.effortLocked': '这个会话现在改不了思考档位。',
   'composer.modelNotInCatalog':
     '咕咕目录里这家 agent 已经没有这一条了，所以这个会话到不了它。换一条。',

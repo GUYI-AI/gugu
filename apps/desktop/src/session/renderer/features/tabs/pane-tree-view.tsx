@@ -25,8 +25,7 @@ const childId = (node: PaneLayoutNode) => node.type === 'pane' ? `pane-${node.pa
  */
 export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane }: { layout: PaneLayoutStore; renderPane: RenderPane }) {
   const treeId = useId().replace(/[^\w-]/g, '');
-  const narrow = !!layout.dimensions && layout.dimensions.width < minExtent(layout.layout, 'width', layout.paneMinWidth);
-  useEffect(() => { layout.setNarrow(narrow); return () => layout.setNarrow(false); }, [layout, narrow]);
+  const narrow = layout.narrow;
   const visiblePaneId = layout.activePaneId;
   const first = cornerPane(layout.layout, 'top-left');
   const last = cornerPane(layout.layout, 'top-right');

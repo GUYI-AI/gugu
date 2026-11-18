@@ -105,6 +105,8 @@ it('renders all recorded hunks for the selected file and reports missing patch t
     expect(recorded).toMatchObject({ available: true, partial: true })
     expect(host.querySelectorAll('[data-patch-row="add"]')).toHaveLength(16)
     expect(host.querySelectorAll('[data-patch-row="remove"]')).toHaveLength(2)
+    expect(host.querySelector('[data-patch-section="0"] [data-patch-row="remove"]')?.getAttribute('data-old-line')).toBe('1')
+    expect(host.querySelector('[data-patch-section="1"] [data-patch-row="add"]')?.getAttribute('data-new-line')).toBe('1')
     expect(host.textContent).toContain('line 15')
     expect(host.textContent).toContain('later edit')
     expect(host.textContent).not.toContain('other file')

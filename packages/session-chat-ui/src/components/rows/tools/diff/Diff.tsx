@@ -27,7 +27,7 @@ export function DiffHeader(props: DiffHeaderProps) {
     <For each={props.section?.patch.changes ?? []}>{change => {
       const path = () => changedFilePath(change);
       const label = () => ('oldPath' in change && typeof change.oldPath === 'string' ? `${basename(change.oldPath)} → ` : '') + (path() ? basename(path()!) : change.operation);
-      return <button type="button" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
+      return <button type="button" data-pane-opener="" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
         const target = path(); if (target) commands().onOpenFile?.({ path: target, itemId: props.item.id, source: 'diff' });
       }}><ShimmerText active={running()}>{label()}</ShimmerText></button>;
     }}</For>

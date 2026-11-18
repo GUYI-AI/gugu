@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { changedFilePath, type SessionPatch } from '@gugu/session-core/acp';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
-import { For } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { ChatContext } from '../../../../chat-context';
 import type { RecordedFileChange } from '../../../../commands';
@@ -66,10 +66,14 @@ export function mountRecordedFileDiff(parent: HTMLElement, context: ChatContext,
         [vars.typeCodeFontSize]: theme.themeVars.typeCodeFontSize,
         [vars.typeCodeFontWeight]: theme.themeVars.typeCodeFontWeight,
       })}>
-        <For each={sections.filter(rows => rows.length > 0)}>{rows =>
-          <DiffLines layout={{ previewRows: rows, lang, truncated: false }} caches={context.sharedCaches}
-            codeLineHeight={() => theme.fonts.code.lineHeight} showMarkers />
-        }</For>
+        <For each={sections}>{(rows, index) => (
+          <Show when={rows.length > 0}>
+            <div data-patch-section={index()}>
+              <DiffLines layout={{ previewRows: rows, lang, truncated: false }} caches={context.sharedCaches}
+                codeLineHeight={() => theme.fonts.code.lineHeight} showMarkers />
+            </div>
+          </Show>
+        )}</For>
       </div>
     ), parent),
   };

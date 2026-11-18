@@ -14,8 +14,8 @@ type BindingLease = { done: boolean; settled: Promise<void> }
 const composerBindings = new WeakMap<Composer, BindingLease>()
 
 /** The existing creation draft follows the first sentence across device choices, within one account. */
-export function mobileCreationDraftKey(ownerId: string): string {
-  return `${NEW_SESSION_DRAFT_KEY}:mobile:${ownerId}`
+export function mobileCreationDraftKey(ownerId: string, chatId?: string): string {
+  return `${NEW_SESSION_DRAFT_KEY}:mobile:${ownerId}${chatId ? `:group:${chatId}` : ''}`
 }
 
 export function bindCreationDraft(composer: Composer, key: string) {

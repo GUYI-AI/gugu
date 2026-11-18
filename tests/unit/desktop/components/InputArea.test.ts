@@ -54,7 +54,6 @@ describe('ChatMessageComposer', () => {
     mobileShellState.enabled = mobile
     const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, { onSend }))
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 0 })
     const source = document.createTextNode('Beta')
     document.body.append(source)
     const range = document.createRange(); range.selectNodeContents(source)
@@ -63,7 +62,7 @@ describe('ChatMessageComposer', () => {
       quoteContent: { messageId: 'source-1', senderName: 'Ada', content: 'Beta', originalContent: 'Alpha Beta', source: message({ id: 'source-1' }) },
     }))
     const editor = container.querySelector('[contenteditable]')!
-    expect(document.activeElement).toBe(editor)
+    await vi.waitFor(() => expect(document.activeElement).toBe(editor))
     source.remove()
   })
 
