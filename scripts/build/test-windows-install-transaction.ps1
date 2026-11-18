@@ -1,4 +1,4 @@
-﻿param([string]$Helper = (Join-Path $PSScriptRoot '..\..\build-resources\nsis\install-transaction.ps1'))
+﻿param([string]$Helper = (Join-Path $PSScriptRoot '..\..\build-resources\nsis\install-transaction.ps1'), [string]$Entry = (Join-Path $PSScriptRoot '..\..\build-resources\nsis\invoke-transaction.ps1'))
 # Run explicitly on Windows. Every registry key and directory belongs to this
 # fixture; it does not install an application or touch a real user's registration.
 $ErrorActionPreference = 'Stop'
@@ -13,6 +13,8 @@ $stage = Join-Path $journal 'stage'
 $backup = "$target.gugu-backup-$app"
 $powershell = (Get-Process -Id $PID).Path
 $results = @()
+$priorTemp = $env:TEMP; $priorTmp = $env:TMP
+$priorEntry = $env:GUGU_INSTALLER_ENTRY; $priorHelper = $env:GUGU_INSTALLER_HELPER; $priorRequest = $env:GUGU_INSTALLER_REQUEST
 $links = Join-Path $root 'links.ini'
 $failLog = Join-Path $root 'installer\fixture.log'
 # The installer runs the helper from its plugin directory, next to NSIS's 32-bit System.dll; run it from such a directory.
@@ -25,7 +27,12 @@ function Invoke-Phase($phase, [int]$expected = 0) {
   try {
     $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
     Push-Location $plugins
-    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links -FailureLog $failLog
+    $request = Join-Path $root 'request.ini'
+    [IO.File]::WriteAllText($request, "[transaction]`r`nPhase=$phase`r`nTarget=$target`r`nAppId=$app`r`nExecutable=fixture.exe`r`nVersion=0.3.5`r`nInstallKey=$key`r`nUninstallKey=$uninstall`r`nMode=CurrentUser`r`nLinkManifest=$links`r`nFailureLog=$failLog`r`n", [Text.Encoding]::Unicode)
+    $env:GUGU_INSTALLER_ENTRY = $Entry
+    $env:GUGU_INSTALLER_HELPER = $Helper
+    $env:GUGU_INSTALLER_REQUEST = $request
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command '& ([ScriptBlock]::Create([IO.File]::ReadAllText($env:GUGU_INSTALLER_ENTRY)))'
     $code=$LASTEXITCODE
   } finally { Pop-Location; $ErrorActionPreference=$prior }
   Assert ($code -eq $expected) "$phase returned $code, expected $expected"
@@ -43,6 +50,8 @@ function Registration($version) {
 }
 try {
   New-Item -ItemType Directory -Path $root | Out-Null
+  $env:TEMP = Join-Path $root 'temp'; $env:TMP = $env:TEMP
+  New-Item -ItemType Directory -Path $env:TEMP | Out-Null
   New-Item -ItemType Directory -Path $plugins | Out-Null
   [IO.File]::WriteAllBytes((Join-Path $plugins 'System.dll'), [byte[]](@(0x4D, 0x5A) + @(0) * 126)) # not a .NET assembly
   [IO.File]::WriteAllText($links, "[links]`r`nold=$oldLink`r`nnew=$newLink`r`n", [Text.Encoding]::Unicode)
@@ -102,7 +111,7 @@ try {
   Invoke-Phase prepare
   Payload $stage 'locked'
   $locked = [IO.File]::Open((Join-Path $target 'fixture.exe'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-  try { Invoke-Phase commit 2 } finally { $locked.Dispose() }
+  try { Invoke-Phase commit 3 } finally { $locked.Dispose() }
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Locked old application was changed'
   $results += 'locked old executable fails without losing installation'
   $failures = @(Get-Content -LiteralPath $failLog -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
@@ -118,7 +127,7 @@ try {
   Invoke-Phase prepare
   Payload $stage 'cwd-held'
   $holder = Start-Process -FilePath $powershell -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -WorkingDirectory (Join-Path $target 'resources') -WindowStyle Hidden -PassThru
-  try { Invoke-Phase commit 2 } finally { Stop-Process -Id $holder.Id -Force; $holder.WaitForExit() }
+  try { Invoke-Phase commit 3 } finally { Stop-Process -Id $holder.Id -Force; $holder.WaitForExit() }
   $last = Get-Content -LiteralPath $failLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
   Assert (@($last.holders | Where-Object { $_ -match "^$($holder.Id) .*\[handle .*\\resources\]" }).Count -eq 1) "Working-directory holder was not named: $($last.holders -join ' | ')"
   $results += 'a process working inside the old tree is named as the holder'
@@ -134,6 +143,33 @@ try {
   Registration '0.3.5'
   Invoke-Phase finish
   $results += 'a transient holder is waited out instead of aborting'
+
+  # NSIS may recreate a missing destination before prepare recovers a journal.
+  Invoke-Phase prepare
+  Payload $stage 'not-published'
+  [IO.Directory]::Move($target, $backup)
+  New-Item -ItemType Directory -Path $target | Out-Null
+  Invoke-Phase prepare
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'transient') 'Empty recreated target blocked recovery'
+  Invoke-Phase rollback
+  $results += 'a missing destination recovers through the empty directory NSIS recreated'
+
+  # A failed import may leave a previously existing key absent. Retrying rollback
+  # must import it, rather than treating delete-of-a-missing-key as a new failure.
+  Invoke-Phase prepare
+  Payload $stage 'registration-retry'
+  Invoke-Phase commit
+  $state = Get-Content -LiteralPath (Join-Path $journal 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $snapshot = Join-Path $journal $state.registry[0].file
+  $original = [IO.File]::ReadAllBytes($snapshot)
+  [IO.File]::WriteAllText($snapshot, 'not a registry file')
+  Invoke-Phase rollback 2
+  Assert (-not (Test-Path -LiteralPath "HKCU:\$key")) 'Failed import did not reach the missing-key recovery case'
+  [IO.File]::WriteAllBytes($snapshot, $original)
+  Invoke-Phase rollback
+  Assert ((Get-ItemProperty -LiteralPath "HKCU:\$uninstall").DisplayVersion -eq '0.3.5') 'Registration import was not retryable'
+  Assert (-not (Test-Path -LiteralPath $journal)) 'Retried rollback left its journal'
+  $results += 'registration rollback retries after delete succeeds and import fails'
 
   Invoke-Phase prepare
   Payload $stage 'committed'
@@ -151,6 +187,8 @@ try {
   $results += 'user data remains intact'
   $results | ConvertTo-Json
 } finally {
+  $env:TEMP = $priorTemp; $env:TMP = $priorTmp
+  $env:GUGU_INSTALLER_ENTRY = $priorEntry; $env:GUGU_INSTALLER_HELPER = $priorHelper; $env:GUGU_INSTALLER_REQUEST = $priorRequest
   Remove-Item -LiteralPath "HKCU:\Software\GuguInstallerFixture\$id" -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
