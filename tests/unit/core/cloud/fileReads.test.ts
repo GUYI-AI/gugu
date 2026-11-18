@@ -154,7 +154,12 @@ describe('device file reads', () => {
     expect(states.at(-1)).toMatchObject({ status: 'failed', code: 'integrity_failed' })
   })
 
-  it('gives each relay reader a private acknowledgement, including a reader joining verified bytes', async () => {
+  it.each([
+    { retention: '7d', separate: false, expected: 1 },
+    { retention: '7d', separate: true, expected: 2 },
+    { retention: 'read-once', separate: true, expected: 2 },
+    { retention: undefined, separate: false, expected: 2 },
+  ])('checks each relay reader and binds sharing to a reusable generation ($retention, separate=$separate)', async ({ retention, separate, expected }) => {
     const root = await mkdtemp(join(tmpdir(), 'relay-reads-')); roots.push(root)
     const item: FileRevision = { ...revision, source: 'local', host_account_id: 'sender', host_device_id: 'sender-device',
       relative_path: 'sample.bin', host_project_id: 'project', temporary_transfer: true }
@@ -164,35 +169,58 @@ describe('device file reads', () => {
       sink: await createFileSink(root, ciphertextSize(body.length)) })
     const ciphertext = await encrypted.file.read(0, encrypted.file.size)
     await encrypted.file.dispose()
-    const acks: { as: string; download_id: string }[] = [], signed: string[] = []
-    const bothSigned = gate(), object = vi.fn(async () => { await bothSigned.promise; return new Response(new Uint8Array(ciphertext)) })
+    const acks: string[] = [], signed: string[] = [], admitted: string[] = []
+    let revoked = false, wrongGeneration = false, newGeneration = false
+    const bytes = gate(), object = vi.fn(async () => { await bytes.promise; return new Response(new Uint8Array(ciphertext)) })
     const cloud = cloudFileProviders({ fetch: object, cache: createFileChunkCache(root), sink: size => createFileSink(root, size),
       endpoint: async () => ({ supabaseUrl: 'https://backend.invalid', anonKey: 'test', token: 'test', fetch: async (url, init) => {
         const op = String(url).split('/').at(-1), request = JSON.parse(String(init?.body))
-        if (op === 'file-resolve') return Response.json({ ...item, status: 'ready' })
+        const current = { ...item, status: 'ready', temporary_transfer: !(revoked && request.as === 'refused') }
+        if (op === 'file-resolve') return Response.json(current)
         if (op === 'file-request') {
+          const generation = newGeneration ? 'next' : separate ? 'transfer-' + request.as : 'shared'
+          const state = { ...current, transfer_status: 'ready', transfer_id: generation, retention }
+          if (!request.download_request_id) { admitted.push(request.as); return Response.json(state) }
           signed.push(request.as)
-          if (signed.length === 2) bothSigned.release()
-          return Response.json({ status: 'ready', transfer_status: 'ready', download: {
-            status: 'ready', url: 'https://store.invalid/file', download_id: 'grant-' + request.as,
+          return Response.json({ ...state, download: {
+            status: 'ready', url: 'https://store.invalid/file', download_id: 'grant-' + request.as, transfer_id: wrongGeneration ? 'other' : generation,
             sha256: digest, codec: 'secretstream-v1', key: Buffer.from(key).toString('base64'),
             size_bytes: ciphertext.length, ciphertext_bytes: ciphertext.length, ciphertext_sha256: encrypted.ciphertextSha256,
           } })
         }
         if (op !== 'file-read-complete') throw Error(String(op))
-        acks.push({ as: request.as, download_id: request.download_id })
-        if (request.as === 'refused') return Response.json({ error: 'denied' }, { status: 403 })
-        return Response.json({ current: { ...item, status: 'ready' }, acknowledged: true })
+        expect(request.download_id).toBe('grant-' + request.as)
+        acks.push(request.as)
+        return Response.json({ current, acknowledged: true })
       } }),
     })
-    const reads = createFileReads({ ...cloud, local: async () => null, ssh: async () => null })
+    const providers = { ...cloud, local: async () => null, ssh: async () => null }
+    const reads = createFileReads({ ...providers, saveTo: createFileSaver(providers) }, nodeFileReadStore(root))
     const good = reads.request(message, account, { purpose: 'save' })
+    await vi.waitFor(() => expect(object).toHaveBeenCalledTimes(1))
     const refused = reads.request({ item_id: 'item', version: 3 }, { ...account, actorId: 'refused' }, { purpose: 'save' })
+    const joined = gate()
+    refused.state$(state => { if (state.status === 'transferring') joined.release() })
+    await joined.promise
     const failed = expect(refused.result).rejects.toMatchObject({ code: 'access_revoked' })
-    expect(await (await fileBlob((await good.result).file)).bytes()).toEqual(body)
+    revoked = true
+    bytes.release()
+    const saved = await saveToFileStore((await good.result).file, root)
+    expect(await readFile(saved.file_path)).toEqual(Buffer.from(body))
     await failed
-    expect(object).toHaveBeenCalledTimes(1)
-    expect(acks).toEqual(expect.arrayContaining([{ as: 'owner', download_id: 'grant-owner' }, { as: 'refused', download_id: 'grant-refused' }]))
+    expect(admitted).toEqual(['owner', 'refused'])
+    expect(object).toHaveBeenCalledTimes(expected)
+    expect(signed).toHaveLength(expected)
+    expect(acks.sort()).toEqual(signed.slice().sort())
+    const retry = await reads.request(message, account, { purpose: 'bytes' }).result
+    expect(await (await fileBlob(retry.file)).bytes()).toEqual(body)
+    const extra = retention === '7d' ? 0 : 1
+    expect(object).toHaveBeenCalledTimes(expected + extra)
+    expect(signed).toHaveLength(expected + extra)
+    expect(acks).toHaveLength(expected + extra)
+    newGeneration = true; wrongGeneration = true
+    await expect(reads.request(message, account, { purpose: 'bytes' }).result).rejects.toMatchObject({ code: 'access_revoked' })
+    expect(object).toHaveBeenCalledTimes(expected + extra)
     key.fill(0)
   })
 

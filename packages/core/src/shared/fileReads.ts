@@ -81,7 +81,7 @@ export interface FileReadHooks {
   waits: ReturnType<typeof createSenderWaits>
   state(state: FileReadState): void
   reuse(value: FileReadReuse): void
-  acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer): Promise<FileBytes>
+  acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer, relay?: { generation: string; verifiedHere: boolean }): Promise<FileBytes>
 }
 
 function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
@@ -111,7 +111,7 @@ type Flight = {
 export function createFileReads(providers: FileProviders, store: FileReadStore = {}): FileReads {
   const waits = createSenderWaits()
   const flights = new Map<string, Flight>()
-  const acquire: FileReadHooks['acquire'] = async (backend, route, revision, context, open) => {
+  const acquire: FileReadHooks['acquire'] = async (backend, route, revision, context, open, relay) => {
     context.signal?.throwIfAborted()
     const report = (actualRoute: FileReadRoute, reused: FileReadReuse) => {
       log.info({ route: actualRoute, reused, size_bytes: revision.size_bytes, sha256: revision.sha256,
@@ -125,7 +125,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
     }
     // Device-only reads must never acquire a transfer through the cloud.
     const deviceOnly = revision.source === 'local' && !revision.temporary_transfer
-    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly])
+    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly, relay?.generation])
     let flight = flights.get(key)
     if (!flight) {
       const subscribers = new Set<Subscriber>(), controller = new AbortController()
@@ -145,7 +145,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
         for (const { hooks } of subscribers) hooks?.state({ status: 'transferring', route: actual })
       }
       const bytes = Promise.resolve().then(async () => {
-        const cached = await store.cachedCopy?.(backend, revision, transfer)
+        const cached = (!relay || relay.verifiedHere) && await store.cachedCopy?.(backend, revision, transfer)
         if (cached) { carrying('local'); reuse('verified-local'); report('local', 'verified-local'); return cached }
         controller.signal.throwIfAborted()
         carrying(route)
@@ -176,7 +176,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
       joined.bytes.then(file => {
         context.signal?.removeEventListener('abort', abort)
         if (context.signal?.aborted) { abort(); return }
-        resolve({ size: file.size, read: (offset, length) => file.read(offset, length), dispose: release })
+        resolve({ size: file.size, read: (offset, length) => file.read(offset, length), dispose: release, saved: file.saved && (() => file.saved!()) })
       }, error => {
         context.signal?.removeEventListener('abort', abort)
         void release().then(() => reject(error), reject)
