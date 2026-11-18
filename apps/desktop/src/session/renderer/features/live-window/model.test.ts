@@ -98,6 +98,13 @@ describe('approved live-window presentation', () => {
     model.observe(context, [{ ...source(), status: 'finished' }]);
     expect(model.getSnapshot()).toMatchObject({ visible: false, operating: false });
   });
+  it('does not mistake reconnecting a manually reopened completed picture for another completed run', () => {
+    const model = opened(), finished = { ...source(), status: 'finished' as const };
+    model.observe(context, [finished]); model.dispatch({ type: 'toggle-window' });
+    model.observe({ ...context, connected: false }, [finished]);
+    model.observe(context, [finished]);
+    expect(model.getSnapshot()).toMatchObject({ visible: true, operating: false });
+  });
   it('selects simultaneous sources without closing the other source', () => {
     const model = opened(); model.observe(context, [source(), source('desktop', 'computer')]);
     model.dispatch({ type: 'show-tab' }); model.dispatch({ type: 'select-tab', tab: 'screen', sourceId: 'desktop' });

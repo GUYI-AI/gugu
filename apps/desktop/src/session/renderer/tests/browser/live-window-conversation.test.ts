@@ -30,7 +30,10 @@ function setup(descriptor: LiveWindowResourceDescriptor = source) {
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ packet: expect.objectContaining({ type: 'ack', frame: sequence }) })));
   };
   return { current, transport, paint, unwatch, report, watched,
-    end: () => emit(watch, { type: 'state', generation: 'g', state: 'closed', reason: 'The browser closed' }) };
+    end: () => {
+      emit(watch, { type: 'state', generation: 'g', state: 'connecting' });
+      emit(watch, { type: 'state', generation: 'g', state: 'closed', reason: 'The browser closed' });
+    } };
 }
 
 describe('live conversation picture lifetime', () => {
@@ -142,6 +145,25 @@ describe('live conversation picture lifetime', () => {
     await vi.waitFor(() => expect(s.current.model.getSnapshot()).toMatchObject({ visible: false, operating: false, headerSource: null }));
     expect(s.current.picture('page')).toBeNull();
     expect(s.report).not.toHaveBeenCalled();
+  });
+  it('reconciles a source that closes while its initial watch is still being admitted', async () => {
+    const s = setup(), admitted = Promise.withResolvers<void>();
+    const watch = s.watched.getMockImplementation()!;
+    s.watched.mockImplementationOnce(async args => { await watch(args); await admitted.promise; });
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    vi.mocked(s.transport.list).mockResolvedValue([]);
+    s.end(); admitted.resolve();
+    await vi.waitFor(() => expect(s.current.model.getSnapshot()).toMatchObject({ visible: false, headerSource: null }));
+    expect(s.report).not.toHaveBeenCalled();
+  });
+  it('reports a failed initial watch without starting a resource refresh and retry loop', async () => {
+    const s = setup(), failure = new Error('watch admission refused');
+    s.watched.mockRejectedValueOnce(failure);
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.report).toHaveBeenCalledWith(failure));
+    expect(s.watched).toHaveBeenCalledTimes(1);
+    expect(s.transport.list).toHaveBeenCalledTimes(1);
   });
   it('does not let a delayed read from the previous visibility overwrite a newly opened conversation', async () => {
     const s = setup(); const first = Promise.withResolvers<readonly LiveWindowResourceDescriptor[]>();
