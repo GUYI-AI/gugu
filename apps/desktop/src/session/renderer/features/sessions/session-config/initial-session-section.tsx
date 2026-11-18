@@ -86,6 +86,7 @@ import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-mode
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { openAgentAppDetail } from '@renderer/features/apps/agent-app-detail-navigation';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
 import {
@@ -309,6 +310,7 @@ export type InitialSessionState = {
 };
 
 interface InitialSessionStateOptions {
+  preferredProvider?: AgentProviderId;
   draft?: ComposerDraft;
   resetPromptOnProjectChange?: boolean;
   /**
@@ -519,7 +521,7 @@ export function useInitialSessionState(
     error: providerError,
     chosenByUser: providerChosenByUser,
   } = useEffectiveProvider(
-    initialProvider,
+    initialProvider ?? options.preferredProvider,
     preferredSessionpageLeg,
     // 记忆单独一格传进去 —— 并进上面那个初值,换项目时的重置会连它一起抹掉(#5973)。
     // 亲手点过的那一家 > 上次真启动过的那家;出厂偏好猜出来的那家不算记忆,否则它排到「设置里的默认 Agent」
@@ -1042,9 +1044,7 @@ export function useInitialSessionState(
   const upgradeCodex = !!harnessNoticeDetail && codexNeedsUpgrade(harnessNoticeDetail);
   const openInstaller = () => {
     if (!providerId) return;
-    (window as typeof window & { __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (id: string) => void })
-      .__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(providerId);
-    navigate('library', { tab: 'agents', agentId: providerId });
+    openAgentAppDetail(navigate, providerId);
   };
   const harnessAction = upgradeCodex || harnessNoticeMessage?.action === 'install'
     ? (!machine && providerId ? { label: translate('taskError.runtimeUpgradeOpenInstaller', { harnessName: agentDisplayName }), onClick: openInstaller } : undefined)
@@ -1771,16 +1771,7 @@ export function InitialSessionField({
           // capabilities payload and would otherwise crash before rendering the repair message.
           selectedAgent={state.providerError ? undefined : (state.provider ?? undefined)}
           onAgentChange={(id) => state.setProvider(id as AgentProviderId)}
-          // The shell owns the top-level tab; the task renderer keeps ownership of its library
-          // route and installation surface. Both intents happen in one click.
-          // 远端:没有「去本机资源库装」这一步 —— 跳过去看到的是这台电脑的安装,不是那台机器的
-          // (那台机器上没装的,选了之后建会话时由那台机器当场装)。
-          onAgentAction={remoteCreateForActions ? undefined : (id) => {
-            (window as typeof window & {
-              __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
-            }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(id)
-            navigate('library', { tab: 'agents', agentId: id })
-          }}
+          onAgentAction={remoteCreateForActions ? undefined : (id) => openAgentAppDetail(navigate, id)}
           modelOptions={modelOptions}
           onModelMenuOpen={refreshHarnessModels}
           // 编解码都在装配那份里(@@@composer-model-assembly)—— 这里只把分好的两路写回

@@ -505,9 +505,6 @@ export default {
       "trayBadgeEnabled": "在托盘图标上显示未读数",
       "system": "跟随系统",
       "theme": "外观",
-      "themePack": "主题",
-      "themePackDefault": "咕咕默认",
-      "themePackValue": "深色：{{dark}}，浅色：{{light}}",
       "title": "通用"
     },
     "guguNumber": "咕咕号",

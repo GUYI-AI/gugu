@@ -160,6 +160,7 @@ export const plugin = definePlugin(
   {
     id: 'antigravity',
     name: 'Antigravity',
+    publisher: 'Google',
     description:
       'Google Antigravity: the official ACP server (agy_acp_server) for chat, and the agy CLI for terminal sessions.',
     // ACP 服务的官方说明页(注册表条目给的同一个出处)。

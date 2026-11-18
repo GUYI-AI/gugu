@@ -511,9 +511,6 @@ export default {
       "trayBadgeEnabled": "Show the unread count on the tray icon",
       "system": "System",
       "theme": "Appearance",
-      "themePack": "Theme",
-      "themePackDefault": "Gugu default",
-      "themePackValue": "Dark: {{dark}}, light: {{light}}",
       "title": "General"
     },
     "guguNumber": "Gugu ID",

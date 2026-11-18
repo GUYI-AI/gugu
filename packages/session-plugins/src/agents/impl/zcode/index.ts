@@ -61,6 +61,7 @@ export const plugin = definePlugin(
   {
     id: 'zcode',
     name: 'ZCode',
+    publisher: '智谱',
     description: 'Zhipu ZCode coding agent, driven through its own app-server protocol by an ACP bridge.',
     websiteUrl: 'https://zcode.z.ai',
   },
