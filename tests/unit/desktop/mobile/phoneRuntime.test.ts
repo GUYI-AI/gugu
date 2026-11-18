@@ -22,7 +22,7 @@ it('preserves phone runtime identity, delivery, permissions, confirmation and re
       banner: { js: "import { createRequire as __guguCreateRequire } from 'node:module'; const require = __guguCreateRequire(import.meta.url);" }, logLevel: 'silent' })
     // esbuild does not emit data files read relative to a bundled import.meta.url.
     await cp(join(source, 'fixtures'), join(out, 'fixtures'), { recursive: true })
-    const { stdout } = await promisify(execFile)(process.execPath, ['--test', ...tests.map((name) => join(out, name))], { cwd: root, timeout: 90_000, maxBuffer: 2 * 1024 * 1024 }).catch((cause: unknown) => {
+    const { stdout } = await promisify(execFile)(process.execPath, ['--test', '--test-concurrency=1', ...tests.map((name) => join(out, name))], { cwd: root, timeout: 90_000, maxBuffer: 2 * 1024 * 1024 }).catch((cause: unknown) => {
       const failure = cause as { stdout?: string; stderr?: string }
       throw new Error(`Phone runtime contract tests failed:\n${failure.stdout ?? ''}\n${failure.stderr ?? ''}`, { cause })
     })

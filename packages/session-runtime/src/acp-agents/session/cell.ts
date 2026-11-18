@@ -192,6 +192,7 @@ export class SessionCell {
    */
   private lastFailureProvisional = false;
   /** 宿主要求关掉这条会话(stop / 删除 / 换运行时)。之后线断了是我们断的,在飞的那一轮是被停下,不是失败。 */
+  private retrying: SessionState['retrying'] = null;
   private closeRequested = false;
   private preparationRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private preparationRetryDelay = 1500;
@@ -293,7 +294,7 @@ export class SessionCell {
   }
 
   get sessionState(): SessionState {
-    const state = this.machine.sessionState(this.transcript.activeTurn?.id ?? null);
+    const state = { ...this.machine.sessionState(this.transcript.activeTurn?.id ?? null), retrying: this.retrying ? { ...this.retrying } : null };
     return this.reverting ? { ...state, canSubmit: false } : state;
   }
 
@@ -1464,6 +1465,7 @@ export class SessionCell {
   }
 
   private closeTurnCompletion(result: Result<SessionPromptResult, AcpSendPromptError> = ok({ queued: false })): void {
+    this.retrying = null;
     this.interruptedForMessage = false;
     this.yieldingRepliedAssistant = null;
     this.nativeInputAfterStart = false;
@@ -1571,6 +1573,10 @@ export class SessionCell {
       return;
     }
     if (event.state === 'unknown') return;
+    if (event.retrying !== undefined) {
+      this.retrying = event.retrying ? { ...event.retrying } : null;
+      this.deps.callbacks?.onSessionStateChanged?.();
+    }
     if (event.state !== 'idle') {
       if (this.machine.phase.kind === 'ready') {
         // 没有一句在飞,agent 自己开了工(后台跑完的通知、子任务回来):不是人开的。

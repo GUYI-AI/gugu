@@ -76,7 +76,7 @@ const SESSION_ROWS: SessionpageListSpec = {
  * and the transcript. Dropped: the host's own bookkeeping (ids repeated bare, rate limits, recent action names, update
  * times), default flags and the preview's activity versions.
  */
-const RUNTIME_SHOWN = ['lifecycle', 'lastTurnError', 'failure', 'pendingPermissionCount', 'queuedPromptCount', 'backgroundAgentCount', 'backgroundCommandCount', 'contextTokens', 'contextSize', 'transcriptPath'] as const
+const RUNTIME_SHOWN = ['lifecycle', 'retrying', 'lastTurnError', 'failure', 'pendingPermissionCount', 'queuedPromptCount', 'backgroundAgentCount', 'backgroundCommandCount', 'contextTokens', 'contextSize', 'transcriptPath'] as const
 
 function withoutActivityVersions(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutActivityVersions)

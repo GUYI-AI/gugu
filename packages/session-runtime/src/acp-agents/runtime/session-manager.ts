@@ -2846,6 +2846,7 @@ export class SessionManager implements InboundRouter {
       lifecycle: state.lifecycle,
       ...(this.cells.get(input.sessionId)?.closing ? { closing: true } : {}),
       isGenerating: state.isGenerating,
+      retrying: cell?.sessionState.retrying ?? null,
       lastStopReason: cell?.sessionState.lastStopReason ?? null,
       lastTurnOutcome: cell?.sessionState.lastTurnOutcome ?? 'none',
       lastTurnError: cell?.lastTurnError ?? null,
