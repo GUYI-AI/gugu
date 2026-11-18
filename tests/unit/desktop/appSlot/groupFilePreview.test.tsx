@@ -24,6 +24,7 @@ vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => boundary.mobile
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('@/lib/attachmentBytes', () => ({
   attachmentBytes: boundary.read,
+  downloadAttachment: boundary.save,
   attachmentPreview: boundary.signed,
   openAttachmentInSystemApp: boundary.open,
   openAttachmentImages: boundary.image,
@@ -217,7 +218,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(video.src).toBe('https://media.test/signed.mp4')
     expect(video.controls).toBe(true)
     expect(video.playsInline).toBe(true)
-    expect(boundary.signed).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 })
+    expect(boundary.signed).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, undefined, expect.any(AbortSignal))
     expect(boundary.read).not.toHaveBeenCalled()
     expect(boundary.open).not.toHaveBeenCalled()
     const download = harness.container.querySelector('button[aria-label="下载"]')
@@ -231,7 +232,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     await until('the report HTML is drawn', () => boundary.previewContents.get(harness.container.querySelector('iframe')?.getAttribute('src') ?? '')?.includes('lane report') === true)
     expect(appsHere!.groupFileOpener).toHaveBeenCalledExactlyOnceWith({ itemId: file.itemId })
     expect(harness.container.querySelector('iframe')?.getAttribute('sandbox')).toBe('allow-scripts')
-    expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, 'shown', undefined, undefined, expect.any(Function))
+    expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, 'shown', undefined, undefined, expect.objectContaining({ onState: expect.any(Function) }))
   })
 
   it('peek has the same content and download as ordinary openWith', async () => {
@@ -250,7 +251,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(boundary.signed).not.toHaveBeenCalled()
     expect(harness.container.querySelector('button[aria-label="在系统浏览器打开"]')).toBeNull()
     await act(async () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="下载"]')!.click())
-    expect(boundary.save).toHaveBeenCalledWith(expect.anything(), 'report.exe')
+    expect(boundary.save).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, 'report.exe', expect.objectContaining({ onState: expect.any(Function) }))
     expect(boundary.open).not.toHaveBeenCalled()
   })
 

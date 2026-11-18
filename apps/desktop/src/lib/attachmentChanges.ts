@@ -11,13 +11,18 @@ export function noteAttachmentChanged(messageId: string): void {
   for (const listener of listeners) listener()
 }
 
+export function subscribeAttachmentChanges(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
+
 /** How many times this message's file changed since the run began: 0 means what the message said still holds. */
 export function attachmentChangeCount(messageId: string | undefined): number {
   return messageId ? changes.get(messageId) ?? 0 : 0
 }
 
 export function useAttachmentChange(messageId: string | undefined): number {
-  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => attachmentChangeCount(messageId))
+  return useSyncExternalStore(subscribeAttachmentChanges, () => attachmentChangeCount(messageId))
 }
 
 export function forgetAttachmentChanges(): void {

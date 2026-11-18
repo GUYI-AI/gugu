@@ -5,10 +5,11 @@ import { attachmentFileRef, parseAttachmentContent, type AttachmentSource } from
 import { attachmentBytes, attachmentMetadata, sourceKeyOf } from '@/lib/attachmentBytes'
 import { lendSessionFileReader } from '@/lib/sessionFileReaders'
 
-const io = vi.hoisted(() => ({ resolve: vi.fn(), blob: vi.fn(), put: vi.fn(), dispose: vi.fn() }))
+const io = vi.hoisted(() => ({ resolve: vi.fn(), request: vi.fn(), blob: vi.fn(), put: vi.fn(), dispose: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({
-  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
-  attachmentCache: async () => ({ put: io.put, delete: vi.fn() }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
+  resolveFile: io.resolve, requestFile: io.request,
+  fileReader: () => ({ accountId: 'account', actorId: 'account' }),
+  attachmentCopyKey: (account: string, sha: string) => `${account}/${sha}`, putAttachment: io.put,
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.blob }))
 
@@ -25,6 +26,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   io.blob.mockResolvedValue(new Blob(['full']))
   io.resolve.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' }, dispose: io.dispose, content: async () => new Blob(['thumb']) })
+  io.request.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' } })
 })
 
 describe('sources the file resolver reads', () => {
@@ -32,7 +34,7 @@ describe('sources the file resolver reads', () => {
     expect(attachmentFileRef(source)).toEqual(ref)
 
     expect(await attachmentBytes(source, 'full')).toMatchObject({ status: 'ready', link: revision })
-    expect(io.resolve.mock.calls.at(-1)![0]).toEqual(ref)
+    expect(io.request.mock.calls.at(-1)![0]).toEqual(ref)
 
     expect(await attachmentBytes(source, 'thumb')).toMatchObject({ status: 'ready', link: revision })
     expect(io.resolve.mock.calls.at(-1)![0]).toEqual(ref)
@@ -40,6 +42,8 @@ describe('sources the file resolver reads', () => {
 
     expect(await attachmentMetadata(source)).toEqual({ status: 'ready', revision })
     expect(io.resolve.mock.calls.at(-1)![0]).toEqual(ref)
+    expect(io.request).toHaveBeenCalledOnce()
+    expect(io.resolve).toHaveBeenCalledTimes(2)
   })
 
   it.each([url, gone])('%j has no reference: it is gone without asking the resolver', async source => {
@@ -48,6 +52,7 @@ describe('sources the file resolver reads', () => {
     expect(await attachmentBytes(source, 'thumb')).toEqual({ status: 'gone', sha256: null })
     expect(await attachmentMetadata(source)).toEqual({ status: 'gone', sha256: null })
     expect(io.resolve).not.toHaveBeenCalled()
+    expect(io.request).not.toHaveBeenCalled()
   })
 
   it('names each source apart, so one never shows another\'s cached picture', () => {

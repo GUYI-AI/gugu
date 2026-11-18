@@ -6,10 +6,10 @@ import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageVie
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
-const io = vi.hoisted(() => ({ resolve: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
+const io = vi.hoisted(() => ({ resolve: vi.fn(), request: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
-  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
-  attachmentCache: async () => ({ put: io.put }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
+  resolveFile: io.resolve, requestFile: io.request, fileReader: () => ({ accountId: 'account', actorId: 'account' }),
+  attachmentCopyKey: (account: string, sha: string) => `${account}/${sha}`, putAttachment: io.put,
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.original }))
 
@@ -27,6 +27,7 @@ beforeEach(() => {
     ? { status: 'ready', revision, content: async () => new Blob(['thumb']), dispose: vi.fn() }
     : { status: 'ready', revision, reader: { accountId: 'account' } })
   io.original.mockResolvedValue(new Blob(['original']))
+  io.request.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' } })
 })
 afterEach(() => { request?.items[0].release?.(); unregister(); attachmentQueryClient.clear(); vi.unstubAllGlobals() })
 
