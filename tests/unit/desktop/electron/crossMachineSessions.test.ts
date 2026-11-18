@@ -162,7 +162,6 @@ describe('reaching another machine', () => {
       if (action.action === 'devices') return xm.listDeviceRows()
       if (action.action === 'device_actions') return { devices: await native.describe() }
       if (action.action === 'project_list') return []
-      if (action.action === 'library_read') return { items: [] }
       throw new Error(`Unexpected action ${action.action}`)
     } })
     const records = index.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line))
@@ -384,7 +383,8 @@ describe('doing things on another machine', () => {
 
     const nowhere = makeCrossMachine(async () => { throw new DeviceRpcTimeoutError('no reply') })
     await expect(nowhere.xm.runOnSession('ghost', CALLER, { action: 'get', session_id: 'ghost' })).rejects.toThrow(
-      'session:ghost is not a session on this machine or on any of this account\'s online machines — could not check: '
+      'No session matches session:ghost on this machine or on any of this account\'s online machines. session_peers (with device '
+      + 'for another machine) lists what is addressable; nothing was sent. Not checked: '
       + '"laptop" (device:dev-c) (offline, last seen 3 h ago), "gpu server" (device:dev-b) (no answer).',
     )
   })
@@ -397,7 +397,7 @@ describe('doing things on another machine', () => {
       return { error: { code: 'session_action_failed', message: 'session not found on this machine — …' } }
     })
     await expect(xm.runOnSession('s-b', CALLER, { action: 'get', session_id: 's-b' })).rejects.toThrow('session not found on this machine')
-    await expect(xm.runOnSession('s-b', CALLER, { action: 'get', session_id: 's-b' })).rejects.toThrow('is not a session on this machine or on any')
+    await expect(xm.runOnSession('s-b', CALLER, { action: 'get', session_id: 's-b' })).rejects.toThrow('No session matches session:s-b on this machine')
     expect(actions(call)).toEqual([['dev-b', 'locate'], ['dev-b', 'get'], ['dev-b', 'locate']])
   })
 
@@ -874,5 +874,43 @@ describe('an agent\'s session on another machine, for opening it', () => {
     expect(await xm.sessionOfAgent('agent-x', 'dev-b')).toBeNull()
     // The second lookup reuses that machine's list asked a moment ago (sessionsOn, a few seconds).
     expect(call.mock.calls.map(([deviceId, type]) => [deviceId, type])).toEqual([['dev-b', 'sessionTimeline.sessionsList']])
+  })
+})
+
+// Owner 2026-11-15: the first 8 characters of a session id or Agent ID are enough; every addressing entry resolves here.
+describe('ids written as a prefix', () => {
+  const B_TASK = '50ac61ad-1111-4111-8111-111111111111'
+  const B_TWIN = '50ac61ad-2222-4222-8222-222222222222'
+  const B_AGENT = 'a9e1c3d5-3333-4333-8333-333333333333'
+  const LOCAL = '7f00c0de-4444-4444-8444-444444444444'
+  const remote = (sessions: Array<{ conversationId: string; title: string; agent?: { userId: string } | null }>) =>
+    makeCrossMachine(async (_deviceId, type) => type === 'sessionTimeline.sessionsList' ? { result: { projects: [], sessions } } : { result: {} })
+  const local = async () => [{ sessionId: LOCAL, agentUserId: null, title: 'here' }]
+
+  it('resolves a unique prefix, session: or aid:, on this machine or another, and passes full ids without listing', async () => {
+    const { xm, call } = remote([{ conversationId: B_TASK, title: 'design lane', agent: { userId: B_AGENT } }])
+    const resolved = await xm.resolveIdPrefixes({ sessionIds: ['50ac61ad', '7F00C0DE-4444', B_TWIN], agentIds: ['a9e1c3d5'] }, local)
+    expect([...resolved.sessions]).toEqual([['50ac61ad', B_TASK], ['7F00C0DE-4444', LOCAL]])
+    expect([...resolved.agents]).toEqual([['a9e1c3d5', B_AGENT]])
+
+    call.mockClear()
+    const full = await xm.resolveIdPrefixes({ sessionIds: [B_TWIN, 'ghost'], agentIds: [B_AGENT] }, local)
+    expect(full.sessions.size + full.agents.size).toBe(0)
+    expect(call).not.toHaveBeenCalled()
+  })
+
+  it('refuses a prefix several sessions share, listing each candidate with where it is', async () => {
+    const { xm } = remote([{ conversationId: B_TASK, title: 'design lane' }, { conversationId: B_TWIN, title: 'review lane' }])
+    await expect(xm.resolveIdPrefixes({ sessionIds: ['50ac61ad'], agentIds: [] }, local)).rejects.toThrow(
+      `session:50ac61ad matches 2 sessions: session:${B_TASK} ("design lane", "gpu server" (device:dev-b)), `
+      + `session:${B_TWIN} ("review lane", "gpu server" (device:dev-b)). Pass a longer prefix or the full id; nothing was sent`,
+    )
+  })
+
+  it('says first that no session matches, and names the machine it could not check after', async () => {
+    const { xm } = remote([{ conversationId: B_TASK, title: 'design lane' }])
+    const error = await xm.resolveIdPrefixes({ sessionIds: ['deadbeef'], agentIds: [] }, local).catch((e: Error) => e.message)
+    expect(error).toMatch(/^No session matches session:deadbeef on this machine or on any of this account's online machines\./)
+    expect(error).toMatch(/Not checked: "laptop" \(device:dev-c\) is offline \(last seen 3 h ago\)\.$/)
   })
 })

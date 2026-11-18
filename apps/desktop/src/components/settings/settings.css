@@ -76,7 +76,9 @@ div.gg-settings-body {
    不是落到图标下面。 */
 div.gg-settings-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The control's column fits its content up to 60%: an auto column took all a long value asked for (an error sentence, a
+     blocked-by-system state) before the title got any; past 60% the value ends in an ellipsis. */
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
   grid-template-areas: 'body control';
   align-items: center;
   column-gap: var(--spacing-md);
@@ -86,7 +88,7 @@ div.gg-settings-row {
   padding: var(--spacing-md) var(--spacing-lg);
 }
 .gg-settings-row[data-leading] {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(60%);
   grid-template-areas: 'lead body control';
 }
 .gg-settings-row + .gg-settings-row { border-top: 1px solid var(--border); }
@@ -130,12 +132,15 @@ div.gg-settings-row {
   gap: var(--spacing-sm);
   min-width: 0;
 }
-/* 行尾只读的值(版本号、权限状态)与 ›。 */
+/* 行尾只读的值(版本号、权限状态)与 ›。放不下时以省略号收尾。 */
 .gg-settings-row-value {
   font-size: var(--font-body);
   line-height: var(--lh-body);
   color: var(--muted-fg);
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .gg-settings-row-chevron { flex-shrink: 0; color: var(--faint-fg); }
 

@@ -1,12 +1,21 @@
 // #987 定时任务 pane — data-pane="tasks"。设计稿只给空态；列表/建表单按 gg-as 设计系统补。
 // 给 agent 配周期 prompt（间隔 + 内容），到点经设备运行时 tick → ACP deliver 触发 agent 回合（owner↔agent 私聊里）。
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { replica, useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useAuth } from '../../store/auth'
 import { agentScheduledTaskService, type AgentScheduledTask } from '../../lib/agentScheduledTasks'
 import type { AgentSettingsPaneProps } from './types'
 import { agentSettingsPaneClass, asClass, profileInputClass } from './agentSettingsStyles'
+
+/** An agent's scheduled tasks (account replica, one reading per agent). */
+const agentScheduledTasks = replica({
+  name: 'agentScheduledTasks',
+  scope: 'account',
+  read: (_owner: string, agentId: string) => agentScheduledTaskService.list(agentId),
+})
 
 const INTERVAL_PRESETS: { labelKey: string; seconds: number }[] = [
   { labelKey: 'preset30Minutes', seconds: 1800 },
@@ -41,29 +50,20 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const { t } = useTranslation('agents')
   const { user } = useAuth()
   const ownerUserId = user?.id ?? null
-  const [tasks, setTasks] = useState<AgentScheduledTask[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // One reading per agent: reopening the pane shows its tasks at once while they are read again.
+  const reading = useReplica(agentScheduledTasks, [agent.id])
+  const tasks = reading.state === 'value' ? reading.value : null
+  const loading = reading.state === 'unknown'
+  const [actionError, setError] = useState<string | null>(null)
+  const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
+  const error = actionError ?? (readError ? (readError.message || t('settings.tasks.loadFailed')) : null)
+  const setTasks = useCallback((edit: (tasks: AgentScheduledTask[]) => AgentScheduledTask[]) => agentScheduledTasks.set([agent.id], (now) => now && edit(now)), [agent.id])
   const [showForm, setShowForm] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [intervalSeconds, setIntervalSeconds] = useState(INTERVAL_PRESETS[1].seconds)
   const [busy, setBusy] = useState(false)
 
-  const reload = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      setTasks(await agentScheduledTaskService.list(agent.id))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('settings.tasks.loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [agent.id, t])
-
-  useEffect(() => {
-    void reload()
-  }, [reload])
+  const reload = useCallback(async () => { setError(null); await agentScheduledTasks.refresh(agent.id) }, [agent.id])
 
   const handleCreate = useCallback(async () => {
     if (!ownerUserId || !prompt.trim() || busy) return
@@ -93,7 +93,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
         setError(e instanceof Error ? e.message : t('settings.tasks.operationFailed'))
       }
     },
-    [reload, t],
+    [reload, setTasks, t],
   )
 
   const handleRemove = useCallback(async (task: AgentScheduledTask) => {
@@ -103,14 +103,15 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : t('settings.tasks.deleteFailed'))
     }
-  }, [t])
+  }, [setTasks, t])
 
   const canSubmit = useMemo(() => !!ownerUserId && prompt.trim().length > 0 && !busy, [ownerUserId, prompt, busy])
 
   return (
     <div className={agentSettingsPaneClass(true)} data-pane="tasks">
       <div className={asClass.tasksHead}>
-        <div className={asClass.tasksHeading}>{t('settings.tasks.title', { count: tasks.length })}</div>
+        {/* Not read yet: the count's place is a placeholder, ❌「（0）」. */}
+        <div className={asClass.tasksHeading}>{reading.state === 'value' ? t('settings.tasks.title', { count: reading.value.length }) : <>{t('settings.tasks.titleLabel')} <Unknown className="w-[2ch]" /></>}</div>
         <button className={asClass.tasksAddButton} onClick={() => setShowForm((v) => !v)} data-testid="agent-task-add">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24">
             <g fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -168,8 +169,8 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
 
       {error && <div style={{ fontSize: 'var(--font-body)', color: 'var(--danger-fg)', marginBottom: 10 }}>{error}</div>}
 
-      {loading ? (
-        <div className={asClass.tasksLoading}>{t('settings.tasks.loading')}</div>
+      {tasks === null ? (
+        loading ? <div className={asClass.tasksLoading}>{t('settings.tasks.loading')}</div> : null
       ) : tasks.length === 0 ? (
         <div className={asClass.tasksEmpty}>
           <div className={asClass.tasksIconBox}>
@@ -205,7 +206,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
                   {task.title || task.prompt}
                 </div>
                 <div style={{ fontSize: 'var(--font-caption)', color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  {intervalLabel(task.intervalSeconds, t)} · {nextRunLabel(task.nextRunAt, task.enabled, t)}
+                  {intervalLabel(task.intervalSeconds, t)}  {nextRunLabel(task.nextRunAt, task.enabled, t)}
                 </div>
               </div>
               <button

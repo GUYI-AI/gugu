@@ -8,14 +8,14 @@ const state = vi.hoisted(() => ({ transition: vi.fn((update: () => void) => upda
 vi.mock('../../../apps/desktop/src/mobile/navigateMobile', () => ({ navigateMobile: state.transition }))
 vi.mock('react-i18next', async original => ({ ...await original<object>(), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: null }) }))
-vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ setDraft: vi.fn(), draftAttachments: {}, setDraftAttachments: vi.fn() }) }))
+vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ setDraft: vi.fn(), keepDraft: vi.fn(), draftAttachments: {}, setDraftAttachments: vi.fn() }) }))
 vi.mock('../../../apps/desktop/src/store/chatLineScope', () => ({ ChatLineScope: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../../../apps/desktop/src/components/assistant/AssistantConversationProgress', () => ({ AssistantConversationProgress: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('../../../apps/desktop/src/components/assistant/AssistantComposerEntries', () => ({ AssistantComposerEntries: () => null }))
 vi.mock('../../../apps/desktop/src/components/assistant/useAssistantTyping', () => ({ useAssistantTyping: () => null }))
 vi.mock('../../../apps/desktop/src/components/ChatAreaPanel', () => ({ ChatAreaPanel: () => <div data-testid="retained-chat"><input defaultValue="draft" /></div> }))
 vi.mock('../../../apps/desktop/src/components/chat/filePreviewHost', () => ({ FilePreviewHost: { Provider: ({ children }: { children: React.ReactNode }) => children } }))
-vi.mock('../../../apps/desktop/src/lib/onScreenChat', () => ({ useReportChatOnScreen: (id: string | null) => id }))
+vi.mock('../../../apps/desktop/src/lib/onScreenChat', () => ({ useReportChatOnScreen: () => {}, useAppActive: () => true }))
 vi.mock('../../../apps/desktop/src/lib/assistantSetupState', () => ({ useCustomizeCardOffered: () => false }))
 vi.mock('../../../apps/desktop/src/lib/assistantTaskChat', () => ({ useOpenedAssistantTaskChat: () => null, showAssistantTaskChat: vi.fn() }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', () => ({ useBackLayer: () => {} }))
@@ -27,9 +27,9 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneIdeas', () => ({ PhoneI
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneMemory', () => ({ PhoneMemory: () => <div>memory content</div> }))
 function ProfileFixture({ go, sub }: { go: (sub: string) => void; sub: string | null }) {
   const [detail, setDetail] = useState(false)
-  useAssistantPanelBack(sub === 'library:capabilities' && detail ? 'capability:calendar' : null, () => setDetail(false))
-  return <>{['devices', 'devices:this-phone', 'devices:offline', 'connectors', 'library:capabilities'].map(sub => <button key={sub} data-testid={`open-${sub}`} onClick={() => go(sub)}>{sub}</button>)}
-    {sub === 'library:capabilities' && (detail ? <span data-testid="capability-detail">Calendar</span> : <button data-testid="open-capability-detail" onClick={() => setDetail(true)}>Calendar</button>)}</>
+  useAssistantPanelBack(sub === 'library:workspace' && detail ? 'capability:calendar' : null, () => setDetail(false))
+  return <>{['devices', 'devices:this-phone', 'devices:offline', 'connectors', 'library:workspace'].map(sub => <button key={sub} data-testid={`open-${sub}`} onClick={() => go(sub)}>{sub}</button>)}
+    {sub === 'library:workspace' && (detail ? <span data-testid="capability-detail">Calendar</span> : <button data-testid="open-capability-detail" onClick={() => setDetail(true)}>Calendar</button>)}</>
 }
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneProfile', () => ({ PhoneProfile: ProfileFixture }))
 // The assistant App fills the sections; the phone's own screens are opened as it opens them (`gugu.assistant.open`).
@@ -46,7 +46,7 @@ vi.mock('../../../apps/desktop/src/session/renderer/features/global-search/searc
 import { act } from 'react'
 import { MobileAssistantApp } from '../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { phoneAssistantLayer } from '../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
-const appOpens = (page: 'devices' | 'library:capabilities') => act(async () => { phoneAssistantLayer.actions()!.open({ section: 'profile', page }) })
+const appOpens = (page: 'devices' | 'library:workspace') => act(async () => { phoneAssistantLayer.actions()!.open({ section: 'profile', page }) })
 
 let h: ReturnType<typeof createReactHarness>
 const find = (id: string) => h.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
@@ -95,7 +95,7 @@ it('keeps profile subpages inside the same header and restores the search action
   expectProfileLocation()
   await appOpens('devices')
   expectProfileLocation()
-  for (const sub of ['devices', 'devices:this-phone', 'devices:offline', 'connectors', 'library:capabilities', 'devices']) {
+  for (const sub of ['devices', 'devices:this-phone', 'devices:offline', 'connectors', 'library:workspace', 'devices']) {
     await clickElement(find(`open-${sub}`))
     expectProfileLocation()
   }
@@ -113,11 +113,11 @@ it('keeps profile subpages inside the same header and restores the search action
 it('returns from a profile detail before leaving its section using the one phone header', async () => {
   await h.render(<MobileAssistantApp {...props} />)
   await clickElement(find('mobile-assistant-pill'))
-  await appOpens('library:capabilities')
+  await appOpens('library:workspace')
   await clickElement(find('open-capability-detail'))
   expect(find('capability-detail')).not.toBeNull()
   await clickElement(find('mobile-assistant-back'))
-  expect(find('mobile-assistant-app').getAttribute('data-sub')).toBe('library:capabilities')
+  expect(find('mobile-assistant-app').getAttribute('data-sub')).toBe('library:workspace')
   expect(h.container.querySelector('[data-testid="capability-detail"]')).toBeNull()
   expect(find('open-capability-detail')).not.toBeNull()
   await clickElement(find('mobile-assistant-back'))

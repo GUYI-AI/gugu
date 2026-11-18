@@ -44,21 +44,12 @@ export function placesOfChats(
       project: options.projects?.has(chat.id) ?? false,
       enabled: options.enabled.has(chat.id),
       avatar: chat.avatar ?? null,
-      members: (chat.member_user_ids ?? [])
-        .flatMap((id) => {
-          const who = identities[id];
-          return who ? [{ id, name: who.display_name, avatar: who.avatar ?? null }] : [];
-        })
-        .slice(0, GROUP_FACES),
       memberCount: chat.member_user_ids?.length ?? 0,
       lastAt: chat.last_message_at ?? null,
       topics: topics.get(chat.id) ?? [],
     }));
   return [...here, ...agents, ...groups];
 }
-
-/** As many faces as a group's picture shows (`Avatar`'s composite). */
-export const GROUP_FACES = 9;
 
 /** One place switched on or off. */
 export interface PlaceChange {

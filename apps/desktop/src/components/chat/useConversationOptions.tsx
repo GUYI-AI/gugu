@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
 import type { SessionOptionDimension } from '@gugu/session-core/session-record/contract'
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
@@ -10,6 +10,8 @@ import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { messageForUser } from '@/lib/userFacingError'
+import { fastModeValue } from '@renderer/features/sessions/session-config/fast-mode'
+import { renderFastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
 
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
 
@@ -17,29 +19,46 @@ export type ConversationTarget = { deviceId: string; sessionId: string; local: b
 export function useConversationOptions(target: ConversationTarget | null, agentName: string) {
   const deviceId = target?.deviceId, sessionId = target?.sessionId, local = target?.local, phoneHost = target?.phoneHost, reachable = target?.reachable !== false
   const key = target ? `${deviceId}/${sessionId}/${local}/${phoneHost}` : ''
+  const scopeRef = useRef({ key })
+  if (scopeRef.current.key !== key) scopeRef.current = { key }
+  const scope = scopeRef.current
+  const readVersion = useRef(0)
+  const invalidateReads = useCallback(() => { readVersion.current++ }, [])
   const [read, setRead] = useState<{ key: string; options: SessionpageSessionOptionsWithMenu } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+  const [pendingScope, setPendingScope] = useState<typeof scope | null>(null)
+  const pending = pendingScope === scope
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
   const options = read?.key === key ? read.options : null
+  const readOptions = useCallback((includeOwnModelCatalog?: true) => {
+    if (!deviceId || !sessionId || local === undefined || !reachable) return
+    const version = ++readVersion.current
+    const current = () => readVersion.current === version && scopeRef.current === scope
+    void conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read(includeOwnModelCatalog).then(options => {
+      if (current()) { setRead({ key, options }); setError(null) }
+    }, cause => { if (current()) setError(messageForUser(cause)) })
+  }, [key, deviceId, sessionId, local, phoneHost, reachable, scope])
   useEffect(() => {
     setError(null)
-    if (!deviceId || !sessionId || local === undefined || !reachable) return
-    let live = true
-    void conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read().then(options => { if (live) setRead({ key, options }) }, cause => { if (live) setError(messageForUser(cause)) })
-    return () => { live = false }
-  }, [key, deviceId, sessionId, local, phoneHost, reachable])
+    readOptions()
+    return invalidateReads
+  }, [readOptions, invalidateReads])
   const pick = async (dimension: SessionOptionDimension, value: string) => {
     if (!target || options?.[dimension]?.selected === value) return
-    setPending(true)
-    try { setRead({ key, options: await conversationOptionClient(target).set(dimension, value) }); setError(null) }
-    catch (cause) { setError(messageForUser(cause)) }
-    finally { setPending(false) }
+    invalidateReads()
+    setPendingScope(scope)
+    try {
+      const updated = await conversationOptionClient(target).set(dimension, value)
+      if (scopeRef.current === scope) { setRead({ key, options: updated }); setError(null) }
+    }
+    catch (cause) { if (scopeRef.current === scope) setError(messageForUser(cause)) }
+    finally { setPendingScope(current => current === scope ? null : current) }
   }
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
   const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description }])) : null
   const props: Partial<ComponentProps<typeof AgentConversationComposer>> = {
     modelOptions: model ? Object.fromEntries(model.groups.flatMap(group => group.items.map(({ id, ...option }) => [id, option]))) : undefined,
+    onModelMenuOpen: () => { if (!pending) readOptions(true) },
     selectedModel: model?.selectedId,
     onModelChange: id => {
       const plan = model?.plan(id)
@@ -49,6 +68,10 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage),
     selectedEffort: options?.effort?.selected ?? undefined,
     onEffortChange: id => { void pick('effort', id) },
+    // The host filters this group by the current model's acknowledged native capability.
+    fastMode: fastModeValue(options?.fast),
+    onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
+    renderFastModeHint,
     permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
@@ -57,10 +80,11 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   const confirmation = <SessionReloadConfirm open={!!restart} onOpenChange={open => { if (!open) setRestart(null) }}
     reason="model-switch" target={restart?.label ?? ''} isReloading={pending} onConfirm={async () => {
       if (!target || !restart) return
-      setPending(true)
+      invalidateReads()
+      setPendingScope(scope)
       try { setRead({ key, options: await conversationOptionClient(target).reload(restart) }); setRestart(null); setError(null) }
       catch (cause) { setError(messageForUser(cause)) }
-      finally { setPending(false) }
+      finally { setPendingScope(current => current === scope ? null : current) }
     }} />
   return { props, confirmation, steers: options?.modelMenu?.steers === true }
 }

@@ -51,7 +51,7 @@ function firstSlice(key: Slice['key'], landing: ListLanding, ids: ReadonlyArray<
   return { key, fromId: ids[Math.min(ids.length - 1, Math.max(0, landing.index - 1))], toId: landing.index + FIRST_FRAME_ROWS >= ids.length - 1 ? undefined : ids[landing.index + FIRST_FRAME_ROWS] }
 }
 
-export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing, followTail, atBottomThreshold, onAtBottomChange, onTotalHeightChanged, onStartReached, handleRef }: {
+export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing, followTail, atBottomThreshold, onAtBottomChange, onStartReached, handleRef }: {
   scrollerRef: RefObject<HTMLElement | null>
   contentRef: RefObject<HTMLElement | null>
   resetKey: string | number | undefined
@@ -61,7 +61,6 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   followTail: boolean
   atBottomThreshold: number
   onAtBottomChange?: (atBottom: boolean) => void
-  onTotalHeightChanged?: () => void
   onStartReached?: () => void
   handleRef?: Ref<FlowListHandle>
 }): { start: number; end: number } {
@@ -69,8 +68,8 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   const reportedRef = useRef<boolean | null>(null)
   const followRef = useRef(followTail)
   followRef.current = followTail
-  const callbacksRef = useRef({ onAtBottomChange, onTotalHeightChanged, onStartReached })
-  callbacksRef.current = { onAtBottomChange, onTotalHeightChanged, onStartReached }
+  const callbacksRef = useRef({ onAtBottomChange, onStartReached })
+  callbacksRef.current = { onAtBottomChange, onStartReached }
 
   // 读者正看着的那一行与它离视口顶的距离;头部插行时按它放回原处。取上沿在视口里的第一行,且不取窗口第一行:
   // 前面接进消息后,原来的第一行会丢掉自己的日期/发言人头(矮三十多像素),钉它等于让它下面的内容整体上跳。
@@ -84,7 +83,17 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   }, [contentRef])
 
   const rangeRef = useRef({ key: resetKey, rowIds, start: 0, end: rowIds.length })
+  // 上一帧画出来时离底多远、scrollTop、视口顶上那一行在哪(绘制之后读;那一行在底部附近才找,从最后一行往上几行就到;橡皮筋回弹按回弹之后记)。
+  const lastFrameRef = useRef<{ key: Slice['key']; gap: number; top: number; at?: { row: Element; top: number } }>({ key: resetKey, gap: 0, top: 0 })
+  if (lastFrameRef.current.key !== resetKey) lastFrameRef.current = { key: resetKey, gap: 0, top: 0 }
+  const [lastFrame] = useState(() => afterPaint(() => {
+    const scroller = scrollerRef.current, view = scroller?.getBoundingClientRect().top ?? 0, gap = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : 0
+    let row = scroller && atBottomRef.current ? contentRef.current?.lastElementChild : null
+    while (row?.previousElementSibling && row.getBoundingClientRect().top > view) row = row.previousElementSibling
+    if (scroller) lastFrameRef.current = { key: rangeRef.current.key, gap: Math.max(0, gap), top: scroller.scrollTop + Math.min(0, gap), at: row ? { row, top: row.getBoundingClientRect().top - view - Math.min(0, gap) } : undefined }
+  }))
   const report = useCallback((scroller: HTMLElement) => {
+    lastFrame.schedule()
     const range = rangeRef.current
     const atBottom = range.end === range.rowIds.length && isAtListEnd(scroller, atBottomThreshold)
     atBottomRef.current = atBottom
@@ -92,7 +101,15 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
       reportedRef.current = atBottom
       callbacksRef.current.onAtBottomChange?.(atBottom)
     }
-  }, [atBottomThreshold])
+  }, [atBottomThreshold, lastFrame])
+  // 底部离读者变远了(新消息、最后一条长高、视口变矮)且不是读者自己走的,才贴底。离底没比上一帧变大 = 什么都没变的重渲染,或上方变高、补挂被锚定
+  // 吸收了(代码块空闲时才高亮,被 content-visibility 跳过的行滚到附近才排出来:「底部有一个范围会被不断吸」)。变大了,谁动的由视口顶上那一行回答:
+  // 它往下挪了是读者往上走;scrollTop 只用来排除没有锚定时(WebKit)上方变高把它推下去 —— 那时 scrollTop 没变,照旧贴。那一行被裁掉了也贴。
+  const endMovedAway = useCallback((scroller: HTMLElement) => {
+    const last = lastFrameRef.current, at = last.at?.row.isConnected ? last.at : null
+    return scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > last.gap + 1 && !(at && at.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top > at.top + 1 && Math.abs(scroller.scrollTop - last.top) > 1)
+  }, [])
+  const followsTail = useCallback((scroller: HTMLElement) => followRef.current && atBottomRef.current && endMovedAway(scroller), [endMovedAway])
 
   // 落点按挂载读一次 —— 调用方的落点在恢复落定后会变。
   const landingRef = useRef({ key: resetKey, landing })
@@ -145,10 +162,10 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   // 浏览器的原生锚定多数时候已经做了(这里读到的差就是 0);它不管的是滚动条正好顶在 0 的时候,以及不支持锚定的 WebKit。
   useLayoutEffect(() => {
     const scroller = scrollerRef.current, anchor = anchorRef.current
-    if (!scroller || !anchor || !anchor.row.isConnected || (followRef.current && atBottomRef.current)) return
+    if (!scroller || !anchor || !anchor.row.isConnected || followsTail(scroller)) return
     const delta = anchor.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.top
     if (Math.abs(delta) > 0.5) scroller.scrollTop += delta
-  }, [headKey, dataHead, scrollerRef])
+  }, [headKey, dataHead, scrollerRef, followsTail])
 
   // 初次落点和未挂载目标都先补到真实行,在这次绘制前定位;没有请求时不再重放落点。
   useLayoutEffect(() => {
@@ -180,31 +197,33 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
       pending.current = null
     } else if (!landing) {
       // 新行进来时保留旧贴底意图,先贴住再重算电平;否则会在 ResizeObserver 前把意图清掉。
-      if (followRef.current && atBottomRef.current && end === rowIds.length) scroller.scrollTop = scroller.scrollHeight
+      if (end === rowIds.length && followsTail(scroller)) scroller.scrollTop = scroller.scrollHeight
       grow(scroller)
     }
     report(scroller)
-  }, [resetKey, slice, rowIds, end, scrollerRef, contentRef, grow, report])
+  }, [resetKey, slice, rowIds, end, scrollerRef, contentRef, grow, report, followsTail])
 
-  // 内容长高/变矮:在底部就贴住(新消息、最后一条长高、图片晚到);ResizeObserver 在布局之后、绘制之前回调。
+  // 内容长高/变矮、视口变高/变矮:在底部就贴住(新消息、最后一条长高、图片晚到、输入框长高);ResizeObserver 在布局之后、
+  // 绘制之前回调。挂在 layout effect 里:首帧之前就在看,落点之后、第一次绘制之前长出来的高度(代码块、公式排好)
+  // 在这同一次绘制前贴好 —— 挂在 effect 里时它第一次回调已在首帧之后,首帧差那一截、下一帧再跳(打开聊天跳 198 px)。
   // 不在底部时视口上方的变化交给浏览器的滚动锚定,这里不动。
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scroller = scrollerRef.current, content = contentRef.current
     if (!scroller || !content || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
-      if (followRef.current && atBottomRef.current) scroller.scrollTop = scroller.scrollHeight
-      callbacksRef.current.onTotalHeightChanged?.()
+      if (followsTail(scroller)) scroller.scrollTop = scroller.scrollHeight
       report(scroller)
       grow(scroller)
     })
     observer.observe(content)
+    observer.observe(scroller)
     const scrolled = afterPaint(() => {
       report(scroller)
       if (!grow(scroller) && rangeRef.current.start === 0 && scroller.scrollTop <= 120) callbacksRef.current.onStartReached?.()
     })
     scroller.addEventListener('scroll', scrolled.schedule, { passive: true })
     return () => { observer.disconnect(); scroller.removeEventListener('scroll', scrolled.schedule); scrolled.cancel() }
-  }, [resetKey, scrollerRef, contentRef, report, grow])
+  }, [resetKey, scrollerRef, contentRef, report, grow, followsTail])
 
   // 原生全选发生之前补齐同一数据窗口;不接管选区/复制,也不处理输入框或其它面板的快捷键。
   useEffect(() => {

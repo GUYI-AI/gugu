@@ -24,38 +24,33 @@ import { accountProjectsStore } from '@/session/renderer/features/projects/store
 import { directoryMachines, visibleMachines } from './machine-list'
 import { DeviceDirectoryRetry } from './DeviceDirectoryRetry'
 import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
-import { phoneAgentAvailable } from '../local-agent/nativeAgent'
+import { platform } from '@/platform'
 import './task-flow-catalog'
+import { takeLegacyInterface, useInterface } from '@/lib/viewStateTable'
 
 // 折叠与「展开显示」只是本机的阅读偏好。键是格(`project|项目群`,没绑群的 `机器|项目`)与父会话 id,全局唯一,所以一份就够。
 const COLLAPSED_KEY = 'gugu.agent-watch.collapsed.projects'
 const MORE_KEY = 'gugu.agent-watch.more.projects'
 
-/** 读不到 / 抛了(隐私模式)就当全展开,❌ 不报错。 */
-function readStoredSet(key: string): ReadonlySet<string> {
-  try {
-    const raw = globalThis.localStorage?.getItem(key)
-    const parsed: unknown = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [])
-  } catch {
-    return new Set()
-  }
+// 存在视图状态表里(本机,lib/viewStateTable);以前存在 localStorage 里的搬一次。
+for (const key of [COLLAPSED_KEY, MORE_KEY]) {
+  takeLegacyInterface(key, key, (raw) => {
+    const parsed: unknown = JSON.parse(raw)
+    const ids = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+    return ids.length ? ids : undefined
+  })
 }
 
+const NO_IDS: string[] = []
+
 function useStoredSet(key: string): [ReadonlySet<string>, (id: string) => void] {
-  const [value, setValue] = useState(() => readStoredSet(key))
+  const [ids, setIds] = useInterface<string[]>(key, NO_IDS)
+  const value = useMemo(() => new Set(ids), [ids])
   const update = useCallback((change: (next: Set<string>) => void): void => {
-    setValue((current) => {
-      const next = new Set(current)
-      change(next)
-      try {
-        globalThis.localStorage?.setItem(key, JSON.stringify([...next]))
-      } catch {
-        // 存不了就存不了,下次进来全展开。
-      }
-      return next
-    })
-  }, [key])
+    const next = new Set(value)
+    change(next)
+    setIds([...next])
+  }, [value, setIds])
   const toggle = useCallback((id: string): void => update((next) => { if (!next.delete(id)) next.add(id) }), [update])
   return [value, toggle]
 }
@@ -325,7 +320,7 @@ export const ProjectsPage = observer(function ProjectsPage({
       {nothingYet && !waitingForMachines && !refreshing && !devicesError && failures.length === 0 ? (
         <div className="gg-aw-placeholder" data-testid="agent-watch-projects-empty">
           <div>{t('agentWatch.projects.empty')}</div>
-          {hostCount === 0 && <div>{phoneAgentAvailable() ? tFlow('noHost') : t('agentWatch.projects.noMachines')}</div>}
+          {hostCount === 0 && <div>{platform.capabilities?.phoneAgentHost ? tFlow('noHost') : t('agentWatch.projects.noMachines')}</div>}
           {hostCount === 0 ? <PhoneHostSetupEntry /> : onCreate ? (
             <Button variant="secondary" size="lg" onClick={onCreate} data-testid="agent-watch-empty-create">{tFlow('createTask')}</Button>
           ) : null}

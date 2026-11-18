@@ -34,6 +34,28 @@ function surface() {
 afterEach(() => vi.useRealTimers());
 
 describe('browser page runtime', () => {
+  it('waits for a real first frame before a borrowed bitmap capture of a hidden page', async () => {
+    const { contents, runtime } = surface();
+    let painted!: (image: { isEmpty(): boolean }) => void;
+    contents.beginFrameSubscription.mockImplementation((_dirty, callback) => { painted = callback; });
+    const lease = runtime.acquire();
+    const capture = lease.snapshot();
+    await vi.waitFor(() => expect(painted).toBeDefined());
+    expect(contents.capturePage).not.toHaveBeenCalled();
+    painted({ isEmpty: () => false }); await capture;
+    expect(contents.capturePage).toHaveBeenCalledExactlyOnceWith(undefined, { stayHidden: true });
+    expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1);
+    lease.dispose(); runtime.close();
+  });
+  it('cancels a viewer waiting for its first bitmap without capturing after it has left', async () => {
+    const { contents, runtime } = surface();
+    contents.beginFrameSubscription.mockImplementation(() => {});
+    const lease = runtime.acquire(), capture = lease.snapshot();
+    await vi.waitFor(() => expect(contents.beginFrameSubscription).toHaveBeenCalled());
+    lease.dispose(); await expect(capture).rejects.toThrow('the browser connection was closed');
+    expect(contents.capturePage).not.toHaveBeenCalled();
+    expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1); runtime.close();
+  });
   it('prepares the native viewport before loading the destination without a bootstrap navigation', async () => {
     const { contents, runtime, view, host } = surface();
     runtime.moveTo(null);

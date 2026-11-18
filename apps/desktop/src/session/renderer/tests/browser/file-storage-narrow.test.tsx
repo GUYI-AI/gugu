@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
+import { act } from 'react';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { FileStorageDashboard } from '@/components/settings/FileStorageDashboard';
@@ -38,4 +39,19 @@ it('keeps the whole dashboard inside a phone-width container and leaves the file
   const past = [...harness.container.querySelectorAll('*')].filter((element) => element.getBoundingClientRect().right > window.innerWidth + 0.5);
   expect(past.map((element) => element.outerHTML.slice(0, 80))).toEqual([]);
   expect(harness.container.querySelector('[data-testid="file-storage-file"] td')!.getBoundingClientRect().width).toBeGreaterThan(300);
+});
+
+it.each([360, 1000])('explains the group access consequence before cloud deletion at %ipx', async width => {
+  await page.viewport(width, 800);
+  harness.container.style.width = `${width - 32}px`;
+  await i18n.changeLanguage('zh-CN');
+  await renderWithAppProviders(harness, <FileStorageDashboard />);
+  await until('the real storage dashboard is ready', () => harness.container.querySelector('[data-testid="file-storage-clean"]') !== null);
+  await act(async () => { await page.elementLocator(harness.container.querySelector('[data-testid="file-storage-clean"]')!).click(); });
+  await until('the deletion confirmation opens', () => document.querySelector('[data-testid="file-storage-clean-confirm"]') !== null);
+  const confirmation = document.querySelector('[data-testid="file-storage-clean-confirm"]')!;
+  expect(confirmation.textContent).toContain('群里的人也将打不开这些文件。');
+  expect(confirmation.textContent).toContain('你机器上的文件还在。');
+  expect(confirmation.textContent).not.toContain('·');
+  await page.screenshot({ path: `__screenshots__/file-storage-confirm-${width}.png` });
 });

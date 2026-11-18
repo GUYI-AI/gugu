@@ -76,7 +76,7 @@ let serverBrowser: ServerTaskBrowser | null = null;
 
 /** A task's page on this Gugu server, for another computer to watch and take over; null when it has none. */
 export async function taskPageForScreen(sessionId: string): Promise<TaskPageScreenTarget | null> {
-  return serverBrowser ? serverBrowser.existingPage(sessionId) : null;
+  return serverBrowser ? serverBrowser.existingPage(sessionId) : (await import('../browser/native-task-page-screen')).nativeTaskPageForScreen(sessionId);
 }
 
 /** 「本机送」: a password login for a task on this Gugu server, in a private context of the account's browser. */

@@ -5,6 +5,7 @@
  * import plugin-registry / settings / db，就会把 Electron `app` 与 drizzle 一起拽进来，单测当场
  * 崩在 `app.getPath`（上一版的实测教训）。脏活集中在这里，那边保持可在任何 node 环境下测。
  */
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveGuguHome } from '@gugu/core/local/state/paths';
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context';
@@ -27,7 +28,9 @@ import { createLogger } from '../../../../lib/logger';
 
 const log = createLogger('harness-model-catalog');
 
-const STORAGE_KEY = 'harnessModelCatalogs';
+// Old successful catalogs may have silently discarded every grouped choice.
+// Re-probe once instead of keeping those empty results for the ready-cache TTL.
+const STORAGE_KEY = 'harnessModelCatalogs.groupedSelect.v1';
 
 let wired = false;
 
@@ -127,7 +130,8 @@ export async function resolveHarnessSpawnIdentity(
     // 选中的是一把 API Key 连接(#2507):走模型注入的那几家,连接不进这份 env(它随宿主造的模型声明进进程),
     // 但目录照它读 ⇒ 换一把连接就得作废。只在选了 API Key 连接时并进来,其余家的身份与改动前逐字相同。
     const connection = runContext.apiKeyConnection ? { connection: runContext.connectionId ?? null } : {};
-    return JSON.stringify({ cli, file: diskFileStamp(cli), env, ...connection });
+    // `host`: gugu's own bridge code runs in the probe, so an update must re-probe.
+    return JSON.stringify({ cli, file: diskFileStamp(cli), host: diskFileStamp(process.execPath), env, ...connection });
   } catch {
     return null;
   }
@@ -178,9 +182,12 @@ export async function resolveHarnessModelCatalogSpawn(
     // 目录要从真会话会用的那份桥接里探(#6394),否则两边可以是两个桥接版本。
     ...(runContext.acpAdapterEntry ? { adapterEntry: runContext.acpAdapterEntry } : {}),
   });
+  // `cwd` is the probe's own scratch directory, removed when the probe ends.
+  const overlay = acp.catalogProbeOverlay?.(cwd);
+  for (const file of overlay?.files ?? []) await writeFile(file.path, file.content, { mode: 0o600 });
   return {
     command: spawn.command,
-    args: spawn.args,
+    args: [...spawn.args, ...(overlay?.args ?? [])],
     // 占位中转凭据的环境与 `_meta` **不在这里**叠 —— 它们住在宿主 bundle,由 `setProbePlatformEnvResolver`
     // 注入,在 `harness-model-catalog.ts` 的第二遍探测里合进来(平台载荷是插件 buildSpawn 的入参,所以走上面那格)。
     // 理由见那边抬头:会话页相对路径 import 宿主模块会被 esbuild 复制一份,
@@ -196,7 +203,16 @@ export async function resolveHarnessModelCatalogSpawn(
     ...(acp.catalogProbeSessionMeta ? { sessionMeta: acp.catalogProbeSessionMeta } : {}),
     ...(acp.catalogModelsInConfigUpdate ? { modelsInConfigUpdate: true } : {}),
     ...(acp.authenticateWhenAdvertised ? { authenticateWhenAdvertised: acp.authenticateWhenAdvertised } : {}),
+    ...(acp.catalogNeedsSignIn ? { readSignIn: () => readSignIn(pluginId) } : {}),
   };
+}
+
+async function readSignIn(pluginId: string) {
+  const { readAgentAuthStatus } = await import('@main/core/agent-config/runtime-process/host');
+  return readAgentAuthStatus(pluginId).catch((error) => {
+    log.warn({ pluginId, error: String(error) }, 'model catalog: sign-in reading failed');
+    return null;
+  });
 }
 
 /**

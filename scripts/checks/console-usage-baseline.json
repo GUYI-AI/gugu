@@ -77,16 +77,11 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/Avatar.tsx",
-    "count": 4
+    "count": 3
   },
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/ChatAreaPanel.tsx",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/components/ContactsPanel.tsx",
     "count": 1
   },
   {
@@ -107,7 +102,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/contacts/GroupInvite.tsx",
-    "count": 2
+    "count": 1
   },
   {
     "rule": "console-member",
@@ -117,11 +112,6 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/sharePosterCanvas.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/hooks/useGroupCollabLoader.ts",
     "count": 1
   },
   {
@@ -237,7 +227,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/store/contacts.tsx",
-    "count": 3
+    "count": 1
   },
   {
     "rule": "console-member",

@@ -3,11 +3,12 @@ import { Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-j
 import { useChatTranslator } from '@session-chat/localization';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { formatElapsed } from '@session-chat/lib/format-elapsed';
+import { useViewShown } from '@session-chat/view-visibility';
 import type { ChatMessage } from '@session-chat/model';
 import { GridLoader } from '@session-chat/components/primitives/GridLoader';
 import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
 import type { MeasureCtx } from '@session-chat/core/define';
-import { processButtonLayout } from './process-row-layout';
+import { processButtonLayout, processSummary } from './process-row-layout';
 import { conversationProcessButton, conversationProcessChevron } from './conversation-message.css';
 
 /** Completed thinking and execution, using the existing ChatRoot disclosure delegation. */
@@ -22,7 +23,9 @@ export function ConversationProcess(props: {
   const commands = useCommands();
   const clock = () => commands().conversationClock?.() ?? Date.now();
   const [now, setNow] = createSignal(clock());
-  const ticking = createMemo(() => !!props.process.live && props.process.startedAt !== undefined);
+  // Off screen the clock stops; shown again it reads the time once and goes on (the hidden-surface contract).
+  const shown = useViewShown();
+  const ticking = createMemo(() => !!props.process.live && props.process.startedAt !== undefined && shown());
   createEffect(() => {
     if (!ticking()) return;
     setNow(clock());
@@ -36,13 +39,9 @@ export function ConversationProcess(props: {
       ? formatElapsed(Math.max(0, end - startedAt - (props.process.idleMs ?? 0))) : null;
   };
   // owner 0 号图:「1m14s · 10 步」—— 时长后面跟这一段过程有几步(折起来的那些行一共几条)。
-  const steps = () => {
-    const count = props.process.steps;
-    return count ? translate(count === 1 ? 'transcript.processStepsOne' : 'transcript.processSteps', { count }) : null;
-  };
-  const summary = () => [elapsed(), steps()].filter(Boolean).join(' · ') || null;
+  const summary = () => processSummary(props.process, translate, elapsed()) || null;
   const notice = () => commands().conversationProcessNotice?.(props.process.id);
-  const label = () => notice()?.text ?? `${translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingAndExecution')}${summary() ? ` · ${summary()}` : ''}`;
+  const label = () => notice()?.text ?? `${translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingAndExecution')}${summary() ? `${translate('metadata.separator')}${summary()}` : ''}`;
   // 在跑:点阵代替大脑,字写「执行中 · 1m15s」并带微光(owner 2026-10-27 原型);跑完换回大脑 + 用时。
   const collapsible = () => props.collapsible !== false && !props.process.empty;
   const layout = () => processButtonLayout(props.process, props.measureCtx());
@@ -50,7 +49,7 @@ export function ConversationProcess(props: {
     disabled={!collapsible()} data-collapse-id={collapsible() ? props.process.toggleId ?? props.process.id : undefined} data-collapse-anchor={props.anchorId}
     aria-expanded={collapsible() ? props.expanded : undefined} aria-label={label()} title={label()}>
     <Show when={!props.process.live} fallback={<><GridLoader /><ShimmerText active multiline style={{ display: 'inline-flex', 'flex-wrap': 'wrap', 'min-width': 0, 'line-height': '22px' }}>
-      <span style={{ 'white-space': 'pre-wrap', 'overflow-wrap': 'anywhere', 'max-width': '100%' }}>{translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingLive')}{summary() ? ' · ' : ''}</span>
+      <span style={{ 'white-space': 'pre-wrap', 'overflow-wrap': 'anywhere', 'max-width': '100%' }}>{translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingLive')}{summary() ? ' ' : ''}</span>
       <Show when={summary()}>{value => <span style={{ 'white-space': 'nowrap' }}>{value()}</span>}</Show>
     </ShimmerText></>}>
       <svg width="17" height="17" viewBox="0 0 24 22" fill="none" stroke="currentColor" stroke-width="1.4"

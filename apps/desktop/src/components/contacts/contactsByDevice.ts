@@ -122,7 +122,7 @@ export function partitionContactsByDevice(
   }
   for (const section of sections) {
     if (section.scope !== 'device' || !section.deviceLabel) continue
-    if ((labelCount.get(section.deviceLabel) ?? 0) > 1) section.displayLabel = `${section.deviceLabel} · ${section.key.slice(0, 6)}`
+    if ((labelCount.get(section.deviceLabel) ?? 0) > 1) section.displayLabel = `${section.deviceLabel} (${section.key.slice(0, 6)})`
   }
 
   return { sections, cloudGroups, primaryKey }

@@ -46,10 +46,6 @@ import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
-import { SearchTrailBar } from './SearchTrailBar'
-import { useChatStore } from '../../store/chatContext'
-import { topicClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
-import { ChatClashNames } from './ChatClashNames'
 
 /**
  * @@@5856 话题分栏 —— 右侧那条独立收发的话题线(product spec)。
@@ -106,6 +102,7 @@ export type TopicSplitPaneProps = {
   runningTokens?: RunningToken[]
   /** 运行条详情卡读哪条会话(来源群)。 */
   runningPreviewChatId?: string | null
+  composerControls?: React.ReactNode
   onClose: () => void
   /** 发言人的 id —— ChatMessageComposer 的 @ 候选与自指要用它。 */
   currentUserId: string | null
@@ -210,6 +207,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   agentStatuses,
   runningTokens,
   runningPreviewChatId = null,
+  composerControls,
   history,
   onClose,
   currentUserId,
@@ -225,8 +223,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   // #6004: the projection owns membership and chat_members_changed refreshes. Read this topic's
   // IDs on every projection update; do not cache a second roster or infer participation from messages.
   const participantIds = visibleChats.find((chat) => chat.id === topic.chatId)?.member_user_ids
-  const { identitiesById } = useChatStore('identitiesById')
-  const nameScope = useMemo(() => ({ chatId: topic.chatId, names: mobile || !participantIds ? NO_CLASH_NAMES : topicClashNames(participantIds, identitiesById) }), [topic.chatId, mobile, participantIds, identitiesById])
   const rankedMentionMembers = useMemo(
     () => prioritizeTopicParticipants(mentionMembers, participantIds),
     [mentionMembers, participantIds],
@@ -234,7 +230,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   const [mentionToInsert, setMentionToInsert] = useState<{ id: string; name: string } | null>(null)
   const { recipientFacts, deliveryWaits } = useMessageDelivery(messages, memberReadSeqs, memberProfiles)
   const { readReceiptHandle, receiptOf } = useReadReceiptPanel({
-    chatId: topic.chatId, messages, memberReadSeqs, memberProfiles, recipientFacts,
+    chatId: topic.chatId, messages, memberReadSeqs, memberProfiles, recipientFacts, deliveryWaits,
   })
   // 宽度记在本机:拖过一次之后下次打开还是那个宽度(与会话列表同口径)。
   const [width, setWidth] = useState(() => readStoredTopicSplitWidth())
@@ -296,8 +292,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     hasNewer: messageWindow.hasNewer, loading: !!messageWindow.loading, isPreservingPosition, isAtBottomRef, setFollowingTail })
   useChatHistoryPagination({ resetKey: chatResetKey, messages, enabled: visible !== false && !unreadNavigationPending,
     scroller: scrollerEl, atBottom: viewportAtBottom, loadOlder: history.loadOlderMessages, loadNewer: history.loadNewerMessages, window: messageWindow, onError: onHistoryError })
-  const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey: chatResetKey, messages,
-    enabled: visible !== false && !unreadNavigationPending, messageWindow, scrollerEl, scrollerRef, listRef, isAtBottomRef,
+  const { pinToBottom } = useTailPinning({ resetKey: chatResetKey, messages,
+    enabled: visible !== false && !unreadNavigationPending, messageWindow, scrollerRef, listRef, isAtBottomRef,
     isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, returnToLatest: history.returnToLatestMessages, onError: onHistoryError })
   const showMessage = useSourceMessageReveal({
     viewportKey, navigationTarget, enabled: visible !== false,
@@ -338,7 +334,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     flashMessageId,
   }), [showMessage, rows, messages, mobile, memberReadSeqs, deliveryWaits, recipientFacts, memberProfiles, memberProfileOpener, onOpenAttachment, readReceiptHandle, onReaction, onForward, onDelete, onQuote, flashMessageId, history, visible])
 
-  // 手机上话题是来源页的一枚页签:在前面时,返回先回到来源那一枚。
+  // Phone topic navigation stays in its source room; Back first returns to the main conversation.
   useBackLayer(onClose, mobile && visible !== false)
   const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
   const page = (
@@ -381,7 +377,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </div>
         )}
 
-        <SearchTrailBar chatId={topic.chatId} surface={paneRef} enabled={visible !== false} />
         <div
           data-testid="topic-split-messages"
           style={TOPIC_SPLIT_MESSAGES_STYLE}
@@ -408,7 +403,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
               unreadAbove={history.unreadEntry ? { messageId: history.unreadEntry.locator.message_id, messageSeq: history.unreadEntry.locator.message_seq,
                 label: t('chatArea.unreadAbove', { count: unreadAboveCount(history.unreadEntry.locator, messages) }), onSeen: history.unreadEntry.onSeen, onJump: () => void history.jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
               onAtBottomChange={onAtBottomChange}
-              onTotalListHeightChanged={onTotalListHeightChanged}
               style={MESSAGE_LIST_STYLE}
               surface="aside"
             />
@@ -421,7 +415,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
             重写一份等于把它们统统退回未解决态,而且不报任何错(owner 2026-09-19 实测点破)。
             话题是一间屋子 ⇒ isGroupChat,寻址规则与群一致。 */}
         {/* 话题里运行条那一行同样是固定高的一行;只在传了 runningTokens 时才有(手机整页话题),桌面分栏旁边群里那一条一直看得见。 */}
-        <ChatBottomDock reserve={messages.length === 0} above={runningTokens &&
+        <ChatBottomDock reserve={messages.length === 0} running={!!runningTokens?.length} above={runningTokens &&
         <RunningBarSlot>
         {runningTokens.length > 0 ? (
           <RunningTokenBar
@@ -437,6 +431,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </RunningBarSlot>
         }>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
+        {composerControls}
         <ChatMessageComposer
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}
@@ -465,9 +460,9 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
       </div>
     </motion.div>
   )
-  if (mobile || embedded) return <ChatClashNames.Provider value={nameScope}>{page}</ChatClashNames.Provider>
+  if (mobile || embedded) return page
   return (
-    <ChatClashNames.Provider value={nameScope}>
+    <>
     {/* @@@5856 宽度归 ResizablePane —— owner 拿掉了「全宽打开」那颗键之后,
         「想看大一点」这件事只剩这条分割线,所以它必须真能拖(拖拽那一套复用会话列表那一份,
         见 ResizablePane 的注释:边界情形全在那儿踩过了)。 */}
@@ -488,6 +483,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     >
       {page}
     </ResizablePane>
-    </ChatClashNames.Provider>
+    </>
   )
 }

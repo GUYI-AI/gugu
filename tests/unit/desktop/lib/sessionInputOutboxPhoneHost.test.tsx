@@ -12,7 +12,7 @@ const fixture = vi.hoisted(() => ({
   events: undefined as undefined | ((result: never) => void),
   sent: vi.fn(), fetch: vi.fn(), directoryFetch: vi.fn(), native: vi.fn(), stopNative: vi.fn(), unsubscribe: vi.fn(),
 }))
-vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: fixture.owner } }) }))
+vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: fixture.owner } }), observeRendererSession: () => () => {} }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: fixture.devices, phones: [] }) }))
 vi.mock('@/platform', () => ({ platform: { get kind() { return fixture.platform } } }))
 vi.mock('@/hooks/useLocalSessionDirectory', () => ({ useLocalSessionDirectory() {} }))

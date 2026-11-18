@@ -9,6 +9,7 @@ import type { LiveSettingCapability } from '@gugu/session-core/agents/plugins';
 import type { ComposerPermissionModeOption } from '@gugu/session-ui/react/components';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
+import { liveSettingOptions } from '../session-config/live-setting-options';
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
@@ -25,8 +26,7 @@ export function sessionPermissionModeOptions(
   sessionModes?: 'permission' | 'none',
 ): Options | null {
   if (sessionModes === 'none') return null;
-  if (liveSetting?.channel === 'unsupported') return null;
-  return options;
+  return liveSettingOptions(options, liveSetting);
 }
 
 /**

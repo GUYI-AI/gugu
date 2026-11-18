@@ -3,6 +3,9 @@ import { cdp, userEvent } from 'vitest/browser';
 import tokensCss from '@/styles/tokens.css?raw';
 import uiCss from '@/session/app-runtime/ui/ui.css?raw';
 import { appPaletteCss } from '@/session/app-runtime/ui/app-palette.mjs';
+import { FILE_MARKS } from '@gugu/session-shared/file-marks';
+/** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
+const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML;
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 
 /**
@@ -19,7 +22,7 @@ type Context = {
   locale: string;
   chat: { id: string; name: string; kind: 'group'; members: { id: string; name: string; kind: 'human' | 'agent'; avatar?: string }[] };
 };
-const FACE = 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"%3E%3Crect width="2" height="2" fill="%23c0aede"/%3E%3C/svg%3E';
+const FACE = 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"%3E%3Crect width="2" height="2" fill="%23ecdab9"/%3E%3C/svg%3E';
 let push: ((context: Context) => void) | null = null;
 const context: Context = {
   themeMode: 'dark',
@@ -62,6 +65,11 @@ beforeAll(async () => {
       </ul>
       <gugu-time id="time"></gugu-time>
       <gugu-empty icon="checklist" id="empty"><strong>还没有投票</strong></gugu-empty>
+      <gugu-file-mark id="mark-pdf" name="report.pdf"></gugu-file-mark>
+      <gugu-file-mark id="mark-scan" name="scan" mime="application/pdf"></gugu-file-mark>
+      <gugu-file-mark id="mark-blob" name="blob.bin"></gugu-file-mark>
+      <gugu-file-mark id="tile-sheet" name="Q3 budget.vote.xlsx" tile style="width: 40px; height: 40px"></gugu-file-mark>
+      <gugu-file-mark id="tile-pdf" name="report.pdf" tile style="width: 24px; height: 24px"></gugu-file-mark>
     </main>`;
   document.getElementById('time')!.setAttribute('datetime', new Date(Date.now() - 3 * 60_000).toISOString());
   await settle();
@@ -177,6 +185,21 @@ describe('an App page with gugu\'s look', () => {
     expect(stranger.getAttribute('aria-label')).toBe('外群的人');
     expect(document.getElementById('time')!.shadowRoot!.textContent).toBe('3 分钟前');
     expect(document.getElementById('empty')!.shadowRoot!.querySelector('.icon svg')).not.toBeNull();
+  });
+
+  // The host's file table and tile in an App page (API 56): what the Files App draws its files with, as the output cards do.
+  it('draws a file by its family: the glyph in ink, or with `tile` the host\'s tile in the family colour, sized by the App', () => {
+    const part = (id: string, name: string) => document.getElementById(id)!.shadowRoot!.querySelector(`[part="${name}"]`)!;
+    expect(part('mark-pdf', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.pdf.glyph));
+    expect(part('mark-scan', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.pdf.glyph));
+    expect(part('mark-blob', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.other.glyph));
+    expect(document.getElementById('mark-pdf')!.shadowRoot!.querySelector('[part="tile"]')).toBeNull();
+    const sheet = part('tile-sheet', 'tile');
+    expect(part('tile-sheet', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.sheet.glyph));
+    expect(css(sheet, '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-sheet'));
+    expect(css(part('tile-pdf', 'tile'), '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-pdf'));
+    expect([sheet.getBoundingClientRect().width, part('tile-pdf', 'tile').getBoundingClientRect().width]).toEqual([40, 24]);
+    expect(css(sheet, 'background-color')).not.toBe('rgba(0, 0, 0, 0)');
   });
 
   it('loses to the App\'s own CSS, with no !important: the whole look is in @layer gugu', () => {

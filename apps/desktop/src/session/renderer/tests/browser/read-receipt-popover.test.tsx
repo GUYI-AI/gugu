@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { GROW_CAP } from '@gugu/session-ui/react/growing-list';
 import { i18n } from '@/i18n';
 import '@/i18n/registerMessagingCatalog';
 import '@/i18n/registerContactsCatalog';
@@ -12,7 +13,7 @@ import '@/styles/tokens.css';
 const { ReadReceiptPopover } = await import('@/components/ReadReceiptPopover');
 const { Popover } = await import('@/components/ui/Popover');
 
-type Member = { id: string; displayName: string; avatar: null; isAgent: boolean; agentStatus?: AgentDisplayStatus };
+type Member = { id: string; displayName: string; avatar: null; isAgent: boolean; agentStatus?: AgentDisplayStatus; undelivered?: boolean };
 const member = (i: number, agentStatus?: AgentDisplayStatus): Member => ({ id: `m${i}`, displayName: `成员 ${i}`, avatar: null, isAgent: !!agentStatus, agentStatus });
 const range = (from: number, n: number) => Array.from({ length: n }, (_, k) => member(from + k));
 
@@ -63,6 +64,12 @@ describe('read receipt list', () => {
     expect(names()).toEqual(['成员 1', '成员 4', '成员 6', '成员 2', '成员 5', '成员 3']);
   });
 
+  it('says on its own row which agent the message never reached', async () => {
+    await open([member(1)], [{ ...member(2, 'offline'), undelivered: true }, member(3)]);
+    const rows = [...panel()!.querySelectorAll('.gg-list-row')].map((row) => row.textContent);
+    expect(rows).toEqual(['成员 1', '成员 3', '成员 2所在实例未运行、未送达']);
+  });
+
   it('opens a 2000-member receipt with the nodes of a 200-member one, both groups in view', async () => {
     const mid = await open(range(1, 100), range(101, 100));
     harness.cleanup(); harness = createReactHarness();
@@ -75,12 +82,12 @@ describe('read receipt list', () => {
     expect(more()).toEqual(['还有 980 位']);
     expect(heads().at(-1)).toBe('未读1000');
 
-    // 展开以后还是只挂一窗;滚到底,吸在顶上的是「未读」。
+    // 展开以后不会把 1000 位全挂上(每组空闲时最多长到 GROW_CAP 行);滚到底,吸在顶上的是「未读」。
     panel()!.querySelector<HTMLButtonElement>('button')!.click();
     await until('unread group expanded', () => !more().includes('还有 980 位'));
     scroller().scrollTop = 1e6;
     await until('last unread member mounted', () => names().includes('成员 2000'));
-    expect(panel()!.querySelectorAll('.gg-list-row').length).toBeLessThan(30);
+    expect(panel()!.querySelectorAll('.gg-list-row').length).toBeLessThanOrEqual(2 * GROW_CAP);
     const top = scroller().getBoundingClientRect().top;
     const stuck = [...panel()!.querySelectorAll<HTMLElement>('[data-slot="section-label"]')].find((h) => Math.abs(h.getBoundingClientRect().top - top) < 1);
     expect(stuck?.textContent).toBe('未读1000');

@@ -177,10 +177,9 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({
   // 会在 useTransform 里炸,而炸出来的是「读不到 .get()」这种和布局毫不相干的报错。
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
-    isLeftPeeking: false,
     leftAnimatedWidth: motionValue(260),
+    leftLayoutWidth: motionValue(260),
     setCollapsed: vi.fn(),
-    setTriggerHovered: vi.fn()
   })
 }));
 
@@ -982,7 +981,7 @@ describe('remoteInstallNote(#6264 别的机器上没装的家:建会话时那边
     const table: Record<string, string> = {
       'remoteHost.installOnCreate': '{agent} 还没装在 {device} 上 —— 发送后会先在那台机器上装好,再开会话。',
       'remoteHost.installing': '正在 {device} 上安装 {agent}…',
-      'remoteHost.installingDetail': '正在 {device} 上安装 {agent} · {progress}',
+      'remoteHost.installingDetail': '正在 {device} 上安装 {agent}，{progress}',
       'agentsPage.phaseDownloading': '下载中',
     };
     return (table[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''));
@@ -1008,7 +1007,7 @@ describe('remoteInstallNote(#6264 别的机器上没装的家:建会话时那边
       { harness: 'gemini', progress: { providerId: 'gemini', phase: 'downloading', bytesDone: 1024 * 1024, bytesTotal: 4 * 1024 * 1024, elapsedMs: 800 } },
       translate
     );
-    expect(note?.text).toContain('正在 d22 上安装 Gemini CLI · 下载中');
+    expect(note?.text).toContain('正在 d22 上安装 Gemini CLI，下载中');
     expect(note?.ratio).toBeCloseTo(0.25);
   });
 });

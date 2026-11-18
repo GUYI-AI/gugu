@@ -51,12 +51,9 @@ it.each(['en-US', 'zh-CN'] as const)('a hidden empty group composer shows its re
   const attach = host.querySelector<HTMLElement>('[data-slot="composer-actions-start"] button')!
   const send = host.querySelector<HTMLElement>('[data-slot="composer-actions-end"] button')!
   expect(card.getBoundingClientRect().height).toBeLessThanOrEqual(60)
-  for (const control of [attach, send]) {
-    expect(control.getBoundingClientRect().width).toBeGreaterThanOrEqual(44)
-    expect(control.getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
-  }
-  expect(attach.getBoundingClientRect().top).toBe(send.getBoundingClientRect().top)
-  expect(attach.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
+  expect(getComputedStyle(attach).display).toBe('none')
+  expect(send.getBoundingClientRect().width).toBeGreaterThanOrEqual(44)
+  expect(send.getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
   expect(editor.getBoundingClientRect().right).toBeLessThanOrEqual(send.getBoundingClientRect().left)
 
   const input = page.getByTestId('chat-composer')

@@ -2,7 +2,7 @@ import { JSDOM } from 'jsdom';
 import React, { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { createPaneDimensionSink, PaneDimensionProvider } from '@renderer/features/tabs/pane-dimension-provider';
 import { PaneSizingContextProvider } from './pane-sizing-context';
 import type { FrontendPty } from './pty';
@@ -37,13 +37,13 @@ function TerminalPane() {
 
 async function show(shown: boolean) {
   await act(async () => root.render(
-    <PageShownContext.Provider value={shown}>
+    <SurfaceShownContext.Provider value={shown}>
       <PaneDimensionProvider sink={sink}>
         <PaneSizingContextProvider ptySessionIds={['remote-task']}>
           <TerminalPane />
         </PaneSizingContextProvider>
       </PaneDimensionProvider>
-    </PageShownContext.Provider>
+    </SurfaceShownContext.Provider>
   ));
   await act(async () => vi.advanceTimersByTime(1_000));
 }

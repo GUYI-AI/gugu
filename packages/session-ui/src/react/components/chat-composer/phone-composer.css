@@ -1,0 +1,168 @@
+/* Approved phone reference: 136px / 943px single line, 295px / 943px four lines,
+   and a 60px / 943px visible send circle. Existing 16/24 typography is retained. */
+/* Reserve the 44px action target, a 4px outer allowance and 16px of text clearance. */
+[data-slot='composer'][data-phone-capsule] { --phone-composer-empty-gutter: 16px; --phone-composer-actions-gutter: 64px; }
+[data-slot='composer'][data-phone-capsule]:not(:has([data-phone-attachment])) { --phone-composer-empty-gutter: 16px; }
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-bar'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  position: relative;
+}
+[data-slot='composer'][data-phone-capsule] :is([data-slot='composer-toolbar'], [data-slot='composer-actions-start'], [data-slot='composer-actions-end']) { display: contents; }
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-input'] {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
+  min-height: 56px;
+  max-height: 128px;
+  padding: 16px var(--phone-composer-actions-gutter) 16px var(--phone-composer-empty-gutter);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border-radius: 28px;
+  background: var(--muted);
+  box-shadow: none;
+}
+[data-slot='composer'][data-phone-capsule][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; }
+/* Two 24px text lines plus the existing 16px vertical padding stay compact.
+   The taller minimum belongs to the third-line attachment/control stack. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 80px; border-radius: 20px; }
+[data-slot='composer'][data-phone-capsule][data-phone-attachment-row] [data-slot='composer-input'] { min-height: 128px; }
+[data-slot='composer'][data-phone-capsule]:not([data-phone-multiline]):not([data-phone-expanded]) [data-phone-attachment] { display: none; }
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
+/* Compact height follows content, not the extra room reserved for the two buttons.
+   Keeping flex-grow here would hold an emptied multiline editor at 72px forever. */
+[data-slot='composer'][data-phone-capsule]:not([data-phone-expanded]) :is([data-slot='composer-input'] > div, [data-slot='composer-input'] > div > div, [data-slot='composer-input'] [contenteditable]) { flex-grow: 0; }
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-attachments'] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  padding: 4px 8px 4px var(--phone-composer-empty-gutter);
+}
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])) {
+  grid-column: 1;
+  grid-row: 3;
+  justify-self: start;
+  margin-left: 2px;
+  align-self: end;
+  margin-bottom: 6px;
+  z-index: 1;
+}
+[data-slot='composer'][data-phone-capsule] :is([data-phone-editor-toggle], [data-phone-send]) {
+  grid-column: 3;
+  grid-row: 3;
+  justify-self: end;
+  margin-right: 2px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  position: relative;
+  z-index: 1;
+  /* Line-state changes must not interpolate touch-target dimensions or insets. */
+  transition-property: background-color, color, opacity, box-shadow;
+}
+[data-slot='composer'][data-phone-capsule] [data-phone-editor-toggle] {
+  align-self: start;
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+[data-slot='composer'][data-phone-capsule] [data-phone-send] {
+  align-self: end;
+  margin-bottom: 6px;
+  color: var(--color-white);
+  border: 9px solid transparent;
+  background: var(--live-light);
+  background-clip: padding-box;
+}
+[data-slot='composer'][data-phone-capsule] [data-phone-send]:is(:disabled, [data-disabled]) { opacity: 0.45; }
+[data-slot='composer'][data-phone-capsule] [data-phone-send][data-composer-action='stop'] { background-color: var(--danger-solid); }
+[data-slot='composer'][data-phone-capsule] [data-phone-send] > svg { width: 16px; height: 16px; }
+[data-slot='composer'][data-phone-capsule] [data-phone-editor-toggle] > svg { width: 20px; height: 20px; }
+/* Metadata belongs above the input; it never competes with the attachment or send target. */
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+}
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-model'] > button {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+}
+[data-slot='composer'][data-phone-capsule] [data-composer-locked-agent] { grid-column: 2; grid-row: 1; justify-self: center; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-slot='composer-bar'] {
+  position: fixed;
+  z-index: 100;
+  margin: 0;
+  right: auto;
+  bottom: auto;
+  overflow: visible;
+  left: var(--phone-editor-viewport-left);
+  top: calc(var(--phone-editor-viewport-top) + max(16px, env(safe-area-inset-top)));
+  width: var(--phone-editor-viewport-width);
+  height: calc(var(--phone-editor-viewport-height) - max(16px, env(safe-area-inset-top)));
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--muted);
+  animation: phone-editor-rise 180ms ease-out;
+}
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-slot='composer-input'] {
+  align-self: stretch;
+  min-height: 0;
+  max-height: none;
+  padding: 56px 24px 60px 48px;
+  border-radius: 20px 20px 0 0;
+}
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-editor-toggle] { margin-top: 8px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }
+@keyframes phone-editor-rise { from { translate: 0 24px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { [data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-slot='composer-bar'] { animation: none; } }
+
+/* The existing32px utility targets fit above the44px send target with4px gaps. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-editor-toggle] {
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-right: 8px; margin-top: 8px;
+}
+/* A compact two-line box fits the existing 32px expand and 44px send targets
+   without intersecting their hit areas; expanded editing keeps its own inset. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-editor-toggle] { margin-top: 0; }
+/* 32px + 44px targets leave 4px separation inside the 80px two-line box.
+   The old 4px bottom margin spent that entire gap and the real boxes overlapped. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-send] { margin-bottom: 0; }
+[data-slot='composer'][data-phone-capsule][data-phone-attachment-row] button[data-phone-attachment] {
+  grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 52px;
+}
+/* Two lines use the former expand slot for attachments; three lines keep both controls. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) button[data-phone-attachment] {
+  grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 48px;
+}
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-send] { margin-bottom: 4px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; padding-right: var(--phone-composer-actions-gutter); }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-attachment-row] button[data-phone-attachment] { margin-bottom: 56px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }
+
+/* Full-screen editing keeps attachment selection reachable. */
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-phone-attachment] { display: inline-flex; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] button[data-phone-attachment] {
+  grid-column: 1; justify-self: start; width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  margin-left: 2px; margin-right: 0; margin-bottom: 8px;
+}
+
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-attachment-row] button[data-phone-attachment] { margin-bottom: 8px; }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { eq, inArray, isNull, like, or } from 'drizzle-orm';
 import { resolveGuguHome } from '@gugu/core/local/state/paths';
 import { db, type AppDb, type DrizzleTx } from '@main/db/client';
+import { flushViewState } from '@main/core/view-state/view-state-service';
 import { automations, editorBuffers, kv, projectRemotes, projects, projectSettings, sessions, terminals, workspaces } from '@main/db/schema';
 import { sessionWorkspaceManager } from '@main/core/sessions/session-workspace-manager';
 import { projectEvents } from '../project-events';
@@ -119,6 +120,8 @@ export async function migrateAssistantProject(input: AssistantProjectCandidate):
     return entry;
   };
   if (isImplicitSessionHomeProjectId(candidate.projectId)) throw new Error('Cannot remove the task workspace');
+  // The view-state rows below are read and rewritten in SQL: what main still holds for them goes to disk first.
+  flushViewState();
   const before = snapshot(candidate.projectId);
   if (!before.project) {
     const entry = { ...candidate, status: 'removed' as const, reason: 'already-removed' };
@@ -176,6 +179,9 @@ export async function migrateAssistantProject(input: AssistantProjectCandidate):
   if (before.tasks.some(row => sessionWorkspaceManager.getSession(row.id))) return retained('pending-restart', backup);
   const taskProject = await resolveAgentSessionProject('');
   if (await currentOwner() !== candidate.ownerId) throw new Error('Assistant project cleanup account changed');
+  // Again with no await before the transaction: a save that came in since is on disk, so the comparison below sees it
+  // (and keeps the project for a later try) instead of the save landing after the rewrite.
+  flushViewState();
   const changed = db.transaction(tx => {
     const current = snapshot(candidate.projectId, tx);
     if (fingerprint(current) !== fingerprint(before)) return false;

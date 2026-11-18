@@ -1,5 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { Avatar } from './Avatar'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -8,6 +7,7 @@ import { groupAgentStatusRank } from '@/lib/groupAgentStatus'
 import { Check } from '@/lib/icons'
 import { Popover } from './ui/Popover'
 import { Button } from './ui/Button'
+import { GrowingList } from '@gugu/session-ui/react/growing-list'
 import { ListRowContent } from './ui/ListRow'
 import { SectionLabel } from './ui/SectionLabel'
 import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
@@ -21,6 +21,8 @@ export interface ReadReceiptMember {
   avatar: string | null
   isAgent: boolean
   agentStatus?: AgentDisplayStatus
+  /** 没有运行中的实例持有它:这条消息到不了它,只它一个,与气泡旁那行同一句话。 */
+  undelivered?: boolean
 }
 
 /** 每组先给这么多人，其余收进「还有 N 位」：打开时两组的开头都在眼前，不被一组刷满。 */
@@ -35,10 +37,12 @@ type Line =
 function MemberRow({ member }: { member: ReadReceiptMember }) {
   const identity = useAvatarIdentity(member.isAgent ? member.id : '')
   const name = useShownAgentName({ name: member.displayName, createdAt: member.isAgent ? identity?.created_at ?? undefined : undefined })
+  const { t } = useTranslation('messaging')
   return (
     // 名字放不下时才截断；悬停给全名。
     <div className="gg-list-row" title={name}>
-      <ListRowContent leading={<Avatar name={name} avatarUrl={member.avatar} seed={member.id} isAgent={member.isAgent} agentStatus={member.agentStatus} size="sm" />} title={name} />
+      <ListRowContent leading={<Avatar name={name} avatarUrl={member.avatar} seed={member.id} isAgent={member.isAgent} agentStatus={member.agentStatus} size="sm" />} title={name}
+        subtitle={member.undelivered ? <span title={t('agent.turnFailure.undelivered')}>{t('message.sendStatus.undelivered')}</span> : undefined} />
     </div>
   )
 }
@@ -91,31 +95,11 @@ function ReadReceiptList({ readers, unreaders, testId }: {
   const { t } = useTranslation('messaging')
   const { t: ct } = useTranslation('contacts')
   const [expanded, setExpanded] = useState<ReadonlySet<'read' | 'unread'>>(() => new Set())
-  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const popupRef = useRef<HTMLDivElement>(null)
   // 滚动每一帧都重画这一窗;名单只在换消息、展开时重排。
   const lines = useMemo(() => linesOf(readers, unreaders, expanded), [readers, unreaders, expanded])
-  const activeHead = useRef(0)
-
-  // @@@receipt-window - 只挂可见那一窗的行:打开 2000 人群的回执和打开 5 人群一样多的节点(owner 的 O(1) 标准)。
-  // 当前分区的标题吸顶:它总在挂载范围里,画成 sticky,其余行按 start 平移。
-  const lineWindow = useVirtualizer({
-    count: lines.length,
-    getScrollElement: () => scroller,
-    estimateSize: (index) => (lines[index]!.kind === 'member' ? 48 : 28),
-    initialRect: { width: 0, height: MAX_HEIGHT },
-    overscan: 6,
-    rangeExtractor: (range) => {
-      let active = 0
-      for (let i = 0; i <= range.startIndex; i++) if (lines[i]!.kind === 'head') active = i
-      activeHead.current = active
-      const indexes = new Set([active])
-      for (let i = Math.max(0, range.startIndex - range.overscan); i <= Math.min(range.count - 1, range.endIndex + range.overscan); i++) indexes.add(i)
-      return [...indexes].sort((a, b) => a - b)
-    },
-  })
-  const items = lineWindow.getVirtualItems()
-
+  // @@@receipt-window - 只挂可见那一窗的行(@@@growing-list):打开 2000 人群的回执和打开 5 人群一样多的节点(owner 的 O(1) 标准)。
+  // 当前分区的标题吸顶。
   // 宽度跟着挂上的名字走(200–320),但滚动时只长不缩:换一窗名字时卡片不来回跳。
   useLayoutEffect(() => {
     const popup = popupRef.current
@@ -168,22 +152,15 @@ function ReadReceiptList({ readers, unreaders, testId }: {
             padding: 4,
           }}
         >
-          <div ref={setScroller} style={{ maxHeight: MAX_HEIGHT, overflowY: 'auto', overscrollBehavior: 'contain' }}>
-            {/* 一格网格:挂上的行叠在同一格里按 start 平移,格宽 = 挂上那些行的最宽者,卡片宽度因此跟着名字走。 */}
-            <div style={{ display: 'grid', gridTemplateRows: `${lineWindow.getTotalSize()}px`, gridTemplateColumns: 'minmax(0, 1fr)' }}>
-              {items.map((item) => {
-                // 吸顶的那个标题不平移:它落在格子顶上,由 sticky 停在滚动区顶边。
-                const style: CSSProperties = item.index === activeHead.current
-                  ? { gridArea: '1 / 1', alignSelf: 'start', position: 'sticky', top: 0, zIndex: 1 }
-                  : { gridArea: '1 / 1', alignSelf: 'start', transform: `translateY(${item.start}px)` }
-                return (
-                  <div key={item.key} data-index={item.index} ref={lineWindow.measureElement} style={style}>
-                    {lineNode(lines[item.index]!)}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          <GrowingList
+            count={lines.length}
+            getKey={(index) => index}
+            estimateSize={(index) => (lines[index]!.kind === 'member' ? 48 : 28)}
+            isSticky={(index) => lines[index]!.kind === 'head'}
+            overscan={6}
+            scrollerStyle={{ maxHeight: MAX_HEIGHT, overscrollBehavior: 'contain' }}
+            renderLine={(index) => lineNode(lines[index]!)}
+          />
         </Popover.Popup>
       </Popover.Positioner>
     </Popover.Portal>

@@ -11,17 +11,28 @@ import { getSessionLocaleSnapshot, subscribeSessionLocale, translateSessionMessa
 import { readChatSummary, resolveChatId, subscribeChatNames } from '@/lib/chatSummariesBridge';
 import { chatDisplayName } from './chat-name';
 import { chatActor } from './actor-identity';
+import { billingLinksAvailable } from '@/lib/appLinks';
+import { scaledTextPx } from '@/mobile/textScale';
 
 let shared: ChatContext | null = null;
 let didPreloadIssueMentionIcons = false;
 
-export const SESSION_CHAT_CONFIG: ChatConfig = {
-  ...DEFAULT_CONFIG,
-  fonts: {
-    sans: [...SESSION_CHAT_FONT_STACK.sans],
-    mono: [...SESSION_CHAT_FONT_STACK.mono],
-  },
-};
+// The transcript measures text on a canvas from these numbers, so they take the system font size the same way CSS does
+// (@@@text-scale, mobile/textScale.ts). Read when a context is created; a change of the setting reloads the page.
+function sessionChatConfig(): ChatConfig {
+  const roles = Object.fromEntries(Object.entries(DEFAULT_CONFIG.roles).map(([name, role]) => {
+    const factor = scaledTextPx(role.size) / role.size;
+    return [name, { ...role, size: role.size * factor, lineHeight: role.lineHeight * factor }];
+  })) as ChatConfig['roles'];
+  return {
+    ...DEFAULT_CONFIG,
+    roles,
+    fonts: {
+      sans: [...SESSION_CHAT_FONT_STACK.sans],
+      mono: [...SESSION_CHAT_FONT_STACK.mono],
+    },
+  };
+}
 
 /**
  * Create the process-long ChatContext. Call once from the renderer bootstrap
@@ -49,10 +60,12 @@ export function createSessionChatContext(): ChatContext {
     actor: chatActor,
     subscribeActors: subscribeSenderAvatars,
     locale: () => getSessionLocaleSnapshot().resolvedLocale,
-    config: SESSION_CHAT_CONFIG,
+    config: sessionChatConfig(),
     mentionProvider: chatMentionProvider,
     commandProvider: advertisedCommandProvider,
-    translator: translateSessionMessage,
+    translator: (key, values) => translateSessionMessage(
+      key === 'transcript.creditsExhausted' && !billingLinksAvailable()
+        ? 'transcript.creditsExhaustedReadonly' : key, values),
     subscribeTranslator: subscribeSessionLocale,
     // #5048 「我是谁」经 window.__GUGU_SELF_IDENTITY__ 从咕咕壳送进来;桥缺席(独立打开的会话页)= 没人,
     // 投递卡退回信封事实。懒读:桥由 gugu 的 App 在登录态变化时装/更新。

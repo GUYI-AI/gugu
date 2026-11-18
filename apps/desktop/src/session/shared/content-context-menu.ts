@@ -15,6 +15,8 @@ export type ContentMenuItem =
     title?: string;
     /** The row is this member (user or agent id): drawn with the member's avatar and shown name, `label` until it is known. */
     person?: string;
+    /** The row is this program of the computer (an id of `files.openInApps`): drawn with the program's icon. */
+    program?: string;
   };
 
 /** An item with `items` opens them beside it; only leaves are actions. */

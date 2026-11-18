@@ -34,7 +34,7 @@ import '@/mobile/phone-look.css'
 const fixture = vi.hoisted(() => ({ theme: 'light' as 'light' | 'dark' }))
 vi.mock('@/store/theme', async original => ({ ...await original<object>(),
   useTheme: () => ({ theme: fixture.theme, preference: fixture.theme, setTheme: vi.fn() }) }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({
   props: { permissionModeOptions: { full: { name: '完全访问' } }, selectedPermissionMode: 'full',
     modelOptions: { model: { name: '测试模型' } }, selectedModel: 'model' }, confirmation: null, steers: false,
@@ -122,8 +122,8 @@ it.each(cases)('$surface/$theme/$count/$width: pending files align above the edi
   await until('normal file picker mounts', () => !!harness.container.querySelector('input[type="file"][multiple]'))
   if (surface === 'new-task') {
     await act(async () => { startPhoneNewTask('position-task') })
-    await until('project folder chooser mounts', () => !!harness.container.querySelector('[data-testid="project-folder-paper"]'))
-    await act(async () => { harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!.click() })
+    await until('project folder chooser mounts', () => !!document.querySelector('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]'))
+    await act(async () => { document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!.click() })
     await until('new task mode active', () => !!harness.container.querySelector('[data-phone-task]'))
   }
   await pick(count)

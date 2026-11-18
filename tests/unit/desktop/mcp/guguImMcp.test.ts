@@ -160,15 +160,17 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
       calls.uploads.push(['oss', String(form.get('key')), file.type, Buffer.from(bytes)])
       return new Response(null, { status: 204 })
     }
+    // A declared send: the bytes go up after the commit and are finished (checked against the declaration) behind it.
+    if (url.endsWith('/functions/v1/attachments/finish')) return new Response(JSON.stringify({ status: 'ready' }))
     if (url.endsWith('/functions/v1/attachments/commit')) {
       const args = JSON.parse(String(init?.body)) as Record<string, unknown>
       commitBodies.push(args)
       if (commitError) return new Response(JSON.stringify({ error: 'denied', message: commitError.message }), { status: 403 })
-      const bytes = stagedBytes.get(String(args.staging_key)) ?? new Uint8Array()
+      const size = typeof args.size_bytes === 'number' ? args.size_bytes : (stagedBytes.get(String(args.staging_key)) ?? new Uint8Array()).length
       const type = String(args.content_type)
       const row = {
         id: args.message_id, chat_id: args.chat_id, sender_user_id: args.sender_user_id, to_user_ids: args.to_user_ids, thread_root_id: args.thread_root_id ?? null,
-        content: `[附件] ${String(args.file_name)} (${type})\n[Size] ${bytes.length}\n[Kind] ${type.startsWith('image/') ? 'image' : 'file'}`,
+        content: `[附件] ${String(args.file_name)} (${type})\n[Size] ${size}\n[Kind] ${type.startsWith('image/') ? 'image' : 'file'}`,
         content_type: 'attachment', file_item_id: `item:${String(args.staging_key)}`, file_version: 1, file_blob_id: null,
       }
       // 服务端按消息 id 幂等:同一条重放,回同一行,不再多一条。
@@ -572,7 +574,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
       'activity_chat_list', 'contact_friend', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
-      'message_rules', 'message_search', 'message_send', 'message_send_as_owner', 'message_send_file', 'message_send_file_as_owner',
+      'message_rules', 'message_search', 'message_send', 'message_send_as_owner',
       'owner_friends_list', 'profile_lookup', 'profile_update', 'profile_whoami', 'session_peers',
       'topic_delete', 'topic_invite', 'topic_list', 'topic_members', 'topic_open',
     ])
@@ -589,10 +591,10 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(sendDescription).not.toContain('message_reply')
     expect(sendDescription).toContain('session_message')
     expect(sendDescription).not.toContain('message_send_local')
-    const fileDescription = tools.find((tool) => tool.name === 'message_send_file')?.description ?? ''
-    expect(fileDescription).toContain('delivery tool')
-    // Every attachment is a file of the chat's folder: the tool that delivers says it shows one by reference.
-    expect(fileDescription).toContain('chat-folder file by its gugu-file://')
+    // One send for text and files (MCP surface review 11-16): its file field says it shows a chat-folder file by reference.
+    const sendSchema = tools.find((tool) => tool.name === 'message_send')?.inputSchema as { properties: Record<string, { description?: string }> }
+    expect(sendSchema.properties.file.description).toContain('A chat-folder file, gugu-file://')
+    expect(sendSchema.properties.file_path).toBeDefined()
     await client.close()
   })
   test('session_peers groups UUID and display aliases under one identity in registry order', async () => {
@@ -607,15 +609,16 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       ? hostPeers.map((row) => row.identity.users)
       : restGet(path)
     const client = await connect({ ...h.deps, callSessionHost: async () => hostPeers })
-    const rows = JSON.parse(text(await client.callTool({ name: 'session_peers', arguments: {} }))).items as typeof hostPeers
-    expect(rows.map((row) => row.identity.users.id)).toEqual(memberIds.map((id) => `user:${id}`))
+    const rows = JSON.parse(text(await client.callTool({ name: 'session_peers', arguments: {} }))).items as Array<Record<string, unknown>>
+    // MCP surface review 11-16: flat rows whose addresses are written ready to pass.
+    expect(rows.map((row) => row.aid)).toEqual(memberIds.map((id) => `aid:${id}`))
     const members = JSON.parse(text(await client.callTool({ name: 'message_members', arguments: { chat_id: '00000000-0000-4000-8000-000000000001' } }))).items as Array<{ user_id: string }>
     // 同一批身份、同一种 user: 写法;顺序各按各的(名录按最近活动,成员按名字)。
-    expect(rows.map((row) => row.identity.users.id).sort()).toEqual(members.map((member) => member.user_id).sort())
-    expect(rows[0].identity.users.display_name).toBe('Codex 1')
-    expect(rows[0].title).toBe('Review delivery routing')
-    expect(rows[0].sessionId).toBe('conversation-a')
-    expect((rows[0] as Record<string, unknown>).user_id).toBeUndefined()
+    expect(rows.map((row) => String(row.aid).replace(/^aid:/, 'user:')).sort()).toEqual(members.map((member) => member.user_id).sort())
+    expect(rows[0]).toMatchObject({ name: 'Codex 1', title: 'Review delivery routing', session: 'session:conversation-a', gugu: 'gugu:1001' })
+    expect(rows[0].identity).toBeUndefined()
+    expect(rows[0].sessionId).toBeUndefined()
+    expect(rows[0].user_id).toBeUndefined()
     await client.close()
   })
   // #5947 名录是全机的,调用者自己那一行也在里面 —— 与 message_members 同一判据标出来,别把读者当第三方呈现给他自己。
@@ -627,12 +630,12 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       { identity: { users: { id: SELF, gugu_number: null, display_name: 'Codex 7' } }, sessionId: 'conversation-self', title: 'Codex 7' },
     ]
     const peersAs = async (context: Record<string, unknown>, host: unknown = hostPeers) => {
-      const rows = JSON.parse(await callToolImpl({ ...TEST_CONTEXT, ...context, runHostAction: async () => host }, 'session_peers', {})).items as Array<{ identity: { users: { id: string } }; is_self?: unknown }>
-      return rows.map((row) => [row.identity.users.id, row.is_self])
+      const rows = JSON.parse(await callToolImpl({ ...TEST_CONTEXT, ...context, runHostAction: async () => host }, 'session_peers', {})).items as Array<{ aid: string; is_self?: unknown }>
+      return rows.map((row) => [row.aid, row.is_self])
     }
-    expect(await peersAs({ agentId: SELF })).toEqual([[`user:${OTHER}`, false], [`user:${SELF}`, true]])
+    expect(await peersAs({ agentId: SELF })).toEqual([[`aid:${OTHER}`, false], [`aid:${SELF}`, true]])
     // 对照:调用者不在名录里 ⇒ 每一行都明确是 false,不是缺键
-    expect(await peersAs({ agentId: '66666666-6666-4666-8666-666666666666' })).toEqual([[`user:${OTHER}`, false], [`user:${SELF}`, false]])
+    expect(await peersAs({ agentId: '66666666-6666-4666-8666-666666666666' })).toEqual([[`aid:${OTHER}`, false], [`aid:${SELF}`, false]])
     // 宿主回了不是名录的东西 ⇒ 具名报错,不是一个裸 TypeError
     await expect(peersAs({ agentId: SELF }, { peers: hostPeers })).rejects.toThrow(/non-directory result/)
   })
@@ -1642,9 +1645,11 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     })
     await client.close()
   })
-  test('group reply requires explicit recipients even when a source message exists', async () => {
+  // Owner 11-16 (msg:db712725): a reply in a group addresses the replied message's author, as in a DM; `to_user_ids: []`
+  // addresses no one; a reply to the agent's own message never addresses the agent itself.
+  const groupReply = async (sourceSender: string, extra: Record<string, unknown> = {}) => {
     const h = harness(['agent-1', 'owner-1'])
-    replyHistory(h, [{ id: 'source-message', sender_user_id: 'owner-1', is_whisper: false }])
+    replyHistory(h, [{ id: 'source-message', sender_user_id: sourceSender, is_whisper: false }])
     const restRpc = h.deps.restRpc
     h.deps.restRpc = async (name: string, body: Record<string, unknown>, profile?: string) => (
       name === 'chat_facts' ? [{ id: '00000000-0000-4000-8000-000000000001', kind: 'group', source_chat_id: null, group_prompt: null }] : restRpc(name, body, profile)
@@ -1652,12 +1657,29 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(h.deps)
     const result = await client.callTool({
       name: 'message_send',
-      arguments: { chat_id: '00000000-0000-4000-8000-000000000001', reply_to_message_id: 'msg:source-message', text: 'group reply' },
+      arguments: { chat_id: '00000000-0000-4000-8000-000000000001', reply_to_message_id: 'msg:source-message', text: 'group reply', ...extra },
     })
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('group chat requires explicit to_user_ids')
-    expect(h.calls.inserts).toHaveLength(0)
     await client.close()
+    return { result, inserts: h.calls.inserts }
+  }
+  test('group reply with only reply_to_message_id addresses the replied message\'s author', async () => {
+    const { result, inserts } = await groupReply('owner-1')
+    expect(result.isError).not.toBe(true)
+    expect(text(result)).toMatch(/^replied/)
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0]?.[1]).toMatchObject({ reply_to_message_id: 'source-message', to_user_ids: ['owner-1'] })
+  })
+  test('group reply with to_user_ids: [] written out addresses no one', async () => {
+    const { result, inserts } = await groupReply('owner-1', { to_user_ids: [] })
+    expect(result.isError).not.toBe(true)
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0]?.[1]).toMatchObject({ reply_to_message_id: 'source-message', to_user_ids: null })
+  })
+  test('group reply to the agent\'s own message never addresses the agent itself', async () => {
+    const { result, inserts } = await groupReply('agent-1')
+    expect(result.isError).not.toBe(true)
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0]?.[1]).toMatchObject({ reply_to_message_id: 'source-message', to_user_ids: null })
   })
   test('group: the same unaddressed send goes through without reply_to_message_id (the reply rule keys on it)', async () => {
     const h = harness(['agent-1', 'owner-1'])
@@ -1999,9 +2021,9 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(upgraded).toEqual({ messageId: String((h.calls.inserts[1][1] as Record<string, unknown>).id), alreadyThere: false, differs: false })
   })
   test('message_send_file → 字节经 attachments/upload 传到 OSS,commit 以 agent 本人发附件消息(#7290)', async () => {
-    const h = harness()
+    const h = harness(['agent-1'])
     const client = await connect(h.deps)
-    const r = await client.callTool({ name: 'message_send_file', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'a b.png', file_path: fixtureFile('src.png', Buffer.from([1, 2, 3])), mime_type: 'image/png' } })
+    const r = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'a b.png', file_path: fixtureFile('src.png', Buffer.from([1, 2, 3])), mime_type: 'image/png' } })
     expect(JSON.parse(text(r))).toMatchObject({ status: 'sent', file_name: 'a b.png', source_link: expect.stringMatching(/^gugu-chat:\/\/00000000-0000-4000-8000-000000000001\//) })
     expect(h.calls.uploads[0][0]).toBe('oss')
     const row = h.calls.inserts[0][1] as Record<string, unknown>
@@ -2015,11 +2037,11 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     ['大写 mime_type', 'Image/PNG'],
     ['泛二进制 mime_type', 'application/octet-stream'],
   ])('message_send_file → .png %s 仍记成 image/png 图片', async (_label, mimeType) => {
-    const h = harness()
+    const h = harness(['agent-1'])
     const client = await connect(h.deps)
     const args: Record<string, unknown> = { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('chart.PNG', Buffer.from([1, 2, 3])) }
     if (mimeType) args.mime_type = mimeType
-    const r = await client.callTool({ name: 'message_send_file', arguments: args })
+    const r = await client.callTool({ name: 'message_send', arguments: args })
     expect(JSON.parse(text(r)).status).toBe('sent')
     expect(h.calls.uploads[0][2]).toBe('image/png')
     const content = String((h.calls.inserts[0][1] as Record<string, unknown>).content)
@@ -2031,7 +2053,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
   // 旧实现把内容当 content_base64 参数收，调用方（模型）要逐 token 复制那串编码，
   // 漂一次后面全部错位——实测 16 KB 的 HTML 毁掉 60%，而且两侧都不报错。
   test('message_send_file → 上传的字节与盘上文件逐字节相同', async () => {
-    const h = harness()
+    const h = harness(['agent-1'])
     const client = await connect(h.deps)
     const payload = Buffer.concat([
       Buffer.from('咕咕 #5828 字节保真\n', 'utf8'),
@@ -2039,7 +2061,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     ])
     const src = fixtureFile('payload.bin', payload)
     const r = await client.callTool({
-      name: 'message_send_file',
+      name: 'message_send',
       arguments: { chat_id: '00000000-0000-4000-8000-000000000001', file_path: src, mime_type: 'application/octet-stream' },
     })
     expect(JSON.parse(text(r)).status).toBe('sent')
@@ -2054,11 +2076,11 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
   // 中文名分两处，别混：**用户看到的附件名**保留中文；**存储对象键**必须消成 ASCII——
   // Supabase Storage 对非 ASCII 的 key 直接 400 InvalidKey（#5828 对着本地栈实测过）。
   test('message_send_file → 附件名保留中文(存的名字是服务端按内容起的,不再由这里拼)', async () => {
-    const h = harness()
+    const h = harness(['agent-1'])
     const client = await connect(h.deps)
     const src = fixtureFile('咕咕的资本叙事与竞品地图.html', '<p>x</p>')
     const r = await client.callTool({
-      name: 'message_send_file',
+      name: 'message_send',
       arguments: { chat_id: '00000000-0000-4000-8000-000000000001', file_path: src, mime_type: 'text/html' },
     })
     expect(JSON.parse(text(r)).status).toBe('sent')
@@ -2072,8 +2094,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     ['相对路径', { file_path: 'relative/report.html' }, /must be absolute/],
     ['文件不存在', { file_path: '/nonexistent-5828/report.html' }, /cannot read/],
   ])('message_send_file 拒绝 %s，且不上传、不插消息', async (_label, extra, pattern) => {
-    const h = harness()
-    const err = await callTool('message_send_file', { chat_id: '00000000-0000-4000-8000-000000000001', ...extra }, h.deps)
+    const h = harness(['agent-1'])
+    const err = await callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', ...extra }, h.deps)
       .then(() => null, (e: unknown) => e)
     expect(String((err as Error)?.message ?? err)).toMatch(pattern)
     expect(h.calls.uploads).toHaveLength(0)
@@ -2083,7 +2105,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     ['3 字节', 3],
     ['0 字节', 0],
   ])('message_send_file 尺寸按盘上真实文件算（%s）', async (_label, size) => {
-    const h = harness()
+    const h = harness(['agent-1'])
     const client = await connect(h.deps)
     const args: Record<string, unknown> = {
       chat_id: '00000000-0000-4000-8000-000000000001',
@@ -2091,7 +2113,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       file_path: fixtureFile('report.pdf', Buffer.alloc(size)),
       mime_type: 'application/pdf',
     }
-    const result = await client.callTool({ name: 'message_send_file', arguments: args })
+    const result = await client.callTool({ name: 'message_send', arguments: args })
     expect(result.isError).not.toBe(true)
     const row = h.calls.inserts[0][1] as Record<string, unknown>
     // 新式信封:[附件] / [Size] / [Kind] 三行(没有 [URL],字节由消息指着的条目给)。
@@ -2100,50 +2122,51 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(row.file_item_id).toBe(`item:${String(h.calls.uploads[0][1])}`)
     await client.close()
   })
-  test('message_send_file → commit 被拒:报错原话,没有消息(没提交的上传在服务端过期回收,这里不清)', async () => {
-    const h = harness()
+  test('message_send_file → commit 被拒:报错原话,没有消息,也没有字节上去(字节只跟在提交了的消息后面)', async () => {
+    const h = harness(['agent-1'])
     h.failCommit(new Error('the group only lets admins send files'))
     const client = await connect(h.deps)
     const result = await client.callTool({
-      name: 'message_send_file',
+      name: 'message_send',
       arguments: { chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'report.pdf', file_path: fixtureFile('report.pdf') },
     })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('the group only lets admins send files')
-    expect(h.calls.uploads).toHaveLength(1)
+    expect(h.calls.uploads, 'a refused declaration sends no bytes: they go up only behind a committed message').toHaveLength(0)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
   test('名字只是标签(B5b):message_send_file 按盘上文件定类型,图照样是图', async () => {
-    const h = harness()
-    await callTool('message_send_file', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('chart.png', Buffer.from([1, 2, 3])), file_name: '销售图 v2.0' }, h.deps)
+    const h = harness(['agent-1'])
+    await callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('chart.png', Buffer.from([1, 2, 3])), file_name: '销售图 v2.0' }, h.deps)
     expect(h.calls.uploads[0][2]).toBe('image/png')
     expect(String((h.calls.inserts[0][1] as Record<string, unknown>).content)).toContain('[附件] 销售图 v2.0 (image/png)')
   })
 
   test('message_send_file:回答丢了 ⇒ 同一次上传、同一个消息 id 重放,只出一条消息;服务端明确拒的(4xx)不重放', async () => {
-    const h = harness()
+    const h = harness(['agent-1'])
     h.loseCommitAnswers(1)
-    const sent = await callTool('message_send_file', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('lost.png', Buffer.from([1, 2, 3])) }, h.deps)
+    const sent = await callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('lost.png', Buffer.from([1, 2, 3])) }, h.deps)
     expect(h.commitBodies).toHaveLength(2)
     expect(h.commitBodies[1]).toEqual(h.commitBodies[0])
     expect(h.calls.inserts).toHaveLength(1)
     expect(JSON.parse(sent)).toMatchObject({ status: 'sent', message_id: `msg:${String(h.commitBodies[0]!.message_id)}`, source_link: `gugu-chat://00000000-0000-4000-8000-000000000001/${String(h.commitBodies[0]!.message_id)}` })
-    const refused = harness()
+    const refused = harness(['agent-1'])
     refused.failCommit(new Error('the group only lets admins send files'))
-    await expect(callTool('message_send_file', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('no.png', Buffer.from([1])) }, refused.deps)).rejects.toThrow(/only lets admins/)
+    await expect(callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('no.png', Buffer.from([1])) }, refused.deps)).rejects.toThrow(/only lets admins/)
     expect(refused.commitBodies).toHaveLength(1)
   })
 
-  test('file tools reject payloads above their backend object limits before upload', async () => {
-    const h = harness()
-    const chatResult = await callTool('message_send_file', {
+  // No client-side cap: the server's upload permit is the limit, and its refusal names the exact number.
+  test('file tools refuse a file above the server permit, with its exact limit, before any byte is stored', async () => {
+    const h = harness(['agent-1'])
+    const chatResult = await callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001',
       file_name: 'too-large.bin',
       file_path: sparseFixture('too-large.bin', (25 * 1024 * 1024) + 1),
     }, h.deps)
       .then(() => null, (error: unknown) => error)
-    expect(chatResult).toEqual(expect.objectContaining({ message: expect.stringContaining('26214400 bytes') }))
+    expect(chatResult).toEqual(expect.objectContaining({ message: expect.stringContaining('a file is at most 26214400') }))
     expect(h.calls.uploads).toHaveLength(0)
   })
   // #1244 thread 归属由会话决定:message_send 没有 thread_root_id 这个参数。写类不认识的键直接拒、点名报回去,
@@ -2184,22 +2207,6 @@ describe('restRpc void/空 body 容忍 (#1216)', () => {
 })
 type DirectoryRow = { user_id: string; display_name: string; type: string | null; gugu_number: number | null; is_self: boolean }
 describe('message_members = 可寻址名录(spec ⑨)', () => {
-  test('disambiguates the full chat before filtering or pagination and matches exact serials', async () => {
-    const h = harness(['agent-1', 'codex-8-id', 'owner-1'])
-    h.deps.restGet = async () => [
-      { id: 'agent-1', display_name: 'Fix login', type: 'agent', name_serial: 9 },
-      { id: 'codex-8-id', display_name: 'Fix login', type: 'agent', name_serial: 93 },
-      { id: 'owner-1', display_name: 'Fix login', type: 'human', name_serial: null },
-      { id: 'outside', display_name: 'Fix login', type: 'agent', name_serial: 100 },
-    ]
-    const read = async (args: Record<string, unknown> = {}) => JSON.parse(await callTool('message_members', { chat_id: '00000000-0000-4000-8000-000000000001', ...args }, h.deps))
-    const all = await read({ name: 'Fix login' })
-    expect(all.items.map((row: DirectoryRow) => row.display_name)).toEqual(['Fix login', 'Fix login #9', 'Fix login #93'])
-    expect((await read({ name: 'Fix login #9' })).items.map((row: DirectoryRow) => row.user_id)).toEqual(['user:agent-1'])
-    expect((await read({ name: '#93', rows: '1' })).items.map((row: DirectoryRow) => row.user_id)).toEqual(['user:codex-8-id'])
-    expect((await read({ type: 'human' })).items[0].display_name).toBe('Fix login')
-  })
-
   function directoryHarness() {
     const h = harness(['agent-1', 'codex-8-id', 'owner-1'])
     const orig = h.deps.restGet
@@ -2474,7 +2481,7 @@ describe('MCP 工具对外声明的入参 schema', () => {
     const client = new Client({ name: 'schema-probe', version: '1' })
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
     const { tools } = await client.listTools()
-    for (const name of ['message_send', 'message_history', 'message_search', 'message_members', 'message_rules', 'message_send_file']) {
+    for (const name of ['message_send', 'message_history', 'message_search', 'message_members', 'message_rules', 'message_send']) {
       const tool = tools.find((candidate) => candidate.name === name)
       expect(tool, `${name} 在工具表里`).toBeTruthy()
       expect(toolRequiresChatId(tool?.inputSchema as Record<string, unknown>), name).toBe(true)
@@ -2518,7 +2525,7 @@ describe('MCP 工具对外声明的入参 schema', () => {
     const schema = send?.inputSchema as Record<string, unknown>
     expect(schema.oneOf).toBeUndefined()
     expect(schema.anyOf).toBeUndefined()
-    expect([...(schema.required as string[])].sort()).toEqual(['chat_id', 'text'])
+    expect([...(schema.required as string[])].sort()).toEqual(['chat_id'])
     const properties = schema.properties as Record<string, Record<string, unknown>>
     expect(properties.action).toBeUndefined()
     expect(properties.chat_id).toBeTruthy()
@@ -2603,17 +2610,17 @@ describe('MCP 工具对外声明的入参 schema', () => {
       expect(text(blocked)).toContain('规矩B（改过了）')
       await client.close()
     })
-    test('#3641 message_send_file 同样过闸:未见过群规 ⇒ 拒,且一个字节都没上传', async () => {
-      const h = harness(['alice'], '附件先说明用途')
+    test('#3641 message_send 带文件同样过闸:未见过群规 ⇒ 拒,且一个字节都没上传', async () => {
+      const h = harness(['agent-1', 'alice'], '附件先说明用途')
       const client = await connect(h.deps)
       const args = { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('a.txt', 'x'), mime_type: 'text/plain' }
-      const blocked = await client.callTool({ name: 'message_send_file', arguments: args })
+      const blocked = await client.callTool({ name: 'message_send', arguments: args })
       expect(blocked.isError).toBe(true)
       expect(text(blocked)).toContain('附件先说明用途')
       expect(h.calls.uploads).toHaveLength(0)
       expect(h.calls.inserts).toHaveLength(0)
       // 正对照:拒过一次即记为已读,重发通过。
-      expect(JSON.parse(text(await client.callTool({ name: 'message_send_file', arguments: args }))).status).toBe('sent')
+      expect(JSON.parse(text(await client.callTool({ name: 'message_send', arguments: args }))).status).toBe('sent')
       await client.close()
     })
     test('#3641 投递已送达当前版本(落盘记录)⇒ 第一次发言就放行;记录的是旧版本 ⇒ 照拒', async () => {
@@ -2879,8 +2886,8 @@ describe('write tools refuse unknown keys (#6840)', () => {
     const client = await connect(h.deps)
     const { tools } = await client.listTools()
     const writers = (TOOL_DEFS as Array<{ name: string; writer?: boolean }>).filter((def) => def.writer).map((def) => def.name)
-    // Includes both delegated text and attachment writers; workspace writers live in the folder App.
-    expect(writers).toHaveLength(21)
+    // One writer for text and files (message_send, message_send_as_owner; MCP surface review 11-16); workspace writers live in the folder App.
+    expect(writers).toHaveLength(19)
     for (const name of writers) {
       expect(tools.find((tool) => tool.name === name)?.inputSchema, name).toMatchObject({ additionalProperties: false })
     }

@@ -7,6 +7,7 @@ import './lib/errorCaptureBootstrap'
 import './lib/insecure-context-shims'
 // 没更新过的老 Android WebView(Chrome 91)没有 structuredClone,首屏渲染即抛;同样 import 即装。
 import './lib/legacy-webview-shims'
+import './lib/passwordSaveCards'
 import React from 'react'
 import App from './App'
 import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
@@ -25,6 +26,7 @@ import { getLocaleSnapshot, LocalizationProvider, subscribeLocale } from './i18n
 import { platform } from './platform'
 import { installPlatformLocaleSync } from './platform/locale-sync'
 import { startShellChromeTone } from './platform/capacitorShellChrome'
+import { installTextScale } from './mobile/textScale'
 import { BuildTagBadge } from './components/BuildTagBadge'
 import { startFirstRunApps } from './components/appSlot/firstRunApps'
 import './i18n/registerMainCatalog'
@@ -42,6 +44,8 @@ import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibil
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
 import { installErrorSummaryConsent } from './lib/errorSummaryConsent'
 
+// Before the first render: the phone's system font size decides how large text is drawn (textScale.ts).
+installTextScale()
 installPerfCounterResponder(window.electronAPI)
 installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.

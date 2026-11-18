@@ -10,8 +10,10 @@
 import { installErrorSummaryReporting } from './errorSummaryReporting'
 import { installErrorRingBuffer } from './errorRingBuffer'
 import { installLocalRendererDiagnostics } from './localRendererDiagnostics'
+import { installBetaTypingDiagnostics } from './betaTypingDiagnostics'
 
 installErrorRingBuffer()
 installLocalRendererDiagnostics()
+void installBetaTypingDiagnostics()
 
 installErrorSummaryReporting()

@@ -5,7 +5,7 @@ import { buildIntegrationListPayload } from '../../apps/desktop/electron/session
 
 // Generate only the public list payload. Provider SDKs, credential stores and
 // host behavior must never be imported by the renderer's bundled catalog.
-const publicCatalog = (locale: string) => buildIntegrationListPayload(locale).map(({ icon: _icon, ...item }) => item)
+const publicCatalog = (locale: string) => buildIntegrationListPayload(locale, undefined, undefined, null).map(({ icon: _icon, ...item }) => item)
 const locales = { en: publicCatalog('en-US'), 'zh-CN': publicCatalog('zh-CN') }
 const sha256 = createHash('sha256').update(JSON.stringify(locales)).digest('hex')
 const bytes = JSON.stringify({ version: 1, sha256, locales }) + '\n'

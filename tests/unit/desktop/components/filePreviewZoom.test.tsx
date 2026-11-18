@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, act } from 'react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { MessageFilePreviewPanel } from '../../../../apps/desktop/src/components/chat/MessageFilePreviewPanel'
 import { HtmlPreviewSurface } from '../../../../apps/desktop/src/components/preview/HtmlPreviewSurface'
@@ -9,11 +9,14 @@ import { DocumentPreviewContent } from '../../../../apps/desktop/src/components/
 import { runWindowMenuCommand, type WindowMenuCommandTarget } from '../../../../apps/desktop/electron/window-menu-commands'
 import { bindAppPageZoom, createFileZoomView } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
 import { ZoomMenuRow } from '../../../../apps/desktop/src/components/preview/ZoomMenuRow'
+import { platform } from '../../../../apps/desktop/src/platform'
+import { readInterface, writeInterface } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 let harness: ReturnType<typeof createReactHarness>
 const originalVisibility = HTMLElement.prototype.checkVisibility
-beforeEach(() => { harness = createReactHarness(); localStorage.clear(); HTMLElement.prototype.checkVisibility = () => true })
-afterEach(() => { harness.cleanup(); localStorage.clear(); HTMLElement.prototype.checkVisibility = originalVisibility })
+beforeEach(() => { harness = createReactHarness(); localStorage.clear(); viewStateCache.forget('view:'); HTMLElement.prototype.checkVisibility = () => true })
+afterEach(() => { harness.cleanup(); localStorage.clear(); viewStateCache.forget('view:'); HTMLElement.prototype.checkVisibility = originalVisibility })
 const preview = (kind: 'markdown' | 'text') => createElement(MessageFilePreviewPanel, {
   kind, content: 'A readable file', file: { fileName: kind === 'text' ? 'notes.txt' : 'README.md', sizeBytes: 15, mimeType: 'text/plain' }, loading: false, onClose() {},
 })
@@ -42,6 +45,30 @@ it('zooms the actual workspace image using its fitted geometry and retains the i
   expect(parseFloat(image.style.width)).toBeGreaterThan(before)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
   expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(before * 1.2)
+})
+
+it('a platform without reading zoom memory (the phone) zooms an image preview on double tap, opens the next one whole and stores nothing', async () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1000)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+  platform.capabilities.readingZoomMemory = false
+  onTestFinished(() => { platform.capabilities.readingZoomMemory = true })
+  writeInterface('gugu.file-content-zoom.image', 2)
+  const draw = async (path: string) => {
+    await harness.render(createElement(ImageRenderer, { file: { path, content: `data:image/png,${path}` } }))
+    const image = harness.container.querySelector('img')!
+    Object.defineProperties(image, { naturalWidth: { configurable: true, value: 2000 }, naturalHeight: { configurable: true, value: 1000 } })
+    await act(async () => image.dispatchEvent(new Event('load')))
+    return image
+  }
+  const image = await draw('first.png')
+  const whole = parseFloat(image.style.width)
+  expect(whole).toBeCloseTo(2000 * (1000 - 32) / 2000)
+  const viewport = harness.container.firstElementChild as HTMLElement
+  await act(async () => viewport.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 100, clientY: 100 })))
+  expect(parseFloat(image.style.width)).toBeGreaterThan(whole)
+  expect(readInterface('gugu.file-content-zoom.image')).toBe(2)
+  await harness.render(createElement('div'))
+  expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(whole)
 })
 
 // Installed only under apps/desktop: the bare name does not resolve from tests/, so a mock under it misses the product import.
@@ -102,14 +129,14 @@ it('binds HTML zoom to the displayed iframe and refuses unrelated and hidden sou
   const frame = harness.container.querySelector('iframe')!
   const change = (source: MessageEventSource | null) => window.dispatchEvent(new MessageEvent('message', { source, data: { type: 'gugu-preview-zoom', command: 'zoomIn' } }))
   await act(async () => { change(window); change(null) })
-  expect(localStorage.getItem('gugu.file-content-zoom.html')).toBeNull()
+  expect(readInterface('gugu.file-content-zoom.html')).toBeUndefined()
   await act(async () => change(frame.contentWindow))
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.html'))).toBeCloseTo(1.2)
+  expect(readInterface<number>('gugu.file-content-zoom.html')).toBeCloseTo(1.2)
   await harness.render(createElement(HtmlPreviewSurface, { fileName: 'page.html', url: 'blob:next', onLink() {} }))
   const next = harness.container.querySelectorAll('iframe')[1]!
   // Loading is not permission to update the visible old document's preference.
   await act(async () => change(next.contentWindow))
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.html'))).toBeCloseTo(1.2)
+  expect(readInterface<number>('gugu.file-content-zoom.html')).toBeCloseTo(1.2)
   expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
 })
 
@@ -121,7 +148,7 @@ it('zooms a Word document from keys like every readable view, remembered for Wor
   const n = native()
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
   expect(Number(harness.container.querySelector<HTMLElement>('.document-preview-docx-body')!.style.zoom)).toBeCloseTo(1.2)
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.docx'))).toBeCloseTo(1.2)
+  expect(readInterface<number>('gugu.file-content-zoom.docx')).toBeCloseTo(1.2)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
   vi.doUnmock('docx-preview')
 })
@@ -137,10 +164,10 @@ it('zooms an App page as a whole from the window keys while it has focus, rememb
   const n = native()
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
   expect(page.setZoomFactor).toHaveBeenLastCalledWith(1.2)
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.app:office'))).toBeCloseTo(1.2)
+  expect(readInterface<number>('gugu.file-content-zoom.app:office')).toBeCloseTo(1.2)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
   // Another App keeps its own size; a page loaded anew is zoomed again.
-  expect(localStorage.getItem('gugu.file-content-zoom.app:kanban')).toBeNull()
+  expect(readInterface('gugu.file-content-zoom.app:kanban')).toBeUndefined()
   page.setZoomFactor.mockClear()
   page.dispatchEvent(new Event('dom-ready'))
   expect(page.setZoomFactor).toHaveBeenLastCalledWith(1.2)
@@ -155,9 +182,9 @@ it('the ⋯ menu row steps the zoom of its view like the keys, remembers it for 
   await act(async () => into!.click())
   expect(ratio!.textContent).toBe('120%')
   expect(view.get('markdown')).toBeCloseTo(1.2)
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.markdown'))).toBeCloseTo(1.2)
+  expect(readInterface<number>('gugu.file-content-zoom.markdown')).toBeCloseTo(1.2)
   await act(async () => out!.click())
-  expect(Number(localStorage.getItem('gugu.file-content-zoom.markdown'))).toBeCloseTo(1)
+  expect(readInterface<number>('gugu.file-content-zoom.markdown')).toBeCloseTo(1)
   await act(async () => { into!.click(); ratio!.click() })
   expect(ratio!.textContent).toBe('100%')
 })

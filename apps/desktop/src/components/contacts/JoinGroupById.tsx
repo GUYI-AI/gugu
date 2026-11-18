@@ -136,8 +136,8 @@ export function JoinGroupById({ headless }: { headless?: boolean }) {
           <div data-testid="join-group-result" className={rowClass}>
             <div className="min-w-0 flex-1">
               <div className={nameClass}>{groupName}</div>
-              <div className={metaClass}>
-                {t('joinGroup.summary', { number: group.public_id, count: group.member_count })}
+              <div className={`${metaClass} flex flex-wrap gap-x-2`}>
+                <span>{t('groupInvite.groupNumber', { number: group.public_id })}</span>{' '}<span>{t('groupInvite.memberCount', { count: group.member_count })}</span>
               </div>
               {joinError ? (
                 <div role="alert" data-testid="join-group-error" className={errorClass}>

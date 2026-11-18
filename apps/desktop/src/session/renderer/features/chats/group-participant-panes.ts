@@ -1,4 +1,6 @@
 import { action, makeObservable, observable } from 'mobx';
+import { replicaAccount } from '@/lib/replica';
+import { readViewState, takeLegacyLocalStorage, takeLegacyLocalStorageForAccount, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 import type { JoinedGroup } from '@/lib/sidebarJoinedGroups';
 import { contentKey, screenLayout, type ScreenBlockContent, type ScreenLayoutStore } from '@renderer/app/screen-layout';
 import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
@@ -6,17 +8,27 @@ import { MIN_PANE_WIDTH_PX } from '@renderer/features/tabs/pane-store';
 import { participantSplitSizes } from './group-participant-width';
 
 type Placement = { source: ScreenBlockContent; target: ScreenBlockContent };
-type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>;
-const KEY = 'gugu.group-participant-pane.v1';
+type Saved = { rightWidth?: number; placements?: Record<string, Placement> };
+// Per account, view state (lib/viewStateTable). Kept in localStorage before (`gugu.group-participant-pane.v1:<account>`, and
+// an older unscoped one, taken as the last signed-in account's); moved over once, the account's own winning.
+const LEGACY_KEY = 'gugu.group-participant-pane.v1';
+const panesOf = (account: string): ViewPanel => ({ conversation: '', panel: 'participant-panes', account });
+const moveSaved = (raw: string, account: string) => {
+  const saved = JSON.parse(raw) as Saved;
+  writeViewState<Saved>(panesOf(account), { rightWidth: saved.rightWidth, placements: saved.placements });
+};
+takeLegacyLocalStorage((key) => key.startsWith(`${LEGACY_KEY}:`), (key, raw) => moveSaved(raw, key.slice(LEGACY_KEY.length + 1)));
+takeLegacyLocalStorageForAccount((key) => key === LEGACY_KEY, (_, raw, account) => {
+  if (!readViewState<Saved>(panesOf(account)).placements) moveSaved(raw, account);
+});
 
 /** Placement only: closing/replacing this auxiliary block never closes the target's workspace or tabs. */
 export class GroupParticipantPanes {
   readonly placements = observable.map<string, Placement>({}, { deep: false });
   rightWidth = 480;
-  private accountId: string | null | undefined;
-  private storageKey: string | undefined = KEY;
+  private accountId: string | null = replicaAccount().id;
 
-  constructor(readonly screen: ScreenLayoutStore, private storage?: Storage) {
+  constructor(readonly screen: ScreenLayoutStore) {
     makeObservable(this, { rightWidth: observable, show: action, hide: action, rememberWidth: action, useAccount: action });
     this.load();
   }
@@ -24,29 +36,27 @@ export class GroupParticipantPanes {
   useAccount(accountId: string | null): void {
     if (this.accountId === accountId) return;
     this.accountId = accountId;
-    this.storageKey = accountId ? `${KEY}:${accountId}` : undefined;
     this.placements.clear();
     this.rightWidth = 480;
     this.load();
   }
 
   private load(): void {
-    if (!this.storageKey) return;
-    try {
-      const saved = JSON.parse(this.storage?.getItem(this.storageKey) ?? 'null');
-      if (Number.isFinite(saved?.rightWidth) && saved.rightWidth >= MIN_PANE_WIDTH_PX) this.rightWidth = saved.rightWidth;
-      for (const [id, value] of Object.entries(saved?.placements ?? {})) {
-        const placement = value as Placement;
-        // The screen snapshot is restored later at boot. Retain valid identities, never arbitrary saved content.
-        const source = placement?.source;
-        const target = placement?.target;
-        const validSource = source?.kind === 'chat' ? typeof source.chatId === 'string'
-          : source?.kind === 'project' && typeof source.projectId === 'string';
-        const validTarget = target?.kind === 'chat' ? typeof target.chatId === 'string'
-          : target?.kind === 'session' && typeof target.sessionId === 'string' && typeof target.projectId === 'string';
-        if (validSource && validTarget) this.placements.set(id, placement);
-      }
-    } catch { /* A corrupt preference cannot prevent opening a conversation. */ }
+    if (!this.accountId) return;
+    const saved = readViewState<Saved>(panesOf(this.accountId));
+    const width = saved.rightWidth;
+    if (typeof width === 'number' && Number.isFinite(width) && width >= MIN_PANE_WIDTH_PX) this.rightWidth = width;
+    for (const [id, value] of Object.entries(saved.placements ?? {})) {
+      const placement = value as Placement;
+      // The screen snapshot is restored later at boot. Retain valid identities, never arbitrary saved content.
+      const source = placement?.source;
+      const target = placement?.target;
+      const validSource = source?.kind === 'chat' ? typeof source.chatId === 'string'
+        : source?.kind === 'project' && typeof source.projectId === 'string';
+      const validTarget = target?.kind === 'chat' ? typeof target.chatId === 'string'
+        : target?.kind === 'session' && typeof target.sessionId === 'string' && typeof target.projectId === 'string';
+      if (validSource && validTarget) this.placements.set(id, placement);
+    }
   }
 
   show(chatId: string, source: ScreenBlockContent, target: ScreenBlockContent, extent?: number): boolean {
@@ -147,10 +157,9 @@ export class GroupParticipantPanes {
   }
 
   private save(): void {
-    if (!this.storageKey) return;
-    try { this.storage?.setItem(this.storageKey, JSON.stringify({ rightWidth: this.rightWidth, placements: Object.fromEntries(this.placements) })); }
-    catch { /* The current window remains usable when preferences cannot be saved. */ }
+    if (!this.accountId) return;
+    writeViewState<Saved>(panesOf(this.accountId), { rightWidth: this.rightWidth, placements: Object.fromEntries(this.placements) });
   }
 }
 
-export const groupParticipantPanes = new GroupParticipantPanes(screenLayout, typeof localStorage === 'undefined' ? undefined : localStorage);
+export const groupParticipantPanes = new GroupParticipantPanes(screenLayout);

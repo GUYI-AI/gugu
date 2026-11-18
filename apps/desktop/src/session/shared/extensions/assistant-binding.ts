@@ -23,17 +23,17 @@ export const ASSISTANT_BINDING_API_VERSION = 44;
  * phone, never handed to the App; a computer answers `unsupported`). A closed list: no other value, and nothing more than
  * the value, is taken. Nothing of the assistant is in Settings (owner 11-06, 11-12: everything about it lives in its App).
  */
-export const ASSISTANT_SCREENS = ['setup', 'move', 'close', 'look', 'model', 'devices', 'connected-apps', 'settings', 'projects', 'capabilities', 'health'] as const;
+export const ASSISTANT_SCREENS = ['setup', 'move', 'close', 'look', 'model', 'devices', 'connected-apps', 'settings', 'projects', 'health'] as const;
 export type AssistantScreen = (typeof ASSISTANT_SCREENS)[number];
 /**
  * The assistant's own pages, drawn by the host in the App's panel, over its page, with a back control of its own (the App's
  * host layer, `app-host-layer.tsx`): `setup` the setup guide while there is no assistant yet (from its name on, the App's
  * own intro being the first screen; once there is one, its settings page), `settings` its settings page (资料: who it is,
  * what it uses, where it lives), `move` that same page (its move group is there), `connected-apps` the apps connected to
- * it, `projects` / `capabilities` the built-in panel's 项目 and 能力. The App hears only that a host page is open
+ * it, `projects` the built-in panel's 项目. The App hears only that a host page is open
  * (`hostPage`), never what it shows.
  */
-export const ASSISTANT_LAYER_SCREENS = ['setup', 'settings', 'move', 'connected-apps', 'projects', 'capabilities'] as const satisfies readonly AssistantScreen[];
+export const ASSISTANT_LAYER_SCREENS = ['setup', 'settings', 'move', 'connected-apps', 'projects'] as const satisfies readonly AssistantScreen[];
 export type AssistantLayerScreen = (typeof ASSISTANT_LAYER_SCREENS)[number];
 export const isAssistantLayerScreen = (screen: string): screen is AssistantLayerScreen => (ASSISTANT_LAYER_SCREENS as readonly string[]).includes(screen);
 
@@ -148,13 +148,12 @@ const COUNT = z.number().int().min(0).max(COUNT_MAX);
 /**
  * The numbers the built-in panel's rows show, from the same sources (`assistant-app-counts.tsx`), numbers only: `devices`
  * (the shell's `deviceCount`), `connectedApps` (`saved` / `connected`, integrations and chat channels), `projects` (the
- * sidebar's projects), `capabilities` (entries of the user-library `capabilities` volume). Each is a read state.
+ * sidebar's projects). Each is a read state.
  */
 export const appAssistantCountsSchema = z.strictObject({
   devices: readOf(COUNT),
   connectedApps: readOf(z.strictObject({ saved: COUNT, connected: COUNT })),
   projects: readOf(COUNT),
-  capabilities: readOf(COUNT),
 });
 export type AppAssistantCounts = z.infer<typeof appAssistantCountsSchema>;
 
@@ -180,13 +179,12 @@ function readStateOf<T extends z.ZodType>(schema: T, read: AppAssistantReadState
   const parsed = schema.safeParse(read.value);
   return parsed.success ? { state: 'ready', value: parsed.data } : { state: 'unreadable' };
 }
-/** The four numbers as an App may see them. */
+/** The three numbers as an App may see them. */
 export function appAssistantCountsOf(read: Record<keyof AppAssistantCounts, AppAssistantReadState<unknown>>): AppAssistantCounts {
   return {
     devices: readStateOf(COUNT, read.devices),
     connectedApps: readStateOf(z.strictObject({ saved: COUNT, connected: COUNT }), read.connectedApps),
     projects: readStateOf(COUNT, read.projects),
-    capabilities: readStateOf(COUNT, read.capabilities),
   };
 }
 /** The connect step's list as an App may see it. */

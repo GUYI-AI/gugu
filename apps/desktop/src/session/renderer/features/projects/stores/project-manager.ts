@@ -393,7 +393,7 @@ export class ProjectManagerStore {
 
     const promise = Promise.all([
       rpc.projects.openProject(projectId),
-      viewStateCache.get(`project:${projectId}`),
+      viewStateCache.read(`project:${projectId}`),
     ])
       .then(async ([openResult, savedSnapshot]) => {
         if (!openResult.success) {

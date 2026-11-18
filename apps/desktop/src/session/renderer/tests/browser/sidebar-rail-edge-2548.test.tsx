@@ -8,6 +8,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar';
 import { WorkspaceLayout } from '@renderer/lib/layout/workspace-layout';
 import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
+import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
@@ -19,7 +20,7 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<obj
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { start: () => {}, bindingFor: () => undefined } }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { start: () => {} } }));
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: (key: string) => ({ value: key === 'interface' ? { sidebarIntro: 'ended' } : {} }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: (key: string) => fakeAppSettings(key === 'interface' ? { sidebarIntro: 'ended' } : {}) } });
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'session-history' }), isCurrentView: (current: string, view: string) => current === view, useParams: () => ({ params: {}, setParams: () => {} }) }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { canGoBack: false }, projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'session-history', viewParamsStore: {}, revalidate: () => {} } }, sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAssistantHomeProjectId: () => {}, setAgentNameOnHoverEnabled: () => {} } }));
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }));
@@ -38,6 +39,7 @@ vi.mock('@/hooks/useNativeConversationChat', () => ({ useNativeConversationChat:
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => {
   harness?.cleanup();
+  sidebarFolds.clear(); // a fold is stored state: it must not be the next test's start
   delete document.documentElement.dataset.windowMaterial;
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.platform;
@@ -133,3 +135,90 @@ for (const material of ['native', 'opaque'] as const) {
     expect(surfaceEdge(surface)).toEqual(expandedEdge);
   });
 }
+
+// A fold moves the names, the head's buttons and the top row each frame. A custom property written for that on the sidebar's
+// layer is inherited by every element under it, so the whole list restyled each frame (~37k elements with the rows mounted),
+// read or not. Each moving element gets its own style instead, and the names fade as one mask on the scroll box.
+it('a fold writes no custom property and swaps no class: the names fade as one mask on the scroll box', async () => {
+  await page.viewport(1000, 700);
+  harness = createReactHarness();
+  await harness.render(
+    <SessionLocalizationProvider>
+      <WorkspaceLayoutContextProvider>
+        <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+      </WorkspaceLayoutContextProvider>
+    </SessionLocalizationProvider>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const scroll = document.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!;
+  expect(scroll.style.maskImage).toBe('');
+  const written: string[] = [];
+  const masks: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      const style = (record.target as HTMLElement).style;
+      for (let index = 0; index < style.length; index++) if (style[index].startsWith('--')) written.push(style[index]);
+      if (record.target === scroll && scroll.style.maskImage) masks.push(scroll.style.maskImage);
+    }
+  });
+  observer.observe(aside, { subtree: true, attributes: true, attributeFilter: ['style'] });
+  const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
+  const listClasses = sidebar.className;
+  // A row's trailing slot as ChatListPanel draws it (the rows themselves are stubbed here): the muted bell, the count.
+  const trailing = document.createElement('span');
+  trailing.className = 'gg-list-row-trailing';
+  trailing.innerHTML = '<span class="gg-chat-row-muted">bell</span><span class="gg-chip">3</span><span>other</span>';
+  scroll.append(trailing);
+  document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
+  observer.disconnect();
+  expect([...new Set(written)]).toEqual([]);
+  // The rail is the attribute alone under fixed rules: a class swap there restyled every row (rules ending in `*`, and an
+  // inherited pointer-events on every row body).
+  await expect.poll(() => sidebar.hasAttribute('data-sidebar-rail'), { timeout: 1000 }).toBe(true);
+  expect(sidebar.className).toBe(listClasses);
+  // The rules end in the count's own elements: the bell by its class; ❌ by tag (a span rule restyled every span in the rows).
+  const [bell, chip, other] = [...trailing.children].map((child) => getComputedStyle(child).display);
+  expect([getComputedStyle(trailing).position, bell, chip, other]).toEqual(['absolute', 'none', 'flex', 'block']);
+  // The avatars' column stays; right of it the names' opacity, 0 on the rail.
+  expect(masks.length).toBeGreaterThan(2);
+  expect(scroll.style.maskImage).toMatch(/^linear-gradient\(to right, black 68px, color-mix\(in srgb, black 0(?:\.0+)?%, transparent\) 68px\)/);
+  for (const testId of ['sidebar-create-agent', 'sidebar-session-history']) {
+    expect(document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!.style.opacity).toBe('0');
+  }
+  document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
+  await expect.poll(() => scroll.style.maskImage, { timeout: 3000 }).toBe('');
+});
+
+it('the rail flips in the frame the list\'s layer takes the rail\'s width, both ways: one paint, ❌ a re-render after it', async () => {
+  await page.viewport(1000, 700);
+  harness = createReactHarness();
+  await harness.render(
+    <SessionLocalizationProvider>
+      <WorkspaceLayoutContextProvider>
+        <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+      </WorkspaceLayoutContextProvider>
+    </SessionLocalizationProvider>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
+  // One mutation batch is one task: the frame loop's writes land together, a React commit lands in a batch of its own.
+  const batches: { width: string; rail: boolean; flipped: boolean }[] = [];
+  const observer = new MutationObserver((records) => batches.push({
+    width: aside.style.width,
+    rail: sidebar.hasAttribute('data-sidebar-rail'),
+    flipped: records.some((record) => record.attributeName === 'data-sidebar-rail'),
+  }));
+  observer.observe(aside, { subtree: true, attributes: true, attributeFilter: ['style', 'data-sidebar-rail'] });
+  for (const [direction, rail] of [['collapse', true], ['expand', false]] as const) {
+    batches.length = 0;
+    document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+    await expect.poll(() => sidebar.hasAttribute('data-sidebar-rail'), { timeout: 3000 }).toBe(rail);
+    await new Promise(requestAnimationFrame);
+    const flip = batches.findIndex((batch) => batch.flipped);
+    const narrow = batches.findIndex((batch) => (batch.width === '72px') === rail);
+    expect(flip, `${direction}: ${batches.map((batch) => `${batch.width}${batch.rail ? ' rail' : ''}`).join(' | ')}`).toBe(narrow);
+  }
+  observer.disconnect();
+});

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openFixture } from '@tooling/utils/db';
@@ -29,7 +29,7 @@ describe('assistant project registration removal', () => {
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db;
     setAssistantProjectCleanupOwner(async () => 'owner-own', async () => 'device-own');
-    state.home = mkdtempSync(join(tmpdir(), 'gugu-assistant-project-'));
+    state.home = realpathSync(mkdtempSync(join(tmpdir(), 'gugu-assistant-project-')));
     path = join(state.home, 'assistant');
     // An existing, ordinary directory with real content, not a fake Git repository.
     const { mkdirSync } = await import('node:fs'); mkdirSync(path); writeFileSync(join(path, 'memory.md'), 'keep this memory\n');
@@ -53,6 +53,18 @@ describe('assistant project registration removal', () => {
     expect(fixture.sqlite.prepare('SELECT count(*) AS n FROM projects').get()).toEqual(before);
     expect(fixture.sqlite.prepare('SELECT path,kind,project_id FROM workspaces WHERE id=?').get(first.workspaceId)).toEqual({ path: fresh, kind: 'path', project_id: null });
     expect(state.task).toHaveBeenCalledWith('');
+  });
+
+  // View state is written behind: a save made while the cleanup awaits is on disk before the transaction compares, so it
+  // reads as a change (the project is kept for a later try) and is never written over the rewritten rows afterwards.
+  it('a view-state save during the cleanup counts as a concurrent change and is kept as saved', async () => {
+    origin('automatic');
+    const saved = { currentViewId: 'session', viewParams: { session: { projectId: 'old', sessionId: 'assistant' } } };
+    state.groups.mockImplementation(async () => { await viewStateService.save('navigation', saved); return { success: true, data: [] }; });
+    const result = await migrateAssistantProject(candidate());
+    expect(result).toMatchObject({ status: 'retained', reason: 'concurrent-change' });
+    expect(readProjects().map(row => row.id).sort()).toEqual(['old', TASKS].sort());
+    expect(JSON.parse((fixture.sqlite.prepare("SELECT value FROM kv WHERE key = 'view-state:navigation'").get() as { value: string }).value)).toEqual(saved);
   });
 
   it('removes a proven automatic registration only after backing it up; keeps history, parents, files, buffers and workspace IDs', async () => {

@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatClock } from '../../i18n/format'
@@ -83,7 +84,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     setFailed(false)
     setMeeting(next)
     if (!document.hasFocus())
-      void platform?.showNotification({ title: t('meeting.heading'), body: [next.title, `${clock(next.start)} - ${clock(next.end)}`].filter(Boolean).join(' · ') }).catch(() => undefined)
+      void platform?.showNotification({ title: t('meeting.heading'), body: [next.title, `${clock(next.start)} - ${clock(next.end)}`].filter(Boolean).join(metadataSeparator()) }).catch(() => undefined)
   }, [enabled, t])
 
   useEffect(() => {
@@ -129,7 +130,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <strong className="truncate text-[length:var(--font-body)] font-semibold">{meeting.title || t('meeting.heading')}</strong>
         <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-          {[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(' · ')}
+          {[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}
         </span>
         {failed ? <span className="text-[length:var(--font-caption)] text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}
       </div>

@@ -1,13 +1,12 @@
 import { detectPlatform, matchesKeyboardEvent, useHotkey } from '@tanstack/react-hotkeys';
 import { observer } from 'mobx-react-lite';
 import { memo, useEffect } from 'react';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { COMMANDS, getEffectiveHotkey, getHotkeyRegistration, isHostCommandId, type CommandId } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { COMMANDS, getEffectiveHotkey, getHotkeyRegistration, isHostCommandId, type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { commandRegistry } from './registry';
 
 // memo: the binder re-renders whenever any scope registers commands; an unchanged id keeps its hotkey binding as is.
 const CommandKey = memo(function CommandKey({ id }: { id: CommandId }) {
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   useHotkey(getHotkeyRegistration(id, keyboard), () => commandRegistry.dispatch(id), {
     enabled: getEffectiveHotkey(id, keyboard) !== null,
     ignoreInputs: COMMANDS[id].ignoreInputs,
@@ -17,7 +16,7 @@ const CommandKey = memo(function CommandKey({ id }: { id: CommandId }) {
 
 /** Terminal widgets and modal roots can stop global entry keys before bubbling. */
 const CapturedCommandKey = memo(function CapturedCommandKey({ id }: { id: CommandId }) {
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   const hotkey = getEffectiveHotkey(id, keyboard);
   useEffect(() => {
     if (!hotkey) return;

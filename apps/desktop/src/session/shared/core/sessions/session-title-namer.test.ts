@@ -113,3 +113,26 @@ describe('parseGeneratedSessionTitle', () => {
     expect(parseGeneratedSessionTitle('第一行\n第二行')).toBeNull();
   });
 });
+
+it('keeps session naming prompt Unicode boundaries', () => {
+  const text = 'a'.repeat(1499) + '😀' + 'b'.repeat(600) + '😀' + 'c'.repeat(499)
+  const body = sessionTitleRequestBody('glm-test', 'test', text, 'x'.repeat(199) + '😀tail')
+  const messages = body.messages as { content: string }[]
+  expect(
+    messages.every(
+      (message) =>
+        !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+          message.content
+        )
+    )
+  ).toBe(true)
+  expect(messages[1].content).toContain('characters omitted')
+})
+
+it('moves a naming prompt tail start inside a surrogate pair inward', () => {
+  const text = 'a'.repeat(2000) + '😀' + 'b'.repeat(499);
+  const body = sessionTitleRequestBody('glm-test', 'test', text);
+  const messages = body.messages as { content: string }[];
+  expect(messages[1].content.endsWith('b'.repeat(499) + '\n</task>')).toBe(true);
+  expect(messages[1].content).toContain('[… 502 characters omitted …]');
+});

@@ -29,7 +29,7 @@ portal 到 body 的菜单加 `data-ta-menu=""` 即得玻璃。
 会话页与咕咕壳是同一个 document 里两个 React 根,壳的 context(通讯录、设备、聊天、登录态)到不了这里。所以:
 
 - 壳 → 这里:`lib/assistantShellBridge.ts` 发布云电脑状态、个人助理是谁(`assistantState` 分清在读 / 没有 / 读不到)、主人叫什么、和它那条私聊(`chatId`,`useAssistantDm`);这里用 `useAssistantShell()` 读。
-- 这里 → 壳:`<ShellSlot name="…" />` 留格子,`components/assistant/AssistantShellHost.tsx` 把壳的组件 portal 进来(`devices` → `AssistantDevicesPage`)。格子外层加 `.ta-skin`。(云电脑开关 / 连接应用 / 聊天工具在全局设置的「咕咕」组。)
+- 这里 → 壳:`<ShellSlot name="…" />` 留格子,壳那一侧把自己的组件 portal 进来(`task-chat` → `AssistantTaskChatOpener`)。格子外层加 `.ta-skin`。(云电脑开关 / 连接应用 / 聊天工具在全局设置的「咕咕」组。)
 - 快速聊天(全局快捷键叫出的小窗)整个在壳那一侧:`components/assistant/QuickChatHost.tsx` 预开一扇同源子窗、把 `QuickChat` 画进去;快捷键 / 显隐 / 位置归主进程 `electron/quick-chat-window.ts`,契约 `lib/quickChatIpc.ts`。
 - 开通:设置「咕咕」里壳的 `AssistantOnboarding`(认识咕咕 → 住哪 → 开通);开通后它的页是助理 App。称呼与身份读账号上的(`lib/firstRun.ts`)。壳 snapshot 的 `member` / `preparing` / `assistantState` 给最左栏那一格写提示与转圈;App 还在装时那一格转圈读主进程的规则状态(`rulesPending`)。
 - 要壳替这里做的事走 `getActions()`:`renameAssistant` / `openLook`(形象工坊)/ `refreshCloud`;填输入框走 `fillChatDraft`。

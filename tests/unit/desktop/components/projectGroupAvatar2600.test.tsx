@@ -17,13 +17,12 @@ describe('#2600 a project group row keeps the group avatar', () => {
   beforeEach(() => { harness = createReactHarness() })
   afterEach(() => harness.cleanup())
 
-  it.each([false, true])('mobile=%s: the group avatar is drawn, no folder cover in its place', async (mobile) => {
+  it.each([false, true])('mobile=%s: the group avatar is drawn as given', async (mobile) => {
     await renderWithAppProviders(harness, createNode(PhoneProjectChatAvatar, {
       chat: chat({ id: 'project-chat', kind: 'group', name: 'task-project' }),
       mobile,
       children: <span data-avatar="group">group avatar</span>,
     }), { chat: {}, contacts: {} })
     expect(harness.container.querySelector('[data-avatar="group"]')).not.toBeNull()
-    expect(harness.container.querySelector('svg.gg-project-avatar')).toBeNull()
   })
 })

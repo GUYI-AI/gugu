@@ -19,12 +19,12 @@ export function payerLine(plan: SubscriptionPlanReading, translate: Translate, h
     case 'subscription': {
       const name = plan.plan ? planName(plan, translate) : undefined;
       return name
-        ? `${translate('subscriptions.payer.subscription')} · ${name}`
+        ? `${translate('subscriptions.payer.subscription')}: ${name}`
         : translate('subscriptions.payer.subscription');
     }
     case 'api-key':
       return plan.plan
-        ? `${translate('subscriptions.payer.apiKey')} · ${plan.plan}`
+        ? `${translate('subscriptions.payer.apiKey')}: ${plan.plan}`
         : translate('subscriptions.payer.apiKey');
     case 'custom-endpoint':
       return translate('subscriptions.payer.customEndpoint', { endpoint: plan.endpoint ?? '' }).trim();
@@ -53,7 +53,7 @@ export function planNotes(
   formatDate: (epochMs: number) => string
 ): string[] {
   const notes: string[] = [];
-  if (plan.via && plan.via.length > 0) notes.push(translate('subscriptions.via', { vendors: plan.via.join(' · ') }));
+  if (plan.via && plan.via.length > 0) notes.push(translate('subscriptions.via', { vendors: plan.via.join(translate('metadata.separator')) }));
   if (plan.planAsOf !== undefined) notes.push(translate('subscriptions.planAsOf', { date: formatDate(plan.planAsOf) }));
   if (plan.extraUsage) notes.push(translate('subscriptions.extraUsage'));
   // 没登录:那一行右侧直接给「登录」(#2507),❌ 再写一句指到资源库的话 —— 有的家在那里根本登不了。
@@ -63,7 +63,7 @@ export function planNotes(
 /** 窗口的名字:按长度不按厂商的位置;厂商分了组就带上组名(原样)。 */
 export function windowLabel(window: SubscriptionUsageWindow, translate: Translate): string {
   const span = windowSpan(window, translate);
-  return window.group ? `${span} · ${window.group}` : span;
+  return window.group ? `${span} (${window.group})` : span;
 }
 
 function windowSpan(window: SubscriptionUsageWindow, translate: Translate): string {

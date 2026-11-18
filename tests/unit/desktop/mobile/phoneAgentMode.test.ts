@@ -161,7 +161,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     test.state = { ownerId: test.ownerId, deviceId, ready: false, status: 'stopped', sessions: [{ sessionId: 'session-1', agentUserId: 'agent-1', displayName: 'Phone task', chatId: 'real-dm', status: 'idle', modelId: 'test-model' }] }
     await stopPhoneAgentHost(test.ownerId)
     expect(test.remove).not.toHaveBeenCalled()
-    expect(test.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'offline', capabilities: { host_kind: 'phone', runtimes: [], host_runtime_capability: 0, keep: 'unchanged' } }))
+    expect(test.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'offline', capabilities: { host_kind: 'phone', runtimes: [], host_runtime_capability: 1, keep: 'unchanged' } }))
     // The row is addressed by owner and device; the order the query builder is called in is not behaviour.
     const filters = { user_id: test.ownerId, device_id: deviceId }
     expect(Object.fromEntries(test.readEq.mock.calls)).toEqual(filters)

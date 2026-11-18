@@ -345,7 +345,7 @@ function IntegrationCliLogin({
           prompt.kind === 'device-link' ? (
             <div className="grid gap-2">
               <p className="text-sm text-foreground-muted">
-                {translate('integrations.cliDeviceLinkHint', { name: metadata.name })}
+                {translate(prompt.code ? 'integrations.cliDeviceLinkHint' : 'integrations.cliAuthorizeHint', { name: metadata.name })}
               </p>
               {prompt.code ? <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary px-3 py-2">
                 <span className="text-xs text-foreground-muted">{translate('integrations.cliDeviceCode')}</span>

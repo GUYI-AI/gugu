@@ -4,12 +4,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { createFileSink } from './fileSnapshot'
+import type { AttachmentDeclareRequest, createAttachmentUploadHost } from './attachmentUploadHost'
 import type { SelectedProjectFile, ProjectFileMessage } from './projectFilePublication'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
 import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileProviders, type FileRevision, type FileStageCommand } from '@gugu/core/shared/fileResolver'
 
 /** Opaque capabilities stay within the issuing renderer and account. Bytes use the existing invoke bus and FileSink. */
 export function createNativeFileHost(deps: {
+  attachments?: ReturnType<typeof createAttachmentUploadHost>
   root: string; owner(): Promise<string | null>; alive(scope: number): boolean
   local: FileProviders['local']; ssh: FileProviders['ssh']; openPath(path: string): Promise<string>
   published(directory: string): void; maxBytes?: number
@@ -39,6 +41,15 @@ export function createNativeFileHost(deps: {
     await check(scope, entry.owner, entry.epoch); return entry
   }
   return { drop,
+    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string } | { op: 'resume' }) {
+      const epoch = epochOf(scope), owner = await deps.owner()
+      if (!owner || !deps.attachments) throw new Error('Attachment uploader is unavailable')
+      await check(scope, owner, epoch)
+      const result = request.op === 'declare' ? await deps.attachments.declare(request)
+        : request.op === 'resume' ? await deps.attachments.resume() : await deps.attachments[request.op](request.messageId)
+      await check(scope, owner, epoch)
+      return result
+    },
     /** `task`: a task's input attachment, kept on this device (`ProjectFilePublishOptions.task`). */
     async publish(scope: number, request: { chatId: string; file?: SelectedProjectFile; message?: ProjectFileMessage; task?: boolean; itemId?: string }) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || !deps.publish || !request.file && !deps.publication) throw new Error('File publisher is unavailable')
@@ -139,6 +150,10 @@ export function registerNativeFileIpc(ipc: IpcMain, host: ReturnType<typeof crea
   ipc.handle('files:publish', async (event, row: Parameters<typeof host.publish>[1]) => {
     try { return await host.publish(scope(event), row) } catch (error) { warn(error); throw error }
   })
+  ipc.handle('attachments:declare', (event, row: AttachmentDeclareRequest) => host.attachment(scope(event), { ...row, op: 'declare' }))
+  ipc.handle('attachments:drop', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'drop' }))
+  ipc.handle('attachments:retry', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'retry' }))
+  ipc.handle('attachments:resume', event => host.attachment(scope(event), { op: 'resume' }))
   ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row,
     (progress) => { if (!event.sender.isDestroyed()) event.sender.send('files:read-progress', progress) }))
   ipc.handle('files:stage', (event, row: FileStageCommand) => host.stage(scope(event), row))

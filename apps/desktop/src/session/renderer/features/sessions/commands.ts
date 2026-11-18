@@ -2,6 +2,8 @@ import { browserControlsRegistry } from '@renderer/features/browser/browser-cont
 import { sessionKeyboardNav } from '@renderer/features/sidebar/session-keyboard-nav';
 import type { BrowserTabResource } from '@renderer/features/browser/browser-tab-resource';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
+import { rowPinOf } from '@renderer/features/sidebar/row-pin';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
 import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
@@ -239,8 +241,7 @@ export function createSessionCommandProvider(projectId: string, sessionId: strin
         // ── Task actions ───────────────────────────────────────────────────
         {
           ...archiveDef,
-          // 它点名的是**当前打开的那条会话**(spec session-graph:标签说「归档任务」,动的是这条
-          // conversation)。没有打开任何会话时这一格灰掉 —— ❌ 让一个按键去归档一个它没点名的东西。
+          // 它点名的是**当前打开的那条会话**(标签说「归档会话」,owner 2026-11-16)。没有打开任何会话时这一格灰掉 —— ❌ 让一个按键去归档一个它没点名的东西。
           enabled: sessionData != null && !sessionData.archivedAt && archiveTargetSessionId() != null,
           // 「Mod+Shift+E」也走同一条 archive-session-flow:一个默认绑好的按键静默归档,正是
           // `interface.confirmBeforeArchive`(归档前询问)要挡的那一下。关掉确认后它照旧一按即归档,
@@ -272,14 +273,20 @@ export function createSessionCommandProvider(projectId: string, sessionId: strin
         },
         {
           ...pinDef,
-          label: sessionData?.isPinned ? 'Unpin Task' : 'Pin Task',
-          description: sessionData?.isPinned
-            ? 'Remove this task from pinned'
-            : 'Pin this task to keep it at the top',
-          enabled: sessionData != null,
-          execute() {
-            if (sessionData) void sessionPageStore?.setPinned(!sessionData.isPinned);
-          },
+          // 置顶 the row this task shows as in the left list, as every session menu does (sidebar-pin-actions `rowPinOf`).
+          ...(() => {
+            const row = sessionData
+              ? rowPinOf(projectId, sessionData.id, { pinned: sessionData.isPinned === true, setPinned: (pinned) => void sessionPageStore?.setPinned(pinned) })
+              : null;
+            return {
+              label: translateSessionMessage(row?.pinned ? 'task.unpin' : 'task.pin'),
+              description: '',
+              enabled: row != null,
+              execute() {
+                row?.setPinned(!row.pinned);
+              },
+            };
+          })(),
         },
         {
           ...focusComposerDef,

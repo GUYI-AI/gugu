@@ -19,6 +19,8 @@ export type ChatSummary = {
   readonly publicId?: number
   readonly unreadCount: number
   readonly isMarkedUnread: boolean
+  /** 置顶 in the chat list (chat.is_pinned). */
+  readonly pinned?: boolean
   readonly hasMessages: boolean
   readonly name: string | null
   readonly kind: string | null
@@ -35,10 +37,11 @@ const KEY = '__GUGU_CHAT_SUMMARIES__'
 const EVENT = 'gugu:chat-summaries'
 const NAMES_EVENT = 'gugu:chat-names'
 const NAMES_VERSION_KEY = '__GUGU_CHAT_NAMES_VERSION__'
+const RESTORED_KEY = '__GUGU_CHAT_LIST_RESTORED__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
-  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
+  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; is_pinned?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
 }
 const summaryOf = memoizeByReference((chat: SummarySource, name: string | null | undefined): ChatSummary =>
   replaceEqualDeep(read()?.get(chat.id), {
@@ -48,6 +51,7 @@ const summaryOf = memoizeByReference((chat: SummarySource, name: string | null |
     firstUnreadMessageId: chat.unread_locator?.message_id ?? null,
     unreadCount: chat.unread_count,
     isMarkedUnread: chat.is_marked_unread === true,
+    pinned: chat.is_pinned === true,
     hasMessages: Boolean(chat.last_message_at),
     name: name || null,
     kind: chat.kind,
@@ -75,6 +79,20 @@ export function publishChatSummaries<T extends SummarySource>(chats: readonly T[
   }
 }
 
+/**
+ * The account's stored list has been read: painted from local rows, found empty, or failed. The session tree's first
+ * draw waits for this (local only, like the view state it restores), so it never draws "no conversations" for a list
+ * that was simply not read yet. On window, as the summaries are.
+ */
+function listRestored(): { promise: Promise<void>; settle: () => void } {
+  const host = window as unknown as Record<string, { promise: Promise<void>; settle: () => void } | undefined>
+  return host[RESTORED_KEY] ??= (() => { let settle!: () => void; return { promise: new Promise<void>((resolve) => { settle = resolve }), settle } })()
+}
+/** 壳:存着的那份列表读过了(先发布摘要,再调这个)。 */
+export const markChatListRestored = (): void => listRestored().settle()
+/** 会话页:启动时等它。 */
+export const chatListRestored = (): Promise<void> => listRestored().promise
+
 /** Changes with what `subscribeChatNames` announces, for a render that reads names as it draws. On window, as the summaries are. */
 export function chatNamesVersion(): number {
   return ((window as unknown as Record<string, unknown>)[NAMES_VERSION_KEY] as number | undefined) ?? 0
@@ -100,6 +118,27 @@ export function resolveChatId(address: string): string | null {
   const publicId = Number(address)
   if (!Number.isSafeInteger(publicId)) return null
   for (const [id, summary] of summaries ?? []) if (summary.publicId === publicId) return id
+  return null
+}
+
+const PIN_KEY = '__GUGU_CHAT_PIN__'
+type PinChat = (chatId: string, pinned: boolean) => Promise<void>
+
+/** 壳:登记聊天列表的「置顶」(同聊天列表那一行的那一个),会话页的页签按 agent 那一行置顶时调它。 */
+export function registerChatPin(pin: PinChat | null): void {
+  (window as unknown as Record<string, unknown>)[PIN_KEY] = pin
+}
+
+/** 会话页:置顶 / 取消置顶聊天列表里的这一行;壳还没登记 = 响亮失败。 */
+export function pinChatRow(chatId: string, pinned: boolean): Promise<void> {
+  const pin = (window as unknown as Record<string, PinChat | null | undefined>)[PIN_KEY]
+  if (!pin) return Promise.reject(new Error('The chat list is not ready to pin this conversation'))
+  return pin(chatId, pinned)
+}
+
+/** 会话页:我的这个 agent 在聊天列表里那一行(和它的私聊)。 */
+export function agentChatOf(agentUserId: string): { chatId: string; summary: ChatSummary } | null {
+  for (const [chatId, summary] of read() ?? []) if ((summary.kind === 'dm' || summary.kind === 'ai') && summary.peerUserId === agentUserId) return { chatId, summary }
   return null
 }
 

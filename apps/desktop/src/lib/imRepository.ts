@@ -16,9 +16,11 @@ import { assertIdentityClosure } from './identityClosure'
 import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { rendererLogger } from './log'
 import { initializeMessages, ingestMessages } from './messageIngest'
+import { messageWindow } from './messageWindows'
 import { platform } from '../platform'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
+import { captureMessagePosition, inferMessagePosition, orderMessages } from '@gugu/core/shared/ui/messageTimeline'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
 import {
   IM_STORE_NAMES,
@@ -66,7 +68,7 @@ export type OutboxOperation =
 export interface OutboxRecord {
   /** Missing on older durable text records. */
   operation?: OutboxOperation
-  preview?: Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'file_metadata' | 'image_dimensions' | 'send_group_id' | 'send_group_size'>
+  preview?: Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'file_metadata' | 'image_dimensions' | 'send_group_id' | 'send_group_size' | 'local_timeline'>
   clientMessageId: string
   chatId: string
   senderUserId: string
@@ -154,20 +156,58 @@ export const imSelectors = {
   chatRowsById: fromTable('chat', (rows) => new Map(rows.map(row => [row.id, row.value]))),
   membershipsForChat: (chatId: string) => fromTable('membership', (rows) =>
     rows.filter((row) => row.chatId === chatId)),
-  messagesForChat: (chatId: string) => fromTable('message', (rows) => rows
-    .filter((row) => row.chatId === chatId)
-    .sort((a, b) => a.seq - b.seq || a.id.localeCompare(b.id))
-    .map((row) => row.value)),
-  messagesForStream: (streamId: string) => fromTable('message', (rows) => rows
-    .filter((row) => row.streamId === streamId)
-    .sort((a, b) => a.seq - b.seq || a.id.localeCompare(b.id))
-    .map((row) => row.value)),
+  messagesForChat: (chatId: string) => fromTable('message', (rows) => orderMessages(rows
+    .filter((row) => row.chatId === chatId).map((row) => row.value))),
+  messagesForStream: (streamId: string) => fromTable('message', (rows) => orderMessages(rows
+    .filter((row) => row.streamId === streamId).map((row) => row.value))),
   presence: (snapshot: ImRepositorySnapshot) => snapshot.presence,
   outbox: (snapshot: ImRepositorySnapshot) => snapshot.outbox
     .map((row) => row.value)
     .sort((a, b) => a.enqueuedAt.localeCompare(b.enqueuedAt)),
   view: (key: string) => (snapshot: ImRepositorySnapshot) => snapshot.view.find((row) => row.key === key)?.value,
   syncState: (key: string) => (snapshot: ImRepositorySnapshot) => snapshot.sync_state.find((row) => row.key === key)?.value,
+}
+
+// The account's repository once the chat provider has opened it, for readers that live outside the provider (read
+// models). The provider still opens and closes it; this only hands out the one that is open.
+type OpenedSlot = {
+  promise: Promise<AccountImRepository>
+  resolve: (repository: AccountImRepository) => void
+  reject: (error: unknown) => void
+  repository: AccountImRepository | null
+  failed: boolean
+}
+const openedRepositories = new Map<string, OpenedSlot>()
+
+function openedSlot(accountId: string): OpenedSlot {
+  let slot = openedRepositories.get(accountId)
+  if (!slot) {
+    let resolve!: (repository: AccountImRepository) => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<AccountImRepository>((done, fail) => { resolve = done; reject = fail })
+    promise.catch(() => undefined) // a failed open is reported to whoever waits; nobody waiting is not an error
+    slot = { promise, resolve, reject, repository: null, failed: false }
+    openedRepositories.set(accountId, slot)
+  }
+  return slot
+}
+
+/** The account's repository if it is open now (for a first frame), else null: `openedImRepository` waits for it. */
+export function openImRepositoryNow(accountId: string): AccountImRepository | null {
+  return openedRepositories.get(accountId)?.repository ?? null
+}
+
+/** The account's open repository; waits while the provider is still opening it, and fails if that open failed. */
+export function openedImRepository(accountId: string): Promise<AccountImRepository> {
+  return openedSlot(accountId).promise
+}
+
+function publishOpened(repository: AccountImRepository): void {
+  const previous = openedRepositories.get(repository.accountId)
+  if (previous?.repository || previous?.failed) openedRepositories.delete(repository.accountId)
+  const slot = openedSlot(repository.accountId)
+  slot.repository = repository
+  slot.resolve(repository)
 }
 
 export async function openImRepository(
@@ -179,19 +219,32 @@ export async function openImRepository(
   } = {},
 ): Promise<AccountImRepository> {
   assertId(accountId, 'accountId')
+  const startedAt = performance.now()
   const adapter = options.adapter ?? await openLocalSyncDb()
   try {
+    const openedAt = performance.now()
     await initializeMessages(accountId, adapter)
     if (!options.initialize) {
       if (options.storage !== undefined) await migrateLegacyChatList(adapter, accountId, options.storage)
       else if (typeof window !== 'undefined') await migrateLegacyChatList(adapter, accountId)
     }
-    const repository = createAccountRepository(accountId, adapter, await adapter.loadAccount(accountId), options.adapter === undefined)
+    const preparedAt = performance.now()
+    const rows = await adapter.loadAccount(accountId)
+    // What a start spends on the local store before the first frame can draw: stage times and row counts, nothing else.
+    repositoryLog.info({
+      openMs: Math.round(openedAt - startedAt), prepareMs: Math.round(preparedAt - openedAt), loadMs: Math.round(performance.now() - preparedAt),
+      chats: rows.chat.length, identities: rows.identity.length, memberships: rows.membership.length,
+    }, 'local account rows read')
+    const repository = createAccountRepository(accountId, adapter, rows, options.adapter === undefined)
     options.loaded?.(repository)
     await options.initialize?.(repository)
+    publishOpened(repository)
     return repository
   } catch (error) {
     if (options.adapter === undefined) adapter.close()
+    // Readers waiting for this account's repository learn that it did not open (a later open replaces this answer).
+    const slot = openedSlot(accountId)
+    if (!slot.repository) { slot.failed = true; slot.reject(error) }
     throw error
   }
 }
@@ -222,7 +275,7 @@ function createAccountRepository(
   }
   const publish = () => { for (const subscription of subscriptions) notify(subscription) }
 
-  return {
+  const repository: AccountImRepository = {
     accountId,
     snapshot() {
       ensureOpen()
@@ -269,9 +322,11 @@ function createAccountRepository(
       if (closed) return
       closed = true
       subscriptions.clear()
+      if (openedRepositories.get(accountId)?.repository === repository) openedRepositories.delete(accountId)
       if (ownsAdapter) void writeChain.finally(() => adapter.close())
     },
   }
+  return repository
 }
 
 function createTransaction(accountId: string, operations: LocalImDbOperation[], stored: ImRepositorySnapshot): ImRepositoryTransaction {
@@ -317,6 +372,8 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
       const chatId = nonEmpty(value.chat_id, 'message.chatId')
       const root = value.thread_root_id ?? null
       const streamId = messageStreamId(value)
+      const position = stored.message.find(row => row.id === value.id && row.chatId === chatId)?.value.local_timeline
+      if (position) value = { ...value, local_timeline: position }
       put('stream', { accountId, id: streamId, chatId, kind: root ? 'thread' : 'main', rootMessageId: root })
       put('message', { accountId, id: nonEmpty(value.id, 'message.id'), chatId, streamId, seq: value.seq, value })
     },
@@ -598,6 +655,14 @@ export function readOutboxRecords(repository: AccountImRepository): OutboxRecord
 }
 
 export async function putOutboxRecord(repository: AccountImRepository, record: OutboxRecord): Promise<void> {
+  const snapshot = repository.snapshot()
+  const previous = snapshot.outbox.find(row => row.id === record.clientMessageId)?.value
+  const held = previous?.preview?.local_timeline ?? record.preview?.local_timeline
+  const root = record.payload.threadRootId ?? null
+  const rows = messageWindow(repository.accountId, record.chatId, root)
+    ?? imSelectors.messagesForStream(root ? `thread:${record.chatId}:${root}` : `main:${record.chatId}`)(snapshot)
+  record.preview = { ...record.preview, local_timeline: held ?? (previous
+    ? inferMessagePosition(rows, record.enqueuedAt) : captureMessagePosition(rows, record.enqueuedAt)) }
   await repository.transaction((transaction) => transaction.putOutbox(record))
 }
 
@@ -609,14 +674,17 @@ export async function ackOutboxRecord(
   repository: AccountImRepository,
   clientMessageId: string,
   message: MessageItem,
-): Promise<void> {
+): Promise<MessageItem> {
   if (message.id !== clientMessageId) throw new Error(`outbox ack id mismatch: ${clientMessageId} != ${message.id}`)
+  const position = repository.snapshot().outbox.find(row => row.id === clientMessageId)?.value.preview?.local_timeline
+  if (position) message = { ...message, local_timeline: position }
   await ingestMessages(repository.accountId, { writes: [{ type: 'put', message }], revisions: [] })
   // applyOperations re-derives the cached window bounds from the committed main stream.
   await repository.transaction((transaction) => {
     if (platform.localMessages !== 'sqlite') transaction.putMessage(message)
     transaction.delete('outbox', [repository.accountId, clientMessageId])
   })
+  return message
 }
 
 function emptyScheduler(chatId: string): GroupSchedulerState {

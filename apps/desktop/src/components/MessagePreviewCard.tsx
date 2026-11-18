@@ -1,11 +1,13 @@
 // @@@6357 working 栏悬浮卡 MessagePreview:版式照 assistant-ui SharedConversation,浮层档 tokens,
 // 承载信息的字只用 --text-primary / --text-secondary(tertiary 过不了 AA)。
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useState } from 'react'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useTranslation } from 'react-i18next'
 import type { MessagePreviewEntry } from '@gugu/session-core/session-record/message-preview'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { useChatStore } from '../store/chatContext'
+import { useDevicesStore } from '../store/devicesContext'
 import { chatDb } from '../lib/supabase'
 import { Avatar } from './Avatar'
 import { formatRelativeTime } from '../lib/relativeTime'
@@ -138,7 +140,7 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
     <div className="mp-mono" data-preview-entry="tool">
       {block.parts
         .map((part) => t('runtime.messagePreview.toolCount', { state: t(`runtime.stateWord.${part.state}`), count: part.count }))
-        .join(' · ')}
+        .join(metadataSeparator())}
     </div>
   )
 }
@@ -160,15 +162,19 @@ export function MessagePreviewCard({
   const preview = state.status === 'live' && state.preview.activityVersion === 1
     && state.preview.entries.every(entry => entry.kind === 'tool' || hasPreviewActivity(entry)) ? state.preview : null
   const activityText = useActivityPreviewText()
+  // 宿主没应答 / 离线时说是哪台机器:自己账号的机器有名字,别人的机器只说「它所在的电脑」。
+  const { devices } = useDevicesStore()
+  const hostDeviceId = state.status === 'unavailable' ? state.hostDeviceId : undefined
+  const hostLabel = hostDeviceId ? devices.find(device => device.device_id === hostDeviceId)?.label.trim() : undefined
   const { messages, threadMessages, identitiesById } = useChatStore()
-  const displayName = useShownAgentName({ id: token.id, chatId, name: rawDisplayName, createdAt: identitiesById[token.id]?.created_at ?? undefined })
+  const displayName = useShownAgentName({ name: rawDisplayName, createdAt: identitiesById[token.id]?.created_at ?? undefined })
   const promptIds = (preview?.entries ?? []).flatMap((entry) =>
     entry.kind === 'prompt' && entry.messageId && activityText(entry.activity) === null ? [promptIdOf(entry.messageId)] : [],
   )
   const lookupPrompt = usePromptMessages(promptIds, [...messages, ...threadMessages])
   const blocks = preview ? toBlocks(preview.entries, lookupPrompt, activityText) : []
   const senderIds = [...new Set(blocks.flatMap(block => block.kind === 'prompt' && block.message?.sender_user_id ? [block.message.sender_user_id] : []))]
-  const senderNames = useShownAgentName(senderIds.map(id => ({ id, chatId, name: identitiesById[id]?.display_name ?? '', createdAt: identitiesById[id]?.type === 'agent' ? identitiesById[id]?.created_at ?? undefined : undefined })))
+  const senderNames = useShownAgentName(senderIds.map(id => ({ name: identitiesById[id]?.display_name ?? '', createdAt: identitiesById[id]?.type === 'agent' ? identitiesById[id]?.created_at ?? undefined : undefined })))
   const senderName = (id: string | null) => id ? senderNames[senderIds.indexOf(id)] ?? '' : ''
   const rel = formatRelativeTime(token.lastActiveAt) ?? t('runtime.justNow')
   const meta = [
@@ -177,11 +183,13 @@ export function MessagePreviewCard({
     rel,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(metadataSeparator())
 
   let note: string | null = null
   if (state.status === 'live' && !preview) note = t('runtime.messagePreview.unavailable')
   if (state.status === 'connecting' || state.status === 'idle') note = t('runtime.messagePreview.connecting')
+  else if (state.status === 'unavailable' && (state.error === 'host_silent' || state.error === 'host_offline'))
+    note = t(state.error === 'host_silent' ? 'runtime.messagePreview.hostSilent' : 'runtime.messagePreview.hostOffline', { machine: hostLabel || t('runtime.messagePreview.hostMachine') })
   else if (state.status === 'unavailable')
     note = t(state.error === 'record_not_found' ? 'runtime.messagePreview.recordNotFound' : 'runtime.messagePreview.unavailable')
   else if (preview && preview.entries.length === 0 && !preview.running) note = t('runtime.messagePreview.empty')

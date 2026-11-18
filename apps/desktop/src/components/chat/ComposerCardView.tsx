@@ -12,7 +12,8 @@ import { Avatar } from '../Avatar'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
 import { useShownAgentName } from '../../hooks/useShownAgentName'
 import { useAvatarIdentity } from '../../lib/avatarIdentity'
-import { listMyAgentJoinRequests } from '../../lib/groupAgentJoinService'
+import { myAgentJoinRequests } from '../../lib/agentJoinRequests'
+import { useReplica } from '../../lib/replica'
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { useChatStore } from '../../store/chatContext'
@@ -84,7 +85,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
       cardType={card.type}
       // 卡上记着接手的是哪种 agent(贴卡时写下的),谁看都画这一枚;没记的老卡画通用的星 —— ❌ 去查这个 agent 现在看不看得到。
       mark={task ? (task.agentType ? <EngineIcon engine={task.agentType} size={13} /> : <Sparkles size={13} />) : <Clock size={13} />}
-      title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')} · ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
+      title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')}: ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
       time={time}
       text={card.text}
       onOpen={openable ? () => (onOpenTopic ? onOpenTopic() : openTaskCardSession(task, place.local)) : undefined}
@@ -108,7 +109,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
           agentName={agentName}
           agentAvatar={identity?.avatar ?? task.agentAvatar ?? null}
           agentUserId={task.agentUserId}
-          note={join === 'pending' ? `· ${t('message.taskCard.awaitingApproval')}` : join === 'rejected' ? `· ${t('message.taskCard.rejected')}` : place.label ? `· ${place.label}` : ''}
+          note={join === 'pending' ? ` ${t('message.taskCard.awaitingApproval')}` : join === 'rejected' ? ` ${t('message.taskCard.rejected')}` : join === 'unknown' ? '' : place.label ? ` ${place.label}` : ''}
           mark={join ? null : <TaskStatusMark status={status} />}
         />
       )}
@@ -227,24 +228,21 @@ const joinLog = rendererLogger('chat/task-card-join')
 
 /**
  * 我的卡、agent 还没坐进这个群时:它的入群请求是待审还是被拒。请求一变,库给发起人发 friend_requests_changed,
- * 卡就跟着重读 —— 同意(它也随之坐进来)、拒绝都不用刷新页面。坐进来了就不读。
+ * 卡就跟着重读 —— 同意(它也随之坐进来)、拒绝都不用刷新页面。坐进来了就不读。还没读到 = 'unknown':卡上不写状态,
+ * ❌ 先画「在哪」再跳成「待审批」。
  */
-function useMyAgentJoin(chatId: string | null, agentUserId: string | null): 'pending' | 'rejected' | null {
+function useMyAgentJoin(chatId: string | null, agentUserId: string | null): 'pending' | 'rejected' | 'unknown' | null {
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
-  const [state, setState] = useState<'pending' | 'rejected' | null>(null)
+  const reading = useReplica(myAgentJoinRequests, chatId && agentUserId ? [chatId] : null)
   useEffect(() => {
     if (!chatId || !agentUserId) return
-    let live = true
-    const read = () => listMyAgentJoinRequests(chatId).then(
-      (byAgent) => {
-        const status = byAgent.get(agentUserId)
-        if (live) setState(status === 'pending' || status === 'rejected' ? status : null)
-      },
-      (error: unknown) => joinLog.error({ chatId, agentUserId, error: String(error) }, 'reading the agent join request for a task card failed'),
-    )
-    void read()
-    const unsubscribe = subscribeAccountRevision('friend_requests_changed', read)
-    return () => { live = false; unsubscribe() }
+    return subscribeAccountRevision('friend_requests_changed', () => { void myAgentJoinRequests.refresh(chatId) })
   }, [chatId, agentUserId, subscribeAccountRevision])
-  return chatId && agentUserId ? state : null
+  useEffect(() => {
+    if (reading.state === 'error') joinLog.error({ chatId, agentUserId, error: String(reading.error) }, 'reading the agent join request for a task card failed')
+  }, [reading, chatId, agentUserId])
+  if (!chatId || !agentUserId) return null
+  if (reading.state !== 'value') return reading.state === 'unknown' ? 'unknown' : null
+  const status = reading.value.get(agentUserId)
+  return status === 'pending' || status === 'rejected' ? status : null
 }

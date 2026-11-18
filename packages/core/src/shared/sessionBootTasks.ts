@@ -27,7 +27,7 @@ export class SessionBootTasks {
     try { this.report(failure) } catch { /* A broken logger must not terminate boot either. */ }
   }
 
-  snapshot(): SessionBootFailure[] { return [...this.failures.values()] }
+  snapshot(): SessionBootFailure[] { return [...this.failures.values()].map(failure => ({ ...failure })) }
 
   clear(operation: string, taskId: string): void { this.failures.delete(`${operation}:${taskId}`) }
 

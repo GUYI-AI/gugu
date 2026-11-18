@@ -106,7 +106,7 @@ export const AgentSourceList = observer(function AgentSourceList({
         {needsUpdate && (
           <>
             {' '}
-            · {translate('agentsPage.updateAvailable')}
+             {translate('agentsPage.updateAvailable')}
             {active.latestVersion && ` v${active.latestVersion}`}
           </>
         )}
@@ -203,7 +203,7 @@ export const AgentSourceList = observer(function AgentSourceList({
             )}
             {companions.map((p) => (
               <p key={p.dependencyId} className="m-0 text-xs text-foreground-muted">
-                {p.name} ·{' '}
+                {p.name}  {' '}
                 {p.managedVersion ? `v${p.managedVersion}` : translate('agentsPage.notInstalled')}
               </p>
             ))}
@@ -254,7 +254,7 @@ export const AgentSourceList = observer(function AgentSourceList({
                     <SelectItem value="local">
                       <span>{translate('agentsPage.sourceLocal')}</span>
                       <span className="text-xs text-foreground-muted">
-                        {local.provenance.kind} · {local.pathEntry ?? local.realpath}
+                        {local.provenance.kind}  {local.pathEntry ?? local.realpath}
                       </span>
                     </SelectItem>
                   )}

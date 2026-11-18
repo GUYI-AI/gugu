@@ -1,4 +1,3 @@
-import { setUserLibraryOwner } from '../session/main/core/app/user-library'
 import { startNativeConversationInboxHost } from '../session/main/core/sessions/native-conversation-inbox'
 // @@@task-shell-port (#5012) — 网页版无头宿主的会话身份接线:浏览器交登录态 → 宿主开账号并绑到会话。
 //
@@ -17,11 +16,13 @@ import { startNativeConversationInboxHost } from '../session/main/core/sessions/
 import { createRPCController, registerRPCRouter } from '../../src/session/shared/lib/ipc/rpc'
 import type { EventDefinition } from '../../src/session/shared/lib/ipc/events'
 import {
+  sessionpageBirthGroupJoinEvent,
   sessionpageAgentProvisionedEvent,
   type SessionpageIdentityAuth,
   type SessionpageIdentityRpc,
 } from '../../src/session/shared/lib/ipc/sessionpage-identity-contract'
 import { onSessionpageAgentProvisioned } from './emdash-agent-provisioning'
+import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpageBirthGroupJoin } from './sessionpage-birth-group-join'
 import { createSessionpageIdentityHost, type SessionpageIdentityAuthSnapshot } from './sessionpage-identity-host'
 import { createLocalDeviceIdResolver, detectDeviceCapabilities, type DeviceCapabilities, type DeviceHeartbeatTableClient } from '@gugu/core/cloud/deviceRuntime'
 import { makeIdentityClient } from '../supabase'
@@ -54,6 +55,7 @@ import { adoptLegacyTaskNames, announceEmdashSession, emdashSessionProvisionInpu
 import { sessionpageRenameAnnouncement, type SessionpageAgentNameTaken } from './sessionpage-rename-announcement'
 import type { HostIpc } from '../session/main/lib/host-ipc'
 import { log } from '../session/main/lib/logger'
+import { createLogger } from '../lib/logger'
 
 /** 浏览器推送的登录态,最近一份即真相。 */
 export function createSessionpageIdentityAuthStore() {
@@ -152,7 +154,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     hostIpc.broadcast(definition.name, data)
   }
   // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事与桌面主进程同一份实现,只喂它这个宿主的登录态。
-  setUserLibraryOwner(async () => (await auth.get())?.userId ?? null)
   setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: auth.get }))
   const unsubscribeGroupMapping = onProjectGroupMappingChanged(({ projectId }) => notifyProjectGroupBindingChanged(projectId))
   const unsubscribeProvisioned = onSessionpageAgentProvisioned((event) => {
@@ -163,6 +164,10 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       displayName: event.displayName,
     })
     if (event.renamedFrom) announceRename({ ...event, previousName: event.renamedFrom })
+  })
+
+  const unsubscribeBirthGroupJoin = onSessionpageBirthGroupJoin(({ sessionId, join }) => {
+    broadcast(sessionpageBirthGroupJoinEvent, { conversationId: sessionId, join })
   })
 
   const controller = createRPCController<SessionpageIdentityRpc>({
@@ -180,6 +185,15 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     agentNames: () => identity.agentNames(),
     sessionPeers: (...args) => identity.sessionPeers(...args),
     ensureAgentAddress: (input) => identity.ensureAgentAddress(input),
+    birthGroupJoin: async (sessionId) => {
+      const current = await auth.get()
+      return current ? sessionpageBirthGroupJoin(sessionId, process.env, current.userId) : null
+    },
+    retryBirthGroupJoin: async (sessionId) => {
+      const current = await auth.get()
+      if (!current) throw new Error('Sign in to retry joining the group')
+      return retrySessionpageBirthGroupJoin(sessionId, process.env, current, createLogger('sessionpage/provision'))
+    },
   })
   registerRPCRouter({ sessionpageIdentity: controller }, hostIpc.ipcMain)
   // #7103 人点的重试(经别的设备来也一样):这条会话下一次签咕咕额度真去问一次。
@@ -206,8 +220,8 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       nativeInbox.dispose()
       setTaskNamer(null)
       unsubscribeProvisioned()
+      unsubscribeBirthGroupJoin()
       unsubscribeGroupMapping()
-      setUserLibraryOwner(null)
       setProjectGroupHost(null)
       setSessionIdentityHost(null)
       setEmdashMcpInjector(null)

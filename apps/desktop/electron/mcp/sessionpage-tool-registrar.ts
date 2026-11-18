@@ -11,7 +11,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { appendFileSync } from 'node:fs'
 import type { z } from 'zod'
 import { TYPED_ID_KINDS, decodeTypedId, type TypedIdKind } from '@gugu/core/shared/typedId.mjs'
-import { encodeResult, withPictures } from './sessionpage-tool-result'
+import { encodeResult, withPictures, withSessionLink } from './sessionpage-tool-result'
 export { withPictures } from './sessionpage-tool-result'
 import { registerGuguTool } from './register-gugu-tool.mjs'
 import type { GuguMcpRequestTracker } from '../gugu-mcp-host'
@@ -31,6 +31,10 @@ export interface SessionpageToolDef {
   action: string
   /** 列表工具:结果按 list-window 的约定切窗(顺序是宿主排好的)。 */
   list?: SessionpageListSpec
+  /** It returns a session: that gets its session_link (withSessionLink). Only session_spawn (owner 2026-11-15: rarely called, so the link costs no context elsewhere). */
+  linksSession?: true
+  /** What the agent is shown of the host's answer, after windowing: drops host internals it never acts on. */
+  present?: (result: unknown) => unknown
 }
 
 export interface SessionpageListSpec extends ListSpec<Record<string, unknown>> {
@@ -141,10 +145,12 @@ export function registerSessionpageTools(
         let result: unknown
         try {
           result = encodeResult(await dispatch(action, signal))
+          if (def.linksSession) result = withSessionLink(result)
           if (def.list) {
             result = await eachWindowed(def.list, windowResult(def.list, result, args), async (next) =>
               encodeResult(await dispatch(decodeAction(next), signal)))
           }
+          if (def.present) result = def.present(result)
         } catch (error) {
           auditToolCall({ phase: 'error', tool: def.name, action, error })
           throw error

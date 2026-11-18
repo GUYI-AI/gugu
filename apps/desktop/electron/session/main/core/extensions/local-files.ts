@@ -845,6 +845,8 @@ export function createLocalAppFiles(platform: {
       const named = pathOf(surface, args.ref);
       if (path.isAbsolute(named)) return requireAgentFileAccess(named);
       await requireAgentFileTreeAccess(surface.workspaceRoot);
+      // `.` is the working copy's own folder: what opens a folder in a program opens this one too. It is no entry to reveal in a folder above.
+      if (args.follow && named === '.') return surface.workspaceRoot;
       if (!args.follow) return entryAt(surface.workspaceRoot, named).abs;
       return requireAgentFileAccess(inside(surface.workspaceRoot, named, 'existing').abs);
     },

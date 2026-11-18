@@ -1,23 +1,21 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { ChatNotificationLevelControl } from './ChatNotificationLevelControl'
-import { COLOR_MUTED, COLOR_PLACEHOLDER } from './chatPresentation'
+import { COLOR_MUTED } from './chatPresentation'
 import { rendererLogger } from '../../lib/log'
-import { ChevronRight } from '@/lib/icons'
 
 const managementLog = rendererLogger('chat/management-actions')
 
-// @@@6418 会话管理动作(查找聊天记录 / 通知 / 置顶 / 清空)。单聊和群聊的设置抽屉共用这一份 ——
+// @@@6418 会话管理动作(通知 / 置顶 / 清空;查找聊天记录只在页头「…」里,❌ 这里再放一份)。单聊和群聊的设置抽屉共用这一份 ——
 // 从 ChatAreaPanel 搬出来,群设置不再是「单聊有、群聊没有」。
 export interface ChatManagementActionsProps {
   activeChat: ChatItem
   onClose: () => void
   onClearMessages: () => Promise<void>
-  onOpenSearch: () => void
   onSetNotificationLevel: (level: NotificationLevel) => Promise<void>
   onTogglePinned: (pinned: boolean) => Promise<void>
   /**
@@ -25,6 +23,8 @@ export interface ChatManagementActionsProps {
    * 与该页其它行同一套几何(13px 行距、整行 hover、无分隔线、行尾 chevron)—— 同一页里❌ 两种节奏。
    */
   appearance?: 'drawer' | 'settings'
+  /** 画在「清空聊天记录」前面(群设置页:它和离开 / 解散是最底下的一组,这里给那一组的小标题)。 */
+  beforeClear?: ReactNode
 }
 
 const ROW_STYLE: CSSProperties = {
@@ -53,14 +53,12 @@ const SETTINGS_ROW_STYLE: CSSProperties = {
   margin: '0 -8px', padding: '13px 8px', borderRadius: 'var(--radius-control)', cursor: 'pointer',
   fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--text-primary)',
 }
-const SETTINGS_CHEVRON_STYLE: CSSProperties = { color: 'var(--text-tertiary)', flexShrink: 0 }
 // 通知档位那一行:三段控件不收缩,标签 + 控件放不进一行(英文、窄抽屉)时控件整块换到下一行、仍贴右 ——
 // ❌ 撑宽这一行,那会让外层滚动容器出横向滚动条。标签的 auto 右边距在一行时把控件推到行尾。
 const WRAP_ROW: CSSProperties = { flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: 16, rowGap: 8 }
 const WRAP_ROW_LABEL_STYLE: CSSProperties = { marginRight: 'auto' }
 const APPEARANCE = {
   drawer: {
-    row: ROW_STYLE,
     staticRow: STATIC_ROW_STYLE,
     wrapRow: { ...STATIC_ROW_STYLE, ...WRAP_ROW } as CSSProperties,
     dangerRow: DANGER_ROW_STYLE,
@@ -69,7 +67,6 @@ const APPEARANCE = {
     error: ERROR_STYLE,
   },
   settings: {
-    row: SETTINGS_ROW_STYLE,
     staticRow: { ...SETTINGS_ROW_STYLE, cursor: 'default' } as CSSProperties,
     wrapRow: { ...SETTINGS_ROW_STYLE, cursor: 'default', ...WRAP_ROW } as CSSProperties,
     dangerRow: { ...SETTINGS_ROW_STYLE, color: 'var(--danger-fg)' } as CSSProperties,
@@ -79,7 +76,7 @@ const APPEARANCE = {
   },
 }
 
-export function ChatManagementActions({ activeChat, onClose, onClearMessages, onOpenSearch, onSetNotificationLevel, onTogglePinned, appearance = 'drawer' }: ChatManagementActionsProps) {
+export function ChatManagementActions({ activeChat, onClose, onClearMessages, onSetNotificationLevel, onTogglePinned, appearance = 'drawer', beforeClear }: ChatManagementActionsProps) {
   const { t } = useTranslation('messaging')
   const look = APPEARANCE[appearance]
   const [confirmClear, setConfirmClear] = useState(false)
@@ -96,24 +93,6 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
   return (
     <div style={COLUMN_STYLE}>
       {actionError ? <div style={look.error}>{actionError}</div> : null}
-      <div
-        data-testid={AUTOMATION_TEST_IDS.chatDrawerSearchButton}
-        className="gg-row"
-        style={look.row}
-        onClick={() => {
-          onOpenSearch()
-          onClose()
-        }}
-      >
-        <span>{t('chatArea.management.searchHistory')}</span>
-        {appearance === 'settings' ? <ChevronRight size={16} style={SETTINGS_CHEVRON_STYLE} /> : (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4" stroke={COLOR_PLACEHOLDER} strokeWidth="1.3" />
-            <path d="M9 9L12 12" stroke={COLOR_PLACEHOLDER} strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-        )}
-      </div>
-      {look.divider ? <div style={look.divider} /> : null}
       <div style={look.wrapRow}>
         <span style={WRAP_ROW_LABEL_STYLE}>{t('chatArea.management.notifications')}</span>
         <ChatNotificationLevelControl
@@ -156,6 +135,7 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
         />
       </div>
       {look.divider ? <div style={look.divider} /> : null}
+      {beforeClear}
       {!confirmClear ? (
         <div className="gg-row" style={look.dangerRow} onClick={() => setConfirmClear(true)}>
           {t('chatArea.management.clearHistory')}

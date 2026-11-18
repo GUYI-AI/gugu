@@ -24,7 +24,7 @@ vi.mock('@renderer/features/browser/browser-pane', () => ({
 
 const { PaneContent } = await import('@renderer/features/tabs/pane-content');
 const { PaneContext } = await import('@renderer/features/tabs/pane-context');
-const { PageShownContext } = await import('@renderer/app/recent-session-pages');
+const { SurfaceShownContext } = await import('@/lib/retainedSurface');
 const { TabContent: BrowserTabContent } = await import('@renderer/features/browser/browser-tab-view');
 
 let container: HTMLDivElement;
@@ -53,7 +53,7 @@ async function drawPages(page: (name: string) => ReactNode) {
             className="flex h-full flex-col"
             style={name === 'hidden' ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}
           >
-            <PageShownContext.Provider value={name === 'shown'}>{page(name)}</PageShownContext.Provider>
+            <SurfaceShownContext.Provider value={name === 'shown'}>{page(name)}</SurfaceShownContext.Provider>
           </div>
         ))}
       </>

@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
-import { identityDb } from './supabase'
+import { readOwnSettings, updateOwnSettingsKey } from './ownSettings'
 
 /**
  * 功能栏导览(规范 4.1 第 6 步):七个功能,按功能栏从上到下的顺序。每一步指着一个真实存在的入口;
@@ -22,7 +21,6 @@ export const TOUR_FILMS = ['split', 'contacts', 'report'] as const
  */
 export type ProductTourState = { step: TourStepId; status: 'active' | 'skipped' | 'done' }
 const KEY = 'productTour'
-const client = identityDb as unknown as SettingsTableClient
 
 /** 没有 = 没看过。格式坏了 throw:❌ 悄悄当成没看过、把人家的进度清零。 */
 export function parseProductTourState(config: Record<string, unknown>): ProductTourState | null {
@@ -47,11 +45,11 @@ export function parseProductTourState(config: Record<string, unknown>): ProductT
 }
 
 export async function readProductTourState(userId: string): Promise<ProductTourState | null> {
-  return parseProductTourState(await readUserSettingsConfig(client, userId, 'user'))
+  return parseProductTourState(await readOwnSettings(userId, 'user'))
 }
 
 export async function saveProductTourState(userId: string, state: ProductTourState): Promise<void> {
-  await updateUserSettingsKey(client, userId, 'user', KEY, () => ({ version: 2, ...state }))
+  await updateOwnSettingsKey(userId, 'user', KEY, () => ({ version: 2, ...state }))
 }
 
 /** 「帮助与导览」发来的请求(UI_EVENTS.reopenProductTour 的 detail)。 */

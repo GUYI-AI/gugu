@@ -1,10 +1,12 @@
+import { AnnotationTray } from '../annotations/annotation-tray';
+import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
+import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
-import { resolveDeliveredAttachment } from '@renderer/lib/chat/delivered-message-presentation';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
 import { appendToDraft } from '@/store/chatContext';
@@ -50,7 +52,7 @@ import { observer, useObserver } from 'mobx-react-lite';
 import { collectBackgroundCommands, collectSubagents } from '@renderer/features/sessions/view/background-task-rosters';
 import { dismissSubagent } from '@renderer/features/sessions/view/subagent-dismissals';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark-seen-when-shown';
 import { createPortal, flushSync } from 'react-dom';
@@ -98,7 +100,7 @@ import type { SessionCondition as ChatSessionCondition } from '@gugu/session-cha
 type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
   actions?: readonly { label: string; pending?: boolean; run: (anchor?: HTMLElement) => void }[];
 };
-import { rpc, rpcOn } from '@renderer/lib/ipc';
+import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -109,6 +111,7 @@ import { resolveSignInTarget } from '@renderer/features/settings/agents-page/age
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
+import { resolveAttachmentDataUrl } from './acp-attachment-image';
 import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
 import { SessionScheduleChip } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
@@ -119,6 +122,7 @@ import { SessionHostQuestion } from '@renderer/features/extensions/session-host-
 import { registerPastedScreenshot } from '@/lib/pastedScreenshot';
 import { useComposerFileUploads } from './use-composer-file-uploads';
 import { shellPort } from '@renderer/lib/shell-port';
+import { useBirthGroupJoin } from './use-birth-group-join';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
@@ -138,8 +142,8 @@ import {
   sessionPermissionModeOptions,
   selectedPermissionModeId,
 } from './permission-mode-options';
-import { resolveVisualEvidenceAttachmentDataUrl } from './acp-chat-resource-manager';
 import { useOpenedOutputMenu } from './opened-output-menu';
+import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
 import {
@@ -183,6 +187,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { sessionFastMode } from '../session-config/fast-mode';
+import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
@@ -202,10 +208,10 @@ import {
 import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
 import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
 import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
+import { offerSessionSend } from '../session-send';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const attachmentDataUrlCache = new Map<string, Promise<string | null>>();
 /** `/mcp` 这条自有命令的匹配 —— 与 agent 命令同一口径:空查询全列,否则按名字包含。 */
 function commandMatchesClientQuery(normalized: string): boolean {
   return normalized.length === 0 || 'mcp'.includes(normalized);
@@ -243,52 +249,6 @@ function issueMatchesQuery(issue: LinkedIssue, query: string): boolean {
     .some((value) => value.toLowerCase().includes(normalized));
 }
 
-function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promise<string | null> {
-  if (id.startsWith('gugu-message-file://')) return resolveDeliveredAttachment(id);
-  const fixtureDataUrl = resolveVisualEvidenceAttachmentDataUrl(store, id);
-  if (fixtureDataUrl) return Promise.resolve(fixtureDataUrl);
-  // 旧消息正文里那条绝对路径投影出来的附件(#5269):字节在盘上,不在 agent 的附件仓里 —— 照那条路径读。
-  const path = pathAttachmentTarget(id);
-  if (path) {
-    const cachedPath = attachmentDataUrlCache.get(id);
-    if (cachedPath) return cachedPath;
-    // 字节在会话所在的那台机器上(别的机器上的会话 = 问那台机器)。
-    const promise = rpcOn(machineRegistry.machineOf(store.projectId)).app.readUserImageDataUrl(path)
-      .then((result) => (result.success ? result.dataUrl : null))
-      .catch((error: unknown) => {
-        // 读不到就退回中性占位块(旧消息里那些指着临时目录的路径就是这种)——❌ 不弹错。
-        log.warn('Failed to read attachment image', { path, error });
-        return null;
-      });
-    attachmentDataUrlCache.set(id, promise);
-    return promise;
-  }
-  if (!store.session) return Promise.resolve(null);
-  const cached = attachmentDataUrlCache.get(id);
-  if (cached) return cached;
-  const promise = store.session
-    .downloadAttachment(id)
-    .then((result) => {
-      if (!result.success) return null;
-      return `data:${result.data.ref.mimeType};base64,${bytesToBase64(result.data.data)}`;
-    })
-    .catch((error: unknown) => {
-      log.warn('Failed to resolve ACP attachment', { id, error });
-      return null;
-    });
-  attachmentDataUrlCache.set(id, promise);
-  return promise;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
 // ── Composer for a single store ────────────────────────────────────────────────
 //
 // Keyed by conversationId in the parent so that drafts, focus, and editor state
@@ -317,7 +277,7 @@ const ComposerForStore = observer(function ComposerForStore({
   /** Keep a newly sent prompt or stop result visible in the transcript. */
   onScrollToBottom?: () => void;
 }) {
-  const { translate } = useSessionMessages();
+  const { locale, translate } = useSessionMessages();
   const life = sessionLifeView(store.runtimeSessionId);
   // 这个任务给自己排的定时:有就在输入框上沿挂一条托盘放那颗芯片,输入框往上压住它的下沿(与芯片读同一份缓存)。
   const scheduleMachine = machineRegistry.machineOf(store.projectId);
@@ -332,6 +292,7 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [verb, store]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const annotationDraft = sessionAnnotations.forSession(store.sessionId);
   const fileSelection = useAttachmentFileSelection(attachments, store.sessionId);
   const attachmentsRef = useRef(attachments);
   // 发送等待的是上传 promise;账本必须在它 resolve 前更新,不能等 React 的下一次渲染。
@@ -392,8 +353,13 @@ const ComposerForStore = observer(function ComposerForStore({
     async (value: string, deliver: (text: string, files: TurnFileRef[]) => void | Promise<void>) => {
       if (sendingRef.current) return;
       sendingRef.current = true;
+      const annotated = annotationDraft.items;
       try {
-        await sendComposerInput(value, {
+        const retained = currentAnnotationImages(annotated, attachmentsRef.current);
+        fileUploads.keepOnly(new Set(retained.map(item => item.id)));
+        setAttachments(retained);
+        prepareAnnotationImages(annotated, fileUploads);
+        await sendComposerInput(annotationPrompt(value, annotated, locale), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -401,6 +367,7 @@ const ComposerForStore = observer(function ComposerForStore({
           status: setSendHold,
           deliver,
           committed: () => flushSync(() => {
+            annotationDraft.submitted(annotated);
             setAttachments([]);
             fileUploads.clear();
             if (editorApiRef.current?.getText() === value) editorApiRef.current.clear();
@@ -411,7 +378,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale]
   );
 
   const handleSubmit = useCallback(
@@ -547,7 +514,7 @@ const ComposerForStore = observer(function ComposerForStore({
     [store, translate]
   );
 
-  const composerShown = useContext(PageShownContext);
+  const composerShown = useContext(SurfaceShownContext);
   const inputAccount = useSessionInputAccount();
   useEffect(() => {
     if (!composerShown) return;
@@ -561,7 +528,8 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [store, composerShown, inputAccount, attachFiles]);
 
   const handleAttachmentsChange = useCallback(
-    (next: ComposerAttachment[]) => {
+    (visible: ComposerAttachment[]) => {
+      const next = [...visible, ...attachmentsRef.current.filter(item => isAnnotationImage(item.id) && item.state !== 'error' && !visible.some(kept => kept.id === item.id))];
       fileUploads.keepOnly(new Set(next.map((attachment) => attachment.id)));
       if (next.every((att) => att.state !== 'error')) setSendHold((hold) => (hold === 'blocked' ? null : hold));
       setAttachments(next);
@@ -767,6 +735,8 @@ const ComposerForStore = observer(function ComposerForStore({
     agentCreationToolsByEngine,
     localSessionMentionProvider,
   ]);
+  // A selection's Send (`SelectionSend`) sends through this composer: typed words' path, this composer's @.
+  useEffect(() => offerSessionSend(store.sessionId, { send: text => store.submitPrompt(text), mentionProvider }), [store, mentionProvider]);
 
   const { data: agents } = useAgents();
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
@@ -888,15 +858,18 @@ const ComposerForStore = observer(function ComposerForStore({
 
   // 「你的 X 模型」那一档的成员,见 @@@own-model-tier —— 平台会话看不见用户自己那条凭据路,
   // 只有这趟 BYOK 探针看得见。主进程按 provider 缓存,新建页读的是同一份(react-query 同 key)。
-  // ⚠️ 只在**需要**时才问:`own` 那条路的成员来自活会话本身,问一趟等于白起一个 harness 进程
-  //    (冷缓存时这趟会 spawn,实测数秒)。明确 BYOK 的会话一次都不问。
+  // 活 BYOK 会话先用自己的清单。打开模型菜单才问宿主，以便发现本次启动后新增的模型。
   // #6552 会话还在起(活会话还没报清单)时 BYOK 那一路也问:那段里探针目录就是唯一看得见这份清单的人。
   // #7342 停下了(宿主停掉进程、起不来)同理 —— 没有活会话就没有活清单,触发器连模型名都对不上。
   //   开销:主进程按 provider 缓存、不等 harness(冷缓存在后台探);远端按会话所在那台机器问(hook 自己选线)。
-  const harnessCatalog = useHarnessModelCatalog(
-    route === 'own' && store.session ? null : providerId,
-    'acp'
-  );
+  const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
+  const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
+  const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const onModelMenuOpen = () => {
+    platformCatalog.refresh();
+    if (readOwnCatalog) harnessCatalog.refresh();
+    else setCatalogMenuSession(store.sessionId);
+  };
 
   /**
    * 这条会话是不是跑在咕咕代付的模型上 —— 判据是它**自己记录的模型**在目录里,
@@ -1323,13 +1296,13 @@ const ComposerForStore = observer(function ComposerForStore({
       platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
     );
     if (!resolved) return null;
-    if (live || !declared) return resolved.options;
-    return Object.fromEntries(
+    const options = live || !declared ? resolved.options : Object.fromEntries(
       Object.entries(resolved.options).map(([id, option]) => [
         id,
         { ...option, disabled: true, disabledReason: translate('composer.effortLockedToSession') },
       ])
     );
+    return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
   }, [store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
@@ -1464,7 +1437,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
         canSubmit={composerCanSubmit({ promptReady: a.canSubmit, isWorking: a.isWorking, reverting: store.reverting, editingMessage: !!store.messageEdit,
-          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0,
+          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0 || annotationDraft.items.length > 0,
           attachmentWaiting: sendHold === 'waiting', membershipLocked: membershipLockedModel !== null })}
         placeholder={startupPlaceholderKeyValue ? translate(startupPlaceholderKeyValue) : undefined}
         onSubmit={handleSubmit}
@@ -1500,13 +1473,16 @@ const ComposerForStore = observer(function ComposerForStore({
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
-        onModelMenuOpen={platformCatalog.refresh}
+        onModelMenuOpen={onModelMenuOpen}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
+        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
+        renderFastModeHint={renderFastModeHint}
         permissionModeOptions={localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
@@ -1542,7 +1518,8 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachments={attachments}
+        attachmentExtra={annotationDraft.items.length ? <AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
+        attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}
         onImageFilesDropped={(files, source) => {
@@ -1594,7 +1571,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const activeTab = pane.resolvedTabs.find((t) => t.isActive && t.kind === tabKind);
   const store = activeTab ? (activeTab.resource as AcpChatTabResource).store : null;
 
-  const visibility = useConversationVisibility(useContext(PageShownContext));
+  const visibility = useConversationVisibility(useContext(SurfaceShownContext));
   useRememberNativeTail(store?.projectId, store?.runtimeSessionId, store?.affordances.isBusy ?? false, visibility.shown);
   useOwnerNotifications(store, visibility.shown);
   const rootRef = visibility.ref;
@@ -1789,6 +1766,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   // 「正在打开引擎会话」一类的启动步骤对用户不存在。要人做的事(登录、会员)照常在下面说。
   // 「重来」在途:按钮停下,❌ 连点各投一遍首轮。
   const [restarting, setRestarting] = useState(false);
+  const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
@@ -1833,6 +1811,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         code: 'turn-interrupted',
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
+      });
+      return;
+    }
+    if (!error && birthGroup.join && !signInExpired && !signInMissing) {
+      // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
+      setCondition({
+        code: 'group-join-failed',
+        label: translate('transcript.condition.groupJoinFailed'),
+        detail: birthGroup.join.reason,
+        actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
       });
       return;
     }
@@ -1987,7 +1975,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
@@ -2004,7 +1992,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     });
   }, [store, translate]);
 
-  useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient);
+  useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient, store?.sessionId);
 
   useEffect(() => {
     if (!store) return;
@@ -2147,7 +2135,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           if (!path || !store) return;
           // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
           // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
-          // ——附件不是工作区文件,它自己就带着一条绝对路径(#5269)。
+          // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
           makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
           return;
         }

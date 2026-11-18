@@ -101,6 +101,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private readonly _sideShares = observable.map<string, number>({}, { deep: false });
 
   setNarrow(narrow: boolean): void { this.narrow = narrow; }
+
+  /** The narrowest this pane is drawn: what the page in front of it asks for (`minWidth`), else MIN_PANE_WIDTH_PX. */
+  paneMinWidth = (paneId: string): number => {
+    const pane = this.groups.find((group) => group.paneId === paneId)?.pane;
+    const entry = pane?.resolvedActiveTabId ? pane.entries.get(pane.resolvedActiveTabId) : undefined;
+    return (entry && this._registry.has(entry.kind) ? this._registry.get(entry.kind).minWidth : undefined) ?? MIN_PANE_WIDTH_PX;
+  };
   /** How the panes are cut. Replaced whole on every change (pane-layout-tree.ts is pure). */
   layout: PaneLayoutNode;
 
@@ -157,6 +164,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       _pair: observable.ref,
       pairDeclined: observable,
       setNarrow: action,
+      dimensions: observable.ref,
+      setDimensions: action,
       layout: observable.ref,
       paneSizes: computed,
       isViewActive: computed,
@@ -347,16 +356,19 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   /** Room for two pages side by side, each at least MIN_PANE_WIDTH_PX (can't measure = room: tests, not drawn yet). */
   private roomToSplit(): boolean {
-    const sizes = this.groups.map(({ paneId, pane }) => this.paneSizer?.(paneId) ?? pane.dimensions);
-    if (sizes.some((size) => !size)) return typeof window === 'undefined' || window.innerWidth >= MIN_PANE_WIDTH_PX * 2 + 1;
-    return sizes.reduce((width, size) => width + size!.width, 0) >= MIN_PANE_WIDTH_PX * 2 + 1;
+    const width = this.dimensions?.width;
+    if (!width) return typeof window === 'undefined' || window.innerWidth >= MIN_PANE_WIDTH_PX * 2 + 1;
+    return width >= MIN_PANE_WIDTH_PX * 2 + 1;
   }
 
-  /** 一格此刻画出来多大:会话页那一侧量了挂上来;没挂 = 不知道。 */
-  paneSizer: ((paneId: string) => { width: number; height: number } | null) | null = null;
+  /**
+   * The tree as drawn (PaneTreeView measures it): the room its panes share. A pane's own page is no measure of its
+   * cell — in full screen it covers the workspace.
+   */
+  dimensions: { width: number; height: number } | null = null;
 
-  setPaneSizer(sizer: ((paneId: string) => { width: number; height: number } | null) | null): void {
-    this.paneSizer = sizer;
+  setDimensions(width: number, height: number): void {
+    this.dimensions = { width, height };
   }
 
   /**
@@ -386,7 +398,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   /**
    * Show `pinned` and `side` side by side (spec session-page「并排」). The pinned page goes to the main pane and stays in
    * front there; `side` goes alone into the side pane; a side it replaces goes back to the strip as an ordinary tab, right
-   * after the pinned one. `activate: false` only records the pair; `focus: false` keeps keyboard ownership.
+   * after the pinned one. `activate: false` only records the pair; `focus: false` keeps keyboard ownership. The pair
+   * already recorded and already on screen (only the focus moves: a tab already in front clicked, the full-screen
+   * button): its shares stay — no page arrived. A pair recorded in the background and lit up now, or a page brought back
+   * when another closed, is a page arriving: it comes at its own width.
    */
   pairWith(pinned: string, side: string, opts: { edge?: PairEdge; focus?: boolean; activate?: boolean; by?: 'push' | 'user' | 'restore' } = {}): void {
     if (pinned === side || !this._groupOf(pinned) || !this._groupOf(side)) return;
@@ -396,6 +411,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const focusedBefore = this.focusedPane.resolvedActiveTabId;
     const focusedPaneBefore = this.activePaneId;
     const activate = opts.activate ?? true;
+    const shown = this._shownPair;
+    const unchanged = before?.pinned === pinned && before.side === side && shown?.pinned === pinned && shown.side === side;
     this._pair = { pinnedTabId: pinned, sideTabId: side };
     if (activate) {
       let sideGroup = this.sideGroup;
@@ -406,14 +423,17 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         this.sidePaneId = sideGroup.paneId;
       }
       if (this._groupOf(side) !== sideGroup) this._move(side, sideGroup);
-      if (opts.edge || this.layout.type === 'pane') {
+      const rebuilt = !!opts.edge || this.layout.type === 'pane';
+      if (rebuilt) {
         this.layout = insertBeside(paneLeaf(main.paneId), main.paneId, sideGroup.paneId, opts.edge ?? 'right');
         this._syncGroupOrder();
       }
       main.pane.activeTabId = pinned;
       sideGroup.pane.activeTabId = side;
-      const own = this._ownSizes(pinned, side, extent);
-      if (own && this.layout.type === 'split') this.layout = { ...this.layout, sizes: own };
+      if (rebuilt || !unchanged) {
+        const own = this._ownSizes(pinned, side, extent);
+        if (own && this.layout.type === 'split') this.layout = { ...this.layout, sizes: own };
+      }
       if (opts.focus ?? true) this.activePaneId = sideGroup.paneId;
       else if (focusedBefore === pinned) this.activePaneId = main.paneId;
       else if (focusedBefore === side) this.activePaneId = sideGroup.paneId;
@@ -608,10 +628,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this.layout = own && this.layout.type === 'split' ? { ...this.layout, sizes: own } : equalizeSplit(this.layout, splitId);
   }
 
-  /** How wide the pair's panes are together, as measured (null until each one has been). */
+  /** How wide the pair's panes are together, as measured (null until the tree has been). */
   private _pairExtent(): number | null {
-    const widths = this.groups.map(({ paneId, pane }) => (this.paneSizer?.(paneId) ?? pane.dimensions)?.width ?? 0);
-    return widths.every((width) => width > 0) ? widths.reduce((sum, width) => sum + width, 0) : null;
+    return this.dimensions?.width ?? null;
   }
 
   private _sideWidthOf(tabId: string): number | undefined {

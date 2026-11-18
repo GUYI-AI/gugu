@@ -2,6 +2,7 @@ import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererLogger } from '@/lib/log'
+import { messageForUser } from '@/lib/userFacingError'
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -16,6 +17,7 @@ import type {
   SessionpageSessionCreateRequest,
   SessionpageSessionCreateResult,
 } from '@gugu/session-core/session-record/contract'
+import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 import { Thread } from '@/components/assistant-ui/thread.aui'
 import { ComposerExtrasProvider } from '@/components/assistant-ui/composer-extras'
 import { Button } from '@/components/ui/Button'
@@ -26,12 +28,13 @@ import { rememberRunMachine, useProjectRunMachine } from '@renderer/features/pro
 import { forgetPhoneSessionCreate, readPhoneSessionCreate, rememberPhoneSessionCreate } from '../local-agent/phoneSessionCreate'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { LiveGlyph } from './StatusGlyph'
-import { CreateOptionsPill } from './CreateOptionsPill'
+import { creationSkillInput } from './create-skill-draft'
 import { useMachineLabel } from './useMachineLabel'
 import { visibleMachines } from './machine-list'
 import { accountProjects, createMachines, runCandidates } from './create-target'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
-import { CreateTarget } from './CreateTarget'
+import { CreateTarget, type CreationConfiguration } from './CreateTarget'
+import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import { connectionStateOf } from '@/components/connection/connectionState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -42,6 +45,11 @@ import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptions, createPhoneSession, fetchPhoneCreateModels, fetchPhoneCreateOptions } from './sessionpage-rpc'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
+import { createAttachmentDraftAdapter } from './create-attachment-adapter'
+import { creationThinking } from './creation-thinking'
+import { creationAttachmentPorts } from './create-attachment-rpc'
+import { creationFailureDiagnostic } from './create-failure-diagnostic'
+import { completeAttachmentCreation, readAttachmentCreation, readAttachmentCreationDevice, submitAttachmentCreation } from './create-attachment-submission'
 import './task-flow-catalog'
 import {
   createBlocker,
@@ -49,6 +57,7 @@ import {
   initialSelection,
   lastUsedDropped,
   reconcileModel,
+  submittedCreationSelection,
   toSessionSummary,
   type CreateSelection,
   type LastUsedItem,
@@ -64,18 +73,7 @@ const LAST_USED_ITEM_LABEL_KEYS: Record<LastUsedItem, string> = {
   effort: 'agentWatch.create.effort',
 }
 
-/**
- * 新建任务页:「+」直接进来(DESIGN 点击路径 4a,项目与机器解耦:项目是账号上的,机器只是这一次跑在哪)。
- *
- * owner 2026-09-06:「手机端的话,我建议是和你手机端会话一个输入框,然后是也 assistant 的组件」。所以:
- *   · 输入框上方「项目 · 机器」两行,都带默认值(CreateTarget;默认机器与桌面同一条规则);
- *   · 界面就是会话页那一套 —— 同一个官方 `Thread`、同一个输入框、同一颗选项胶囊(这里选的是
- *     harness · 模型),只是线程是空的。❌ 不再渲桌面会话页那张 composer:它是给 IDE 面画的。
- *   · 发送 = 建会话。建成直接跳进新会话的时间线,第一句话就在那儿。
- *
- * 发送失败**把那句话还给输入框**:assistant-ui 在发送时就清空了输入框,不还回去的话
- * 一次网络抖动就吞掉人打了半天的开场白 —— 那正是本仓禁止的「不持久化的输入」。
- */
+/** Phone creation keeps the session composer and draft, with target controls above it. */
 function describe(err: unknown): string {
   if (err instanceof SessionpageRpcError) return `${err.message} (${err.code})`
   return err instanceof Error ? err.message : String(err)
@@ -95,6 +93,7 @@ export function CreateSessionPage({
   onCreated: (device: Device, ...created: Parameters<CreatedHandler>) => void
 }) {
   const { t } = useTranslation('main')
+  const ownerId = useAuth().user?.id ?? null
   const { devices: hosts, phones, cloudComputer } = useDevicesStore()
   const { isHome, label: machineLabel } = useMachineLabel()
   const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
@@ -108,39 +107,50 @@ export function CreateSessionPage({
   const rows = useMemo(() => createMachines(project, machines), [project, machines])
   const runKey = project?.chatId ?? ''
   const { machine: machineId, pick } = useProjectRunMachine(runKey, runCandidates(rows, project), project?.chatId)
-  const machine = rows.find((row) => row.device.device_id === machineId)
-  const target = (busy: boolean) => (
-    <CreateTarget projects={projects} project={project} onProject={setProjectKey} machines={rows} machine={machine} onMachine={pick} machineLabel={machineLabel} busy={busy} />
+  const submittedDeviceId = ownerId ? readAttachmentCreationDevice(mobileCreationDraftKey(ownerId)) : null
+  const machine = rows.find((row) => row.device.device_id === (submittedDeviceId ?? machineId))
+  const previousMachine = useRef<typeof machine>(undefined)
+  const previousOwner = useRef(ownerId)
+  if (previousOwner.current !== ownerId) { previousOwner.current = ownerId; previousMachine.current = undefined }
+  if (machine) previousMachine.current = machine
+  const editingMachine = machine ?? (submittedDeviceId && previousMachine.current?.device.device_id !== submittedDeviceId ? undefined : previousMachine.current)
+  const target = (busy: boolean, configuration?: CreationConfiguration) => (
+    <CreateTarget projects={projects} project={project} onProject={setProjectKey} machines={rows} machine={machine} onMachine={pick} machineLabel={machineLabel}
+      conversationKey={`create:${ownerId ?? 'signed-out'}:${taskGroup?.chatId ?? ''}`}
+      busy={busy} configuration={configuration} scopeChatId={taskGroup?.chatId ?? project?.chatId ?? null} />
   )
 
-  if (!machine) {
+  if (!editingMachine) {
     return (
       <AgentWatchScreen title={t('agentWatch.create.title')} onBack={onBack} testId="agent-watch-create-page">
-        <div className="gg-aw">{target(false)}</div>
+        <div className="gg-aw">{target(false)}<PhoneHostSetupEntry /></div>
       </AgentWatchScreen>
     )
   }
   return (
     <CreateOnMachine
-      key={machine.device.device_id}
-      device={machine.device}
-      projectId={machine.localProjectId}
+      key={ownerId ?? 'signed-out'}
+      device={editingMachine.device}
+      projectId={machine?.localProjectId ?? null}
+      targetAvailable={!!machine}
+      scopeChatId={taskGroup?.chatId ?? project?.chatId ?? null}
       target={target}
       taskGroup={taskGroup}
       onBack={onBack}
       onCreated={(...created) => {
-        rememberRunMachine(project?.chatId, machine.device.device_id)
-        onCreated(machine.device, ...created)
+        rememberRunMachine(project?.chatId, editingMachine.device.device_id)
+        onCreated(editingMachine.device, ...created)
       }}
     />
   )
 }
 
-/** 在选定的这台机器上开:换机器 = 换一份(key),那台的选项、模型目录、未确认的手机创建各读各的。 */
+/** Device choices change catalogs while retaining the existing composer and native composition. */
 function CreateOnMachine({
   device,
   projectId,
   target,
+  targetAvailable,
   taskGroup,
   onBack,
   onCreated,
@@ -148,8 +158,10 @@ function CreateOnMachine({
   device: Device
   /** 选了项目时那台机器上的本地项目;null = 不选项目(那台的任务工作区)。手机任务宿主用它自己报的那个项目。 */
   projectId: string | null
-  /** 输入框上方的「项目 · 机器」两行;`busy` = 建着 / 有未确认的创建,不让换。 */
-  target: (busy: boolean) => ReactNode
+  /** The shared control row is locked while a creation is in flight or unconfirmed. */
+  target: (busy: boolean, configuration?: CreationConfiguration) => ReactNode
+  targetAvailable: boolean
+  scopeChatId: string | null
   taskGroup: { chatId: string; name: string } | null
   onBack?: () => void
   /** firstPrompt: absent only when retrying a stored phone attempt from before the first prompt carried its id. */
@@ -161,7 +173,7 @@ function CreateOnMachine({
   const { label: machineLabel } = useMachineLabel()
   const ownerId = useAuth().user?.id ?? null
   const phone = isPhoneDevice(device)
-  const online = device.is_online && (!phone || isAgentHostDevice(device))
+  const online = targetAvailable && device.is_online && (!phone || isAgentHostDevice(device))
   const draft = useRef<ReturnType<typeof bindCreationDraft> | null>(null)
   // Completion still settles the real request after leaving; only this page may navigate or alter its composer.
   const page = useMemo(() => ({ active: true, deviceId: device.device_id, ownerId }), [device.device_id, ownerId])
@@ -170,8 +182,10 @@ function CreateOnMachine({
     return () => { page.active = false }
   }, [page])
   // #7199 在睡着的云电脑上新建 = 叫醒它;醒了(在线)选项照常读出来。
-  const { issue: wakeIssue, dropped: wakeDropped, retry: retryWake } = useCloudComputerWake(device)
-  const [options, setOptions] = useState<SessionpageSessionCreateOptions | null>(null)
+  const { issue: wakeIssue, dropped: wakeDropped, retry: retryWake } = useCloudComputerWake(targetAvailable ? device : null)
+  const catalogKey = JSON.stringify([ownerId, device.device_id, phone])
+  const [optionCatalog, setOptionCatalog] = useState<{ key: string; value: SessionpageSessionCreateOptions } | null>(null)
+  const options = optionCatalog?.key === catalogKey ? optionCatalog.value : null
   const [optionsError, setOptionsError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [selection, setSelection] = useState<CreateSelection>({ harness: null, model: null, permissionMode: null, effort: null })
@@ -180,16 +194,21 @@ function CreateOnMachine({
   /** 与桌面创建框同一条：明确点选的自家默认不被自动默认覆盖；换 harness 后重算。 */
   const modelTouched = useRef(false)
   /** 选定 harness 的模型目录；自动默认等这份读数，人明确点选后沿用其选择。 */
-  const [models, setModels] = useState<SessionpageSessionCreateModels | null>(null)
+  const [modelCatalog, setModelCatalog] = useState<{ key: string; value: SessionpageSessionCreateModels } | null>(null)
+  const models = modelCatalog?.key === catalogKey ? modelCatalog.value : null
   const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  const [modelRetry, setModelRetry] = useState(0)
+  const modelListRead = useRef<Promise<SessionpageSessionCreateModels> | null>(null)
   /** 正在建的那句话;建成或失败后清空。它同时也是线程里唯一那条(乐观显示的)用户消息。 */
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
+  const attachmentAttempt = ownerId ? readAttachmentCreation(mobileCreationDraftKey(ownerId)) : null
+  const attachmentAdapter = useMemo(() => ownerId ? createAttachmentDraftAdapter(mobileCreationDraftKey(ownerId)) : undefined, [ownerId])
 
   // 机器离线时**不发 RPC**(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
   useEffect(() => {
-    setOptions(null)
+    setOptionCatalog(null)
     setOptionsError(null)
     if (!online) return
     let cancelled = false
@@ -198,38 +217,62 @@ function CreateOnMachine({
     readOptions(device.device_id)
       .then((next) => {
         if (cancelled) return
-        const attempt = phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null
+        const attempt = ownerId ? readAttachmentCreation(mobileCreationDraftKey(ownerId))
+          ?? (phone ? readPhoneSessionCreate(ownerId, device.device_id) : null) : null
         modelTouched.current = attempt !== null
-        setPhoneAttempt(attempt)
-        setOptions(next)
-        setSelection(attempt ? { ...initialSelection(next), harness: attempt.harness, model: attempt.model ?? null } : initialSelection(next))
+        setPhoneAttempt(attempt && !('attachments' in attempt) ? attempt : null)
+        setOptionCatalog({ key: catalogKey, value: next })
+        setSelection(attempt ? submittedCreationSelection(attempt) : initialSelection(next))
       })
       .catch((err) => { if (!cancelled) setOptionsError(describe(err)) })
     return () => { cancelled = true }
-  }, [device.device_id, online, reloadKey, phone, ownerId])
+  }, [device.device_id, online, reloadKey, phone, ownerId, catalogKey])
 
   // 目录跟着 harness 走；复用这次读数定默认，不另发可用性探针。
   // 展示不由手机选:那台电脑按自己的「终端」开关定。
   const harness = selection.harness
   const model = selection.model
   useEffect(() => {
-    if (!online || !harness) { setModels(null); setModelsState('idle'); return }
+    if (!online || !options || !harness) { setModelCatalog(null); setModelsState('idle'); return }
     let cancelled = false
     // 推理档跟着模型走(桌面同一条),所以换模型也重读;但同一家同一腿只是换模型时**不清空**清单 ——
     // 清了列表会在人刚点完那一下闪没,而且 reconcile 会把刚选的模型判成「不在目录里」清掉。
-    setModels((prev) => (prev && prev.harness === harness ? prev : null))
+    setModelCatalog((prev) => (prev?.key === catalogKey && prev.value.harness === harness ? prev : null))
     setModelsState('loading')
     const readModels = phone ? fetchPhoneCreateModels : fetchCreateModels
     readModels(device.device_id, harness, null, model)
       .then((next) => {
         if (cancelled) return
-        setModels(next)
+        setModelCatalog({ key: catalogKey, value: next })
         setModelsState('ready')
-        setSelection((current) => reconcileModel(current, next, modelTouched.current, options?.lastUsed))
+        const attempt = ownerId ? readAttachmentCreation(mobileCreationDraftKey(ownerId))
+          ?? (phone ? readPhoneSessionCreate(ownerId, device.device_id) : null) : null
+        setSelection((current) => attempt ? submittedCreationSelection(attempt) : reconcileModel(current, next, modelTouched.current, options?.lastUsed))
       })
       .catch(() => { if (!cancelled) setModelsState('failed') })
-    return () => { cancelled = true }
-  }, [device.device_id, online, harness, model, reloadKey, phone, options])
+    return () => { cancelled = true; modelListRead.current = null }
+  }, [device.device_id, online, harness, model, reloadKey, phone, options, catalogKey, ownerId, modelRetry])
+
+  const refreshModelList = () => {
+    if (!online || !options || !harness || modelsState === 'loading' || modelListRead.current) return
+    if (!models || models.harness !== harness) { setModelRetry(value => value + 1); return }
+    // The menu only needs the list. Passing the selected model would run its effort probe again.
+    const readModels = phone ? fetchPhoneCreateModels : fetchCreateModels
+    const request = readModels(device.device_id, harness, null, null)
+    modelListRead.current = request
+    void request.then(next => {
+      if (modelListRead.current !== request) return
+      setModelCatalog(current => current?.key === catalogKey && current.value.harness === harness ? {
+        key: catalogKey, value: {
+          ...current.value, models: next.models, harnessState: next.harnessState,
+          harnessReason: next.harnessReason, guguReason: next.guguReason,
+        },
+      } : current)
+      setModelsState('ready')
+    }, () => { if (modelListRead.current === request) setModelsState('failed') }).finally(() => {
+      if (modelListRead.current === request) modelListRead.current = null
+    })
+  }
 
   const blocker = options ? createBlocker(options, selection) : null
   const readingModelDefault = !modelTouched.current && (!models || models.harness !== harness) && modelsState !== 'failed'
@@ -238,7 +281,7 @@ function CreateOnMachine({
   const creating = pendingText !== null
   const canSubmit = online && options !== null && optionsError === null && blocker === null && !readingModelDefault && !modelNeedsSignIn
   const reloadOptions = () => {
-    setOptions(null)
+    setOptionCatalog(null)
     setOptionsError(null)
     setReloadKey((key) => key + 1)
   }
@@ -250,19 +293,21 @@ function CreateOnMachine({
 
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     isRunning: creating,
+    adapters: { attachments: attachmentAdapter },
     messages,
     convertMessage: (message) => message,
     onNew: async (message: AppendMessage) => {
-      const first = message.content[0]
-      if (!first || first.type !== 'text') throw new Error(t('agentWatch.composer.textOnly'))
-      const text = first.text.trim()
+      const originalText = message.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n')
+      const files = message.attachments ?? []
+      const typedText = originalText.trim()
+      const text = typedText
       const submittedDraft = draft.current
-      submittedDraft?.hold(first.text)
+      submittedDraft?.hold(originalText, files)
       // 还没读到选项 / 还有拦着的原因 → 如实报,❌ 不带着空 projectId 发过去让机器来拒。
       if (!online || !options || optionsError || blocker || readingModelDefault || modelNeedsSignIn) {
         setCreateError(blocker ? t(`agentWatch.create.blocked.${blocker}`) : modelNotice ?? t('agentWatch.create.blocked.loading'))
-        runtime.thread.composer.setText(first.text)
-        submittedDraft?.restore(first.text)
+        runtime.thread.composer.setText(originalText)
+        await submittedDraft?.restore(originalText, files)
         return
       }
       setCreateError(null)
@@ -270,9 +315,10 @@ function CreateOnMachine({
       const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
-        if (phone && !ownerId) throw new Error('请先登录后创建 Agent')
+        if ((phone || files.length) && !ownerId) throw new Error('请先登录后创建 Agent')
+        if (attachmentAttempt && !files.length) throw Object.assign(new Error('Original creation attachments are required'), { code: 'creation_attachments_pending' })
         if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error('上次创建尚未确认，请先发送原来的任务以继续同一次创建')
-        const request: SessionpageSessionCreateRequest = phoneAttempt ?? {
+        let request: SessionpageSessionCreateRequest = attachmentAttempt ?? phoneAttempt ?? {
           ...(phone ? { clientRequestId: crypto.randomUUID() } : {}),
           // 手机任务宿主跑它自己报的那个项目;电脑上不带 = 那台的任务工作区。
           ...(phone ? (options.projects[0] ? { projectId: options.projects[0].id } : {}) : projectId ? { projectId } : {}),
@@ -283,26 +329,39 @@ function CreateOnMachine({
           ...(selection.model ? { model: selection.model } : {}),
           ...(selection.permissionMode ? { permissionMode: selection.permissionMode } : {}),
           ...(selection.effort ? { effort: selection.effort } : {}),
+          ...(creationThinking(models, selection).fastMode !== undefined ? { fastMode: creationThinking(models, selection).fastMode } : {}),
           ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
-        if (phone) {
+        if (phone && !files.length) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
           submittedPhoneRequest = request
           setPhoneAttempt(request)
         }
-        const result = await (phone ? createPhoneSession : createSession)(device.device_id, request)
+        let attachmentReceipt: Awaited<ReturnType<typeof submitAttachmentCreation>> | null = null
+        const result = files.length
+          ? (attachmentReceipt = await submitAttachmentCreation({ key: mobileCreationDraftKey(ownerId!), ownerId: ownerId!,
+              deviceId: device.device_id, request, files: files.map((entry) => {
+                if (!entry.file) throw Object.assign(new Error('The original attachment is no longer available'), { code: 'creation_attachments_original_missing' })
+                return { id: entry.id, file: entry.file }
+              }), ports: creationAttachmentPorts(device.device_id, phone, ownerId!) })).result
+          : await (phone ? createPhoneSession : createSession)(device.device_id, request)
+        if (attachmentReceipt) request = attachmentReceipt.request
         if (phone) {
           if (!result.session?.supported || result.session.conversationId !== result.conversationId) throw new Error('手机尚未返回完整的任务记录，请继续同一次创建')
-          forgetPhoneSessionCreate(ownerId!, device.device_id, request)
+          if (!files.length) forgetPhoneSessionCreate(ownerId!, device.device_id, request)
           if (page.active) setPhoneAttempt(null)
         }
-        submittedDraft?.accepted(text)
+        // A different page may now own the visible draft. Keep this admitted receipt and its original Files
+        // until that page explicitly resumes the same creation, rather than making its restored files a new task.
+        if (attachmentReceipt && !page.active) return
+        submittedDraft?.accepted(originalText, files)
         if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
+        if (attachmentReceipt) completeAttachmentCreation(mobileCreationDraftKey(ownerId!), attachmentReceipt.request)
       } catch (err) {
-        // 机器那边装 agent 没装成:原因进日志,人看到的是能照做的下一步(按本端语言,❌ 机器那边拼的双语原文)。
-        // 其余原因同理:按原因码归类说人话(remoteFailureKind),原文只进日志。
-        createLog.warn({ error: String(err) }, 'create session failed')
         const code = err instanceof SessionpageRpcError ? err.code : err instanceof Error && 'code' in err && typeof err.code === 'string' ? err.code : null
+        // Host errors may include private paths. Log only a locally declared code;
+        // preserve the original error for the existing retry and user-error contract.
+        createLog.warn(creationFailureDiagnostic(code), 'create session failed')
         if (phone && ownerId && submittedPhoneRequest && code === 'phone_create_rejected') {
           // The host explicitly proved it rejected before any durable provision was admitted.
           forgetPhoneSessionCreate(ownerId, device.device_id, submittedPhoneRequest)
@@ -312,7 +371,12 @@ function CreateOnMachine({
         setPendingText(null)
         // 签咕咕额度被拒:那台机器报的是原因码(#7103),按原因说(与新建框咕咕那一组同一份文案)。
         const gugu = guguReasonInText(code)
-        setCreateError(phone ? describe(err) : code === 'harness_install_failed'
+        const attachmentError = files.length || attachmentAttempt
+        const attachmentCopy = code === 'creation_attachments_pending' ? 'attachmentPending'
+          : code === 'creation_attachments_unconfirmed' || code === 'attachment_creation_unverified' ? 'attachmentUnconfirmed'
+            : code === 'creation_attachments_account_changed' ? 'attachmentAccountChanged'
+              : code === 'creation_attachments_original_missing' ? 'attachmentOriginalMissing' : null
+        setCreateError(attachmentError ? attachmentCopy ? tFlow(attachmentCopy) : messageForUser(err) : phone ? describe(err) : code === 'harness_install_failed'
           ? t('agentWatch.create.agentInstallFailed')
           : code === 'harness_runtime_missing'
             ? t('agentWatch.create.agentRuntimeMissing')
@@ -320,21 +384,26 @@ function CreateOnMachine({
               ? guguReasonText(gugu, translateSessionMessage)
               : t(`agentWatch.create.failure.${remoteFailureKind(code)}`))
         // 把那句话还回去。assistant-ui 发送时已经清空了输入框,这一步不做就等于吞掉用户输入。
-        submittedDraft?.restore(phoneAttempt?.prompt ?? first.text)
-        if (!submittedDraft && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt?.prompt ?? first.text)
+        await submittedDraft?.restore(phoneAttempt?.prompt ?? originalText, files)
+        if (!submittedDraft && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt?.prompt ?? originalText)
       }
     },
   })
 
+  const skillEditor = useRef<PromptEditorRef | null>(null)
+  const skillDraft = creationSkillInput(skill => skillEditor.current?.insertMention(skill))
+
+  // @@@effect-flow - acquire this editor's account-bound draft and settle its hydration/cleanup barrier.
   useEffect(() => {
     if (!ownerId) return
     const binding = bindCreationDraft(runtime.thread.composer, mobileCreationDraftKey(ownerId))
+    void binding.ready.catch((error) => { if (page.active) setCreateError(describe(error)) })
     draft.current = binding
     return () => {
       binding.dispose()
       if (draft.current === binding) draft.current = null
     }
-  }, [ownerId, runtime.thread.composer])
+  }, [ownerId, runtime.thread.composer, page])
 
   useEffect(() => {
     if (phoneAttempt && pendingText === null && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt.prompt)
@@ -370,12 +439,13 @@ function CreateOnMachine({
       {blocker ? t(`agentWatch.create.blocked.${blocker}`) : modelNotice}
     </div>
   ) : null
-  const pendingCreationNotice = phoneAttempt && !creating ? (
+  const pendingAttempt = attachmentAttempt ?? phoneAttempt
+  const pendingCreationNotice = pendingAttempt && !creating ? (
     <div className="gg-aw-create-blocker" role="status" data-testid="agent-watch-create-pending">
       <div>{tFlow('pendingCreation')}</div>
       <details>
         <summary className="min-h-[var(--control-h-touch)] cursor-pointer py-3">{tFlow('originalTask')}</summary>
-        <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words">{phoneAttempt.prompt}</div>
+        <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words">{pendingAttempt.prompt}</div>
       </details>
     </div>
   ) : null
@@ -421,7 +491,7 @@ function CreateOnMachine({
   const cloudAsleep = device.cloud_computer === 'asleep' || device.cloud_computer === 'waking'
   const wakeFailed = cloudAsleep && wakeIssue !== null
   const connection = online ? 'online' as const : connectionStateOf({ deviceOnline: false, cloudWaking: cloudAsleep, cloudWakeFailed: wakeFailed })
-  const subtitle = connection !== 'online' ? (
+  const subtitle = !targetAvailable ? tFlow('noMachine') : connection !== 'online' ? (
     <ConnectionStatus
       state={connection}
       subject={machineLabel(device)}
@@ -452,24 +522,10 @@ function CreateOnMachine({
         <AssistantRuntimeProvider runtime={runtime}>
           <div className="gg-aw-thread-host gg-aw-create-host" data-testid="agent-watch-create-thread">
             <ComposerExtrasProvider
+              attachmentPlacement="input"
+              editorApiRef={skillEditor}
               placeholder={t('agentWatch.create.placeholder')}
-              extras={
-                options ? (
-                  <CreateOptionsPill
-                    phoneHost={phone}
-                    options={options}
-                    selection={selection}
-                    onChange={(next, modelPicked) => {
-                      modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
-                      setTouched(true)
-                      setSelection(next)
-                    }}
-                    busy={!online || optionsError !== null || creating || phoneAttempt !== null}
-                    models={models}
-                    modelsState={modelsState}
-                  />
-                ) : null
-              }
+              extras={null}
               above={
                 <div className="gg-aw-thread-extras">
                   {errorNotice}
@@ -478,7 +534,16 @@ function CreateOnMachine({
                   {pendingCreationNotice}
                   {lastUsedNotice}
                   {taskGroupNotice}
-                  {target(creating || phoneAttempt !== null)}
+                  {target(creating || pendingAttempt !== null, {
+                    options, selection, models, modelsState, skills: skillDraft.skills, onSkills: skillDraft.update,
+                    onOpenModels: refreshModelList,
+                    onChange: (next, modelPicked) => {
+                      modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
+                      setTouched(true)
+                      setSelection(next.model !== selection.model || next.harness !== selection.harness
+                        ? { ...next, fastMode: false } : next)
+                    },
+                  })}
                 </div>
               }
             >

@@ -18,6 +18,7 @@ function recordingOps(table: () => ProcessGroupMember[]) {
       calls.push('snapshot');
       return table();
     },
+    killTreeSync: (pid) => void calls.push(`taskkill /T ${pid}`),
   };
   // 组长 100 的整组由 handle 停(POSIX 上就是发给 -100)。
   const owned = {
@@ -37,6 +38,29 @@ describe('signalEngineTree (#6353)', () => {
     expect(calls[0]).toBe('snapshot');
     for (const pid of [-100, -200, 61, 100, 101, 200]) expect(calls).toContain(`kill ${pid} SIGKILL`);
     for (const pid of [-50, 50, 60, 300, -300, process.pid]) expect(calls).not.toContain(`kill ${pid} SIGKILL`);
+  });
+  // @@@windows-exit-tree - before, the Windows branch returned at once and the agent CLIs under a worker outlived the app.
+  it('on Windows, host exit stops each owned root as a whole tree and never touches this process', () => {
+    const { ops, calls } = recordingOps(() => { throw new Error('Windows has no process table here'); });
+    ops.isWindows = true;
+    signalProcessDescendantsSync([60, 70], 'SIGKILL', ops);
+    expect(calls).toEqual(['taskkill /T 60', 'taskkill /T 70']);
+  });
+  it('on Windows, a failed tree stop still stops the other roots, then fails loud', () => {
+    const { ops, calls } = recordingOps(() => []);
+    ops.isWindows = true;
+    ops.killTreeSync = (pid) => {
+      calls.push(`taskkill /T ${pid}`);
+      if (pid === 60) throw new Error('access denied');
+    };
+    expect(() => signalProcessDescendantsSync([60, 70], 'SIGKILL', ops)).toThrow('access denied');
+    expect(calls).toEqual(['taskkill /T 60', 'taskkill /T 70']);
+  });
+  it('on Windows, refuses this process as a root: its other children belong to the person and the installer', () => {
+    const { ops, calls } = recordingOps(() => []);
+    ops.isWindows = true;
+    expect(() => signalProcessDescendantsSync([process.pid, 70], 'SIGKILL', ops)).toThrow(/not a root/);
+    expect(calls).toEqual(['taskkill /T 70']);
   });
   it('signals the escaped tool process together with the group, read before the signal', () => {
     const { ops, calls, owned } = recordingOps(() => TREE);

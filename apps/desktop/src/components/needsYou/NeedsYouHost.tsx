@@ -15,6 +15,7 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { SectionLabel } from '../ui/SectionLabel'
+import { Hint } from '../ui/Tooltip'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
@@ -58,9 +59,11 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     // the chat list's header beside its 32px 「+」; the phone grows md to the touch size (IconButton).
     if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) return createPortal(
       <span className="relative inline-flex">
-        <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} title={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
-          <Bell />
-        </IconButton>
+        <Hint label={title} side="bottom">
+          <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
+            <Bell />
+          </IconButton>
+        </Hint>
         {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
       </span>, element, key)
     if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || slots?.getSlotLabel?.(key) !== 'active') return null
@@ -73,7 +76,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
-          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} · {request.origin}</Button>)}
+          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} : {request.origin}</Button>)}
         {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}
           onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>「{request.label || '新设备'}」想用你的密码</Button>)}
         {joining && <Button variant="ghost" className="w-full justify-start" data-password-join=""
@@ -84,9 +87,11 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
           // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
           // Read at the click: the list does not follow the assistant's snapshot.
           const openTask = () => {
+            const failure = sessionPresentation(task.session, true)?.tone === 'error'
+            if (failure) void markRead([task])
             const assistant = readAssistantShellBridge()?.getSnapshot()
             if (!assistant?.chatId || !isAssistantAgent(task.session.agent?.userId, assistant.assistant?.id)) return followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
-            void markRead([task])
+            if (!failure) void markRead([task])
             return followLink({ kind: 'chat', chatId: assistant.chatId })
           }
           return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />

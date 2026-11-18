@@ -112,6 +112,7 @@ import { migrateProjectKind } from '@main/core/projects/operations/migrate-proje
 import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
 import { knownHarnessConfigRoots, loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
 import { closeDatabase, db, sqlite } from '@main/db/client'
+import { flushViewState } from '@main/core/view-state/view-state-service'
 import { resolveDatabasePath } from '@main/db/path'
 import { backupBeforeTaskToSession, runTaskToSessionOnce } from '../../migrations/task-to-session'
 import { backupBeforeSessionNaming, runSessionNamingOnce } from '../../migrations/session-naming'
@@ -253,7 +254,6 @@ import { setSessionMessageOutboxReady } from '@main/core/sessions/session-messag
 import { sessionProcess } from '@main/core/sessions/session-process'
 import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
-export { setUserLibraryOwner } from '@main/core/app/user-library'
 // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
 // 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
 export {
@@ -894,6 +894,7 @@ async function disposeEmdashModuleOnce(): Promise<void> {
   await runPhase('module-scope', () => appScope.dispose())
   await runPhase('local-pty', disposeLocalPtySessions)
   await runPhase('activity', () => { stopActivityCollector?.(); stopActivityCollector = null })
+  await runPhase('view-state', flushViewState)
   await runPhase('database', closeDatabase)
   await runPhase('logging', flushLogWrites)
   await flushLogWrites()
@@ -1893,7 +1894,7 @@ export async function openAllEmdashProjects(): Promise<void> {
       sessionBootTasks.record('project-open', project.id, result.reason)
     } else if (!result.value.success) {
       sessionBootTasks.record('project-open', project.id, result.value.error)
-    } else sessionBootTasks.clear('project-open', project.id)
+    }
   })
 }
 

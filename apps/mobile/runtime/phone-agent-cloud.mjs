@@ -145,7 +145,7 @@ export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRe
       catch (error) { throw context.failure ? Object.assign(new Error(`phone preparation request failed: ${context.failure.category}`), context.failure) : error }
       finally { context.active = false }
     },
-    attachmentEndpoint: async () => ({ supabaseUrl: root, anonKey: config.supabaseAnonKey, token: await token(), fetch: timedFetch }),
+    attachmentEndpoint: async () => ({ supabaseUrl: root, anonKey: config.supabaseAnonKey, token: await token(), fetch: timedFetch, signedParts: true }),
     async start() {
       const claims = jwtClaims(config.accessToken)
       if (claims.sub !== ownerId) throw new Error('owner token does not belong to this phone host')

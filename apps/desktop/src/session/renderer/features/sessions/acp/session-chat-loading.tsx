@@ -1,13 +1,13 @@
 import { useContext } from 'react';
 import { MessageListSkeleton } from '@/components/chat/MessageListSkeleton';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 /**
  * Loading belongs to the transcript's content overlay, below the composer. A tab layer kept hidden draws none: a chat tab
  * not in front has no store here, so its skeleton would stay, and CSS animations run on under content-visibility:hidden.
  */
 export function SessionChatLoading({ label, stage }: { label: string; stage?: string }) {
-  const shown = useContext(TabLayerShownContext);
+  const shown = useContext(SurfaceShownContext);
   if (!shown) return null;
   return (
     <div

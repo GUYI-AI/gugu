@@ -139,7 +139,7 @@ it.each([false, true])(
     expect(getComputedStyle(search).boxShadow).toBe('none')
     expect(getComputedStyle(search).borderTopWidth).toBe('0px')
     await act(async () => {
-      await page.getByRole('button', { name: '查看应用 · 飞书', exact: true }).click()
+      await page.getByRole('button', { name: '查看应用: 飞书', exact: true }).click()
     })
     expect(open).toHaveBeenCalledExactlyOnceWith('feishu')
     const row = harness.container.querySelector<HTMLElement>(
@@ -226,7 +226,7 @@ it('opens a complete category, restores its query after details, and isolates an
   expect(harness.container.querySelectorAll('.connected-app-row')).toHaveLength(7)
   await act(async () => {
     await userEvent.fill(
-      page.getByRole('searchbox', { name: '搜索应用 · 任务与项目', exact: true }),
+      page.getByRole('searchbox', { name: '搜索应用: 任务与项目', exact: true }),
       'Linear'
     )
   })

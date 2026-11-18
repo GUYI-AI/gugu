@@ -97,7 +97,7 @@
  */
 import { Button } from '@session-ui/react/primitives/button';
 import { cx } from '@session-ui/styles/utilities/cx';
-import { ArrowUp, CircleAlert, Plus, Search, ShieldCheck } from '../../../icons'
+import { ArrowUp, CircleAlert, Expand, Minimize, Paperclip, Plus, Search, ShieldCheck } from '../../../icons'
 import { ToolbarDisclosureProvider, useToolbarDisclosure } from './use-toolbar-disclosure'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ComboboxPopover } from '../combobox-popover';
@@ -203,6 +203,8 @@ import {
 import { ComposerAttachmentStrip } from './composer-attachment-strip';
 import { ComposerModelMenu, resolveComposerModelPanel } from './composer-model-menu';
 import { ComposerAgentLoading, ComposerAgentSelector } from './composer-agent-selector';
+import { usePhoneComposer } from './use-phone-composer';
+import './phone-composer.css';
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export type ComposerQueuedPromptEdit = { id: string; text: string; originalDraftText: string; pending?: boolean };
@@ -273,12 +275,18 @@ export interface ChatComposerProps {
    * unset state still says what will happen, rather than leaving the user to guess.
    */
   defaultEffort?: string;
+  /** Undefined hides Fast; supported hosts own the accepted per-session value. */
+  fastMode?: boolean;
+  onFastModeChange?: (enabled: boolean) => void;
+  renderFastModeHint?: import('./composer-fast-mode').RenderFastModeHint;
 
   permissionModeOptions?: Record<string, ComposerPermissionModeOption> | null;
   selectedPermissionMode?: string;
   onPermissionModeChange?: (modeId: string) => void;
   /** Extra control(s) appended to the toolbar-left row, after the permission selector. */
   toolbarExtra?: React.ReactNode;
+  /** Render the existing model control in a host-owned phone navigation row. */
+  renderPhoneHeader?: (modelControl: React.ReactNode) => React.ReactNode;
 
   onSubmit: (text: string) => void | Promise<void>;
   /** Called whenever the editor serialized plain text changes. */
@@ -303,6 +311,8 @@ export interface ChatComposerProps {
    * Hosts can override image handling with `onImageFilesDropped`.
    */
   attachments?: ComposerAttachment[];
+  /** Host-owned context attachments, displayed beside the regular attachment strip. */
+  attachmentExtra?: React.ReactNode;
   /** Automatic-send waiting hint, displayed beside the attachment chips. */
   attachmentStatus?: string;
   onAttachmentsChange?: (next: ComposerAttachment[]) => void;
@@ -404,6 +414,8 @@ export interface ChatComposerProps {
    */
   tone?: 'task';
   leading?: React.ReactNode;
+  /** Host-owned context chips inside the input, without replacing the mounted editor. */
+  inputHeader?: React.ReactNode;
   className?: string;
 }
 
@@ -443,10 +455,14 @@ export function ChatComposer({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  fastMode,
+  onFastModeChange,
+  renderFastModeHint,
   permissionModeOptions,
   selectedPermissionMode,
   onPermissionModeChange,
   toolbarExtra,
+  renderPhoneHeader,
   onSubmit,
   onInputChange,
   onMentionInsert,
@@ -456,6 +472,7 @@ export function ChatComposer({
   contextUsage,
   attachments = [],
   attachmentStatus,
+  attachmentExtra,
   onAttachmentsChange,
   onImageFilesDropped,
   onAttachmentQualityChange,
@@ -489,10 +506,13 @@ export function ChatComposer({
   getPromptHistory,
   tone,
   leading,
+  inputHeader,
   className,
 }: ChatComposerProps) {
   const { translate } = useMessages();
   const rootRef = useRef<HTMLDivElement>(null);
+  const phoneCapsule = mobile && phoneActions;
+  const phoneEditor = usePhoneComposer(phoneCapsule, rootRef);
   const editorRef = useRef<PromptEditorRef | null>(null);
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
@@ -582,6 +602,7 @@ export function ChatComposer({
     if (phoneActions) { phoneSubmittingRef.current = true; setPhoneSubmitting(true); }
     try {
       const committed = submit(text);
+      phoneEditor.collapse();
       // Settle focus synchronously; a deferred refocus reopens the keyboard.
       const active = rootRef.current?.ownerDocument.activeElement;
       if (active instanceof HTMLElement && rootRef.current?.contains(active)) active.blur();
@@ -754,6 +775,34 @@ export function ChatComposer({
       ? translate('composer.followUpPlaceholder')
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
+  const renderHeader = mobile ? renderPhoneHeader : undefined;
+  const modelControl = (
+              <ComposerModelMenu
+                panel={modelPanel}
+                disabled={disabled}
+                triggerTitle={selectedAgentTitle}
+                modelItems={modelItems}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                openRequest={modelMenuOpenRequest}
+                settingNotice={modelSettingNotice}
+                menuNotice={modelMenuNotice}
+                onOpen={onModelMenuOpen}
+                modelUnlock={modelUnlock}
+                onModelUnlock={onModelUnlock}
+                onManageModels={onManageModels}
+                modelUpgrade={modelUpgrade}
+                onModelUpgrade={onModelUpgrade}
+                effortItems={effortItems}
+                selectedEffort={selectedEffort}
+                onEffortChange={onEffortChange}
+                defaultEffort={defaultEffort}
+                fastMode={fastMode}
+                onFastModeChange={onFastModeChange}
+                renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
+                phoneActions={phoneActions}
+              />
+  );
   const promptEditor = (
     <PromptEditor
       {...editorOptions}
@@ -776,7 +825,7 @@ export function ChatComposer({
   );
 
   return (
-    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
+    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-attachment-row={phoneEditor.attachmentRow || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
       if (queueEdit && event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229) {
         event.preventDefault(); finishQueueEdit(null);
       }
@@ -819,6 +868,7 @@ export function ChatComposer({
           </div>
         )}
 
+        {renderHeader?.(modelControl)}
         <div
           data-slot="composer-bar"
           data-drag-active={dragActive || undefined}
@@ -829,7 +879,7 @@ export function ChatComposer({
           onDrop={queueEdit ? undefined : handleDrop}
         >
           {/* Attachment chips — anatomy vendored from assistant-ui (#5269), see composer-attachment-chip.tsx */}
-          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus}
+          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus} extra={attachmentExtra}
             onView={onViewAttachment} onRemove={onAttachmentsChange ? removeAttachment : undefined} onRetry={onRetryAttachment} onQualityChange={onAttachmentQualityChange} qualityLocked={disabled || attachmentQualityLocked} />}
 
           {/* Editor area */}
@@ -849,6 +899,7 @@ export function ChatComposer({
               editorRef.current?.focus();
             }}
           >
+            {inputHeader}
             {leading ? (
               <div className={styles.editorLeadRow}>
                 <span className={styles.editorLead}>{leading}</span>
@@ -856,6 +907,12 @@ export function ChatComposer({
               </div>
             ) : promptEditor}
           </div>
+
+          {phoneCapsule && (phoneEditor.attachmentRow || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
+            data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
+            aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
+            onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
+            onClick={phoneEditor.toggle}>{phoneEditor.expanded ? <Minimize /> : <Expand />}</Button>}
 
           {/* Toolbar */}
           <div
@@ -875,11 +932,14 @@ export function ChatComposer({
                   size="base"
                   icon
                   className={styles.attachButtonRound}
+                  data-phone-attachment={phoneCapsule || undefined}
+                  onPointerDown={phoneCapsule ? (event) => event.preventDefault() : undefined}
+                  onMouseDown={phoneCapsule ? (event) => event.preventDefault() : undefined}
                   onClick={onAttach}
                   disabled={disabled || !!queueEdit}
                   aria-label={translate('composer.addAttachment')}
                 >
-                  <Plus />
+                  {phoneCapsule ? <Paperclip /> : <Plus />}
                 </Button>
               )}
               {permissionModeItems.length > 0 && (
@@ -988,27 +1048,7 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
-              <ComposerModelMenu
-                panel={modelPanel}
-                disabled={disabled}
-                triggerTitle={selectedAgentTitle}
-                modelItems={modelItems}
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                openRequest={modelMenuOpenRequest}
-                settingNotice={modelSettingNotice}
-                menuNotice={modelMenuNotice}
-                onOpen={onModelMenuOpen}
-                modelUnlock={modelUnlock}
-                onModelUnlock={onModelUnlock}
-                onManageModels={onManageModels}
-                modelUpgrade={modelUpgrade}
-                onModelUpgrade={onModelUpgrade}
-                effortItems={effortItems}
-                selectedEffort={selectedEffort}
-                onEffortChange={onEffortChange}
-                defaultEffort={defaultEffort}
-              />
+              {!renderHeader && modelControl}
 
               {queueEdit ? (
                 <>
@@ -1028,6 +1068,7 @@ export function ChatComposer({
                     //    "这会中断正在跑的东西",不该被换成与正文同色的墨点。
                     className={styles.sendButtonRound}
                     data-composer-action="stop"
+                    data-phone-send={phoneCapsule || undefined}
                     disabled={disabled || stopDisabled}
                     aria-busy={stopDisabled || undefined}
                     onClick={onStop}
@@ -1041,6 +1082,8 @@ export function ChatComposer({
                     size="base"
                     icon
                     className={cx(styles.sendButtonRound, styles.sendButtonInk)}
+                    data-phone-send={phoneCapsule || undefined}
+                    onPointerDown={mobile ? (event) => event.preventDefault() : undefined}
                     onClick={() => handleSubmit(editorRef.current?.getText() ?? '')}
                     disabled={disabled || !canSubmit}
                     aria-label={translate('composer.sendMessage')}

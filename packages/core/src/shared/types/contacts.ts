@@ -1,4 +1,4 @@
-import type { AgentDesiredStatus, AgentType, ChatStatus, GroupAvatarMember, GroupJoinMode, GroupMemberRole } from './chat'
+import type { AgentDesiredStatus, AgentType, ChatStatus, GroupJoinMode, GroupMemberRole } from './chat'
 
 export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected'
 
@@ -117,8 +117,4 @@ export interface DiscoverableGroup {
   // 前端据此把该群「加入」置灰 + 给行级说明，不呈现注定失败的可点按钮。
   invite_link_enabled: boolean
   creator_name: string | null
-  // @@@group-avatar-tile — 群头像组合的成员格（最多 9，与组合布局上限同）。广场行与聊天列表/通讯录
-  // 走同一条群头像链路：avatar_url 为 NULL 时用它组合出群的脸。非成员读不到 chat_members，
-  // 故由 search_discoverable_groups(SECURITY DEFINER) 随结果带出。
-  member_avatars: GroupAvatarMember[]
 }

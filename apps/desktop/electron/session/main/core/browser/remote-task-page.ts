@@ -1,5 +1,5 @@
 import { browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
-import type { TaskPageControl } from '@shared/browser-task-page';
+import type { TaskPageControl, TaskPageControlResult } from '@shared/browser-task-page';
 import { PROJECTION_NOT_SENT, PROJECTION_UNCONFIRMED, type ProjectionInputOutcome } from '@shared/extensions/projection-protocol';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
@@ -11,7 +11,7 @@ import { watchRemoteProjection } from '../extensions/projection-remote-viewer';
  * computers (a Gugu server's headless Chromium). The tab watches it over this computer's device connection to that
  * machine (projection-remote-host.ts → task-page-screen.ts there) and gets its packets as `browserTaskPagePacketChannel`.
  */
-const watches = new Map<string, Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<void>; close(): void }>>();
+const watches = new Map<string, Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }>>();
 
 export async function watchRemoteTaskPage(args: { watchId: string; deviceId: string; sessionId: string }): Promise<{ success: true }> {
   if (typeof args.watchId !== 'string' || !args.watchId || args.watchId.length > 128) throw new Error('A task page watch needs an id');
@@ -44,11 +44,11 @@ export async function sendRemoteTaskPage(args: { watchId: string; packet: unknow
 }
 
 /** The toolbar's buttons and address bar, and the tab's size, applied to the page there. */
-export async function controlRemoteTaskPage(args: { watchId: string; control: TaskPageControl }): Promise<{ success: true }> {
+export async function controlRemoteTaskPage(args: { watchId: string; control: TaskPageControl }): Promise<{ success: true; inspection?: Exclude<TaskPageControlResult, void> }> {
   const watching = watches.get(args.watchId);
   if (!watching) throw new Error('This task page is not watched');
-  await (await watching).control(args.control);
-  return { success: true };
+  const inspection = await (await watching).control(args.control);
+  return { success: true, ...(inspection ? { inspection } : {}) };
 }
 
 export function unwatchRemoteTaskPage(watchId: string): boolean {

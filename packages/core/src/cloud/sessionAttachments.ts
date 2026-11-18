@@ -20,13 +20,16 @@ export async function resolveSessionAttachment(endpoint: AttachmentsEndpoint, id
   return file
 }
 
+/** The head of a session message's attachment block; the task card and the agent's envelope find the block by it. */
+export const SESSION_ATTACHMENTS_MARKER = '附件（原件引用与校验信息；仅元数据）：'
+
 /** References are data, carried inside the existing durable message envelope. No signed URLs or bytes. */
 export function withSessionAttachments(text: string, files?: SessionAttachmentRef[]): string {
   if (!files?.length) return text
   if (files.length > 8 || files.some(file => !/^[0-9a-f-]{36}$/i.test(file.attachment_id)
     || !/^[0-9a-f]{64}$/.test(file.sha256) || !Number.isSafeInteger(file.size_bytes) || file.size_bytes < 0
     || typeof file.file_name !== 'string' || typeof file.content_type !== 'string')) throw new Error('Invalid session attachment references')
-  return `${text}\n\n附件（原件引用与校验信息；仅元数据）：\n${JSON.stringify(files)}`
+  return `${text}\n\n${SESSION_ATTACHMENTS_MARKER}\n${JSON.stringify(files)}`
 }
 
 

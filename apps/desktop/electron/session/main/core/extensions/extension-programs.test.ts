@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { awaitFact } from '../../../../../../../tests/support/awaitFact';
 import * as programSurfaces from './extension-program-surface';
+import { liveWindowActivity } from './live-window-activity';
 import {
   callerMeta,
   extensionPrograms,
@@ -139,6 +140,16 @@ afterEach(async () => {
 });
 
 describe('extension programs run by gugu (#6615)', () => {
+  it('advances source activity only for an admitted Agent call, not tool discovery or person calls', async () => {
+    const target = program('browser-use', 'live-window-activity');
+    await extensionPrograms.tools(target);
+    expect(liveWindowActivity('task-f', target.extensionId)).toBeUndefined();
+    await extensionPrograms.call(target, { name: 'whoami' }, { signal: new AbortController().signal, agent: 'user:a', sessionId: 'task-f' });
+    const activity = liveWindowActivity('task-f', target.extensionId)!;
+    expect(activity).toBeGreaterThan(0);
+    await extensionPrograms.call(target, { name: 'whoami' }, { signal: new AbortController().signal, sessionId: 'task-f' });
+    expect(liveWindowActivity('task-f', target.extensionId)).toBe(activity);
+  });
   it('cancelling during cold startup still stops the unused program after its idle interval', async () => {
     const realConnect = Client.prototype.connect;
     const entered = Promise.withResolvers<void>();

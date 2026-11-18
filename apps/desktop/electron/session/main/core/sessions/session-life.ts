@@ -115,6 +115,18 @@ export class SessionLife {
 
   constructor(private readonly ports: SessionLifePorts) {}
 
+  /** A host-owned input keeps its original signed-in epoch across asynchronous preparation and routing. */
+  inputOwnerFence(ownerUserId: string): () => void {
+    const epoch = this.epoch;
+    const assert = () => {
+      if (!ownerUserId || this.account !== ownerUserId || this.epoch !== epoch || this.leaving || this.tail !== null) {
+        throw Object.assign(new Error('The original attachment input owner is no longer active'), { code: 'attachment_creation_unverified' });
+      }
+    };
+    assert();
+    return assert;
+  }
+
   private entry(sessionId: string): Entry {
     const existing = this.entries.get(sessionId);
     if (existing) return existing;
@@ -549,7 +561,11 @@ export class SessionLife {
           if (aborted === ABORTED) return;
           out = aborted;
         } catch (error) {
-          if (!run.abort.signal.aborted) this.send(sessionId, { k: 'stage-fail', gen: run.gen, at: effect.at, cause: toSerializedError(error),
+          if (run.abort.signal.aborted) return;
+          // A start that cannot proceed is a failure of this session: say it at the failure level. The transition line
+          // below is info, under the hosts' default level, so without this a rejected stage left no line at all.
+          this.ports.failed(sessionId, new Error(`Start stage '${effect.at}' failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+          this.send(sessionId, { k: 'stage-fail', gen: run.gen, at: effect.at, cause: toSerializedError(error),
             ...((error as { awaitsPerson?: unknown }).awaitsPerson === true ? { awaitsPerson: true as const } : {}) });
           return;
         }

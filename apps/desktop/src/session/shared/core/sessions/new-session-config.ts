@@ -50,6 +50,7 @@ const v1Schema = z.object({
       model: z.string().optional(),
       /** Reasoning-effort level picked alongside the model. Absent for effort-less models. */
       effort: z.string().optional(),
+      fastMode: z.boolean().optional(),
       /**
        * composer 里选中的「咕咕提供的模型」。**三态**,完整口径见
        * `@shared/core/agents/platform-model` 的 SessionPlatformModel:

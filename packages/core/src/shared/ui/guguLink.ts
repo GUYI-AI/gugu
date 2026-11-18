@@ -47,7 +47,7 @@ export function parseGroupFileLink(href: string): GroupFileLink | null {
   const at = match[3] === undefined ? null : placeOf(match[3])
   return {
     itemId: match[1]!.toLowerCase(),
-    ...(Number.isSafeInteger(version) ? { version } : {}),
+    ...(Number.isSafeInteger(version) && version! > 0 ? { version } : {}),
     ...(at && Object.keys(at).length > 0 ? { at } : {}),
   }
 }
@@ -86,7 +86,7 @@ function decoded(part: string): string {
 const NOT_BARE = /[&=%;#+\s<>\\()[\]{}"`|\u0000-\u001f\u007f]/g
 /** As `%XX`: encodeURIComponent leaves `(` and `)` as they are, and a bare one ends a markdown link. */
 const escaped = (c: string) => (c === '(' || c === ')' ? `%${c.charCodeAt(0).toString(16).toUpperCase()}` : encodeURIComponent(c))
-const part = (text: string) => text.replace(NOT_BARE, escaped)
+const part = (text: string) => text.replace(NOT_BARE, escaped).replace(/'/g, '%27')
 
 /**
  * The one way gugu writes such a link — the place's keys and values escaped one by one, in the App's order, so whatever
@@ -137,7 +137,7 @@ export function classifyFileLink(href: string): FileLinkClassification {
   const groupFile = parseGroupFileLink(candidate)
   if (groupFile) return { kind: 'group-file', ...groupFile }
 
-  const { path: raw, at } = workspacePlace(href)
+  const { path: raw, at } = workspacePlace(candidate)
   const placed = at && Object.keys(at).length > 0 ? { at } : {}
   let path = raw
   try {
@@ -238,7 +238,7 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
     const [kind, id] = 'chat' in input.place ? (['chat', input.place.chat] as const) : (['session', input.place.session] as const);
     search.append(PLACE_KEYS[kind], id);
   }
-  const tail = segments.map(encodeURIComponent).join('/');
+  const tail = segments.map(segment => encodeURIComponent(segment).replace(/[()]/g, escaped)).join('/');
   const query = search.toString();
   const link = `${scheme}://ext/${input.extensionId}/${tab}${tail ? `/${tail}` : ''}${query ? `?${query}` : ''}`;
   if (link.length > MAX_EXTENSION_LINK_LENGTH) {
@@ -379,7 +379,7 @@ export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' 
     case 'session':
     case 'project':
       if (!scheme) throw new Error('An external resource link needs the build scheme')
-      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId)}`
+      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId).replace(/[()]/g, escaped)}`
   }
 }
 
@@ -401,7 +401,7 @@ export function linkTargetOf(args: Record<string, unknown>, own: { id: string; c
     case 'file': {
       const file = typeof args.file === 'object' && args.file ? (args.file as { id?: unknown }).id : args.file
       if (typeof file === 'string' && !MESSAGE_UUID.test(file)) throw new Error("file is a chat file's entry or id: a working copy's file has no link, it goes by its path")
-      if (args.version !== undefined && (!Number.isInteger(args.version) || Number(args.version) < 1)) throw new Error('version must be a positive whole number')
+      if (args.version !== undefined && (!Number.isSafeInteger(args.version) || Number(args.version) < 1)) throw new Error('version must be a positive whole number')
       const at = args.at == null ? undefined : Object.fromEntries(Object.entries(args.at as object).map(([key, value]) => {
         if (typeof value !== 'string' && typeof value !== 'number') throw new Error('A file place has string or number values')
         return [key, String(value)]

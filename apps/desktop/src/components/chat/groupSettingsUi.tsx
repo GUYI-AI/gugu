@@ -40,7 +40,9 @@ const navTitleStyle: CSSProperties = { ...settingsRowTitleStyle, flexShrink: 0 }
 const navValueStyle: CSSProperties = {
   flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
   // 行尾的值(「未设置协作规则」、成员数)是信息:可读次级字;❌ text-tertiary(= faint,3.35 / 3.12)。
-  fontSize: 'var(--font-body)', color: 'var(--muted-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  // Not clipped here: a text value ellipsizes in its own span, and a control in the value (the members row's 「+」)
+  // keeps the touch area it draws past its box.
+  fontSize: 'var(--font-body)', color: 'var(--muted-fg)', whiteSpace: 'nowrap',
 }
 const navValueTextStyle: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 const chevronStyle: CSSProperties = { color: 'var(--text-tertiary)', flexShrink: 0 }

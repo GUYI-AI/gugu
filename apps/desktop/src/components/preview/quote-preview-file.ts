@@ -1,18 +1,21 @@
-import { stringifyMention } from '@gugu/session-shared/markdown';
+import { fileCite } from '@gugu/session-shared/markdown';
 import { composeInChat } from '@/session/shared/extensions/app-send-core';
 import { APP_COMPOSE_EVENT } from '@/session/shared/extensions/app-runtime-protocol';
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu';
 import { getRendererSession } from '@/lib/sessionPublication';
+import { openSelectionSend } from '@/components/chat/selectionSendAsk';
+import { i18n } from '@/i18n';
+import { codeQuote } from '../../../preinstalled-apps/workspace/code-quote.js';
 
 export function selectedTextQuote(selection: FileViewerSelection): string {
-  return selection.text.split('\n').map((line) => `> ${line}`).join('\n');
+  return selection.code ? codeQuote(selection.text) : selection.text.split('\n').map((line) => `> ${line}`).join('\n');
 }
 
+/** The place as the Files App says it (its `line` / `lines` strings): 「第 10–11 行」, "Lines 10–11". */
 export function selectionPosition(selection: FileViewerSelection): string {
-  const at = selection.at;
-  if (!at) return '';
-  if (at.lines) return `L${at.lines}`;
-  return '';
+  const [first, last = first] = selection.at?.lines?.split('-') ?? [];
+  if (!first) return '';
+  return first === last ? i18n.t('fileCite.line', { first, ns: 'messaging' }) : i18n.t('fileCite.lines', { first, last, ns: 'messaging' });
 }
 
 /** Use the App file-reference producer and its existing draft delivery, including membership and version checks. */
@@ -24,7 +27,7 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
     refs: [{
       file: { id: itemId },
       version,
-      ...(selection ? { at: selection.at, label: [selectionPosition(selection), selection.text].filter(Boolean).join(' · ') } : {}),
+      ...(selection ? { at: selection.at, label: selectionPosition(selection) } : {}),
     }],
   });
   document.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail, bubbles: true }));
@@ -32,8 +35,14 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
 
 /** The same task-file reference text in desktop and phone composers. */
 export function workspaceFileQuote(path: string, selection: FileViewerSelection | null): string {
-  const name = path.replace(/\\/g, '/').split('/').pop() ?? path;
-  const label = [name, selection && selectionPosition(selection)].filter(Boolean).join(' · ');
-  const mention = stringifyMention({ label, target: path, kind: 'file' });
-  return selection ? `${mention}\n${selectedTextQuote(selection)}` : mention;
+  return workspaceFileCite(path, selection).draft;
+}
+
+function workspaceFileCite(path: string, selection: FileViewerSelection | null) {
+  return fileCite(selection ? selectedTextQuote(selection) : '', [{ file: { id: path }, label: selection ? selectionPosition(selection) : '' }]);
+}
+
+/** Send a task file's selection with a few words, from the box beside it (or the phone's bar): the cite's words and pill, then theirs. */
+export function sendWorkspaceSelection(sessionId: string, path: string, selection: FileViewerSelection, anchor: DOMRect | 'dock'): void {
+  void openSelectionSend({ cite: workspaceFileCite(path, selection), to: { session: sessionId }, anchor }).catch(() => undefined);
 }

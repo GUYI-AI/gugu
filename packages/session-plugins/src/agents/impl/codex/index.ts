@@ -1,4 +1,5 @@
 import { CODEX_AUTH_CONNECTIONS } from '../../connection-capabilities';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -110,6 +111,13 @@ export const plugin = definePlugin(
       // The native app-server bridge owns exactly one Codex thread per adapter process.
       maxSessionsPerProcess: 1,
       liveSettings: {
+        fast: {
+          channel: 'acp-config-option',
+          ack: 'ack-read-back',
+          busy: 'queue-next-turn',
+          reloadRequired: false,
+          recovery: 'none',
+        },
         model: {
           channel: 'provider-thread-settings',
           ack: 'ack-read-back',
@@ -323,7 +331,8 @@ export const provider = registerPluginBehavior(plugin, {
   },
   acp: {
     // Its session/load replays the user messages it received: canonical evidence of delivered communications.
-    historyRecovery: { canonicalReplay: true },
+    // Its record keeps the native prompt (the person's words plus the host's attachment lines): the receipt ties the two.
+    historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },
     // codex 的 ACP 腿只有一座桥:咕咕自己写的 `runtime/codex-app-server-acp.mjs`(驱动用户自己那份
     // `codex app-server`),随应用一起构建;入口由宿主解析(#6394)。❌ 再回落到上游
     // `@agentclientprotocol/codex-acp` —— 那座桥没有 notify / 平台模型目录 / MCP 关闭集合这些通道,

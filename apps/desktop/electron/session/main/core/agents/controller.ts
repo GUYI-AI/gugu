@@ -42,7 +42,7 @@ import { getDependencyDescriptor } from '../dependencies/registry';
 import { getPlugin, listPlugins } from './plugin-registry';
 import { partsToInstall, partsToUpdate } from './agent-programs';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
-import { lookupHarnessModelCatalog } from './harness-model-catalog';
+import { lookupHarnessModelCatalog, probeHarnessModelCatalog } from './harness-model-catalog';
 import { wireHarnessModelCatalog } from './harness-model-catalog-wiring';
 
 /** Enrich a manager HostDependency snapshot with latestVersion/updateAvailable from the coordinator. */
@@ -50,6 +50,15 @@ const enrichHostDep = (
   id: DependencyId,
   hostDep: Parameters<typeof agentUpdateService.enrichHostDependency>[1],
 ) => agentUpdateService.enrichHostDependency(id, hostDep);
+
+async function catalogDependencyManager() {
+  wireHarnessModelCatalog();
+  const manager = await getDependencyManager();
+  void ensureAgentDependenciesProbed(manager).catch((error: unknown) => {
+    process.emitWarning(error instanceof Error ? error.message : String(error), { code: 'AGENT_DEPENDENCY_PROBE' });
+  });
+  return manager;
+}
 
 /** 正在跑的安装:一台机器上一个 agent 一条。取消要找的就是它。 */
 const inFlightInstalls = new Map<string, AbortController>();
@@ -413,14 +422,7 @@ export const agentsController = createRPCController({
    * `unavailable`，所以这里让依赖探测后台运行，失败只记录诊断，不吞掉目录结果。
    */
   modelCatalog: async (id: string, leg: SessionpageLeg, force?: boolean) => {
-    wireHarnessModelCatalog();
-    const mgr = await getDependencyManager();
-    void ensureAgentDependenciesProbed(mgr).catch((error: unknown) => {
-      process.emitWarning(
-        error instanceof Error ? error.message : String(error),
-        { code: 'AGENT_DEPENDENCY_PROBE' },
-      );
-    });
+    const mgr = await catalogDependencyManager();
     return lookupHarnessModelCatalog(id, {
       // 目录替哪条腿读(#6246):两条腿的配置根可能不同,渲染层按它所在的那条腿问。
       leg,
@@ -431,5 +433,11 @@ export const agentsController = createRPCController({
         mgr.get(agentProgramFor(getPlugin(id), leg).dependencyId as DependencyId)?.version ?? null,
       ...(force ? { force: true } : {}),
     });
+  },
+  /** Disposable target read: it never replaces the default-model catalog/cache. */
+  targetModelCatalog: async (id: string, leg: SessionpageLeg, model: string) => {
+    if (!model.trim()) throw new Error('A target model is required');
+    await catalogDependencyManager();
+    return probeHarnessModelCatalog(id, leg, model);
   },
 });

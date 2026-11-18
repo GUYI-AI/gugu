@@ -35,7 +35,7 @@ export function AssistantTyping({ pending, name, activity = null }: {
       <div style={buildBubbleStyle(false, false, false)}>
         <div className="ast-typing-body">
           <span className="ast-typing-dots" aria-hidden><span /><span /><span /></span>
-          <span role="status" aria-live="polite" aria-label={`${name} · ${label}`} className="ast-typing-label">{label}</span>
+          <span role="status" aria-live="polite" aria-label={`${name}: ${label}`} className="ast-typing-label">{label}</span>
           {thinking && <ThinkingElapsed key={thinking.id} startedAt={thinking.startedAt} />}
           {thinking?.text && <Button variant="ghost" size="sm" className="ast-typing-toggle" aria-label={t('chat.thinkingDetails')}
             aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpandedId(expanded ? null : thinking.id)}>

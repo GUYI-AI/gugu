@@ -1,6 +1,8 @@
+import { Unknown } from '@/components/ui/Unknown'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
+import { resolveAccountTargets } from '../agents-page/agent-account'
 import { useListedConnections } from './listed-connections'
 import { errorText, useSubscriptionPlan } from './subscription-queries'
 import { payerLine } from './subscription-view'
@@ -25,15 +27,20 @@ export function useConnectionStatus(
     ? payerLine(plan.data, translate, false)
     : plan.error
       ? translate('subscriptions.unavailable.error', { message: errorText(plan.error) })
-      : translate('subscriptions.checking')
-  const identity =
-    auth?.status.kind === 'unauthenticated' && auth.status.reason === 'expired'
-      ? translate('subscriptions.connections.expired')
-      : currentConnection?.kind === 'api-key'
-        ? currentConnection.name || description
-        : auth?.status.kind === 'authenticated' && auth.status.account
-          ? auth.status.account
-          : description
+      : null
+  // null = 还说不出:它要用的那几份(有账号登录的家:登录态;有连接的家:连接;套餐)还没读到。
+  // 一次写定,❌ 先写「查询中」、再写付费方、再换成账号。没有账号登录的家(Pi 这类)登录态永远是空的,不等它。
+  const signsIn = resolveAccountTargets(agent).length > 0
+  const identity: string | null =
+    (signsIn && auth === null) || (form !== null && connections.data === undefined && !connections.error)
+      ? null
+      : auth?.status.kind === 'unauthenticated' && auth.status.reason === 'expired'
+        ? translate('subscriptions.connections.expired')
+        : currentConnection?.kind === 'api-key'
+          ? currentConnection.name || description
+          : auth?.status.kind === 'authenticated' && auth.status.account
+            ? auth.status.account
+            : description
   const badge =
     plan.data?.plan ??
     (plan.data?.payer === 'api-key' || plan.data?.payer === 'custom-endpoint' ? 'API' : undefined)
@@ -46,12 +53,12 @@ export function ConnectionStatusLine({
   badge
 }: {
   agentId: string
-  identity: string
+  identity: string | null
   badge: string | undefined
 }) {
   return (
     <span className="subscription-status-line" data-testid={`connection-status-${agentId}`}>
-      <span>{identity}</span>
+      <span>{identity ?? <Unknown className="w-32" />}</span>
       {badge && <span className="subscription-plan-badge">{badge}</span>}
     </span>
   )

@@ -1,7 +1,6 @@
 import { sessionProjectLocations } from '../session-timeline/session-project-locations';
-import { viewStateService } from './view-state-service';
 
-/** Keep layout repair in the existing state read, without another startup IPC round trip. */
-export async function readViewStateForRestore(sessionIds: string[]) {
-  return { views: await viewStateService.getAll(), locations: sessionProjectLocations(sessionIds) };
+/** Layout repair for the saved screen: where its sessions live. The view state itself reached the renderer before its first frame. */
+export function readViewStateForRestore(sessionIds: string[]) {
+  return { locations: sessionProjectLocations(sessionIds) };
 }

@@ -91,7 +91,7 @@ vi.mock('@renderer/features/library/library-host', async () => {
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
 const { toast } = await import('@renderer/lib/hooks/use-toast');
 const { ExtensionsSettingsCard, MARKET_REOPEN_MIN_MS } = await import('./ExtensionsSettingsCard');
-const { PageShownContext } = await import('@renderer/app/recent-session-pages');
+const { SurfaceShownContext } = await import('@/lib/retainedSurface');
 
 const T1 = '2026-10-16T01:00:00.000Z';
 const T2 = '2026-10-16T01:05:00.000Z';
@@ -129,7 +129,7 @@ describe('the App page market: the index in hand at once, the download site behi
       root.render(
         React.createElement(QueryClientProvider, { client: queryClient },
           React.createElement(SessionLocalizationProvider, null,
-            React.createElement(PageShownContext.Provider, { value: shown }, React.createElement(ExtensionsSettingsCard))))
+            React.createElement(SurfaceShownContext.Provider, { value: shown }, React.createElement(ExtensionsSettingsCard))))
       );
     });
   }

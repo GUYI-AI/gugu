@@ -224,9 +224,7 @@ export function useCreateSessionCallback({
       ? { ...ref, path: undefined, workspacePath: taskAttachmentWorkspacePath(ref.itemId, ref.name) } : ref);
     // ACP keeps the person's words: Life prepares file context only after placement. PTY retains its text-only leg.
     const text = baseSession.type === 'acp' ? input.prompt.trim() : [input.prompt.trim(),
-      ...named.map(ref => turnAttachmentText(ref, deviceId || !ref.path || taskChatId
-        ? { failure: 'kept on the computer it was attached from — open the folder file above' }
-        : { localPath: ref.path })),
+      ...named.map(ref => turnAttachmentText(ref, deviceId || !ref.path || taskChatId ? null : { localPath: ref.path })),
     ].filter(Boolean).join('\n');
     const transport = firstTurnTransport;
     // #2569 Context handed over with this draft rides beside the words where the first turn has room for host context (an

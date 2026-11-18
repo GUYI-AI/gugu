@@ -6,7 +6,6 @@ import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } 
 import { CreateSessionPage } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
-import type { CreateSelection } from '../../../apps/desktop/src/mobile/agent-watch/create-session-form'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 
@@ -26,15 +25,9 @@ vi.mock('../../../apps/desktop/src/hooks/useWakeCloudComputer', () => ({
 }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/CreateOptionsPill', async () => {
   const { createElement } = await import('react')
-  return {
-    CreateOptionsPill: ({ selection, onChange }: {
-      selection: CreateSelection
-      onChange: (next: CreateSelection, modelPicked?: boolean) => void
-    }) => createElement('div', null,
-      createElement('button', { 'data-testid': 'pick-codex', onClick: () => onChange({ ...selection, harness: 'codex', model: null, effort: null }) }, 'Codex'),
-      createElement('button', { 'data-testid': 'pick-own-default', onClick: () => onChange({ ...selection, model: null }, true) }, 'Own default'),
-    ),
-  }
+  return { ModelChoices: ({ onPick }: { onPick: (model: string | null) => void }) => createElement('button', {
+    'data-testid': 'pick-own-default', onClick: () => onPick(null),
+  }, 'Own default') }
 })
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class SessionpageRpcError extends Error { readonly code = 'test' },
@@ -80,6 +73,15 @@ async function write(text: string) {
   await act(async () => { writeComposer(input(), text) })
 }
 
+async function pickCodex() {
+  await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!.click() })
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="harness"]')!.click() })
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-dimension="harness"][data-option-id="codex"]')!.click() })
+}
+async function pickOwnDefault() {
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!.click() })
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="pick-own-default"]')!.click() })
+}
 describe('phone first-send host readiness', () => {
   const remote: Device = { ...device, platform: 'linux', capabilities: { terminals: [], runtimes: ['codex', 'claude'] } }
   const prepareCodex = (signedIn = false, platformModel = 'platform:available-model') => {
@@ -123,7 +125,7 @@ describe('phone first-send host readiness', () => {
   it('sends the shared available default after switching to an unsigned-in Codex', async () => {
     prepareCodex()
     await harness.render(pageOn(remote, { onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
+    await pickCodex()
     await write('Run with an available model')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledExactlyOnceWith(remote.device_id, expect.objectContaining({ harness: 'codex', model: 'platform:available-model' }))
@@ -144,7 +146,7 @@ describe('phone first-send host readiness', () => {
   it('a group New task lands its first sentence in that group as a task card (chatId + taskChatId)', async () => {
     prepareCodex()
     await harness.render(pageOn(remote, { taskGroup: { chatId: 'group-1', name: 'Group' }, onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
+    await pickCodex()
     await write('Look at the build')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledExactlyOnceWith(remote.device_id, expect.objectContaining({ chatId: 'group-1', taskChatId: 'group-1' }))
@@ -153,8 +155,8 @@ describe('phone first-send host readiness', () => {
   it('does not replace an explicitly chosen own default when its catalogue returns', async () => {
     prepareCodex(true, 'platform:gpt-6-luna')
     await harness.render(pageOn(remote, { onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-own-default"]') as HTMLButtonElement).click() })
+    await pickCodex()
+    await pickOwnDefault()
     await write('Keep my explicit selection')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledOnce()
@@ -164,8 +166,8 @@ describe('phone first-send host readiness', () => {
   it('shows the existing sign-in explanation when the chosen own model has no login', async () => {
     prepareCodex()
     await harness.render(pageOn(remote, { onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-own-default"]') as HTMLButtonElement).click() })
+    await pickCodex()
+    await pickOwnDefault()
     await write('Keep this draft until sign-in')
     expect(harness.container.querySelector('[data-blocker="model_auth_required"]')?.textContent).toContain('登录')
     expect(send().disabled).toBe(true)

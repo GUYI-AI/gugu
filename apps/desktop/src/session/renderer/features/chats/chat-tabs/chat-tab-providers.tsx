@@ -36,6 +36,9 @@ export const CHAT_TOPIC_TAB_KIND = 'chat-topic';
  */
 export const CHAT_INFO_TAB_KIND = 'chat-info';
 
+/** The narrowest a conversation (the chat, a topic beside it) is drawn: under it, messages are not readable. */
+export const CHAT_MIN_WIDTH_PX = 360;
+
 export type ChatTabState = { chatId: string };
 export type ChatTopicState = { topicChatId: string; name: string };
 export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number; topic?: ChatTopicState };
@@ -82,6 +85,7 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   conversation: true,
 
   resourceKey: () => 'chat',
+  minWidth: CHAT_MIN_WIDTH_PX,
   // 别的页签的页、对话的名字和右端按钮都由对话画:它一直挂着(没上屏就藏着)。
   keepMounted: true,
   initialize: stateResource,
@@ -93,13 +97,14 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/** A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name. */
+/** A panel tab's name as its strip says it: what its page called itself, else the file's name, else the App's tab title. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
+  const file = item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
-    isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
-    item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined,
+    isFolderItem(item) ? folderName : item.kind && !file ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
+    file,
   );
 }
 
@@ -214,6 +219,7 @@ export const chatTopicTabProvider = createTabProvider<typeof CHAT_TOPIC_TAB_KIND
   // A topic is a conversation of its source group (owner 11-05 §6.6): what is opened from it goes beside it.
   conversation: true,
   resourceKey: (state) => state.topicChatId,
+  minWidth: CHAT_MIN_WIDTH_PX,
   // As before: the topic beside a group is this window's; a restart opens the group alone.
   isPersistent: () => false,
   initialize: stateResource,

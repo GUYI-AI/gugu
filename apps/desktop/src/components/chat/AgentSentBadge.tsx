@@ -24,7 +24,7 @@ function SendingAgentLink({ source }: { source: NonNullable<MessageItem['agent_s
   const { toast } = useToast()
   const [opening, setOpening] = useState(false)
   const label = t('message.agentSentForYou', { agent: source.name })
-  if (!source.id) return <span data-ai-sent="true" title={t('message.sendingAgentRemoved')} className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--faint-fg)]">{label} · {t('message.sendingAgentRemoved')}</span>
+  if (!source.id) return <span data-ai-sent="true" title={t('message.sendingAgentRemoved')} className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--faint-fg)]">{label}  {t('message.sendingAgentRemoved')}</span>
 
   async function open() {
     if (!user || !source.id || opening) return

@@ -2,7 +2,7 @@
 export interface GroupAdminRpcClient {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{
     data: unknown
-    error: { message: string } | null
+    error: { message: string; code?: string } | null
   }>
 }
 
@@ -38,7 +38,8 @@ export function createGroupAdmin(client: GroupAdminRpcClient, actor: string) {
 
   async function call(response: ReturnType<GroupAdminRpcClient['rpc']>): Promise<unknown> {
     const { data, error } = await response
-    if (error) throw new Error(error.message)
+    // The SQLSTATE travels with the message: a caller can tell a transient rollback (40P01) from a refusal.
+    if (error) throw Object.assign(new Error(error.message), error.code ? { code: error.code } : {})
     return data
   }
   async function object(name: string, response: ReturnType<GroupAdminRpcClient['rpc']>, expected: Record<string, unknown> = {}) {
@@ -153,4 +154,10 @@ export async function setGroupAvatar(
   })
   if (row.avatar_url !== url) throw new Error('update_group_as: avatar was not confirmed')
   return url
+}
+
+/** Back to the default face: the picture's URL and both storage references are cleared together. */
+export async function clearGroupAvatar(admin: ReturnType<typeof createGroupAdmin>, chatId: string): Promise<void> {
+  const row = await admin.update(chatId, { avatar_url: null, avatar_storage_bucket_id: null, avatar_storage_object_name: null })
+  if (row.avatar_url) throw new Error('update_group_as: avatar was not cleared')
 }

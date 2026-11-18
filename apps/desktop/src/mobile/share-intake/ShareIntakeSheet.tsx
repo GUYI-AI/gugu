@@ -10,7 +10,9 @@ import { ListRow } from '../../components/ui/ListRow'
 import { SearchField } from '../../components/ui/SearchField'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { useChatStore } from '../../store/chatContext'
-import { mergeShareIntoDraft, shareTargetChats } from './shareTargets'
+import { useAuth } from '../../store/auth'
+import { sendableConversations } from '../../components/chat/forwardMessageUtils'
+import { mergeShareIntoDraft } from './shareTargets'
 import './share-intake.css'
 
 /** 缩略图的 blob 地址在同一个 effect 里建、在它的清理里撤 —— StrictMode 重挂一次也拿到新的,❌ 在 render 里建。 */
@@ -56,13 +58,15 @@ export function ShareIntakeContent({ share, onDone }: { share: IncomingShare; on
     'chats', 'identitiesById', 'activeChatId', 'drafts', 'draftAttachments', 'writeDraft', 'setDraftAttachments',
   )
   const [query, setQuery] = useState('')
+  const { user } = useAuth()
   const displayName = useCallback(
     (chat: ChatItem) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name),
     [identitiesById],
   )
+  // The forward page's list without topics: a share lands in a conversation's draft.
   const targets = useMemo(
-    () => shareTargetChats(chats, { query, displayName, activeChatId, drafts }),
-    [chats, query, displayName, activeChatId, drafts],
+    () => sendableConversations(chats, { ownerId: user?.id, query, displayName, identitiesById, topics: false, activeChatId, drafts }).chats,
+    [chats, user?.id, query, displayName, identitiesById, activeChatId, drafts],
   )
   const hasContent = Boolean(share.text) || share.files.length > 0
   const reasonText = {
@@ -129,11 +133,10 @@ export function ShareIntakeContent({ share, onDone }: { share: IncomingShare; on
                     <Avatar
                       name={displayName(chat)}
                       avatarUrl={isRoomChat(chat.kind) ? chat.avatar : identity?.avatar}
-                      seed={chat.peer_user_id ?? undefined}
+                      seed={isRoomChat(chat.kind) ? chat.id : chat.peer_user_id ?? undefined}
                       size="sm"
                       isAgent={identity?.type === 'agent'}
                       variant={isRoomChat(chat.kind) ? 'group' : 'default'}
-                      memberAvatars={chat.member_user_ids?.flatMap((id) => identitiesById[id] ? [{ id, name: identitiesById[id].display_name, avatar: identitiesById[id].avatar }] : [])}
                     />
                   }
                   title={displayName(chat)}

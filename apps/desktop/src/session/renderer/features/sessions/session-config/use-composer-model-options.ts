@@ -9,7 +9,7 @@ import { platformModelIdFromOption, platformOptionId } from '@/session/shared/pl
 import { PLATFORM_GROUP_HEADING_KEY } from '@/session/shared/platform-model-labels';
 import { composerModelOptions, type PlatformModelRow } from './platform-model-options';
 import { modelProviderIcon } from './model-provider-icon';
-import { openBillingPage } from '@/lib/appLinks';
+import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks';
 import type { ComposerModelUpgrade } from '@gugu/session-ui/react/components';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
 
@@ -122,7 +122,7 @@ export function composerModelFooter(
   const locked = platformModels.filter((model) => model.requiresMembership).map((model) => model.displayName);
   return {
     onManageModels: () => openShellSettings('model'),
-    modelUpgrade: locked.length
+    modelUpgrade: locked.length && billingLinksAvailable()
       ? {
           label: translate('composer.platformModelUpgrade'),
           title: translate('composer.platformModelUpgradeTitle'),

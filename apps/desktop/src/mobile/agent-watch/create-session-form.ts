@@ -1,9 +1,11 @@
+import { metadataSeparator } from '@/i18n/format'
 import { readingFromStatus, type InstallationReading } from '@gugu/session-core/deps/runtime/types'
 import type {
   SessionpageHarnessOption,
   SessionpagePermissionMode,
   SessionpageSessionCreateModels,
   SessionpageSessionCreateOptions,
+  SessionpageSessionCreateRequest,
   SessionpageSessionCreateResult,
   SessionpageSessionSummary,
 } from '@gugu/session-core/session-record/contract'
@@ -31,6 +33,13 @@ export type CreateSelection = {
   permissionMode: SessionpagePermissionMode | null
   /** 推理档 id(目录 efforts 里的);null = 引擎默认。换 harness 必清。 */
   effort: string | null
+  fastMode?: boolean
+}
+
+/** An unconfirmed task keeps its submitted options; a new default/catalog cannot rewrite that intent. */
+export function submittedCreationSelection(request: SessionpageSessionCreateRequest): CreateSelection {
+  return { harness: request.harness, model: request.model ?? null, permissionMode: request.permissionMode ?? null,
+    effort: request.effort ?? null, ...(request.fastMode !== undefined ? { fastMode: request.fastMode } : {}) }
 }
 
 /**
@@ -132,7 +141,7 @@ export function selectHarness(
     selection.permissionMode && option?.permissionModes.includes(selection.permissionMode)
       ? selection.permissionMode
       : null
-  return { ...selection, harness, permissionMode, model: null, effort: null }
+  return { ...selection, harness, permissionMode, model: null, effort: null, ...(selection.fastMode !== undefined ? { fastMode: false } : {}) }
 }
 
 /**
@@ -194,7 +203,7 @@ export function createPillLabel(
   const model = selectedModelName(models, selection)
   const effort = selectedEffortName(models, selection)
   const parts = (phoneAgentLabel ? [phoneAgentLabel, model, effort] : [harness?.name, model, effort]).filter((x): x is string => !!x)
-  return parts.length > 0 ? parts.join(' · ') : null
+  return parts.length > 0 ? parts.join(metadataSeparator()) : null
 }
 
 export type CreateBlocker = 'no_usable_harness' | 'pick_harness'

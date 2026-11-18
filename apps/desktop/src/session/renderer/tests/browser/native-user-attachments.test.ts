@@ -3,7 +3,8 @@ import { createChatContext, createChatState, createChatView } from '@gugu/sessio
 import { nativeUserAttachmentCommands } from '@/mobile/agent-watch/native-user-attachments';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 
-it.each([390, 1280])('renders a decoded user thumbnail and opens its full image at %s px', async width => {
+// A restarted task: nothing runs, its turns come from the archive and the image is read by its attachment id alone.
+it.each([390, 1280])('renders a restarted task user thumbnail and opens its full image at %s px', async width => {
   const ref = { id: 'immutable-image', name: 'photo.png', mimeType: 'image/png' as const };
   const turns: TranscriptTurn[] = [{ id: 'c:turn:s28', seq: 28, initiator: 'user', outcome: { kind: 'done' }, items: [
     { kind: 'message', id: 'c:turn:s28:message:user', seq: 0, role: 'user', text: 'caption', attachments: [ref] },
@@ -11,7 +12,7 @@ it.each([390, 1280])('renders a decoded user thumbnail and opens its full image 
   ] }];
   const url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aIrkAAAAASUVORK5CYII=';
   const openImage = vi.fn(), readImage = vi.fn(async () => url);
-  const commands = nativeUserAttachmentCommands({ turns: () => turns, readImage, readPathImage: vi.fn(), openImage, openFile: vi.fn(), onError: vi.fn(), unavailable: () => 'missing' });
+  const commands = nativeUserAttachmentCommands({ readImage, readPathImage: vi.fn(), openImage, openFile: vi.fn(), onError: vi.fn(), unavailable: () => 'missing' });
   const host = document.createElement('div');
   host.style.cssText = `position:fixed;top:45px;left:0;width:${width}px;height:800px`;
   document.body.append(host);
@@ -26,7 +27,7 @@ it.each([390, 1280])('renders a decoded user thumbnail and opens its full image 
     expect(chip.dataset.kind).toBe('image');
     chip.click();
     await vi.waitFor(() => expect(openImage).toHaveBeenCalledWith(url, ref.name, expect.any(HTMLImageElement)));
-    expect(readImage).toHaveBeenCalledExactlyOnceWith(turns[0]!.items[0]!.id, ref.id);
+    expect(readImage).toHaveBeenCalledExactlyOnceWith(ref.id);
     expect(host.textContent).toContain('caption');
   } finally { view.dispose(); state.dispose(); context.dispose(); host.remove(); }
 });

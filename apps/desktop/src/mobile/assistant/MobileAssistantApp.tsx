@@ -19,7 +19,7 @@ import type { AssistantHomePlace } from '@/lib/assistantHome'
 import { assistantTintHue, assistantTintStyle } from '@/lib/assistantTint'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { ArrowUpToLine, ChevronLeft, Mic, Paperclip, Search, Sparkles } from '@/lib/icons'
-import { useReportChatOnScreen } from '@/lib/onScreenChat'
+import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 import { showAssistantTaskChat, useOpenedAssistantTaskChat } from '@/lib/assistantTaskChat'
@@ -191,7 +191,9 @@ function MobileAssistantAppContent({
   attachmentsRef.current = draftAttachments
   const [ideasOpen, setIdeasOpen] = useState(false)
   const [chatColumn, setChatColumn] = useState<HTMLDivElement | null>(null)
-  const chatShown = useReportChatOnScreen(visible && tab === 'chat' ? chatId : null) === chatId
+  const shownChat = visible && tab === 'chat' ? chatId : null
+  useReportChatOnScreen(shownChat)
+  const chatShown = useAppActive() && shownChat === chatId
   const machine = usePhoneMachine(homeDeviceId, assistant.id, chatId)
   // 「+」里的「录制语音笔记」:手机只录和传到它家里(phoneVoiceRuntime),转写在电脑上点「开始转写」;上传失败时录音保留在手机上。
   const { t: tVoice } = useTranslation('voiceNotes')
@@ -264,7 +266,7 @@ function MobileAssistantAppContent({
         leading={
           <>
             {innerPage || back ? (
-              <IconButton size="lg" aria-label={`${t('panel.back')} · ${labels[back?.tab ?? tab]}`} onClick={() => innerPage ? innerPage.back() : back && open(back)} data-testid="mobile-assistant-back">
+              <IconButton size="lg" aria-label={`${t('panel.back')}: ${labels[back?.tab ?? tab]}`} onClick={() => innerPage ? innerPage.back() : back && open(back)} data-testid="mobile-assistant-back">
                 <ChevronLeft />
               </IconButton>
             ) : onExit ? (
@@ -335,7 +337,7 @@ function MobileAssistantAppContent({
         </div>
       ) : null}
       {app ? <PhoneAssistantWorkLedger ownerId={ownerId} assistantId={assistant.id} /> : null}
-      {app && ownerId ? <PhoneAssistantCountsSource ownerId={ownerId} assistantId={assistant.id} machine={machine} cloudDeviceId={cloudDeviceId} /> : null}
+      {app && ownerId ? <PhoneAssistantCountsSource ownerId={ownerId} machine={machine} cloudDeviceId={cloudDeviceId} /> : null}
       {tab === 'chat' || (app && !hostScreen) ? null : (
         <main id={`assistant-${assistant.id}-${tab}`} role="tabpanel" aria-label={labels[tab]} className="ta-phone-body" ref={pageBody} onScroll={(event) => pageScroll.current.set(pageKey, event.currentTarget.scrollTop)} data-testid={`mobile-assistant-${tab}`} hidden={taskChat}>
           {/* The App's page fills each section; under it only the phone's own screens it opens (PHONE_ASSISTANT_SCREENS). */}

@@ -73,16 +73,24 @@ function acceptMockFilePanel(event: Event) {
 }
 beforeEach(() => window.addEventListener(UI_EVENTS.chatAsked, acceptMockFilePanel))
 afterEach(() => window.removeEventListener(UI_EVENTS.chatAsked, acceptMockFilePanel))
+/** The chat a file is in, as the host answers a file link (`groupFileOpener`): the one resolution a link makes. */
 const fileOwner = vi.hoisted(() => vi.fn())
+const fileAnswer = (itemId: string, chatId: string) => ({ chatId, itemId, name: `${itemId}.md`, typedName: `${itemId}.md`, choice: { kind: 'none' } })
+vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', async (original) => {
+  const actual = await original<typeof import('../../../../apps/desktop/src/components/appSlot/appsHere')>()
+  return { ...actual, appsHere: { ...actual.appsHere, groupFileOpener: async ({ itemId }: { itemId: string }) => {
+    const { data } = await fileOwner(itemId)
+    return data ? { success: true, data: fileAnswer(itemId, data.chat_id) } : { success: false, error: 'No such file in this chat' }
+  } } }
+})
+// A link's file is the host's to find: the renderer does not read workspace_items for it.
 vi.mock('../../../../apps/desktop/src/lib/supabase', async (original) => {
   const actual = await original<typeof import('../../../../apps/desktop/src/lib/supabase')>()
   return { ...actual, chatDb: new Proxy(actual.chatDb, { get(client, key) {
     if (key !== 'from') return Reflect.get(client, key)
     return (table: string) => {
-      if (table !== 'workspace_items') return client.from(table)
-      let id = ''
-      const query = { select: () => query, eq: (_key: string, value: string) => { id = value; return query }, maybeSingle: () => fileOwner(id) }
-      return query
+      if (table === 'workspace_items') throw new Error('a file link read workspace_items in the renderer')
+      return client.from(table)
     }
   } }) }
 })
@@ -348,7 +356,24 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (importOriginal)
   useChatStoreReader: () => () => chatStoreMock,
   useChatStoreSelect: <T,>(select: (store: typeof chatStoreMock) => T) => select(chatStoreMock),
   useStoreValueBy: <T,>(read: (store: typeof chatStoreMock) => T) => read(chatStoreMock),
+  // The shell reads "is the active conversation still listed" straight from the chat store (lib/shellTab @@@phone-chat-layer).
+  useActiveChatListedSource: () => chatListSource,
 }))
+const chatListListeners = vi.hoisted(() => new Set<() => void>())
+const chatListSource = {
+  activeId: () => chatStoreMock.chats.some((chat) => chat.id === chatStoreMock.activeChatId) ? chatStoreMock.activeChatId : null,
+  listed: (chatId: string) => chatStoreMock.chats.some((chat) => chat.id === chatId),
+  subscribe: (listener: () => void) => { chatListListeners.add(listener); return () => { chatListListeners.delete(listener) } },
+}
+// The chat store published a new list / selection: what the provider's layout-phase notification does.
+async function publishChats(change: { chats?: Array<{ id: string }>; activeChatId?: string | null }) {
+  await act(async () => {
+    if (change.chats) chatStoreMock.chats = change.chats
+    if (change.activeChatId !== undefined) chatStoreMock.activeChatId = change.activeChatId
+    for (const listener of [...chatListListeners]) listener()
+    await Promise.resolve()
+  })
+}
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
   chatService: chatServiceMock
 }))
@@ -659,6 +684,76 @@ describe('MainLayout', () => {
     expect(harness.container.textContent).toContain('chat-list-panel')
     expect(chatArea?.parentElement?.parentElement?.style.display).toBe('none')
   })
+  // owner 11-14:退群后手机停在桌面的「选择一个会话」空态,没有顶栏、返回、底栏。会话页是盖在来源 tab 上的一层,
+  // 它只在当前会话还在列表里时成立(lib/shellTab @@@phone-chat-layer)。
+  describe('the phone chat page whose conversation goes away', () => {
+    const user = { id: 'user-1', email: 'user@example.com', nickname: 'User' }
+    const chatPageShown = () => (harness.container.querySelector('[data-testid="mock-chat-area"]') as HTMLElement).parentElement?.parentElement?.style.display === 'flex'
+    const tabBarShown = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileMessagesNav}"]`) !== null
+    const pageActive = (tab: string) => harness.container.querySelector(`[data-mobile-tab-page="${tab}"]`)?.hasAttribute('inert') === false
+    async function openFromList() {
+      platformMock.kind = 'capacitor'
+      platformMock.capabilities.sessionHost = false
+      chatStoreMock.chats = [{ id: 'chat-1' }]
+      chatStoreMock.activeChatId = 'chat-1'
+      await harness.render(createNode(MainLayout, { user }))
+      await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
+      expect(chatPageShown(), 'positive control: inside the chat page').toBe(true)
+      expect(tabBarShown()).toBe(false)
+    }
+    it('lands on the chat list with its tab bar after leaving the group', async () => {
+      await openFromList()
+      await publishChats({ chats: [], activeChatId: null })
+      expect(chatPageShown()).toBe(false)
+      expect(harness.container.textContent).toContain('chat-list-panel')
+      expect(tabBarShown()).toBe(true)
+      expect(pageActive('chats')).toBe(true)
+    })
+    it('lands on the chat list in the frame the row leaves the list, before the selection is revoked', async () => {
+      await openFromList()
+      await publishChats({ chats: [] })
+      expect(chatPageShown(), 'removed: the row is gone while the selection still names it').toBe(false)
+      expect(tabBarShown()).toBe(true)
+      await publishChats({ activeChatId: null })
+      expect(chatPageShown()).toBe(false)
+    })
+    it('does not jump back into the group when invited back after being removed', async () => {
+      await openFromList()
+      await publishChats({ chats: [], activeChatId: null })
+      await publishChats({ chats: [{ id: 'chat-1' }] })
+      expect(chatPageShown()).toBe(false)
+      expect(tabBarShown()).toBe(true)
+    })
+    it('returns to Partners when a project group opened there goes away', async () => {
+      platformMock.kind = 'capacitor'
+      platformMock.capabilities.sessionHost = false
+      chatStoreMock.chats = [{ id: 'project-chat' }]
+      chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id; for (const listener of [...chatListListeners]) listener() })
+      await harness.render(createNode(MainLayout, { user }))
+      await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
+      await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-group"]') as HTMLElement)
+      expect(chatPageShown(), 'positive control: the project group is open').toBe(true)
+      await publishChats({ chats: [], activeChatId: null })
+      expect(chatPageShown()).toBe(false)
+      expect(pageActive('contacts')).toBe(true)
+      expect(harness.container.querySelector('[data-testid="mock-phone-partners"]')?.getAttribute('data-active')).toBe('true')
+      expect(tabBarShown()).toBe(true)
+    })
+    it('goes back to the tab it was opened from after a notification opened it', async () => {
+      platformMock.kind = 'capacitor'
+      platformMock.capabilities.sessionHost = false
+      chatStoreMock.chats = [{ id: 'chat-1' }]
+      chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id; for (const listener of [...chatListListeners]) listener() })
+      await harness.render(createNode(MainLayout, { user }))
+      await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
+      await act(async () => { notificationClicks.listener?.({ chatId: 'chat-1' }); await Promise.resolve() })
+      expect(chatPageShown(), 'positive control: the notification opened the chat').toBe(true)
+      await nativeBack()
+      expect(chatPageShown()).toBe(false)
+      expect(pageActive('contacts')).toBe(true)
+      expect(tabBarShown()).toBe(true)
+    })
+  })
   it('leaves the mobile chat pane alone on Android back while a layer is open over it', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
@@ -740,6 +835,26 @@ describe('MainLayout', () => {
     expect(chatArea.getAttribute('data-bumps'), 'local UI state survives the contacts round trip').toBe('2')
     expect(surface!.style.contentVisibility).toBe('')
     expect(chatAreaProbe.mounts, 'exactly one mount across boot → contacts → chats').toBe(1)
+  })
+
+  it('keeps the session frame its last drawn box while another tab hides its slot, so its scroll offsets survive (A1)', async () => {
+    // The slot measures 0×0 once display:none (jsdom has no layout: the rect follows the slot's own display).
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const hidden = this.style.display === 'none'
+      return { x: 0, y: 0, top: hidden ? 0 : 40, left: hidden ? 0 : 300, right: 0, bottom: 0, width: hidden ? 0 : 900, height: hidden ? 0 : 700, toJSON: () => ({}) } as DOMRect
+    })
+    try {
+      await renderMainLayoutWithToast()
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-tasks"]') as HTMLElement)
+      const frame = harness.container.querySelector<HTMLElement>('[data-emdash-slot]')!
+      expect([frame.style.width, frame.style.height, frame.style.contentVisibility]).toEqual(['900px', '700px', 'visible'])
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-contacts"]') as HTMLElement)
+      expect(frame.style.contentVisibility, 'hidden the retained-surface way').toBe('hidden')
+      expect(frame.style.transform).toBe('scale(0)')
+      expect([frame.style.width, frame.style.height], 'shrunk to 0×0, every scroller inside is clamped to 0').toEqual(['900px', '700px'])
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-tasks"]') as HTMLElement)
+      expect([frame.style.width, frame.style.height, frame.style.contentVisibility]).toEqual(['900px', '700px', 'visible'])
+    } finally { rect.mockRestore() }
   })
 
   it('has no separate chat page on the desktop with a session page (gugu-dev#181)', async () => {
@@ -1066,9 +1181,8 @@ describe('MainLayout', () => {
     await clickElement(harness.container.querySelector('[data-testid="mock-settings-pick-about"]') as HTMLElement)
     expect(settings().getAttribute('data-section'), 'positive control: the user moved on inside the panel').toBe('about')
     await nativeBack()
-    expect(layerOpen('mobile-settings-layer'), 'the first back only leaves the detail page').toBe(true)
-    await nativeBack()
-    expect(layerOpen('mobile-settings-layer')).toBe(false)
+    // Entered straight at a detail page: one back leaves 「我的」 for where the link was, ❌ first the settings home it never showed.
+    expect(layerOpen('mobile-settings-layer'), 'one back leaves the settings layer').toBe(false)
     expect(settings().getAttribute('data-section'), 'closing resets the controlled phone settings page').toBe('account')
     await recharge()
     expect(settings().getAttribute('data-section')).toBe('account')
@@ -1115,7 +1229,7 @@ describe('MainLayout: files.openWith', () => {
     if (blocks) expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('source', false, 'resource')
     else expect(chatStoreMock.setActiveChatId).toHaveBeenCalledWith('source')
     expect(drainTopicSplitRequest('source')).toBeNull()
-    expect(takeChatAsk('source')).toEqual({ itemId: 'F1', restore })
+    expect(takeChatAsk('source')).toEqual({ itemId: 'F1', opener: fileAnswer('F1', 'topic-file'), restore })
     expect(takeChatAsk('topic-file')).toBeNull()
   })
 
@@ -1135,7 +1249,7 @@ describe('MainLayout: files.openWith', () => {
     const restore = vi.fn()
     fileOwner.mockResolvedValue({ data: { chat_id: 'g-open' }, error: null })
     await act(async () => { await openLinkTarget({ kind: 'file', itemId: 'F1' }, { message: message as never, restore }) })
-    expect(takeChatAsk('g-open')).toEqual({ itemId: 'F1', message, restore })
+    expect(takeChatAsk('g-open')).toEqual({ itemId: 'F1', opener: fileAnswer('F1', 'g-open'), message, restore })
   })
 
   it('a chat the person is not in: said, and nothing asked of any panel', async () => {
@@ -1167,7 +1281,48 @@ it.each(['owned', 'group'] as const)('opens a %s file on its file host and prese
     expect(sessionPageViewRequests.openChat).toHaveBeenCalledExactlyOnceWith(chatId, false, 'resource')
     expect(openNativeConversation).not.toHaveBeenCalled()
   }
-  expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', message: source })
+  // Its waiting page was asked of the message's chat first: the answer turns that page into the file.
+  expect(takeChatAsk(chatId)).toEqual({ itemId: 'F1', opener: { ...fileAnswer('F1', chatId), wait: expect.any(String) }, message: source })
+})
+
+// An agent's file goes up beside its task (which may take a while): the host refusing it before that leaves no waiting
+// ask behind for the task page to open later.
+it.each(['owned', 'group'] as const)('a %s file the host refuses: nothing is left waiting in its chat', async kind => {
+  const chatId = 'refused-file-chat'
+  const source = message({ id: 'receipt-refused', chat_id: chatId, file_item_id: 'F9', file_version: 1 })
+  chatStoreMock.chats = [{ id: chatId, kind: kind === 'owned' ? 'dm' : 'group', peer_user_id: kind === 'owned' ? 'agent' : null }] as never
+  if (kind === 'owned') { taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]; taskRoute.remote = true }
+  fileOwner.mockResolvedValue({ data: null, error: null })
+  await renderMainLayoutWithToast()
+  await act(async () => { await expect(openLinkTarget({ kind: 'file', itemId: 'F9', version: 1 }, { message: source })).rejects.toThrow() })
+  expect(takeChatAsk(chatId)).toBeNull()
+})
+
+// A link with no message of its own (one in a task page's text): no chat to wait in, nothing asked before the answer.
+it('a file link clicked outside any message: nothing waits; the answer opens the file\'s chat', async () => {
+  chatStoreMock.chats = [{ id: 'file-group', kind: 'group' }] as never
+  fileOwner.mockResolvedValue({ data: { chat_id: 'file-group' }, error: null })
+  await renderMainLayoutWithToast()
+  let opened!: Promise<unknown>
+  act(() => { opened = openLinkTarget({ kind: 'file', itemId: 'F7' }); void opened.catch(() => undefined) })
+  expect(takeChatAsk('file-group')).toBeNull()
+  await act(async () => { await opened })
+  expect(takeChatAsk('file-group')).toEqual({ itemId: 'F7', opener: fileAnswer('F7', 'file-group') })
+})
+
+it('opens an owned agent\'s file beside its task on the phone, as on a computer', async () => {
+  platformMock.kind = 'capacitor'
+  platformMock.capabilities.sessionHost = false
+  const chatId = 'phone-file-chat'
+  chatStoreMock.chats = [{ id: chatId, kind: 'dm', peer_user_id: 'agent' }] as never
+  taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]; taskRoute.remote = true
+  fileOwner.mockResolvedValue({ data: { chat_id: chatId }, error: null })
+  resourceHosts.host.mockClear()
+  await renderMainLayoutWithToast()
+  await act(async () => { void openLinkTarget({ kind: 'file', itemId: 'F1', version: 1 }).catch(() => undefined) })
+  await vi.waitFor(() => expect(resourceHosts.host).toHaveBeenCalledWith('user-1', chatId, expect.objectContaining({ sessionId: 'task-session', projectId: 'project' })))
+  expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
+  expect(takeChatAsk(chatId)).toMatchObject({ itemId: 'F1' })
 })
 
 it('opens an App card beside the owned agent session without an IM block', async () => {
@@ -1523,7 +1678,8 @@ describe('MainLayout: agent sender-name entry', () => {
       expect(openNativeConversation).toHaveBeenCalledWith({ kind: 'session', sessionId: 'native-session', projectId: 'native-project' })
       expect(chatServiceMock.getOrCreateDM).toHaveBeenCalledWith('user-1', peer.id)
     } else {
-      expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('sender-dm', false)
+      // A sender's name is clicked inside a conversation on the screen: the DM opens within that screen's entry.
+      expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('sender-dm', false, undefined, true)
       expect(chatServiceMock.getOrCreateDM).not.toHaveBeenCalled()
     }
   })

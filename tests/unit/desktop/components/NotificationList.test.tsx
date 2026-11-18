@@ -29,9 +29,9 @@ vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ se
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { start: () => {} } }))
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }))
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, toggleLeft: vi.fn() }), useLeftRailLayout: () => false, useSidebarProgressFollow: () => ({ current: null }), sidebarRailTextOpacity: () => 1 }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },
@@ -128,20 +128,21 @@ it.each([false, true])('opening the bell reads nothing; a read failure stays lis
   const failure = { ...task('error-a', 'error'), lastInteractedAt: '2026-11-05T01:00:00.000Z' }
   const wait = { ...task('approval', 'needs_user', false), lastInteractedAt: '2026-11-05T00:00:00.000Z' }
   state.sessions = [failure, wait]
-  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]') }))
+  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]'), status: !!row.querySelector('.gg-phone-message-avatar-badge') }))
   await mount(mobile); await open()
   await see('error-a'); await see('approval')
   expect(markSeen, 'looking at the list is not reading the task').not.toHaveBeenCalled()
   expect(rows().map(row => row.querySelector('.gg-list-row-subtitle')?.textContent), 'the second line says why, not the name again').toEqual(['出错了', '等你批准'])
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
   expect(rows().map(row => row.dataset.emphasis)).toEqual(['true', 'true'])
-  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false }, { badge: '1', muted: false }])
+  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false, status: true }, { badge: '1', muted: false, status: true }])
   // The host read bit lands (the task was opened); the person closes the bell and opens it again.
   state.sessions = [{ ...failure, unseen: false }, wait]
   await mount(mobile); await act(async () => toggle()!.click()); await open()
   expect(rows().map(row => row.dataset.sessionLine), 'a read failure is still a failure: it stays listed').toEqual(['error-a', 'approval'])
   expect(rows().map(row => row.dataset.emphasis)).toEqual([undefined, 'true'])
-  expect(marks(), 'a read row is muted and has no badge').toEqual([{ badge: null, muted: true }, { badge: '1', muted: false }])
+  expect(marks(), 'a read row is muted, with no badge and no status mark: its state stays in words').toEqual([{ badge: null, muted: true, status: false }, { badge: '1', muted: false, status: true }])
+  expect(rows()[0].querySelector('.gg-list-row-subtitle')?.textContent).toBe('出错了')
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('1')
   expect(document.querySelector('[data-testid="notification-mark-all-read"]'), 'nothing unread left to mark').toBeNull()
   // Its state, not its read bit, takes it off the list.
@@ -154,6 +155,17 @@ it('mark all reads global unexpanded errors across groups and leaves pending act
   await mount(); await open()
   await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="notification-mark-all-read"]')!.click())
   expect(markSeen.mock.calls.map(([id]) => id).sort()).toEqual(['agent-a', 'agent-b'])
+})
+it.each([false, true])('clicking an error acknowledges its host before opening the exact task (phone=%s)', async mobile => {
+  state.sessions = [task('failed', 'error')]
+  await mount(mobile); await open()
+  await act(async () => rows()[0].click())
+  expect(markSeen).toHaveBeenCalledExactlyOnceWith('failed')
+  expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'failed', deviceId: 'server' })
+  state.sessions = [task('failed', 'error', false)]
+  await mount(mobile)
+  expect(rows().map(row => row.dataset.sessionLine), 'a read failure stays listed').toEqual(['failed'])
+  expect(document.querySelector('[data-testid="notification-count"]')).toBeNull()
 })
 it('failed reads retain their item and display the original error', async () => {
   state.sessions = [task('error-a', 'error')]; state.readError = new Error('host write failed')

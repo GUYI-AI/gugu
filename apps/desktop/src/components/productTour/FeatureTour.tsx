@@ -26,7 +26,7 @@ export function FeatureTour({ index, children, onSelect, onClose }: { index: num
   // Only the explicit tour controls are allowed to finish the tour; otherwise
   // a save transition could be mistaken for the user dismissing the tour.
   return <Dialog.Root open onOpenChange={() => {}}>
-    <Dialog.Portal><Dialog.Backdrop className="product-tour-feature-backdrop" /><Dialog.Viewport className="product-tour-feature-viewport">
+    <Dialog.Portal><div className="product-tour-feature-layer"><Dialog.Backdrop className="product-tour-feature-backdrop" /><Dialog.Viewport className="product-tour-feature-viewport">
       <Dialog.Popup className="product-tour-feature">
         <header className="product-tour-feature-header">
           <span>{t('featureHeader')}</span>
@@ -45,7 +45,7 @@ export function FeatureTour({ index, children, onSelect, onClose }: { index: num
           {children}
         </div>
       </Dialog.Popup>
-    </Dialog.Viewport></Dialog.Portal>
+    </Dialog.Viewport></div></Dialog.Portal>
   </Dialog.Root>
 }
 

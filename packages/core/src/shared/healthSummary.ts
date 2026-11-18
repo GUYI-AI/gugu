@@ -139,7 +139,7 @@ export function baselineStatus(
   value: number | null,
   history: ReadonlyArray<number | null>,
 ): { baseline: number | null; status: BaselineStatus | null } {
-  const known = history.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).slice(-BASELINE_WINDOW_DAYS)
+  const known = history.slice(-BASELINE_WINDOW_DAYS).filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   const baseline = known.length >= BASELINE_MIN_DAYS ? median(known) : null
   if (value === null || baseline === null || baseline === 0) return { baseline, status: null }
   const delta = (value - baseline) / baseline
@@ -174,7 +174,7 @@ const arr = (o: Obj, k: string, at: string): unknown[] => {
 }
 const latest = (v: unknown, at: string): HealthLatest | null => {
   if (v === null || v === undefined) return null
-  if (!isObj(v) || typeof v.value !== 'number' || typeof v.at !== 'string') throw new Problem(at)
+  if (!isObj(v) || typeof v.value !== 'number' || !Number.isFinite(v.value) || typeof v.at !== 'string') throw new Problem(at)
   return { value: v.value, at: v.at }
 }
 
@@ -188,6 +188,8 @@ export function readHealthSummary(raw: unknown): HealthSummaryRead {
     if (!isObj(range)) throw new Problem('range')
     const background = raw.background
     if (!isObj(background)) throw new Problem('background')
+    if (typeof background.supported !== 'boolean') throw new Problem('background.supported')
+    if (typeof background.granted !== 'boolean') throw new Problem('background.granted')
     const body = raw.body
     if (!isObj(body)) throw new Problem('body')
     const strings = (k: string) => arr(raw, k, 'root').map((v, i) => {
@@ -273,7 +275,10 @@ export function readHealthSummary(raw: unknown): HealthSummaryRead {
         in_bed_minutes: numOrNull(n, 'in_bed_minutes', 'last_night') ?? 0,
         asleep_minutes: numOrNull(n, 'asleep_minutes', 'last_night') ?? 0,
         stages,
-        sources: arr(n, 'sources', 'last_night').map(String),
+        sources: arr(n, 'sources', 'last_night').map((source, index) => {
+          if (typeof source !== 'string') throw new Problem(`last_night.sources[${index}]`)
+          return source
+        }),
       }
     }
     return {

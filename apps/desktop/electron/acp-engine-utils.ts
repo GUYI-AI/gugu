@@ -26,7 +26,6 @@ import { registerGuguWidgetTool } from './mcp/gugu-widget-tool'
 import { GUGU_MCP_SERVER_NAME } from './mcp/gugu-mcp-name.mjs'
 import { registerGuguScheduleTools } from './mcp/gugu-schedule-tool'
 import { registerGuguProjectTools } from './mcp/gugu-project-tool'
-import { registerGuguLibraryTools } from './mcp/gugu-library-tool'
 import { registerAssistantResource } from './mcp/gugu-assistant-resource'
 import type { AssistantLocalSource } from './sessionpage/assistant-local-index'
 import { registerGuguSessionTools, type SessionDispatcher } from './mcp/gugu-session-tool'
@@ -288,7 +287,6 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
       : undefined
     registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
     registerGuguProjectTools(server, sessionDispatcher, trackRequest)
-    registerGuguLibraryTools(server, sessionDispatcher, trackRequest)
     if (sessionDispatcher) registerAssistantResource(server, {
       accountId: async () => {
         const context = getContext()
@@ -405,7 +403,7 @@ export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): 
 }
 
 /** chat, file on this machine, acting agent, its message → the sent message; null when the chat does not keep files here. */
-/** `next`: the folder file this is the next version of, from the version named (message_send_file with file and file_path). */
+/** `next`: the folder file this is the next version of, from the version named (message_send with file and file_path). */
 export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, actor: string, message: ProjectFileMessage,
   next?: ProjectFileNextVersion) => Promise<{ message?: Record<string, unknown> } | null>
 

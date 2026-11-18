@@ -1,3 +1,7 @@
+import { useObserver } from 'mobx-react-lite'
+import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
+import { annotationPrompt, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '@renderer/features/sessions/annotations/annotation-images'
 import { hasPendingWindow } from './timeline-window-fields'
 import { boundedWindowReady } from './desktop-window-history'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
@@ -20,6 +24,9 @@ import { MessageProvider } from '@gugu/session-ui/react/components'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { appendToDraft } from '@/store/chatContext'
 import { useLocale } from '@/i18n'
+import type { ExistingSessionModel } from './CreateTarget'
+import { PhoneAttachmentMenuBar } from '../composer/PhoneAttachmentMenuBar'
+import { creationSkillInput } from './create-skill-draft'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/store/theme'
 import { useSessionConversationDraft } from './use-session-conversation-draft'
@@ -73,7 +80,7 @@ import { rendererLogger } from '@/lib/log'
 /** The phone supplies session data and RPC actions to the same project conversation UI. */
 export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
-  onStop, stopping, footerNotice, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
+  onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
   historyReady = true, historyCursor, queueReady = false, unseen = false,
 }: {
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
@@ -92,7 +99,9 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
-  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
+  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
+  /** Only the existing Work controls may take ownership of the phone permission selector. */
+  permissionsInWork?: boolean
   onAtBottom?: () => void; onLoadToolImage?: (itemId: string, index: number) => Promise<void>; emptyNote?: ReactNode
   historyReady?: boolean; historyCursor?: number | null
   /** A live foreground snapshot, not a cached/offline history window. */
@@ -127,7 +136,14 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const mobile = useMobileShell()
   const composerDraft = useSessionConversationDraft(deviceId, sessionId, !mobile && nativeRecord && !local && !phoneHost, editor)
   const { text: draftText, setText: setDraftText } = composerDraft
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const annotationDraft = sessionAnnotations.forSession(sessionId)
+  const annotationItems = useObserver(() => annotationDraft.items)
+  const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([])
+  const attachmentsRef = useRef(attachments)
+  const setAttachments = useCallback((update: ComposerAttachment[] | ((current: ComposerAttachment[]) => ComposerAttachment[])) => {
+    const next = typeof update === 'function' ? update(attachmentsRef.current) : update
+    attachmentsRef.current = next; setAttachmentState(next)
+  }, [])
   const fileSelection = useAttachmentFileSelection(attachments, `${deviceId}/${sessionId}`)
   const [attachmentWaiting, setAttachmentWaiting] = useState(false)
   const applied = useRef<typeof draft>(undefined)
@@ -148,8 +164,11 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     onDraftApplied?.()
   }, [draft, onDraftApplied, draftText, setDraftText])
   const options = useConversationOptions({ deviceId, sessionId, local, phoneHost, reachable: hostReachable }, harness ? engineLabel(harness) : agentName)
+  const workOwnsPermissions = mobile && permissionsInWork && !!composerControls && !appPanel
+    && !!options.props.onPermissionModeChange && Object.keys(options.props.permissionModeOptions ?? {}).length > 0
   const senderInputs = useQueuedSessionInputs(sessionId)
   const account = useSessionInputAccount()
+  const skillDraft = creationSkillInput(skill => editor.current?.insertMention(skill))
   const life = useSessionLifeView(deviceId, sessionId, local, !phoneHost && hostReachable,
     timeline.queuedPrompts.length > 0 || pendingSends.length > 0 || senderInputs.length > 0)
   const localQueue = useRef<{ key: string; inputs: readonly SessionInput[] }>({ key: '', inputs: [] })
@@ -182,7 +201,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       void uploads.add({ id, name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file', mimeType: file.type }, file)
     }
   }
-  const changeAttachments = (next: ComposerAttachment[]) => {
+  const changeAttachments = (visible: ComposerAttachment[]) => {
+    const next = [...visible, ...attachmentsRef.current.filter(item => isAnnotationImage(item.id) && item.state !== 'error' && !visible.some(kept => kept.id === item.id))]
     const kept = new Set(next.map(file => file.id))
     const submission = inFlight.current
     if (submission?.waiting && [...submission.attachments].some(id => !kept.has(id))) {
@@ -217,6 +237,10 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   }
   const submit = async (value: string) => {
     if (sending || stopping || inFlight.current) return
+    const annotated = annotationDraft.items
+    const retained = currentAnnotationImages(annotated, attachmentsRef.current)
+    uploads.keepOnly(new Set(retained.map(item => item.id))); setAttachments(retained)
+    prepareAnnotationImages(annotated, uploads)
     const ownerId = getRendererSession()?.user.id
     const scope = JSON.stringify([ownerId, deviceId, sessionId])
     const revision = composerDraft.revisionOf()
@@ -230,16 +254,16 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     if (!checkBeforeSend(attempt)) return
     let cancelWait!: () => void
     const cancelled = new Promise<false>(resolve => { cancelWait = () => resolve(false) })
-    const submission = { attachments: new Set(attachments.map(file => file.id)), waiting: uploads.unsettled(), cancelWait }
+    const submission = { attachments: new Set(attachmentsRef.current.map(file => file.id)), waiting: uploads.unsettled(), cancelWait }
     inFlight.current = submission
     try {
       setAttachmentWaiting(submission.waiting)
       if (!await Promise.race([uploads.waitForUploads(), cancelled]) || inFlight.current !== submission) return
       submission.waiting = false
       setAttachmentWaiting(false)
-      const sentAttachments = attachments
+      const sentAttachments = attachmentsRef.current.filter(file => submission.attachments.has(file.id))
       const files = uploads.files(sentAttachments.map(file => file.id))
-      const text = value.trim()
+      const text = annotationPrompt(value, annotated, resolvedLocale)
       if ((!text && !files.length) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
@@ -247,6 +271,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         await currentSendTarget().onSend(text, files)
         if (getRendererSession()?.user.id !== ownerId) return
         if (attempt.succeeded() && submissionFailures.current.get(scope) === failure) submissionFailures.current.delete(scope)
+        annotationDraft.submitted(annotated)
         composerDraft.committed(value)
         setAttachments(current => current.filter(file => !sentAttachments.some(sent => sent.id === file.id)))
         for (const file of sentAttachments) uploads.forget(file.id)
@@ -309,12 +334,9 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     ...send, held: true, baselineMessageIds: [...send.baseline], delivery: { state: 'sending' as const },
   }))], [settledInputs, projectedInputs, receiptHistory.visible, pendingSends, senderInputs, nativeTurns])
   const rejectedInputCommands = useRejectedSessionInputCommands(sessionId)
-  const attachmentTurns = useRef(turns)
-  attachmentTurns.current = turns
   const userAttachments = useMemo(() => nativeUserAttachmentCommands({
-    turns: () => attachmentTurns.current,
-    readImage: async (itemId, attachmentId) => {
-      const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeAttachment({ conversationId: sessionId, itemId, attachmentId })
+    readImage: async attachmentId => {
+      const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeAttachment({ attachmentId })
       if (!result.ok) throw new Error(result.error.message)
       return result.value
     },
@@ -327,7 +349,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     openFile: outputs.openFile,
     unavailable: () => translateSessionMessage('attachmentViewer.unavailable'),
     onError: error => setBackgroundError(messageForUser(error)),
-  }), [deviceId, sessionId, local, outputs.openFile])
+  }), [deviceId, local, outputs.openFile])
   // Publishing new commands remeasures every Solid transcript row. Editing a
   // phone draft must not rebuild the history before its outbox commit can run.
   const commands = useMemo<ChatCommands>(() => ({
@@ -364,16 +386,27 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     {phoneHost ? <PhoneTaskDraftRecovery deviceId={deviceId} sessionId={sessionId} composer={recoveryComposer} sending={sending} /> : null}
     {queue.error ? <div role="alert">{queue.error}</div> : null}
     <input ref={input} type="file" hidden multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
-    <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel ? {} : lockedHarness(harness))}
+    <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel || composerControls ? {} : lockedHarness(harness))}
+      permissionModeOptions={workOwnsPermissions || appPanel ? null : options.props.permissionModeOptions}
+      renderPhoneHeader={composerControls ? modelControl => composerControls(modelControl, {
+        options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange, onOpen: options.props.onModelMenuOpen,
+        effortOptions: options.props.effortOptions, selectedEffort: options.props.selectedEffort, defaultEffort: options.props.defaultEffort,
+        onEffortChange: options.props.onEffortChange, fastMode: options.props.fastMode, onFastModeChange: options.props.onFastModeChange,
+        ...(workOwnsPermissions ? { permissionModeOptions: options.props.permissionModeOptions,
+          selectedPermissionMode: options.props.selectedPermissionMode, onPermissionModeChange: options.props.onPermissionModeChange } : {}),
+      }, skillDraft) : mobile && appPanel ? () => <PhoneAttachmentMenuBar conversationKey={`${deviceId}:${sessionId}`} disabled={sending} onOpen={() => input.current?.click()} /> : undefined}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
-      ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0)}
+      ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}
       onStop={agentWorking ? onStop : undefined} editorApiRef={receiveEditor} editorOptions={{ clearOnSubmit: false, enterBehavior: 'newline' }}
       queuedPromptEdit={quotes.composer.queuedPromptEdit} onChangeQueuedPromptEdit={quotes.composer.changeQueuedPromptEdit} onFinishQueuedPromptEdit={quotes.composer.finishQueuedPromptEdit} renderQueuedPromptText={quotes.composer.renderQueuedPromptText}
       onInputChange={composerDraft.setText} onSubmit={submit} onSubmitWhileWorking={submit}
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
-      attachments={attachments} onAttachmentsChange={changeAttachments}
+      attachmentExtra={annotationItems.length ? <AnnotationTray sessionId={sessionId} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
+        onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
+      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
-      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
+      onAttach={mobile && (composerControls || !appPanel) ? () => input.current?.click() : undefined}
+      toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}

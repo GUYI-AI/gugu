@@ -41,7 +41,7 @@ export type AgentWatchRoute =
    */
   | { name: 'projects'; reveal?: { deviceId: string; sessionId: string } | { projectId: string } }
   /** `deviceId` = 会话所在的机器(跨机器的子会话在它自己那台上打开)。 */
-  | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: FirstPrompt; appKind?: string; draft?: { text: string } }
+  | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: FirstPrompt; appKind?: string; draft?: { text: string }; innerSidebarEntry?: string }
   /** 新建任务(DESIGN 点击路径 4a):根页的 + 直接进来,项目与机器是页上带默认值的两行,❌ 先选机器。 */
   | { name: 'create' }
 
@@ -90,9 +90,9 @@ export function AgentWatchPage({
   if (openRequest && openRequest !== seenOpenRequest) {
     if ('projectId' in openRequest) setNavigation({ request: openRequest, routes: [{ name: 'projects', reveal: openRequest }] })
     else {
-      const { deviceId, session, tabKind, draft } = openRequest
+      const { deviceId, session, tabKind, draft, innerSidebarEntry } = openRequest
       setNavigation({ request: openRequest, routes: [rowOpens(session)
-        ? { name: 'timeline', deviceId, session, ...(tabKind ? { appKind: tabKind } : {}), ...(draft ? { draft } : {}) }
+        ? { name: 'timeline', deviceId, session, innerSidebarEntry, ...(tabKind ? { appKind: tabKind } : {}), ...(draft ? { draft } : {}) }
         : { name: 'projects', reveal: { deviceId, sessionId: session.conversationId } }] })
     }
   }
@@ -149,7 +149,8 @@ export function AgentWatchPage({
     if (createRequest === seenCreateRequest.current) return
     seenCreateRequest.current = createRequest
     setTaskGroup(taskInGroup)
-    navigate([{ name: 'projects' }, { name: 'create' }], 'push')
+    // A group shortcut pushes directly over the group. The projects list was never visited.
+    navigate(taskInGroup ? [{ name: 'create' }] : [{ name: 'projects' }, { name: 'create' }], 'push')
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 群只在请求变的那一刻读
   }, [createRequest, navigate])
   useEffect(() => {
@@ -167,6 +168,7 @@ export function AgentWatchPage({
         key={`${device.device_id}:${route.session.conversationId}:${route.appKind ?? ''}`}
         device={device}
         initialAppKind={route.appKind}
+        innerSidebarEntry={route.innerSidebarEntry}
         session={liveSession ?? route.session}
         firstPrompt={route.firstPrompt}
         draft={route.draft}

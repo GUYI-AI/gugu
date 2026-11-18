@@ -8,6 +8,7 @@ import { compareCreditAmounts, creditUnits, type CreditAmount } from '@gugu/core
 import { formatCreditDecimal } from './v2/decimal'
 import { quotaWindowLabel } from './quota'
 import { formatNumber, getLocaleSnapshot, i18n, type SupportedLocale } from '@/i18n'
+import { billingLinksAvailable } from '../appLinks'
 
 type SpendingPowerLocale = SupportedLocale
 
@@ -121,6 +122,14 @@ function describeRate(power: SpendingPower, now: Date, locale: SpendingPowerLoca
         count: creditCount(power.spendable),
       })
     case 'exhausted':
+      if (!billingLinksAvailable()) {
+        return compareCreditAmounts(power.held, 0) > 0
+          ? t('credits.spending.exhaustedHeldReadonly', {
+            credits: formatCredits(power.held, locale),
+            available: formatUntil(power.period.freesAt, now, locale),
+          })
+          : t('credits.spending.exhaustedReadonly', { available: formatUntil(power.period.freesAt, now, locale) })
+      }
       // 两条出路都成立,一起说:周期额度会自己回来,充值加量包则立刻可用。
       // ❌ 只说其中一条 —— 只说「去充值」会让人白花钱,只说「等刷新」会让人干等。
       return compareCreditAmounts(power.held, 0) > 0

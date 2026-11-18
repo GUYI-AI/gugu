@@ -7,7 +7,7 @@ export default {
   "done": "完成",
   "saveFailed": "导览进度没保存上，请重试。",
   "featureHeader": "再认识三个好用的功能",
-  "featuresProgress": "功能短片 · {{current}} / {{total}}",
+  "featuresProgress": "功能短片（{{current}}/{{total}}）",
   "filmProgress": "动画播放进度",
   "featureSteps": "功能短片步骤",
   "play": "播放",

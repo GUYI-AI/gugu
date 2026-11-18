@@ -5,17 +5,18 @@ import { appContextMenuOf } from '../../session/shared/extensions/app-context-me
 import { fileBlob } from '@gugu/core/shared/fileResolver'
 import { guguLink, guguLinkScheme, linkTargetOf, type OpenTarget } from '@gugu/core/shared/ui/guguLink'
 import { openLinkWith } from '../../session/shared/extensions/open-link'
-import { openLinkTarget } from '../../lib/guguLinks'
+import { openLinkTarget, type LinkSource } from '../../lib/guguLinks'
 import { resourceChatIdOf } from '../../session/shared/extensions/app-files-core'
 import { readCachedDevices } from '../../store/devicesCache'
 import { directoryRows, listedSession, liveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
-import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
-import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
+import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, viewedAmongOf, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
+import { AppSendError, chatSelectionPills, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
+import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
@@ -27,6 +28,10 @@ import {
   APP_FRAME_MARKER,
   SYNC_PORT_WINDOW_MESSAGE,
   fileRefOf,
+  openingNameOf,
+  openingViewOf,
+  boxOnWindow,
+  opensAsLink,
   openWithTabOf,
   openWithIntentOf,
   fileSearchOf,
@@ -81,6 +86,7 @@ import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/s
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
 import { appToast } from '../../session/shared/extensions/app-toast'
+import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
 import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
@@ -338,14 +344,17 @@ function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
  * a tap in an App decides it (`openerChoice`; `none`: the panel offers an App that would) — main's `groupFileOpener` on
  * the desktop, this page's on the phone.
  */
-export async function groupFileOpener(args: { chatId: string; itemId: string; at?: Record<string, string> }): Promise<Result<AppOpenWithDetail>> {
+export async function groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Result<AppOpenWithDetail>> {
   try {
+    // API 57: the images an App page showed with it, read while the file is — main's `groupFileOpener` too.
+    const among = viewedAmongOf(files.viewedAmong, args)
     const target = await files.groupFile(args.chatId, args.itemId)
     const choice = openerChoice(target.typedName, appsHereNow(), 'chat', phoneApps.remembered)
     // App 引用 pill: the place, for the page about to open the file — main's `deliverToOpeningPage` on the desktop.
     const place = placeFor(choice, args.at)
     if (place) holdPlaceForOpeningPage(target.chatId, target.itemId, place.candidate, place.at)
-    return { success: true, data: { ...target, choice } }
+    const images = await among(target, choice)
+    return { success: true, data: { ...target, choice, ...(images.length ? { among: images } : {}) } }
   } catch (error) {
     return failure(error)
   }
@@ -675,6 +684,16 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
+      case 'filesSendSelection': {
+        requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
+        // API 55 A page of a chat's folder sends into that chat, the binding's; the call names none.
+        const chatId = session ? null : hosted.binding.chatId
+        if (!session && !chatId) refused('denied', 'Send needs a session page or a chat\'s folder')
+        const { draft, quote, pills } = session ? selectionSendOf(args, sessionWorkspace(session.id))
+          : await chatSelectionSendOf(args, refs => chatSelectionPills(sendPlatform, chatId!, refs))
+        // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
+        return await openSelectionSend({ cite: { draft, quote, pills }, to: session ? { session: session.id } : { chat: chatId! }, anchor: 'dock' })
+      }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
@@ -771,6 +790,20 @@ export function hostAppFrame(
             { id: id!, deviceId: listed.row.deviceId, deviceLabel: device?.label ?? null, online: device?.is_online },
             ref, hooks.openWorkingCopy,
           )
+        }
+        // A plain open of a chat file: a link to it, opened as main has the desktop window open it (its tab waiting meanwhile).
+        if (opensAsLink(ref, { ask: args.ask === true, peek: args.peek === true, tab })) {
+          files.mayName(surface(), ref.id, 'opening')
+          const named = openingNameOf(args)
+          // The clicked picture's box, from the page's to the window's: this host draws the page's frame.
+          const { among, origin } = openingViewOf(ref, args)
+          const onWindow = origin ? boxOnWindow(origin, hosted.frame.getBoundingClientRect()) : undefined
+          const action = { kind: 'openChatFile' as const, ...(among ? { among } : {}), ...(onWindow ? { origin: onWindow } : {}), itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+            ...(args.at && typeof args.at === 'object' ? { at: args.at as Record<string, string> } : {}),
+            ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}) }
+          return import('../../session/renderer/features/extensions/host-action-handlers')
+            .then(({ applyExtensionHostAction }) => applyExtensionHostAction({ origin: { pageId: null, extensionId: hosted.binding.extensionId, sessionId: null, tabId: hosted.binding.tabId }, action }))
+            .then(() => undefined)
         }
         return files.openTarget(surface(), { ref: chatRef(args.ref) }).then((target) => {
           const choice = tab === undefined
@@ -1041,8 +1074,8 @@ declare const __GUGU_TIER__: string
 export const phoneLinkScheme = () => guguLinkScheme({ tier: typeof __GUGU_TIER__ === 'undefined' ? undefined : __GUGU_TIER__, devLaunch: false })
 
 /** Host facts and transports only; target parsing and opening order are shared with main. */
-export async function openPhoneLink(target: string | OpenTarget) {
-  if (platform.kind === 'capacitor') await phoneApps.ready()
+export async function openPhoneLink(target: string | OpenTarget, source?: Pick<LinkSource, 'message'>) {
+  if (platform.capabilities.mobileApps) await phoneApps.ready()
   return openLinkWith({
     installed: () => installedExtensionsStore.manifests.map((manifest) => ({ manifest })),
     isEnabled: (id) => installedExtensionsStore.isEnabled(id),
@@ -1065,7 +1098,7 @@ export async function openPhoneLink(target: string | OpenTarget) {
       if (!opened) throw new Error('The App did not open')
       return opened
     },
-    openResource: (resource) => openLinkTarget(resource),
+    openResource: (resource) => openLinkTarget(resource, source),
     bringUp: async ({ sessionId }) => {
       const listed = listedSession(readCachedDevices(), liveDeviceSessions(), sessionId)
       if (!('row' in listed)) throw new Error('Session is not in your task list')

@@ -13,20 +13,24 @@ import { visibleMachines, workspaceDevices } from '@/mobile/agent-watch/machine-
 import { shortHome } from '@/session/shared/path-name'
 import { useDevicesStore } from '@/store/devicesContext'
 import { newProjectPath, projectNameProblem } from './partnersModel'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { Avatar } from '@/components/Avatar'
 import { projectRpcOn } from './projectRpc'
+import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
 
 const LAST_MACHINE_KEY = 'gugu.partners.newProjectMachine'
 const log = rendererLogger('partners/new-project')
 
+// 上次选的那台是本机的视图状态(lib/viewStateTable);以前存在 localStorage 里的搬一次。
+takeLegacyInterface(LAST_MACHINE_KEY, LAST_MACHINE_KEY, (raw) => raw || undefined)
+
 function readLastMachine(): string | null {
-  try { return globalThis.localStorage?.getItem(LAST_MACHINE_KEY) ?? null } catch { return null }
+  return readInterface<string>(LAST_MACHINE_KEY) ?? null
 }
 
 function writeLastMachine(deviceId: string): void {
-  try { globalThis.localStorage?.setItem(LAST_MACHINE_KEY, deviceId) } catch { /* 记不住上次那台只影响下次的默认 */ }
+  writeInterface(LAST_MACHINE_KEY, deviceId)
 }
 
 type Directory = { deviceId: string; path: string | null; failed: boolean }
@@ -157,7 +161,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       />
       <div className="gg-partners-scroll">
         <div className="gg-partners-new-hero">
-          <ProjectFolderAvatar coverId={projectId} size={64} />
+          <Avatar variant="group" name={trimmed} seed={projectId} size={64} />
           <input
             ref={nameInput}
             className="gg-partners-name-input"

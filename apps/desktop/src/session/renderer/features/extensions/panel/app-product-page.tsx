@@ -345,8 +345,9 @@ export function AppProductPage({
 
   // ── 装上后多了什么 ──
   // 同名的几个页签(会话页一个、群里一个)是用的人眼里的同一个页签:一行,各说各的。
+  // 宿主自己画的页(hostPage)不是 App 加的,不列 —— 和管理页「页面」同一个判断。
   const tabsByTitle = new Map<string, string[]>();
-  for (const tab of manifest.contributes.tabs) {
+  for (const tab of manifest.contributes.tabs.filter((tab) => !tab.hostPage)) {
     const text = localizedTabText(manifest, tab, locale);
     const toolbar = text.toolbar.map((command) => command.title);
     const suffixes = [...new Set([...claimedSuffixes(tab, 'session'), ...claimedSuffixes(tab, 'chat')])];

@@ -15,6 +15,10 @@ import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
 import { GroupAgentFloodSettings } from './GroupAgentFloodSettings'
 import { ChatManagementActions } from './ChatManagementActions'
 import { SettingsPageHead } from './groupSettingsUi'
+import { settingsDangerRowStyle } from './groupSettingsStyles'
+import { confirmConversationAction } from '../../lib/confirmDanger'
+import { messageForUser } from '../../lib/userFacingError'
+import { useToast } from '../toastContext'
 import { COLOR_MUTED } from './chatPresentation'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
 import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
@@ -37,12 +41,21 @@ export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettin
 }
 
 function TopicMembers({ topic, sourceChatId, onClose, mobile }: { topic: ChatTopicState; sourceChatId: string; onClose: () => void; mobile: boolean }) {
+  const { t } = useTranslation('messaging')
+  const { toast } = useToast()
+  const { deleteChat } = useChatStore('deleteChat')
   const { snapshot, error, reload, authorityRevision } = useRoomCollab(topic.topicChatId, 'topic', sourceChatId)
   const settings = useGroupChatSettings(topic.topicChatId, snapshot ? groupRoleRevision(snapshot) : undefined, authorityRevision)
+  // Deleting a topic is in no menu (menu-table.ts @@@menu-order): rare, irreversible, felt by every member. Its place is
+  // the bottom of the topic's own page, for the group's managers (can_archive_topic), asking first.
+  const deleteTopic = () => void confirmConversationAction('delete-chat', 'topic', topic.name).then((ok) => {
+    if (ok) deleteChat(topic.topicChatId, true).then(onClose, (failure: unknown) => toast(t('chatList.deleteFailed'), 'error', messageForUser(failure)))
+  })
   return <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
     <MemberListPanel chatId={topic.topicChatId} chatKind="topic" chatName={topic.name}
       snapshot={snapshot} error={error} onReload={reload} settingsState={settings}
       head={(title, action) => <SettingsPageHead title={title} action={action} mobile={mobile} onClose={mobile ? onClose : undefined} />} />
+    {settings.settings?.can_archive_topic ? <div className="px-3 pb-4"><div role="button" data-testid="topic-settings-delete" style={settingsDangerRowStyle} onClick={deleteTopic}>{t('chatList.deleteTopic')}</div></div> : null}
   </div>
 }
 
@@ -53,7 +66,6 @@ interface ChatRightPanelBodyProps {
   messages: MessageItem[]
   onClose: () => void
   onClearMessages: () => Promise<void>
-  onOpenSearch: () => void
   onSetNotificationLevel: (level: NotificationLevel) => Promise<void>
   onTogglePinned: (pinned: boolean) => Promise<void>
   memberProfiles: MemberProfileCardModel[]
@@ -62,7 +74,7 @@ interface ChatRightPanelBodyProps {
   // @@@whisper (#820) — 悄悄话回调透传到内部 MemberProfilePopover。
   onWhisper?: (target: MemberProfileChatTarget) => void
   groupSettings?: GroupChatSettingsState
-  groupCollabSnapshot: GroupCollabSnapshot
+  groupCollabSnapshot: GroupCollabSnapshot | null
   /** Why the roster could not be read: its members' page says so. */
   groupCollabError?: MemberListPanelProps['error']
   groupAgentStatuses: Record<string, AgentDisplayStatus>
@@ -73,7 +85,7 @@ interface ChatRightPanelBodyProps {
 
 // @@@right-panel-body - One right-side surface for DM + group + mobile. Members section differs by chat
 // kind (group gets the rich role-switching list, DM keeps the simple peer card), then ChatManagementActions.
-function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages, onOpenSearch, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
+function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
   const { t } = useTranslation('messaging')
   const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const isGroupChat = activeChat.kind === 'group'
@@ -106,7 +118,6 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
           onDissolveGroup={onDissolveGroup}
           onOpenUserChat={onOpenUserChat}
           onWhisper={onWhisper}
-          onOpenSearch={onOpenSearch}
           onSetNotificationLevel={onSetNotificationLevel}
           onTogglePinned={onTogglePinned}
           onClearMessages={onClearMessages}
@@ -155,7 +166,6 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
             activeChat={activeChat}
             onClose={onClose}
             onClearMessages={onClearMessages}
-            onOpenSearch={onOpenSearch}
             onSetNotificationLevel={onSetNotificationLevel}
             onTogglePinned={onTogglePinned}
           />

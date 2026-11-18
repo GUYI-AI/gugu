@@ -15,11 +15,14 @@ import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/se
 import { publishMyChatAgentCounts } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
 import { accountProjectsStore } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
 import { chat, clickElement, createNode, createReactHarness, device, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
+import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
+
+const presence = vi.hoisted(() => ({ statuses: {} as Record<string, AgentDisplayStatus> }))
 
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', async () => ({
   ...await import('../../../support/agentDisplayStatusTestDouble'),
-  useAgentDisplayStatuses: () => ({}),
+  useAgentDisplayStatuses: () => presence.statuses,
 }))
 
 // jsdom has no layout: give the document (the sidebar list's scroller here) a window's height, so the sidebar's
@@ -35,6 +38,7 @@ let harness: ReturnType<typeof createReactHarness>
 let release: () => void
 beforeEach(() => {
   harness = createReactHarness()
+  presence.statuses = {}
   openChat.mockReset()
   openAgent.mockClear()
   installSessionViewRequestBridge(window, { openChat })
@@ -82,6 +86,60 @@ const identitiesById = {
 }
 const render = () => renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), { chat: { chats, identitiesById }, contacts: {} })
 const rows = () => [...harness.container.querySelectorAll<HTMLElement>('[data-chat-row]')].map((row) => row.dataset.chatRow)
+
+describe('#2652 archived owned Agents leave the ordinary desktop sidebar', () => {
+  const archivedAt = '2026-11-01T00:00:00Z'
+  const project = (archived: boolean, props = {}) => renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar', ...props }), {
+    auth: { id: 'me' },
+    chat: { chats, identitiesById: { ...identitiesById, 'a-solo': displayIdentity('a-solo', {
+      type: 'agent', owner_user_id: 'me', session_archived_at: archived ? archivedAt : null,
+    }) } }, contacts: {},
+  })
+
+  it('omits a cold archived row even when pinned, selected, unread and carrying a new message or draft', async () => {
+    publishSidebarChatView({ focusedChatId: 'dm-solo', groups: [], oneList: true })
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), {
+      auth: { id: 'me' }, contacts: {},
+      chat: { chats: chats.map(row => row.id === 'dm-solo' ? { ...row, is_pinned: true, unread_count: 4, last_message_at: at(9) } : row),
+        drafts: { 'dm-solo': 'keep my draft' }, identitiesById: { ...identitiesById, 'a-solo': displayIdentity('a-solo', {
+          type: 'agent', owner_user_id: 'me', session_archived_at: archivedAt,
+        }) } },
+    })
+    expect(rows()).toEqual(['room', 'project', 'dm-human'])
+  })
+
+  it('reacts to identity-only archive and restore updates without changing the chat array', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    await project(false)
+    expect(rows()).toContain('dm-solo')
+    await project(true)
+    expect(rows()).not.toContain('dm-solo')
+    await project(false)
+    expect(rows()).toContain('dm-solo')
+  })
+
+  it('uses a positive local archive reading before the identity is synchronized', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    await project(false)
+    presence.statuses = { 'a-solo': 'archived' }
+    await project(false)
+    expect(rows()).not.toContain('dm-solo')
+    presence.statuses = { 'a-solo': 'idle' }
+    await project(false)
+    expect(rows()).toContain('dm-solo')
+  })
+
+  it('keeps the addressable conversation outside the ordinary sidebar and does not change the phone list', async () => {
+    const activeChats = chats.map(row => row.id === 'dm-solo' ? { ...row, last_message_at: at(9) } : row)
+    const archivedIdentities = { ...identitiesById, 'a-solo': displayIdentity('a-solo', {
+      type: 'agent', owner_user_id: 'me', session_archived_at: archivedAt,
+    }) }
+    for (const props of [{ placement: 'page' }, { placement: 'sidebar', mobile: true }]) {
+      await renderWithAppProviders(harness, createNode(ChatListPanel, props), { auth: { id: 'me' }, contacts: {}, chat: { chats: activeChats, identitiesById: archivedIdentities } })
+      expect(rows()).toContain('dm-solo')
+    }
+  })
+})
 
 describe('the sidebar chat list as one list', () => {
   it('switch off: today\'s Chats tab (project groups out, topics nested, empty DMs out)', async () => {

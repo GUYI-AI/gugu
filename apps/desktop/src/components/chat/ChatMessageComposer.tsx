@@ -23,7 +23,7 @@ import { ComposerAttachButton } from './ComposerAttachButton'
 import { PhoneAttachPanel, type PhoneAttachEntry } from './PhoneAttachPanel'
 import { compressPhoto } from './compressPhoto'
 import { IconButton } from '../ui/IconButton'
-import { Camera, Image, Paperclip, Plus } from '@/lib/icons'
+import { Camera, Image, Paperclip } from '@/lib/icons'
 import { ComposerVerbs } from './ComposerVerbs'
 import { useComposerVerbTakeover } from './useComposerVerbTakeover'
 import { ChatComposerContextBands } from './ChatComposerContextBands'
@@ -76,7 +76,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  // 手机「+」面板开着没有。
+  // 手机附件面板。
   const [attachOpen, setAttachOpen] = useState(false)
   const isMain = surface === 'main'
   const inChatSlot = useInChatSlot()
@@ -84,7 +84,8 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const takenOver = useComposerVerbTakeover(chatId)
   const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
   // 手机项目群的「新任务」(电脑上是 ComposerVerbs 换上会话页那一侧的框;手机就地换成新任务的框)。
-  const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, '') })
+  const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, ''),
+    insertSkill: skill => editorApiRef.current?.insertMention(skill) })
   // 新任务的两件事要让这一面里别处的东西让位(运行条、空项目的「新任务」钮,phone-new-task.css):把状态记在这一面的根上。
   // ❌ 写成 `[data-chat-surface]:has(…)`:那会让整面聊天每次增删节点都重算每一行里的一批元素(check-css-parses @@@wide-invalidation)。
   const hostRef = useRef<HTMLDivElement>(null)
@@ -130,10 +131,9 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   useLayoutEffect(() => registerDraftEditor(chatId ?? null, () => editorApiRef.current), [chatId, registerDraftEditor])
   useEffect(() => {
     if (!mentionToInsert) return
-    const member = members.find(candidate => candidate.id === mentionToInsert.id)
-    editorApiRef.current?.insertMention({ id: mentionToInsert.id, label: member?.rawName ? `aid:${mentionToInsert.id}` : mentionToInsert.name, name: member?.rawName ?? member?.name ?? mentionToInsert.name, kind: 'custom' })
+    editorApiRef.current?.insertMention({ id: mentionToInsert.id, label: mentionToInsert.name, name: mentionToInsert.name, kind: 'custom' })
     onMentionInserted?.()
-  }, [mentionToInsert, onMentionInserted, members])
+  }, [mentionToInsert, onMentionInserted])
   useEffect(() => {
     if (quoteContent) scheduleComposerFocus('quote-attached', { target: () => inputRef.current })
   }, [quoteContent])
@@ -183,6 +183,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
         <Composer {...props.conversation} key={chatId} editorApiRef={editorApiRef} editorOptions={editorOptions} mobile={mobile}
           disabled={disabled} disabledPlaceholder={placeholder ?? disabledReason} canSubmit={!sending && (!!text.trim() || attachments.length > 0)}
           placeholder={props.conversation ? undefined : phoneTask.placeholder ?? (whisperTarget ? t('composer.whisperPlaceholder', { name: whisperTarget.displayName }) : placeholder ?? (mobile && isGroupChat ? t('composer.mobilePlaceholder') : projectName && !mobile ? t('composer.projectGroupPlaceholder', { name: projectName }) : t('composer.placeholder')))}
+          inputHeader={phoneTask.inputHeader}
           onInputChange={setText} onSubmitWhileWorking={props.conversation ? handleSend : undefined} onSubmit={value => phoneTask.active ? phoneTask.send(value) : handleSend(value)} onMentionInsert={onMentionInsert}
           mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
@@ -190,14 +191,15 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
           toolbarExtra={<>{mobile
             ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"
-                onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}>{attachGlyph ?? <Plus />}</IconButton>
+          data-phone-attachment=""
+                onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}><Paperclip /></IconButton>
             : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
           className={inChatSlot ? sessionComposerDockedWidthClassName : undefined} />
         {mobile && attachOpen && <PhoneAttachPanel onClose={() => setAttachOpen(false)} entries={[
           { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },
           { id: 'camera', label: t('composer.camera'), icon: <Camera />, onSelect: () => cameraInputRef.current?.click() },
           { id: 'file', label: t('composer.file'), icon: <Paperclip />, onSelect: () => fileInputRef.current?.click() },
-          ...[...(attachMenu ?? []), ...(phoneTask.action ? [phoneTask.action] : [])].map((action): PhoneAttachEntry => ({ ...action, icon: action.icon ?? <Plus /> })),
+          ...[...(attachMenu ?? []), ...(phoneTask.action ? [phoneTask.action] : [])].map((action): PhoneAttachEntry => ({ ...action, icon: action.icon ?? <Paperclip /> })),
         ]} />}
       </div>
     </MessageProvider>
