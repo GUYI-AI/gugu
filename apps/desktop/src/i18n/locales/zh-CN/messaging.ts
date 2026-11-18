@@ -392,7 +392,7 @@ export default {
     "retry": "重试"
   },
   "dispatchPick": {
-    "myAgents": "我的 agent",
+    "myAgents": "我的智能体",
     "title": "交给谁",
     "search": "搜索成员、任务或对话",
     "chatAgents": "{{chat}} 的 agent",
@@ -577,7 +577,7 @@ export default {
       "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
-      "myAgents": "我的 agent",
+      "myAgents": "我的智能体",
       "otherAgents": "其他人的 agent",
       "listen": {
         "all": "收听全部消息",
@@ -782,7 +782,7 @@ export default {
     "view": "查看 {{title}}"
   },
   "message": {
-    "myAgentTag": "我的 agent",
+    "myAgentTag": "我的智能体",
     "removedIdentityTag": "已移除",
     "agentOwnerUnavailableTag": "主人信息不可用",
     "agentOwnerTag": "{{owner}} 的 agent",

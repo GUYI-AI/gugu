@@ -810,7 +810,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         card={messageProfile.card}
         memberProfiles={messageMemberProfiles}
         authorityRevision={authorityRevision}
-        topicChatId={topicSurface.splitTopic?.chatId ?? null}
+        asideTopic={topicSurface.splitTopic}
         chatId={activeChatId}
         currentUserId={user?.id ?? null}
         isGroupChat={isGroupChat}
