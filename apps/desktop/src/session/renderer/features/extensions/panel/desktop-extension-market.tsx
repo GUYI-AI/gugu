@@ -61,7 +61,7 @@ export function DesktopExtensionMarket({
                 icon={<span className="mk-icon"><ExtensionMonogram name={name} iconDataUrl={item.cloud.iconUrl} /></span>}
                 publisher={translate('extensions.official')}
                 category={categoryLabel(marketCategoryOf(item.manifest))}
-                description={subtitle}
+                description={locale.startsWith('zh') ? subtitle.replace(/\bagents?\b/gi, '智能体') : subtitle}
                 installed={installedIds.has(id)}
                 deprecated={Boolean(item.cloud.deprecated)}
                 onOpen={() => onOpen(item)}
