@@ -1,6 +1,7 @@
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import type { PermissionState } from '@capacitor/core'
+import { nativeTextSelection } from './nativeTextSelection'
 import { BackgroundMode } from '@anuradev/capacitor-background-mode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { App } from '@capacitor/app'
@@ -188,6 +189,7 @@ function ensureNotificationChannels(): Promise<void> {
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
+  textSelection: nativeTextSelection,
   accountOAuthBrowser: {
     openBrowser,
     openLinkBrowser: async (url) => openBrowser(googleIdentityLinkUrl(url, getSupabaseUrl())),

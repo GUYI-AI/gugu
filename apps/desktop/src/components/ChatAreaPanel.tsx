@@ -1,3 +1,5 @@
+import { PhoneConversationHeading } from '../mobile/chat/PhoneConversationHeading'
+import { startPhoneNewTask } from '../mobile/chat/PhoneNewTask'
 import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
@@ -506,14 +508,20 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   // 块的页签条最后那枚之后的「+」(gugu-dev#181 第 ⑥ 步);页签本身由会话页的页签引擎画(chat-tabs)。
   const blockTabs = blockHost?.tabs && activeChatId ? createPortal(<TabBarAddMenu chatId={activeChatId} />, blockHost.tabs) : null
+  const split = mobile ? topicSurface.splitTopic : null
+  const memberTopic = split ? { topicChatId: split.chatId, name: split.name } : tabs.memberTopic
+  const phoneTopic = mobile ? memberTopic : null
+  const phoneTopicMeta = phoneTopic ? topicSurface.topics.find(topic => topic.chat_id === phoneTopic.topicChatId) : undefined
+  const phoneTopicName = phoneTopicMeta?.name ?? phoneTopic?.name
   const headerActions = (
     <>
       <ChatHeaderActions
         isGroupChat={isGroupChat}
-        isRoomChat={isRoomChatSurface} memberTopic={tabs.memberTopic} memberTopicCount={topicSurface.topics.find((topic) => topic.chat_id === tabs.memberTopic?.topicChatId)?.participant_count}
+        isRoomChat={isRoomChatSurface} memberTopic={memberTopic} memberTopicCount={(phoneTopicMeta ?? topicSurface.topics.find(topic => topic.chat_id === memberTopic?.topicChatId))?.participant_count}
         infoShown={tabs.infoShown}
         showHeaderMenu={showHeaderMenu}
         mobile={mobile}
+        membersInMenu={mobile && !chrome && !blockHost}
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
@@ -522,8 +530,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         } : undefined}
         moreButtonRef={moreButtonRef}
         onSearch={() => { if (activeChatId) searchInChat(activeChatId) }}
+        onCreateAgent={mobile && !phoneTopic && isGroupChat ? () => startPhoneNewTask(activeChat.id) : undefined}
         onOpenFolder={handleOpenFolder}
-        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? tabs.memberTopic : null) }}
+        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? memberTopic : null) }}
         onCloseInfo={() => { if (activeChatId) closeInfoTab(activeChatId) }}
         onToggleHeaderMenu={() => setShowHeaderMenu((v) => !v)}
         onCloseHeaderMenu={() => setShowHeaderMenu(false)}
@@ -557,7 +566,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
-  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
+  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} topicsReady={topicSurface.topicsReady} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
       viewportKey={`${viewportKey}:topic`} navigationTarget={navigationTarget}
@@ -609,7 +618,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider data-chat-area-header="" mobile={mobile}
+        divider data-chat-area-header="" data-chat-context-id={phoneTopic?.topicChatId ?? activeChat.id} mobile={mobile} centered={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
@@ -621,39 +630,19 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             size="lg"
             aria-label={topicSurface.splitTopic ? t('common.back') : t('chatArea.backToList')}
             title={t('common.back')}
-            onClick={onBack}
+            onClick={topicSurface.splitTopic ? topicSurface.closeSplit : onBack}
           >
             <ChevronLeft />
           </IconButton>
         ) : null}
-        /* @@@5856 这里曾有一支「话题全宽打开时顶栏画面包屑」。owner 2026-09-19 把全宽形态整个拿掉之后,
-           主区永远不会是一条话题(chats_topic_source_chk 保证话题必有来源,收口会把它换成来源线 + 分栏),
-           那一支就永远走不到了 ⇒ 删。面包屑本身搬进了分栏的标题块。 */
-        title={(
-          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {/* @@@1146 对话头按设计稿(.top 仅 标题+状态行,无头像;单聊点
-                名称→设置)：删除咕咕旧版 WeChat 式头像,点「名称」开会话资料抽屉(名称带 no-drag 才可点)。 */}
-            <span
-              style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', minWidth: 0,
-                fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)',
-              }}
-            >
-              <span
-                role="button"
-                tabIndex={0}
-                className="window-no-drag-region"
-                onClick={openConversationOrAgentSettings}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openConversationOrAgentSettings() } }}
-                title={t('chatArea.conversationProfile')}
-                aria-label={t('chatArea.conversationProfile')}
-                style={{ color: 'var(--fg)', fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, cursor: 'pointer' }}
-              >
-                {shownActiveChatName}
-              </span>
-            </span>
-          </div>
-        )}
+        title={<PhoneConversationHeading
+          name={phoneTopicName ?? shownActiveChatName}
+          topic={mobile && (Boolean(phoneTopic) || activeChat.kind === 'topic')}
+          centered={mobile}
+          label={t('chatArea.conversationProfile')}
+          onOpen={() => phoneTopic ? openInfoTab(activeChatId, 'main', { ...phoneTopic, name: phoneTopicName ?? phoneTopic.name }) : openConversationOrAgentSettings()}
+        />}
+        subtitle={phoneTopic ? <span data-phone-header-source="">{shownActiveChatName}</span> : undefined}
         actions={headerActions}
       />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
 

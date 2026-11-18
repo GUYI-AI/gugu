@@ -44,7 +44,7 @@ export function MessageBody({
   const { t } = useTranslation('messaging')
   const album = useMessageAlbum(msg.id)
   const card = msg.content_type === 'card' ? parseComposerCard(msg.content) : null
-  if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} />
+  if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} mobile={compact} />
   if (card) return <ComposerCardView card={card} isMine={msg.is_mine} isGroup={isGroup} chatId={msg.chat_id} senderName={senderName} time={time} memberProfiles={memberProfiles} onOpenTopic={compact && onOpenTopic && card.type === 'task' ? () => onOpenTopic(msg.id) : undefined} onOpenFile={onOpenFile} />
   if (msg.content_type === 'widget') return <WidgetBubble message={msg} />
   if (msg.content_type === 'attachment') {

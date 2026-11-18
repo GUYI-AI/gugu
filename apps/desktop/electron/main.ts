@@ -1,3 +1,6 @@
+import { accountAttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { nativeAttachmentUpload } from './attachmentUploadTransport'
+import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
@@ -2458,7 +2461,22 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
-const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot,
+const attachmentUploads = createAttachmentUploadHost({
+  account: async () => {
+    const auth = await desktopAuthProvider().getAuth()
+    if (!auth?.userId || !auth.accessToken) return null
+    return { id: auth.userId, home: resolveGuguHome(process.env), endpoint: async () => {
+      const current = await desktopAuthProvider().getAuth()
+      if (current?.userId !== auth.userId || !current.accessToken) throw new Error('Attachment upload account changed')
+      return { ...await accountAttachmentsEndpoint({ supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken }, electronFetch), upload: nativeAttachmentUpload }
+    } }
+  },
+  result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
+  progress: event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('attachments:progress', event) },
+  warn: error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Attachment upload failed; pending bytes remain on this device'),
+})
+const resumeDeclaredUploads = () => { void attachmentUploads.resume().catch(error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Pending attachment uploads not read')) }
+const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments: attachmentUploads,
   owner: async () => (await desktopAuthProvider().getAuth())?.userId ?? null,
   alive: scope => !!webContents.fromId(scope) && !webContents.fromId(scope)!.isDestroyed(),
   local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
@@ -2466,7 +2484,7 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
 })
 registerNativeFileIpc(ipcMain, nativeFiles, error => createLogger('files').warn({ error: String(error) }, 'Native file operation failed'))
-app.on('will-quit', () => { void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
+app.on('will-quit', () => { attachmentUploads.dispose(); void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
 
 // @@@payment-window (#1907) - 支付在专用 BrowserWindow 原生 POST 落地,主窗不再被支付页顶掉。
 // @@@local-runtime-open - Opening a terminal window is strictly local, so it bypasses cloud device commands.
@@ -2642,6 +2660,7 @@ function signedInAccountId(): string | null {
 }
 
 function onHumanAuthSessionChanged(): void {
+  resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
   void emdashBridgeModule?.setTaskNameOwner(signedInAccountId())
     .then(() => adoptCloudTaskNames?.())
@@ -4600,13 +4619,15 @@ app.whenReady().then(async () => {
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      // The app path, not `resolve(argv[1])`: the working directory is userData by now (@@@app-cwd).
-      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [app.getAppPath()])
+  if (!IS_TEST_MODE) {
+    if (process.defaultApp) {
+      if (process.argv.length >= 2) {
+        // The app path, not `resolve(argv[1])`: the working directory is userData by now (@@@app-cwd).
+        app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [app.getAppPath()])
+      }
+    } else {
+      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
     }
-  } else {
-    app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
   }
   setupRendererCommandIpcHandlers()
   // 应用菜单(app-menu.ts):mac「咕咕」那一栏多一项「设置…」;@@@devtools-lock 锁了的包「视图」里没有
@@ -4704,10 +4725,12 @@ app.whenReady().then(async () => {
             : (invokeRendererAuth('getSessionOwner', { waitMs }) as Promise<BootOwnerAnswer>),
         ms,
       )
-    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal) => {
+    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal, beforeAdmission?: () => void) => {
       signal?.throwIfAborted()
+      beforeAdmission?.()
       const ready = await sessionpagePlatformRecovery?.ensureReady(sessionId, `session-message:${message.kind ?? 'ordinary'}`)
       signal?.throwIfAborted()
+      beforeAdmission?.()
       if (ready?.status === 'failed') {
         createLogger('session-message').error({ sessionId, messageId: message.id, error: ready.error }, 'platform credential recovery failed; message remains pending')
         return {
@@ -4718,20 +4741,21 @@ app.whenReady().then(async () => {
       }
       const attempt = async () => {
         signal?.throwIfAborted()
-        const result = await localDelivery.tryInjectSessionMessage(sessionId, message)
+        beforeAdmission?.()
+        const result = await localDelivery.tryInjectSessionMessage(sessionId, message, beforeAdmission)
         return result === false ? 'not-live' as const : result
       }
       let accepted: Exclude<Awaited<ReturnType<typeof attempt>>, 'not-live'>
       if (message.kind === 'session-direct') {
         // #6546 冷目标:与收件箱同一个唤醒入口,等准入后再投一次;叫不醒带着原因报回发送方。
         try {
-          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal)
+          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal, beforeAdmission)
         } catch (error) {
           if (!(error instanceof SessionWakeError)) throw error
           return { status: 'not-ready' as const, reason: `target session not live — ${error.message}` }
         }
       } else {
-        const first = await localDelivery.tryInjectOrWake(sessionId, message)
+        const first = await localDelivery.tryInjectOrWake(sessionId, message, beforeAdmission)
         if (first === false) return { status: 'not-ready' as const }
         accepted = first
       }
@@ -5572,6 +5596,7 @@ app.whenReady().then(async () => {
               host: primaryGuguMcpHost,
               resolveFile: desktopFiles.resolve,
               publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+              attachments: attachmentUploads,
               // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
               grantKey: sessionpageSurfaceKey(info.sessionId),
               nativeSessionId: info.sessionId,
@@ -5845,6 +5870,7 @@ app.whenReady().then(async () => {
             host: primaryGuguMcpHost,
             resolveFile: desktopFiles.resolve,
             publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+            attachments: attachmentUploads,
             grantKey: sessionpageSurfaceKey(info.sessionId),
             nativeSessionId: info.sessionId,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
@@ -6006,6 +6032,7 @@ app.whenReady().then(async () => {
           runLocalSessionAction(auth, sessionContext, action, signal)
         return {
           host,
+          attachments: attachmentUploads,
           grantKey: sessionpageSurfaceKey(info.sessionId),
           nativeSessionId: info.sessionId,
           runHostAction: runAction,
@@ -6590,6 +6617,7 @@ app.whenReady().then(async () => {
     }).catch((error: unknown) => createLogger('search/backfill').error({ error: String(error) }, 'Search backfill could not start after backend boot'))
   }
   startDeviceRuntimeWhenRendererReady()
+  resumeDeclaredUploads()
   // server 的升级另有一套(后台下好、没有 agent 在跑时切换),❌ 走桌面这套弹界面的更新器。
   if (!SERVER_MODE) {
     purgeUpdaterCacheOnce()

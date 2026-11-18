@@ -30,6 +30,7 @@ import { AppMoreMenu } from './app-more-menu';
 import { PermissionIcon, formatSize, listOf } from './app-product-page';
 import { AppVariantList, type AppVariantRow } from './app-variant-list';
 import { VersionHistorySection, type Loadable } from './app-version-history';
+import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 import { AppUnreadBindingSection, type UnreadBindingApi } from './app-unread-binding-section';
@@ -153,22 +154,8 @@ export function AppManagePage({
 
   // ── 版本历史:点开才读 ──
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [history, setHistory] = useState<Loadable<MarketVersionHistoryEntry[]>>({ status: 'idle' });
-  useEffect(() => {
-    if (!historyOpen) return;
-    let cancelled = false;
-    setHistory({ status: 'loading' });
-    void api.marketHistory({ extensionId: manifest.id }).then((result) => {
-      if (cancelled) return;
-      if (!result.success || !result.data) throw new Error(result.error ?? 'history unreadable');
-      setHistory({ status: 'ready', data: result.data });
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      log.warn('extension version history unreadable:', error);
-      setHistory({ status: 'error' });
-    });
-    return () => { cancelled = true; };
-  }, [api, manifest.id, historyOpen]);
+  const { state: history, retry: readHistoryAgain } = useVersionHistory(api, manifest.id, historyOpen);
+
 
   // ── 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单 ──
   const toolsLive = enabled && givesAgentTools(manifest) && !revoked.includes('agents:tools');
@@ -309,6 +296,7 @@ export function AppManagePage({
             <div className="mk-vers">
               <VersionHistorySection
                 state={history}
+                onReadAgain={readHistoryAgain}
                 extensionId={manifest.id}
                 installedVersion={manifest.version}
                 offeredVersion={autoUpdate?.on ? (notice?.kind === 'update' ? notice.version : manifest.version) : null}

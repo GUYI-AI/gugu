@@ -70,6 +70,7 @@ const STRINGS = {
     nameTaken: '这个文件夹里已经有「{name}」了',
     alreadyThere: '「{name}」已经有了，新传的这份叫「{new}」。',
     keepBoth: '两个都留',
+    keepRemainingBoth: '其余保留两份',
     replaceOld: '替换原来的',
     dropNew: '不要新传的',
     done: '好',
@@ -317,6 +318,7 @@ const STRINGS = {
     nameTaken: '“{name}” is already in this folder',
     alreadyThere: '“{name}” was already here: the new one is “{new}”.',
     keepBoth: 'Keep both',
+    keepRemainingBoth: 'Keep both for the remaining files',
     replaceOld: 'Replace the old one',
     dropNew: 'Drop the new one',
     done: 'OK',
@@ -794,7 +796,7 @@ function renderChrome() {
   $('new-label').textContent = t.new
   $('new-doc').hidden = !canWriteHere()
   $('move-cancel').textContent = t.cancel
-  $('conflicts-done').textContent = t.done
+  $('conflicts-done').textContent = $('conflicts-done').dataset.choice === 'keep-remaining' ? t.keepRemainingBoth : $('conflicts-done').dataset.choice === 'skip' ? t.skipAll : t.done
   $('empty-upload').textContent = t.upload
   $('download').textContent = t.download
   $('open-with').textContent = t.openWith
@@ -2677,6 +2679,10 @@ function askReplace(name) {
     }
     li.append(actions)
     $('conflict-list').replaceChildren(li)
+    $('conflicts-done').hidden = false
+    $('conflicts-done').parentElement.hidden = false
+    $('conflicts-done').dataset.choice = 'skip'
+    $('conflicts-done').textContent = t.skipAll
     $('conflicts-done').onclick = answered('skip')
     $('conflicts').hidden = false
   })
@@ -2720,8 +2726,15 @@ function askAboutNames(arrived, before) {
   if (clashes.length === 0) return Promise.resolve(arrived)
   const kept = new Map(arrived.map((entry) => [entry.id, entry]))
   let finish
-  const settled = new Promise((resolve) => { finish = () => { $('conflicts').hidden = true; resolve([...kept.values()]) } })
-  $('conflicts-done').onclick = finish // Unanswered names keep both files, as before.
+  const settled = new Promise((resolve) => { finish = () => { $('conflicts').hidden = true; delete $('conflicts-done').dataset.choice; resolve([...kept.values()]) } })
+  // One clash has only its two explicit choices. With several, keeping the rest is a named choice, never "OK".
+  const remainingChoice = () => {
+    $('conflicts-done').hidden = $('conflict-list').children.length < 2
+    $('conflicts-done').parentElement.hidden = $('conflicts-done').hidden
+    $('conflicts-done').dataset.choice = 'keep-remaining'
+    $('conflicts-done').textContent = t.keepRemainingBoth
+  }
+  $('conflicts-done').onclick = () => { if ($('conflict-list').children.length > 1) finish() }
   $('conflict-list').replaceChildren(...clashes.map(({ entry, old }) => {
     const li = document.createElement('li')
     li.className = 'conflict'
@@ -2738,6 +2751,7 @@ function askAboutNames(arrived, before) {
           kept.set(entry.id, await run())
           li.remove()
           if (!$('conflict-list').children.length) finish()
+          else remainingChoice()
         } catch (error) {
           showBanner(failureText(error), 'error')
         }
@@ -2762,6 +2776,7 @@ function askAboutNames(arrived, before) {
     li.append(actions)
     return li
   }))
+  remainingChoice()
   $('conflicts').hidden = false
   return settled
 }

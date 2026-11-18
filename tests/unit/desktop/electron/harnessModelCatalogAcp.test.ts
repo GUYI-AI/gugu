@@ -776,6 +776,38 @@ describe('模型目录缓存', () => {
     await getHarnessModelCatalog('claude', { leg: 'acp',  harnessVersion: '1', force: true })
     expect(probes).toBe(2)
   })
+  it('an hour-old directory is refreshed on demand, once across simultaneous readers', async () => {
+    const before = await fakeAgent(SESSION_WITH_MODELS)
+    const after = await fakeAgent(SESSION_WITH_MODELS.replace("{ value: 'haiku', name: 'Haiku' }", "{ value: 'new-model', name: 'New Model' }"))
+    let entry = before
+    setAcpSpawnResolver(async () => {
+      probes++
+      return { command: process.execPath, args: [entry], env: {} }
+    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const startedAt = Date.now()
+      const options = { leg: 'acp', harnessVersion: 'unchanged' } as const
+      const old = await getHarnessModelCatalog('codex', options)
+      entry = after
+      vi.setSystemTime(startedAt + 60 * 60_000 - 1)
+      expect(await lookupHarnessModelCatalog('codex', options)).toEqual({ state: old, refreshing: false })
+      expect(probes).toBe(1)
+
+      vi.setSystemTime(startedAt + 60 * 60_000)
+      expect(probes).toBe(1)
+      const [quickMenu, phoneMenu] = await Promise.all([
+        lookupHarnessModelCatalog('codex', options), getHarnessModelCatalog('codex', options),
+      ])
+      expect(quickMenu).toEqual({ state: old, refreshing: true })
+      expect(phoneMenu).toMatchObject({ kind: 'ready', models: expect.arrayContaining([{ id: 'new-model', name: 'New Model' }]) })
+      expect(await lookupHarnessModelCatalog('codex', options)).toEqual({ state: phoneMenu, refreshing: false })
+      expect(probes).toBe(2)
+    } finally {
+      await __drainProbesForTest()
+      vi.useRealTimers()
+    }
+  })
   it('失败态很快就重探，成功态照旧吃缓存', async () => {
     vi.useFakeTimers()
     try {

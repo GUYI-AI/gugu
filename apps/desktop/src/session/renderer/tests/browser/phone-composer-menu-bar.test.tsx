@@ -72,7 +72,10 @@ it('human direct messages keep the shared paperclip inside the input and open th
   await until('actual direct composer', () => !!harness!.container.querySelector('[contenteditable]'))
   expect(harness.container.querySelector('[data-phone-composer-controls]')).toBeNull()
   const input = harness.container.querySelector<HTMLElement>('[data-slot="composer-input"]')!
-  const clip = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!.getBoundingClientRect()
+  const attachment = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!
+  expect(input.querySelector('[contenteditable]')?.textContent).toBe('')
+  expect(harness!.container.querySelector('[data-phone-editor-toggle]')).toBeNull()
+  const clip = attachment.getBoundingClientRect()
   const box = input.getBoundingClientRect()
   expect(clip.left).toBeGreaterThanOrEqual(box.left); expect(clip.right).toBeLessThanOrEqual(box.right)
   expect(clip.top).toBeGreaterThanOrEqual(box.top); expect(clip.bottom).toBeLessThanOrEqual(box.bottom)

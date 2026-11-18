@@ -1,5 +1,11 @@
 /* Reference 05: 90/943 button height, 20/943 gaps. Reference 07: 28/943 side insets. */
-.gg-phone-composer-controls { display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; min-width: 0; padding-block: 2px; margin-bottom: var(--phone-composer-row-input-gap, 4px); opacity: 1; transition: opacity var(--transition-fast); }
+.gg-phone-composer-controls { display: flex; flex-wrap: wrap-reverse; align-items: center; column-gap: 8px; row-gap: 4px; min-width: 0; padding-block: 2px; margin-bottom: var(--phone-composer-row-input-gap, 4px); opacity: 1; transition: opacity var(--transition-fast); }
+.gg-phone-composer-controls-items { display: flex; align-items: center; flex: 1 1 max-content; gap: 8px; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.gg-phone-composer-controls-items[hidden] { display: none; }
+/* The sm icon's mobile ::after extends to the 44px touch target; reserve its right half in layout. */
+.gg-phone-composer-menu-toggle { flex: 0 0 auto; margin: 8px calc((var(--control-h-touch) - var(--control-h-sm)) / 2) 8px auto; color: var(--text-secondary); }
+.gg-phone-composer-controls[data-collapsed] { padding-block: 0; }
+.gg-phone-composer-controls:has(> .gg-phone-composer-controls-items:empty) { display: none; }
 .gg-phone-composer-control { flex: 0 0 auto; position: relative; min-height: 44px; height: 44px; padding: 0 12px; gap: 4px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font-size: var(--font-body); }
 /* The row floats over the messages (ChatBottomDock): like every floating card, the visible box draws its own background. */
 .gg-phone-composer-control { isolation: isolate; }
@@ -8,12 +14,15 @@
 .gg-phone-composer-control[data-active]::before { border-color: var(--live-light); }
 .gg-phone-composer-control > svg { width: 16px; height: 16px; }
 .gg-phone-composer-control-label { max-width: 156px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gg-phone-composer-control-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--live-light); }
+.gg-phone-composer-control-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint-fg); }
+.gg-phone-composer-control-dot[data-tone='call'] { background: var(--danger-solid); }
 .gg-phone-composer-shade { position: fixed; z-index: var(--z-modal); background: var(--bg-overlay-soft); left: var(--phone-control-left, 0px); top: var(--phone-control-top, 0px); width: var(--phone-control-width, 100dvw); height: var(--phone-control-height, 100dvh); }
 .gg-phone-composer-sheet { position: fixed; z-index: var(--z-modal); display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding: 0; border: 0; border-radius: 20px; background: var(--muted); color: var(--text-primary); box-shadow: var(--shadow-menu); outline: none; animation: gg-phone-composer-sheet-in 180ms ease-out; left: var(--phone-control-left, 12px); top: var(--phone-control-top, calc(100dvh - 8px)); width: var(--phone-control-width, calc(100dvw - 24px)); max-height: var(--phone-control-max-height, 500px); transform: translateY(-100%); }
 .gg-phone-composer-sheet-handle { flex: 0 0 4px; width: 34px; margin: 8px auto 0; border-radius: 2px; background: var(--border-strong); }
 .gg-phone-composer-sheet-head { display: flex; align-items: center; justify-content: space-between; min-height: 52px; gap: 8px; padding: 0 12px 0 16px; }
-.gg-phone-composer-sheet-head > h2 { margin: 0; font-size: var(--font-body); font-weight: 500; color: var(--text-secondary); }
+.gg-phone-composer-sheet-head > h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-body); font-weight: 500; color: var(--text-secondary); }
+.gg-phone-composer-sheet-count { margin-inline-start: 6px; font-weight: 400; color: var(--text-tertiary); }
+.gg-phone-composer-sheet-back { flex: 0 0 auto; }
 .gg-phone-composer-sheet-close { position: relative; border-radius: 50%; }
 .gg-phone-composer-sheet-close::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--hover); }
 .gg-phone-composer-sheet-close > svg { position: relative; width: 16px; height: 16px; }
@@ -44,8 +53,7 @@
 @keyframes gg-phone-composer-sheet-out { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 16px; } }
 @media (prefers-reduced-motion: reduce) { .gg-phone-composer-sheet { animation: none; } }
 
-/* Relevant controls stay on one line; narrow phones reveal the rest by swiping. */
-.gg-phone-create-controls .gg-phone-composer-controls { flex-wrap: nowrap; }
+/* Buttons retain their spacing on one line; only the row toggle moves above when needed. */
 .gg-phone-create-controls .gg-phone-composer-control-label { max-width: none; overflow: visible; text-overflow: clip; }
 
 .gg-phone-composer-controls[data-editing] { opacity: 0; pointer-events: none; height: 0; min-height: 0; padding-block: 0; margin-block: 0; overflow: hidden; }

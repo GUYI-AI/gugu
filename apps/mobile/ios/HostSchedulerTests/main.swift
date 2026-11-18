@@ -145,7 +145,77 @@ private final class Fixture {
         guard case .failure(let staleError as GuguHostFailure) = staleInbox, staleError.code == "stale_context" else { throw GuguHostFailure(code: "scheduler_test_failed", message: "Stale inbox target reused native source custody") }
         try require(f.model.calls == 3, "Stale inbox admission dispatched a model")
         cases.append("changed_native_context_rejects_inbox_custody_without_model_dispatch")
+        try f.store.update("inputs", id: id) { $0["status"] = "interrupted" }
+        let completedRetry: Result<String, Error> = try awaitResult { scheduler.retry(agent: try! f.agent, jobId: id, completion: $0) }
+        guard case .failure(let completedError as GuguHostFailure) = completedRetry, completedError.code == "invalid_args" else {
+            throw GuguHostFailure(code: "scheduler_test_failed", message: "Completed native execution was replayed from interrupted backend settlement")
+        }
+        try require(f.model.calls == 3, "Completed native journal was executed again")
+        cases.append("completed_native_execution_cannot_retry_from_interrupted_backend_settlement")
         let stop: Result<Void, Error> = try awaitResult { scheduler.stop(completion: $0) }; _ = try stop.get()
+
+        let interrupted = try Fixture(root.appendingPathComponent("interrupted"), asset: asset)
+        let original = UUID().uuidString.lowercased(), originalClient = UUID().uuidString.lowercased()
+        let originalRoute: [String: Any] = ["kind": "chat", "chatId": UUID().uuidString.lowercased(), "sourceMessageId": UUID().uuidString.lowercased(), "threadRootId": UUID().uuidString.lowercased(), "whisper": true]
+        let epoch = try interrupted.agent["contextEpoch"]!
+        _ = try interrupted.store.admit("inputs", id: original, fingerprint: "previous-process-admission") {
+            ["id": original, "agentId": interrupted.agentId, "sessionId": interrupted.sessionId, "contextEpoch": epoch,
+             "prompt": "Check the existing result before retry", "clientMessageId": originalClient, "status": "starting", "sequence": 1,
+             "route": originalRoute, "usedChatIds": [originalRoute["chatId"]!]]
+        }
+        interrupted.model.held = true
+        let recoveredScheduler = try interrupted.scheduler()
+        let recovered: [String: Any] = try awaitResult { recoveredScheduler.timeline(agent: try! interrupted.agent, method: "snapshot", input: ["trim": false], completion: $0) }
+        let recoveredJSON = String(decoding: try JSONSerialization.data(withJSONObject: recovered), as: UTF8.self)
+        try require(recovered["ok"] as? Bool == true && recoveredJSON.contains("phoneInterruption") && recoveredJSON.contains(originalClient) && interrupted.model.calls == 0,
+                    "Reading recovered custody lost interruption or automatically dispatched work")
+        let retried: Result<String, Error> = try awaitResult { recoveredScheduler.retry(agent: try! interrupted.agent, jobId: original, completion: $0) }
+        let child = try retried.get()
+        try require(interrupted.model.started.wait(timeout: .now() + 10) == .success, "Explicit retry did not start actual Pi")
+        let duplicateRetry: Result<String, Error> = try awaitResult { recoveredScheduler.retry(agent: try! interrupted.agent, jobId: original, completion: $0) }
+        try require(try duplicateRetry.get() == child && interrupted.model.calls == 1, "Duplicate retry started a second attempt")
+        let originalRecord = try interrupted.store.record("inputs", id: original)!, childRecord = try interrupted.store.record("inputs", id: child)!
+        try require(originalRecord["status"] as? String == "interrupted" && childRecord["retryOf"] as? String == original && childRecord["clientMessageId"] as? String == child,
+                    "Retry overwrote the original interrupted attempt")
+        guard let childRoute = childRecord["route"] as? [String: Any] else { throw GuguHostFailure(code: "scheduler_test_failed", message: "Retry route is missing") }
+        try require(try GuguHostJournal.digest(childRoute) == GuguHostJournal.digest(originalRoute), "Retry lost original destination or privacy")
+        let afterRetry: [String: Any] = try awaitResult { recoveredScheduler.timeline(agent: try! interrupted.agent, method: "snapshot", input: ["trim": false], completion: $0) }
+        try require(String(decoding: try JSONSerialization.data(withJSONObject: afterRetry), as: UTF8.self).contains("\"retryable\":false"), "Accepted retry did not retire the original action")
+        interrupted.allowed = false
+        let revokedRetry: Result<String, Error> = try awaitResult { recoveredScheduler.retry(agent: try! interrupted.agent, jobId: original, completion: $0) }
+        guard case .failure = revokedRetry else { throw GuguHostFailure(code: "scheduler_test_failed", message: "Retired owner retried a task") }
+        interrupted.allowed = true
+        let recoveredStop: Result<Void, Error> = try awaitResult { recoveredScheduler.stop(completion: $0) }; _ = try recoveredStop.get()
+        cases.append("recovered_admission_has_zero_inference_until_explicit_idempotent_retry_preserving_destination_and_original_ledger")
+
+        let nativeInterrupted = try Fixture(root.appendingPathComponent("native-interrupted"), asset: asset)
+        let interruptedId = UUID().uuidString.lowercased(), interruptedClient = UUID().uuidString.lowercased()
+        let historical = GuguHostContext(ownerId: nativeInterrupted.binding.ownerId, installationId: nativeInterrupted.binding.installationId,
+            agentUserId: nativeInterrupted.agentId, sessionId: nativeInterrupted.sessionId, jobId: interruptedId,
+            contextEpoch: try nativeInterrupted.agent["contextEpoch"] as! String, runtimeInstanceId: UUID().uuidString.lowercased())
+        let nativeJournal = try nativeInterrupted.lifecycle.journal(binding: nativeInterrupted.binding)
+        let firstUser: [String: Any] = ["role": "user", "content": [["type": "text", "text": "Original interrupted input"]], "timestamp": 1]
+        _ = try nativeJournal.admit(historical, prompt: "Original interrupted input", modelId: "catalog-id", clientMessageId: interruptedClient)
+        try nativeJournal.record(historical, event: ["type": "message_end", "message": firstUser], messages: [firstUser])
+        try nativeJournal.finish(historical, result: ["status": "interrupted", "messages": [firstUser]])
+        _ = try nativeInterrupted.store.admit("inputs", id: interruptedId, fingerprint: "previous-native-process") {
+            ["id": interruptedId, "agentId": nativeInterrupted.agentId, "sessionId": nativeInterrupted.sessionId,
+             "contextEpoch": historical.contextEpoch, "prompt": "Original interrupted input", "clientMessageId": interruptedClient, "status": "running", "sequence": 1]
+        }
+        let nativeRecovered = try nativeInterrupted.scheduler()
+        let nativeBefore: [String: Any] = try awaitResult { nativeRecovered.timeline(agent: try! nativeInterrupted.agent, method: "snapshot", input: ["trim": false], completion: $0) }
+        try require(nativeInterrupted.model.calls == 0 && String(decoding: try JSONSerialization.data(withJSONObject: nativeBefore), as: UTF8.self).contains("phoneInterruption"), "Reading the interrupted native journal dispatched inference or lost its state")
+        let nativeRetry: Result<String, Error> = try awaitResult { nativeRecovered.retry(agent: try! nativeInterrupted.agent, jobId: interruptedId, completion: $0) }
+        let nativeChild = try nativeRetry.get(); try nativeInterrupted.waitStatus(nativeChild, "done")
+        let afterNative = try nativeJournal.job(interruptedId), nextNative = try nativeJournal.job(nativeChild)
+        try require(afterNative["status"] as? String == "interrupted" && (afterNative["events"] as? [[String: Any]])?.count == 1,
+                    "Retry rewrote the original native ledger")
+        try require(nativeInterrupted.model.calls == 1 && (nextNative["messages"] as? [[String: Any]])?.count ?? 0 >= 3,
+                    "Explicit native retry lost transcript history or executed more than once")
+        let replayNative: Result<String, Error> = try awaitResult { nativeRecovered.retry(agent: try! nativeInterrupted.agent, jobId: interruptedId, completion: $0) }
+        try require(try replayNative.get() == nativeChild && nativeInterrupted.model.calls == 1, "Replayed receipt reran completed retry")
+        let nativeRecoveredStop: Result<Void, Error> = try awaitResult { nativeRecovered.stop(completion: $0) }; _ = try nativeRecoveredStop.get()
+        cases.append("actual_interrupted_native_journal_retries_once_with_saved_Pi_history_and_preserves_original_record")
 
         let write = try Fixture(root.appendingPathComponent("write"), asset: asset); write.model.write = true
         let writeScheduler = try write.scheduler(), writeId = UUID().uuidString.lowercased()

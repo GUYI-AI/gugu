@@ -8,6 +8,7 @@ import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarCo
 import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { followRendererSession } from '@/lib/replica'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
+import '@/i18n/registerMainCatalog'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { publishChatSummaries } from '@/lib/chatSummariesBridge'
@@ -32,8 +33,9 @@ vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
   conversationOptionClient: () => {
     const read = () => ({
       mode: host.supported ? { selected: host.selected, available: [{ id: ':workspace', name: '编辑', description: '工作区权限' }, { id: ':danger-full-access', name: '完全访问', description: '保留原生权限含义' }] } : null,
+      modeMap: { edit: { id: ':workspace' }, 'full-access': { id: ':danger-full-access' } },
       model: { selected: 'native-model', available: [{ id: 'native-model', name: 'Native Codex model' }] },
-      effort: null,
+      effort: { selected: 'xhigh', available: [{ id: 'xhigh', name: 'Xhigh' }, { id: 'adaptive', name: 'Adaptive profile' }] },
       fast: null,
       modelMenu: { agentName: 'Codex', conversationSelection: null, platformModels: [], ownCatalog: null, ownAuth: null },
     })
@@ -95,8 +97,9 @@ afterEach(() => {
 
 async function openPermissions() {
   await page.getByTestId('agent-watch-create-model-device').click()
-  const drill = page.getByRole('button', { name: /权限.*完全访问/ })
-  await expect.element(drill).toHaveTextContent('完全访问')
+  await expect.element(page.getByRole('button', { name: /思考强度.*极高/ })).toBeVisible()
+  const drill = page.getByRole('button', { name: /权限.*全部放行/ })
+  await expect.element(drill).toHaveTextContent('全部放行')
   expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
   await drill.click()
 }
@@ -104,33 +107,36 @@ async function openPermissions() {
 it('moves the actual phone conversation permissions into Work and sends the original native mode id once', async () => {
   await mount()
   await openPermissions()
-  const selected = page.getByRole('radio', { name: /完全访问/ })
+  const selected = page.getByRole('radio', { name: /全部放行/ })
   await expect.element(selected).toHaveAttribute('aria-checked', 'true')
   await page.screenshot({ path: '__screenshots__/phone-work-permission-options.png' })
-  await page.getByRole('radio', { name: /编辑/ }).click()
-  await until('accepted native mode is shown in Work', () => document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent?.includes('编辑') === true)
+  await page.getByRole('radio', { name: /可改文件/ }).click()
+  await until('accepted native mode is shown in Work', () => document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent?.includes('可改文件') === true)
   expect(host.set).toHaveBeenCalledTimes(1)
   expect(host.set).toHaveBeenCalledWith('mode', ':workspace')
   expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
   await page.screenshot({ path: '__screenshots__/phone-work-permission-selected.png' })
+  await page.getByRole('button', { name: /思考强度.*极高/ }).click()
+  await expect.element(page.getByRole('radio', { name: /极高/ })).toHaveAttribute('aria-checked', 'true')
+  await expect.element(page.getByRole('radio', { name: 'Adaptive profile' })).toBeVisible()
 })
 
 it('keeps a rejected change on the original mode and retains the existing error notice', async () => {
   host.fail = true
   await mount()
   await openPermissions()
-  await page.getByRole('radio', { name: /编辑/ }).click()
+  await page.getByRole('radio', { name: /可改文件/ }).click()
   await until('host rejection is visible', () => document.body.textContent?.includes('Permission update rejected') === true)
   expect(host.selected).toBe(':danger-full-access')
   expect(host.set).toHaveBeenCalledTimes(1)
   expect(host.set).toHaveBeenCalledWith('mode', ':workspace')
-  expect(document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent).toContain('完全访问')
+  expect(document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent).toContain('全部放行')
 })
 
 it('retains the phone composer permission selector when there is no Work owner', async () => {
   await mount({ withWork: false })
   await until('fallback permission selector visible', () => !!document.querySelector('[data-slot="composer-permission-mode"]'))
-  expect(document.querySelector('[data-slot="composer-permission-mode"]')?.textContent).toContain('完全访问')
+  expect(document.querySelector('[data-slot="composer-permission-mode"]')?.textContent).toContain('全部放行')
   expect(host.set).not.toHaveBeenCalled()
 })
 

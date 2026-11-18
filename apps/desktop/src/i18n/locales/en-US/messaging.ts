@@ -129,7 +129,7 @@ export default {
     "backToList": "Back to chats",
     "conversationProfile": "View chat details",
     "downloadFailed": "Could not download the file",
-    "filePreview": { "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
+    "filePreview": { "readAgain": "Read again", "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
     "empty": {
       "chats": "Select a chat to start chatting",
       "contacts": "Select a contact to view details"
@@ -818,6 +818,8 @@ export default {
     },
     "attachment": "[Attachment]",
     "copied": "Copied",
+    "selectTextFailed": "Could not open text selection",
+    "selectionClose": "Back",
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "forwarded": "↪ Forwarded",
     "forwardedFrom": "↪ From {{line}}",

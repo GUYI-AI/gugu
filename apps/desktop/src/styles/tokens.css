@@ -1255,6 +1255,14 @@ input {
   }
 }
 
+/* A message's widget page is a guest of its own in the list's scroller. While the list scrolls (the same
+   `data-scrolling` the scrollbar shows on), the pointer passes through it: a guest under a moving pointer
+   takes every wheel and hover first, and the list then drops frames whenever the pointer rests on a widget
+   (mac1 11-18: 26–43 dropped frames a pass against 9–15). The page takes the pointer again once scrolling stops. */
+[data-scrolling] [data-widget-page] {
+  pointer-events: none;
+}
+
 /* The search panel's loading line: a short bar crossing under its filter row. */
 @keyframes gs-scan { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 

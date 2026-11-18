@@ -12,23 +12,35 @@ import type { MemberProfileCardModel } from '../../../../apps/desktop/src/compon
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { NATIVE_BACK_EVENT } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { platform } from '../../../../apps/desktop/src/platform'
+import type { NativeTextSelection } from '../../../../apps/desktop/src/platform/nativeTextSelection'
 import { QUICK_REACTIONS, REACTIONS } from '../../../../packages/core/src/shared/ui/reactionCatalog'
 import { TOOLTIP_OPEN_DELAY_MS } from '../../../../apps/desktop/src/styles/motion'
 import { clickElement, createNode, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 vi.mock('@/lib/copyFeedback', () => ({ notifyCopied: vi.fn() }))
 let harness: ReturnType<typeof createReactHarness>
+let textStyle: HTMLStyleElement
 const originalPlatformKind = platform.kind
+const originalNativeSelection = platform.textSelection
+const originalCaretRange = Object.getOwnPropertyDescriptor(document, 'caretRangeFromPoint')
 beforeEach(() => {
   vi.useFakeTimers()
   vi.mocked(notifyCopied).mockClear()
   for (const key of ['gugu.reaction-frequency', 'emoji-mart.frequently', 'emoji-mart.last']) localStorage.removeItem(key)
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} })
   harness = createReactHarness()
+  // jsdom has no user-agent font inheritance; the native handoff reads real computed text properties.
+  textStyle = document.createElement('style')
+  textStyle.textContent = '.gg-md,.gg-md *{font:16px/24px sans-serif;color:rgb(24,24,24)}'
+  document.head.append(textStyle)
 })
 afterEach(() => {
   platform.kind = originalPlatformKind
+  platform.textSelection = originalNativeSelection
   harness.cleanup()
+  textStyle.remove()
+  if (originalCaretRange) Object.defineProperty(document, 'caretRangeFromPoint', originalCaretRange)
+  else Reflect.deleteProperty(document, 'caretRangeFromPoint')
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -125,26 +137,23 @@ describe('MessageBubble touch menu', () => {
       expect(document.querySelector('[role="group"][aria-label="快速回应"]')?.querySelectorAll('button')).toHaveLength(7)
     })
   })
-  it('selects text in place on the bubble and copies the picked part', async () => {
-    const writeText = vi.fn(async (_text: string) => {})
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const toast = vi.fn()
-    await renderMessage(toast)
+  it('starts a browser selection at the originally pressed word without an app copy toolbar', async () => {
+    await renderMessage()
+    pressInsideWord('from')
     await longPress()
     await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
     expect(document.querySelector('[role="menu"]'), 'the menu steps aside').toBeNull()
     const bubble = messageBubble()
     expect(bubble.style.userSelect, 'the bubble itself becomes selectable').toBe('text')
-    expect(window.getSelection()?.toString(), 'starts with the whole text selected').toBe('hello from mobile')
+    expect(bubble.style.visibility, 'the lifted preview releases the real message immediately').toBe('')
+    expect(window.getSelection()?.toString()).toBe('from')
+    expect(document.querySelector('[data-testid="message-selection-bar"]')).toBeNull()
     selectMessageText('from mobile')
     document.dispatchEvent(new Event('selectionchange'))
-    await clickElement(document.querySelector('[data-testid="message-selection-copy"]')!)
-    expect(writeText).toHaveBeenCalledWith('from mobile')
-    expect(notifyCopied).toHaveBeenCalledExactlyOnceWith('已复制')
-    expect(document.querySelector('[data-testid="message-selection-bar"]')).toBeNull()
-    expect(bubble.style.userSelect, 'back to long-press = menu').toBe('none')
+    expect(window.getSelection()?.toString()).toBe('from mobile')
+    expect(notifyCopied).not.toHaveBeenCalled()
   })
-  it('leaves text selection on a tap outside the bubble and lets the system own long-press meanwhile', async () => {
+  it('lets the browser own selection gestures and ends when its selection clears', async () => {
     await renderMessage()
     await longPress()
     await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
@@ -152,9 +161,63 @@ describe('MessageBubble touch menu', () => {
     await act(async () => { messageBubble().dispatchEvent(press) })
     expect(press.defaultPrevented, 'native selection handles, not our menu').toBe(false)
     expect(document.querySelector('[role="menu"]')).toBeNull()
-    await act(async () => { document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })) })
+    await act(async () => { window.getSelection()?.removeAllRanges(); document.dispatchEvent(new Event('selectionchange')) })
     expect(document.querySelector('[data-testid="message-selection-bar"]')).toBeNull()
     expect(window.getSelection()?.toString()).toBe('')
+    expect(messageBubble().style.userSelect).toBe('none')
+  })
+  it('hands the original word to the native selector and restores the bubble when it closes', async () => {
+    let finish!: () => void
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(resolve => { finish = resolve }))
+    const close = vi.fn(async () => {})
+    platform.textSelection = { open, close }
+    await renderMessage()
+    pressInsideWord('from')
+    await longPress()
+    await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
+    expect(open).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'hello from mobile', start: 6, end: 10, title: '选择文本', closeLabel: '返回' }))
+    expect(window.getSelection()?.toString()).toBe('')
+    expect(document.querySelector('[data-testid="message-selection-copy"]')).toBeNull()
+    expect(messageBubble().style.visibility).toBe('')
+    expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('hidden')
+    const request = open.mock.calls[0][0]
+    await act(async () => { finish() })
+    expect(close).toHaveBeenCalledExactlyOnceWith({ id: request.id })
+    expect(messageBubble().style.userSelect).toBe('none')
+    expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('')
+  })
+  it('keeps the first press when Android delivers contextmenu after the message is lifted', async () => {
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    platform.textSelection = { open, close: vi.fn(async () => {}) }
+    await renderMessage()
+    pressInsideWord('from')
+    await longPress()
+    expect(messageBubble().style.visibility).toBe('hidden')
+    Object.defineProperty(document, 'caretRangeFromPoint', { value: () => null, configurable: true })
+    await act(async () => { messageBubble().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 240 })) })
+    await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
+    expect(open).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'hello from mobile', start: 6, end: 10 }))
+  })
+  it('closes only its native selection request when the selection layer receives Back', async () => {
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    const close = vi.fn(async () => {})
+    platform.textSelection = { open, close }
+    await renderMessage()
+    await longPress()
+    await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
+    await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
+    expect(close).toHaveBeenCalledExactlyOnceWith({ id: open.mock.calls[0][0].id })
+    expect(messageBubble().style.userSelect).toBe('none')
+  })
+  it('reports a native selection failure rather than showing a script-selected substitute', async () => {
+    platform.textSelection = { open: vi.fn().mockRejectedValue(new Error('Native text selection unavailable')), close: vi.fn(async () => {}) }
+    const toast = vi.fn()
+    await renderMessage(toast)
+    await longPress()
+    await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
+    expect(toast).toHaveBeenCalledWith('无法打开选择文本', 'error', 'Native text selection unavailable')
+    expect(window.getSelection()?.toString()).toBe('')
+    expect(document.querySelector('[data-testid="message-selection-bar"]')).toBeNull()
   })
   it('keeps external-link copying without resource actions on ordinary messages', async () => {
     const writeText = vi.fn(async (_text: string) => {})
@@ -611,6 +674,13 @@ function menuItem(label: string) {
 }
 function selectMessageText(text: string) {
   selectTextIn(messageBubble().querySelector('p')!, text)
+}
+function pressInsideWord(text: string) {
+  const node = messageBubble().querySelector('p')!.firstChild!
+  const range = document.createRange()
+  range.setStart(node, node.textContent!.indexOf(text) + 1)
+  range.collapse(true)
+  Object.defineProperty(document, 'caretRangeFromPoint', { configurable: true, value: vi.fn(() => range) })
 }
 function selectTextIn(element: Element, text: string) {
   const node = element.firstChild!

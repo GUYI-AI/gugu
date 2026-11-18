@@ -412,7 +412,7 @@ function watchForInactivity(
  * - 版本没变也有 TTL：清单可以在服务端变而 CLI 不动（claude 的 `default` 指向、codex 的
  *   服务端清单都是这样），所以时间上也得有个尽头。
  */
-export const READY_TTL_MS = 12 * 60 * 60_000;
+export const READY_TTL_MS = 60 * 60_000;
 
 /**
  * 失败态只缓存很短一会儿。
@@ -547,7 +547,7 @@ async function loadAll(): Promise<Record<string, CachedCatalog>> {
 function isFresh(entry: CachedCatalog, inputsHash: string | null): boolean {
   const age = Date.now() - entry.probedAt;
   // 盘上的旧结构行（只记过版本号、没有指纹）：判不新鲜，重探一次把身份补齐。
-  // ❌ 不按「两边都不知道」处理 —— 那会让升级前那份读数靠 TTL 再活 12 小时。
+  // ❌ 不按「两边都不知道」处理 —— 那会让升级前那份读数继续活到 TTL。
   if (entry.inputsHash === undefined) return false;
   // 主闸：输入变了就作废。两边都算得出时才比 —— 算不出就别假装比过了。
   // 缓存带指纹而此刻算不出（冷启尚未解析出可执行文件）时也必须作废：沿用旧目录会跳过后台探测，

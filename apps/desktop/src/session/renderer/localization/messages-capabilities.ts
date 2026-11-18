@@ -12,6 +12,7 @@ export const enUSCapabilityMessages = {
   'reset.builtIn': 'built-in',
   'reset.always': 'always',
   'settings.readFailed': 'Could not read this setting',
+  'settings.readAgain': 'Read again',
   'settings.refreshFailed': 'Could not read the latest; showing what was read last',
 
   // ── settings · task defaults ───────────────────────────────────────────────
@@ -39,6 +40,9 @@ export const enUSCapabilityMessages = {
   'taskDefaults.preserveCapitalization': 'Preserve task name capitalization',
   'taskDefaults.preserveCapitalizationDescription':
     'Keep uppercase letters in generated and manually entered task names. Defaults to lowercase.',
+  'taskDefaults.idleCompaction': 'Compact long conversations while you are away',
+  'taskDefaults.idleCompactionDescription':
+    'Claude Code conversations are summarized before the prompt cache expires, so your next message costs less and replies sooner.',
   'taskDefaults.enableTmux': 'Enable tmux',
   'taskDefaults.enableTmuxDescription':
     'Use tmux for agent tasks and terminals unless the project has its own setting.',
@@ -305,13 +309,13 @@ export const enUSCapabilityMessages = {
   'browserSettings.defaultProfile': 'Default browser profile',
   'browserSettings.defaultProfileDescription':
     "New browser tabs open with this profile. You can switch an individual tab's profile from its toolbar menu.",
-  'browserSettings.isolatedPerTask': 'Isolated per task',
+  'browserSettings.isolatedPerTask': 'Isolated per agent',
   'browserSettings.relaxCors': 'Disable CORS for localhost',
   'browserSettings.relaxCorsDescription':
     'Allows pages opened from localhost in {appName} browser tabs to call APIs that do not send matching CORS headers.',
   'browserSettings.profiles': 'Browser profiles',
   'browserSettings.profilesDescription':
-    'Each profile keeps its own cookies and logins, shared across tasks.',
+    'Each profile keeps its own cookies and logins, shared across agents.',
   'browserSettings.renameProfileLabel': 'Rename {name} browser profile',
   'browserSettings.saveProfileNameLabel': 'Save {name} browser profile name',
   'browserSettings.cancelRenameLabel': 'Cancel renaming {name} browser profile',
@@ -346,7 +350,7 @@ export const enUSCapabilityMessages = {
   'browserSettings.importLoginsNoBrowser': 'No default browser was found on this computer.',
   'browserSettings.importLoginsUnsupported': 'Importing from {browser} is not supported on this computer yet.',
   'browserSettings.importLoginsNeedsProfile':
-    'The default profile is "Isolated per task", which has no fixed profile to import into. Choose a profile above first.',
+    'The default profile is "Isolated per agent", which has no fixed profile to import into. Choose a profile above first.',
   'browserSettings.importingToast': 'Importing logins from {browser}… If macOS asks for your password to let Gugu read {browser}\'s data, allow it.',
   'browserSettings.importedToast_one': 'Imported {count} login from {browser} into "{profile}"',
   'browserSettings.importedToast_other': 'Imported {count} logins from {browser} into "{profile}"',
@@ -986,6 +990,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'reset.builtIn': '内置',
   'reset.always': '始终',
   'settings.readFailed': '读不到这项设置',
+  'settings.readAgain': '重新读取',
   'settings.refreshFailed': '没读到最新的，显示的是上次读到的',
 
   // ── 设置 · 任务默认值 ───────────────────────────────────────────────────────
@@ -1010,6 +1015,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'taskDefaults.preserveCapitalization': '保留会话名大小写',
   'taskDefaults.preserveCapitalizationDescription':
     '在生成和手动输入的会话名中保留大写字母，默认转小写。',
+  'taskDefaults.idleCompaction': '离开时压缩长对话',
+  'taskDefaults.idleCompactionDescription': 'Claude Code 的长对话在提示缓存过期前先压缩成摘要，回来再发消息更省也更快。',
   'taskDefaults.enableTmux': '启用 tmux',
   'taskDefaults.enableTmuxDescription': '除非项目有单独设置，否则在 tmux 会话中运行智能体会话和终端。',
 
@@ -1271,13 +1278,13 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'browserSettings.defaultProfile': '默认浏览器配置',
   'browserSettings.defaultProfileDescription':
     '新浏览器标签页使用此配置。你也可以在单个标签页的工具栏菜单中切换其配置。',
-  'browserSettings.isolatedPerTask': '每个会话独立',
+  'browserSettings.isolatedPerTask': '每个智能体独立',
   'browserSettings.relaxCors': '对 localhost 关闭 CORS 限制',
   'browserSettings.relaxCorsDescription':
     '允许在 {appName} 浏览器标签页中从 localhost 打开的页面调用未返回匹配 CORS 头的接口。',
   'browserSettings.profiles': '浏览器配置',
   'browserSettings.profilesDescription':
-    '每个配置保留各自的 cookie 和登录状态，并在会话间共享。',
+    '每个配置保留各自的 cookie 和登录状态，并在智能体间共享。',
   'browserSettings.renameProfileLabel': '重命名浏览器配置 {name}',
   'browserSettings.saveProfileNameLabel': '保存浏览器配置 {name} 的名称',
   'browserSettings.cancelRenameLabel': '取消重命名浏览器配置 {name}',
@@ -1310,7 +1317,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'browserSettings.importLoginsUnknownBrowser': '默认浏览器',
   'browserSettings.importLoginsNoBrowser': '这台电脑上没有认出默认浏览器。',
   'browserSettings.importLoginsUnsupported': '这台电脑上暂不支持从 {browser} 导入。',
-  'browserSettings.importLoginsNeedsProfile': '默认配置是「每个会话独立」，没有固定的一份可以导入。请先在上面选一个配置。',
+  'browserSettings.importLoginsNeedsProfile': '默认配置是「每个智能体独立」，没有固定的一份可以导入。请先在上面选一个配置。',
   'browserSettings.importingToast': '正在从 {browser} 导入登录……如果 macOS 弹窗要你输入开机密码、允许咕咕读取 {browser} 的数据，请允许。',
   'browserSettings.importedToast_one': '已从 {browser} 导入 {count} 条登录信息到「{profile}」',
   'browserSettings.importedToast_other': '已从 {browser} 导入 {count} 条登录信息到「{profile}」',

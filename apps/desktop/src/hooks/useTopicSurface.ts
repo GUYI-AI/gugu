@@ -47,6 +47,7 @@ export type TopicSurface = {
   /** 这条线上长出来的话题,按来源消息分组 —— 锚点卡读它。 */
   anchorsByMessageId: Map<string, TopicSummary[]>
   topics: TopicSummary[]
+  topicsReady: boolean
   reloadTopics: () => void
   /** The open tab's conversation, retained while another tab is shown. */
   topic: OpenTopic | null
@@ -197,6 +198,7 @@ export function useTopicSurface({
   return {
     anchorsByMessageId: bySourceMessageId,
     topics,
+    topicsReady: read !== null,
     reloadTopics,
     topic,
     splitTopic,

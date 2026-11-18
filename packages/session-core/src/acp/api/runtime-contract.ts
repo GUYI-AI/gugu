@@ -281,6 +281,14 @@ export const acpRuntimeApiContract = defineContract({
     }),
     output: z.object({ delivered: z.boolean() }),
   }),
+  /**
+   * #3005 设置 → 通用里的「离开时压缩长对话」:宿主在运行时起来时与人改设置时推一次,定时器到点才读。
+   * 关掉对已经在跑的会话立刻生效;与 Claude Code 自己的 `idleCompaction` 是「任一关了就不压」。
+   */
+  setIdleCompaction: procedure({
+    input: z.object({ enabled: z.boolean() }),
+    output: z.object({}),
+  }),
   promptDetached: procedure({
     input: detachedPromptInputSchema,
     output: detachedPromptResponseSchema,

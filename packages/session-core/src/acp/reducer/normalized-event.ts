@@ -461,7 +461,7 @@ export type NormalizedEvent =
       /** `completed` 时给出的完整摘要；缺席表示这次压缩不带摘要。 */
       summary?: string;
       /** 是用户自己敲的 `/compact`，还是撞到窗口自动压的。 */
-      trigger?: 'manual' | 'automatic';
+      trigger?: 'manual' | 'automatic' | 'idle';
       /** 压之前 / 压之后的 token 数：这两个数才说明"丢了多少原文"。 */
       preTokens?: number;
       postTokens?: number;
