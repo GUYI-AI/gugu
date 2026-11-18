@@ -100,6 +100,35 @@ describe('each actual pane owns its content', () => {
     } finally { layout.dispose(); }
   });
 
+  it('keeps a late pane-focus request on the active annotation canvas and preserves its comment input', async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const forwardNativeFocus = vi.fn();
+    const browser = createTabProvider({ ...provider, kind: 'browser', TabContent: () => <>
+      <div data-pane-tab="another-tab"><div tabIndex={-1} data-browser-annotation-layer="" /></div>
+      <div tabIndex={-1} data-browser-page="" onFocus={forwardNativeFocus} />
+      <div tabIndex={-1} data-browser-annotation-layer="" data-active-canvas=""><input defaultValue="Unsent comment" /></div>
+    </> });
+    const layout = new PaneLayoutStore(createTabRegistry([browser]), { viewId: 'annotation-focus-return' });
+    layout.open('browser', { id: 'annotated' }, { from: null, intent: 'newTab' });
+    const group = layout.groups[0];
+    const flush = () => { for (const frame of frames.splice(0)) frame(0); };
+    try {
+      act(() => root.render(<PaneContext.Provider value={{ paneId: group.paneId, pane: group.pane, isFocusedPane: true }}><PaneContent hideTabBar /></PaneContext.Provider>));
+      const canvas = dom.window.document.querySelector<HTMLElement>('[data-active-canvas]')!;
+      canvas.focus();
+      await act(async () => { group.pane.focusActiveContent(); flush(); });
+      expect(dom.window.document.activeElement).toBe(canvas);
+      const input = canvas.querySelector('input')!;
+      input.focus();
+      await act(async () => { group.pane.focusActiveContent(); flush(); });
+      expect(dom.window.document.activeElement).toBe(input);
+      expect(input.value).toBe('Unsent comment');
+      expect(forwardNativeFocus).not.toHaveBeenCalled();
+    } finally { layout.dispose(); }
+  });
+
   it('hands focus from the retained folder guest to the new page before history shortcuts are used', async () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
     vi.stubGlobal('cancelAnimationFrame', () => {});
