@@ -25,9 +25,10 @@ import { assertMcpToolDescriptionWithinBudget } from './mcp-tool-description-bud
  * 多数会话都会用到的(#6614 的读数)。不在这里的已注册工具只进目录,按原名 tools/call 仍然能调。
  */
 export const GUGU_LISTED_TOOLS: ReadonlySet<string> = new Set([
-  'message_send', 'message_send_as_owner', 'message_send_file_as_owner', 'message_send_file', 'message_history', 'message_search', 'message_members',
-  'message_conversations', 'message_rules', 'message_invite', 'contact_friend', 'owner_friends_list',
-  'topic_open', 'topic_list', 'profile_whoami',
+  'message_send', 'message_download_file', 'message_history', 'message_search', 'message_members',
+  'message_conversations', 'message_rules', 'profile_whoami',
+  // Acting for the owner (message_send_as_owner, owner_friends_list, contact_friend, message_invite) and topics are in the
+  // catalog (MCP surface review 11-16: 0–10 calls in 454 sessions); the catalog_list description and the platform prompt point there.
   'session_message', 'session_spawn', 'session_open_in_tab', 'session_get', 'session_peers', 'session_children',
   // Native device inspection/execution. The coordinator role does not register device_call;
   // executors keep it. This set only selects from tools that their server actually registered.
@@ -35,15 +36,32 @@ export const GUGU_LISTED_TOOLS: ReadonlySet<string> = new Set([
   // #7221 「明早 8 点提醒我」:答应了以后的事,得在当场就找得到这把工具 —— 藏进目录,agent 会改用自己 harness 的定时器,
   // 进程一停就没了。看与取消不常用,留在目录。
   'schedule_create',
-  // app_create / app_install 曾因 L5 S1(做 App 的路上 2 次调用花在 catalog_list + catalog_describe)列在这里;#7335 退回目录:
+  // app_create / app_install 曾因 L5 S1(做 App 的路上 2 次调用花在 catalog_list + 当时的 catalog_describe)列在这里;#7335 退回目录:
   // 两个合计约 900 token 每个会话都付,做 App 的会话很少(d22 三周 0 次调用),那 2 次调用只在做 App 时才花。
-  'guide_topics', 'guide_read',
-  'catalog_list', 'catalog_describe', 'catalog_call',
+  'guide_read',
+  'catalog_list', 'catalog_call',
 ])
+
+/**
+ * Tool names that are gone, and what does their job now. Not registered anywhere: a call by an old name (an agent's memory,
+ * an old skill) is refused with the new way, never served by a second path.
+ */
+export const RETIRED_TOOLS: Readonly<Record<string, string>> = {
+  message_send_file: 'message_send with file or file_path (its text is the caption)',
+  message_send_file_as_owner: 'message_send_as_owner with file_path',
+  guide_topics: 'guide_read without a topic',
+  catalog_describe: 'catalog_list with the exact tool name as name',
+}
+
+/** The refusal for a retired name, or null. */
+export function retiredToolRefusal(name: string): string | null {
+  const now = RETIRED_TOOLS[name]
+  return now ? `${name} was retired: use ${now}` : null
+}
 
 /** The coordinator's core tools replace occasional contact/group creation within the same budget. */
 export const GUGU_ASSISTANT_LISTED_TOOLS: ReadonlySet<string> = new Set([
-  ...[...GUGU_LISTED_TOOLS].filter(name => !['device_call', 'contact_friend', 'message_invite', 'topic_open'].includes(name)),
+  ...[...GUGU_LISTED_TOOLS].filter(name => name !== 'device_call'),
   'activity_list', 'activity_context', 'session_stop',
 ])
 
@@ -88,7 +106,7 @@ export function unlistedTools(server: McpServer, listedTools = GUGU_LISTED_TOOLS
           const detail = parsed.error.issues.map((issue) =>
             selfNamedArgumentHint(args, issue.path) ?? `${issue.path.join('.') || '(root)'}: ${issue.message}`,
           ).join('; ')
-          return { content: [{ type: 'text', text: `Input validation error: Invalid arguments for tool ${name}: ${detail}` }], isError: true }
+          return { content: [{ type: 'text', text: `Input validation error: Invalid arguments for tool ${name}: ${detail}. Its inputSchema: ${JSON.stringify(advertisedTool(name, tool).inputSchema)}` }], isError: true }
         }
         return (tool.handler as (args: unknown, extra: Extra) => Promise<CallToolResult>)(parsed.data, extra)
       },
@@ -126,20 +144,19 @@ function ownListedTools(server: McpServer, listedTools: ReadonlySet<string>): Ar
 // 10-19 打分规则挪进 shared(query-score.ts),中文按最长一段记分 —— app_search 与 App 页的搜索用同一份。
 const CATALOG_SEARCH_DESCRIPTION = 'Keywords, matched in tool names and descriptions; the best matches come back.'
 
-// 「名字从哪来」只在 catalog_call 上写一次(P5);catalog_describe 的说明本来就指着 catalog_list。
+// 「名字从哪来」只在 catalog_call 上写一次(P5)。
 const TOOL_NAME_DESCRIPTION = 'As catalog_list prints it.'
 const toolNameSchema = z.string().min(1)
 // harness 的 XML/JSON 桥常把对象参数序列化成字符串,在 schema 边界收下这种形状(同 to_user_ids)。
 const toolArgsSchema = z.preprocess(
   (value) => (typeof value === 'string' ? JSON.parse(value) : value),
   z.record(z.string(), z.unknown()).optional(),
-).describe('As catalog_describe shows.')
+).describe('As catalog_list shows.')
 
 const CATALOG_DESCRIPTIONS = {
   // Both halves of what the catalog holds (D-04 咕咕's less-used tools, D-02 / D-10 the installed Apps'): see product-platform-prompt.ts.
-  catalog_list: 'Tools not in your tool list (less-used 咕咕 tools, installed Apps\'), one line each: call signature (? = optional) and what it does. A skill line names a SKILL.md to read when your task matches.',
-  catalog_describe: 'One catalog tool\'s full definition.',
-  catalog_call: 'Run a catalog_list tool by name, with the same checks and results as a listed one.',
+  catalog_list: 'Tools not in your tool list — acting for your owner (as_owner sends, their friends, invitations), topics, groups, projects, schedules, installed Apps\' — one line each: call signature (? = optional) and what it does; an exact tool name as name gives its full definition. A skill line names a SKILL.md to read when your task matches.',
+  catalog_call: 'Run a catalog_list tool by name, with the same checks and results as a listed one; wrong arguments come back with its definition.',
 } as const
 
 const text = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
@@ -157,7 +174,7 @@ const shortEnum = (property: unknown): string | null => {
 
 /**
  * A row's parameters, required ones first: `app_check(tab_kind, item_id?, chat_id?)`, a short enum written out
- * (`mode?: crawl|map`). L5 S1 rerun: two of 29 calls were catalog_describe, made only to learn the argument names before catalog_call.
+ * (`mode?: crawl|map`). L5 S1 rerun: two of 29 calls were the then catalog_describe, made only to learn the argument names before catalog_call.
  */
 const callOf = (name: string, schema: Tool['inputSchema']): string => {
   const required = new Set(schema.required ?? [])
@@ -178,6 +195,8 @@ export function registerGuguCatalogTools(server: McpServer, source: CatalogSourc
     // #6634 问题 14 W-21: Claude, having installed through catalog_call, sent catalog_list and catalog_call through it too.
     const own = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools[name]
     if (!entry && listedTools.has(name) && own?.enabled !== false) throw new Error(`${name} is one of your own tools, not a catalog entry: call it directly`)
+    const retired = entry ? null : retiredToolRefusal(name)
+    if (retired) throw new Error(retired)
     if (!entry) {
       // #6634 问题 16 W-21: a program whose tools/list failed was simply absent; the agent guessed names for minutes.
       // An extension the person revoked or turned off was absent the same way, and an agent went and ran its program by hand.
@@ -191,6 +210,16 @@ export function registerGuguCatalogTools(server: McpServer, source: CatalogSourc
     'catalog_list',
     { description: CATALOG_DESCRIPTIONS.catalog_list, inputSchema: z.object({ ...listWindowShape, name: z.string().optional().describe(CATALOG_SEARCH_DESCRIPTION) }).strict() },
     async (args) => {
+      // An exact catalog tool name gives that tool's full definition: what to pass, without another round trip. Asked
+      // before any listing, and of the one source holding the name, so an App that never answers holds nothing else up.
+      const wanted = args.name?.trim()
+      if (wanted && /^[\w-]+$/.test(wanted)) {
+        const exact = unlistedTools(server, listedTools).find((tool) => tool.name === wanted)
+          ?? (await source(wanted)).find((tool) => tool.name === wanted)
+        if (exact) return text({ name: exact.name, description: exact.description, inputSchema: exact.inputSchema, ...(exact.annotations ? { annotations: exact.annotations } : {}) })
+        const retired = retiredToolRefusal(wanted)
+        if (retired) throw new Error(retired)
+      }
       // A row is `{ call, about }`: `call` already starts with the name (上下文工程第一批 P6 dropped the `name` copy, −11% per listing).
       // A name search also finds the tools already in the session's own list: an agent that looked an App up by name, got nothing and hand-wrote its files (小修汇总 3).
       const searched = Boolean(args.name?.trim())
@@ -211,14 +240,6 @@ export function registerGuguCatalogTools(server: McpServer, source: CatalogSourc
       type Row = (typeof skillEntries)[number]['row'] | (typeof toolEntries)[number]['row']
       const rows = bestKeywordMatches<Row>([...skillEntries, ...toolEntries, ...ownEntries], args.name)
       return text(windowList(rows, { ...args, name: undefined }, { namesOf: () => [], catalog: true }))
-    },
-  )
-  server.registerTool(
-    'catalog_describe',
-    { description: CATALOG_DESCRIPTIONS.catalog_describe, inputSchema: z.object({ tool: toolNameSchema }).strict() },
-    async ({ tool }) => {
-      const { name, description, inputSchema, annotations } = await find(tool)
-      return text({ name, description, inputSchema, annotations })
     },
   )
   server.registerTool(

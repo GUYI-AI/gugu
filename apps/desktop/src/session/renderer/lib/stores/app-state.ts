@@ -30,7 +30,7 @@ class AppState {
     this.resourceMonitor = new ResourceMonitorStore();
     snapshotRegistry.register('navigation', () => this.navigation.snapshot);
     // Save each manual disclosure change immediately, including before a refresh or restart.
-    snapshotRegistry.register('sidebar', () => this.sidebar.snapshot, 0);
+    snapshotRegistry.register('sidebar', () => this.sidebar.snapshot);
   }
 }
 

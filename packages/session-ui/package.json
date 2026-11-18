@@ -23,6 +23,7 @@
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./icons": "./src/icons.tsx",
     "./icon-bodies": "./src/icon-bodies.ts",
+    "./file-mark": "./src/file-mark.tsx",
     "./react/primitives": "./src/react/primitives/index.ts",
     "./react/components": "./src/react/components/index.ts",
     "./styles/sprinkles": "./src/styles/utilities/sprinkles.css.ts",
@@ -33,7 +34,8 @@
     "./styles/global": "./src/styles/global.css.ts",
     "./package.json": "./package.json",
     "./react/text-shimmer": "./src/react/components/TextShimmer.tsx",
-    "./react/loading-indicator": "./src/react/components/loading-indicator/LoadingIndicator.tsx"
+    "./react/loading-indicator": "./src/react/components/loading-indicator/LoadingIndicator.tsx",
+    "./react/growing-list": "./src/react/primitives/growing-list/growing-list.tsx"
   },
   "scripts": {
     "test": "vitest run",

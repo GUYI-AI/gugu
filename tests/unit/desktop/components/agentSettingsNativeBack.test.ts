@@ -7,7 +7,7 @@ import { clearAgentDisplayStatusOverrides } from '../../../support/agentDisplayS
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
 
 type BackState = Window & { __guguNativeBackHandled?: boolean }
 const back = async () => {

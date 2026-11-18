@@ -4,8 +4,9 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+import { followRendererSession } from '@/lib/replica'
 
-const fixture = vi.hoisted(() => ({ platform: { kind: 'electron' }, read: vi.fn(), claim: vi.fn(() => 'claim'), revision: () => () => {} }))
+const fixture = vi.hoisted(() => ({ platform: { kind: 'electron' }, read: vi.fn(), revision: () => () => {} }))
 vi.mock('@/platform', async original => ({ ...(await original<object>()), platform: fixture.platform }))
 vi.mock('react-i18next', async original => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useAuth: () => ({ user: { id: 'reader' } }) }))
@@ -15,14 +16,14 @@ vi.mock('@/lib/widgetRegistry', async original => ({ ...(await original<object>(
 vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => null } }))
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: {} }))
 vi.mock('@/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <iframe title="resolved original" /> }))
-vi.mock('@/session/renderer/features/extensions/extension-view-store', async original => ({ ...(await original<object>()), extensionViewStore: { claim: fixture.claim, release: vi.fn(), paintedPages: new Set() } }))
+vi.mock('@/session/renderer/features/extensions/extension-view-layer', () => ({ ExtensionPage: () => <iframe title="resolved original" /> }))
 vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1', contributes: { tabs: [{ name: 'poll', widget: { height: 240 } }] } }),
 } }))
 
 let harness: ReturnType<typeof createReactHarness>
-afterEach(() => { harness?.cleanup(); fixture.read.mockReset(); fixture.claim.mockClear() })
+afterEach(() => { harness?.cleanup(); fixture.read.mockReset() })
 
 it.each(['electron', 'phone'])('keeps glyph, text and loading through a pending original registry read on %s', async platform => {
   fixture.platform.kind = platform
@@ -32,6 +33,8 @@ it.each(['electron', 'phone'])('keeps glyph, text and loading through a pending 
   let resolve!: (value: typeof resolved) => void, reject!: (error: Error) => void
   fixture.read.mockReturnValueOnce(new Promise<typeof resolved>(done => { resolve = done }))
   fixture.read.mockReturnValueOnce(new Promise<typeof resolved>((_done, fail) => { reject = fail }))
+  // The original's read is an account replica: it follows the published session, signed in as the same user.
+  followRendererSession('SIGNED_IN', 'reader')
   harness = createReactHarness()
   // Ids of their own per case: an original read once this session shows at once when mounted again.
   const view = (id: string) => <div style={{ width: 400 }}><WidgetBubble message={{ ...message, id: `${platform}-${id}` }} /></div>

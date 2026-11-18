@@ -29,6 +29,7 @@ export function AppMoreMenu({
   onForward,
   onToggleEnabled,
   autoUpdate,
+  onUpdate,
   onUninstall,
   testId,
   resource,
@@ -45,6 +46,7 @@ export function AppMoreMenu({
   onForward?: () => void;
   onToggleEnabled?: (enabled: boolean) => void;
   autoUpdate?: { on: boolean; onToggle: (on: boolean) => void };
+  onUpdate?: () => void;
   onUninstall?: () => void;
   testId?: string;
   resource?: ResourceContext;
@@ -52,6 +54,11 @@ export function AppMoreMenu({
   const label = translate('extensions.moreActions', { name });
   const share = resource ? resourceMenuItems(resource).map(item => <DropdownMenuItem key={item.id} onClick={() => void item.click()}>{item.label}</DropdownMenuItem>) : [];
   const top = [
+    onUpdate && (
+      <DropdownMenuItem key="update" onClick={onUpdate}>
+        {translate('extensions.updateAction')}
+      </DropdownMenuItem>
+    ),
     onSettings && (
       <DropdownMenuItem key="settings" onClick={onSettings}>
         {translate('extensions.appSettings')}

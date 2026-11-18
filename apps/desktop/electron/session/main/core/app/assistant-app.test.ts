@@ -28,7 +28,6 @@ vi.mock('@main/core/extensions/extension-send', async () => {
 });
 vi.mock('@main/core/extensions/extension-programs', () => ({ notifyFromNativeProgram: notified }));
 const { callAssistantApp } = await import('./assistant-app');
-const { setUserLibraryOwner, readUserLibraryVolume, runLibraryAgentAction } = await import('./user-library');
 const { AssistantWorkStore, assistantWorkBinding } = await import('../../../../sessionpage/assistant-work');
 let home: string;
 beforeEach(async () => {
@@ -36,9 +35,8 @@ beforeEach(async () => {
   vi.stubEnv('GUGU_HOME', home);
   Object.assign(state, { owner: 'owner', role: true, queryError: false, swapDuringQuery: false });
   send.mockClear(); notified.mockClear();
-  setUserLibraryOwner(async () => state.owner || null);
 });
-afterEach(async () => { setUserLibraryOwner(null); vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }); });
+afterEach(async () => { vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }); });
 
 it('uses the shared App message delivery with a host-owned sender, fixed personal recipient and defer semantics', async () => {
   expect(await callAssistantApp('listAgents', {})).toEqual({ agents: [{ agentId: 'user:assistant' }], unreached: [] });
@@ -61,30 +59,9 @@ it('refuses task agents, unknown roles, account switches and wake/replacement re
   }
   expect(send).not.toHaveBeenCalled();
 });
-it('calls the real library program, preserves both A→B→A commits and emits the standard program notification', async () => {
-  const write = async (name: string, previous?: { id: string; modifiedAt: string }) => {
-    const result = await callAssistantApp('callProgram', { name: 'library_write', arguments: {
-      kind: 'capabilities', name, description: 'Summary', group: null, content: 'PRIVATE BODY',
-      ...(previous ? { id: previous.id, expectedModifiedAt: previous.modifiedAt } : {}),
-    } }, 'owner') as { structuredContent: { result: { id: string; modifiedAt: string; activity: Array<{ after: { name: string } }> } } };
-    return result.structuredContent.result;
-  };
-  const original = await write('A'); const intermediate = await write('B', original); const final = await write('A', intermediate);
-  expect(final.activity.map(operation => operation.after.name)).toEqual(['A', 'B', 'A']);
-  expect((await readUserLibraryVolume('capabilities')).items[0].name).toBe('A');
-  expect(notified).toHaveBeenCalledTimes(3);
-  expect(notified).toHaveBeenLastCalledWith({ extensionId: 'gugu.assistant', extensionName: '个人助理面板', server: 'resources' },
-    { method: 'notifications/resources/updated', params: { ownerId: 'owner', resource: 'capabilities' } });
-  expect(JSON.stringify(notified.mock.calls)).not.toContain('PRIVATE BODY');
-  // Agent writes update the same store and notify the App, without generating a message back to the Agent.
-  await runLibraryAgentAction({ action: 'library_write', kind: 'capabilities', id: final.id, expectedModifiedAt: final.modifiedAt,
-    name: 'Agent edit', description: 'Summary', group: null, content: 'PRIVATE BODY' });
-  expect(notified).toHaveBeenCalledTimes(4);
-  expect(send).not.toHaveBeenCalled();
-});
-it('does not emit a successful notification for a rejected save or accept arbitrary tools/verbs', async () => {
+it('does not accept arbitrary tools/verbs, the removed note programs included', async () => {
   await expect(callAssistantApp('dispatch', { text: 'x', to: { agent: 'user:assistant' }, delivery: 'defer' })).rejects.toMatchObject({ code: 'denied' });
-  await expect(callAssistantApp('callProgram', { name: 'library_write', arguments: { kind: 'capabilities', name: '' } }, 'owner')).rejects.toThrow();
+  for (const name of ['library_list', 'library_read', 'library_write']) await expect(callAssistantApp('callProgram', { name, arguments: { kind: 'capabilities' } }, 'owner')).rejects.toMatchObject({ code: 'invalid' });
   await expect(callAssistantApp('callProgram', { name: 'shell_exec' })).rejects.toMatchObject({ code: 'invalid' });
   await expect(callAssistantApp('spawnAgent', { prompt: 'x' })).rejects.toMatchObject({ code: 'denied' });
   expect(notified).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();

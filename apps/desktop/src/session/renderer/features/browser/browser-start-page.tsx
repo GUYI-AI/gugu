@@ -61,9 +61,7 @@ export function BrowserStartPage({
                   className="group hover:bg-row-hover flex min-h-14 w-full items-center gap-3 rounded-md px-3 py-2 text-left"
                   onClick={() => onOpenUrl(url)}
                 >
-                  {/* 裸图标,不塞进染色 tile(design.md Reject:icons dropped into tinted tiles)——
-                      2026-09-22 去掉框/填底/蓝墨:图标的蓝不表达任何状态,真正的在线信号是
-                      右侧那个圆点(见下,C-05)。 */}
+                  {/* These URLs are discovered addresses, not confirmed server-health signals. */}
                   <Globe className="size-4 shrink-0 text-foreground-muted" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-foreground">
@@ -75,7 +73,6 @@ export function BrowserStartPage({
                       {formatServerAddress(url)}
                     </span>
                   </span>
-                  <span className="size-2 shrink-0 rounded-full bg-foreground-info" />
                 </button>
               ))}
             </div>

@@ -118,3 +118,97 @@ describe('a Gugu server task browser (#1607 4b)', () => {
     }
   })
 })
+
+// Local opt-in coverage for #2914. No account, App install, model call or GUI.
+it.skipIf(!process.env.GUGU_TEST_CHROME)('real static-page capture feedback belongs to confirmed dispatch and the current target', { timeout: 60_000 }, async () => {
+  const { leasePageProtocol } = await import('../../../../apps/desktop/electron/session/main/core/browser/leased-page-protocol')
+  const { browserPageFeedback } = await import('../../../../apps/desktop/src/session/shared/browser-page-feedback')
+  const profile = await mkdtemp(path.join(tmpdir(), 'feedback-capture-'))
+  const server = createServer((request, response) => {
+    response.setHeader('content-type', 'text/html')
+    const next = request.url === '/next'
+    response.end(`<title>${next ? 'feedback next fixture' : 'feedback fixture'}</title><p>Static page</p>`)
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const site = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const browser = createServerTaskBrowser({ binary: () => process.env.GUGU_TEST_CHROME!, profile, log: { info: vi.fn(), warn: vi.fn() } })
+  let lease: ReturnType<typeof leasePageProtocol> | undefined
+  let screen: Awaited<ReturnType<typeof browser.existingPage>> | undefined
+  try {
+    const page = await browser.pageFor('feedback-task', site, new AbortController().signal)
+    lease = leasePageProtocol(page as unknown as WebContents, {
+      ready: Promise.resolve(), capture: params => page.debugger.sendCommand('Page.captureScreenshot', params),
+    })
+    const call = new AbortController()
+    const feedback = browserPageFeedback(page)
+    screen = (await browser.existingPage('feedback-task'))!
+    const frames: import('../../../../apps/desktop/electron/server/server-task-browser').TaskPageScreenFrame[] = []
+    await screen.startScreen(frame => frames.push(frame))
+    await lease.protocol.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 24, y: 36 }, undefined, call.signal)
+    await vi.waitFor(() => expect(feedback.snapshot()).toMatchObject({ cursor: { x: 24, y: 36 }, action: { phase: 'running' } }))
+    const callId = feedback.snapshot().action!.id
+    await vi.waitFor(() => expect(frames.at(-1)?.feedback).toMatchObject({
+      target: feedback.snapshot().target, cursor: { x: 24, y: 36 }, action: { id: callId, phase: 'running' },
+    }), { timeout: 10_000 })
+    const painted = frames.at(-1)!
+    expect(Buffer.from(painted.data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]))
+    expect(painted.width).toBeGreaterThan(24)
+    expect(painted.height).toBeGreaterThan(36)
+    call.abort()
+    await vi.waitFor(() => {
+      const finished = frames.at(-1)?.feedback
+      expect(finished).toMatchObject({ target: painted.feedback!.target, cursor: { x: 24, y: 36 } })
+      expect(finished!.action).toBeUndefined()
+    })
+    const beforeNavigationSnapshot = feedback.snapshot()
+    const target = beforeNavigationSnapshot.target
+    const beforeNavigation = frames.length
+    await lease.protocol.send('Page.navigate', { url: `${site}/next` })
+    await vi.waitFor(() => expect(page.getURL()).toBe(`${site}/next`))
+    await vi.waitFor(async () => {
+      const title = await lease!.protocol.send('Runtime.evaluate', { expression: 'document.title', returnByValue: true }) as { result: { value: string } }
+      expect(title.result.value).toBe('feedback next fixture')
+    })
+    await vi.waitFor(() => expect(feedback.snapshot().target.revision).toBeGreaterThan(target.revision))
+    // An absent frame decoration is not evidence that the host removed its old pointer.
+    const afterNavigationSnapshot = feedback.snapshot()
+    const nextTarget = afterNavigationSnapshot.target
+    const assertHostPointerCleared = (snapshot: ReturnType<typeof feedback.snapshot>) => {
+      expect(snapshot.target).toEqual(nextTarget)
+      expect(snapshot.cursor).toBeUndefined()
+    }
+    assertHostPointerCleared(afterNavigationSnapshot)
+    // Negative oracle input only: do not write the model or manufacture a picture.
+    expect(() => assertHostPointerCleared({ ...afterNavigationSnapshot, cursor: beforeNavigationSnapshot.cursor })).toThrow()
+    await vi.waitFor(() => {
+      expect(frames.at(-1)?.feedback).toMatchObject({ target: nextTarget })
+      expect(frames.at(-1)!.feedback!.cursor).toBeUndefined()
+    }, { timeout: 10_000 })
+    const undecoratedNavigationFrame = frames.at(-1)!
+    const nextCall = new AbortController()
+    await lease.protocol.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 48, y: 72 }, undefined, nextCall.signal)
+    await vi.waitFor(() => expect(feedback.snapshot()).toMatchObject({ cursor: { x: 48, y: 72 }, action: { phase: 'running' } }))
+    const nextCallId = feedback.snapshot().action!.id
+    const assertCurrentPicture = (frame: typeof painted | undefined) => {
+      expect(frame?.feedback).toMatchObject({
+        target: nextTarget, cursor: { x: 48, y: 72 }, action: { id: nextCallId, phase: 'running' },
+      })
+    }
+    await vi.waitFor(() => {
+      expect(frames.length).toBeGreaterThan(beforeNavigation)
+      // Positive current-target evidence: absent feedback or the old pointer cannot satisfy this.
+      assertCurrentPicture(frames.at(-1))
+    }, { timeout: 10_000 })
+    // Both negative controls use real pictures captured by this same browser.
+    expect(() => assertCurrentPicture(undecoratedNavigationFrame)).toThrow()
+    expect(() => assertCurrentPicture(painted)).toThrow()
+    nextCall.abort()
+  } finally {
+    await screen?.stopScreen()
+    await lease?.cleanup()
+    lease?.protocol.close('feedback fixture ended')
+    await browser.dispose()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+    await rm(profile, { recursive: true, force: true })
+  }
+})

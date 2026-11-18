@@ -1,6 +1,6 @@
 import type { SubscribeOwnedAgentChanges } from '@gugu/core'
 import { isSubscribeFailure, subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol'
-import { subscribeAuthenticatedElectronRealtimeChannel, type ElectronManagedRealtimeChannel } from './realtime-channel'
+import { subscribeAuthenticatedElectronRealtimeChannel, type ElectronManagedRealtimeChannel, type ElectronRealtimeSocket } from './realtime-channel'
 
 type OwnedAgentChannel = ElectronManagedRealtimeChannel & {
   on: (kind: 'broadcast', filter: { event: string }, callback: () => void) => unknown
@@ -8,7 +8,7 @@ type OwnedAgentChannel = ElectronManagedRealtimeChannel & {
 
 export function createDesktopOwnedAgentChangesSubscription<TChannel>({ supabase, warn }: {
   supabase: {
-    realtime: { setAuth: () => unknown | Promise<unknown> }
+    realtime: ElectronRealtimeSocket
     channel: (topic: string, options: { config: { private: boolean; broadcast: { self: boolean; ack: boolean } } }) => TChannel
     removeChannel: (channel: TChannel) => unknown
   }

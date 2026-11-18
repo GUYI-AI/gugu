@@ -9,7 +9,7 @@ const base = createUnsupportedPlatform('web', 'web')
 export const webPlatform: AppPlatform = {
   ...base,
   // @@@task-web-host — 网页版有会话页:后端是无头宿主(electron/session/headless),经 WebSocket 接入。
-  capabilities: { ...base.capabilities, externalFileOpen: true, sessionHost: true, clipboard: true },
+  capabilities: { ...base.capabilities, externalFileOpen: true, sessionHost: true, clipboard: true, readingZoomMemory: true },
   writeClipboardText: writeBrowserClipboardText,
   saveFile: anchorDownload,
   async openRemoteFile(file) {

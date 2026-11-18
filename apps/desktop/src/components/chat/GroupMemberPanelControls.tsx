@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { confirmDanger } from '../../lib/confirmDanger'
 import { useTranslation } from 'react-i18next'
 import type { AgentDisplayStatus, GroupChatSettings, GroupCollabSnapshot, GroupMemberRole, ListenMode } from '@gugu/core/shared/types/chat'
-import { MoreHorizontal, UserPlus } from '@/lib/icons'
+import { MoreHorizontal } from '@/lib/icons'
 import { chatService } from '../../lib/chat'
 import { groupAgentDisplayStatus } from '../../lib/groupAgentStatus'
 import { useShownAgentStatus } from './useAgentsOnCloudComputer'
@@ -11,10 +12,8 @@ import { MemberProfilePopover, MemberProfileRoot } from '../MemberProfilePopover
 import { Popover } from '../ui/Popover'
 import type { MemberProfileCardModel, MemberProfileChatTarget, MemberProfileEditControls } from '../MemberProfileCard'
 import { type ActiveMemberProfile, type MemberProfileHandle, agentOwnerDisplayName, toAgentProfile, toHumanProfile } from '../memberProfileModels'
-import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
-import { AddGroupMembers } from './AddGroupMembers'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { closeInfoTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { settingsErrorStyle } from './groupSettingsStyles'
@@ -26,9 +25,10 @@ import { settingsErrorStyle } from './groupSettingsStyles'
 
 const errorStyle: CSSProperties = { ...settingsErrorStyle, padding: '4px 14px' }
 
-export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper, invite = false }: {
+export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
   chatId: string
   chatKind: 'group' | 'topic'
+  chatName?: string | null
   settings: GroupChatSettings | null
   snapshot: GroupCollabSnapshot | null
   identities: Readonly<Record<string, DisplayIdentity>>
@@ -37,13 +37,10 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
-  /** 进来时选人页已经开着(群信息页成员行的「+」)。 */
-  invite?: boolean
 }) {
   const { t } = useTranslation(['messaging', 'contacts'])
   const viewerIsManager = settings?.can_manage === true
   const isGroup = chatKind === 'group'
-  const [pickerOpen, setPickerOpen] = useState(invite && chatKind === 'group')
   // 资料卡:每一行是它的 Trigger(payload = 那一行的资料),再点同一行就关。开着时错误显示在卡里。
   const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const [profileOpen, setProfileOpen] = useState(false)
@@ -53,8 +50,6 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { profileCard.close(); manageMenu.close() }, [chatId, manageMenu, profileCard])
-
-  const openPicker = useCallback(() => setPickerOpen(true), [])
 
   const shownAgent = useShownAgentStatus() // #7199 资料卡画的那一格:宿主闲时收回着 ≠ 不在线
   const profileOf = useCallback((memberId: string): MemberProfileCardModel | null => {
@@ -109,9 +104,13 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const setListenMode = useCallback((profile: MemberProfileCardModel, mode: ListenMode) => (
     runMutation(() => chatService.setAgentListenMode(chatId, profile.id, mode))
   ), [chatId, runMutation])
+  // Removing someone from a group or topic (or leaving it) asks first, from the member menu and the profile card alike.
   const remove = useCallback(async (profile: MemberProfileCardModel) => {
+    const title = !isGroup ? topicRemovalLabel(profile) : ownsAgent(profile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')
+    const description = !isGroup ? topicRemovalHint(profile) : t('group.settings.removeMember', { name: profile.displayName })
+    if (!(await confirmDanger({ title, description, confirmLabel: title }))) return
     if (await runMutation(() => chatService.removeGroupMember(chatId, profile.id))) profileCard.close()
-  }, [chatId, profileCard, runMutation])
+  }, [chatId, isGroup, ownsAgent, profileCard, runMutation, t, topicRemovalHint, topicRemovalLabel])
 
   const editControlsFor = useCallback((profile: MemberProfileCardModel): MemberProfileEditControls | undefined => {
     const manageable = canManage(profile)
@@ -137,16 +136,10 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   }, [profileCard, profileOf])
 
 
-  // 项目群不拉人类进来:「邀请」还在(加自己的 agent),人类那一页换成原因。
-  const { projectGroup, canInviteHumans: canInvite, showInvite } = groupInviteAccess(chatId, chatKind, settings)
+  // 项目群不拉人类进来:「添加成员」还在(加自己的 agent),人类那一页换成原因(GroupAddMembersSheet)。
+  const { showInvite } = groupInviteAccess(chatId, chatKind, settings)
   const mobile = useMobileShell()
 
-  // 成员页的第一行,带字、通栏:邀请只有这一个入口(页头只有「成员 N」),所以它得一眼看得见。
-  const inviteAction: ReactNode = showInvite ? (
-    <Button className="flex-1" onClick={openPicker} data-testid="member-list-invite">
-      <UserPlus />{t('group.memberList.invite')}
-    </Button>
-  ) : null
 
   const rowActions = useCallback((memberId: string): ReactNode => {
     const profile = profileOf(memberId)
@@ -174,14 +167,17 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
           const menuProfile = payload ? profileOf(payload) : null
           return menuProfile ? (
             <DropdownMenu.Content className="min-w-[160px]" aria-label={t('group.memberList.manage', { name: menuProfile.displayName })}>
-              {isGroup && canManage(menuProfile) ? (
-                <MenuItem onClick={() => { void setRole(menuProfile, menuProfile.role === 'admin' ? 'member' : 'admin') }}>
-                  {menuProfile.role === 'admin' ? t('group.memberList.revokeAdmin') : t('group.memberList.makeAdmin')}
-                </MenuItem>
-              ) : null}
+              {/* Ordered by session/shared/menu-table.ts @@@menu-order (no click data; a short menu, so flat). Listen mode:
+                  weekly, tuning how an agent joins in. Admin: set once per member, if ever. Remove: rare, destructive, last,
+                  asks first. */}
               {canEditListenMode(menuProfile) ? (
                 <MenuItem onClick={() => { void setListenMode(menuProfile, menuProfile.listenMode === 'active' ? 'passive' : 'active') }}>
                   {menuProfile.listenMode === 'active' ? t('group.memberList.setPassive') : t('group.memberList.setActive')}
+                </MenuItem>
+              ) : null}
+              {isGroup && canManage(menuProfile) ? (
+                <MenuItem onClick={() => { void setRole(menuProfile, menuProfile.role === 'admin' ? 'member' : 'admin') }}>
+                  {menuProfile.role === 'admin' ? t('group.memberList.revokeAdmin') : t('group.memberList.makeAdmin')}
                 </MenuItem>
               ) : null}
               {canManage(menuProfile) || ownsAgent(menuProfile) || isSelfLeaving(menuProfile) ? (
@@ -213,24 +209,14 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
               } : undefined}
               onWhisper={member.id !== currentUserId && onWhisper ? (target) => { profileCard.close(); onWhisper(target) } : undefined}
               searchChatId={chatId}
+              listenRoom={chatName ? { kind: chatKind, name: chatName } : undefined}
               editControls={editControlsFor(member)}
             />
           )
         }}
       </MemberProfileRoot>
-      {pickerOpen && snapshot ? (
-        <AddGroupMembers
-          chatId={chatId}
-          snapshot={snapshot}
-          settings={settings}
-          canInviteHumans={canInvite}
-          humanDeniedHint={projectGroup ? t('group.projectGroupNoInvite') : undefined}
-          onClose={() => setPickerOpen(false)}
-          onReload={onReload}
-        />
-      ) : null}
     </>
   )
 
-  return { inviteAction, rowActions, profileTrigger, overlays, errorLine }
+  return { showInvite, rowActions, profileTrigger, overlays, errorLine }
 }

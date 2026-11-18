@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useState } from 'react'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { Input } from '@renderer/lib/ui/input'
@@ -44,6 +45,7 @@ function useConnectionModelList(
   const apiKey = source && 'apiKey' in source ? source.apiKey : undefined
   const endpoint = source && 'apiKey' in source ? source.endpoint : undefined
   const [list, setList] = useState<ModelList>({ kind: 'waiting' })
+  // @@@effect-flow - probing the key being typed (debounced); the key is never put in a cache.
   useEffect(() => {
     if (!connectionId && !apiKey) {
       setList({ kind: 'waiting' })
@@ -193,6 +195,6 @@ export function modelsLine(
   translate: ReturnType<typeof useSessionMessages>['translate']
 ): string | undefined {
   if (!models?.length) return undefined
-  if (models.length <= 2) return models.join(', ')
+  if (models.length <= 2) return models.join(metadataSeparator())
   return translate('subscriptions.connections.moreModels', { first: models[0], count: models.length - 1 })
 }

@@ -7,7 +7,8 @@ import { OPENED_FILE_MAX_BYTES } from '@gugu/session-core/session-record/contrac
 import type { AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import { formatBytes } from '@renderer/utils/formatBytes'
 import { bindFileViewerMenu } from '@/components/preview/file-viewer-menu'
-import { workspaceFileQuote } from '@/components/preview/quote-preview-file'
+import { sendWorkspaceSelection, workspaceFileQuote } from '@/components/preview/quote-preview-file'
+import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { MessageFilePreviewPanel } from '@/components/chat/MessageFilePreviewPanel'
 import type { DocumentPreviewKind } from '@/components/chat/documentPreview'
 import type { ChatCommands, OpenedOutput } from '@gugu/session-chat-ui'
@@ -125,7 +126,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
           conversationId: sessionId,
           path: plan.path,
           signal: request.signal,
-          retryTransient: opts.download === true,
+          retryTransient: true,
           onProgress: (read, size) => {
             if (requestRef.current !== request) return
             setPreview((current) => (current && current.loading ? { ...current, progress: { read, size } } : current))
@@ -243,6 +244,8 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         videoUrl={preview.file.url || undefined}
         kind={preview.kind}
         content={preview.content}
+        {...(sessionId ? { onCite: (selection: FileViewerSelection) => { onQuote(workspaceFileQuote(preview.path, selection)); close() },
+          onSend: (selection: FileViewerSelection) => sendWorkspaceSelection(sessionId, preview.path, selection, 'dock') } : {})}
         loading={preview.loading}
         loadingLabel={
           preview.progress

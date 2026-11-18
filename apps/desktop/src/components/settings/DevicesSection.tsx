@@ -1,4 +1,7 @@
 import { notifyCopied } from '@/lib/copyFeedback'
+import { billingLinksAvailable } from '../../lib/appLinks'
+import type { Reading } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -69,7 +72,7 @@ const log = rendererLogger('devices')
 /** 行内元信息之间的分隔点:画在样式里,❌ 拼进译文(各语言的标点与间距不同)。 */
 // 每一项前面一个 16px 的「·」格;整行往左挪 16px、外层裁掉 ⇒ 换行后落在行首的那一项,它的点在裁掉的那 16px 里,
 // ❌ 出现「· 咕咕 0.2.51」那种孤零零挂在行首的分隔符。第一项(状态)用同宽的左内边距占位。
-const META_SEP = "before:inline-block before:w-4 before:text-center before:content-['·']"
+const META_SEP = "ml-2"
 
 const DEVICE_LIST_CLASS = 'flex flex-col rounded-[var(--radius-document)] bg-foreground/[0.025] p-1 dark:bg-foreground/[0.04]'
 
@@ -198,7 +201,7 @@ export function DevicesSection({
           onMethodChange={setAddingServer}
           onClose={() => { setAddingServer(null); setRelogin(null) }}
           onAdded={(added) => { setRelogin(null); onServerAdded(added) }}
-          onUpgrade={onUpgrade}
+          onUpgrade={billingLinksAvailable() ? onUpgrade : undefined}
           relogin={relogin ?? undefined}
         />
       )}
@@ -362,6 +365,7 @@ function useNameWhenAppears(devices: readonly Device[], rename: (deviceId: strin
     return () => clearTimeout(timer)
   }, [pending])
 
+  // @@@effect-flow - renaming the machine just added once its row appears.
   useEffect(() => {
     if (!pending || targetLabel === null) return
     if (targetLabel === pending.name) { setPending(null); return }
@@ -450,7 +454,7 @@ function DeviceRow({
   /** #7199 这台设备能做的事(能被助理调用的动作)。 */
   onOpenActions: () => void
   /** 离线的 SSH 机器上这个账号还登着没有(问不到 = null / unknown,照旧只说离线)。 */
-  signIn: SshSignInState | null
+  signIn: Reading<SshSignInState> | null
   /** #6264 远程 SSH 那台此刻设备连接的问题(没有 = 连着);其它机器 null。 */
   sshLink?: SshLinkFailure | null
   /** 设备连接要先登录时,句中的「登录」:经 SSH 登录(问密码 / 口令)。 */
@@ -512,13 +516,16 @@ function DeviceRow({
     }, Math.max(0, restarting.deadline - Date.now()))
     return () => clearTimeout(timer)
   }, [restarting, toast, t, device.label, device.is_online])
+  const signInState = signIn?.state === 'value' ? signIn.value : null
+  // 离线的 SSH 机器还没问到登录态:状态那一格画占位,❌ 先写「N 天前在线」再改成「登录已失效」。
+  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && signIn?.state === 'unknown'
   const signedOutText = sshLink === 'notSignedIn'
     ? t('devices.loginState.signedOut')
-    : device.is_online || !signIn
+    : device.is_online || !signInState
     ? null
-    : signIn.state === 'expired'
-      ? t('devices.loginState.expired', { time: formatRelativeTime(signIn.at, { mode: 'elapsed', dateAfterDays: 30 }) })
-      : signIn.state === 'signedOut' || signIn.state === 'removed'
+    : signInState.state === 'expired'
+      ? t('devices.loginState.expired', { time: formatRelativeTime(signInState.at, { mode: 'elapsed', dateAfterDays: 30 }) })
+      : signInState.state === 'signedOut' || signInState.state === 'removed'
         ? t('devices.loginState.signedOut')
         : null
   const version = model.kind === 'cloud'
@@ -653,6 +660,8 @@ function DeviceRow({
               t('devices.online')
             ) : signedOutText ? (
               <span className="text-[var(--danger-fg)]" data-testid="settings-device-signed-out">{signedOutText}</span>
+            ) : signInPending ? (
+              <Unknown className="w-24" />
             ) : (
               <span title={model.kind === 'server' ? t('devices.loginState.offlineHint') : undefined}>
                 {lastSeen ? t('devices.lastSeen', { time: lastSeen }) : t('devices.offline')}
@@ -681,6 +690,7 @@ function DeviceRow({
           {model.kind === 'server' && model.connection.via === 'sshElsewhere' && (
             <span title={t('devices.via.sshElsewhereHint')} className={META_SEP}>{t('devices.via.sshElsewhere')}</span>
           )}
+          {model.kind === 'server' && model.connection.via === 'unknown' && <Unknown className={`${META_SEP} w-24`} />}
           {model.kind === 'server' && model.connection.via === 'cloud' && (
             <span title={t('devices.via.tunnelHint')} className={META_SEP}>{t('devices.via.tunnel')}</span>
           )}

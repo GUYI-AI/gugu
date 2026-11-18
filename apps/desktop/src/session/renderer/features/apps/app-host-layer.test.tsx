@@ -26,7 +26,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { nav
 // The panel's own pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
 vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
-vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
 vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 const { AppConversationFrame } = await import('./app-conversation-frame');
 const { AppHostLayerFrame: AppDockPage, resetMountedAppPagesForTest } = await import('./app-host-layer');
@@ -44,7 +43,7 @@ let root: Root;
 let element: HTMLDivElement;
 const find = (testId: string) => element.querySelector(`[data-testid="${testId}"]`);
 const workAction = (extensionId: string, action: { kind: 'openWork'; ownerId: string; workId: string; sessionId: string } | { kind: 'closeWork' }) =>
-  act(async () => { await applyExtensionHostAction({ origin: { extensionId, sessionId: null, tabId: 'dock' }, action }); });
+  act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId, sessionId: null, tabId: 'dock' }, action }); });
 const open = (extensionId = 'today', ownerId = OWNER) => workAction(extensionId, { kind: 'openWork', ownerId, workId: WORK, sessionId: 'exec-a' });
 
 beforeEach(() => {
@@ -192,7 +191,7 @@ describe('the assistant\'s own pages over the App\'s panel, asked by the App', (
     ownerId: OWNER, chatId: null, chatReadFailed: false, assistant: null, assistantState: 'none', home: null, setup: 'shell', member: true, preparing: false,
     deviceCount: 1, ownerAvatar: null, ...over } as never);
   const ask = (screen: string, ownerId = OWNER) => act(async () => {
-    await applyExtensionHostAction({ origin: { extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'openAssistantScreen', screen, ownerId } as never });
+    await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'openAssistantScreen', screen, ownerId } as never });
   });
   const opened = () => readAppHostLayerBridge()!.getSnapshot().today?.kind ?? null;
 

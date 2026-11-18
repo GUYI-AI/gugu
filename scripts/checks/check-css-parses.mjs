@@ -167,7 +167,6 @@ export const HAS_OFF_SUBJECT_KNOWN = {
   'apps/desktop/src/components/referralPreview/referralPreview.css': 1,
   'apps/desktop/src/components/settings/settings-content.css': 1,
   'apps/desktop/src/mobile/phone-look.css': 1,
-  'apps/desktop/src/mobile/phone-shell.css': 6,
   'apps/desktop/src/session/app-runtime/ui/ui.css': 1,
   'apps/desktop/src/session/renderer/index.css': 3,
   'apps/desktop/src/session/renderer/lib/ui/assistant-ui/thread-scroll-to-bottom.css.ts': 1,

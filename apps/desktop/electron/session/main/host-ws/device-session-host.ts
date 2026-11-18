@@ -49,10 +49,6 @@ const REMOTE_ALLOWED_APP = new Set([
   'app.readUserFile',
   'app.readUserImageDataUrl',
   // The assistant's books belong to this host and signed-in owner, including when read on a phone.
-  'app.getUserLibrary',
-  'app.getUserLibraryVolume',
-  'app.readUserLibraryEntry',
-  'app.writeUserLibraryEntry',
 ]);
 const REMOTE_DENIED_EXTENSIONS = /^extensions\.(bindSurface|retargetSurface|invokeCommand|reportLayout|setAppState|programNotifiedElsewhere|downloadWorkingCopyFile)$/;
 /** 屏上有哪些会话:那台桌面的屏,❌ 盖掉这台机器自己报的(闲置回收读它,见 core/sessions/sessions-on-screen.ts)。 */
@@ -117,6 +113,8 @@ export const REMOTE_SHELL_CHANNELS: ReadonlySet<string> = new Set([
   SESSION_SHELL_CHANNELS.agentNames,
   SESSION_SHELL_CHANNELS.ensureAgentAddress,
   SESSION_SHELL_CHANNELS.sessionPeers,
+  SESSION_SHELL_CHANNELS.birthGroupJoin,
+  SESSION_SHELL_CHANNELS.retryBirthGroupJoin,
 ]);
 
 let shellLookup: ((channel: string) => HostHandler | undefined) | null = null;

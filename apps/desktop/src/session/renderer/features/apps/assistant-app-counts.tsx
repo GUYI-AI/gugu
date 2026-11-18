@@ -1,13 +1,13 @@
-// #1925 (API 44) 内置「助理」面板资料页那几行的数(设备、连接应用、项目、能力)和开通「连应用」那一步的列表,按同一份读法读出来
+// #1925 (API 44) 内置「助理」面板资料页那几行的数(设备、连接应用、项目)和开通「连应用」那一步的列表,按同一份读法读出来
 // 交给主进程,给读得到助理的 App 当 `status.counts` / `status.connectors`(assistant-binding.ts)。
 // 每一个数与内置那一行同源、同一个读缓存键:设备 = 壳的 deviceCount;连接应用 = 它家那台的集成 + 聊天渠道
-// (assistantApplicationCounts);项目 = 左栏的项目(appState.sidebar.orderedProjects);能力 = 资源库 `capabilities` 那一卷的条目数。
+// (assistantApplicationCounts);项目 = 左栏的项目(appState.sidebar.orderedProjects)。
 // 每个数是一个读的状态:读到了(ready + 数)/ 还在读(loading)/ 读不到(unreadable,内置那一行说「暂时读不到资源」的时候)。❌ 拿 0 顶。
 // 列表 = 它家那台的集成(与连接应用那一行同一份读),按 connectorOrder 排:名字、图标(宿主自带那一套画成 data: 图)、连没连。
 // ❌ 账号名、❌ 连接里的任何东西。点一家 = `gugu.assistant.connect`,走内置那一步同一个 useOpenConnector(它家那台的连接框)。
 // 挂在 App 面板那一格里(app-host-layer.tsx),只为读助理的 App 挂。
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { integrationIcons } from '@gugu/session-plugins/integration-icons';
 import { usePhoneRead } from '@/mobile/assistant/usePhoneRead';
@@ -15,7 +15,6 @@ import { assistantReadWaiting } from '@/components/assistant/useAssistantRead';
 import { peekAssistantPanelIntegrations, readAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations';
 import { useChatChannels } from '@/components/settings/channels/useChatChannels';
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
-import { AssistantLibraryCount, type LibraryCountRead } from '@/components/assistant/AssistantLibraryVolume';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { platform } from '@/platform';
@@ -31,14 +30,12 @@ import {
   appAssistantConnectorsOf,
   appAssistantCountsOf,
   type AppAssistantConnector,
-  type AppAssistantReadState,
 } from '@shared/extensions/assistant-binding';
 
 type Icon = (typeof integrationIcons)[string];
 const LOADING = { state: 'loading' } as const;
 const UNREADABLE = { state: 'unreadable' } as const;
 const ready = <T,>(value: T) => ({ state: 'ready' as const, value });
-const fromLibrary = (read: LibraryCountRead): AppAssistantReadState<number> => (typeof read === 'number' ? ready(read) : read === 'failed' ? UNREADABLE : LOADING);
 
 /** Text as a `data:` URL of its own bytes (UTF-8). */
 function dataUrl(mime: string, text: string): string {
@@ -107,8 +104,6 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
   const chat = useChatChannels();
   // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable.
   const appsFailed = apps.state === 'error' && !assistantReadWaiting(apps.error);
-  const [capabilities, setCapabilities] = useState<LibraryCountRead>('loading');
-  const onCount = useCallback((read: LibraryCountRead) => setCapabilities(read), []);
   const counts = appAssistantCountsOf({
     devices: shell?.deviceCount === undefined ? LOADING : ready(shell.deviceCount),
     connectedApps: machineFailed || appsFailed || chat.status === 'failed' ? UNREADABLE
@@ -116,7 +111,6 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
         ? ready(assistantApplicationCounts(apps.data.items, apps.data.configured, apps.data.statuses, chat.list)) : LOADING,
     // The desktop's sidebar holds them; a window without the agent runtime has no such list to count.
     projects: platform.capabilities.agentRuntime ? ready(appState.sidebar.orderedProjects.length) : UNREADABLE,
-    capabilities: machineFailed ? UNREADABLE : fromLibrary(capabilities),
   });
   const connectors = appAssistantConnectorsOf(machineFailed || appsFailed ? UNREADABLE
     : apps.state === 'ok' ? ready(connectorsOf(apps.data.items, apps.data.configured, i18n.language)) : LOADING);
@@ -137,12 +131,7 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
     });
     // `counts` and `connectors` are in `key`.
   }, [key, ownerId]);
-  return (
-    <>
-      <AssistantLibraryCount key={assistantId ?? ''} machine={machine.data} kind="capabilities" assistantId={assistantId ?? ''} onCount={onCount} />
-      {ownerId && home ? <ConnectorOpener key={`${ownerId}|${home.deviceId}`} home={home} /> : null}
-    </>
-  );
+  return ownerId && home ? <ConnectorOpener key={`${ownerId}|${home.deviceId}`} home={home} /> : null;
 });
 
 /** The built-in connect step's click, held for `openAssistantConnector` while the panel is on screen. */

@@ -772,12 +772,14 @@ describe('SessionCell prompts', () => {
       success: false,
       error: { type: 'prompt_failed', cause: { message: "You've hit your usage limit. Upgrade or try again later." } },
     });
+    expect(cell.lastTurnError).toContain("You've hit your usage limit");
     // Control: a turn that answered stays a success.
     agent.prompt = vi.fn(async () => {
       cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
       return { stopReason: 'end_turn' };
     });
     expect((await cell.prompt({ text: 'again' })).success).toBe(true);
+    expect(cell.lastTurnError).toBeNull();
   });
 
   it('a stderr failure the provider marks as a credential failure settles with signInRequired (MiMo, 10-07)', async () => {
@@ -1744,6 +1746,71 @@ describe('SessionCell permissions', () => {
 });
 
 describe('SessionCell config options', () => {
+  it.each(['model', 'effort', 'permission'] as const)(
+    'a locally rejected unsupported %s setting does not strand queued or later prompts',
+    async (dimension) => {
+      const { cell, agent } = makeCell(new FakeAcpAgent(), {
+        liveSettings: {
+          [dimension]: { channel: 'unsupported', ack: 'none', busy: 'reject', reloadRequired: false, recovery: 'unsupported' },
+        },
+      });
+      try {
+        const setting = dimension === 'permission'
+          ? cell.setMode('other')
+          : cell.setConfigOption(dimension, 'other');
+        const queued = cell.prompt({ text: 'queued behind local rejection', origin: 'typed' });
+        expect(await setting).toMatchObject({ success: false, error: { cause: { name: 'LiveSettingUnsupported' } } });
+        await queued;
+        await flushDrains();
+        expect(cell.liveSettingBlock).toBeNull();
+        expect(agent.setSessionConfigOption).not.toHaveBeenCalled();
+        expect(agent.setSessionMode).not.toHaveBeenCalled();
+        expect(agent.prompt).toHaveBeenCalledTimes(1);
+        expect((await cell.prompt({ text: 'later send', origin: 'typed' })).success).toBe(true);
+        expect(agent.prompt).toHaveBeenCalledTimes(2);
+      } finally { cell.dispose(); }
+    },
+  );
+
+  it('keeps a dispatched RPC failure blocked even after a later local rejection', async () => {
+    const { cell, agent } = makeCell();
+    cell.applySessionMeta({ configOptions: [{
+      id: 'thinking_level', name: 'Depth', category: 'thought_level', type: 'select', currentValue: 'low',
+      options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }],
+    }] });
+    agent.setSessionConfigOption.mockRejectedValueOnce(new Error('remote state unknown'));
+    try {
+      expect((await cell.setConfigOption('effort', 'high')).success).toBe(false);
+      expect(cell.liveSettingBlock).toBe('remote state unknown');
+      // The same dimension now has no executor. That local failure cannot confirm the earlier RPC.
+      Reflect.deleteProperty(agent, 'setSessionConfigOption');
+      expect(await cell.setConfigOption('effort', 'low')).toMatchObject({
+        success: false, error: { cause: { name: 'LiveSettingExecutorMissing' } },
+      });
+      expect(cell.liveSettingBlock).toBe('remote state unknown');
+      expect((await cell.prompt({ text: 'must not reach agent', origin: 'typed' })).success).toBe(false);
+      expect(agent.prompt).not.toHaveBeenCalled();
+    } finally { cell.dispose(); }
+  });
+
+  it('does not block prompts when an executor is missing before any RPC', async () => {
+    const agent = new FakeAcpAgent();
+    Reflect.deleteProperty(agent, 'setSessionConfigOption');
+    const { cell } = makeCell(agent);
+    cell.applySessionMeta({ configOptions: [{
+      id: 'thinking_level', name: 'Depth', category: 'thought_level', type: 'select', currentValue: 'low',
+      options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }],
+    }] });
+    try {
+      expect(await cell.setConfigOption('effort', 'high')).toMatchObject({
+        success: false, error: { cause: { name: 'LiveSettingExecutorMissing' } },
+      });
+      expect(cell.liveSettingBlock).toBeNull();
+      expect((await cell.prompt({ text: 'still usable', origin: 'typed' })).success).toBe(true);
+      expect(agent.prompt).toHaveBeenCalledTimes(1);
+    } finally { cell.dispose(); }
+  });
+
   it('fails loudly when the provider omits the live settings declaration', async () => {
     const { cell } = makeCell(new FakeAcpAgent(), { liveSettings: undefined });
 

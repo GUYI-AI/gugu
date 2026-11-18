@@ -31,11 +31,84 @@ export default {
       "storage_error": "本机草稿未保存，仍可确认来源或继续注册。"
     }
   },
+  "agentHome": {
+  "mcpCount": "含 {{count}} 个 MCP 服务器",
+  "unmarkedMcp": "这些 MCP 没有来源标记，保留在本机配置里：{{names}}",
+  "terminalSignIn": "你终端里的 {{name}} 需要重新登录。",
+  "oldSessionsSkipped": "{{count}} 个旧会话文件太大，未带过来。",
+  "accountSignIn": "{{name}} 需要在咕咕里重新登录。",
+  "signInAction": "登录",
+
+  "title": "带上你在本机的配置",
+  "intro": "在这台电脑上找到了下面这些。会复制一份给咕咕用，你终端里的配置不会被改动。",
+  "skip": "跳过",
+  "importContinue": "导入并继续",
+  "failed": "配置导入失败",
+  "signIn": "登录不会复制：在咕咕里重新登录一次，不影响你终端里的登录。",
+  "migration": "你现有的咕咕任务和账号会保留。",
+  "copyNote": "这是复制一份：之后你在终端里改的，要到「设置 → 订阅」点「重新导入」才会进来；咕咕里的改动也不会写回终端。",
+  "mcpSecrets": "{{names}}：含密钥，将随勾选的配置一起复制到咕咕这份。",
+  "projectMcp": "另有 {{count}} 个项目级 MCP 服务器未导入。",
+  "groups": {
+    "settings": "设置与权限",
+    "hooks": "Hooks",
+    "mcp": "MCP 服务器",
+    "rules": "规则",
+    "skills": "Skills",
+    "agents": "子代理和命令",
+    "models": "模型"
+  },
+  "issue": {
+    "symlink": "符号链接，未导入",
+    "tooLarge": "文件太大，未导入",
+    "sourceChanged": "来源已更新，请重试",
+    "unreadable": "无法读取此文件"
+  },
+  "local": "本机配置",
+  "updated": "本机配置有更新",
+  "row": "{{date}} 从 {{path}} 导入了一份。之后你在终端里的修改不会自动同步，咕咕里的改动也不会写回终端。",
+  "upgradeKept": "咕咕已沿用你原来的 {{name}} 配置。",
+  "upgradeCopied": "咕咕已带上你原来的登录。如果终端里也用同一个账号，之后可能要在其中一边重新登录。",
+  "upgradeRelogin": "请在设置 → 订阅中重新登录 {{name}}。",
+  "importAction": "导入",
+  "notImported": "选择要带入咕咕的本机配置。",
+  "repairRequired": "请导入 {{name}} 的配置，或在咕咕里登录 {{name}}，然后重试。",
+  "repairRequiredGeneric": "请导入配置，或在咕咕里登录这家智能体，然后重试。",
+  "repairAction": "打开配置导入",
+  "repairFailed": "无法打开配置导入。",
+  "reimport": "重新导入",
+  "reimportTitle": "重新导入本机配置",
+  "loginNotSynced": "登录不在这里同步。",
+  "apply": "导入所选修改",
+  "cancel": "取消",
+  "uncertain": "无法判断哪边改过",
+  "states": {
+    "unchanged": "没有变化",
+    "userChanged": "本机改过",
+    "guguChanged": "咕咕改过",
+    "bothChanged": "两边都改过 · 勾选用本机的覆盖",
+    "userAdded": "本机新加",
+    "userDeleted": "本机已删除 · 咕咕这边保留"
+  }
+},
+  "controlWatch": {
+    "picture": "操作画面",
+    "enlarge": "放大",
+    "shrink": "缩小",
+    "landscape": "横屏",
+    "portrait": "转回竖屏",
+    "dock": "收到边上",
+    "restore": "展开画面，可拖动吸附两侧",
+    "close": "收起画面",
+    "sources": "画面来源",
+    "web": "浏览器",
+    "computer": "电脑"
+  },
   "referralPreview": {
     "contactCaption": "扫码加我为联系人",
     "contactFooter": "用咕咕连接你的 AI 协作网络",
     "noNumber": "咕咕号尚未分配，暂不能生成联系人名片。",
-    "proposal": "建议 · 待审核",
+    "proposal": "建议待审核",
     "invite": "邀请朋友",
     "summary": "分享邀请码，让朋友加入咕咕。邀请码选填，人人都能注册。",
     "code": "我的邀请码",
@@ -51,8 +124,7 @@ export default {
     "optionalCode": "邀请码（选填）",
     "placeholder": "有邀请码可以填在这里",
     "clear": "清除",
-    "draftNote": "仅保存本机预览草稿，尚未提交或确认邀请来源；留空也能继续。",
-    "storageError": "本机草稿保存失败；仍可留空继续，邀请码不会提交。"
+    "draftNote": "仅保存本机预览草稿，尚未提交或确认邀请来源；留空也能继续。"
 },
   "imageAnnotate": {
     "title": "编辑图片",
@@ -95,8 +167,8 @@ export default {
     "notSignedIn": "请先登录后将图片放进对话",
     "originalUnavailable": "原消息已不可用，无法回复。",
     "canvas": "标注画布",
-    "keyboardHint": "R 框 · A 箭头 · N 编号 · P 画笔 · T 文字 · M 马赛克 · C 裁剪 · 空格加拖动平移 · ⌘ +/− 缩放",
-    "touchHint": "单指绘制 · 双指缩放、平移 · 长按标注选择"
+    "keyboardHint": "R 框;A 箭头;N 编号;P 画笔;T 文字;M 马赛克;C 裁剪;空格加拖动平移;⌘ +/− 缩放",
+    "touchHint": "单指绘制，双指缩放或平移，长按选择标注。"
   },
   "firstRun": {
     "unreadableTitle": "读不到你的引导进度",
@@ -168,10 +240,7 @@ export default {
       "exportMarkdown": "导出为 Markdown"
     },
     "attachment": {
-      "add": "添加附件",
-      "remove": "移除 {{name}}",
-      "cancel": "取消上传 {{name}}",
-      "retry": "重传"
+      "add": "添加附件"
     },
     "tool": {
       "groupCount": "{{count}} 次工具调用",
@@ -217,8 +286,6 @@ export default {
       "menu": "更多",
       "cancel": "取消",
       "stop": "停止当前任务",
-      "pin": "置顶",
-      "unpin": "取消置顶",
       "pinned": "置顶",
       "expandChildren": "展开 {{count}} 个子会话",
       "collapseChildren": "收起 {{count}} 个子会话",
@@ -232,13 +299,12 @@ export default {
       "rename": "重命名",
       "showMore": "展开显示 ({{count}})",
       "showLess": "收起",
-      "renameSave": "保存",
-      "archive": "归档"
+      "renameSave": "保存"
     },
     "output": {
       "machineOnly": "只能在那台电脑上打开",
       "notOpened": "这条会话还没打开过这个文件。",
-      "editedNotOpened": "agent 改过 · 请在电脑上打开",
+      "editedNotOpened": "Agent 改过此文件，请在电脑上打开。",
       "fileMissing": "文件已经不在那台电脑上了。",
       "fileChanged": "读的时候文件被改了，再点一次。",
       "tooLarge": "文件太大，手机上最多看 {{limit}}。",
@@ -310,10 +376,10 @@ export default {
       "byMobile": "手机端"
     },
     "create": {
-      "title": "新建任务",
+      "title": "创建智能体",
       "pickMachine": "在哪台机器上",
       "welcome": "在 {{machine}} 上开始新任务",
-      "placeholder": "第一句话…",
+      "placeholder": "随心输入",
       "project": "项目",
       "harness": "Harness",
       "model": "模型",
@@ -425,7 +491,7 @@ export default {
     "emailPlaceholder": "邮箱地址",
     "emailRequired": "请填写邮箱地址",
     "failed": "操作失败，请稍后重试",
-    "headline": "别自己做，<break />让 Agent 来。",
+    "headline": "别自己做，<break />让 AI 来。",
     "welcome": "欢迎来到咕咕",
     "subtitle": "登录你的账号，开始与 AI 协作",
     "brandSubtitle": "你想做的，咕咕帮你做到。",
@@ -454,7 +520,7 @@ export default {
   },
   "assistantRules": {
     "stuckTitle": "咕咕暂时无法启动",
-    "stuckBody": "它需要「咕咕助理」App，目前没能装上或已停用。联网或重新启用后会自动继续。"
+    "stuckBody": "它需要「咕咕助理」应用，目前没能装上或已停用。联网或重新启用后会自动继续。"
   },
   "brand": {
     "name": "咕咕"
@@ -506,6 +572,7 @@ export default {
       "notificationsChat": "聊天消息通知",
       "notificationsChatAria": "开启聊天消息通知",
       "notificationsChatDescription": "私聊的新消息，和群里叫到你的消息",
+      "notificationsEmpty": { "title": "还没有通知", "hint": "有人找你、智能体做完事，会在这里提醒你" },
       "notificationsScope": "这里只管咕咕这边的消息。项目页里智能体的通知在「项目」那一页。",
       "notificationsBlocked": "系统没放行，咕咕的通知弹不出来。",
       "notificationsBlockedAction": "去「本机控制」里开",
@@ -531,22 +598,19 @@ export default {
       "trayBadgeEnabled": "在托盘图标上显示未读数",
       "system": "跟随系统",
       "theme": "外观",
-      "themePack": "主题",
-      "themePackDefault": "咕咕默认",
-      "themePackValue": "深色：{{dark}} · 浅色：{{light}}",
       "title": "通用"
     },
     "guguNumber": "咕咕号",
     "guguNumberCopied": "已复制咕咕号",
     "guguNumberUnassigned": "咕咕号未分配",
     "my": "我的",
-    "newAgent": "新建 Agent",
+    "newAgent": "创建智能体",
     "newTask": "新建任务",
     "apps": {
-      "intro": "装在这台手机上的 App:从聊天里的卡片装的，和从市场装的。咕咕自带的不在这里。",
-      "empty": "还没有装过 App。",
-      "from": "{{version}} · 来自 {{name}}",
-      "fromMarket": "{{version}} · 来自咕咕市场",
+      "intro": "装在这台手机上的应用：从聊天卡片或市场安装。咕咕自带的应用不在这里。",
+      "empty": "还没有装过应用。",
+      "from": "版本 {{version}}，来自 {{name}}",
+      "fromMarket": "版本 {{version}}，来自咕咕市场",
       "updateTo": "更新到 {{version}}",
       "open": "打开"
     },
@@ -561,7 +625,7 @@ export default {
       "about": "关于",
       "connectors": "连接应用",
       "account": "账户",
-      "apps": "App",
+      "apps": "市场",
       "browser": "浏览器",
       "devices": "设备",
       "files": "文件存储",
@@ -610,7 +674,7 @@ export default {
         "help": "帮助"
       },
       "items": {
-        "newAgent": "新建 Agent",
+        "newAgent": "创建智能体",
         "settings": "设置",
         "exit": "退出",
         "undo": "撤销",
@@ -632,8 +696,6 @@ export default {
       }
     },
     "panelToggles": {
-      "collapseList": "收起左侧栏",
-      "expandList": "展开左侧栏",
       "noList": "这一页没有左侧栏"
     },
     "loading": "正在恢复登录状态",
@@ -671,7 +733,7 @@ export default {
     "mainNavigation": "主导航",
     "messages": "消息 (⌘1)",
     "my": "我的",
-    "newAgent": "新建 Agent",
+    "newAgent": "创建智能体",
     "newTask": "新建任务",
     "usage": "用量",
     "resizeChatList": "调整聊天列表宽度",
@@ -680,7 +742,7 @@ export default {
       "title": "暂时连不上服务器"
     },
     "settings": "设置",
-    "shareSubtitle": "Agent · 咕咕号 {{number}}",
+    "shareSubtitle": "Agent，咕咕号 {{number}}",
     "taskFrame": {
       "hostDisconnectedTitle": "会话页宿主未连接",
       "hostNotConnected": "会话页宿主未连接",
@@ -695,11 +757,12 @@ export default {
     "tasks": "项目",
     "sessionView": "会话",
     "library": "资源库",
-    "apps": "App",
+    "apps": "市场",
     "appDockFailed": "左栏没能改动",
+    "moreApps": "更多应用",
     "appOpen": "打开",
     "appOpenInWindow": "在新窗口打开",
-    "appSettings": "App 设置",
+    "appSettings": "应用设置",
     "appUnpin": "从左栏移走",
     "appQuit": "退出",
     "appQuitFailed": "没能退出",
@@ -753,11 +816,11 @@ export default {
   "partners": {
     "search": "搜索",
     "noResults": "没有找到",
-    "projects": "项目 · {{count}}",
-    "friends": "朋友 · {{count}}",
-    "groupAgents": "群里遇到的 Agent · {{count}}",
-    "rooms": "群 · {{count}}",
-    "agents": "Agent · {{count}}",
+    "projects": "项目（{{count}}）",
+    "friends": "朋友（{{count}}）",
+    "groupAgents": "群里遇到的 Agent（{{count}}）",
+    "rooms": "群（{{count}}）",
+    "agents": "Agent（{{count}}）",
     "groupChat": "群聊",
     "assistant": "个人助理",
     "groupOffline": "项目所在的电脑不在线",

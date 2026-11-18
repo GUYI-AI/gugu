@@ -1,6 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { followLink } from '../../lib/guguLinks'
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink'
+import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -8,7 +8,7 @@ import { rendererLogger } from '@/lib/log'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { queryClient } from '@/session/renderer/lib/query-client'
+import { queryClient } from '@/lib/replica'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { AppMarketContent, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
 import { featuredShotsReady } from '@/session/renderer/features/extensions/panel/app-featured'
@@ -39,11 +39,11 @@ const MARKET_KEY = ['phone-app-market']
 const log = rendererLogger('settings/mobile-apps')
 
 /** The phone supplies storage and actions; browsing and product pages are the desktop's components. */
-export function MobileAppsSection({ appDetail }: { appDetail?: AppDetailLink }) {
+export function MobileAppsSection({ appDetail }: { appDetail?: ExtensionAppDetailLink }) {
   return <QueryClientProvider client={queryClient}><MobileAppsContent appDetail={appDetail} /></QueryClientProvider>
 }
 
-const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
+const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { appDetail?: ExtensionAppDetailLink }) {
   const { translate, locale } = useSessionMessages()
   const { theme } = useTheme()
   const skin = sessionSkinClassName(theme)
@@ -79,7 +79,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
   const [pending, setPending] = useState<Record<string, ExtensionPendingAction>>({})
   const inFlight = useRef(false)
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
-  const openedLink = useRef<AppDetailLink | undefined>(undefined)
+  const openedLink = useRef<ExtensionAppDetailLink | undefined>(undefined)
   useEffect(() => {
     if (!appDetail || !catalog.data || openedLink.current === appDetail) return
     openedLink.current = appDetail
@@ -184,7 +184,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
           <Button onClick={() => read(phoneApps.reload)}>{translate('extensions.retry')}</Button>
         </SettingsNote>
       ) : null}
-      {tab === 'installed' ? <AppsSection updates={offered.updates} gone={offered.gone} onManage={setManage} /> : (
+      {tab === 'installed' ? <AppsSection updates={offered.updates} gone={offered.gone} known={offered.known} onManage={setManage} /> : (
         <div className={`${skin} mk phone-app-market`} data-testid="phone-app-market">
           <SearchField value={query} placeholder={translate('extensions.searchPlaceholder')} onChange={(event) => { setQuery(event.target.value); setPages(1) }} />
           {error}

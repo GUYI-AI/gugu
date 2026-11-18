@@ -31,7 +31,7 @@ function acpBusy(summary: SessionSummary | undefined): boolean {
     || summary.backgroundCommandCount > 0;
 }
 
-/** 此刻进程在跑的这一家的会话(两种腿);它们都跑在用户的配置根上。 */
+/** 此刻进程在跑的这一家的会话(两种腿);它们共享同一个活动配置根。 */
 function liveSessions(providerId: SubscriptionProvider): LiveSession[] {
   const live = new Map<string, LiveSession>();
   // ACP: session-life says which sessions have a run; the runtime summary says only whether it is busy.
@@ -66,12 +66,20 @@ async function stopForSwitch(session: LiveSession): Promise<boolean> {
   }
 }
 
+/** Migration reuses the same busy guard and stops idle processes before touching credentials. */
+export async function prepareSubscriptionMigration(providerId: string): Promise<void> {
+  const live = liveSessions(providerId);
+  const busy = live.filter((session) => session.busy).length;
+  if (busy) throw new SubscriptionSessionsBusyError(providerId, busy);
+  for (const session of live) await stopForSwitch(session);
+}
+
 /**
  * 切换默认订阅(#26,照 cockpit-tools「切号后重启客户端」;API Key 连接的家同一条,#2507):
  *
  * 1. 有会话正在干活就先不切 —— 停掉它会丢掉这一轮;用户看过提示仍要切(`stopBusySessions`)就连它们一起关掉。
  *    额度用完正是要切号的时候,这时手上的回合本来也跑不下去,所以拒绝必须带着一键关掉的出路;
- * 2. 先停掉其余在跑的这一家的会话,再换凭据。旧进程活着时会原地刷新 token、把旧账号写回用户根,
+ * 2. 先停掉其余在跑的这一家的会话,再换凭据。旧进程活着时会原地刷新 token、把旧账号写回活动根,
  *    换进去的新账号就被它盖掉了;它也不会自己认出换了人;
  * 3. 停掉的会话放回「重启之后还没打开过」的样子,下一条消息用新订阅接着原对话跑。
  */

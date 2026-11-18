@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useEffect } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,6 @@ const D = '../../../../apps/desktop/src';
 const reads = vi.hoisted(() => ({
   apps: { state: 'loading' } as Record<string, unknown>,
   chat: { status: 'ready', list: [] } as Record<string, unknown>,
-  capabilities: 'loading' as number | 'loading' | 'failed',
   machine: { data: { panel: {} }, isLoading: false, error: null } as Record<string, unknown>,
   pushes: [] as Record<string, unknown>[],
   opened: [] as string[],
@@ -24,12 +23,6 @@ vi.mock('../../../../apps/desktop/src/mobile/assistant/usePhoneRead', () => ({ u
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-integrations', () => ({ readAssistantPanelIntegrations: vi.fn(), peekAssistantPanelIntegrations: vi.fn() }));
 vi.mock('../../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => reads.chat }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 2, connected: 1 }) }));
-vi.mock('../../../../apps/desktop/src/components/assistant/AssistantLibraryVolume', () => ({
-  AssistantLibraryCount: ({ onCount }: { onCount: (read: unknown) => void }) => {
-    useEffect(() => onCount(reads.capabilities));
-    return null;
-  },
-}));
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }));
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({ appState: { sidebar: { orderedProjects: [{}, {}, {}] } } }));
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpc: { extensions: {
@@ -70,7 +63,7 @@ const last = () => reads.pushes.at(-1) as { ownerId: string; counts: Record<stri
 beforeEach(() => {
   resetAssistantAppCountsForTest();
   Object.assign(reads, {
-    apps: { state: 'loading' }, chat: { status: 'ready', list: [] }, capabilities: 'loading',
+    apps: { state: 'loading' }, chat: { status: 'ready', list: [] },
     machine: { data: { panel: {} }, isLoading: false, error: null }, pushes: [], opened: [],
   });
   installAssistantShellBridge();
@@ -86,13 +79,12 @@ afterEach(() => {
 describe('the counts as read states', () => {
   it('ready with the number, loading while it reads — never 0 for it', () => {
     mount();
-    expect(last().counts).toEqual({ devices: { state: 'ready', value: 2 }, connectedApps: { state: 'loading' }, projects: { state: 'ready', value: 3 }, capabilities: { state: 'loading' } });
+    expect(last().counts).toEqual({ devices: { state: 'ready', value: 2 }, connectedApps: { state: 'loading' }, projects: { state: 'ready', value: 3 } });
     expect(last().connectors).toEqual({ state: 'loading' });
     reads.apps = ok();
-    reads.capabilities = 5;
     act(() => publishAssistantShell(shell({ deviceCount: 4 })));
     mount();
-    expect(last().counts).toEqual({ devices: { state: 'ready', value: 4 }, connectedApps: { state: 'ready', value: { saved: 2, connected: 1 } }, projects: { state: 'ready', value: 3 }, capabilities: { state: 'ready', value: 5 } });
+    expect(last().counts).toEqual({ devices: { state: 'ready', value: 4 }, connectedApps: { state: 'ready', value: { saved: 2, connected: 1 } }, projects: { state: 'ready', value: 3 } });
   });
 
   // Owner 11-12 (fresh account): right after setup the cloud had not prepared the panel's collections yet; that is still
@@ -104,11 +96,10 @@ describe('the counts as read states', () => {
     expect(last().connectors).toEqual({ state: 'loading' });
   });
 
-  it('unreadable where the built-in row says it cannot read: the library, the connections, the chat channels, the panel itself', () => {
-    reads.capabilities = 'failed';
+  it('unreadable where the built-in row says it cannot read: the connections, the chat channels, the panel itself', () => {
     reads.apps = { state: 'error' };
     mount();
-    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' }, capabilities: { state: 'unreadable' } });
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
     expect(last().connectors).toEqual({ state: 'unreadable' });
     act(() => root.unmount());
     root = createRoot(container);
@@ -116,9 +107,8 @@ describe('the counts as read states', () => {
     reads.pushes = [];
     reads.apps = ok();
     reads.chat = { status: 'failed', list: [] };
-    reads.capabilities = 5;
     mount();
-    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' }, capabilities: { state: 'ready', value: 5 } });
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
     act(() => root.unmount());
     root = createRoot(container);
     resetAssistantAppCountsForTest();
@@ -126,9 +116,8 @@ describe('the counts as read states', () => {
     reads.chat = { status: 'ready', list: [] };
     reads.machine = { data: undefined, isLoading: false, error: new Error('PANEL_IDENTITY_UNAVAILABLE') };
     reads.apps = { state: 'loading' };
-    reads.capabilities = 'loading';
     mount();
-    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' }, capabilities: { state: 'unreadable' } });
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
     expect(last().connectors).toEqual({ state: 'unreadable' });
   });
 

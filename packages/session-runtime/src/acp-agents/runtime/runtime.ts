@@ -94,6 +94,11 @@ export class AcpRuntime {
   }
 
   /** #6396 宿主告诉一条活会话一件事(转录里一行 / agent 下一轮的开头),见 SessionManager.announce。 */
+  /** #3005 Gugu's own idle-compaction switch; read when a timer fires, so it applies to running sessions too. */
+  setIdleCompaction(enabled: boolean): void {
+    this.manager.setIdleCompaction(enabled);
+  }
+
   announceSession(input: Parameters<SessionManager['announce']>[0]): { delivered: boolean } {
     return this.manager.announce(input);
   }
@@ -203,7 +208,7 @@ export class AcpRuntime {
 
   setModelOption(
     sessionId: string,
-    dimension: 'model' | 'effort',
+    dimension: 'model' | 'effort' | 'fast',
     value: string
   ): Promise<Result<LiveSettingApplyResult, AcpSetModelOptionError>> {
     return this.manager.setConfigOption(sessionId, dimension, value);

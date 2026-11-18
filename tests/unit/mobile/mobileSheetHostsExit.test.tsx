@@ -23,8 +23,8 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/opened-output-open', async
   readWholeOpenedFile: (input: { signal: AbortSignal }) => { m.signal = input.signal; return m.read() },
 }))
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer: m.image }))
-vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', subscribeIncomingShares: (fn: (share: IncomingShare) => void) => { m.incoming = fn; return () => { m.incoming = null } } } }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
+vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', capabilities: { readingZoomMemory: false }, subscribeIncomingShares: (fn: (share: IncomingShare) => void) => { m.incoming = fn; return () => { m.incoming = null } } } }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
 vi.mock('../../../apps/desktop/src/mobile/server-login/serverLoginApproval', () => ({ readServerLoginRequest: vi.fn(async () => ({ code: 'test-code', state: 'expired', machine: {} })) }))
 
 let h: ReturnType<typeof createReactHarness>
@@ -41,11 +41,11 @@ async function back() { await act(async () => { window.dispatchEvent(new CustomE
 
 it('new task project picker: clearing the view keeps the project list until exit completes', async () => {
   await h.render(createNode(CreateTarget, {
-    projects: [{ key: 'chat-1', name: 'Repo', homes: new Map() }], project: null, onProject: vi.fn(),
+    projects: [{ chatId: 'chat-1', name: 'Repo', homes: new Map() }], project: null, onProject: vi.fn(),
     machines: [], machine: undefined, onMachine: vi.fn(), machineLabel: () => '', busy: false,
   }))
-  await clickElement(q('agent-watch-create-target-row')); await frame()
-  const popup = q('agent-watch-create-target-sheet')
+  await clickElement(q('agent-watch-create-project')); await frame()
+  const popup = q('agent-watch-create-controls-sheet')
   await back()
   expect(popup.textContent).toContain('Repo')
   await expectExit(popup, exit)

@@ -4,12 +4,18 @@ import { authService } from '../../lib/auth'
 import type { AuthUser } from '../../store/auth'
 import { Avatar } from '../Avatar'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
+import { SettingsChoice } from './SettingsChoice'
 import { Button } from '../ui/Button'
 import { LogOut } from '@/lib/icons'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { useTranslation } from 'react-i18next'
-import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, type Occupation } from '@gugu/core/shared/firstRun'
-import { readOccupation, writeOccupation } from '../../lib/firstRun'
+import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
+import { writeOccupation } from '../../lib/firstRun'
+import { ownSettings } from '../../lib/ownSettings'
+import { useReplica } from '../../lib/replica'
+import { clearViewState, useViewState } from '../../lib/viewStateTable'
+import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import '../../i18n/registerMainCatalog'
 import { rendererLogger } from '../../lib/log'
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
@@ -28,13 +34,21 @@ interface AccountSectionProps {
   logout: () => Promise<{ success: boolean }>
 }
 
+type AccountEdit = { nickname?: string; bio?: string; occupation?: { draft: Occupation | null } }
+const ACCOUNT_EDIT = { conversation: '', panel: 'settings/account', persist: false }
+
 export function AccountSection({ user, updateUser, logout, mobile = false }: AccountSectionProps) {
   const { t } = useTranslation('settings')
   const { t: tMain } = useTranslation('main')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [nickname, setNickname] = useState(user?.nickname ?? '')
-  const [bio, setBio] = useState(user?.bio ?? '')
+  // Edits not saved yet live in the view-state table (memory only): closing Settings and opening it again keeps them;
+  // a restart does not (by design). A field equal to the saved value again is no edit (another device may have saved it).
+  const [edit, setEdit] = useViewState<AccountEdit>(ACCOUNT_EDIT, {})
+  const nickname = edit.nickname ?? user?.nickname ?? ''
+  const bio = edit.bio ?? user?.bio ?? ''
+  const setNickname = (value: string) => setEdit({ nickname: value })
+  const setBio = (value: string) => setEdit({ bio: value })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -47,15 +61,29 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
 
   // 身份(product spec:新账号在「认识你」里填,这里能改)。存在账号设置里、只有本人读得到,不进名片。
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
-  const [occupation, setOccupation] = useState<{ kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; saved: Occupation | null; draft: Occupation | null }>({ kind: 'loading' })
+  // 身份是自己那一行设置里的一个键:和首次引导、文件存储等读同一份(lib/ownSettings)。
+  const settingsRow = useReplica(ownSettings, user?.id ? ['user'] : null)
+  useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
+  const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
+  // 改了但还没存的那一份;没有 = 没动过,显示存着的。
+  const occupationEdit = edit.occupation ?? null
+  const setOccupationEdit = (next: { draft: Occupation | null } | null) => setEdit({ occupation: next ?? undefined })
+  const savedOccupation = occupationReading.state === 'value' ? JSON.stringify(occupationReading.value) : null
+  const editedOccupation = edit.occupation ? JSON.stringify(edit.occupation.draft) : null
   useEffect(() => {
-    if (!user?.id) return
-    let cancelled = false
-    readOccupation(user.id)
-      .then((saved) => { if (!cancelled) setOccupation({ kind: 'ready', saved, draft: saved }) })
-      .catch((e: unknown) => { log.error({ error: e }, 'read occupation failed'); if (!cancelled) setOccupation({ kind: 'error', message: messageForUser(e) }) })
-    return () => { cancelled = true }
-  }, [user?.id])
+    const same = {
+      nickname: edit.nickname !== undefined && edit.nickname === (user?.nickname ?? ''),
+      bio: edit.bio !== undefined && edit.bio === (user?.bio ?? ''),
+      occupation: editedOccupation !== null && editedOccupation === savedOccupation,
+    }
+    if (same.nickname || same.bio || same.occupation) setEdit({ ...(same.nickname ? { nickname: undefined } : {}), ...(same.bio ? { bio: undefined } : {}), ...(same.occupation ? { occupation: undefined } : {}) })
+  }, [edit.nickname, edit.bio, editedOccupation, savedOccupation, user?.nickname, user?.bio, setEdit])
+  const occupation = occupationReading.state === 'value'
+    ? { kind: 'ready' as const, saved: occupationReading.value, draft: occupationEdit ? occupationEdit.draft : occupationReading.value }
+    : occupationReading.state === 'error'
+      // Said in words with a retry (the reason goes to the log): ❌ a raw「TypeError: Failed to fetch」.
+      ? { kind: 'error' as const, message: t('account.occupationReadFailed') }
+      : { kind: 'unknown' as const }
   const occupationDirty = occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
   const occupationInvalid = occupation.kind === 'ready' && occupationDirty && !occupationComplete(occupation.draft)
 
@@ -89,12 +117,10 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
         log.error({ error: e }, 'write occupation failed')
         setSaving(false); setSaveError(messageForUser(e)); return
       }
-      setOccupation({ kind: 'ready', saved: occupation.draft, draft: occupation.draft })
     }
     updateUser(next)
-    // 同步本地输入到持久值(去空白)→ dirty 归零、显示「已保存」、避免空格 bio 残留脏态
-    setNickname(next.nickname)
-    setBio(next.bio ?? '')
+    // 存好了:没存的那一份不要了 → 显示持久值(去空白)、dirty 归零、显示「已保存」
+    clearViewState(ACCOUNT_EDIT)
     setSaving(false)
     setSaved(true)
   }
@@ -192,31 +218,31 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
-          description={occupation.kind === 'ready' ? t('account.occupationNote') : undefined}
+          description={occupation.kind === 'ready' ? <>{t('account.occupationNote')}{settingsRow.state === 'value' ? <RefreshFailed error={settingsRow.error} onRetry={() => { void ownSettings.refresh('user') }} /> : null}</> : undefined}
           control={occupation.kind !== 'ready' ? (
-            <span className="gg-settings-row-value" role={occupation.kind === 'error' ? 'alert' : undefined}>
-              {occupation.kind === 'loading' ? t('account.occupationLoading') : occupation.message}
-            </span>
+            occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
+              <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}
+                <Button variant="secondary" size="sm" onClick={() => { void ownSettings.refresh('user') }}>{t('staleRead.retry', { ns: 'common' })}</Button></span>
+            )
           ) : (
             <span className="flex w-full flex-col gap-2">
-              <select
+              <SettingsChoice
                 id="settings-account-occupation"
-                className="gg-settings-select"
-                data-testid="settings-account-occupation"
+                testId="settings-account-occupation"
+                label={t('account.occupation')}
+                mobile={mobile}
                 value={occupation.draft?.key ?? ''}
-                onChange={(e) => {
-                  const key = e.target.value
+                options={[
+                  ...(occupation.saved ? [] : [{ value: '' as const, label: t('account.occupationUnset') }]),
+                  ...[...OCCUPATION_KEYS, 'other' as const].map(value => ({ value, label: tMain(`firstRun.occupation.${value}`) })),
+                ]}
+                onChange={key => {
                   const draft: Occupation | null = !key ? null : key === 'other'
                     ? { key: 'other', text: occupation.draft?.key === 'other' ? occupation.draft.text : '' }
-                    : { key: key as (typeof OCCUPATION_KEYS)[number] }
-                  setOccupation({ ...occupation, draft }); setSaved(false)
+                    : { key }
+                  setOccupationEdit({ draft }); setSaved(false)
                 }}
-              >
-                {occupation.saved ? null : <option value="">{t('account.occupationUnset')}</option>}
-                {[...OCCUPATION_KEYS, 'other' as const].map((key) => (
-                  <option key={key} value={key}>{tMain(`firstRun.occupation.${key}`)}</option>
-                ))}
-              </select>
+              />
               {occupation.draft?.key === 'other' ? (
                 <input
                   className="gg-settings-input window-no-drag-region"
@@ -226,7 +252,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
                   aria-invalid={occupationInvalid || undefined}
                   value={occupation.draft.text}
                   placeholder={tMain('firstRun.otherPlaceholder')}
-                  onChange={(e) => { setOccupation({ ...occupation, draft: { key: 'other', text: e.target.value } }); setSaved(false) }}
+                  onChange={(e) => { setOccupationEdit({ draft: { key: 'other', text: e.target.value } }); setSaved(false) }}
                   onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
                 />
               ) : null}

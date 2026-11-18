@@ -65,7 +65,7 @@ export function InstalledRowNoticeLine({
       <span className="xp-note">
         <span>
           {translate('extensions.rowHasUpdate', { version: notice.version })}
-          {summary && ` · ${summary}`}
+          {summary && ` ${summary}`}
         </span>
         {onInstallVersion && (
           <button type="button" className="xp-link" onClick={() => onInstallVersion(notice.version)}>

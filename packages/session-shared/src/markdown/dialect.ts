@@ -58,9 +58,14 @@ export function normalizeMarkdownSourceWithLines(text: string): { text: string; 
 
 // CJK sentence punctuation ends a bare URL: GFM autolinks would otherwise swallow `。` / `，` into the link.
 const CJK_URL_STOPS = new Set('。．，、？！：；（）【】「」『』〈〉《》');
-const BARE_URL = /^(https?:\/\/|mailto:|www\.|gugu-(?:file|chat|widget):\/\/)/i;
-/** gugu's own links as an agent writes them bare: a group's file, a conversation or one message, a widget. */
-const GUGU_LINK_IN_TEXT = /gugu-(?:file|chat|widget):\/\/[^\s()[\]<>"'`]+/gi;
+/**
+ * Any gugu scheme as written in text — gugu-file / gugu-chat / gugu-widget, and a build's own (`gugu://session/<id>`, …).
+ * Which of them is a link is parseGuguLink's call alone; no list of kinds is kept here.
+ */
+const GUGU_SCHEME = String.raw`gugu(?:-[a-z0-9-]+)?:\/\/`;
+const BARE_URL = new RegExp(String.raw`^(https?:\/\/|mailto:|www\.|${GUGU_SCHEME})`, 'i');
+/** gugu's own links as an agent writes them bare. */
+const GUGU_LINK_IN_TEXT = new RegExp(String.raw`${GUGU_SCHEME}[^\s()[\]<>"'\x60]+`, 'gi');
 
 function remarkCjkAutolinkBoundary() {
   return (tree: Root) => {
@@ -86,7 +91,7 @@ function remarkCjkAutolinkBoundary() {
 }
 
 /**
- * A bare gugu link in prose (a group's file, a conversation or message, a widget) is a link, the same node `[…](gugu-…)`
+ * A bare gugu link in prose (a group's file, a conversation or message, a widget, a session) is a link, the same node `[…](gugu…)`
  * parses to: the tools hand agents these links bare, and GFM autolinks only `http(s)://`, `www.` and mail. Alone in its
  * paragraph a message or widget link is still a reference block (messageReferenceBlocks). Trailing sentence punctuation stays prose, as GFM
  * leaves it out of an autolink; CJK punctuation is cut by the autolink boundary that runs next.
@@ -112,8 +117,7 @@ function bareGuguLinks(node: Text): Array<Text | Link> {
     const chars = [...match[0]];
     const stop = chars.findIndex((ch) => CJK_URL_STOPS.has(ch));
     const url = (stop < 0 ? match[0] : chars.slice(0, stop).join('')).replace(/[.,:;!?]+$/, '');
-    const kind = parseGuguLink(url)?.kind;
-    if (kind !== 'file' && kind !== 'chat' && kind !== 'widget') continue;
+    if (!parseGuguLink(url)) continue;
     if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) });
     out.push({ type: 'link', url, children: [{ type: 'text', value: url }] });
     at = match.index + url.length;
@@ -261,14 +265,15 @@ function remarkLiteralizeUntrusted(options: { keepImages?: boolean } = {}) {
 
 /** A `\n` inside a text node becomes a `break` (a typed Shift+Enter is an intended line break). */
 function remarkHardBreaks() {
-  return (tree: Root) => {
+  return (tree: Root, file: { value: unknown }) => {
     const visit = (parent: Parent) => {
       parent.children = parent.children.flatMap((child) => {
         const node = child as Nodes;
         if (node.type === 'text' && node.value.includes('\n')) {
-          return node.value.split('\n').flatMap((part, i) => {
+          const positions = hardBreakPositions(node, String(file.value));
+          return node.value.split(/\r?\n/).flatMap((part, i) => {
             const out: RootContent[] = i > 0 ? [{ type: 'break' }] : [];
-            if (part) out.push({ type: 'text', value: part });
+            if (part) out.push({ type: 'text', value: part, ...(positions?.[i] ? { position: positions[i] } : {}) });
             return out;
           });
         }
@@ -278,6 +283,31 @@ function remarkHardBreaks() {
     };
     visit(tree);
   };
+}
+
+/** A decoded newline entity adds a display break but stays on its original source line. */
+function hardBreakPositions(node: Text, source: string): Text['position'][] | undefined {
+  const start = node.position?.start, end = node.position?.end;
+  if (start?.offset === undefined || end?.offset === undefined) return undefined;
+  const raw = source.slice(start.offset, end.offset);
+  const positions: Text['position'][] = [];
+  let point = start, previous = 0;
+  for (const match of raw.matchAll(/\r\n|\r|\n|&(?:NewLine|#0*10|#[xX]0*[aA]);/g)) {
+    if (match[0].startsWith('&')) {
+      let slashes = 0;
+      for (let i = match.index - 1; i >= 0 && raw[i] === '\\'; i--) slashes++;
+      if (slashes % 2) continue;
+    }
+    const at = { line: point.line, column: point.column + match.index - previous, offset: start.offset + match.index };
+    positions.push({ start: point, end: at });
+    const next = match.index + match[0].length;
+    point = match[0].startsWith('&')
+      ? { line: at.line, column: at.column + match[0].length, offset: start.offset + next }
+      : { line: at.line + 1, column: 1, offset: start.offset + next };
+    previous = next;
+  }
+  positions.push({ start: point, end });
+  return positions.length === node.value.split(/\r?\n/).length ? positions : undefined;
 }
 
 /** Frontmatter is shown as a yaml code block — never as a setext heading (#5375). */

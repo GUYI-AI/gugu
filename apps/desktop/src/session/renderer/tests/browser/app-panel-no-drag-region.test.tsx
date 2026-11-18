@@ -48,7 +48,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', async (original) => ({
 }));
 vi.mock('@renderer/lib/layout/layout-provider', async (original) => ({
   ...await original<typeof import('@renderer/lib/layout/layout-provider')>(),
-  useWorkspaceLayoutContext: () => ({ leftAnimatedWidth: motionValue(0), leftRail: 0 }),
+  useWorkspaceLayoutContext: () => ({ leftAnimatedWidth: motionValue(0), leftLayoutWidth: motionValue(0) }),
 }));
 // The App's page itself is the stand-in webview below; the slot only holds its place, as the real one does.
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
@@ -59,7 +59,6 @@ vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat
 // The panel's own host pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
 vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
-vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
 vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 
 const { appView } = await import('@renderer/features/apps/apps-views');

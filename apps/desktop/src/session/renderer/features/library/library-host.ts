@@ -99,6 +99,8 @@ export type LibraryRemoteDevice = {
 };
 
 export type LibraryHost = {
+  /** Selected execution device, independent of the viewing client's OS. */
+  executionHost?: import('@shared/integration-cli-platform').CliExecutionHost;
   connectionMetadata?: ConnectionMetadataStore;
   connectionMetadataExpected?: boolean;
   connectionMetadataError?: unknown;

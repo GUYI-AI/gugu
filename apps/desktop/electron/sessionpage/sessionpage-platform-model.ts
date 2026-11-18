@@ -1,4 +1,6 @@
 import type { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
+import { writeSessionSettingsFile, SESSION_SETTINGS_FILE_PREFIX as SETTINGS_FILE_PREFIX } from './session-settings-file'
+import { CLAUDE_TUI_BASE_SETTINGS } from './claude-tui-settings'
 // @@@sessionpage TASKPAGE-FUSION — platform model quota for session-page sessions.
 //
 // The session page ships every agent the session backend supports, and each one spawns through the same
@@ -356,21 +358,6 @@ export function renewedLifetimeMs(env: NodeJS.ProcessEnv = process.env): number 
  * 文件名带 pid 和一次性随机段,而不是会话 id 的哈希:哈希名是可预测的,同机上别的进程能算出来;
  * 带 pid 才让「这份是谁的、那个谁还活着吗」可判,收尸时不会误删另一个正在跑的实例的文件。
  */
-async function writeSessionSettingsFile(
-  document: Record<string, unknown>,
-): Promise<string> {
-  const path = join(tmpdir(), `${SETTINGS_FILE_PREFIX}${process.pid}-${randomUUID().slice(0, 8)}.json`)
-  try {
-    await writeFile(path, `${JSON.stringify(document)}\n`, { mode: 0o600 })
-  } catch (error) {
-    // 半截文件的名字带着活 pid,开机收尸会一直跳过它 —— 写失败当场收走,别留到进程死后。
-    await rm(path, { force: true }).catch(() => undefined)
-    throw error
-  }
-  return path
-}
-
-const SETTINGS_FILE_PREFIX = 'gugu-platform-settings-'
 const CREDENTIAL_FILE_PREFIX = 'gugu-platform-credential-'
 
 type CredentialEndpoint = {
@@ -451,6 +438,7 @@ async function proxyPlatformRequest(
       ? '平台中转:网关中途掐断了回答,给 harness 的那条也当场断开'
       : '平台中转:连不上网关'),
     streamTiming: timing => log.info({ sessionId, ...timing }, 'platform model stream timing'),
+    httpError: diagnostic => log.warn({ sessionId, ...diagnostic }, 'platform model HTTP rejection'),
   })
 }
 
@@ -999,17 +987,6 @@ export async function assertUserModelAllowed(
  * 只给 TUI:Chat UI 那条路是 headless claude,没有 TUI 快捷键可冲突,而 `disableAgentView`
  * 顺带关闭后台 agent 功能 —— 加给聊天会话是无缘由的能力削减。
  */
-const CLAUDE_TUI_BASE_SETTINGS = {
-  disableAgentView: true,
-  // `--dangerously-skip-permissions` 的免责声明对话框只认这个 settings 键(claude 2.1.259:
-  // `i$()` 读 userSettings/localSettings/flagSettings/policySettings 的
-  // skipDangerousModePermissionPrompt;`.claude.json` 的 bypassPermissionsModeAccepted 是它的
-  // 旧位,新版启动时会迁进 settings)。咕咕只在用户在自己界面上选了 auto-approve 时才传那个
-  // flag —— 那一下就是知情同意,再弹一次只会把首句吞进对话框(#4765 同族)。不传 flag 时这个键
-  // 无人读取。走 --settings 而不是写用户 `~/.claude/settings.json`:runtime 注入,不落地。
-  skipDangerousModePermissionPrompt: true,
-} as const
-
 let claudeTuiBaseSettingsPromise: Promise<string> | undefined
 
 /**
@@ -1509,7 +1486,13 @@ export function sessionBundleModelFor(
   providerId: string,
   surface: HarnessSessionSurface,
   platform: Pick<SessionpagePlatformModel, 'modelCapability'> | null,
+  fastMode?: boolean,
 ): SessionModelCapability | null {
+  // Claude receives a single native flag-settings object, even without a pinned model.
+  // Its existing platform document remains the authority for credentials and model/env keys.
+  if (providerId === 'claude' && fastMode !== undefined) {
+    return { ...(platform?.modelCapability ?? { dialect: 'provider-env' as const }), fastMode };
+  }
   if (!providerDeliversModelViaConfigFile(providerId, surface)) return null
   return platform?.modelCapability ?? null
 }

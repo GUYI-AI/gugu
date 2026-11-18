@@ -54,6 +54,8 @@ export const UI_EVENTS = {
   // 群成员面板里「新建 Agent 并加入本群」(detail = { chatId }):壳打开新建 Agent 的那一页,并带上这个群
   // —— 建出来的 agent 一出生就进群(与 session_spawn 的 chat_id 同一条 birth-groups 链),建完回到这个群。
   createAgentInGroup: '__create_agent_in_group',
+  // 「添加成员」 (detail = { chatId }): the shell draws the member picker (GroupAddMembersHost).
+  addGroupMembers: '__add_group_members',
   // Something was asked of a chat (摩擦单 F10, 真源原则 13): a file or an App beside it (askChat, chat-tabs), a
   // message in its list (askReveal) — the view showing that chat takes it, now or when it shows it.
   chatAsked: '__chat_asked',
@@ -61,3 +63,11 @@ export const UI_EVENTS = {
   // #6646 扩展详情里点了「转发」:聊天壳用同一个转发页把这个扩展发出去(detail = ExtensionForwardRequest)。
   forwardExtension: '__forward_extension',
 } as const
+
+export function requestGroupAgentCreation(chatId: string): void {
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
+}
+
+export function openGroupMemberPicker(chatId: string): void {
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.addGroupMembers, { detail: { chatId } }))
+}

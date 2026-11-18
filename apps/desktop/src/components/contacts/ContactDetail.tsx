@@ -2,7 +2,11 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
 // 联系人详情(人 / Agent)和它用到的几块:原样从 ContactsPanel.tsx 搬出(那个文件行数冻结、只减不增),
 // 手机「伙伴」点一个朋友也开这一页(#446)。
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useReplica } from '../../lib/replica'
+import { commonGroupChats } from '../../lib/commonGroupChats'
+import { useChatStore } from '../../store/chatContext'
+import { Unknown } from '../ui/Unknown'
 import { agentContactPresentation, useShownAgentContactStatus } from '../contactAgentTone'
 import { Pane, PaneHeader } from '../ui/Pane'
 import { ListRow } from '../ui/ListRow'
@@ -26,7 +30,6 @@ import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowA
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { ShareAgentModal } from './ShareAgentModal'
 import { cn } from '@/lib/cn'
-import { rendererLogger } from '@/lib/log'
 import { chatPublicId, displayName, userPublicId } from '../../lib/contactsListSort'
 import {
   ct, detailBlockClass, detailBodyClass, detailCaptionClass, detailNoticeClass, detailPlaceholderClass, detailTitleClass,
@@ -42,47 +45,28 @@ export function PaneBackButton({ label, onBack }: { label: string; onBack: () =>
 
 function CommonGroups({
   contactId,
-  getCommonGroupChats,
   onOpenGroupChat
 }: {
   contactId: string
-  getCommonGroupChats: (contactId: string) => Promise<ContactGroupChat[]>
   onOpenGroupChat?: (group: ContactGroupChat) => void
 }) {
-  const [groups, setGroups] = useState<ContactGroupChat[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    getCommonGroupChats(contactId)
-      .then((data) => {
-        if (!cancelled) setGroups(data)
-      })
-      .catch((err) => {
-        rendererLogger('contacts/detail').error({ err }, 'load common group chats failed')
-        if (!cancelled) {
-          setGroups([])
-          setError(err instanceof Error ? err.message : ct('commonGroups.loadFailed'))
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [contactId, getCommonGroupChats])
+  const reading = useReplica(commonGroupChats, [contactId])
+  const { chats } = useChatStore('chats')
+  // The name I gave a group is mine, kept with my chat list: drawn over the shared rows.
+  const groups = useMemo(() => {
+    if (reading.state !== 'value') return null
+    const aliases = new Map(chats.map((chat) => [chat.id, chat.alias]))
+    return reading.value.map((row) => ({ ...row, alias: aliases.get(row.id) ?? null }))
+  }, [reading, chats])
+  const error = reading.state === 'error' ? (reading.error.message || ct('commonGroups.loadFailed')) : null
 
   return (
     <div className={detailBlockClass}>
       <div className={cn(detailCaptionClass, '!mb-2')}>{ct('commonGroups.title')}</div>
-      {loading ? (
-        <div className={detailNoticeClass}>{ct('commonGroups.loading')}</div>
-      ) : error ? (
+      {error ? (
         <div role="alert" className={cn(detailNoticeClass, 'text-[var(--danger-fg)]')}>{error}</div>
+      ) : groups === null ? (
+        <div className={detailNoticeClass}><Unknown className="w-40" /></div>
       ) : groups.length === 0 ? (
         <div className={detailNoticeClass}>{ct('commonGroups.empty')}</div>
       ) : (
@@ -106,12 +90,10 @@ function HumanDetail({
   contact,
   onSwitchToChat,
   onOpenGroupChat,
-  getCommonGroupChats
 }: {
   contact: ContactUser
   onSwitchToChat?: (target: ContactUser) => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
-  getCommonGroupChats: (contactId: string) => Promise<ContactGroupChat[]>
 }) {
   const name = displayName(contact)
   const hasFields = Boolean(contact.email || contact.bio)
@@ -163,7 +145,6 @@ function HumanDetail({
 
       <CommonGroups
         contactId={contact.id}
-        getCommonGroupChats={getCommonGroupChats}
         onOpenGroupChat={onOpenGroupChat}
       />
     </>
@@ -180,7 +161,6 @@ function AgentDetail({
   requestState,
   onRequest,
   commonGroup,
-  getCommonGroupChats
 }: {
   contact: ContactUser
   humanContacts: ContactUser[]
@@ -191,7 +171,6 @@ function AgentDetail({
   requestState: AgentRequestState | null
   onRequest?: () => void
   commonGroup: ContactGroupChat | null
-  getCommonGroupChats: (contactId: string) => Promise<ContactGroupChat[]>
 }) {
   const shownName = useShownAgentName({ name: contact.display_name, agentType: contact.agent_type, createdAt: contact.created_at ?? undefined })
 
@@ -341,7 +320,6 @@ function AgentDetail({
       </FieldList>
       <CommonGroups
         contactId={contact.id}
-        getCommonGroupChats={getCommonGroupChats}
         onOpenGroupChat={onOpenGroupChat}
       />
       {showShareModal ? (
@@ -369,7 +347,6 @@ export function ContactDetail({
   onRequestAgent,
   onSetAgentPublic,
   onSetAgentDesiredStatus,
-  getCommonGroupChats
 }: {
   contact: ContactUser | null
   humanContacts: ContactUser[]
@@ -383,7 +360,6 @@ export function ContactDetail({
   onRequestAgent: (agent: ContactUser) => Promise<void>
   onSetAgentPublic: (agentId: string, agentPublic: boolean) => Promise<void>
   onSetAgentDesiredStatus: (agentId: string, desiredStatus: 'online' | 'offline') => Promise<void>
-  getCommonGroupChats: (contactId: string) => Promise<ContactGroupChat[]>
 }) {
   const shownName = useShownAgentName({ name: contact ? displayName(contact) : ct('panel.contactDetail'), agentType: contact?.agent_type, createdAt: contact?.type === 'agent' ? contact.created_at ?? undefined : undefined })
 
@@ -421,14 +397,12 @@ export function ContactDetail({
               requestState={agentRequestState}
               onRequest={() => onRequestAgent(contact)}
               commonGroup={commonAgentGroup}
-              getCommonGroupChats={getCommonGroupChats}
             />
           ) : (
             <HumanDetail
               contact={contact}
               onSwitchToChat={onSwitchToChat}
               onOpenGroupChat={onOpenGroupChat}
-              getCommonGroupChats={getCommonGroupChats}
             />
           )}
         </div>
@@ -471,7 +445,7 @@ export function GroupChatRow({
         title={groupDisplayName(group)}
         subtitle={
           <>
-            {kindLabel} · {publicId ? `${ct('groupInvite.groupNumber', { number: publicId })} · ` : ''}
+            {kindLabel}  {publicId ? `${ct('groupInvite.groupNumber', { number: publicId })} ` : ''}
             {ct('groupDetail.memberCount', { count: group.member_count })}
           </>
         }

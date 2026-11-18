@@ -146,7 +146,7 @@ export const MessageBubble = memo(function MessageBubble({
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
     onQuoteSelection: menuSelection && msg.content_type === 'text' ? () => { onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }); close() } : undefined,
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
-    onSelectText: compactMobile && msg.content_type === 'text' ? () => { phone.setSelecting(true); close() } : undefined,
+    onSelectText: compactMobile && msg.content_type === 'text' && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
     onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void (album ? downloadSendFiles(album) : downloadAttachment(mediaAttachment.source, mediaAttachment.fileName)).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
@@ -161,7 +161,7 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   const openMenuAt = (x: number, y: number) => {
-    captureMenuSelection()
+    captureMenuSelection(); if (compactMobile) phone.captureAt(bubbleRef.current, x, y)
     document.dispatchEvent(new CustomEvent(UI_EVENTS.closeContextMenus))
     setMenuPos({ x, y })
     setShowMenu(true)
@@ -201,7 +201,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const avatarIsAgent = memberProfile?.type === 'agent' || (!msg.is_mine && isAgent)
   const senderIdentity = useAvatarIdentity(avatarIsAgent ? msg.sender_user_id ?? '' : '')
-  const avatarName = useShownAgentName({ id: msg.sender_user_id, chatId: msg.chat_id, name: memberProfile?.displayName ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
+  const avatarName = useShownAgentName({ name: memberProfile?.displayName ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
   const avatarUrl = memberProfile?.avatar ?? null
   // @@@avatar-status-badge (#793 rollout) - the agent sender's status lives on its memberProfile
   // (populated for both group agents and the DM peer in ChatAreaPanel's messageMemberProfiles).
@@ -320,7 +320,7 @@ export const MessageBubble = memo(function MessageBubble({
                 title={readReceiptLabel(readReceiptRead, readReceiptTotal, t)}
                 style={{
                   border: 0, background: 'transparent',
-                  width: compactMobile ? 44 : 15, height: compactMobile ? 44 : 15,
+                  width: compactMobile ? 'var(--msg-avatar-gutter-touch)' : 15, height: compactMobile ? 'var(--msg-avatar-gutter-touch)' : 15,
                   padding: 0, display: 'inline-flex',
                   alignItems: 'center',
                   cursor: readReceiptHandle ? 'pointer' : 'default',
@@ -370,9 +370,9 @@ export const MessageBubble = memo(function MessageBubble({
 
       {/* ── 右键:指针处的同一份菜单。手机长按:同一份动作,气泡浮起、菜单贴在它上下(owner 11-05 方案 A;返回键先关它) ── */}
       {compactMobile
-        ? phone.mounted && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
+        ? phone.mounted && !phone.selecting && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
         : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
-      {phone.selecting && <PhoneTextSelection bubble={bubbleRef} onCopy={(text) => { void handleCopyText(text || undefined); phone.setSelecting(false) }} onDone={() => phone.setSelecting(false)} />}
+      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} />}
 
     </MessageHoverRegion>
   )

@@ -12,6 +12,7 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
+import { writeInterface } from '@/lib/viewStateTable'
 
 /**
  * GUYI-AI/gugu#2548 ⑤ the inner column folded: its expand button floats at the content card's top-left, in the restore
@@ -26,7 +27,7 @@ let harness: ReturnType<typeof createReactHarness>;
 let unpublish: () => void = () => {};
 beforeEach(async () => {
   await page.viewport(1100, 700);
-  localStorage.removeItem('gugu.taskpage.sidebarWidth');
+  writeInterface('gugu.taskpage.sidebarWidth', undefined);
   document.documentElement.dataset.platform = 'mac';
   document.documentElement.dataset.theme = 'light';
 });

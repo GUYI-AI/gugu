@@ -361,7 +361,7 @@ export async function runSshInstall(target: SshTarget, run: InstallRun, deps: Ss
     })
     const unsupported = unsupportedPlatform(found)
     if (unsupported) {
-      throw new StepFailure(unsupported, [found.distro || found.os, found.arch, found.libc].filter(Boolean).join(' · '))
+      throw new StepFailure(unsupported, [found.distro || found.os, found.arch, found.libc].filter(Boolean).join(', '))
     }
     // 装着一份、却问不出它说哪一版协议(那条命令崩溃 / 超时 / 没权限):照实报,❌ 当太旧去重装。
     if (installedProtocolUnreadable(found)) throw new StepFailure('versionCheckFailed', found.protocolError ?? undefined)

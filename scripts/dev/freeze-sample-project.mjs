@@ -181,7 +181,7 @@ for (const turn of turns) {
       const tool = input?.tool ?? item.tool
       const output = json(item.outputText)
       if (tool === 'workspace__create' && fileNameOf.has(output?.created?.id)) push({ kind: 'shared', files: [fileNameOf.get(output.created.id)] })
-      else if (tool === 'message_send_file' && fileNameOf.has(parseGroupFileId(output?.file))) push({ kind: 'shared', files: [fileNameOf.get(parseGroupFileId(output.file))] })
+      else if ((tool === 'message_send' || tool === 'message_send_file') && fileNameOf.has(parseGroupFileId(output?.file))) push({ kind: 'shared', files: [fileNameOf.get(parseGroupFileId(output.file))] })
       else if (tool === 'message_send') push({ kind: 'posted' })
     }
   }

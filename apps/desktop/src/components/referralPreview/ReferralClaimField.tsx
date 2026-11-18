@@ -5,21 +5,29 @@ import { claimMyReferral } from '@/lib/referrals'
 import { clearPersonalReferral, pendingPersonalReferral, refreshPersonalReferrals } from '@/lib/referralPending'
 import { Button } from '../ui/Button'
 import { useReferral } from './useReferral'
+import { clearViewState, takeLegacyLocalStorage, useViewState, writeViewState, type ViewPanel } from '@/lib/viewStateTable'
+
+const referralDraftOf = (userId: string): ViewPanel => ({ conversation: 'account:referral', panel: 'draft', account: userId })
+for (const prefix of ['gugu:referral-entry-review:', 'gugu:referral-code:']) {
+  takeLegacyLocalStorage(key => key.startsWith(prefix), (key, text) => {
+    if (text) writeViewState(referralDraftOf(key.slice(prefix.length)), { text })
+  })
+}
 
 export function ReferralClaimField({ userId }: { userId: string }) {
   const fieldId = useId()
   const { t } = useTranslation('main')
   const { data, failed, reload } = useReferral(userId)
-  const [draft, setDraft] = useState(() => {
-    try { return pendingPersonalReferral(userId) || localStorage.getItem(`gugu:referral-code:${userId}`) || '' }
+  const [initialDraft] = useState(() => {
+    try { return pendingPersonalReferral(userId) }
     catch { return '' }
   })
+  const [{ text: draft }, setDraft] = useViewState(referralDraftOf(userId), { text: initialDraft })
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const change = (value: string) => {
-    setDraft(value)
     setStatus(null)
-    try { localStorage.setItem(`gugu:referral-code:${userId}`, value) }
+    try { setDraft({ text: value }) }
     catch { setStatus('storage_error') }
   }
   const submit = async () => {
@@ -30,7 +38,7 @@ export function ReferralClaimField({ userId }: { userId: string }) {
       const result = await claimMyReferral(userId, code)
       setStatus(result)
       if (result === 'attributed' || result === 'already_attributed') {
-        try { clearPersonalReferral(userId); localStorage.removeItem(`gugu:referral-code:${userId}`) }
+        try { clearPersonalReferral(userId); clearViewState(referralDraftOf(userId)) }
         catch { /* The confirmed server source remains authoritative. */ }
         refreshPersonalReferrals(userId)
       }

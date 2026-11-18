@@ -180,6 +180,8 @@ export const sessionSummarySchema = z.object({
   lastStopReason: stopReasonSchema.nullable(),
   /** How the last turn ended. Parallel to `lastStopReason`; see `lastTurnOutcomeSchema`. */
   lastTurnOutcome: lastTurnOutcomeSchema,
+  /** The last failed turn's diagnostic, for host-side notification identity; absent on older runtimes. */
+  lastTurnError: z.string().nullable().optional(),
   pendingPermissionCount: z.number().int(),
   /** The same pending requests as `pendingPermissionCount`, in arrival order, each with what it waits on. */
   pendingPermissionWaits: z.array(pendingPermissionWaitSchema),

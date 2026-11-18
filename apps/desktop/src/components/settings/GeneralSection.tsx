@@ -2,23 +2,25 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, useLocale, type LocalePreference } from '@/i18n'
 import { useTheme } from '../../store/theme'
-import { ChevronRight } from '@/lib/icons'
-import { useThemePackNames } from '@renderer/lib/theme/use-theme-packs'
+import { useMobileShell } from '../../hooks/useMobileShell'
 import { Button } from '../ui/Button'
+import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { sendTestNotification } from '../../lib/notificationDiagnostics'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
 import { setNotificationSettings, useNotificationSettings, type NotificationSettings } from '../../lib/notificationSettings'
 import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
+import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClient } from '@renderer/lib/query-client'
+import { SettingsChoice } from './SettingsChoice'
+import { Unknown } from '../ui/Unknown'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { HelpImproveSettingGroup } from '../HelpImprove'
 
 const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LOCALES]
+const THEME_OPTIONS = ['light', 'dark', 'system'] as const
 
 /**
  * @@@5301 通知开关按**来源**排行:一行 = 一类发给你的东西,而不是一行 = 一个抽象层级。
@@ -71,10 +73,10 @@ const NOTIFICATION_PERMISSION: readonly SystemPermission[] = ['notifications']
  * @@@sidebar-tint 侧栏渐进底色**不在这一页** —— 2026-09-18 owner 把它归到会话页的设置里
  * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值仍是 lib/sidebarTint.ts。
  */
-export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPermissions: () => void; onOpenThemes?: () => void }) {
+export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPermissions: () => void; showThemePacks?: boolean }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
-  const themePacks = useThemePackNames()
+  const mobile = useMobileShell()
   const { preference, setPreference } = useLocale()
   const notificationSettings = useNotificationSettings()
   // product spec:手机上「通用 → 通知」同时如实显示系统权限;读不到真值的宿主上恒为空、不渲染。
@@ -92,29 +94,23 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
       <SettingsGroup>
         <SettingsRow
           title={<label htmlFor="settings-language">{t('settings.general.language')}</label>}
-          control={(
-            <select
-              id="settings-language"
-              className="gg-settings-select"
-              value={preference}
-              onChange={(event) => setPreference(event.target.value as LocalePreference)}
-            >
-              {LANGUAGE_OPTIONS.map((locale) => (
-                <option key={locale} value={locale}>
-                  {t(`settings.general.languageOptions.${locale}`)}
-                </option>
-              ))}
-            </select>
-          )}
+          control={<SettingsChoice id="settings-language" label={t('settings.general.language')} mobile={mobile}
+            value={preference} onChange={setPreference}
+            options={LANGUAGE_OPTIONS.map(value => ({ value, label: t(`settings.general.languageOptions.${value}`) }))} />}
         />
         {/* 主题开关放在通用页。三种偏好(浅/深/跟随系统)——选中态画的是**偏好**不是真值,
             「跟随系统」在系统当下为浅色时解析出来也是 light,照真值画会把高亮落在「浅色」上。
-            单选、每次只有一个选中 → Button variant="option"(#2987:IconButton 强制正方形,装不下两个汉字)。 */}
+            单选、每次只有一个选中。手机复用用量页的分段胶囊，桌面保留独立选项按钮。 */}
         <SettingsRow
           title={t('settings.general.theme')}
-          control={(
+          control={mobile ? (
+            <div className="[&_.gg-segtab]:min-h-[var(--control-h-touch)]">
+              <SegmentedTabs ariaLabel={t('settings.general.theme')} value={themePreference} onChange={setTheme}
+                items={THEME_OPTIONS.map(value => ({ value, label: t(`settings.general.${value}`) }))} />
+            </div>
+          ) : (
             <div role="radiogroup" aria-label={t('settings.general.theme')} className="flex gap-[var(--spacing-xs)]">
-              {(['light', 'dark', 'system'] as const).map((themeOption) => (
+              {THEME_OPTIONS.map((themeOption) => (
                 <Button
                   key={themeOption}
                   variant="option"
@@ -129,29 +125,13 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             </div>
           )}
         />
-        {/* @@@theme-packs 主题在资源库里选(owner 11-07);这里只说当下用的是哪族,点过去。只在有资源库的宿主上画。 */}
-        {onOpenThemes && (
-          <SettingsRow
-            title={t('settings.general.themePack')}
-            control={(
-              <>
-                <span className="gg-settings-row-value">
-                  {t('settings.general.themePackValue', {
-                    dark: themePacks.dark ?? t('settings.general.themePackDefault'),
-                    light: themePacks.light ?? t('settings.general.themePackDefault'),
-                  })}
-                </span>
-                <ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />
-              </>
-            )}
-            onClick={onOpenThemes}
-          />
-        )}
       </SettingsGroup>
+
+      {showThemePacks && <SessionSettingsSection section="theme-packs" />}
 
       {/* @@@5301 通知。这一节**只管咕咕主界面这条链**(聊天新消息 + IM 侧 agent 会话的运行事件);
           会话页 agent 的通知是另一条独立的链、归任务设置面板。两个面板是既定结构,❌ 不要合并。 */}
-      <SettingsGroup
+      {(platform.kind !== 'capacitor' || platform.capabilities.notifications) && <SettingsGroup
         title={t('settings.general.notifications')}
         note={t('settings.general.notificationsScope')}
         footer={notificationHint !== null ? (
@@ -211,15 +191,12 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             </Button>
           )}
         />
-      </SettingsGroup>
+      </SettingsGroup>}
 
       {/* 终端开关:默认关,普通用户不需要知道终端是什么。开着 = 终端的入口与界面全部回来、新任务走编程;
           它取代了原来的「通用 / 编程」手动切换。只管人看不看得到,❌ 管 agent 自己跑 pty。
-          手机上没有本机的会话运行时,不出现。壳的设置页不在会话页的 QueryClientProvider 里:套同一个 queryClient,
-          与会话页读的是同一份缓存,拨了那边立刻跟着变。 */}
-      {platform.capabilities.agentRuntime ? (
-        <QueryClientProvider client={queryClient}><TerminalGroup /></QueryClientProvider>
-      ) : null}
+          手机上没有本机的会话运行时,不出现。与会话页读的是同一个设置读模型,拨了那边立刻跟着变。 */}
+      {platform.capabilities.agentRuntime ? <TerminalGroup /> : null}
 
       {/* @@@5295 托盘角标。它数的是**未读聊天消息**(#6433),但它是窗口外观不是通知,所以自成一组 ——
           ❌ 别并进上面的通知组:关掉角标不等于关掉通知,反过来也是。
@@ -255,13 +232,13 @@ function TerminalGroup() {
       <SettingsRow
         title={t('settings.general.terminal')}
         description={t('settings.general.terminalDescription')}
-        control={(
+        control={enabled.state === 'value' ? (
           <Toggle
-            checked={enabled}
+            checked={enabled.value}
             onChange={(next) => update({ enabled: next })}
             ariaLabel={t('settings.general.terminal')}
           />
-        )}
+        ) : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
       />
     </SettingsGroup>
   )

@@ -23,6 +23,7 @@ import {
   SidebarMinimalistic,
 } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
+import { platformModels } from '../../lib/agentModelReplicas'
 
 interface NavItem {
   key: ActiveSection
@@ -36,7 +37,7 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
-  { id: 'preferences', sections: ['general', 'interface', 'model', 'permissions', 'passwords'] },
+  { id: 'preferences', sections: ['general', 'connectors', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
 ]
@@ -127,7 +128,7 @@ function IbPhone() {
 }
 
 // Nothing of the assistant here: its 资料 and 连接应用 live in its App (owner 11-12). 连接应用 here is the person's own
-// connected apps, a phone row under 通用 (a computer has them in the Library's 集成).
+// connected apps, under General in Preferences.
 const NAV_ITEMS: NavItem[] = [
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
@@ -148,6 +149,11 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'resource-monitor', labelKey: 'settings.nav.resource-monitor', il: <Activity size={15} />, ib: <Activity size={15} /> },
   { key: 'browser', labelKey: 'settings.nav.browser', il: <Globe size={15} />, ib: <GlobeFilled size={15} /> },
 ]
+
+/** The pointer on a section's entry: read what its first frame needs, once (the model list is the slow one). */
+function warmSettingsSection(key: string): void {
+  if (key === 'model' && platformModels.peek().state === 'unknown') void platformModels.prefetch()
+}
 
 export function SettingsNav({ activeSection, sections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
   const { t } = useTranslation('main')
@@ -238,6 +244,7 @@ export function SettingsNav({ activeSection, sections, mobile = false, user, onS
                       // 没有它,六行字看着像一段说明文字,而不是能按的东西。桌面是左右两栏,点了右边就换,不需要。
                       meta={mobile ? <ChevronRight size={16} aria-hidden="true" className="text-[var(--faint-fg)]" /> : undefined}
                       onClick={() => onSelect(key)}
+                      onPointerEnter={() => warmSettingsSection(key)}
                       onKeyDown={(event) => {
                         if (event.target !== event.currentTarget || event.defaultPrevented) return
                         if (event.key === 'Enter' || event.key === ' ') {

@@ -1,9 +1,9 @@
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { AgentAppDetailLink, ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -15,14 +15,19 @@ import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
-import { LibraryHostProvider } from '@renderer/features/library/library-host';
+import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { useSelectedLibraryHost } from '@renderer/features/library/library-view';
 import { DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scope-picker';
 import { libraryDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
-import { useParams } from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
+import { appState } from '@renderer/lib/stores/app-state';
+import { navigateBack } from '@renderer/lib/components/nav-buttons';
+import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { AgentAppDetailPage } from './agent-app-detail-page';
+import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -31,29 +36,84 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  * the machine picker in its title (it has no column of its own to carry one). A place of its own on the rail, so no task
  * list beside it, like 消息 and 通讯录.
  */
-const AppsMainPanel = observer(function AppsMainPanel() {
+const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const host = useSelectedLibraryHost();
-  const { params } = useParams('apps');
+  const { params, setParams } = useParams('apps');
+  const { navigate } = useNavigate();
+  const { translate } = useSessionMessages();
+  const { agentDetail, agentDetailFrom } = params;
+  const closeAgentDetail = () => {
+    if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
+      navigateBack(true);
+    } else {
+      setParams({ agentDetail: undefined, agentDetailFrom: undefined });
+    }
+    if (agentDetailFrom === 'embedded-composer') restoreAgentDetailComposer();
+  };
+
   return (
-    <PageLayout>
-      {/* 照 Google Play 的应用首页铺满这一页(页面那层最宽 1060,owner 10-10「这个是我想要的」)。 */}
-      <PageContent className="max-w-none">
-        <DeviceScopeProvider store={libraryDeviceStore}>
-          <LibraryHostProvider value={host} key={host.key}>
-            <ExtensionsLibraryPage detail={params.detail} />
-          </LibraryHostProvider>
-        </DeviceScopeProvider>
-      </PageContent>
-    </PageLayout>
+    <>
+      <div hidden={!!agentDetail} className={agentDetail ? undefined : 'contents'}>
+        <PageLayout>
+          <PageContent className="max-w-none">
+            <DeviceScopeProvider store={libraryDeviceStore}>
+              <LibraryHostProvider value={host} key={host.key}>
+                <ExtensionsLibraryPage
+                  detail={params.detail}
+                  onOpenAgentDetail={(agentId) => setParams({
+                    agentDetail: { kind: 'agent-app-detail', agentId, deviceId: host.remote?.deviceId },
+                    agentDetailFrom: 'apps',
+                  })}
+                />
+              </LibraryHostProvider>
+            </DeviceScopeProvider>
+          </PageContent>
+        </PageLayout>
+      </div>
+      {agentDetail && (
+        <PageLayout key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`}>
+          <PageContent className="max-w-none">
+            <AgentDetailHost target={agentDetail}>
+              <AgentAppDetailPage
+                agentId={agentDetail.agentId}
+                backLabel={translate(agentDetailFrom === 'apps' ? 'extensions.title' : 'common.back')}
+                onBack={closeAgentDetail}
+                onCreate={() => navigate('new-session', { agentId: agentDetail.agentId, deviceId: agentDetail.deviceId })}
+              />
+            </AgentDetailHost>
+          </PageContent>
+        </PageLayout>
+      )}
+    </>
   );
 });
 
-type AppsViewParams = { detail?: AppDetailLink };
+const AgentDetailHost = observer(function AgentDetailHost({ target, children }: {
+  target: AgentAppDetailLink;
+  children: ReactNode;
+}) {
+  const device = target.deviceId ? remoteHostsStore.device(target.deviceId) : null;
+  // A missing device may still have cached data. Keep its identity and disable mutations.
+  const host = machineLibraryHost(target.deviceId ? {
+    deviceId: target.deviceId,
+    deviceLabel: device?.label ?? target.deviceId,
+    online: device?.isOnline ?? false,
+    lastSeenAt: device?.lastSeenAt ?? null,
+    hostKind: device?.hostKind,
+  } : null);
+  return <LibraryHostProvider value={host}>{children}</LibraryHostProvider>;
+});
+
+type AppsViewParams = {
+  detail?: ExtensionAppDetailLink;
+  agentDetail?: AgentAppDetailLink;
+  agentDetailFrom?: 'apps' | 'embedded-composer';
+};
 function AppsViewWrapper({ children }: { children: ReactNode } & AppsViewParams) { return <>{children}</>; }
 
 export const appsView = {
   WrapView: AppsViewWrapper,
-  transientParams: ['detail'],
+  transientParams: ['detail', 'agentDetail', 'agentDetailFrom'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   withoutSessionSidebar: true,

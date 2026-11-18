@@ -23,7 +23,6 @@ import { useAssistantPanelPage } from '@/lib/assistantPanelPage';
 import { appHostLayerSlotKey, readAppHostLayerBridge, type AppHostLayer } from '@/lib/appHostLayerBridge';
 import { readShellSlots } from '@/lib/shellSlots';
 import { AssistantProjectsLibrary } from '@/components/assistant/AssistantProjectsLibrary';
-import { AssistantLibraryVolume } from '@/components/assistant/AssistantLibraryVolume';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { useAssistantMachine } from '@renderer/features/assistant/assistant-data';
@@ -257,21 +256,20 @@ function HostPageLayer({ extensionId, kind, onCollapse }: { extensionId: string;
           <div className="flex min-h-full flex-col items-center justify-center" data-testid={`app-host-layer-${kind}`}>
             <AppHostLayerSlot extensionId={extensionId} className="ta-skin flex w-full justify-center" testId="app-host-layer-cell" />
           </div>
-        ) : <AssistantPanelPage kind={kind} />}
+        ) : <AssistantProjectsPage />}
       </div>
     </div>
   );
 }
 
-/** The built-in panel's own page for the kinds drawn here, as its 项目 and 能力 rows open them (assistant-profile.tsx). */
-function AssistantPanelPage({ kind }: { kind: AppHostLayerPage }) {
+/** The built-in panel's own 项目 page, as its row opens it (assistant-profile.tsx). */
+function AssistantProjectsPage() {
   const shell = useAssistantShell();
   const home = shell?.assistant ? shell.home : null;
   const machine = useAssistantMachine(shell?.assistant?.id ?? null, shell?.chatId ?? null, home, shell?.chatReadFailed);
   // As the built-in panel asks in its chat: the draft goes into the assistant's own composer; the App sees none of it.
   const askInChat = (text: string) => readAssistantShellBridge()?.fillChatDraft(text);
-  if (kind === 'assistant-projects') return <AssistantProjectsLibrary machine={machine.data} askInChat={askInChat} />;
-  return <AssistantLibraryVolume machine={machine.data} assistantId={shell?.assistant?.id ?? ''} kind="capabilities" askInChat={askInChat} />;
+  return <AssistantProjectsLibrary machine={machine.data} askInChat={askInChat} />;
 }
 
 /** The host page over the App's panel, with the host's own controls (`onCollapse`: the panel's collapse; null: none). */

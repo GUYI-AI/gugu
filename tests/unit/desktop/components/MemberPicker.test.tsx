@@ -10,7 +10,7 @@ vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
-afterEach(() => { harness.cleanup(); vi.useRealTimers() })
+afterEach(() => { harness.cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 const providers = {
   auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
@@ -63,7 +63,25 @@ describe('member picker', () => {
     expect(rows()).toEqual(['helper'])
     await clickElement(q('[data-contact-option="helper"]')!)
     expect(chips()).toEqual(['Alice', 'Helper'])
-    expect(confirmText()).toBe('创建群聊 · 2 位成员')
+    expect(confirmText()).toBe('创建群聊（2 位成员）')
+  })
+
+  it('uses underline source tabs in the phone creation flow and retains the selection across sources', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    await renderWithAppProviders(harness, createNode(CreateGroupChatForm, { onClose: () => {}, onCreated: () => {} }), providers)
+    expect(q('[role="tablist"].gg-segtabs-underline')).not.toBeNull()
+    const recent = q('[data-testid="member-picker-source-recent"]')!
+    const people = q('[data-testid="member-picker-source-people"]')!
+    expect(people.getAttribute('aria-selected')).toBe('true')
+    expect(people.querySelector('span:last-child')?.textContent).toBe('2')
+    await clickElement(q('[data-contact-option="alice"]')!)
+    await clickElement(recent)
+    expect(recent.getAttribute('aria-selected')).toBe('true')
+    expect(recent.querySelector('span:last-child')?.textContent).toBe('0')
+    expect(rows()).toEqual([])
+    expect(chips()).toEqual(['Alice'])
+    await clickElement(people)
+    expect(q('[data-contact-option="alice"]')?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('works from the keyboard: search + Enter picks and clears, Space toggles a focused row, Backspace drops the last pick', async () => {

@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -30,7 +31,7 @@ afterEach(async () => {
 })
 
 const bridge = (key: string, personalAssistant: boolean, assistantWork?: AssistantWorkBinding) => buildSocialBridge(runtime, key, null, {
-  host, grantKey: key, ...(personalAssistant ? { personalAssistant: true as const } : {}),
+  host, attachments: testAttachmentUploads(), grantKey: key, ...(personalAssistant ? { personalAssistant: true as const } : {}),
   getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon',
   runSessionAction: run, assistantWork,
 })

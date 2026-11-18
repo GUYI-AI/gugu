@@ -25,7 +25,7 @@ vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({
   useToast: () => ({ toast: toastMock }),
 }))
 const mobileShellState = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobileShellState.enabled }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobileShellState.enabled, readMobileShell: () => mobileShellState.enabled }))
 let container: HTMLDivElement
 let harness: ReturnType<typeof createReactHarness>
 async function flush() {
@@ -54,7 +54,6 @@ describe('ChatMessageComposer', () => {
     mobileShellState.enabled = mobile
     const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, { onSend }))
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 0 })
     const source = document.createTextNode('Beta')
     document.body.append(source)
     const range = document.createRange(); range.selectNodeContents(source)
@@ -63,7 +62,7 @@ describe('ChatMessageComposer', () => {
       quoteContent: { messageId: 'source-1', senderName: 'Ada', content: 'Beta', originalContent: 'Alpha Beta', source: message({ id: 'source-1' }) },
     }))
     const editor = container.querySelector('[contenteditable]')!
-    expect(document.activeElement).toBe(editor)
+    await vi.waitFor(() => expect(document.activeElement).toBe(editor))
     source.remove()
   })
 
@@ -767,16 +766,7 @@ describe('ChatMessageComposer', () => {
     }))
     await flush()
     await typeInComposer('@')
-
-    const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
-    expect(options).toHaveLength(13)
-    const scrollIntoView = options.map(() => vi.fn())
-    options.forEach((option, index) => {
-      Object.defineProperty(option, 'scrollIntoView', {
-        configurable: true,
-        value: scrollIntoView[index],
-      })
-    })
+    // Scrolling the highlighted line into the popup's view needs layout: growing-list-window.test.tsx (Chromium).
 
     const textarea = container.querySelector('[contenteditable]') as HTMLElement
     await act(async () => {
@@ -790,8 +780,7 @@ describe('ChatMessageComposer', () => {
     })
     await flush()
 
-    expect(options[11].getAttribute('aria-selected')).toBe('true')
-    expect(scrollIntoView[11]).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(document.body.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain('Agent 11')
 
     await pressEnter()
     await flush()

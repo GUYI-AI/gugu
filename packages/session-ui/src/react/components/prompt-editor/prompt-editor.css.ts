@@ -31,6 +31,12 @@ export const editorPlaceholder = style({
   position: 'absolute',
   top: 0,
   left: 0,
+  // One line, as the empty editor is one line tall: a placeholder wider than the field (a long hint on a narrow phone)
+  // ends in an ellipsis instead of wrapping onto a second line the field cuts in half.
+  right: 0,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
   // @@@composer-three-tiers 的**第一档**:输入正文 = 消息正文那一档(#7333:16/24,`textTitle`),比底排整排大一号 ——
   // 差的这一档是"该读的东西"与"工具"之间的分界。真实输入与 placeholder 必须同一档。
   fontSize: tokenVars.textTitle,

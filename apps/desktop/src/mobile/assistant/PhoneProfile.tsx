@@ -20,7 +20,7 @@ import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRout
 import { PhoneConnectorDetail,PhoneConnectorsPage } from './PhoneConnectors'
 import { PhoneConnectorSetupPage } from './PhoneConnectorSetup'
 import { parseConnectorSub } from './phoneConnectorFlow'
-import { PhoneLibraryVolume } from './PhoneLibraryVolume'
+import { AssistantProjectsLibrary } from '@/components/assistant/AssistantProjectsLibrary'
 import { usePhoneIntegrations } from './usePhoneProfileData'
 import './phone-profile.css'
 
@@ -40,8 +40,7 @@ export function PhoneProfile(input: PhonePageProps) {
   const connectors = sub === 'channels' || sub === 'connectors' || !!sub?.startsWith('connector:')
   const integrations = usePhoneIntegrations(machine, connectors)
   const deviceRename = useDeviceRename()
-  if (sub === 'library:workspace') return <PhoneLibraryVolume key={sub} {...props} kind="workspace" />
-  if (sub === 'library:capabilities' || sub === 'library:devices') return <PhoneLibraryVolume key={sub} {...props} kind={sub === 'library:capabilities' ? 'capabilities' : 'devices'} />
+  if (sub === 'library:workspace') return <AssistantProjectsLibrary machine={machine.state === 'ready' ? machine.machine : null} askInChat={props.askInChat} />
 
   if (sub === 'settings') return <div className="ta-page ta-phone-profile"><PageHead title={t('nav.settings')} /><div className="ta-skin">
     <AssistantSettingsPage panelNavigation onOpenPage={(tab) => props.open({ tab })} onOpenSection={(section) => go(`settings:${section}`)} />

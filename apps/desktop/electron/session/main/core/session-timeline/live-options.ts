@@ -8,6 +8,7 @@ import { ReplicaState } from '@gugu/session-wire';
 import { z } from 'zod';
 import { peekAcpRuntimeClient } from '@main/core/acp/runtime-process/host';
 import { sessionPlatformModel } from '@main/core/sessions/platform-model-selection';
+import { getSessions } from '@main/core/sessions/getSessions';
 import { recordLiveModelSwitch } from '@main/core/sessions/live-model-switch';
 import { recordLiveSessionSetting } from '@main/core/sessions/record-live-session-setting';
 import { log } from '@main/lib/logger';
@@ -36,7 +37,7 @@ export class SessionOptionsError extends Error {
 }
 
 function toGroup(
-  source: { selected: string | null; available: ReadonlyArray<{ id: string; name: string; description?: string }> } | null
+  source: { selected: string | null; available: ReadonlyArray<{ id: string; name: string; description?: string }> } | null | undefined
 ): SessionOptionGroup | null {
   if (!source) return null;
   if (source.available.length === 0) return null;
@@ -55,6 +56,7 @@ export function toSessionOptions(config: SessionConfigState): SessionpageSession
     mode: toGroup(config.modeOptions),
     model: toGroup(config.modelOptions),
     effort: toGroup(config.efforts),
+    ...(config.fastMode ? { fast: toGroup(config.fastMode) } : {}),
   };
 }
 
@@ -66,6 +68,7 @@ export function toSessionOptions(config: SessionConfigState): SessionpageSession
  */
 export type SessionOptionsIo = {
   readConfig(conversationId: string): Promise<SessionConfigState>;
+  canUseFast?(conversationId: string): Promise<boolean>;
   apply(input: {
     conversationId: string;
     dimension: SessionOptionDimension;
@@ -141,6 +144,10 @@ async function readConfig(sessionId: string): Promise<SessionConfigState> {
 
 const defaultIo: SessionOptionsIo = {
   readConfig,
+  canUseFast: async (id) => {
+    const row = (await getSessions()).find((session) => session.id === id);
+    return row?.providerId === 'codex' || row?.providerId === 'claude';
+  },
   apply: async (input) => {
     const client = await peekAcpRuntimeClient();
     if (!client) {
@@ -157,7 +164,10 @@ const defaultIo: SessionOptionsIo = {
 };
 
 export async function readSessionOptions(conversationId: string): Promise<SessionpageSessionOptions> {
-  return toSessionOptions(await currentIo().readConfig(conversationId));
+  const ops = currentIo();
+  const options = toSessionOptions(await ops.readConfig(conversationId));
+  if (options.fast && !(await (ops.canUseFast ?? defaultIo.canUseFast!)(conversationId))) options.fast = null;
+  return options;
 }
 
 /**
@@ -173,6 +183,16 @@ export async function setSessionOption(input: {
 }): Promise<SessionpageSessionOptions> {
   const ops = currentIo();
   const options = toSessionOptions(await ops.readConfig(input.conversationId));
+  if (input.dimension === 'fast' || options.fast) {
+    if (!(await (ops.canUseFast ?? defaultIo.canUseFast!)(input.conversationId))) {
+      options.fast = null;
+      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', '当前模型不支持 Fast 模式');
+    }
+  }
+  if (input.dimension === 'fast' && input.value === 'off' && !options.fast) {
+    await recordLiveSessionSetting(input.conversationId, { dimension: 'fast', value: false });
+    return options;
+  }
   const group = options[input.dimension];
   if (!group) {
     throw new SessionOptionsError('option_unsupported', `这条会话没有可改的${input.dimension}`);
@@ -190,7 +210,7 @@ export async function setSessionOption(input: {
   }
   // 回读一份：provider 可能把这次切换归到另一档上（或者压根没接受）。
   // ❌ 不把入参当结果回给手机 —— 那是在报「我发出去了」，不是「它变成了什么」。
-  return toSessionOptions(await ops.readConfig(input.conversationId));
+  return readSessionOptions(input.conversationId);
 }
 
 function describeFailure(error: { type: string; message?: string } | undefined): string {
@@ -219,6 +239,10 @@ async function persistAppliedOption(
   effectiveValue: string
 ): Promise<void> {
   try {
+    if (dimension === 'fast') {
+      await recordLiveSessionSetting(sessionId, { dimension: 'fast', value: effectiveValue === 'on' });
+      return;
+    }
     if (dimension === 'mode') {
       await recordLiveSessionSetting(sessionId, { dimension: 'permission', modeId: effectiveValue });
       return;

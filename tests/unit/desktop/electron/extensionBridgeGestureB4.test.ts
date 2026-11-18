@@ -34,7 +34,7 @@ type Host = {
   showSession(id: string): Promise<unknown>
   dispatch(text: string, options?: Record<string, unknown>): Promise<unknown>
   clipboard: { writeText(text: string): Promise<unknown> }
-  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
+  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward' | 'sendSelection', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
   assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
@@ -50,6 +50,8 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   filesUpload: () => host.appFiles.upload({}),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
+  // 54: the host's Send box beside a selection.
+  filesSendSelection: () => host.appFiles.sendSelection({ text: 'x', refs: [{ file: { workspace: 'session:s-1', id: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } }),
   filesOpenIn: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).openIn!({ ref: { workspace: 'session:s-1', id: 'a.md' }, app: 'finder' }),
   showMessage: () => host.showMessage('msg-1'),
   showSession: () => host.showSession('s-1'),
@@ -85,22 +87,17 @@ function bound() {
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })
 
 describe('a verb that needs a gesture is judged by one rule, on what the preload read (L11 B4)', () => {
-  it('only registers a non-passive wheel listener while the trusted context names a message view', () => {
+  it('never takes the wheel: a message view\'s page lets its list scroll natively', () => {
     const receive = electron.on.mock.calls.find(([channel]) => channel === EXTENSION_BRIDGE_EVENT_CHANNEL)![1] as (event: unknown, payload: unknown) => void
-    const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener')
+    const add = vi.spyOn(window, 'addEventListener')
     try {
       expect(initialWheelListeners).toBe(0)
       receive(null, { type: 'context', context: {} })
-      expect(add).not.toHaveBeenCalled()
       receive(null, { type: 'context', context: { widget: { messageId: 'message-1' } } })
-      expect(add).toHaveBeenCalledExactlyOnceWith('wheel', expect.any(Function), { capture: true, passive: false })
-      const listener = add.mock.calls[0]![1]
-      receive(null, { type: 'context', context: { widget: { messageId: 'message-1' } } })
-      expect(add).toHaveBeenCalledTimes(1)
       receive(null, { type: 'context', context: { widget: {}, modal: { data: null } } })
-      expect(remove).toHaveBeenCalledExactlyOnceWith('wheel', listener, true)
+      expect(add.mock.calls.filter(([type]) => type === 'wheel')).toEqual([])
     } finally {
-      add.mockRestore(); remove.mockRestore()
+      add.mockRestore()
     }
   })
 

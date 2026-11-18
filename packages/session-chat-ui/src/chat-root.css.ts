@@ -56,6 +56,11 @@ export const scrollContainer = style({
   width: '100%',
   overflowX: 'hidden',
   overflowY: 'auto',
+  // ChatRoot owns anchoring (its row anchor, rescaled on a width change). The browser's own anchoring would move
+  // scrollTop first when a read forces layout before the column's ResizeObserver; ChatRoot then takes that as the
+  // reader scrolling and re-anchors them in the old geometry. Nothing is lost: rows are placed from measured heights,
+  // so a DOM-only height change inside a row is already a layout bug (images paint as link chips for that reason).
+  overflowAnchor: 'none',
   // Reserve a stable gutter so the scrollbar appearing/disappearing does not
   // change contentRect.width, which would trigger prose re-wrap ("flash") and
   // transient height desync ("overlap") on every thinking expand/collapse.

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { openPhoneAgentStore } from './phone-agent-store.mjs'
-import { receivePhoneArtifact, phoneFileTools, phoneInboxAttachmentRow, phoneTurnFiles, registerArtifact } from './phone-agent-files.mjs'
+import { receivePhoneArtifact, phoneFileTools, phoneTurnFiles, registerArtifact } from './phone-agent-files.mjs'
 
 const ownerId = '68a158dd-1832-4671-ac02-ebde330d3d7a'
 const agent = { agentUserId: '558fcc98-9d61-4054-8a18-900d969b1849', sessionId: '13226587-813a-4e58-a023-dc419aeab890' }
@@ -59,20 +59,6 @@ test('turn prefetch registers the canonical artifact path and sends the same ver
   }
 })
 
-test('inbox attachment metadata retains the authoritative message reference without image bytes, URLs or unregistered paths', () => {
-  const row = { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', contentType: 'attachment', content: '[附件] calendar.png (image/png)\n[URL] https://files.invalid/storage/v1/object/public/chat-media/calendar.png\n[Size] 42\n[Kind] image\n[Caption]\n请把这个图片转发给我', fileItemId: null, fileVersion: null, fileBlobId: null }
-  const prepared = phoneInboxAttachmentRow(row)
-  assert.match(prepared.content, /message_download_file/)
-  assert.match(prepared.content, new RegExp(`msg:${row.id}`))
-  assert.match(prepared.content, /calendar\.png/)
-  assert.match(prepared.content, /请把这个图片转发给我/)
-  assert.equal(prepared.content.includes('https://'), false)
-  assert.equal(prepared.content.startsWith('[附件]'), false)
-  assert.equal(row.content.startsWith('[附件]'), true)
-  const gone = phoneInboxAttachmentRow({ ...row, content: '[附件] deleted.png (image/png)\n[Size] 42\n[Kind] image' })
-  assert.match(gone.content, /"available":false/)
-})
-
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'gugu-phone-file-'))
   const store = await openPhoneAgentStore(root, ownerId)
@@ -86,6 +72,7 @@ async function fixture() {
       if (String(url).endsWith('/attachments/upload')) return json({ staging_key: 'staged', url: 'https://storage.invalid/put', fields: {}, max_bytes: 1024 })
       if (String(url).includes('/put')) return new Response('', { status: 200 })
       if (String(url).endsWith('/attachments/commit')) return json({ message: { id: JSON.parse(options.body).message_id } })
+      if (String(url).endsWith('/attachments/finish')) return json({ status: 'ready' })
       throw new Error('unexpected endpoint')
     } }),
   }
@@ -106,7 +93,7 @@ test('native chunks become an owner-scoped complete artifact and private permiss
   } finally { await fx.close() }
 })
 
-test('file sending uses core attachment upload/commit with the agent sender, stable message id and real bytes', async () => {
+test('file sending declares the file in its commit (agent sender, stable message id), then uploads the real bytes and finishes them', async () => {
   const fx = await fixture()
   const checked = []
   try {
@@ -122,6 +109,11 @@ test('file sending uses core attachment upload/commit with the agent sender, sta
     assert.deepEqual(Buffer.from(await upload.arrayBuffer()), bytes)
     const commit = JSON.parse(fx.requests.find(([url]) => url.endsWith('/commit'))[1].body)
     assert.equal(commit.sender_user_id, agent.agentUserId)
+    // One path for every sender (owner 11-15): the message goes with the file's index, its bytes follow it.
+    assert.deepEqual({ sha256: commit.sha256, size_bytes: commit.size_bytes }, { sha256: createHash('sha256').update(bytes).digest('hex'), size_bytes: bytes.length })
+    const order = fx.requests.map(([url]) => url.endsWith('/commit') ? 'commit' : url.includes('/put') ? 'bytes' : url.endsWith('/finish') ? 'finish' : null).filter(Boolean)
+    assert.deepEqual(order, ['commit', 'bytes', 'finish'])
+    assert.equal(JSON.parse(fx.requests.find(([url]) => url.endsWith('/finish'))[1].body).message_id, commit.message_id)
     assert.equal(sent.details.message_id, `msg:${commit.message_id}`)
     assert.equal(checked.length >= 2, true)
     assert.deepEqual(checked[0][1], [proof])

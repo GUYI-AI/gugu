@@ -1,8 +1,10 @@
 export default {
+  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
+  "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。", "sent": "已发送" },
   "agent": {
     "identity": {
       "phone": "手机 Agent",
-      "pending": "智能体 · 类型确认中",
+      "pending": "正在确认智能体类型",
       "unavailable": "智能体类型不可用",
       "removed": "已移除的智能体",
       "cloud": "Gagent"
@@ -58,7 +60,7 @@ export default {
     },
     "turnFailure": {
       "card": {
-        "appUnavailable": "App 用不了",
+        "appUnavailable": "应用用不了",
         "deliveryRejected": "消息未送达",
         "outcomeUnknown": "发送失败",
         "generic": "回复没有完成",
@@ -67,7 +69,7 @@ export default {
         "timeout": "太久没有响应",
         "rateLimited": "请求太频繁",
         "nextMessage": "下条消息会自动再试",
-        "recovered": "{{name}} 之前 {{count}} 次没有完成 · 已恢复",
+        "recovered": "{{name}} 之前 {{count}} 次未完成，现已恢复。",
         "settings": "去设置"
       },
       "state": {
@@ -91,7 +93,7 @@ export default {
       "notAdmitted": "消息已保留，助理就绪后回复。",
       "outcomeUnknown": "消息发送失败。",
       "undelivered": "消息暂未送达：没有运行中的咕咕实例持有这个 Agent，打开那个实例后会由它读取。",
-      "appUnavailable": "未送达：这条来自一个 App，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
+      "appUnavailable": "未送达：这条来自一个应用，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
       "retry": "重试",
       "retrying": "重试中…",
       "timeout": "Agent 长时间未响应，本次回复未完成"
@@ -126,7 +128,7 @@ export default {
     "backToList": "返回对话列表",
     "conversationProfile": "查看对话资料",
     "downloadFailed": "无法下载文件",
-    "filePreview": { "close": "关闭文件预览", "download": "下载", "openExternal": "外部打开", "loading": "读取文件中…", "rendering": "正在生成预览…", "renderFailed": "无法渲染此文件", "sheetTruncated": "表格太大，只显示了前面一部分。完整内容请用 Office 软件打开。", "openInOffice": "用 Office 软件打开", "previewLimits": "此文档过大或结构过于复杂，无法安全预览。", "unsupported": "此文件类型暂不支持内置预览，请下载或使用外部打开。", "readFailed": "读取文件失败（{{status}}）", "pdfControls": "PDF 控制", "previousPage": "上一页", "nextPage": "下一页", "zoomOut": "缩小", "zoomIn": "放大", "zoom": "缩放", "zoomReset": "恢复 100%", "pageNumber": "页码", "outline": "目录", "fitWidth": "适应宽度", "fitPage": "适应整页", "find": "查找", "findPrevious": "上一个", "findNext": "下一个", "closeFind": "关闭查找" },
+    "filePreview": { "readAgain": "重新读取", "close": "关闭文件预览", "download": "下载", "openExternal": "外部打开", "loading": "读取文件中…", "rendering": "正在生成预览…", "renderFailed": "无法渲染此文件", "sheetTruncated": "表格太大，只显示了前面一部分。完整内容请用 Office 软件打开。", "openInOffice": "用 Office 软件打开", "previewLimits": "此文档过大或结构过于复杂，无法安全预览。", "unsupported": "此文件类型暂不支持内置预览，请下载或使用外部打开。", "readFailed": "读取文件失败（{{status}}）", "pdfControls": "PDF 控制", "previousPage": "上一页", "nextPage": "下一页", "zoomOut": "缩小", "zoomIn": "放大", "zoom": "缩放", "zoomReset": "恢复 100%", "pageNumber": "页码", "outline": "目录", "fitWidth": "适应宽度", "fitPage": "适应整页", "find": "查找", "findPrevious": "上一个", "findNext": "下一个", "closeFind": "关闭查找" },
     "empty": {
       "chats": "选择一个对话开始聊天",
       "contacts": "选择联系人查看详情"
@@ -167,6 +169,7 @@ export default {
     "unreadAbove_one": "↑ {{count}} 条新消息",
     "unreadAbove_other": "↑ {{count}} 条新消息",
     "noMessages": "暂无消息，发一条开始聊天",
+    "mobileEmpty": { "title": "还没有消息", "hint": "发出的消息会显示在这里" },
     "notificationLevel": {
       "all": "全部",
       "important": "仅重要",
@@ -186,13 +189,13 @@ export default {
     },
     "appEnable": {
       "devices": "装到哪几台电脑",
-      "devicesHint": "每台新装的电脑上，所有 agent 默认都能用；之后可以在 App 设置里改。",
+      "devicesHint": "每台新装的电脑上，所有 agent 默认都能用；之后可以在应用设置里改。",
       "addsChat": "这台电脑上已经装了、只给了部分 agent：这次只加上群「{{name}}」，别的不变。",
       "decline": "不装",
       "machine": "这台电脑",
       "all": "所有 agent",
       "allSub": "包括各个项目里的 agent",
-      "chosen": "agent、群和项目 · {{count}}",
+      "chosen": "已选 {{count}} 个 Agent、群或项目",
       "project": "项目",
       "cardGroup": "卡片所在",
       "agent": "你的 agent",
@@ -233,9 +236,9 @@ export default {
       "appFiles": "『{{name}}』的文件",
       "noAppFiles": "这个对话里还没有『{{name}}』的文件。它打开的是对话里的文件，先建一个，或者让 agent 建一个。",
       "fileUnavailable": "这里打不开这个文件：它可能已被删除，或者不在这个对话里。",
-      "noOpener": "本机没有能打开『{{name}}』的 App，咕咕市场里也没有。",
-      "marketUnreadable": "本机没有能打开『{{name}}』的 App；咕咕市场现在读不到，稍后再试。",
-      "offerFromMarket": "它是咕咕市场里的 App，在这里装一次就好。",
+      "noOpener": "本机没有能打开『{{name}}』的应用，咕咕市场里也没有。",
+      "marketUnreadable": "本机没有能打开『{{name}}』的应用；咕咕市场现在读不到，稍后再试。",
+      "offerFromMarket": "它是咕咕市场里的应用，在这里装一次就好。",
       "switchedOffWhy": "这个文件是『{{name}}』的，它装着，但停用了。启用它，就用它打开。",
       "switchOn": "启用",
       "switchFailed": "没启用上，稍后再试。",
@@ -250,8 +253,8 @@ export default {
       "showRaw": "查看原始内容",
       "hideRaw": "收起原始内容",
       "install": "安装",
-      "goToApps": "去 App 页",
-      "unavailable": "这个 App 现在打不开：没装上，或者已经停用。",
+      "goToApps": "前往市场",
+      "unavailable": "这个应用现在打不开：没装上，或者已经停用。",
       "title": "用哪个打开「{{name}}」"
     },
     "source": {
@@ -263,6 +266,7 @@ export default {
     }
   },
   "chatList": {
+    "createAgent": "创建智能体",
     "addContact": "添加联系人",
     "clearSearch": "清除搜索",
     "create": "新建",
@@ -273,13 +277,21 @@ export default {
     "delete": "删除",
     "disableNotifications": "关闭通知",
     "deleteFailed": "无法删除这条对话",
+    "deleteChat": "删除聊天",
+    "deleteChatConfirm": "删除和「{{name}}」的这条聊天？聊天记录将一并删除。",
+    "deleteTopic": "删除话题",
+    "closeTopic": "关闭话题",
+    "deleteTopicConfirm": "删除话题「{{name}}」？它会从所有成员的列表里收起。",
+    "dissolveGroup": "解散群聊",
+    "leaveGroup": "退出群聊",
+    "markTopicsRead": "本群话题全部标为已读",
     "draft": "[草稿]",
-    "moreTopics": "更多 · {{count}}",
-    "moreTopics_one": "更多 · {{count}}",
-    "moreTopics_other": "更多 · {{count}}",
+    "moreTopics": "更多话题（{{count}}）",
+    "moreTopics_one": "更多话题（{{count}}）",
+    "moreTopics_other": "更多话题（{{count}}）",
     "empty": "暂无对话",
-    "emptyHint": "点上方“新建 Agent”开始第一段对话",
-    "emptyHintMobile": "去「项目」页右上角新建 Agent，开始第一段对话",
+    "emptyHint": "点上方“创建智能体”开始第一段对话",
+    "emptyHintMobile": "去「项目」页右上角创建智能体，开始第一段对话",
     "enableNotifications": "开启通知",
     "markRead": "标为已读",
     "removeProject": "移除项目",
@@ -299,8 +311,7 @@ export default {
     "pin": "置顶",
     "scan": "扫一扫",
     "search": "搜索",
-    "unpin": "取消置顶",
-    "unpinFromSidebar": "取消固定到左侧栏"
+    "unpin": "取消置顶"
   },
   "chatService": {
     "errors": {
@@ -374,11 +385,16 @@ export default {
     "besideUnavailable": "这个文件现在取不到。",
     "besideOutside": "只能取到这份文档所在文件夹里的文件。",
     "imageUnavailable": "图片暂时打不开",
+    "senderUploading": "发送方还没传完",
+    "senderUploadFailed": "发送方没有传完这个文件",
+    "uploading": "正在上传",
+    "notUploaded": "还没传完",
+    "uploadFailed": "上传失败，点按重试",
     "newerInFolder": "文件夹里有新版",
     "retry": "重试"
   },
   "dispatchPick": {
-    "myAgents": "我的 agent",
+    "myAgents": "我的智能体",
     "title": "交给谁",
     "search": "搜索成员、任务或对话",
     "chatAgents": "{{chat}} 的 agent",
@@ -401,11 +417,11 @@ export default {
       "attachFolder": "挂文件夹",
       "attachFailed": "文件夹没挂上，请重试",
       "action": "新任务",
-      "chip": "新任务 · {{agent}}",
+      "chip": "用 {{agent}} 新建任务",
       "pickAgent": "选 agent",
       "placeholder": "想让 {{agent}} 做点什么？",
       "pickFolder": "点一张文件夹开工",
-      "where": "{{folder}} · {{machine}}",
+      "where": "在 {{machine}} 的 {{folder}} 中",
       "offline": "{{machine}} 离线了，换一张文件夹",
       "optionsFailed": "读不到 {{machine}} 上的 agent，确认它在线后再选一次文件夹",
       "noAgent": "{{machine}} 上没有能用的 agent",
@@ -430,6 +446,7 @@ export default {
     "attachmentSendTimedOut": "附件发送超时。",
     "attachmentPersistenceFailed": "附件 {{fileName}} 保存失败。",
     "attach": "添加",
+    "attachmentsMenu": "附件",
     "cancelQuote": "取消引用",
     "disabled": "当前对话不可发送",
     "exitWhisper": "退出悄悄话",
@@ -446,7 +463,7 @@ export default {
     "mentionMembers": "@ 提及成员",
     "mentionNoMatch": "没有匹配的成员",
     "placeholder": "发送消息…",
-    "mobilePlaceholder": "消息",
+    "mobilePlaceholder": "随心输入",
     "projectGroupPlaceholder": "发消息给 {{name}}… @ 某个 agent 叫它",
     "removeAttachment": "移除 {{fileName}}",
     "sendFailed": "消息没发出去：{{guidance}}",
@@ -463,11 +480,7 @@ export default {
       "timeout": "发送超时，请稍后重新发送",
       "unavailable": "发送未完成，请稍后重新发送"
     },
-    "verb": {
-      "task": "新任务",
-      "agent": "新智能体"
-    },
-    "whisperBanner": "悄悄话给 {{name}} · 仅你与对方可见",
+    "whisperBanner": "给 {{name}} 发悄悄话，仅你与对方可见。",
     "whisperPlaceholder": "悄悄话给 {{name}}…"
   },
   "emoji": {
@@ -496,6 +509,7 @@ export default {
     "forwarding": "转发中…",
     "noResults": "未找到对话",
     "noTargets": "暂无可转发的对话",
+    "people": "联系人",
     "note": "留言",
     "preview": {
       "attachment": "[附件]",
@@ -535,6 +549,7 @@ export default {
       "separator": "、"
     },
     "notice": {
+      "migrationPlaceholder": "这条消息没有迁移",
       "agentFloodGroup": "这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
       "agentFloodTopic": "这条话题里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
       "left": "{{actor}} 退出了群聊",
@@ -546,7 +561,9 @@ export default {
     "memberList": {
       "agentLeave": "让它退出群聊",
       "clearSearch": "清除搜索",
-      "invite": "邀请成员",
+      "add": "添加",
+      "addMembers": "添加成员",
+      "newAgent": "创建智能体",
       "makeAdmin": "设为管理员",
       "manage": "管理 {{name}}",
       "noMatches": "没有匹配「{{query}}」的成员",
@@ -558,7 +575,7 @@ export default {
       "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
-      "myAgents": "我的 agent",
+      "myAgents": "我的智能体",
       "otherAgents": "其他人的 agent",
       "listen": {
         "all": "收听全部消息",
@@ -593,9 +610,9 @@ export default {
       "pendingApproval_one": "已提交审批：{{count}} 个 Agent 等群主或管理员批准后入群",
       "pendingApproval_other": "已提交审批：{{count}} 个 Agent 等群主或管理员批准后入群",
       "add": "添加",
-      "addWithCount": "添加 · {{count}} 位成员",
-      "addWithCount_one": "添加 · {{count}} 位成员",
-      "addWithCount_other": "添加 · {{count}} 位成员",
+      "addWithCount": "添加 {{count}} 位成员",
+      "addWithCount_one": "添加 {{count}} 位成员",
+      "addWithCount_other": "添加 {{count}} 位成员",
       "adding": "添加中…",
       "allFailed": "{{failed}} 人添加失败：{{reason}}",
       "humanPermissionHint": "你当前不能邀请人类成员；仍可添加你自己的 Agent。",
@@ -674,8 +691,8 @@ export default {
         "inviteOnly": "仅邀请",
         "open": "直接加入"
       },
-      "leave": "离开群组",
-      "leaveConfirm": "确认离开群组？",
+      "leave": "退出群聊",
+      "leaveConfirm": "确认退出该群聊？",
       "loadFailed": "群设置加载失败：{{reason}}",
       "memberCount": "{{count}} 名成员",
       "memberCount_one": "{{count}} 名成员",
@@ -685,9 +702,9 @@ export default {
       "members": "群成员",
       "posterCta": "扫码加入群聊，一起和 AI 协作",
       "posterQrCaption": "扫码加入群聊",
-      "posterSubtitle": "群聊 · {{count}} 位成员",
-      "posterSubtitle_one": "群聊 · {{count}} 位成员",
-      "posterSubtitle_other": "群聊 · {{count}} 位成员",
+      "posterSubtitle": "{{count}} 位成员的群聊",
+      "posterSubtitle_one": "{{count}} 位成员的群聊",
+      "posterSubtitle_other": "{{count}} 位成员的群聊",
       "reject": "拒绝",
       "removeConfirm": "将 {{name}} 移出群聊？",
       "removeMember": "将 {{name}} 移出群聊",
@@ -700,18 +717,17 @@ export default {
       "rules": "协作规则",
       "rulesPlaceholder": "群协作规则：核心原则、方向确认、协作约定…",
       "rulesUnset": "未设置协作规则",
-      "title": "群设置",
       "unavailable": "不可用",
       "uploading": "上传中"
     }
   },
   "header": {
-    "openApp": "打开 App",
+    "openApp": "打开应用",
     "groupApps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
-    "noGroupApps": "本设备暂无可用的 App。",
+    "noGroupApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
     "groupInfo": "群信息",
     "chatInfo": "会话信息",
@@ -763,7 +779,7 @@ export default {
     "view": "查看 {{title}}"
   },
   "message": {
-    "myAgentTag": "我的 agent",
+    "myAgentTag": "我的智能体",
     "removedIdentityTag": "已移除",
     "agentOwnerUnavailableTag": "主人信息不可用",
     "agentOwnerTag": "{{owner}} 的 agent",
@@ -779,6 +795,8 @@ export default {
       "openLink": "打开链接",
       "selectText": "选择文本",
       "delete": "删除",
+      "deleteConfirm": "删除这条消息？删除后无法恢复。",
+      "deleteTitle": "删除消息",
       "forward": "转发",
       "more": "更多",
       "openTopic": "开话题",
@@ -794,13 +812,15 @@ export default {
     },
     "attachment": "[附件]",
     "copied": "已复制",
+    "selectTextFailed": "无法打开选择文本",
+    "selectionClose": "返回",
     "copyFailed": "复制失败，请手动选择文本复制",
     "forwarded": "↪ 转发",
     "forwardedFrom": "↪ 引自：{{line}}",
     "me": "我",
     "read": "已读",
     "readCount": "已读 {{read}}",
-    "readUnreadCount": "已读 {{read}} · 未读 {{unread}}",
+    "readUnreadCount": "{{read}} 人已读，{{unread}} 人未读",
     "receipt": {
       "allRead": "全部已读",
       "noneRead": "暂无成员已读",
@@ -842,7 +862,7 @@ export default {
       "schedule": "已安排",
       "handedTo": "交给",
       "onMachine": "在 {{machine}} 上",
-      "onColleagueComputer": "{{name}} 的任务 · 无法查看",
+      "onColleagueComputer": "无法查看 {{name}} 的任务",
       "awaitingApproval": "等群主同意它进群",
       "rejected": "群主没有同意它进群，结果在它的会话里",
       "open": "打开这个会话",
@@ -859,17 +879,16 @@ export default {
     "openSendingAgent": "打开 {{agent}} 的对话",
     "sendingAgentRemoved": "代发 Agent 已移除",
     "openSendingAgentFailed": "无法打开代发 Agent 的对话",
-    "viaApp": "由『{{app}}』App 代你发送",
-    "viaAppFor": "由『{{app}}』App 代 {{name}} 发送",
+    "viaApp": "由『{{app}}』应用代你发送",
+    "viaAppFor": "由『{{app}}』应用代 {{name}} 发送",
     "voice": "语音消息 {{duration}}",
-    "whisperBoth": "悄悄话 · 仅你与对方可见",
-    "whisperOnlyYou": "悄悄话 · 仅你可见",
-    "whisperTo": "悄悄话给 {{name}} · 仅你与对方可见",
+    "whisperBoth": "仅你与对方可见的悄悄话",
+    "whisperOnlyYou": "仅你可见的悄悄话",
+    "whisperTo": "给 {{name}} 的悄悄话，仅你与对方可见。",
     "widget": "[Widget]",
     "reference": { "loading": "正在读取…", "unreadable": "一条你看不到的消息", "widgetUnreadable": "一个你看不到的 widget", "widgetRetracted": "这个 widget 已撤回", "widgetElsewhere": "这个 widget 在别的会话中", "locate": "定位原消息", "locateActive": "定位活的 widget", "previewQuote": "[引用]", "previewMessage": "[引用消息]" },
-    "widgetUnavailable": { "missing": "尚未安装 App。", "disabled": "App 已关闭。", "view": "此 App 视图不可用。", "platform": "此设备无法运行此 App。" }
+    "widgetUnavailable": { "missing": "尚未安装应用。", "disabled": "应用已关闭。", "view": "此应用视图不可用。", "platform": "此设备无法运行此应用。" }
   },
-  "searchTrail": {"position": "「{{query}}」第 {{index}}/{{total}} 条", "positionNoWords": "第 {{index}}/{{total}} 条", "previous": "上一条", "next": "下一条 (⌘G)", "results": "结果", "close": "退出搜索"},
   "outbox": {
     "selectFileAgain": "上传已中断，请重新选择文件。",
     "sourceNotSent": "原消息尚未送达，请先重试原消息再转发。",
@@ -915,7 +934,7 @@ export default {
     },
     "anchor": {
       "lead": "话题",
-      "separator": " · ",
+      "separator": " ",
       "messageCount": "{{count}} 条",
       "messageCount_one": "{{count}} 条",
       "participantCount": "{{count}} 人参与",
@@ -934,7 +953,7 @@ export default {
       "members": "成员",
       "collapseSplit": "收起分栏",
       "collapseSplitHint": "收起分栏，话题不会关闭",
-      "composerPlaceholder": "在这条话题里说…",
+      "composerPlaceholder": "随心输入",
       "empty": "还没有人在这条话题里说话",
       "resize": "拖动改变话题分栏的宽度"
     }
@@ -942,9 +961,9 @@ export default {
   "resources": {
     "copyUrl": "复制咕咕 URL",
     "sendTo": "复制 URL 并发给…",
-    "appUnderstand": "了解 App", "appUnderstandText": "说明这个 App 能做什么。",
-    "appFork": "定制", "appForkText": "先问我想改什么，经我确认后 fork 这个 App。",
-    "appImprove": "提建议", "appImproveText": "帮我向这个 App 提出改进建议。",
+    "appUnderstand": "了解应用", "appUnderstandText": "说明这个应用能做什么。",
+    "appFork": "定制", "appForkText": "先问我想改什么，经我确认后 fork 这个应用。",
+    "appImprove": "提建议", "appImproveText": "帮我向这个应用提出改进建议。",
     "forkRequest": "向上游提需求", "forkRequestText": "帮我把这个 fork 的改动向上游作者提建议。",
     "forkMerge": "合并上游", "forkMergeText": "把上游合进这个 fork。先对比 fork 相对原始基点的改动，保留并逐项核对这些改动和已有数据，再重装并检查。",
     "forkRemove": "删除 fork", "forkRemoveText": "先征求我的确认，再删除这个 fork，保留数据和源码仓库。",

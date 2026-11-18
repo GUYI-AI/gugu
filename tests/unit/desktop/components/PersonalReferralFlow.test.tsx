@@ -6,6 +6,7 @@ import '../../../../apps/desktop/src/i18n/registerMainCatalog'
 const rpc = vi.hoisted(() => ({ read: vi.fn(), claim: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/referrals', () => ({ getMyReferral: rpc.read, claimMyReferral: rpc.claim }))
 import { InvitationPanel } from '../../../../apps/desktop/src/components/referralPreview/InvitationPanel'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 import { ReferralClaimField } from '../../../../apps/desktop/src/components/referralPreview/ReferralClaimField'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -13,7 +14,7 @@ const summary = () => ({ status: 'ok', code: 'ABCDEF123456', code_enabled: true,
   rewarded_invitations: 1, earned_cny: '2.75', claim_available: true, claim_deadline: '2026-12-01', attribution: null,
   policy: { rewards_enabled: false, credits_each_cny: '2.75', recipients: 'invitee', success_condition: 'first_message', max_rewards_per_inviter: null } })
 beforeEach(async () => {
-  harness = createReactHarness(); localStorage.clear(); rpc.read.mockReset(); rpc.claim.mockReset()
+  harness = createReactHarness(); localStorage.clear(); viewStateCache.forget('view:'); rpc.read.mockReset(); rpc.claim.mockReset()
   setLocalePreference('zh-CN'); await i18n.changeLanguage('zh-CN')
 })
 afterEach(() => { harness.cleanup() })
@@ -57,4 +58,16 @@ it('refreshes every visible source field for the account after confirmation', as
   await clickElement([...harness.container.querySelectorAll('button')].find(button=>button.textContent==='确认邀请来源')!)
   expect(harness.container.querySelectorAll('input')).toHaveLength(0)
   expect([...harness.container.querySelectorAll('[role="status"]')].filter(p=>p.textContent?.includes('邀请来源已确认'))).toHaveLength(2)
+})
+
+it('keeps an unconfirmed source draft through remounts and isolates it from another account', async () => {
+  rpc.read.mockResolvedValue(summary())
+  await harness.render(createNode(ReferralClaimField, { userId: 'draft-owner', key: 'draft-owner' }))
+  await typeInto(harness.container.querySelector('input')!, 'ABCDEF123456')
+  await harness.render(null)
+  await harness.render(createNode(ReferralClaimField, { userId: 'draft-owner', key: 'draft-owner' }))
+  expect(harness.container.querySelector('input')!.value).toBe('ABCDEF123456')
+  await harness.render(createNode(ReferralClaimField, { userId: 'other-owner', key: 'other-owner' }))
+  expect(harness.container.querySelector('input')!.value).toBe('')
+  expect(rpc.claim).not.toHaveBeenCalled()
 })

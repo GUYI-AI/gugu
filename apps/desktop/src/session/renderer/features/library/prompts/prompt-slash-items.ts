@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { CommandItem } from '@gugu/session-ui/react/components';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { filterSlashCommands } from '@renderer/features/sessions/acp/slash-command-matching';
@@ -13,7 +14,7 @@ import { withOverrides, type PromptLibrary, type PromptLibraryPrompt } from '@sh
 export function promptSlashItems(mine: readonly PromptLibraryPrompt[], overrides: PromptLibrary['overrides'], mineSection: string, query: string): CommandItem[] {
   const own = mine.map((prompt) => item(`prompt:${prompt.id}`, prompt.title, undefined, prompt.prompt, mineSection));
   const apps = withOverrides(installedExtensionsStore.appPrompts, overrides).filter((prompt) => prompt.state !== 'hidden').map((prompt) =>
-    item(`app-prompt:${prompt.key}`, prompt.title, prompt.otherTitles.join(' · ') || undefined, prompt.prompt, prompt.appName));
+    item(`app-prompt:${prompt.key}`, prompt.title, prompt.otherTitles.join(metadataSeparator()) || undefined, prompt.prompt, prompt.appName));
   return filterSlashCommands([...own, ...apps], query);
 }
 
@@ -23,7 +24,7 @@ function item(id: string, title: string, otherTitle: string | undefined, text: s
     id,
     name: title,
     label: title,
-    description: otherTitle ? `${otherTitle} · ${preview}` : preview,
+    description: otherTitle ? `${otherTitle}: ${preview}` : preview,
     behavior: 'insert',
     kind: 'prompt',
     token: text,

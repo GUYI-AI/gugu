@@ -1,5 +1,5 @@
 // #7341 项目挂的文件夹,打在真 SQLite 与真目录上:一个文件夹只属于一个项目、挂两次不出两行、摘下不删行。
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { openFixture } from '@tooling/utils/db';
@@ -88,7 +88,7 @@ describe('project folders', () => {
     mocks.branches.clear();
     mocks.opened.mockReset().mockResolvedValue({ success: true, data: {} });
     mocks.created.mockReset();
-    tmp = await mkdtemp(path.join(os.tmpdir(), 'gugu-project-folders-'));
+    tmp = await realpath(await mkdtemp(path.join(os.tmpdir(), 'gugu-project-folders-')));
     rootA = path.join(tmp, 'gugu');
     rootB = path.join(tmp, 'other');
     worktree = path.join(tmp, 'gugu-7341');

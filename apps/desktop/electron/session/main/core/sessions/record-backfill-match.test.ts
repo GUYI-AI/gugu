@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { recordIdentityFor, recordTurnsAfterStore, turnIdentityKeys, turnPrompt } from './record-backfill-match';
-import { hermesPromptMeta } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 
 /** A turn as the runtime stored it (`S:turn:sN`) or as the record timeline reads it (`S:turn:N`). */
 const turn = (id: string, prompt: string | null, own: { message?: string; tool?: string; reply?: string } = {}): TranscriptTurn => ({
@@ -147,9 +147,11 @@ describe('filling the store from the record (#980)', () => {
     const native = `<resource_changes>飞书已连接</resource_changes>\n<gugu_profile_review>Review profile</gugu_profile_review>\n${prompt}`;
     const stored = [turn('S:turn:s0', prompt, { message: 'auto:assistant:0', reply: 'answer' })];
     const user = stored[0].items.find(item => item.kind === 'message' && item.role === 'user');
-    if (user?.kind === 'message') user._meta = hermesPromptMeta([{ type: 'text', text: native }]);
+    if (user?.kind === 'message') user._meta = nativePromptMeta([{ type: 'text', text: native }]);
     const record = [turn('S:turn:0', native, { message: 'hermes:1#0', reply: 'answer' }), turn('S:turn:1', 'next', { message: 'hermes:2#0', reply: 'next answer' })];
-    expect(recordTurnsAfterStore(record, stored, 'content', { hermesPromptReceipts: true })).toEqual([record[1]]);
+    expect(recordTurnsAfterStore(record, stored, 'content')).toEqual([record[1]]);
+    // Without the receipt the native prompt matches nothing stored.
+    if (user?.kind === 'message') delete user._meta;
     expect(recordTurnsAfterStore(record, stored, 'content')).toBeNull();
   });
 

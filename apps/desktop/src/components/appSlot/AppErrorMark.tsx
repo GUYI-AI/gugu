@@ -12,7 +12,7 @@ export function AppErrorMark({ error, onToggle, testId }: { error: string; onTog
     <Button size="sm" variant="ghost" className="min-w-0" data-testid={testId} onClick={onToggle} title={error}>
       <span className="inline-block size-2 shrink-0 rounded-full bg-[var(--text-error)]" />
       <span className="truncate">
-        {translateSessionMessage('extensions.appError')} · {translateSessionMessage('extensions.appErrorDetails')}
+        {translateSessionMessage('extensions.appError')}  {translateSessionMessage('extensions.appErrorDetails')}
       </span>
     </Button>
   )

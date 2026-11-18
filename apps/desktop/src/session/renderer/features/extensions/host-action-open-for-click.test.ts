@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { publishChatSummaries } from '@/lib/chatSummariesBridge';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { APP_OPEN_WITH_EVENT } from '@shared/extensions/app-runtime-protocol';
 import { groupPageSlot, type PanelItem } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 
-const { tabs, showChatTab, updateFileNames, projects } = vi.hoisted(() => ({
+const { tabs, showChatTab, updateFileNames, chatPageOrigin, projects } = vi.hoisted(() => ({
   projects: new Map(),
-  tabs: [] as { tabId: string; inWindow: boolean; shown?: boolean; item: PanelItem }[], showChatTab: vi.fn(), updateFileNames: vi.fn(), }));
-vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ panelTabsOf: () => tabs, showChatTab, updateFileNames, chatLayoutOf: () => ({ groups: [{ pane: { entries: new Map(tabs.map((tab) => [tab.tabId, tab])) } }] }) }));
+  tabs: [] as { tabId: string; inWindow: boolean; shown?: boolean; item: PanelItem }[], showChatTab: vi.fn(), updateFileNames: vi.fn(), chatPageOrigin: vi.fn(), }));
+vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ panelTabsOf: () => tabs, showChatTab, updateFileNames, chatPageOrigin, chatLayoutOf: () => ({ groups: [{ pane: { entries: new Map(tabs.map((tab) => [tab.tabId, tab])) } }] }) }));
 
 const navigate = vi.fn();
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate } } }));
@@ -25,7 +26,7 @@ vi.mock('./extension-surface-store', () => ({
 
 const { WorkspaceViewModel } = await import('@renderer/features/sessions/stores/workspace-view-model');
 const { applyExtensionHostAction } = await import('./host-action-handlers');
-beforeEach(() => { vi.clearAllMocks(); tabs.length = 0; projects.clear(); });
+beforeEach(() => { vi.clearAllMocks(); chatPageOrigin.mockReset(); publishChatSummaries([]); tabs.length = 0; projects.clear(); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('an App browser open keeps the host-stamped source', () => {
@@ -41,6 +42,7 @@ describe('an App browser open keeps the host-stamped source', () => {
       const source = layout.focusedPane;
       const tabId = source.resolvedActiveTabId!;
       layout.open('app', { initialUrl: 'app-b' }, { from: tabId, intent: 'beside' });
+      layout.setActiveGroup(layout.sideGroup!.paneId);
       const other = layout.focusedPane;
       const otherBefore = JSON.parse(JSON.stringify(other.snapshot));
       expect(other).not.toBe(source);
@@ -51,7 +53,7 @@ describe('an App browser open keeps the host-stamped source', () => {
       projects.set('project', { mountedProject: { sessionManager: { sessions: new Map([['task', { viewModel: view }]]) } } });
       // The bridge delivers the original page identity after the person has focused B.
       await Promise.resolve();
-      await applyExtensionHostAction({ origin: { extensionId: 'app', sessionId: 'task', tabId }, action: { kind: 'openBrowserTab', url: 'https://example.com/from-a' } });
+      await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'app', sessionId: 'task', tabId }, action: { kind: 'openBrowserTab', url: 'https://example.com/from-a' } });
       expect(source.entries.get(tabId)).toMatchObject({ kind: 'browser', state: { initialUrl: 'https://example.com/from-a' } });
       expect(source.navigationOf(tabId)?.pages).toHaveLength(2);
       expect(other.snapshot).toEqual(otherBefore);
@@ -59,7 +61,7 @@ describe('an App browser open keeps the host-stamped source', () => {
   });
 
   it('preserves the no-session shell refusal', () => {
-    expect(() => applyExtensionHostAction({ origin: { extensionId: 'app', sessionId: null, tabId: 'shell' }, action: { kind: 'openBrowserTab', url: 'https://example.com/' } })).toThrow('This session is no longer open');
+    expect(() => applyExtensionHostAction({ origin: { pageId: null, extensionId: 'app', sessionId: null, tabId: 'shell' }, action: { kind: 'openBrowserTab', url: 'https://example.com/' } })).toThrow('This session is no longer open');
   });
 });
 
@@ -82,7 +84,7 @@ describe("a click that opens the App's own page brings the task page forward", (
 });
 
 describe('showing an already-open file while its metadata is checked', () => {
-  const origin = { extensionId: 'workspace', sessionId: null, tabId: groupPageSlot('chat', 'folder') };
+  const origin = { extensionId: 'workspace', sessionId: null, tabId: groupPageSlot('chat', 'folder'), pageId: null };
   beforeEach(() => { tabs.push({ tabId: 'folder', inWindow: false, shown: true, item: { kind: 'workspace.main', title: 'Group folder' } }); });
   it('activates the existing file in a background window without resolving its link again', async () => {
     tabs[0]!.item = { kind: 'workspace.main', itemId: 'file', title: 'old' };
@@ -119,6 +121,29 @@ describe('showing an already-open file while its metadata is checked', () => {
     tabs.push({ tabId: 'held', inWindow: false, item: { kind: 'workspace.main', itemId: 'file', title: 'old' } });
     expect(await applyExtensionHostAction({ origin, action: { kind: 'openChatFile', chatId: 'chat', itemId: 'file', onlyIfOpen: 'workspace.main' } })).toBeUndefined();
     expect(showChatTab).not.toHaveBeenCalled();
+  });
+
+  it('opens an authorized source-group file in the topic that asked, without moving other files there', async () => {
+    publishChatSummaries([{ id: 'topic', kind: 'topic', unread_count: 0, source_chat_id: 'chat' }]);
+    const setPageViewState = vi.fn();
+    chatPageOrigin.mockReturnValue({ chatId: 'topic', tabId: 'folder', pane: { setPageViewState } });
+    const dispatched = vi.fn();
+    window.addEventListener(APP_OPEN_WITH_EVENT, dispatched);
+    try {
+      const detail = {
+        chatId: 'chat', itemId: 'file', name: 'notes.txt', typedName: 'notes.txt', viewState: { index: 3 },
+        file: { document: false, contentType: 'text/plain', version: 1, size: 5 },
+        choice: { kind: 'none' as const },
+      };
+      const topicOrigin = { ...origin, tabId: groupPageSlot('topic', 'folder') };
+      await applyExtensionHostAction({ origin: topicOrigin, action: { kind: 'openWith', detail } });
+      expect(dispatched.mock.calls[0]?.[0].detail).toMatchObject({ chatId: 'topic', from: 'folder' });
+      expect(setPageViewState).toHaveBeenCalledWith('folder', { index: 3 });
+
+      await applyExtensionHostAction({ origin: topicOrigin, action: { kind: 'openWith', detail: { ...detail, chatId: 'other-group' } } });
+      expect(dispatched.mock.calls[1]?.[0].detail).toMatchObject({ chatId: 'other-group', from: undefined });
+      expect(setPageViewState).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener(APP_OPEN_WITH_EVENT, dispatched); }
   });
 
   it('refreshes only the existing tab without activating a late result or bringing its chat up', async () => {

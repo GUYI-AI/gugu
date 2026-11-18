@@ -5,7 +5,7 @@ const NOTE_OVERSIZED = '便笺交代未完整载入。继续涉及该工作前�
 const NOTE_UNREADABLE = '工作便笺不可读，恢复被阻断，存在认知缺口。必须先按已知 source_link/chat_id 用 message_history/message_search 回查原需求所在主聊及后补交代，核对未决约束与等待对象；不能仅凭原任务完成认定全部交代已核全。来源未知或查不全时，只汇报已核实部分并明确缺口，不猜地址或授权。核全前不得覆盖工作便笺，不得宣称“没有其他未结交代”或“已恢复全部”。';
 const NOTE_TIMES = '\nmodifiedAt 是文件修改时间，observedAt 是读取时间，均不代表决定时间。\n';
 const INDEX_INTRO = '上下文重建后的当前资源索引，替代历史资源快照。界面行为由 App 消息另行送达。\n';
-const INDEX_FAILED = '资源索引重建失败：当前状态未核实，不能按旧快照断言资源不存在。需要时用 session_devices / device_actions / project_list / library_read 重新核实。';
+const INDEX_FAILED = '资源索引重建失败：当前状态未核实，不能按旧快照断言资源不存在。需要时用 session_devices / device_actions / project_list 重新核实。';
 
 /** A host instruction, emitted separately from resource data and only on recovery events. */
 export function assistantRecoveryHook(context: string, workingContextPath?: string): string {

@@ -1,23 +1,12 @@
 import React from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { Switch } from '@/components/ui/Switch';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { ResetToDefaultButton } from './ResetToDefaultButton';
+import { SettingSwitch } from './SettingControls';
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
 
 const SidebarMetadataSettingsCard: React.FC = () => {
-  const {
-    value: interfaceSettings,
-    update,
-    isLoading,
-    isSaving,
-    isFieldOverridden,
-    resetField,
-  } = useAppSettingsKey('interface');
+  const interfaceSettings = useAppSettingsKey('interface');
   const { translate } = useSessionMessages();
-
-  const busy = isLoading || isSaving;
-  const showAgentNameOnHover = interfaceSettings?.showLeftSidebarAgentNameOnHover ?? true;
 
   return (
     <SettingsGroup>
@@ -29,20 +18,12 @@ const SidebarMetadataSettingsCard: React.FC = () => {
       <SettingsRow
         title={translate('sidebarMeta.agentNameOnHover')}
         control={
-          <>
-            <ResetToDefaultButton
-              visible={isFieldOverridden('showLeftSidebarAgentNameOnHover')}
-              defaultLabel={translate('reset.on')}
-              onReset={() => resetField('showLeftSidebarAgentNameOnHover')}
-              disabled={busy}
-            />
-            <Switch
-              checked={showAgentNameOnHover}
-              onCheckedChange={(checked) => update({ showLeftSidebarAgentNameOnHover: checked })}
-              disabled={busy}
-              aria-label={translate('sidebarMeta.agentNameOnHoverToggle')}
-            />
-          </>
+          <SettingSwitch
+            api={interfaceSettings}
+            field="showLeftSidebarAgentNameOnHover"
+            resetLabel={translate('reset.on')}
+            label={translate('sidebarMeta.agentNameOnHoverToggle')}
+          />
         }
       />
     </SettingsGroup>

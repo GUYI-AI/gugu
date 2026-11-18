@@ -2,6 +2,8 @@ import { PROJECTION_NOT_SENT, PROJECTION_UNCONFIRMED, type ProjectionFrame, type
 import { ProjectionInputNotSent } from './projection-input-queue';
 import { projectionClient } from './projection-client';
 import type { ProjectionHost } from './projection-source';
+import { installLocalTouchViewing } from './projection-local-touch';
+import { installProjectionPresentation } from './projection-presentation-view';
 export type PendingProjectionText = { id: number; text: string; state: 'not-sent' | 'unconfirmed'; reason?: string };
 export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'closed';
 
@@ -9,6 +11,11 @@ export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'clos
 export async function mountProjection(host: ProjectionHost, root: HTMLElement, id: string, options: {
   state?(state: ProjectionViewState, reason?: string): void; error?(error: unknown): void;
   painted?(frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null): void;
+  /** A host presentation can watch a thumbnail without admitting picture input. */
+  interactive?: boolean;
+  localTouchViewing?: boolean;
+  /** Shared host pictures can display App decorations; App pages may keep their own existing chrome. */
+  decorations?: boolean;
 } = {}) {
   const surface = document.createElement('div');
   surface.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;touch-action:none';
@@ -23,9 +30,14 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   input.autocomplete = 'off';
   input.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none';
   surface.append(image, input);
+  const presentation = options.decorations ? installProjectionPresentation(surface) : null;
   root.append(surface);
   let frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null = null;
   let ready = false;
+  let interactive = options.interactive !== false;
+  let frozen = false;
+  let freezing: Promise<void> | undefined;
+  surface.style.pointerEvents = interactive ? 'auto' : 'none';
   let nextText = 0;
   const observed = new WeakSet<Promise<unknown>>();
   const pendingText = new Map<number, PendingProjectionText>();
@@ -48,7 +60,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   const send = (value: ProjectionInput) => {
     const text = value.kind === 'text' ? { id: ++nextText, text: value.text, state: 'not-sent' as const } : undefined;
     if (text) pendingText.set(text.id, text);
-    if (!ready || !client) return;
+    if (!ready || !client || !interactive || frozen) return;
     const operation = client.input(value, () => { if (text && pendingText.has(text.id)) pendingText.set(text.id, { ...text, state: 'unconfirmed' }); });
     if (observed.has(operation)) return;
     observed.add(operation);
@@ -68,7 +80,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     ...(event.metaKey ? ['meta' as const] : []), ...(event.shiftKey ? ['shift' as const] : []),
   ];
   const point = (event: MouseEvent, clamp = false) => {
-    if (!frame || !ready) return null;
+    if (!frame || !ready || !interactive || frozen) return null;
     const box = image.getBoundingClientRect();
     const ratio = frame.width / frame.height;
     const width = Math.min(box.width, box.height * ratio);
@@ -79,7 +91,11 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     if (!clamp && (x < 0 || y < 0 || x > 1 || y > 1)) return null;
     return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
   };
+  if (options.localTouchViewing) installLocalTouchViewing(surface, {
+    point: event => point(event), send, focus: () => input.focus({ preventScroll: true }), signal: lifetime.signal,
+  });
   surface.addEventListener('pointerdown', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event);
     if (!at || event.button > 2) return;
     event.preventDefault();
@@ -89,15 +105,18 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     send({ kind: 'pointer', action: 'down', button, ...at, modifiers: modifiers(event) });
   });
   surface.addEventListener('pointermove', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event, surface.hasPointerCapture(event.pointerId));
     if (at) send({ kind: 'pointer', action: 'move', button, ...at, modifiers: modifiers(event) });
   });
   surface.addEventListener('pointerup', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event, true);
     if (at) send({ kind: 'pointer', action: 'up', button, ...at, modifiers: modifiers(event) });
     if (surface.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
   });
   surface.addEventListener('pointercancel', event => {
+    if (options.localTouchViewing && event.pointerType === 'touch') return;
     const at = point(event, true);
     if (at) send({ kind: 'pointer', action: 'up', button, ...at, modifiers: modifiers(event) });
   });
@@ -141,7 +160,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   }
   try {
     const changed = (state: 'connecting' | 'live' | 'closed', reason?: string) => {
-      ready = state === 'live'; input.disabled = !ready; options.state?.(state, reason);
+      ready = state === 'live'; input.disabled = !ready || !interactive || frozen; options.state?.(state, reason);
     };
     const painted = (next: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null) => {
       frame = next; if (next) recoveryAttempts = 0; options.painted?.(next);
@@ -156,13 +175,31 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       },
       painted,
+      presentation: value => presentation?.update(value),
       state: changed,
       error: pause,
     });
-  } catch (error) { lifetime.abort(); surface.remove(); throw error; }
-  return Object.freeze({ pendingText: () => [...pendingText.values()].map(entry => ({ ...entry })), discardPendingText: (id: number) => pendingText.delete(id), close: async () => {
+  } catch (error) { lifetime.abort(); presentation?.close(); surface.remove(); throw error; }
+  const freeze = () => {
+    if (freezing) return freezing;
+    frozen = true; interactive = false; ready = false; input.disabled = true; surface.style.pointerEvents = 'none';
     lifetime.abort();
-    try { await client?.close(); }
-    finally { surface.remove(); }
-  } });
+    // Closing the watch releases held input. Keep its last decoded picture until the presentation is closed.
+    freezing = Promise.resolve(client?.close());
+    return freezing;
+  };
+  return Object.freeze({
+    pendingText: () => [...pendingText.values()].map(entry => ({ ...entry })),
+    discardPendingText: (id: number) => pendingText.delete(id),
+    setInteractive(value: boolean) {
+      if (frozen || interactive === value) return;
+      interactive = value; input.disabled = !ready || !interactive; surface.style.pointerEvents = value ? 'auto' : 'none';
+      if (!value) { input.blur(); reset(); }
+    },
+    freeze,
+    close: async () => {
+      try { await freeze(); }
+      finally { presentation?.close(); surface.remove(); }
+    },
+  });
 }

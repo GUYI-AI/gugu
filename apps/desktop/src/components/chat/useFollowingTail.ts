@@ -54,14 +54,13 @@ export function useFollowingTail({
 }
 
 /** The main conversation's pin, resize and navigation policy, shared by every message surface. */
-export function useTailPinning({ resetKey, messages, enabled, messageWindow, scrollerEl, scrollerRef, listRef,
+export function useTailPinning({ resetKey, messages, enabled, messageWindow, scrollerRef, listRef,
   isAtBottomRef, isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, returnToLatest, onError,
 }: {
   resetKey: string
   messages: readonly FeedItem[]
   enabled: boolean
   messageWindow: Pick<HistoryWindow, 'hasNewer' | 'loading' | 'navigation' | 'navigationVersion'> | undefined
-  scrollerEl: HTMLElement | null
   scrollerRef: RefObject<HTMLElement | null>
   listRef: RefObject<FlowListHandle | null>
   isAtBottomRef: RefObject<boolean>
@@ -97,22 +96,6 @@ export function useTailPinning({ resetKey, messages, enabled, messageWindow, scr
   }, [scrollToBottom, messageWindow?.hasNewer, messageWindow?.loading, returnToLatest, onError, forgetSavedPosition, isAtBottomRef])
 
   useEffect(() => {
-    const scroller = scrollerRef.current; if (!scroller) return
-    let prevH = scroller.clientHeight
-    const ro = new ResizeObserver(() => {
-      const h = scroller.clientHeight
-      if (h !== prevH) {
-        prevH = h
-        if (!isPreservingPosition() && isAtBottomRef.current) {
-          scrollToBottom()
-        }
-      }
-    })
-    ro.observe(scroller)
-    return () => ro.disconnect()
-  }, [scrollerEl, scrollerRef, scrollToBottom, isPreservingPosition, isAtBottomRef])
-
-  useEffect(() => {
     if (!enabled) return
     const feed = messages
     const firstId = feed.length ? feed[0].id : null
@@ -135,15 +118,6 @@ export function useTailPinning({ resetKey, messages, enabled, messageWindow, scr
     lastTrackRef.current = { firstId, lastId }
   }, [messages, enabled, pinToBottom, prepareForSavedPosition, messageWindow?.navigationVersion, messageWindow?.navigation, isAtBottomRef])
 
-  // Async row layout can grow the content without resizing the viewport. Preserve the main
-  // window's geometry guard so a stale at-bottom report never pulls a reader away from history.
-  const onTotalListHeightChanged = useCallback(() => {
-    requestAnimationFrame(() => {
-      const el = scrollerRef.current
-      if (!el || isPreservingPosition() || !isAtBottomRef.current) return
-      if (el.scrollHeight - el.clientHeight - el.scrollTop > 400) return
-      el.scrollTop = el.scrollHeight
-    })
-  }, [scrollerRef, isPreservingPosition, isAtBottomRef])
-  return { pinToBottom, onTotalListHeightChanged }
+  // Content and viewport size changes are pinned by the list itself (lib/flowList.ts), before the frame is painted.
+  return { pinToBottom }
 }

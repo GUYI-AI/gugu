@@ -1,17 +1,23 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatItem } from '@gugu/core/shared/types/chat'
+import type { ChatItem, GroupChatSettings } from '@gugu/core/shared/types/chat'
 import { ChatListSlotHost } from '../../../../apps/desktop/src/components/ChatListSlotHost'
 import { INNER_SIDEBAR_TOPIC_LIMIT, innerSidebarTopicRows, topicsOfChat } from '../../../../apps/desktop/src/components/chat/innerSidebarTopicsModel'
+import { i18n } from '../../../../apps/desktop/src/i18n'
+import { chatService } from '../../../../apps/desktop/src/lib/chat'
+import { confirmConversationAction } from '../../../../apps/desktop/src/lib/confirmDanger'
 import { innerSidebarTopicsSlotKey, setInnerSidebarTopicsAll } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
 import { readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { SCREEN_CONTENT_DRAG_TYPE } from '../../../../apps/desktop/src/session/renderer/lib/drag-screen-content'
-import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
+vi.mock('../../../../apps/desktop/src/lib/confirmDanger', async (original) => ({
+  ...(await original<object>()), confirmConversationAction: vi.fn(),
+}))
 
 const NOW = Date.parse('2099-02-01T00:00:00Z')
 const DAY = 24 * 60 * 60 * 1000
@@ -66,9 +72,15 @@ describe('which topics the inner sidebar shows', () => {
 describe('the inner sidebar topics slot', () => {
   let harness: ReturnType<typeof createReactHarness>
   const openChat = vi.fn()
+  const confirm = vi.mocked(confirmConversationAction)
+  const groupSettings = (canManage: boolean) => ({
+    id: source.id, my_role: canManage ? 'admin' : 'member', can_manage: canManage, can_archive_topic: false,
+  } as GroupChatSettings)
   beforeEach(() => {
     harness = createReactHarness()
     openChat.mockReset()
+    confirm.mockReset()
+    vi.spyOn(chatService, 'getGroupChatSettings').mockResolvedValue(groupSettings(false))
     installSessionViewRequestBridge(window, { openChat })
     setInnerSidebarTopicsAll(null)
   })
@@ -86,7 +98,7 @@ describe('the inner sidebar topics slot', () => {
     // #2548 a topic that calls me (3 unread, 1 addressed) says 「@1」 in red; one with news that does not call me (2 unread,
     // 0 addressed) only wears the grey dot, without a number; one with nothing new wears nothing.
     const mark = (id: string) => {
-      const chip = slot.querySelector<HTMLElement>(`[data-topic-row="${id}"] [data-slot="chip"]`)
+      const chip = slot.querySelector(`[data-topic-row="${id}"]`)?.closest('[role="listitem"]')?.querySelector<HTMLElement>('[data-slot="chip"]')
       return chip && { text: chip.textContent, tone: chip.dataset.tone, shape: chip.dataset.shape, label: chip.getAttribute('aria-label') }
     }
     expect(mark('calls-me')).toEqual({ text: '@1', tone: 'danger', shape: 'count', label: null })
@@ -101,6 +113,51 @@ describe('the inner sidebar topics slot', () => {
     expect(openChat).toHaveBeenCalledWith('group', false)
     expect(drainTopicSplitRequest('group')).toMatchObject({ chatId: 't1', sourceChatId: 'group' })
     slot.remove()
+  })
+
+  it('pins a topic independently of whether the viewer can close it', async () => {
+    const pinChat = vi.fn(async () => {})
+    await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics], pinChat } })
+    const slot = document.body.appendChild(document.createElement('div'))
+    try {
+      await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
+      const row = slot.querySelector('[data-topic-row="t1"]')!.closest('[role="listitem"]')!
+      const pin = row.querySelector<HTMLElement>(`button[aria-label="${i18n.t('chatList.pin', { ns: 'messaging' })}"]`)!
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      pin.dispatchEvent(press)
+      expect(press.defaultPrevented).toBe(true)
+      await clickElement(pin)
+      expect(pinChat).toHaveBeenCalledWith('t1', true)
+      expect(row.querySelectorAll('button')).toHaveLength(2)
+      expect(openChat).not.toHaveBeenCalled()
+      expect(confirm).not.toHaveBeenCalled()
+    } finally {
+      slot.remove()
+    }
+  })
+
+  it('gives source group managers the existing topic confirmation and close action', async () => {
+    vi.mocked(chatService.getGroupChatSettings).mockResolvedValue(groupSettings(true))
+    const deleteChat = vi.fn(async () => {})
+    await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics], deleteChat } })
+    const slot = document.body.appendChild(document.createElement('div'))
+    try {
+      await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
+      const row = slot.querySelector('[data-topic-row="t1"]')!.closest('[role="listitem"]')!
+      const close = () => row.querySelector<HTMLElement>(`button[aria-label="${i18n.t('chatList.closeTopic', { ns: 'messaging' })}"]`)
+      await waitForCondition(() => close() !== null, 'Manager did not get the Close topic action')
+      confirm.mockResolvedValueOnce(false)
+      await clickElement(close()!)
+      expect(deleteChat).not.toHaveBeenCalled()
+      confirm.mockResolvedValueOnce(true)
+      await clickElement(close()!)
+      expect(confirm).toHaveBeenLastCalledWith('delete-chat', 'topic', 't1')
+      expect(deleteChat).toHaveBeenCalledExactlyOnceWith('t1', true)
+      expect(openChat).not.toHaveBeenCalled()
+      expect(chatService.getGroupChatSettings).toHaveBeenCalledExactlyOnceWith('group')
+    } finally {
+      slot.remove()
+    }
   })
 
   it('a topic row drags into the chat area as a split, with the chat list topic sub-row payload', async () => {

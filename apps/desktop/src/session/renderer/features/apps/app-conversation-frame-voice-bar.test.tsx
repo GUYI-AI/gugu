@@ -19,7 +19,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { nav
 // The panel's own pages and their reads (app-host-layer.tsx), as app-conversation-frame.test.tsx: they read the cloud on import.
 vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
-vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
 vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 vi.mock('./app-conversation-voice-bar', () => ({
   default: (props: Record<string, unknown>) => { state.bars.push(props); return <div data-testid="voice-bar-here" />; },
@@ -28,7 +27,6 @@ vi.mock('./app-conversation-voice-bar', () => ({
 // The panel's own pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
 vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
-vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
 vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 const { AppConversationFrame } = await import('./app-conversation-frame');
 const { installShellSlots } = await import('@/lib/shellSlots');

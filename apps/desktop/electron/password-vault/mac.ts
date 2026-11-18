@@ -8,7 +8,8 @@ import { decode } from './crypto'
  * used only before revealing plaintext; opening the vault itself needs no person step. */
 export function macVaultKeyProtector(verifyOwner: (reason: string) => Promise<void>): VaultKeyProtector {
   function available(): void {
-    if (process.platform !== 'darwin' || process.type !== 'browser' || !app.isReady() || !safeStorage.isEncryptionAvailable()) throw new VaultError('UNAVAILABLE')
+    if (process.platform !== 'darwin' || process.type !== 'browser' || !app.isReady()) throw new VaultError('UNAVAILABLE')
+    if (!safeStorage.isEncryptionAvailable()) throw new VaultError('SYSTEM_STORAGE_UNAVAILABLE')
   }
   return {
     async verifyPerson() {

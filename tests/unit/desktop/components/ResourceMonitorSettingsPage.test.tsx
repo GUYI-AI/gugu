@@ -17,7 +17,7 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
     useAppSettingsKey: () => {
       const [enabled, setEnabled] = useState(false);
       return {
-        value: { enabled }, isLoading: false, isSaving: false,
+        settings: { state: 'value', value: { value: { enabled, pageCounters: true }, defaults: {}, overrides: {} }, stale: false, error: null }, isSaving: false,
         update: (next: { enabled: boolean }) => setEnabled(next.enabled),
       };
     },

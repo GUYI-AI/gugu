@@ -27,10 +27,13 @@ async function pick(input: HTMLInputElement, files: File[]) {
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
 }
 
-describe('phone "+" panel (owner 11-05: photos and files are two different things)', () => {
+describe('phone composer attachments', () => {
   it('offers Photos, Camera and File as separate entries, each opening its own picker', async () => {
     await mount()
+    // The owner's 2026-11-16 correction restores the shared in-input paperclip.
     await clickElement(q('[data-testid="chat-composer-attach-menu"]')!)
+    expect(q('[data-phone-composer-controls]'), 'human DMs have no menu bar').toBeNull()
+    expect(q('[data-phone-attachment]')).not.toBeNull()
     const panel = q('[data-testid="chat-composer-attach-panel"]')!
     expect([...panel.querySelectorAll('[data-testid^="chat-composer-attach-"]')].map((el) => el.getAttribute('data-testid')))
       .toEqual(['chat-composer-attach-photos', 'chat-composer-attach-camera', 'chat-composer-attach-file'])

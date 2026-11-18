@@ -1,5 +1,5 @@
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
+import { agentAccessMethods, agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@shared/core/sessions/new-session-defaults';
 import {
@@ -64,7 +64,7 @@ import {
 import { UNATTENDED_SESSION_PERMISSION_MODE } from '@shared/core/sessions/unattended-session-autonomy';
 import type { SessionViewLockState } from './session-view-lock';
 import { SessionViewControl } from './session-view-control';
-import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import { codexNeedsUpgrade } from '../session-input-failure-copy';
 import { useSessionInputNotice } from '../session-input-notice';
@@ -75,14 +75,18 @@ import {
   harnessCatalogToOptions,
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
+import { agentOffersFastMode, draftFastMode } from './fast-mode';
+import { renderFastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { queryClient } from '@renderer/lib/query-client';
+import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
+import { queryClient } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { openAgentAppDetail } from '@renderer/features/apps/agent-app-detail-navigation';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
 import {
@@ -224,7 +228,7 @@ export type InitialSessionState = {
    * 而它又必须**排在清单最前**:owner 2026-08-28 实测放末尾时它躺在咕咕那十几个模型下面,
    * 「我翻了半天才找到」。
    */
-  harnessModelUnlock: { groupLabel: string; label: string; title: string } | null;
+  harnessModelUnlock: { groupLabel: string; label: string; title: string; detail?: string } | null;
   /**
    * 选中的平台模型 id,null = 用 harness 自家模型(纯 BYOK)。
    * composer 是会话的唯一决策点:这里为 null 就不注入平台环境,即使 agent 级 model_access
@@ -241,6 +245,8 @@ export type InitialSessionState = {
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
+  fastMode?: boolean;
+  setFastMode?: (enabled: boolean) => void;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
@@ -304,6 +310,7 @@ export type InitialSessionState = {
 };
 
 interface InitialSessionStateOptions {
+  preferredProvider?: AgentProviderId;
   draft?: ComposerDraft;
   resetPromptOnProjectChange?: boolean;
   /**
@@ -488,13 +495,14 @@ export function useInitialSessionState(
   } = options;
   const { translate } = useSessionMessages();
   // 新建会话的记忆 —— 应用设置 `newSessionMemory`,这台设备一份;主进程的 spawnAgent 读的是同一份(L11 复核 58)。
-  const { value: memory, update: updateMemory, updateAsync: updateMemoryAsync } = useAppSettingsKey('newSessionMemory');
+  const { settings: memorySettings, update: updateMemory, updateAsync: updateMemoryAsync } = useAppSettingsKey('newSessionMemory');
+  const memory = memorySettings.state === 'value' ? memorySettings.value.value : undefined;
   const lastStartedConfiguration = memory?.lastStarted ?? null;
   /** 正在编辑一条已存记录(自动化)—— 它的 agent 是那条记录的属性,❌ 不写进全局的「我上次选的」。 */
   const editingStoredRecord = initialProvider !== undefined;
   // 新会话默认通用。设置里开着「允许以终端（TUI）模式启动 agent」时,框里给「终端 | 通用」由人选(owner 10-30);
   // 编辑一条已存的自动化时,先由那条记录自己的展示播种。两者都只覆盖这一个框(`setSessionView`,❌ 写回任何全局设置)。
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
   // #2569 a draft handed over from another box (the sample project's first message) opens with what was picked there.
   const handed = draft?.handoff?.picked;
   const [sessionViewOverride, setSessionViewOverride] = useState<SessionView | null>(() => handed?.sessionView ?? null);
@@ -513,7 +521,7 @@ export function useInitialSessionState(
     error: providerError,
     chosenByUser: providerChosenByUser,
   } = useEffectiveProvider(
-    initialProvider,
+    initialProvider ?? options.preferredProvider,
     preferredSessionpageLeg,
     // 记忆单独一格传进去 —— 并进上面那个初值,换项目时的重置会连它一起抹掉(#5973)。
     // 亲手点过的那一家 > 上次真启动过的那家;出厂偏好猜出来的那家不算记忆,否则它排到「设置里的默认 Agent」
@@ -536,6 +544,7 @@ export function useInitialSessionState(
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>(
     () => (handed?.model ? { [handed.provider]: handed.model } : {})
   );
+  const [fastModeDraft, setFastModeDraft] = useState(false);
   // 每个 provider 一格三态:平台模型 id / null(明确选了 harness)/ 缺席(还没表过态)。
   // 缺席与 null 必须分得开 —— 前者才轮得到 agent 级默认值说话。
   const [platformModelOverrides, setPlatformModelOverrides] = useState<
@@ -992,6 +1001,9 @@ export function useInitialSessionState(
   // 按这条腿的程序判(#6335,`resolveLegLoginGate`):主程序那一路仍是「目录 auth-required 且声明了登录」。
   const harnessSignIn = legLoginGate.signIn ? openAgentAccount : null;
   // 同一个判据算两次没有意义:能去登录才给入口,不能去就一个字都不画(控件要么真生效要么不渲染)。
+  const accessMethodsLine = agentAccessMethods(agents?.find((agent) => agent.id === providerId))
+    .map((method) => translate(`harnessCatalog.access.${method}`))
+    .join(' / ');
   const harnessModelUnlock = harnessSignIn
     ? {
         // 这三格构成模型清单**里**的一组(组头 + 一条可点的动作),用户点开清单挑模型时才看见。
@@ -1008,6 +1020,8 @@ export function useInitialSessionState(
               label: translate('harnessCatalog.unlockModels', { name: agentDisplayName }),
               title: translate('harnessCatalog.unlockModelsHint', { name: agentDisplayName }),
             }),
+        // Second line: the connection panel's own ways in.
+        detail: accessMethodsLine,
       }
     : null;
   // 一行说明,不是弹窗也不是阻断:分组为什么不在,用户有权知道 —— 主进程给原因码,这里翻成人话。
@@ -1030,9 +1044,7 @@ export function useInitialSessionState(
   const upgradeCodex = !!harnessNoticeDetail && codexNeedsUpgrade(harnessNoticeDetail);
   const openInstaller = () => {
     if (!providerId) return;
-    (window as typeof window & { __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (id: string) => void })
-      .__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(providerId);
-    navigate('library', { tab: 'agents', agentId: providerId });
+    openAgentAppDetail(navigate, providerId);
   };
   const harnessAction = upgradeCodex || harnessNoticeMessage?.action === 'install'
     ? (!machine && providerId ? { label: translate('taskError.runtimeUpgradeOpenInstaller', { harnessName: agentDisplayName }), onClick: openInstaller } : undefined)
@@ -1078,6 +1090,11 @@ export function useInitialSessionState(
     : modelOverride && modelOptions?.[modelOverride]
       ? modelOverride
       : resolvedDefaultModel;
+  const targetFastCatalog = useTargetModelCatalog(
+    !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
+    sessionpageSurface,
+    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== model ? model : null,
+  );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
   const modelEfforts = resolveCreateEfforts({
@@ -1183,6 +1200,7 @@ export function useInitialSessionState(
   return {
     provider: providerId,
     setProvider: (next) => {
+      setFastModeDraft(false);
       setProviderOverride(next);
       // 点一下就记住 —— ❌ 不等到「发送成功」:用户点完换个页面是常态,而那时还没有会话可记。
       if (next && !editingStoredRecord) updateMemory({ lastPicked: next });
@@ -1201,6 +1219,7 @@ export function useInitialSessionState(
     setIssueContextEditorOpen,
     model,
     setModel: (nextModel) => {
+      setFastModeDraft(false);
       if (!providerId) return;
       // 选 harness 模型同时就是「这条会话不上平台」的表态,agent 级默认值不再回来顶掉它。
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: null }));
@@ -1227,12 +1246,15 @@ export function useInitialSessionState(
     connectionPanel: connections.panel,
     harnessModelUnlock,
     setPlatformModel: (nextModel) => {
+      setFastModeDraft(false);
       if (!providerId) return;
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: nextModel }));
     },
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
       if (!effortKey) return;
@@ -1356,7 +1378,7 @@ export function InitialSessionField({
   const syncingEditorTextRef = useRef(false);
   const localMentionItemsRef = useRef<MentionItem[]>([]);
   const { value: promptLibrary, overrides } = usePromptLibrary();
-  const harnessModelOptions = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
+  const { options: harnessModelOptions, refresh: refreshHarnessModels } = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
   const { data: agents, isLoading: agentsLoading } = useAgents();
   // #6264 名单要跨云问另一台机器时,那一格画「正在读取」,❌ 空着让人以为那台机器上什么都开不了。
   // 只在真在读时画(isLoading):那台机器没连上就不问,❌ 一直转到它回来(原因由机器的提示说)。
@@ -1749,17 +1771,9 @@ export function InitialSessionField({
           // capabilities payload and would otherwise crash before rendering the repair message.
           selectedAgent={state.providerError ? undefined : (state.provider ?? undefined)}
           onAgentChange={(id) => state.setProvider(id as AgentProviderId)}
-          // The shell owns the top-level tab; the task renderer keeps ownership of its library
-          // route and installation surface. Both intents happen in one click.
-          // 远端:没有「去本机资源库装」这一步 —— 跳过去看到的是这台电脑的安装,不是那台机器的
-          // (那台机器上没装的,选了之后建会话时由那台机器当场装)。
-          onAgentAction={remoteCreateForActions ? undefined : (id) => {
-            (window as typeof window & {
-              __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
-            }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(id)
-            navigate('library', { tab: 'agents', agentId: id })
-          }}
+          onAgentAction={remoteCreateForActions ? undefined : (id) => openAgentAppDetail(navigate, id)}
           modelOptions={modelOptions}
+          onModelMenuOpen={refreshHarnessModels}
           // 编解码都在装配那份里(@@@composer-model-assembly)—— 这里只把分好的两路写回
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。
@@ -1779,6 +1793,9 @@ export function InitialSessionField({
           effortOptions={state.effortOptions}
           selectedEffort={state.effort ?? undefined}
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
+          fastMode={state.fastMode}
+          onFastModeChange={state.setFastMode}
+          renderFastModeHint={renderFastModeHint}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={permissionModeOptions}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}

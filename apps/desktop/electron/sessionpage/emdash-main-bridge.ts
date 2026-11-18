@@ -16,6 +16,8 @@ export { createServerPasswordAgent } from '../password-vault/server-agent'
 export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+// Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
+export { listSessions as listLocalSessions } from '../session/main/core/session-timeline/service'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
 // #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
 export { projectionRemoteEvent } from '../session/main/core/extensions/projection-remote-viewer'
@@ -200,7 +202,6 @@ export {
   // 于是 setTabTitle / setTabBadge / openBrowserTab / reportError / compose
   // 五个动词一律「Renderer not ready」(实机实证)。
   setExtensionHostWindowChannel,
-  setUserLibraryOwner,
   setLoginShellPathRehydrator,
   setLoginShellEnvProvider,
   setPlatformCredentialsProbe,
@@ -226,3 +227,4 @@ export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/co
 export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
+export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'

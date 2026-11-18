@@ -39,13 +39,13 @@ const single: ReadonlyArray<{
   {
     key: 'projects.folders.hintClosed',
     en: [
-      'Click the card to spread its 0 folders · pick one and the new task starts there',
-      'Click the card to spread its 1 folder · pick it and the new task starts there',
-      'Click the card to spread its 2 folders · pick one and the new task starts there',
+      "Open the card to view its 0 folders, then choose where to start the new task.",
+      "Open the card to view its 1 folder, then choose where to start the new task.",
+      "Open the card to view its 2 folders, then choose where to start the new task.",
     ],
     zh: [
-      '点卡片摊开这个项目挂的 1 个文件夹 · 点其中一张，新任务就从那儿开工',
-      '点卡片摊开这个项目挂的 2 个文件夹 · 点其中一张，新任务就从那儿开工',
+      "点卡片展开 1 个文件夹，选择新任务的工作目录。",
+      "点卡片展开 2 个文件夹，选择新任务的工作目录。",
     ],
   },
   {
@@ -84,8 +84,8 @@ const single: ReadonlyArray<{
   { key: 'integrations.accountCount', en: ['0 accounts', '1 account', '2 accounts'], zh: ['1 个账号', '2 个账号'] },
   {
     key: 'subscriptions.connections.count',
-    en: ['This device · 0 connections', 'This device · 1 connection', 'This device · 2 connections'],
-    zh: ['当前设备 · 1 个连接', '当前设备 · 2 个连接'],
+    en: ["0 connections on this device", "1 connection on this device", "2 connections on this device"],
+    zh: ["当前设备有 1 个连接", "当前设备有 2 个连接"],
   },
   { key: 'subscriptions.window.hours', en: ['0 hours', '1 hour', '2 hours'], zh: ['1 小时', '2 小时'] },
   { key: 'subscriptions.window.days', en: ['0 days', '1 day', '2 days'], zh: ['1 天', '2 天'] },
@@ -99,11 +99,11 @@ const single: ReadonlyArray<{
     key: 'extensions.forkBehind',
     extra: { version: '1.2.0' },
     en: [
-      'Upstream 1.2.0 · Your fork is 0 releases behind',
-      'Upstream 1.2.0 · Your fork is 1 release behind',
-      'Upstream 1.2.0 · Your fork is 2 releases behind',
+      "Upstream 1.2.0, your fork is 0 releases behind",
+      "Upstream 1.2.0, your fork is 1 release behind",
+      "Upstream 1.2.0, your fork is 2 releases behind",
     ],
-    zh: ['上游 1.2.0 · 你的 fork 落后 1 版', '上游 1.2.0 · 你的 fork 落后 2 版'],
+    zh: ["上游 1.2.0，你的 fork 落后 1 版", "上游 1.2.0，你的 fork 落后 2 版"],
   },
   {
     key: 'extensions.rowRevoked',
@@ -151,11 +151,11 @@ describe('一句里两个数:各自取单复数再拼', () => {
     })
 
   it('项目卡片头「N 个文件夹 · N 个会话」', async () => {
-    expect(await render('en-US', () => meta(1, 0))).toBe('1 folder · 0 sessions')
-    expect(await render('en-US', () => meta(2, 1))).toBe('2 folders · 1 session')
-    expect(await render('en-US', () => meta(0, 2))).toBe('0 folders · 2 sessions')
-    expect(await render('zh-CN', () => meta(1, 0))).toBe('1 个文件夹 · 0 个会话')
-    expect(await render('zh-CN', () => meta(2, 1))).toBe('2 个文件夹 · 1 个会话')
+    expect(await render('en-US', () => meta(1, 0))).toBe('1 folder, 0 sessions')
+    expect(await render('en-US', () => meta(2, 1))).toBe('2 folders, 1 session')
+    expect(await render('en-US', () => meta(0, 2))).toBe('0 folders, 2 sessions')
+    expect(await render('zh-CN', () => meta(1, 0))).toBe('1 个文件夹，0 个会话')
+    expect(await render('zh-CN', () => meta(2, 1))).toBe('2 个文件夹，1 个会话')
   })
 
   // 与 changes-list-item.tsx / session-git-diff-stats.tsx 的拼法相同。

@@ -958,7 +958,7 @@ describe('session orchestration', () => {
       expect(result.message_route).toEqual({ tool: 'session_message', to: [`session:${result.session_id}`] });
       // 首句信封:发信人带机器名,地址是发起方的 session:(跨机器回得来)。
       const envelope = lastAcpDelegationEnvelope();
-      expect(envelope).toContain('from="Claude 7 · mac1"');
+      expect(envelope).toContain('from="Claude 7 (mac1)"');
       expect(envelope).toContain('from_id="session:remote-caller"');
       expect(envelope).toContain('Train the model on this box.');
       // Its start is session-life's: the delegation is admitted as the first pending row; the start reads the
@@ -1093,7 +1093,7 @@ describe('session orchestration', () => {
       const sent = mocks.sendMessage.mock.calls.at(-1)![0] as { sessionId: string; text: string; kind: string };
       expect(sent.sessionId).toBe('caller');
       expect(sent.kind).toBe('session-direct');
-      expect(sent.text).toContain('from="Claude 7 · mac1"');
+      expect(sent.text).toContain('from="Claude 7 (mac1)"');
       expect(sent.text).toContain('from_id="session:remote-caller"');
     });
 

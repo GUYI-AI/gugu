@@ -12,6 +12,27 @@ const row = (id, parentId, at, message) => ({ type: 'message', id, parentId, tim
 const line = (entry) => `${JSON.stringify(entry)}\n`
 const assistant = (text) => ({ role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop' })
 
+test('interrupted actual Pi input keeps its answer and distinct retry custody across restart and lost retry ACK', async () => {
+  const f = await fixture(), at = 1_700_000_000_000, id = randomUUID()
+  const job = { id, agentUserId: f.agent.agentUserId, contextEpoch: f.agent.contextEpoch, inputRecordId: 'u-interrupted',
+    prompt: 'Check actual result', status: 'interrupted', createdAt: stamp(at), finishedAt: stamp(at + 3) }
+  f.store.state.jobs[id] = job
+  try {
+    await f.write([row('u-interrupted', null, at, { role: 'user', content: job.prompt }), row('a-interrupted', 'u-interrupted', at + 1, assistant('Partial actual answer'))])
+    const first = await f.api.snapshot(f.agent, {})
+    assert.equal(first.turns.length, 1)
+    assert.deepEqual(first.turns[0].outcome, { kind: 'error', reason: 'process_closed', phoneInterruption: { jobId: id, retryable: true } })
+    assert.match(JSON.stringify(first), /Partial actual answer/)
+    await f.reopen()
+    assert.deepEqual((await f.api.snapshot(f.agent, {})).turns[0].outcome, first.turns[0].outcome)
+    f.store.state.jobs.child = { id: 'child', retryOf: id, agentUserId: f.agent.agentUserId, contextEpoch: f.agent.contextEpoch, status: 'queued', prompt: job.prompt, createdAt: stamp(at + 5) }
+    const updated = await f.api.after(f.agent, { cursor: first.cursor })
+    assert.equal(updated.ok, false)
+    assert.equal(updated.snapshot.turns[0].outcome.phoneInterruption.retryable, false)
+    assert.equal(job.status, 'interrupted')
+  } finally { await f.close() }
+})
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'gugu-phone-timeline-'))
   const ownerId = randomUUID()

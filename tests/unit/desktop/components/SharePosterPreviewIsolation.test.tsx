@@ -43,7 +43,7 @@ describe('default sharing on an installation without official services', () => {
         title: 'Existing card', subtitle: 'Existing subtitle',
         qrCaption: '扫码加入 咕咕', ctaText: '用 咕咕 连接你的 AI 协作网络', variant: undefined,
       })
-      expect(document.body.textContent).not.toContain('建议 · 待审核')
+      expect(document.body.textContent).not.toContain('建议待审核')
     })
   }
 })

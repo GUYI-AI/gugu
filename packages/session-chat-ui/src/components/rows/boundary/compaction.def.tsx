@@ -61,7 +61,8 @@ function compactionLabel(data: TranscriptCompaction, translate: import('@session
         case 'failed':
           return translate('transcript.compactionFailed');
         default:
-          return translate('transcript.compacted');
+          // #3005 Claude Code's own wording for the same event, so the row reads the same as in its terminal.
+          return translate(data.trigger === 'idle' ? 'transcript.compactedWhileIdle' : 'transcript.compacted');
       }
     }
 
@@ -87,13 +88,13 @@ export const compactionUnitDef = defineUnit<TranscriptCompaction, { rowH: number
     const detail = (): string | undefined => {
       const d = props.data;
       const parts: string[] = [];
-      if (d.trigger) parts.push(d.trigger === 'manual' ? '/compact' : 'auto');
+      if (d.trigger) parts.push(d.trigger === 'manual' ? '/compact' : d.trigger === 'idle' ? 'idle' : 'auto');
       if (d.preTokens !== undefined && d.postTokens !== undefined) {
         parts.push(`${formatTokens(d.preTokens)} → ${formatTokens(d.postTokens)}`);
       }
       if (d.durationMs !== undefined) parts.push(`${Math.round(d.durationMs / 1000)}s`);
       if (d.error) parts.push(d.error);
-      return parts.length > 0 ? parts.join(' · ') : undefined;
+      return parts.length > 0 ? parts.join(translate('metadata.separator')) : undefined;
     };
 
     return (

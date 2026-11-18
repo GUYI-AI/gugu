@@ -52,7 +52,7 @@ describe('a message link into another chat', () => {
       const resetKey = `${chat}#${window.viewVersion}`
       const { onAtBottomChange } = useFollowingTail({ resetKey, unreadNavigationPending: false, hasNewer: window.hasNewer,
         loading: !!window.loading, isPreservingPosition: memory.isPreservingPosition, isAtBottomRef, setFollowingTail })
-      const { onTotalListHeightChanged } = useTailPinning({ resetKey, messages, enabled: true, messageWindow: window, scrollerEl: memory.scrollerEl,
+      useTailPinning({ resetKey, messages, enabled: true, messageWindow: window,
         scrollerRef: memory.scrollerRef, listRef, isAtBottomRef, isPreservingPosition: memory.isPreservingPosition,
         prepareForSavedPosition: memory.prepareForSavedPosition, forgetSavedPosition: memory.forgetSavedPosition, returnToLatest: async () => {}, onError: noop })
       useSourceMessageReveal({ activeChatId: chat, navigationTarget: true, revealMessage: memory.revealMessage, flashTimerRef, onMissing: missing,
@@ -71,8 +71,7 @@ describe('a message link into another chat', () => {
       return <><button onClick={() => setChat('a')}>Open chat a</button><button onClick={follow}>Follow the link</button>
         <div data-chat={chat} style={{ height: 560, width: '100%', display: 'flex', flexDirection: 'column' }}>
           <MessageList key={chat} rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef}
-            initialTopMostItemIndex={memory.openLocation()} followTail={!window.hasNewer} onAtBottomChange={onAtBottomChange}
-            onTotalListHeightChanged={onTotalListHeightChanged} />
+            initialTopMostItemIndex={memory.openLocation()} followTail={!window.hasNewer} onAtBottomChange={onAtBottomChange} />
         </div></>
     }
     await renderWithAppProviders(harness, createElement(Conversation))

@@ -487,7 +487,7 @@ private func whoText(_ c: CNContact) -> String {
     var bits: [String] = []
     if let org = field(c, CNContactOrganizationNameKey, { $0.organizationName }), org != contactDisplayName(c) { bits.append(org) }
     if c.isKeyAvailable(CNContactPhoneNumbersKey), let phone = c.phoneNumbers.first { bits.append(phone.value.stringValue) } else if c.isKeyAvailable(CNContactEmailAddressesKey), let email = c.emailAddresses.first { bits.append(email.value as String) }
-    return "「\(contactDisplayName(c))」" + (bits.isEmpty ? "" : "（\(bits.joined(separator: " · "))）")
+    return "「\(contactDisplayName(c))」" + (bits.isEmpty ? "" : "（\(bits.joined(separator: "，"))）")
 }
 
 func registerContacts(_ r: Router) {

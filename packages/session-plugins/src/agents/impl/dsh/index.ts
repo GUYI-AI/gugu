@@ -12,6 +12,7 @@ import { icon } from './icon';
 import { DSH_PERMISSION_MODES } from './permission-modes';
 import { dshSessionBundleDescriptor, materializeDshSessionBundle } from './session-bundle';
 import { dshMcpBehavior } from './mcp';
+import { join } from 'node:path';
 
 const sessionBundle = dshSessionBundleDescriptor satisfies SessionBundleDescriptor;
 
@@ -26,6 +27,7 @@ export const plugin = definePlugin(
   {
     id: 'dsh',
     name: 'DeepSeek Harness',
+    publisher: 'DeepSeek',
     description: "DeepSeek's open-source coding agent: reads the codebase, edits files, runs commands, and keeps long sessions.",
     websiteUrl: 'https://www.deepseek.com/en/harness/',
   },
@@ -122,7 +124,25 @@ export const provider = registerPluginBehavior(plugin, {
   mcp: dshMcpBehavior(),
   sessionBundle: { materialize: materializeDshSessionBundle, platformModel },
   // 会话级 argv(`--patch <文档>`)由物化器产出,经 `capabilityArgs` 挂在 `dsh --profile acp` 上。
-  acp: createNativeAcpBehavior((ctx) => ({
-    args: ['--profile', 'acp', ...(ctx.capabilityArgs ?? [])],
-  })),
+  acp: {
+    ...createNativeAcpBehavior((ctx) => ({
+      args: ['--profile', 'acp', ...(ctx.capabilityArgs ?? [])],
+    })),
+    catalogProbeOverlay: dshCatalogProbeOverlay,
+  },
 });
+
+/**
+ * dsh persists every `session/new` at once (`$DSH_HOME/sessions` plus a row in `$DSH_HOME/storages`), keeps it after
+ * `session/close`, and offers no delete over ACP (`dsh-acp` README); with no prompt it has no title, so its app lists
+ * each model-catalog probe as an untitled session. The probe's `--patch` moves both stores into the probe's scratch
+ * directory. Measured on 0.2.1-rc.5 and 0.2.2-rc.3 (2026-11-16): `$DSH_HOME` gets no session, `session/new` still answers.
+ */
+export function dshCatalogProbeOverlay(scratchDir: string) {
+  const path = join(scratchDir, 'gugu-probe-patch.json');
+  const rows = [
+    { id: 'session-persistence-jsonl', config: { root: join(scratchDir, 'sessions') } },
+    { id: 'storage-json', config: { root: join(scratchDir, 'storages') } },
+  ];
+  return { args: ['--patch', path], files: [{ path, content: `${JSON.stringify(rows)}\n` }] };
+}

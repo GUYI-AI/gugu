@@ -118,8 +118,8 @@ export class LifecycleMap<T, PE, TE> {
         return result.success ? ok<void>() : err(result.error);
       } finally {
         this._active.delete(id);
-        this._tearingDown.delete(id);
-        await this._hooks.postTeardown?.(id, value as T);
+        try { await this._hooks.postTeardown?.(id, value as T); }
+        finally { this._tearingDown.delete(id); }
       }
     })();
 

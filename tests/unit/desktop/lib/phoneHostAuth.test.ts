@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { createPhoneHostAuthGate } from '../../../../apps/desktop/src/lib/phoneHostAuthGate'
 
 const native = vi.hoisted(() => ({ authSession: vi.fn() }))
-vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true, isPluginAvailable: () => true }, registerPlugin: () => native }))
+vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true, getPlatform: () => "android", isPluginAvailable: () => true }, registerPlugin: () => native }))
 import { phoneHostGetSession, phoneHostRefreshSession, phoneHostSignOut } from '../../../../apps/desktop/src/lib/phoneHostAuth'
 
 describe('Android host refresh authority', () => {

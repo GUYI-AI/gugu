@@ -107,9 +107,10 @@ const client = {
       } catch (error) {
         await db.query('ROLLBACK TO SAVEPOINT rpc_call')
         await db.query('RESET role')
-        // As PostgREST hands a refusal on: the sentence, and the code a door puts in hint.
-        const { hint, detail } = error as { hint?: string; detail?: string }
-        return { data: null, error: { message: String((error as Error).message), hint: hint ?? '', details: detail ?? '' } }
+        // As PostgREST hands a refusal on: SQLSTATE plus the sentence and a door's hint. Rolling-deployment
+        // compatibility distinguishes a missing projected column (42703) from a denied read (42501).
+        const { code, hint, detail } = error as { code?: string; hint?: string; detail?: string }
+        return { data: null, error: { code: code ?? '', message: String((error as Error).message), hint: hint ?? '', details: detail ?? '' } }
       }
     }
     // PostgREST runs only when awaited; select changes the real SQL projection before that execution.

@@ -115,6 +115,7 @@ const host = withHostResolvedCli(worker as unknown as ContractClient<AgentConfig
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-host-connections-'));
   state.userHome = join(state.home, 'user');
+  vi.stubEnv('GUGU_HOME', join(state.home, 'gugu-home'));
   state.cli = join(state.home, 'fake-cli.cjs');
   await writeFile(state.cli, FAKE_CLI);
   state.busy = false;
@@ -124,6 +125,7 @@ beforeEach(async () => {
   state.fixture = await openRegistryFixture('empty');
 });
 afterEach(async () => {
+  vi.unstubAllEnvs();
   state.fixture?.close();
   state.fixture = null;
   await rm(state.home, { recursive: true, force: true });

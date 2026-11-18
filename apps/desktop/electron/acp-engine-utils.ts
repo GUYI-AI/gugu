@@ -3,6 +3,7 @@ import { registerPasswordBetaTools } from './mcp/password-beta-tools'
 import { guguMcpToolScope } from './mcp/password-native-identity'
 import { registerGuguActivityTools } from './mcp/gugu-activity-tool'
 import type { ProjectFileMessage, ProjectFileNextVersion, SelectedProjectFile } from './projectFilePublication'
+import type { createAttachmentUploadHost } from './attachmentUploadHost'
 import { registerGuguWebSearchTool, type SessionWebSearch } from './mcp/gugu-web-search-tool'
 // ACP 引擎运行时工具 —— 从已删除的 JSON-RPC automation 层(原 rpc/methods/acpEngine.ts)抽出的
 // 纯生产函数：引擎配置加载 / provider 凭据 allowlist / 注入式社交桥。
@@ -26,7 +27,6 @@ import { registerGuguWidgetTool } from './mcp/gugu-widget-tool'
 import { GUGU_MCP_SERVER_NAME } from './mcp/gugu-mcp-name.mjs'
 import { registerGuguScheduleTools } from './mcp/gugu-schedule-tool'
 import { registerGuguProjectTools } from './mcp/gugu-project-tool'
-import { registerGuguLibraryTools } from './mcp/gugu-library-tool'
 import { registerAssistantResource } from './mcp/gugu-assistant-resource'
 import type { AssistantLocalSource } from './sessionpage/assistant-local-index'
 import { registerGuguSessionTools, type SessionDispatcher } from './mcp/gugu-session-tool'
@@ -198,6 +198,7 @@ export type GuguMcpContext = GuguMcpContextBase & (
       getAccessToken: (signal?: AbortSignal) => Promise<string>
       resolveFile?: (ref: FileRef, actorId: string) => Promise<ResolvedFile>
       publishFile?: ProjectFilePublish
+      attachments?: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
       runHostAction?: (action: unknown, signal?: AbortSignal) => Promise<unknown>
       /**
        * 有值 = 这条 grant 属于一条**运行时分叉**(侧边聊天),值是来源 agent 的显示名。
@@ -288,7 +289,6 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
       : undefined
     registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
     registerGuguProjectTools(server, sessionDispatcher, trackRequest)
-    registerGuguLibraryTools(server, sessionDispatcher, trackRequest)
     if (sessionDispatcher) registerAssistantResource(server, {
       accountId: async () => {
         const context = getContext()
@@ -405,7 +405,7 @@ export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): 
 }
 
 /** chat, file on this machine, acting agent, its message → the sent message; null when the chat does not keep files here. */
-/** `next`: the folder file this is the next version of, from the version named (message_send_file with file and file_path). */
+/** `next`: the folder file this is the next version of, from the version named (message_send with file and file_path). */
 export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, actor: string, message: ProjectFileMessage,
   next?: ProjectFileNextVersion) => Promise<{ message?: Record<string, unknown> } | null>
 
@@ -414,6 +414,7 @@ export interface BuildSocialBridgeDeps {
   resolveFile?: (ref: FileRef, actor: FileActor) => Promise<ResolvedFile>
   /** The host's project file publisher (the composer's): a file of a chat that keeps files on this machine, with its message. */
   publishFile?: ProjectFilePublish
+  attachments: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
   getSupabaseUrl?: () => string
   getSupabaseAnonKey?: () => string
   host: DesktopGuguMcpHost
@@ -443,6 +444,7 @@ export async function buildSocialBridge(
       context.authProvider,
       'gugu MCP bridge',
     )
+    if (!deps.attachments) throw new Error('Device attachment upload host is required')
     await deps.host.start()
     const getBoundAuth = async (signal?: AbortSignal): Promise<RuntimeAuth> => {
       signal?.throwIfAborted()
@@ -481,6 +483,13 @@ export async function buildSocialBridge(
         await getBoundAuth()
         return deps.publishFile!(...args)
       } } : {}),
+      attachments: {
+        declare: async (request: Parameters<BuildSocialBridgeDeps['attachments']['declare']>[0]) => {
+          await getBoundAuth()
+          return deps.attachments.declare(request)
+        },
+        drop: async (messageId: string) => { await getBoundAuth(); return deps.attachments.drop(messageId) },
+      },
       ...(deps.forkOf === undefined ? {} : { forkOf: deps.forkOf }),
       ...(deps.readAssistantResources ? { readAssistantResources: async () => {
         await getBoundAuth()

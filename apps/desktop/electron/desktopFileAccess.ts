@@ -1,12 +1,11 @@
 import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
 import { attachmentRequest, configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileChunkCache, createFileSink, createFileSaver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
-import { attachmentStage } from '@gugu/core/local/files/attachmentDiagnostics'
+import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
 import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
@@ -43,7 +42,7 @@ export function createDesktopFileAccess(deps: {
   auth(): Promise<RuntimeAuth | null>; root(projectId: string): Promise<string | null>
   /** This device's project bound to a chat, as the account records it. */
   project(chatId: string): Promise<string | undefined>
-  links(): HeldFileSshLinks | null; tempRoot: string; downloads: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
+  links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
@@ -109,18 +108,5 @@ export function createDesktopFileAccess(deps: {
   })
   return { providers, resolve, resolveAccount, read, drain, publish,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
-    async download(ref: FileRef, name: string, actorId: string) {
-      const step = <T>(stage: string, action: () => Promise<T>) => attachmentStage({ actorId, ref }, stage, action)
-      const { accountId } = await step('identity', identity)
-      const file = await step('resolve', async () => {
-        const resolved = await resolve(ref, { accountId, actorId })
-        if (resolved.status !== 'ready') throw new Error('File is no longer available')
-        return resolved
-      })
-      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name, true))
-      const bytes = saved.content_type.startsWith('image/')
-        ? await step('read-image', async () => new Uint8Array(await readFile(saved.file_path))) : new Uint8Array()
-      return { localPath: saved.file_path, bytes, readOnly: saved.read_only }
-    },
   }
 }

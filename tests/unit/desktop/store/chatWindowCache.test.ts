@@ -116,6 +116,8 @@ describe('cached scoped history ownership', () => {
     const stop = cache.subscribe('chat', () => undefined)
     cache.set('chat', Array.from({ length: 120 }, (_, index) => row(index + 201)))
     const pending = message({ id: 'pending', chat_id: 'chat', seq: -1, is_mine: true, local_send_state: 'sending' })
+    // The durable outbox supplies the sender-device position before the cache receives the row.
+    pending.local_timeline = { afterSeq: 320, createdAt: pending.created_at }
     cache.set('chat', [...(cache.get('chat') ?? []), pending])
     expect(cache.get('chat')).toHaveLength(40)
     expect(cache.get('chat')?.at(-1)).toBe(pending)
