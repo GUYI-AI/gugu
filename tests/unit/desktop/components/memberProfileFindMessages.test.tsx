@@ -6,7 +6,7 @@ import type { MemberProfileCardModel } from '../../../../apps/desktop/src/compon
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { pressProfileOpener, profileCardWithOpener } from '../../../support/memberProfileCard'
 
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => false }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => false, readMobileShell: () => false }))
 
 const { commandRegistry } = await import('../../../../apps/desktop/src/session/renderer/lib/commands/registry')
 const { resetSearchSession, useSearchSession } = await import('../../../../apps/desktop/src/session/renderer/features/global-search/search-session')

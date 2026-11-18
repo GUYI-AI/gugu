@@ -482,10 +482,6 @@ export default {
       "timeout": "The send timed out. Try sending again later.",
       "unavailable": "The send did not finish. Try sending again later."
     },
-    "verb": {
-      "task": "New task",
-      "agent": "New agent"
-    },
     "whisperBanner": "Whisper to {{name}}, visible only to you both.",
     "whisperPlaceholder": "Whisper to {{name}}…"
   },

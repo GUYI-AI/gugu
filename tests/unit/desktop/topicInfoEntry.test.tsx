@@ -49,7 +49,7 @@ vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', async (importOrigin
   readDisplayIdentities: async (ids: readonly string[]) => ids.map((id) => displayIdentity(id, { display_name: id })),
 }))
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 const { ChatSettingsPanel } = await import('../../../apps/desktop/src/components/chat/ChatSettingsPanel')
 const { NATIVE_BACK_EVENT } = await import('../../../apps/desktop/src/components/ui/sheetStack')

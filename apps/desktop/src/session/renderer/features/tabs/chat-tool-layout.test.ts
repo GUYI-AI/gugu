@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTabProvider, createTabRegistry } from './core/tab-provider-registry';
 import { PaneLayoutStore } from './pane-layout-store';
 
@@ -129,5 +129,84 @@ describe('chat and tool layout', () => {
     expect(plain.chatToolLayout).toBeUndefined();
     expect(plain.snapshot.chatToolLayout).toBeUndefined();
     expect(plain.pair).toEqual(pair);
+  });
+});
+
+describe('mounted chat workspace', () => {
+  it('keeps tool order and resources in one pane while showing, hiding and filling only that pane', () => {
+    const layout = makeLayout('owner');
+    const owner = layout.open('chat', { id: 'owner' }, newTab)!;
+    const detachWorkspace = layout.attachChatWorkspace();
+    try {
+      expect(layout.chatWorkspaceMode).toBe('empty');
+      const first = layout.open('tool', { id: 'one' }, newTab)!;
+      const panes = layout.chatWorkspacePanes!;
+      const tools = panes.tools!.pane;
+      const firstResource = tools._resources.get(first);
+      expect(panes.chat.pane.tabOrder).toEqual([owner]);
+
+      layout.setChatToolLayout('hidden');
+      const second = layout.open('tool', { id: 'two' }, newTab)!;
+      expect(layout.chatWorkspaceMode).toBe('hidden');
+      expect(layout.activePaneId).toBe(panes.chat.paneId);
+      expect(layout.isPaneShown(panes.tools!.paneId)).toBe(false);
+
+      layout.setChatToolLayout('split');
+      const before = layout.layout;
+      layout.setChatToolLayout('full');
+      tools.setActiveTab(first);
+      expect(layout.chatWorkspaceMode).toBe('full');
+      expect(layout.chatWorkspaceSinglePaneId).toBe(panes.tools!.paneId);
+      expect(tools.tabOrder).toEqual([first, second]);
+      expect(tools._resources.get(first)).toBe(firstResource);
+      expect(layout.layout).toBe(before);
+      expect(layout.isPaneShown(panes.chat.paneId)).toBe(false);
+
+      tools.closeTab(first);
+      expect(layout.chatWorkspaceMode).toBe('full');
+      expect(tools.resolvedActiveTabId).toBe(second);
+      tools.closeTab(second);
+      expect(layout.chatWorkspaceMode).toBe('empty');
+      expect(layout.stripTabIds).toEqual([owner]);
+    } finally {
+      detachWorkspace();
+    }
+  });
+
+  it('closes tool tabs as a group without including the conversation in the tool strip', async () => {
+    const layout = makeLayout('owner');
+    const owner = layout.open('chat', { id: 'owner' }, newTab)!;
+    const detachWorkspace = layout.attachChatWorkspace();
+    try {
+      layout.open('tool', { id: 'one' }, newTab);
+      layout.open('tool', { id: 'two' }, newTab);
+      const tools = layout.chatWorkspacePanes!.tools!.pane;
+      tools.closeAll();
+      await vi.waitFor(() => expect(layout.chatWorkspaceMode).toBe('empty'));
+      expect(layout.stripTabIds).toEqual([owner]);
+    } finally {
+      detachWorkspace();
+    }
+  });
+
+  it('retains the existing two-tool pairing when both tool pages are explicitly paired', () => {
+    const layout = makeLayout('owner');
+    const owner = layout.open('chat', { id: 'owner' }, newTab)!;
+    const detachWorkspace = layout.attachChatWorkspace();
+    try {
+      const first = layout.open('tool', { id: 'one' }, newTab)!;
+      const second = layout.open('tool', { id: 'two' }, newTab)!;
+      layout.chatWorkspacePanes!.tools!.pane.splitTab(second);
+      expect(layout.chatWorkspaceMode).toBeUndefined();
+      expect(layout.pair).not.toBeNull();
+      expect(new Set([layout.pair!.pinned, layout.pair!.side])).toEqual(new Set([first, second]));
+
+      layout.groups.find(({ pane }) => pane.entries.has(owner))!.pane.setActiveTab(owner);
+      expect(layout.chatWorkspaceMode).toBe('split');
+      expect(layout.chatWorkspacePanes?.chat.pane.tabOrder).toEqual([owner]);
+      expect(new Set(layout.chatWorkspacePanes?.tools?.pane.tabOrder)).toEqual(new Set([first, second]));
+    } finally {
+      detachWorkspace();
+    }
   });
 });

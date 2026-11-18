@@ -16,6 +16,6 @@ export const zhCNAppSettingsMessages: Record<keyof typeof enUSAppSettingsMessage
   'appSettings.settings': '设置',
   'appSettings.save': '保存',
   'appSettings.saved': '已保存，之后的调用使用新设置。',
-  'appSettings.readFailed': '读不到这个 App。',
+  'appSettings.readFailed': '读不到这个应用。',
   'appSettings.saveFailed': '设置没能保存。',
 };

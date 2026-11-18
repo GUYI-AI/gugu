@@ -150,6 +150,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private readonly _isPrimaryChatTab: PaneLayoutStoreOptions['isPrimaryChatTab'];
   private readonly _chatToolLayout = observable.box<PopulatedChatToolLayout | undefined>(undefined);
   private readonly _chatToolDisposer?: () => void;
+  private readonly _chatWorkspaceHosts = observable.box(0);
   private _lastPersistentActivePaneId: string;
   private readonly _lastPersistentActiveTabIds = new Map<string, string | undefined>();
 
@@ -195,6 +196,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       primaryChatTabId: computed,
       chatToolLayout: computed,
       setChatToolLayout: action,
+      chatWorkspaceMode: computed,
+      chatWorkspacePanes: computed,
+      chatWorkspaceSinglePaneId: computed,
+      attachChatWorkspace: action,
       splitRight: action,
       splitPane: action,
       pairWith: action,
@@ -265,7 +270,102 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   setChatToolLayout(mode: PopulatedChatToolLayout): void {
-    if (this.primaryChatTabId && this._hasToolTabs()) this._chatToolLayout.set(mode);
+    if (!this.primaryChatTabId || !this._hasToolTabs()) return;
+    this._chatToolLayout.set(mode);
+    this._focusChatWorkspacePage();
+  }
+
+  /** Only a mounted desktop chat uses the new chrome. A displayed pair of two tools keeps its own layout. */
+  get chatWorkspaceMode(): ChatToolLayoutMode | undefined {
+    if (!this._chatWorkspaceHosts.get() || this._singlePaneHost) return undefined;
+    const primary = this.primaryChatTabId;
+    const pair = this._shownPair;
+    if (!primary || (pair && pair.pinned !== primary && pair.side !== primary)) return undefined;
+    return this.chatToolLayout;
+  }
+
+  get chatWorkspacePanes(): { chat: Pane<R>; tools?: Pane<R> } | undefined {
+    const id = this.chatWorkspaceMode && this.primaryChatTabId;
+    const chat = id ? this._groupOf(id) : undefined;
+    if (!chat) return undefined;
+    return { chat, tools: this.groups.find((group) => group !== chat) };
+  }
+
+  get chatWorkspaceSinglePaneId(): string | undefined {
+    const panes = this.chatWorkspacePanes;
+    if (this.chatWorkspaceMode === 'hidden') return panes?.chat.paneId;
+    if (this.chatWorkspaceMode === 'full') return panes?.tools?.paneId;
+    return undefined;
+  }
+
+  isPaneShown(paneId: string): boolean {
+    const single = this.chatWorkspaceSinglePaneId;
+    return single ? single === paneId : !this.narrow || this.activePaneId === paneId;
+  }
+
+  attachChatWorkspace(): () => void {
+    this._chatWorkspaceHosts.set(this._chatWorkspaceHosts.get() + 1);
+    // Old snapshots and tool-to-tool pairs may still have tools in the chat pane.
+    const stop = reaction(
+      () => {
+        const panes = this.chatWorkspacePanes;
+        if (!panes || this.chatWorkspaceMode === 'empty') return undefined;
+        if (panes.tools && panes.chat.pane.tabOrder.length === 1) return undefined;
+        const candidates = [this.focusedPane.resolvedActiveTabId, ...this.stripTabIds];
+        return candidates.find((id) => id && id !== this.primaryChatTabId);
+      },
+      (tabId) => { if (tabId) this._selectChatWorkspaceTab(tabId, false); },
+      { fireImmediately: true }
+    );
+    this._focusChatWorkspacePage();
+    return action(() => {
+      stop();
+      this._chatWorkspaceHosts.set(this._chatWorkspaceHosts.get() - 1);
+    });
+  }
+
+  private _focusChatWorkspacePage(): void {
+    const single = this.chatWorkspaceSinglePaneId;
+    if (single) this.activePaneId = single;
+  }
+
+  /** Keep all tools in one pane so changing the selected tool preserves order, size and the chat resource. */
+  private _selectChatWorkspaceTab(tabId: string, focus = true): boolean {
+    const primary = this.primaryChatTabId;
+    const panes = this.chatWorkspacePanes;
+    if (!primary || !panes) return false;
+    if (tabId === primary) {
+      if (this.chatWorkspaceMode === 'full') this.setChatToolLayout('split');
+      this.activePaneId = panes.chat.paneId;
+      panes.chat.pane.activeTabId = primary;
+      return true;
+    }
+
+    const order = panes.chat.pane.tabOrder.length > 1 ? this.stripTabIds : [];
+    if (!panes.tools) this.pairWith(primary, tabId, { by: 'restore' });
+    const chat = this._groupOf(primary)!;
+    const tools = this.groups.find((group) => group !== chat);
+    if (!tools) return false;
+    for (const id of order) {
+      if (id !== primary) this._move(id, tools);
+    }
+    // Moving an existing tool leaves its resource intact. Reorder only if a legacy chat pane supplied pages.
+    const wanted = order.filter((id) => id !== primary && tools.pane.entries.has(id));
+    wanted.forEach((id, to) => {
+      const from = tools.pane.tabOrder.indexOf(id);
+      if (from !== to) tools.pane.reorderTabs(from, to);
+    });
+    chat.pane.activeTabId = primary;
+    tools.pane.activeTabId = tabId;
+    this._recordChatWorkspacePair();
+    if (focus && this.chatWorkspaceMode !== 'hidden') this.activePaneId = tools.paneId;
+    this._focusChatWorkspacePage();
+    return true;
+  }
+
+  private _recordChatWorkspacePair(): void {
+    const pair = this._shownPair;
+    this._pair = pair ? { pinnedTabId: pair.pinned, sideTabId: pair.side } : null;
   }
 
   private _restoreChatToolLayout(saved: TabGroupsSnapshot['chatToolLayout']): void {
@@ -366,7 +466,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (!detached) return null;
     if (pair && (tabId === pair.pinned || tabId === pair.side)) this._pair = null;
     // Windowing a hidden member only clears its recorded pair; the content being used stays put.
-    if (wasActive && this.sidePaneId !== null) this._collapseDisplay(source.paneId === this.sidePaneId ? 'pinned' : 'side', after);
+    if (this.chatWorkspacePanes?.tools === source) this._recordChatWorkspacePair();
+    else if (wasActive && this.sidePaneId !== null) this._collapseDisplay(source.paneId === this.sidePaneId ? 'pinned' : 'side', after);
     const paneId = crypto.randomUUID();
     const pane = new PaneStore<R>(this._registry, this._ctx, {
       layoutOpener: (kind, args, config) => this.open(kind, args, config),
@@ -393,12 +494,16 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const windowPane = this.windowPanes.get(windowPaneId);
     if (!windowPane) return;
     const activate = opts?.activate ?? true;
-    const target = this.mainGroup;
-    for (const tabId of [...windowPane.pane.tabOrder]) {
+    const workspace = this.chatWorkspacePanes;
+    const target = workspace?.tools ?? this.mainGroup;
+    const returned = [...windowPane.pane.tabOrder];
+    for (const tabId of returned) {
       const detached = windowPane.pane.detachTab(tabId);
       if (detached) target.pane.adoptEntry(detached.entry, detached.resource, { activate, shown: detached.shown });
     }
-    if (activate) this.activePaneId = target.paneId;
+    if (workspace && returned.length && (activate || !workspace.tools)) {
+      this._selectChatWorkspaceTab(returned[returned.length - 1], activate);
+    } else if (activate) this.activePaneId = target.paneId;
     this._dropWindowPane(windowPaneId);
   }
 
@@ -445,8 +550,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (this.splitBlocked(paneId, tabId, edge) !== null) return false;
     const moving = tabId ?? this.focusedPane.resolvedActiveTabId!;
     const pane = this.groups.find((group) => group.paneId === paneId)!.pane;
-    const beside = [pane.resolvedActiveTabId, pane.previousActiveTabId,
-      this.groups.find((group) => group.pane !== pane)?.pane.resolvedActiveTabId, ...pane.tabOrder]
+    const sibling = this.groups.find((group) => group.pane !== pane)?.pane.resolvedActiveTabId;
+    // Splitting from the shared tool strip can still pair two tools.
+    const localTools = this.chatWorkspacePanes?.tools?.pane === pane ? pane.tabOrder : [];
+    const beside = [pane.resolvedActiveTabId, pane.previousActiveTabId, ...localTools, sibling, ...pane.tabOrder]
       .find((id) => id && id !== moving);
     if (!beside) return false;
     this.pairDeclined = false;
@@ -520,6 +627,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       : tabId === pair.pinned && this.sideGroup?.pane.resolvedActiveTabId === pair.side);
     if (member) this._pair = null;
     this._sideShares.delete(tabId);
+    const workspaceTools = this.chatWorkspacePanes?.tools;
+    // The remaining tools already belong to their own pane. The pane is removed only when its last page closes.
+    if (workspaceTools?.paneId === paneId) {
+      this._displaced.delete(tabId);
+      this._recordChatWorkspacePair();
+      return;
+    }
     const record = this._displaced.get(tabId);
     this._displaced.delete(tabId);
     for (const [other, pointed] of [...this._displaced]) {
@@ -654,6 +768,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       this.activePaneId = target.paneId;
       return;
     }
+    const tools = this.chatWorkspacePanes?.tools;
+    if (tools === fromGroup) {
+      const to = overId === `pane-drop-${tools.paneId}` ? tools.pane.tabOrder.length - 1 : tools.pane.tabOrder.indexOf(overId);
+      if (to >= 0) tools.pane.reorderTabs(tools.pane.tabOrder.indexOf(draggedTabId), to);
+      return;
+    }
     const pair = this.pair;
     if (pair && draggedTabId === pair.side) {
       this.unpair();
@@ -668,7 +788,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   setActiveGroup(paneId: string): void {
-    if (this.groups.some((g) => g.paneId === paneId)) {
+    const single = this.chatWorkspaceSinglePaneId;
+    if ((!single || single === paneId) && this.groups.some((g) => g.paneId === paneId)) {
       this.activePaneId = paneId;
     }
   }
@@ -794,10 +915,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     // A placement shared by the kind says where a new tab lands, not where this page was: a link inside a page still goes in place.
     const pageRemembered = this._registry.get(kind).placementKey ? undefined : remembered;
     const inLayout = !source || this.groups.includes(source as Pane<R>);
+    const chatWorkspace = inLayout ? this.chatWorkspacePanes : undefined;
     if (intent === 'navigate' && from && !conversation && (own || !pageRemembered || !inLayout) && (!open || open === from)) {
       source!.pane.navigate(from.tabId, kind, state, config.viewState);
       if (activate) {
-        if (this.groups.includes(source as Pane<R>)) this.activePaneId = source!.paneId;
+        if (this.groups.includes(source as Pane<R>) && this.chatWorkspaceMode !== 'hidden') this.activePaneId = source!.paneId;
         source!.pane.activeTabId = from.tabId;
         // A resident source guest lives outside the pane DOM. Hand input to its replacement after navigation, never
         // while close confirmation is pending.
@@ -817,19 +939,23 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const current = !activate && from ? from.tabId : focused;
     let tabId = open?.tabId;
     if (!tabId) {
-      const main = this.mainGroup.pane;
+      const main = (chatWorkspace?.tools ?? this.mainGroup).pane;
       tabId = main.openWithState(kind, state, { activate: false, after: from && main.entries.has(from.tabId) ? from.tabId : undefined, openerTabId: from?.tabId });
       if (!tabId) return;
     }
     const target = this._groupOf(tabId)!;
     const onScreen = target.pane.resolvedActiveTabId === tabId;
-    if (beside && current && current !== tabId && !onScreen) {
-      this.pairWith(current, tabId, { activate: activate || from?.tabId === focused });
-    } else if (activate && !(onScreen && beside)) {
-      target.pane.setActiveTab(tabId);
+    if (chatWorkspace && tabId !== this.primaryChatTabId) {
+      if (activate || !chatWorkspace.tools) this._selectChatWorkspaceTab(tabId, activate);
+    } else {
+      if (beside && current && current !== tabId && !onScreen) {
+        this.pairWith(current, tabId, { activate: activate || from?.tabId === focused });
+      } else if (activate && !(onScreen && beside)) {
+        target.pane.setActiveTab(tabId);
+      }
+      // A narrow view draws one pane: an explicit open must reveal its destination there.
+      if (activate && beside && this.narrow) this.activePaneId = this._groupOf(tabId)!.paneId;
     }
-    // A narrow view draws one pane: an explicit open must reveal its destination there.
-    if (activate && beside && this.narrow) this.activePaneId = this._groupOf(tabId)!.paneId;
     if (config.viewState) this._groupOf(tabId)?.pane.setPageViewState(tabId, config.viewState);
     if (activate) this.focusedPane.focusActiveContent();
     return tabId;
@@ -1019,7 +1145,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private _createPaneStore(paneId: string): PaneStore<R> {
     return new PaneStore<R>(this._registry, this._ctx, {
       layoutOpener: (kind, args, config) => this.open(kind, args, config),
-      isViewActive: () => this._isViewActiveBox.get() && (!this.narrow || this.activePaneId === paneId),
+      isViewActive: () => this._isViewActiveBox.get() && this.isPaneShown(paneId),
       layoutSplitter: {
         tabClosing: (entry) => {
           const pair = this.pair;
@@ -1030,6 +1156,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         tabRemoved: (tabId, wasActive, after) => this._tabRemoved(paneId, tabId, wasActive, after),
         // Selecting a tab is explicit focus movement; opening a page uses _openFrom instead.
         activating: (tabId) => {
+          if (this._selectChatWorkspaceTab(tabId)) return true;
           const pair = this.pair;
           if (pair && (tabId === pair.pinned || tabId === pair.side)) {
             const current = this.focusedPane.resolvedActiveTabId;
@@ -1052,8 +1179,15 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         split: (tabId) => { this.splitPane(paneId, 'right', tabId); },
         splitBlocked: (tabId) => this.splitBlocked(paneId, tabId, 'right'),
         entryForTab: (tabId) => this.groups.map(({ pane }) => pane.entries.get(tabId)).find(Boolean),
-        stripTabIds: () => this.stripTabIds,
-        isOnScreen: (tabId) => !this.narrow && (this._shownPair?.pinned === tabId || this._shownPair?.side === tabId),
+        stripTabIds: () => {
+          const tools = this.chatWorkspacePanes?.tools;
+          return tools?.paneId === paneId ? tools.pane.tabOrder : this.stripTabIds;
+        },
+        isOnScreen: (tabId) => {
+          if (!this.chatWorkspaceMode) return !this.narrow && (this._shownPair?.pinned === tabId || this._shownPair?.side === tabId);
+          const group = this._groupOf(tabId);
+          return !!group && this.isPaneShown(group.paneId) && group.pane.resolvedActiveTabId === tabId;
+        },
         revealTab: (tabId) => {
           const group = this._groupOf(tabId);
           if (!group) return false;
