@@ -23,6 +23,10 @@ export default {
     "fileOpenFailed": "暂时打不开这个文件，请稍后重试"
   },
   "question": {
+    "count": "{{count}} 个问题", "flowHint": "选完后统一提交", "progress": "回答进度",
+    "singleSelect": "选一项", "multiSelect": "可多选", "review": "核对回答", "reviewTitle": "提交前核对",
+    "reviewHint": "确认后一次提交给智能体", "edit": "修改", "back": "返回", "noSelection": "未选择", "answerSeparator": "、",
+    "answerUnreadable": "回答详情暂时无法读取",
     "title": "需要你确认", "other": "自己填写", "later": "稍后回答", "resume": "继续回答",
     "previous": "上一题", "next": "下一题", "submit": "提交回答", "submitting": "发送中…",
     "answered": "已回答", "withdrawn": "这次提问已结束", "waiting": "待你回答",

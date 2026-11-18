@@ -23,6 +23,10 @@ export default {
     "fileOpenFailed": "This file could not be opened. Please try again later."
   },
   "question": {
+    "count_one": "{{count}} question", "count_other": "{{count}} questions", "flowHint": "Submit all answers together", "progress": "Answer progress",
+    "singleSelect": "Choose one", "multiSelect": "Choose any", "review": "Review answers", "reviewTitle": "Review before submitting",
+    "reviewHint": "Confirm and send all answers together", "edit": "Edit", "back": "Back", "noSelection": "No selection", "answerSeparator": ", ",
+    "answerUnreadable": "Answer details could not be read",
     "title": "Your input", "other": "Write an answer", "later": "Answer later", "resume": "Continue answering",
     "previous": "Previous", "next": "Next", "submit": "Submit answers", "submitting": "Sending…",
     "answered": "Answered", "withdrawn": "This question has closed", "waiting": "Waiting for your answer",
