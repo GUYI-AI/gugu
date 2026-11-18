@@ -209,7 +209,7 @@
   gap: 4px;
 }
 
-.phone-market-agent-facts > div + div {
+.phone-market-agent-facts > div:not(:first-child) {
   border-inline-start: 1px solid var(--border-color);
 }
 

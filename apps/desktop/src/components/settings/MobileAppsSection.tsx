@@ -70,6 +70,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
     retry: false,
   })
   const unreadable = inventory.isError
+  const inventoryLoaded = store.isLoaded
   const reloadInventory = () => void phoneApps.reload().then(() => inventory.refetch(), () => inventory.refetch())
   useEffect(() => {
     const off = phoneApps.market.onRefreshed((result) => {
@@ -81,7 +82,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
 
   useEffect(() => {
     if (!appDetail || openedLink.current === appDetail) return
-    if (openInstalledDetail && !store.isLoaded) return
+    if (openInstalledDetail && !inventoryLoaded) return
     const installed = openInstalledDetail && store.manifests.some(app => app.id === appDetail.extensionId)
     if (!installed && !catalog.data) return
     openedLink.current = appDetail
@@ -93,7 +94,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
     const item = phoneMarketRows(catalog.data?.entries ?? [], '').find(row => row.manifest.id === appDetail.extensionId)
     if (item) setDetail(item)
     else setError(translate('extensions.marketUnavailable'))
-  }, [appDetail, catalog.data, onHandledAppDetail, openInstalledDetail, store.isLoaded, translate])
+  }, [appDetail, catalog.data, onHandledAppDetail, openInstalledDetail, inventoryLoaded, translate])
 
   const closeDetail = () => {
     setDetail(null)
@@ -111,7 +112,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
     {unreadable && mode === 'installed' && <SettingsNote tone="danger" role="alert" data-testid="phone-apps-unreadable">
       {translate('extensions.loadFailed')} <Button onClick={reloadInventory}>{translate('extensions.retry')}</Button>
     </SettingsNote>}
-    {mode === 'installed' && (store.isLoaded
+    {mode === 'installed' && (inventoryLoaded
       ? <AppsSection updates={offered.updates} gone={offered.gone} known={offered.known} onManage={setManage}
         assistant={installedAssistant} hideEmpty={hideInstalledEmpty} />
       : !unreadable ? <ShelfSkeleton label={translate('extensions.loading')} /> : null)}
