@@ -45,8 +45,8 @@ export async function accountAttachmentsEndpoint(context: { supabaseUrl: string;
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
 export class AttachmentsError extends Error {
   /** `details`: only on recipient_not_member — the refused ids, comma-separated in to_user_ids order (gugu-supabase#242). */
-  constructor(readonly route: string, readonly status: number, readonly code: string, message: string, readonly details?: string) {
-    super(`attachments/${route}: ${message}`)
+  constructor(readonly route: string, readonly status: number, readonly code: string, readonly reason: string, readonly details?: string) {
+    super(`attachments/${route}: ${reason}`)
   }
 }
 
@@ -89,8 +89,8 @@ export async function planAttachmentUpload(endpoint: AttachmentsEndpoint, file: 
 /**
  * Uploads to the configured object store using the server-issued scoped upload plan. An endpoint with `signedParts` asks
  * for a multipart upload, which the server gives when its store signs parts and the file is more than one part; the same
- * `request_id` then resumes it, sending only the parts not yet stored. A given `request_id` whose permit was used or
- * lapsed starts the upload once more under a fresh id.
+ * `request_id` then resumes it, sending only the parts not yet stored. If the server confirms that a permit is closed,
+ * the next request ID is derived from that permit's ID.
  */
 export async function uploadAttachmentBytes(
   endpoint: AttachmentsEndpoint,
@@ -98,24 +98,13 @@ export async function uploadAttachmentBytes(
   scope: { chat_id: string | null; as: string; request_id?: string },
   options?: { onPlan?: (plan: AttachmentUploadPlan) => void; retry?: boolean; onProgress?: (progress: AttachmentByteProgress) => void; signal?: AbortSignal },
 ): Promise<string> {
-  const size = file.bytes instanceof Blob ? file.bytes.size : file.bytes.byteLength
-  let requestId = scope.request_id ?? crypto.randomUUID(), fresh = false, restarted = false
-  for (;;) {
-    try {
-      const form = await planAttachmentUpload(endpoint, { size, contentType: file.contentType }, { ...scope, request_id: requestId }, options?.signal)
-      options?.onPlan?.(form)
-      await uploadAttachmentPlan(endpoint, form, file, options?.retry === true && !!scope.request_id && !fresh, options?.onProgress, options?.signal)
-      return form.staging_key
-    } catch (error) {
-      if (!(error instanceof AttachmentsError)) throw error
-      // The parts did not make this file, or the server holds no upload for the key any more: start it again, once.
-      if (!restarted && (error.code === 'upload_changed' || error.route === 'upload-parts' && error.code === 'upload_incomplete')) { restarted = true; continue }
-      // The caller's id was already sent or its permit lapsed (a resend long after the first try, or a resumed upload that
-      // stopped reporting): that id can never upload again, so the upload starts once more under a fresh one.
-      if (scope.request_id && !fresh && error.code === 'expired') { fresh = true; restarted = false; requestId = crypto.randomUUID(); continue }
-      throw error
-    }
-  }
+  const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
+  const plan = await storeManagedAttachment(endpoint, upload, file, scope, {
+    signal: options?.signal, onPlan: options?.onPlan, onProgress: options?.onProgress,
+    allowExisting: () => options?.retry === true && upload.requestId === scope.request_id,
+  })
+  if (!plan?.staging_key) throw new AttachmentsError('upload', 502, 'invalid', 'upload plan has no staging key')
+  return plan.staging_key
 }
 
 /** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
@@ -133,12 +122,12 @@ const MAX_STORAGE_ATTEMPTS = 3
 const retryableStatus = (status: number) => status === 408 || status === 429 || status >= 500
 
 function isTransientStorageError(error: unknown): boolean {
-  if (error instanceof AttachmentsError) return retryableStatus(error.status)
+  if (error instanceof AttachmentsError) return retryableStatus(error.status) && !error.code.endsWith('_full')
   const chromium = error instanceof Error && /^net::ERR_(?:CONNECTION_(?:RESET|CLOSED|ABORTED|REFUSED|FAILED|TIMED_OUT)|EMPTY_RESPONSE|TIMED_OUT|INTERNET_DISCONNECTED|NETWORK_CHANGED|CONTENT_LENGTH_MISMATCH)$/.test(error.message)
   return error instanceof AttachmentDeadlineError || chromium || isDownloadConnectionError(error)
 }
 
-async function retryStorageUpload(upload: () => Promise<{ status: number }>, attempts: { used: number }, signal?: AbortSignal) {
+async function retryUploadRequest<T extends { status: number }>(upload: () => Promise<T>, attempts: { used: number }, signal?: AbortSignal) {
   for (;;) {
     signal?.throwIfAborted()
     attempts.used++
@@ -181,7 +170,7 @@ async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string,
           attempts.set(sent.n, budget)
           try {
             if (budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 409, 'upload_incomplete', `Storage retry limit reached for part ${sent.n}`)
-            const { status } = await retryStorageUpload(
+            const { status } = await retryUploadRequest(
               () => putPart(endpoint, sent, blob.slice(start, start + sent.bytes), loaded => { sending.set(sent.n, loaded); progress() }, signal), budget, signal)
               .finally(() => sending.delete(sent.n))
             if (status === 403) {
@@ -275,7 +264,7 @@ async function sendAttachmentPlan(endpoint: AttachmentsEndpoint, form: Attachmen
   }
   const init = { method, body, headers: method === 'PUT' ? { 'content-type': file.contentType, ...form.headers } : form.headers, signal }
   const attempts = { used: 0 }
-  const posted = await retryStorageUpload(() => sendAttachmentRequest(endpoint, form.url, init, size, onProgress), attempts, signal)
+  const posted = await retryUploadRequest(() => sendAttachmentRequest(endpoint, form.url, init, size, onProgress), attempts, signal)
   if (posted.status !== 200 && posted.status !== 204 && !((allowExisting || attempts.used > 1) && posted.status === 409)) {
     throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}`)
   }
@@ -300,14 +289,36 @@ export type DeclaredAttachment = { staging_key: string; sha256: string; size_byt
 export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; contentType: string },
   scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<DeclaredAttachment> {
   const size = file.bytes instanceof Uint8Array ? file.bytes.byteLength : file.bytes.size
-  const [sha256, plan] = await Promise.all([attachmentSha256(file.bytes), planAttachmentUpload(endpoint, { size, contentType: file.contentType }, scope, signal)])
+  const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
+  const [sha256, plan] = await Promise.all([attachmentSha256(file.bytes), readManagedUploadPlan(endpoint, { size, contentType: file.contentType }, scope, upload, signal)])
   requireUploadSize(size, plan.max_bytes)
   return { staging_key: plan.staging_key, sha256, size_bytes: size, plan }
+}
+
+export type DeclaredUploadState = { requestId: string; plan?: AttachmentUploadPlan; mayRollOver: boolean }
+
+const nextUploadRequestId = (id: string) => contentRequestId('attachment-upload-permit', id)
+
+async function readManagedUploadPlan(endpoint: AttachmentsEndpoint, file: { size: number; contentType: string },
+  scope: { chat_id: string | null; as: string }, upload: DeclaredUploadState, signal?: AbortSignal) {
+  for (;;) {
+    try {
+      const request = { ...scope, request_id: upload.requestId }
+      const { plan } = await retryUploadRequest(async () => ({ status: 200, plan: await planAttachmentUpload(endpoint, file, request, signal) }), { used: 0 }, signal)
+      return plan
+    } catch (error) {
+      if (!upload.mayRollOver || !(error instanceof AttachmentsError) || error.status !== 410 || error.code !== 'expired') throw error
+      // After a restart or a lost signing response, each confirmed expiry leads to the same successor.
+      upload.requestId = await nextUploadRequestId(upload.requestId)
+    }
+  }
 }
 
 /** How a sender follows its declared bytes up (all optional: an agent just waits for them). */
 export type DeclaredUploadHooks = {
   signal?: AbortSignal
+  /** The queue keeps the current plan between attempts. A new host can recover it from the original staging key. */
+  upload?: DeclaredUploadState
   onProgress?: (progress: AttachmentByteProgress, attempt: number) => void
   /** Bytes can beat their message's commit: finish waits this long for the declaration (by default not at all). */
   declarationWaitMs?: number
@@ -321,38 +332,12 @@ export type DeclaredUploadHooks = {
 export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, declared: Pick<DeclaredAttachment, 'staging_key' | 'size_bytes' | 'plan'>,
   file: { bytes: Uint8Array | Blob; name: string; contentType: string }, message: { id: string; chat_id: string | null; as: string }, hooks: DeclaredUploadHooks = {}): Promise<boolean> {
   const scope = { chat_id: message.chat_id, as: message.as }
-  const issue = (request_id?: string) => planAttachmentUpload(endpoint, { size: declared.size_bytes, contentType: file.contentType }, { ...scope, request_id }, hooks.signal)
-  const requestId = (key?: string) => key?.startsWith('staging/') ? key.split('/').at(-1) : undefined
-  let plan = declared.plan ?? await issue(requestId(declared.staging_key)).catch(error => {
-    if (!(error instanceof AttachmentsError) || error.code !== 'expired') throw error
-    return issue()
+  const upload = hooks.upload ?? declaredUploadState(declared.staging_key, message.id, declared.plan)
+  const plan = await storeManagedAttachment(endpoint, upload, { ...file, name: file.name || 'file' }, scope, {
+    ...hooks, declaredSize: declared.size_bytes,
+    allowExisting: attempt => attempt > 1 || !declared.plan || upload.plan !== declared.plan,
   })
-  const bytes = { ...file, name: file.name || 'file' }
-  const partAttempts: PartAttempts = new Map()
-  let replaced = false, attempt = 1
-  for (;;) {
-    try {
-      await uploadWithPermit(endpoint, plan, bytes, !declared.plan || attempt > 1, partAttempts, progress => hooks.onProgress?.(progress, attempt), hooks.signal)
-      break
-    } catch (error) {
-      if (!(error instanceof AttachmentsError) || hooks.stopped?.()) throw error
-      const currentRequestId = requestId(plan.staging_key)
-      if (error.code === 'expired' && plan.parts && error.route === 'upload' && currentRequestId) {
-        // Reporting completed parts can extend the server's permit beyond the plan date we last saw.
-        const renewed = await issue(currentRequestId).catch(error => {
-          if (error instanceof AttachmentsError && error.code === 'expired') return null
-          throw error
-        })
-        if (renewed && renewed.staging_key === plan.staging_key && Date.parse(renewed.expires_at ?? '') > Date.now()) {
-          plan = renewed; attempt++; continue
-        }
-      }
-      if (replaced || !(error.code === 'expired' || error.code === 'upload_changed' || error.route === 'upload-parts' && error.code === 'upload_incomplete')) throw error
-      plan = await issue()
-      partAttempts.clear()
-      replaced = true; attempt++
-    }
-  }
+  if (!plan) return false
   const uploadKey = plan.staging_key ?? declared.staging_key
   const until = Date.now() + (hooks.declarationWaitMs ?? 0)
   let finishFailures = 0
@@ -370,6 +355,54 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
       await waitForAttachmentRetry(wait, hooks.signal)
     }
   }
+}
+
+async function storeManagedAttachment(endpoint: AttachmentsEndpoint, upload: DeclaredUploadState, file: { bytes: Uint8Array | Blob; name: string; contentType: string },
+  scope: { chat_id: string | null; as: string }, hooks: Pick<DeclaredUploadHooks, 'signal' | 'onProgress' | 'stopped'> & {
+    declaredSize?: number; allowExisting: (attempt: number) => boolean; onPlan?: (plan: AttachmentUploadPlan) => void
+  }): Promise<AttachmentUploadPlan | undefined> {
+  const size = hooks.declaredSize ?? (file.bytes instanceof Blob ? file.bytes.size : file.bytes.byteLength)
+  const partAttempts: PartAttempts = new Map()
+  let revalidated: { requestId: string; expiresAt?: string } | undefined
+  let reopened = false, rolled = false, attempt = 1
+  for (;;) {
+    if (hooks.stopped?.()) return
+    const requestId = upload.requestId
+    if (!upload.plan) {
+      upload.plan = await readManagedUploadPlan(endpoint, { size, contentType: file.contentType }, scope, upload, hooks.signal)
+      hooks.onPlan?.(upload.plan)
+    }
+    const plan = upload.plan
+    if (upload.requestId !== requestId) { partAttempts.clear(); reopened = false }
+    try {
+      await uploadWithPermit(endpoint, plan, file, hooks.allowExisting(attempt), partAttempts, progress => hooks.onProgress?.(progress, attempt), hooks.signal)
+      return plan
+    } catch (error) {
+      if (!(error instanceof AttachmentsError) || hooks.stopped?.()) throw error
+      if (error.status === 410 && error.code === 'expired') {
+        if (error.route === 'upload') {
+          // The local cap may be stale after completed parts extended it. Check the same permit with the server.
+          if (revalidated?.requestId === upload.requestId && revalidated.expiresAt === plan.expires_at) throw error
+          revalidated = { requestId: upload.requestId, expiresAt: plan.expires_at }
+        } else {
+          // The multipart control routes confirm that this permit ended or its bytes were already registered.
+          if (rolled || !upload.mayRollOver) throw error
+          upload.requestId = await nextUploadRequestId(upload.requestId)
+          partAttempts.clear(); reopened = false; rolled = true
+        }
+      } else {
+        if (reopened || !(error.code === 'upload_changed' || error.route === 'upload-parts' && error.code === 'upload_incomplete')) throw error
+        partAttempts.clear()
+        reopened = true
+      }
+      upload.plan = undefined
+      attempt++
+    }
+  }
+}
+
+export function declaredUploadState(stagingKey: string, messageId: string, plan?: AttachmentUploadPlan): DeclaredUploadState {
+  return { requestId: stagingKey.startsWith('staging/') ? stagingKey.split('/').at(-1)! : messageId, plan, mayRollOver: true }
 }
 
 export interface CommitArgs {

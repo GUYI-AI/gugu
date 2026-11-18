@@ -1,8 +1,8 @@
-// The server lists the upload duties; this device's stored bytes are their only local persistence.
-import { AttachmentsError, finishDeclaredAttachment, pendingAttachmentUploads, type AttachmentsEndpoint, type AttachmentUploadPlan } from './attachmentsApi'
+// The server lists the upload duties and their original keys; this device keeps the bytes and caches the live plan.
+import { AttachmentsError, declaredUploadState, finishDeclaredAttachment, pendingAttachmentUploads, type AttachmentsEndpoint, type AttachmentUploadPlan, type DeclaredUploadState } from './attachmentsApi'
 
 export type AttachmentUploadTask = { messageId: string; chatId: string; as: string; pendingKey: string; sha256: string; name: string; contentType: string; size: number }
-export type DeclaredUploadProgress = { sha256: string; chatId?: string; loaded: number; total: number; attempt: number; failed?: boolean; final?: boolean }
+export type DeclaredUploadProgress = { sha256: string; chatId?: string; loaded: number; total: number; attempt: number; failed?: boolean; final?: boolean; reason?: string }
 export type DeclaredUploadHost = {
   endpoint(): Promise<AttachmentsEndpoint>
   copyOf(sha256: string): Promise<Blob | null>
@@ -12,6 +12,7 @@ export type DeclaredUploadHost = {
 const FINISH_WAIT_MS = 120_000, RETRY_FIRST_MS = 5_000, RETRY_MAX_MS = 60_000
 export function createDeclaredUploads(host: DeclaredUploadHost) {
   const running = new Map<string, Promise<void>>()
+  const permits = new Map<string, { pendingKey: string; upload: DeclaredUploadState }>()
   // False until a late prepare or running upload has observed the cancellation.
   const dropped = new Map<string, boolean>()
   const controllers = new Set<AbortController>()
@@ -29,6 +30,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
   }
   function drop(messageId: string) {
     dropped.set(messageId, running.has(messageId))
+    permits.delete(messageId)
     host.progress(messageId)
   }
   function resume(): Promise<void> {
@@ -41,6 +43,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       const uploads = await pendingAttachmentUploads(await host.endpoint())
       const pendingIds = new Set(uploads.map(upload => upload.message_id))
       for (const [id, observed] of dropped) if (observed && !pendingIds.has(id) && !running.has(id)) dropped.delete(id)
+      for (const id of permits.keys()) if (!pendingIds.has(id) && !running.has(id)) permits.delete(id)
       if (askAgain) { clearTimeout(askAgain.timer); askAgain = null }
       for (const pending of uploads) {
         if (messageId && pending.message_id !== messageId) continue
@@ -65,11 +68,15 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
     host.progress(task.messageId, progress)
     const controller = new AbortController()
     controllers.add(controller)
+    const cached = permits.get(task.messageId)
+    const upload = cached?.pendingKey === task.pendingKey ? cached.upload : declaredUploadState(task.pendingKey, task.messageId, first ?? undefined)
+    permits.set(task.messageId, { pendingKey: task.pendingKey, upload })
     try {
       const endpoint = await host.endpoint()
       const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, size_bytes: task.size, ...(first ? { plan: first } : {}) },
         { bytes: file.slice(0, file.size, task.contentType), name: task.name, contentType: task.contentType }, { id: task.messageId, chat_id: task.chatId, as: task.as }, {
           signal: controller.signal,
+          upload,
           onProgress: (transfer, attempt) => {
             progress = { sha256: task.sha256, chatId: task.chatId, loaded: transfer.loaded, total: transfer.total ?? task.size, attempt }
             host.progress(task.messageId, progress)
@@ -78,6 +85,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
           stopped: () => closed || dropped.has(task.messageId),
         })
       if (!finished || closed) return
+      permits.delete(task.messageId)
       host.progress(task.messageId)
     } catch (error) {
       if (closed || dropped.has(task.messageId)) return
@@ -87,18 +95,22 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
         })
         if (closed || dropped.has(task.messageId)) return
         if (pending && !pending.some(upload => upload.message_id === task.messageId)) {
+          permits.delete(task.messageId)
           host.progress(task.messageId)
           return
         }
       }
       const final = error instanceof AttachmentsError && (error.code === 'upload_mismatch' || error.code === 'too_large' || error.status === 413)
-      host.progress(task.messageId, { ...progress, failed: true, final })
+      const reason = error instanceof AttachmentsError && error.status === 429 && error.code.endsWith('_full') ? error.reason : undefined
+      if (final) permits.delete(task.messageId)
+      host.progress(task.messageId, { ...progress, failed: true, final, reason })
       host.warn?.(error)
       throw error
     } finally { controllers.delete(controller) }
   }
   return { begin, drop, retry: (messageId: string) => resuming ?? readPending(messageId), resume, dispose() {
     closed = true
+    permits.clear()
     if (askAgain) clearTimeout(askAgain.timer)
     for (const controller of controllers) controller.abort(new Error('Attachment upload host stopped'))
   } }
