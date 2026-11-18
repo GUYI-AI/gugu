@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { autoReviewModelOptions, autoReviewModelSchema } from './auto-review-model';
+import { autoReviewModelOptions, autoReviewModelSchema, canSpecifyClaudeReviewModel } from './auto-review-model';
 import type { CustomModelConnection } from './custom-model';
 
 const connection = (id: string, patch: Partial<CustomModelConnection> = {}): CustomModelConnection => ({
@@ -21,4 +21,16 @@ it('stores a complete custom model identity or the explicit default', () => {
   expect(autoReviewModelSchema.parse(null)).toBeNull();
   expect(autoReviewModelSchema.safeParse({ kind: 'custom', connectionId: '481825a8-60b9-4c83-8d1b-f104e3db0269', modelId: '' }).success).toBe(false);
   expect(autoReviewModelSchema.parse({ kind: 'custom', connectionId: '481825a8-60b9-4c83-8d1b-f104e3db0269', modelId: 'upstream/model-v1' })).toMatchObject({ modelId: 'upstream/model-v1' });
+});
+
+it.each(['claude-opus-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-opus-5[1m]',
+  'claude-opus-5-20261001', 'us.anthropic.claude-sonnet-5-5-v1:0', 'claude-opus-5-5@20261001'])('excludes native-rejected reviewer ID %s', id => {
+  expect(canSpecifyClaudeReviewModel(id)).toBe(false);
+});
+it('filters by original ID rather than a presentation label', () => {
+  const candidates = autoReviewModelOptions([connection('one', { models: [
+    { id: 'claude-opus-5', label: 'A cheap model' }, { id: 'claude-haiku-5-5', label: 'Opus 5' },
+    { id: 'claude-sonnet-5' }, { id: 'claude-opus-5-1' },
+  ] })]);
+  expect(candidates.map(model => model.modelId)).toEqual(['claude-haiku-5-5', 'claude-sonnet-5', 'claude-opus-5-1']);
 });
