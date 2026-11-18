@@ -17,7 +17,7 @@ export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string
   claude: '在终端里用 Claude 改代码、讲代码、做重构',
   codex: '接 OpenAI 的模型，看着整个项目写代码、跑命令',
   pi: '极简的终端编程智能体，能接多家模型，也能自行添加功能',
-  agy: 'Google 的编程智能体，能聊天，也能在终端里干活',
+  antigravity: 'Google 的编程智能体，能聊天，也能在终端里干活',
   dsh: 'DeepSeek 开源的编程智能体，读代码、改文件、跑命令，撑得住长会话',
   mimocode: '小米的终端编程智能体，跨会话记得住事，能接 OpenAI 兼容的模型',
   opencode: '在命令行里接模型写代码、改代码',
@@ -26,7 +26,7 @@ export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string
   copilot: '把 Copilot 搬进终端，写代码、敲命令、查东西都能问',
   hermes: 'Nous Research 的终端智能体，会用技能，能在多家模型之间切换',
   kilocode: '多种工作模式，模型选择多，改坏了能退回存档点',
-  'kiro-cli': '亚马逊的终端开发助手，边聊边干，也能把流程自动化',
+  kiro: '亚马逊的终端开发助手，边聊边干，也能把流程自动化',
   zcode: '智谱的编程智能体，写代码、改代码',
 };
 
