@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { annotationPrompt, SessionAnnotations, sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
 import { sendComposerInput } from '../acp/send-composer-input';
-import { annotationImageId, currentAnnotationImages } from './annotation-images';
+import { annotationImageId, currentAnnotationImages, prepareAnnotationImages } from './annotation-images';
 import type { SupportedLocale } from '@gugu/session-shared/format';
 
 const page = (annotation = 'Revise this paragraph'): BrowserAnnotationSelection => ({
@@ -122,4 +122,26 @@ describe('the conversation annotation draft', () => {
     expect(prompt.match(/^## (?:User Comment \d+|浏览器批注 \d+：)$/gm)).toEqual([locale === 'zh-CN' ? '## 浏览器批注 1：' : '## User Comment 1']);
     for (const value of [`https://example.org/${hostile}`, `#${hostile}`, `p#${hostile}`, hostile]) expect(prompt).toContain(JSON.stringify(value));
   });
+});
+
+it('composes the three sources in draft order and uploads only actual page evidence', async () => {
+  const draft = new SessionAnnotations();
+  const file = draft.add({ kind: 'file', path: 'docs/pricing.txt', startLine: 3, endLine: 4,
+    text: 'First line\n## Still literal file text', annotation: 'Check both lines' });
+  const browser = draft.add(page());
+  draft.add({ kind: 'diff', path: 'src/sample.ts', turnId: 'turn1', patchIndex: 1, rowIndex: 4,
+    oldLine: 8, text: 'const prior = 1;', annotation: 'Explain removal' });
+  expect(draft.items.map(item => item.number)).toEqual([1, 2, 3]);
+  const sent = annotationPrompt('', draft.items);
+  expect(sent.match(/^## User Comment \d+$/gm)).toEqual(['## User Comment 1', '## User Comment 2', '## User Comment 3']);
+  expect(sent).toContain('File path: "docs/pricing.txt"\nSource lines: 3-4');
+  expect(sent).toContain('> First line\n> ## Still literal file text');
+  expect(sent).toContain('File path: "src/sample.ts"\nRecorded patch 2\nOld line: 8');
+  expect(sent).not.toContain('New line:');
+  const upload = vi.fn(async () => true);
+  prepareAnnotationImages(draft.items, { has: () => false, add: upload });
+  expect(upload).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ id: annotationImageId(browser.id) }), browser.screenshot);
+  draft.update(file.id, 'Only line contents');
+  expect(draft.items[0]).toMatchObject({ number: 1, annotation: 'Only line contents' });
 });

@@ -1,5 +1,5 @@
 import { Check, Trash2, X } from '@/lib/icons';
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -37,4 +37,18 @@ export function AnnotationEditor({ number, initialValue = '', busy = false, onSa
         aria-label={translate('annotations.save')} title={translate('annotations.save')}><Check className="size-3.5" /></Button>
     </form>
   );
+}
+
+export function AnnotationMarker({ number, onClick, style, className = '' }: {
+  number: number;
+  onClick: () => void;
+  style?: CSSProperties;
+  className?: string;
+}) {
+  const { translate } = useSessionMessages();
+  return <button type="button" data-annotation-marker={number} aria-label={translate('annotations.editMarker', { number })}
+    className={`pointer-events-auto flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[var(--live-light)] text-xs text-[var(--color-white)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
+    style={style} onPointerDown={event => { event.preventDefault(); event.stopPropagation(); }} onPointerUp={event => event.stopPropagation()} onClick={onClick}>
+    {number}
+  </button>;
 }

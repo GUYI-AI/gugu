@@ -17,7 +17,28 @@ export type BrowserAnnotationSelection = {
   /** The actual page capture, with this selection's number drawn on it. */
   screenshot: File;
 };
-export type SessionAnnotation = BrowserAnnotationSelection & { id: string; number: number };
+export type FileAnnotationSelection = {
+  kind: 'file';
+  path: string;
+  startLine: number;
+  endLine: number;
+  text: string;
+  annotation: string;
+};
+export type DiffAnnotationSelection = {
+  kind: 'diff';
+  path: string;
+  turnId: string;
+  patchIndex: number;
+  rowIndex: number;
+  oldLine?: number;
+  newLine?: number;
+  text: string;
+  annotation: string;
+};
+type AnnotationSelection = BrowserAnnotationSelection | FileAnnotationSelection | DiffAnnotationSelection;
+type AnnotationIdentity = { id: string; number: number };
+export type SessionAnnotation = AnnotationSelection & AnnotationIdentity;
 
 /** One conversation's unsent feedback; independent of the tab's annotation mode. */
 export class SessionAnnotations {
@@ -33,7 +54,7 @@ export class SessionAnnotations {
 
   reserveNumber(): number { return this.nextNumber++; }
 
-  add(selection: BrowserAnnotationSelection, number = this.reserveNumber()): SessionAnnotation {
+  add<T extends AnnotationSelection>(selection: T, number = this.reserveNumber()): T & AnnotationIdentity {
     const item = { ...selection, id: crypto.randomUUID(), number };
     this.items = [...this.items, item];
     return item;
@@ -96,7 +117,28 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
   const copy = (key: PromptKey, values: Readonly<Record<string, number>> = {}): string =>
     messages[key].replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? String(values[name]) : match);
   const sections: string[] = [];
-  sections.push(copy('annotations.prompt.browserComments') + '\n\n' + items.map(item => [
+  const heading = items.every(item => item.kind === 'browser') ? 'annotations.prompt.browserComments' : 'annotations.prompt.allComments';
+  sections.push(copy(heading) + '\n\n' + items.map(item => {
+    if (item.kind !== 'browser') {
+      const lines = item.kind === 'file'
+        ? [`${copy('annotations.prompt.lines')} ${item.startLine === item.endLine ? item.startLine : `${item.startLine}-${item.endLine}`}`]
+        : [
+            copy('annotations.prompt.patch', { patch: item.patchIndex + 1 }),
+            ...(item.oldLine === undefined ? [] : [copy('annotations.prompt.oldLine', { line: item.oldLine })]),
+            ...(item.newLine === undefined ? [] : [copy('annotations.prompt.newLine', { line: item.newLine })]),
+          ];
+      return [
+        copy('annotations.prompt.userComment', { number: item.number }),
+        copy(item.kind === 'file' ? 'annotations.prompt.file' : 'annotations.prompt.diff'),
+        `${copy('annotations.prompt.filePath')} ${JSON.stringify(item.path)}`,
+        ...lines,
+        copy('annotations.prompt.sourceEvidence'),
+        ...item.text.split(/\r?\n/).map(line => `> ${line}`),
+        '',
+        copy('annotations.prompt.comment'), item.annotation,
+      ].join('\n');
+    }
+    return [
     copy('annotations.prompt.browserComment', { number: item.number }), copy('annotations.prompt.browser'),
     copy('annotations.prompt.position', { x: item.rect.x, y: item.rect.y, width: item.viewport.width, height: item.viewport.height }),
     copy('annotations.prompt.untrusted'),
@@ -105,7 +147,8 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
     ...(!item.selector ? [copy('annotations.prompt.region', { ...item.rect, number: item.number })] : []),
     `${copy('annotations.prompt.screenshot')} ${item.screenshot.name}${copy('annotations.prompt.screenshotAttachment', { number: item.number })}`,
     copy('annotations.prompt.comment'), item.annotation,
-  ].join('\n')).join('\n\n'));
+    ].join('\n');
+  }).join('\n\n'));
   if (prompt.trim()) sections.push(`${copy('annotations.prompt.request')}\n${prompt.trim()}`);
   return sections.join('\n\n');
 }

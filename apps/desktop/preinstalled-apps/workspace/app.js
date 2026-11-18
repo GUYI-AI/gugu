@@ -1,3 +1,4 @@
+import { fileAnnotationMarkers, requestAt } from './annotation-markers.js'
 import { codeQuote } from './code-quote.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
@@ -159,6 +160,8 @@ const STRINGS = {
     copied: '已复制',
     cite: '引用',
     send: '发送',
+    annotate: '批注',
+    editAnnotation: '修改第 {number} 条批注',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -407,6 +410,8 @@ const STRINGS = {
     copied: 'Copied',
     cite: 'Cite',
     send: 'Send',
+    annotate: 'Annotate',
+    editAnnotation: 'Edit annotation {number}',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -822,7 +827,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
-  $('send-sel').textContent = t.send
+  $('send-sel').textContent = annotationEntry() ? t.annotate : t.send
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -2809,6 +2814,7 @@ function closeCurrent() {
 }
 
 function clearShownFile() {
+  annotationMarkers.watch(null)
   syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
@@ -3219,6 +3225,7 @@ async function mountText(current, preview) {
     current.previewPending = current.previewDeferred = false
     syncBlockControls()
     previewMarks()
+    annotationMarkers.refresh()
     // A task is ticked where it is read (its line's [ ] / [x], below); not in a file this person may only read.
     for (const box of $('preview').querySelectorAll('li > input[type=checkbox], li > p:first-child > input[type=checkbox]')) box.disabled = !!file.readOnly
     const empty = !file.text.trim()
@@ -3268,7 +3275,28 @@ async function mountPlain(current) {
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
 
-function showSelection(picks, end, inPreview = false) {
+let annotationStart = null
+const annotationEntry = () => !touchPane?.matches && gugu.apiVersion >= 58 && gugu.files.annotateSelection &&
+  state.current?.entry.workspace === state.ctx?.workspace?.id && state.ctx?.workspace && state.current?.entry
+const annotationMarkers = fileAnnotationMarkers({
+  anchor: line => {
+    const view = state.current?.view
+    if (document.body.dataset.mode !== 'edit') {
+      const block = [...$('preview').querySelectorAll('[data-line]')].find(node => {
+        const [start, end] = node.dataset.line.split('-').map(Number)
+        return start <= line && line <= end
+      })
+      if (block?.getClientRects().length) return block.getBoundingClientRect()
+    }
+    if (view && line <= view.state.doc.lines && view.dom.getClientRects().length) return view.coordsAtPos(view.state.doc.line(line).from)
+    return null
+  },
+  viewport: () => $('preview')?.closest('.panes')?.getBoundingClientRect(),
+  label: number => fmt(state.t.editAnnotation, { number }),
+})
+
+function showSelection(picks, end, inPreview = false, start = end) {
+  annotationStart = picks.length ? start : null
   state.picks = picks
   selectionEnd = picks.length ? end : null
   picksInPreview = inPreview && picks.length > 0
@@ -3276,8 +3304,9 @@ function showSelection(picks, end, inPreview = false) {
   document.body.classList.toggle('picks-in-preview', picksInPreview)
   // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
   // whose folder the file is in, its members to @ (55).
-  const entry = state.current?.entry
-  $('send-sel').hidden = !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
+  const entry = state.current?.entry, annotation = annotationEntry()
+  $('send-sel').textContent = annotation ? state.t.annotate : state.t.send
+  $('send-sel').hidden = annotation ? !picks.some(pick => pick.lines && pick.text) : !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
     : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
@@ -3305,7 +3334,8 @@ function selectionWatch(cm) {
       text: doc.sliceString(from, to),
       lines: [doc.lineAt(from).number, doc.lineAt(doc.lineAt(to).from === to ? to - 1 : to).number],
     }))
-    showSelection(picks, () => (view.dom.isConnected ? view.coordsAtPos(selection.main.head) : null))
+    showSelection(picks, () => (view.dom.isConnected ? view.coordsAtPos(selection.main.head) : null), false,
+      () => (view.dom.isConnected ? view.coordsAtPos(selection.main.from) : null))
   })
 }
 
@@ -3316,12 +3346,12 @@ document.addEventListener('selectionchange', () => {
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) {
     const range = picked.getRangeAt(picked.rangeCount - 1)
     const pick = { text: previewSelectionText(range), lines: previewSelectionLines(range) }
-    showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true)
+    showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true, () => range.startContainer.isConnected ? range.getClientRects()[0] ?? range.getBoundingClientRect() : null)
   } else if (picksInPreview) {
     showSelection([], null)
   }
 })
-document.addEventListener('scroll', () => placeSelectionBar(), true)
+document.addEventListener('scroll', () => { placeSelectionBar(); annotationMarkers.refresh() }, true)
 
 // A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes),
 // named by them; the file's name before them is gugu's. A preview block without lines names none: it points at the file.
@@ -3351,6 +3381,17 @@ async function cite(current = state.current, picks = state.picks, whole = false)
 // with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
 // Called inside the click, as the host requires.
 async function send(current = state.current, picks = state.picks) {
+  const annotated = annotationEntry()
+  if (annotated) {
+    const selected = picks.filter(pick => pick.lines && pick.text), at = annotationStart?.()
+    if (!selected.length || !at) return
+    try {
+      const selection = { startLine: Math.min(...selected.map(pick => pick.lines[0])), endLine: Math.max(...selected.map(pick => pick.lines[1])),
+        text: selected.map(pick => pick.text).join('\n') }
+      if (await gugu.files.annotateSelection(annotated, requestAt(at, { selection }))) dropSelection()
+    } catch (error) { showBanner(failureText(error), 'error') }
+    return
+  }
   const cited = citeOf(current, picks)
   const at = selectionEnd?.()
   if (!cited || !at) return
@@ -4070,6 +4111,7 @@ function showDoc(entry) {
   reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
+  annotationMarkers.watch(annotationEntry() || null)
   $('doc-title').textContent = entry.name
   $('doc-message').hidden = true
   showEntry(entry)
@@ -4222,6 +4264,7 @@ function applyMode() {
   $('mode-split').hidden = true
   document.body.classList.toggle('read-in-host', readInHost())
   if (mode !== 'edit' && state.current?.previewDeferred) state.current.drawPreview()
+  annotationMarkers.refresh()
   syncBlockControls(true)
 }
 
