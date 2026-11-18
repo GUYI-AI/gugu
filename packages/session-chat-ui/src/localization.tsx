@@ -286,6 +286,7 @@ const fallbackMessages = {
   'transcript.compacting': 'Compacting context…',
   'transcript.compacted': 'Context compacted — the agent keeps a summary of everything above',
   'transcript.compactionFailed': 'Context compaction failed',
+  'transcript.compactedWhileIdle': 'Compacted while idle, before the prompt cache expired — the agent keeps a summary of everything above',
   'transcript.contextReset': "The engine started a new session — it doesn't have the earlier messages",
   'transcript.sessionNotice.modelUnavailable':
     'The model this task was created with is unavailable here — running {running} instead',
