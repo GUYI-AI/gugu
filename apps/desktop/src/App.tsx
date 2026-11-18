@@ -45,6 +45,12 @@ if (typeof window !== 'undefined') { installAssistantPanelHost(); installConnect
 function AuthenticatedProduct({ user }: { user: AuthUser }) {
   const [effectsActive, setEffectsActive] = useState(false)
   const onShellCommitted = useCallback(() => setEffectsActive(true), [])
+  useEffect(() => {
+    if (!effectsActive || platform.kind !== 'electron' || !platform.capabilities.sessionHost) return
+    const lifespan = new AbortController()
+    void import('./components/settings/data-import/import-sync').then(({ startImportSync }) => startImportSync(user.id, lifespan.signal))
+    return () => lifespan.abort()
+  }, [effectsActive, user.id])
 
   useEffect(() => {
     // @@@3839 只交代**身份**。presence 缓存是按账号划界的,换人(含登出)时 store 自己清空;

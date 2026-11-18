@@ -1,30 +1,54 @@
+type Waiter = () => void;
+
 export class KeyedMutex {
-  private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly queues = new Map<string, Set<Waiter>>();
 
   /**
-   * Runs `fn` exclusively for `key`: concurrent calls on the same key are serialized
-   * (each waits for the previous to finish before starting). Concurrent calls on
-   * different keys run in parallel. A rejected `fn` does not block subsequent calls on
-   * the same key.
+   * Runs `fn` exclusively for `key` in acquisition order. Different keys run
+   * independently, and a rejection releases the lock.
    */
   async runExclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.locks.get(key) ?? Promise.resolve();
-
-    let release: () => void = () => {};
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chained = previous.catch(() => {}).then(() => current);
-    this.locks.set(key, chained);
-
-    await previous.catch(() => {});
+    const release = await this.acquire(key);
     try {
       return await fn();
     } finally {
       release();
-      if (this.locks.get(key) === chained) {
-        this.locks.delete(key);
-      }
     }
+  }
+
+  /** Acquires a lease that can cross stages. Cancellation removes a queued waiter. */
+  async acquire(key: string, signal?: AbortSignal): Promise<() => void> {
+    signal?.throwIfAborted();
+    const held = this.queues.get(key);
+    if (!held) {
+      const queue = new Set<Waiter>();
+      this.queues.set(key, queue);
+      return this.lease(key, queue);
+    }
+
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        held.delete(admit);
+        reject(signal?.reason);
+      };
+      const admit = () => {
+        signal?.removeEventListener('abort', onAbort);
+        held.delete(admit);
+        resolve(this.lease(key, held));
+      };
+      held.add(admit);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  private lease(key: string, queue: Set<Waiter>): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = queue.values().next().value;
+      if (next) next();
+      else this.queues.delete(key);
+    };
   }
 }

@@ -99,10 +99,10 @@ describe('message_send with a file, by reference', () => {
     expect(drop).toHaveBeenCalledExactlyOnceWith(h.commits[0]!.message_id)
   })
 
-  test.each(['network', '5xx'])('an uncertain %s commit keeps delivering its bytes, even if it only settles an orphan', async kind => {
+  test.each(['network', '5xx', '408', '429'])('an uncertain %s commit keeps delivering its bytes, even if it only settles an orphan', async kind => {
     const h = makeDeps(() => {
       if (kind === 'network') throw new TypeError('response lost')
-      return new Response(JSON.stringify({ error: 'failed' }), { status: 503 })
+      return new Response(JSON.stringify({ error: 'failed' }), { status: kind === '5xx' ? 503 : Number(kind) })
     })
     const drop = vi.spyOn(h.attachments, 'drop')
     const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file_path: localFile }, h.deps))
@@ -111,6 +111,17 @@ describe('message_send with a file, by reference', () => {
     expect(new Set(h.commits.map(commit => commit.message_id)).size).toBe(1)
     expect(drop).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(h.finishes).toHaveLength(1))
+  })
+  test('a failed recipient read after commit preserves the sent file receipt and never resends', async () => {
+    const h = makeDeps(), read = h.deps.restGet as (path: string) => Promise<unknown>
+    h.deps.restGet = (path: string) => {
+      if (path.startsWith('message_agent_delivery_blocks?')) throw new TypeError('fetch failed')
+      return read(path)
+    }
+    const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file_path: localFile }, h.deps))
+    expect(receipt).toMatchObject({ status: 'sent', delivery_status: 'unverified', file_name: 'GLM_Agent.pptx', size_bytes: 12, mime_type: PPTX,
+      message_id: `msg:${h.commits[0]!.message_id}`, file: `gugu-file://${ITEM}?v=3` })
+    expect(h.commits).toHaveLength(1)
   })
   test('file alone: one attachments/share call pinned to that version, no upload, no commit; the receipt names the pinned file', async () => {
     const { deps, shares, commits, uploads } = makeDeps()

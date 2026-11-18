@@ -29,7 +29,13 @@ public class GuguAuthStoragePlugin extends Plugin {
             String value = call.getString("value");
             if (value == null) { call.reject("Missing storage value"); return; }
             var storage = getContext().getSharedPreferences("gugu-auth-storage", android.content.Context.MODE_PRIVATE);
-            synchronized (STORAGE_LOCK) { if (!storage.edit().putString(key, value).commit()) { call.reject("Auth storage commit failed"); return; } }
+            synchronized (STORAGE_LOCK) {
+                if ("sb-main".equals(key)) {
+                    try { AccountClosurePreparation.requireAuthWrite(getContext(), value); }
+                    catch (Exception refused) { call.reject("Account closure prevents this auth write", "closure_not_prepared"); return; }
+                }
+                if (!storage.edit().putString(key, value).commit()) { call.reject("Auth storage commit failed"); return; }
+            }
             call.resolve();
         } catch (RuntimeException error) { call.reject("Auth storage write failed", error); }
     }

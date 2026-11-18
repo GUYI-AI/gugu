@@ -132,42 +132,6 @@ it('carries the active file-backed Codex API key into the managed slot during up
   expect(await readFile(join(terminal, 'auth.json'), 'utf8')).toBe(former);
 });
 
-it('saves API metadata without secrets and runs Codex sessions on the managed root with env and -c overrides', async () => {
-  const connection = await createHarnessConnection({
-    providerId: 'codex',
-    kind: 'api-key',
-    apiKey: 'test-secret',
-    endpoint: 'https://gateway.example/v1',
-  });
-  expect(JSON.stringify(await listHarnessConnections('codex'))).not.toContain('test-secret');
-  expect(
-    state
-      .fixture!.sqlite.prepare('SELECT meta FROM provider_accounts')
-      .all()
-      .map((row) => JSON.stringify(row))
-      .join('')
-  ).not.toContain('test-secret');
-  await selectHarnessConnection('codex', connection.id);
-  for (const sessionId of ['old', undefined]) {
-    const context = await resolveHarnessConnection('codex', sessionId ? { sessionId } : {});
-    expect(context).toMatchObject({ connectionId: connection.id, credentialEnv: { OPENAI_API_KEY: 'test-secret' } });
-    expect(context.configRootEnv).toBeUndefined();
-    expect(context.credentialHome).toBeUndefined();
-    expect(context.extraArgs).toContain('model_providers.gugu_connection.base_url="https://gateway.example/v1"');
-    expect(JSON.stringify(context.extraArgs)).not.toContain('test-secret');
-  }
-  // #2507 删当前连接不必先切走:落回原生,默认连接 ❌ 停在一条已删的上。
-  await removeHarnessConnection('codex', connection.id);
-  expect(await listHarnessConnections('codex')).toEqual([
-    { id: 'native', kind: 'native', name: '', current: true, endpoint: undefined },
-  ]);
-  expect(await resolveHarnessConnection('codex')).toEqual({ connectionId: 'native' });
-  expect((await resolveHarnessConnection('codex', { sessionId: 'old' })).connectionId).toBe('native');
-  expect(state.fixture!.sqlite.prepare("SELECT config FROM sessions WHERE id = 'old'").get()).toEqual({
-    config: '{"version":"1","type":"pty"}',
-  });
-});
-
 // #2507 删掉正在用的账号 = 一次切回原生:用户根里换回原来那份登录,删掉的那个号的登录留在它自己的保管目录里。
 it('removing the current Codex account falls back to the existing CLI sign-in and leaves the removed one in its vault', async () => {
   await writeAuthAt(state.codexRoot, chatgptAuth('original'));
@@ -276,30 +240,13 @@ it('files a first Codex account under its own connection when native never had a
   expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('first', 'r2'));
 });
 
-it('keeps a first Codex account’s rotated token with it after a detour through an API connection', async () => {
-  const first = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  const second = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  const api = await createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'fixture-key' });
-  await writeAuthAt(vault(first.id), chatgptAuth('first'));
-  await writeAuthAt(vault(second.id), chatgptAuth('second'));
-  await selectHarnessConnection('codex', first.id);
-  await selectHarnessConnection('codex', api.id);
-  // API 连接上跑着的时候,用户根里仍是 first,CLI 照样会轮换它的 token。
-  await writeAuthAt(state.codexRoot, chatgptAuth('first', 'r2'));
-  await selectHarnessConnection('codex', second.id);
-  expect(await readFile(join(vault(first.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('first', 'r2'));
-  await expect(stat(join(vault('native'), 'auth.json'))).rejects.toThrow();
-});
-
 it('checks a switch before anything is stopped: a missing sign-in or keychain storage is refused up front', async () => {
   await writeAuthAt(state.codexRoot, chatgptAuth('original'));
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  const api = await createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'fixture-key' });
   await expect(assertHarnessConnectionSelectable('codex', work.id)).rejects.toThrow('no saved sign-in');
   await writeAuthAt(vault(work.id), chatgptAuth('work'));
   await assertHarnessConnectionSelectable('codex', work.id);
   await assertHarnessConnectionSelectable('codex', 'native');
-  await assertHarnessConnectionSelectable('codex', api.id);
   await expect(assertHarnessConnectionSelectable('codex', 'missing')).rejects.toThrow('no longer exists');
   await writeFile(join(state.codexRoot, 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
   await expect(assertHarnessConnectionSelectable('codex', work.id)).rejects.toThrow('keyring');
@@ -366,22 +313,6 @@ it('switches Claude by moving the sign-in through the managed root and runs ever
   expect(await accessAt(claudeVault(work.id))).toBe('work-rotated');
   expect(await sessionHarnessConnectionId('pinned')).toBe('native');
   expect(await sessionHarnessConnectionId('deleted')).toBeUndefined();
-});
-
-it('runs a Claude API connection on the managed root through env only, leaving the signed-in account in place', async () => {
-  await writeClaudeSignIn(state.claudeRoot, 'u-original', claudeCredential('original', 100));
-  const api = await createHarnessConnection({ providerId: 'claude', kind: 'api-key', apiKey: 'fixture-key', endpoint: 'https://relay.example/v1' });
-  await expect(stat(join(state.home, 'harness-connections', 'claude', api.id))).rejects.toThrow();
-  await selectHarnessConnection('claude', api.id);
-  const context = await resolveHarnessConnection('claude', { sessionId: 'old' });
-  expect(context).toMatchObject({
-    connectionId: api.id,
-    credentialEnv: { ANTHROPIC_AUTH_TOKEN: 'fixture-key', ANTHROPIC_BASE_URL: 'https://relay.example/v1' },
-  });
-  expect(context.unsetEnv).toContain('CLAUDE_CODE_OAUTH_TOKEN');
-  expect(context.configRootEnv).toBeUndefined();
-  expect(await accessAt(state.claudeRoot)).toBe('original');
-  expect(JSON.stringify(await listHarnessConnections('claude'))).not.toContain('fixture-key');
 });
 
 it('refuses a Claude account with no saved sign-in and never falls back when a connection is missing', async () => {

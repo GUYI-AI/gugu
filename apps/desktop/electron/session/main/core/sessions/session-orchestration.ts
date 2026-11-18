@@ -1,3 +1,4 @@
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
 import { taskName, taskNameFor } from './task-name';
 import { sessionHostLocale } from '@main/core/host-locale';
@@ -713,6 +714,12 @@ export async function resolveSpawnModelSelection(
   requestedModel: string | undefined,
 ): Promise<{ kind: 'gugu'; modelId: string } | { kind: 'harness'; model: string | undefined }> {
   if (!requestedModel) return { kind: 'harness', model: undefined };
+  const custom = customModelRefFromOption(requestedModel);
+  if (custom) {
+    const { validateCustomModelSelection } = await import('@main/core/agents/custom-models');
+    await validateCustomModelSelection(provider, custom);
+    return { kind: 'harness', model: requestedModel };
+  }
   const platformModelId = platformModelIdFromOption(requestedModel);
   // 平台组先问一次。带前缀的只需平台目录；裸 id 只有在撞上平台同名项时，才需要再确认它
   // 是否也是这家 harness 自己明列的模型。这样普通的自家别名仍不因一次 spawn 而触发冷启探测。
@@ -798,7 +805,7 @@ export async function resolveCreateModelChoice(
 ): Promise<{ model: string | null; platformModel: { modelId: string } | null } | undefined> {
   const requested = requestedModel?.trim();
   if (!requested) return undefined;
-  if (!requested.startsWith('platform:')) {
+  if (!requested.startsWith('platform:') && !customModelRefFromOption(requested)) {
     const catalog = await listLocalModels(provider, { transport: transport as SessionTransport });
     if (isHarnessModelChoice(catalog, requested)) return { model: requested, platformModel: null };
   }
@@ -2004,26 +2011,50 @@ async function sendSessionMessage(
  * 发起方会话只在 agent 操作 App 页面时有(`from`,它不能发给自己);否则与别的机器上的发起方一样是 null。信封由发信方
  * 那一侧给,这里只管投。送达回 message id,否则带原因抛。
  */
-export async function messageSessionFrom(
+export type HostSessionDeliveryReceipt = {
+  id: string;
+  status: 'delivered' | 'queued' | 'deferred';
+  recovery?: import('./session-life').QueuedDeliveryRecovery;
+};
+
+/** Keep admission visible to host-owned deliveries whose completion depends on it. */
+export async function messageSessionDeliveryFrom(
   envelope: DeliveryEnvelope,
   sessionId: string,
   text: string,
   /** `queue` / `key` exactly as `session_message` takes them; `keyScope` names the sender (`app:<id>`). */
   options: AppMessageOptions,
-): Promise<{ id: string; deferred?: true }> {
+): Promise<HostSessionDeliveryReceipt> {
   const action = appMessage(sessionId, text, options);
   const stored = options.receipt ? readAcceptedMessage(sessionDirectMessageId(options.keyScope, sessionId, action)) : undefined;
   const durableEnvelope: DeliveryEnvelope = stored ? () => stored.content : envelope;
-  const { recipients } = await sendSessionMessage(options.from ?? null, durableEnvelope, action, options.keyScope, await allSessionRows());
+  const rows = await allSessionRows();
+  const { recipients } = await sendSessionMessage(options.from ?? null, durableEnvelope, action, options.keyScope, rows);
   const [result] = recipients;
   if (result?.status === 'failed' || !result?.message_id) {
     throw Object.assign(new Error(result?.error?.message ?? `the message to session ${sessionId} was not delivered`), { code: result?.error?.code });
   }
-  return { id: result.message_id, ...(result.status === 'deferred' ? { deferred: true as const } : {}) };
+  if (result.status === 'queued' && options.recoverPending && transportOf(resolveSessionRow(rows, sessionId)) === 'acp') {
+    const life = sessionLife();
+    let recovery = life.recoverQueuedDelivery(sessionId, result.message_id, false);
+    // Reserve durably before asking Life to start. A crash may consume a reservation without starting;
+    // it must never start first and lose the charge. Life rechecks eligibility after the await.
+    if (recovery.state === 'needed' && await options.recoverPending(recovery.cause)) {
+      recovery = life.recoverQueuedDelivery(sessionId, result.message_id, true);
+    }
+    return { id: result.message_id, status: result.status, recovery };
+  }
+  return { id: result.message_id, status: result.status };
+}
+
+/** The App-facing receipt keeps its existing id/deferred shape. */
+export async function messageSessionFrom(envelope: DeliveryEnvelope, sessionId: string, text: string, options: AppMessageOptions): Promise<{ id: string; deferred?: true }> {
+  const result = await messageSessionDeliveryFrom(envelope, sessionId, text, options);
+  return { id: result.id, ...(result.status === 'deferred' ? { deferred: true as const } : {}) };
 }
 
 /** `from`: the session of the agent that works the App's page (owner 10-14) — it is the one telling, so not itself. */
-type AppMessageOptions = { delivery?: 'queue' | 'defer'; key?: string; keyScope: string; from?: string; receipt?: { id: string; at: string } };
+type AppMessageOptions = { delivery?: 'queue' | 'defer'; key?: string; keyScope: string; from?: string; receipt?: { id: string; at: string }; recoverPending?: (cause: string) => Promise<boolean> };
 
 function appMessage(sessionId: string, text: string, options: AppMessageOptions): Extract<SessionAction, { action: 'message' }> {
   return {

@@ -71,7 +71,10 @@ describe.each(['desktop', 'phone'] as const)('%s active header', platform => {
     const toggle = host.querySelector<HTMLButtonElement>('[data-live-window-toggle]')!;
     expect(toggle.dataset.running).toBe('true');
     await act(async () => model.observe(context, [source('browser', 1, 'finished')]));
-    expect(toggle.hasAttribute('data-running')).toBe(false); expect(model.getSnapshot().visible).toBe(true);
+    expect(toggle.hasAttribute('data-running')).toBe(false);
+    expect(toggle.title).not.toMatch(/Using|正在用/);
+    expect(model.getSnapshot().visible).toBe(platform === 'phone');
+    if (platform === 'desktop') await page.elementLocator(toggle).click();
     await act(async () => model.activate({ ...context, connected: false }));
     expect(toggle.dataset.disconnected).toBe('true');
     expect(host.querySelector('[data-live-window-disconnected]')?.textContent).toMatch(/Computer disconnected|电脑已断开/);

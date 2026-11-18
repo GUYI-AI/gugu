@@ -56,12 +56,14 @@ export function openCodeFamilyConfigContent(
   // ⚠️ 窗口未知(一把 API Key 连接说不出窗口,#2507)就**整个不写 `limit`**:opencode 1.18.28 的 schema 里
   //    `limit` 一出现就要 `context`(实测「Missing key provider.gugu-platform.models.<m>.limit.context」,
   //    session/new 起不来);不写 `limit` 它用自己的默认、照常起会话。平台会话的窗口恒已知(平台那条路缺窗口先抛),不受影响。
-  const modelEntry = (window: number | null | undefined) => ({
-    ...(positiveWindow(window) ? { limit: { output: OPENCODE_PLATFORM_OUTPUT_LIMIT, context: window } } : {}),
-    // 推理档 —— `variants`(整张表)+ `options`(这次会话选中的那一档)。与插件物化那条路
-    // **共用同一个函数**,理由同 `npm` / `limit`:两边漂移时,漂了的那家会静默走它自己的默认。
-    ...openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort),
-  })
+  const modelEntry = (id: string, window: number | null | undefined) => {
+    const custom = model.customModels?.entries.find((entry) => entry.id === id)
+    const context = custom?.contextWindow ?? window
+    return {
+      ...(positiveWindow(context) ? { limit: { output: custom?.maxOutput ?? OPENCODE_PLATFORM_OUTPUT_LIMIT, context } } : {}),
+      ...(!model.customModels || custom?.thinking === true ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {}),
+    }
+  }
   /**
    * 这个 provider 下声明**整组**可切模型,而不只是选中的那一个。
    *
@@ -80,10 +82,10 @@ export function openCodeFamilyConfigContent(
   for (const entry of platformModels) {
     const id = entry.id.trim()
     if (!id) continue
-    models[id] = modelEntry(entry.contextWindow ?? (id === selectedModel ? contextWindow : null))
+    models[id] = modelEntry(id, entry.contextWindow ?? (id === selectedModel ? contextWindow : null))
   }
   // 选中的那个必须在表里 —— 目录与令牌之间有任何时序差时,至少这一轮跑得动。
-  if (!models[selectedModel]) models[selectedModel] = modelEntry(contextWindow)
+  if (!models[selectedModel]) models[selectedModel] = modelEntry(selectedModel, contextWindow)
   // 模型的寻址方式是 `provider/model`,所以平台模型只有在同一份文档里连 provider 一起声明
   // 之后才选得中。两半都是会话级的,随进程消亡。
   // 一把 API Key 连接:块叫连接的名字(这一家界面上显示的那一格),❌「Gugu 平台额度」;平台会话原样。

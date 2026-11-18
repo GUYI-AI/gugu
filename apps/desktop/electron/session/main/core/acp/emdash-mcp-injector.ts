@@ -160,9 +160,12 @@ export function getEmdashIdentityProvisioner(): EmdashIdentityProvisioner {
   return provisioner;
 }
 
+export type ApplyAcpMaterialization = (apply: () => Promise<void>) => Promise<void>;
+
 export type EmdashMcpInjector = (
   info: EmdashSessionStartInfo,
   identity: EmdashSessionIdentity | null,
+  applyMaterialization?: ApplyAcpMaterialization,
 ) => Promise<EmdashSessionCapabilityInjection>;
 
 let injector: EmdashMcpInjector | null = null;
