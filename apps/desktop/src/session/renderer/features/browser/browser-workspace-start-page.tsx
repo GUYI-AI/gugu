@@ -22,7 +22,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   return (
-    <div className="h-full overflow-auto bg-background-1 px-6 py-8 [container-type:inline-size]" data-workspace-new-tab-page="">
+    <div className="h-full overflow-auto bg-tab-strip px-6 py-8 [container-type:inline-size]" data-workspace-new-tab-page="">
       <div className="mx-auto flex max-w-[960px] flex-col gap-9">
         <section aria-label={translate('browser.workspaceTools')} className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">{translate('browser.workspaceTools')}</h2>

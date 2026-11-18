@@ -221,7 +221,7 @@ export function BrowserToolbar({
             }}
             onFocus={(event) => event.currentTarget.select()}
             className={cn('h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0',
-              workspaceStart && 'rounded-full bg-background-1 text-center')}
+              workspaceStart && 'rounded-full bg-background-3 text-center')}
             aria-label={translate('browser.urlLabel')}
             aria-invalid={urlError ? true : undefined}
             aria-describedby={urlError ? urlErrorId : undefined}

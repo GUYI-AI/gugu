@@ -38,11 +38,14 @@ vi.mock('@renderer/lib/layout/navigation-provider', async (original) => ({
 }));
 
 let harness: ReturnType<typeof createReactHarness> | undefined;
+const previousTheme = document.documentElement.dataset.theme;
 const group = { viewId: 'new-tab-group', place: { kind: 'chat', chatId: 'new-tab-group' } } as const;
 const topic = { viewId: 'new-tab-topic', place: { kind: 'chat', chatId: 'new-tab-topic' } } as const;
 afterEach(() => {
   harness?.cleanup();
   harness = undefined;
+  if (previousTheme) document.documentElement.dataset.theme = previousTheme;
+  else delete document.documentElement.dataset.theme;
   commandRegistry.setContext(document.body);
   clearViewState(recentToolPanel(group));
   clearViewState(recentToolPanel(topic));
@@ -53,6 +56,7 @@ it('shows the context tools, opens recent resources, and removes them only from 
   await page.viewport(1024, 720);
   const view = harness = createReactHarness();
   view.container.className = 'emlight gugu-skin';
+  document.documentElement.dataset.theme = 'light';
   view.container.style.cssText = 'width:760px;height:540px';
   const recent: RecentTool[] = [
     { kind: 'chat-file', id: 'chat-file:report', itemId: 'report', title: '行程.md' },
@@ -96,6 +100,7 @@ it('opens the actual group tab from the header and keeps newly opened tabs hidde
   await page.viewport(1240, 640);
   const view = harness = createReactHarness();
   view.container.className = 'emlight gugu-skin';
+  document.documentElement.dataset.theme = 'light';
   view.container.style.cssText = 'position:fixed;inset:0;width:1200px;height:580px';
   installSessionTabViews();
   await act(() => view.render(
