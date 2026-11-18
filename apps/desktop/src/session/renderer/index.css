@@ -1129,6 +1129,8 @@
   [data-chat-workspace-header] {
     --tab-strip-height: 44px;
     --chat-tool-tab-height: 32px;
+    --tab-slot-min-width: 84px;
+    --tab-slot-max-width: 238px;
     --tab-strip-inset-start: calc((var(--tab-strip-height) - var(--chat-tool-tab-height)) / 2);
     --tab-strip-inset-end: var(--tab-strip-inset-start);
     height: var(--tab-strip-height);
@@ -1142,6 +1144,15 @@
   [data-chat-workspace-header] .session-tab-ears::before,
   [data-chat-workspace-header] .session-tab-ears::after {
     display: none;
+  }
+
+  [data-chat-workspace-header] [data-tab-density='compact'] [data-tool-tab-title] {
+    text-overflow: clip;
+    mask-image: linear-gradient(to right, #000 75%, transparent);
+  }
+
+  [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
+    background: var(--row-press);
   }
 
   [data-chat-tool-dragging] [data-pane-content-drop-preview] {

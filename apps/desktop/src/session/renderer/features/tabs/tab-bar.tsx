@@ -112,7 +112,7 @@ export const TabBar = observer(function TabBar({
       trailingSlot={tabTrailingSlot}
       dropZone={<PaneDropZone paneId={paneId} />}
       overflowSlot={
-        overflowing ? (
+        overflowing && !toolsOnly ? (
           <TabOverflowMenu
             read={() => (scrollContainerRef.current ? readStripTabs(scrollContainerRef.current) : [])}
             onPick={(tabId) => tabsById.get(tabId)?.host.setActiveTab(tabId)}
@@ -124,7 +124,7 @@ export const TabBar = observer(function TabBar({
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
     >
-      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={pane.activeTabId}>
+      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={pane.activeTabId} keepActiveOnResize={toolsOnly}>
       {stripOrder.map((id) => {
         const entry = tabsById.get(id);
         if (!entry) return null;

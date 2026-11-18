@@ -63,7 +63,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
             {renderPane(paneId, narrow || paneId === first, narrow || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>;
         })}
-        {draggingChatTool && layout.chatWorkspaceMode === 'full' && <ChatWorkspaceDropZones layout={layout} />}
+        {draggingChatTool && layout.chatWorkspaceMode === 'full' && <ChatWorkspaceDropZones layout={layout} tabId={String(active.id)} />}
       </div>
     </div>
   </PaneDimensionProvider>;
@@ -117,7 +117,9 @@ const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorO
     {chatDivider && divider.preview && <div
       className={`pointer-events-none absolute inset-y-0 z-20 border-foreground/25 bg-foreground/10 ${divider.preview === 'left' ? 'left-0 border-r' : 'right-0 border-l'}`}
       style={{ width: `${node.sizes[divider.preview === 'left' ? 0 : 1]}%` }}
+      data-occludes-browser-page
       data-chat-tool-collapse-preview={divider.preview}
+      data-chat-tool-collapse-ready={divider.ready || undefined}
     />}
   </ResizablePanelGroup>;
 });

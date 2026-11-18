@@ -1,21 +1,26 @@
 export type ChatToolSide = 'left' | 'right';
 
-// The desktop reference stayed split at 180 px and collapsed at 115 px from the chat edge.
-export const CHAT_TOOL_COLLAPSE_EDGE_PX = 144;
-export const CHAT_TOOL_MIN_WIDTH_PX = 320;
+// The reference stayed split at 180 pt and collapsed at 115 pt from the chat edge.
+export const CHAT_TOOL_COLLAPSE_PREVIEW_PX = 180;
+export const CHAT_TOOL_COLLAPSE_COMMIT_PX = 115;
+export const CHAT_TOOL_MIN_VISIBLE_PANE_PX = 324;
 
 export const CHAT_TOOL_DROP_PREFIX = 'chat-tool-group-edge-';
 export const chatToolDropId = (side: ChatToolSide, chatPaneId: string) => `${CHAT_TOOL_DROP_PREFIX}${side}-${chatPaneId}`;
 
 export function chatDividerAt(offset: number, width: number, leftMin: number, rightMin: number): {
   sizes: [number, number];
+  preview: ChatToolSide | undefined;
   collapse: ChatToolSide | undefined;
 } {
   const usable = width - 1;
   const left = Math.max(leftMin, Math.min(usable - rightMin, offset));
   const fraction = (left / usable) * 100;
-  const collapse = offset <= CHAT_TOOL_COLLAPSE_EDGE_PX ? 'left'
-    : usable - offset <= CHAT_TOOL_COLLAPSE_EDGE_PX ? 'right'
-    : undefined;
-  return { sizes: [fraction, 100 - fraction], collapse };
+  const edgeAt = (distance: number): ChatToolSide | undefined =>
+    offset <= distance ? 'left' : usable - offset <= distance ? 'right' : undefined;
+  return {
+    sizes: [fraction, 100 - fraction],
+    preview: edgeAt(CHAT_TOOL_COLLAPSE_PREVIEW_PX),
+    collapse: edgeAt(CHAT_TOOL_COLLAPSE_COMMIT_PX),
+  };
 }

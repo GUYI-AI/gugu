@@ -12,7 +12,7 @@ import type {
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
 import { declaredShare } from './side-width';
-import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_WIDTH_PX, chatDividerAt, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
+import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatDividerAt, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
 import {
   equalizeSplit,
   evenSizes,
@@ -119,11 +119,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   /** The narrowest this pane is drawn: what the page in front of it asks for (`minWidth`), else MIN_PANE_WIDTH_PX. */
-  paneMinWidth = (paneId: string): number => {
+  paneMinWidth = (paneId: string, tabId?: string): number => {
     const pane = this.groups.find((group) => group.paneId === paneId)?.pane;
-    const entry = pane?.resolvedActiveTabId ? pane.entries.get(pane.resolvedActiveTabId) : undefined;
+    const active = tabId ?? pane?.resolvedActiveTabId;
+    const entry = active ? pane?.entries.get(active) : undefined;
     const required = (entry && this._registry.has(entry.kind) ? this._registry.get(entry.kind).minWidth : undefined) ?? MIN_PANE_WIDTH_PX;
-    return this.chatWorkspaceMode ? Math.max(required, CHAT_TOOL_MIN_WIDTH_PX) : required;
+    return this.chatWorkspaceMode ? Math.max(required, CHAT_TOOL_MIN_VISIBLE_PANE_PX) : required;
   };
   /** How the panes are cut. Replaced whole on every change (pane-layout-tree.ts is pure). */
   layout: PaneLayoutNode;
@@ -303,7 +304,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   canDropChatToolGroup(tabId: string): boolean {
     const panes = this.chatWorkspacePanes;
-    return !!panes?.tools?.pane.entries.has(tabId) && !this.narrow && this.chatWorkspaceMode !== 'hidden';
+    if (!panes?.tools?.pane.entries.has(tabId) || this.chatWorkspaceMode === 'hidden') return false;
+    const width = this.dimensions?.width;
+    return width === undefined || width >= this.paneMinWidth(panes.chat.paneId) + this.paneMinWidth(panes.tools.paneId, tabId) + 1;
   }
 
   moveChatToolGroup(tabId: string, side: ChatToolSide): void {

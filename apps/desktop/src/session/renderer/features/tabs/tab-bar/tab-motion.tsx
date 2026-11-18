@@ -53,7 +53,7 @@ export function stripTabNodes(scroller: HTMLElement): [string, HTMLElement][] {
   });
 }
 
-type Props = { scroller: RefObject<HTMLDivElement | null>; order: string; activeTabId: string | undefined; children: ReactNode };
+type Props = { scroller: RefObject<HTMLDivElement | null>; order: string; activeTabId: string | undefined; keepActiveOnResize?: boolean; children: ReactNode };
 
 /** Snapshot before React moves keyed slots. No wrapper: slots must remain direct flex siblings. */
 export class TabStripMotion extends Component<Props> {
@@ -66,7 +66,15 @@ export class TabStripMotion extends Component<Props> {
       ?.scrollIntoView({ behavior: 'instant', inline: 'nearest', block: 'nearest' });
   }
 
-  componentDidMount() { this.revealActiveTab(); }
+  private resizeObserver?: ResizeObserver;
+
+  componentDidMount() {
+    this.revealActiveTab();
+    const scroller = this.props.scroller.current;
+    if (!this.props.keepActiveOnResize || !scroller || typeof ResizeObserver === 'undefined') return;
+    this.resizeObserver = new ResizeObserver(() => this.revealActiveTab());
+    this.resizeObserver.observe(scroller);
+  }
 
   private positions(): Map<string, Point> {
     const scroller = this.props.scroller.current;
@@ -109,6 +117,7 @@ export class TabStripMotion extends Component<Props> {
   }
 
   componentWillUnmount() {
+    this.resizeObserver?.disconnect();
     for (const animation of this.animations.values()) animation.cancel();
   }
 

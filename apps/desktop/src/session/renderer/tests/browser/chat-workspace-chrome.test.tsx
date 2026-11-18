@@ -138,6 +138,27 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(tool()).toBeNull();
 });
 
+it('shrinks and scrolls the group strip with the selected tab still in view', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await act(() => {
+    for (let index = 0; index < 7; index += 1) {
+      workspace.open('tool', { id: `extra-${index}` }, { from: null, intent: 'newTab' });
+    }
+    workspace.setPaneSizes([59, 41]);
+  });
+  const activeTab = () => inside('[data-chat-workspace-header] [data-tab-active]');
+  const scroller = () => activeTab()?.closest<HTMLElement>('[data-tabstrip-scroller]');
+  await until('the active tool scrolls into view as the strip gets narrow', () => {
+    const active = activeTab()?.getBoundingClientRect();
+    const strip = scroller()?.getBoundingClientRect();
+    return !!active && !!strip && scroller()!.scrollLeft > 0 && active.left >= strip.left && active.right <= strip.right + 1;
+  });
+  expect(inside('[data-chat-workspace-header] [data-tabstrip-overflow]')).toBeNull();
+  expect(activeTab()!.getBoundingClientRect().width).toBeCloseTo(84, 0);
+});
+
 async function mouse(type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', x: number, y: number, pressed = false) {
   for (let current: Window = window; current.frameElement; current = current.parent) {
     const frame = current.frameElement as HTMLElement;
@@ -163,7 +184,7 @@ it('previews and drops the whole tool group on both sides and leaves it full if 
 
   for (const [side, targetX, shouldCancel] of [['left', 90, false], ['right', 710, false], ['left', 90, true]] as const) {
     await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
-    await mode('full');
+    await until(`full view is ready for the ${side} drag (cancel: ${shouldCancel})`, () => workspace.chatWorkspaceMode === 'full');
     const byId = side === 'left' ? before[0] : before[1];
     const chip = inside(`[data-chat-workspace-header] [data-tabid="${byId}"]`)!;
     const box = chip.getBoundingClientRect();
@@ -178,7 +199,7 @@ it('previews and drops the whole tool group on both sides and leaves it full if 
     expect(workspace.chatWorkspaceMode).toBe('full');
     if (shouldCancel) {
       await userEvent.keyboard('{Escape}');
-      await until('cancel clears the group landing preview', () => !inside('[data-chat-tool-drop-preview]'));
+      await until('cancel clears the active tab drag and group landing preview', () => !inside('[data-tab-dragging]') && !inside('[data-chat-tool-drop-preview]'));
       await mouse('mouseReleased', targetX, 144);
       await mode('full');
       continue;
@@ -190,6 +211,7 @@ it('previews and drops the whole tool group on both sides and leaves it full if 
     expect(workspace.chatToolSide).toBe(side);
     expect(workspace.chatWorkspacePanes!.tools!.pane.tabOrder).toEqual(before);
     expect(workspace.chatWorkspacePanes!.tools!.pane.resolvedActiveTabId).toBe(byId);
+    await until('the tab overlay finishes landing', () => !inside('[data-tab-dragging]') && !inside('.cursor-grabbing'));
   }
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });
@@ -243,13 +265,21 @@ it('resizes and previews each collapse before release, and restores the split on
   expect(inside('[data-chat-tool-collapse-preview]')).toBeNull();
 
   await begin();
+  await mouse('mouseMoved', 173, y, true);
+  await until('the approach previews a collapse without arming it', () => !!inside('[data-chat-tool-collapse-preview="left"]:not([data-chat-tool-collapse-ready])'));
+  await mouse('mouseReleased', 173, y);
+  await mode('split');
+  expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
+
+  await begin();
   await mouse('mouseMoved', 91, y, true);
+  await until('moving past the commit threshold arms the collapse', () => !!inside('[data-chat-tool-collapse-ready]'));
   await mouse('mouseReleased', 91, y);
   await mode('full');
-  expect(workspace.paneSizes[0]).toBeCloseTo(320 / 799 * 100);
+  expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
   await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
   await mode('split');
-  await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - 320) < 2);
+  await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - 324) < 2);
 
   await begin();
   await mouse('mouseMoved', 749, y, true);
@@ -259,6 +289,6 @@ it('resizes and previews each collapse before release, and restores the split on
   await mode('hidden');
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
   await mode('split');
-  await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - 479) < 2);
+  await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - 475) < 2);
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });

@@ -7,7 +7,7 @@ import type { PaneLayoutStore } from './pane-layout-store';
 export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string | undefined) {
   const handleRef = useRef<HTMLDivElement>(null);
   const held = useRef<(() => void) | null>(null);
-  const [preview, setPreview] = useState<ChatToolSide>();
+  const [feedback, setFeedback] = useState<{ preview: ChatToolSide; ready: boolean }>();
 
   useLayoutEffect(() => {
     const handle = handleRef.current;
@@ -42,13 +42,17 @@ export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string
 
     const geometry = (x: number) => {
       const rect = frame.getBoundingClientRect();
-      return chatDividerAt(x - rect.left - grab, rect.width, layout.paneMinWidth(left.paneId), layout.paneMinWidth(right.paneId));
+      const leftMin = layout.paneMinWidth(left.paneId);
+      const rightMin = layout.paneMinWidth(right.paneId);
+      if (rect.width < leftMin + rightMin + 1) return;
+      return chatDividerAt(x - rect.left - grab, rect.width, leftMin, rightMin);
     };
 
     const resize = (x: number) => {
       const target = geometry(x);
+      if (!target) return;
       layout.setSplitSizes(splitId, target.sizes);
-      setPreview(target.collapse);
+      setFeedback(target.preview ? { preview: target.preview, ready: !!target.collapse } : undefined);
       return target.collapse;
     };
 
@@ -67,7 +71,7 @@ export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string
       view.removeEventListener('keydown', keyDown, true);
       if (handle.hasPointerCapture(pointer)) handle.releasePointerCapture(pointer);
       setDragShield(false);
-      setPreview(undefined);
+      setFeedback(undefined);
       held.current = null;
     };
 
@@ -80,7 +84,7 @@ export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string
 
     const reset = () => {
       if (moved) layout.setSplitSizes(splitId, before);
-      setPreview(undefined);
+      setFeedback(undefined);
       canceled = true;
     };
 
@@ -108,5 +112,5 @@ export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string
     view.addEventListener('keydown', keyDown, true);
   };
 
-  return { start, handleRef, preview };
+  return { start, handleRef, preview: feedback?.preview, ready: feedback?.ready };
 }

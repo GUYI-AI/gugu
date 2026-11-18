@@ -37,7 +37,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     const ownerDocument = workspace?.ownerDocument;
     if (!ownerDocument || !workspace) return;
     const keyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || ownerDocument.fullscreenElement || !escapeIsFree(event.target)) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || ownerDocument.fullscreenElement || ownerDocument.documentElement.hasAttribute('data-gugu-dragging') || !escapeIsFree(event.target)) return;
       const target = event.target instanceof Element ? event.target : ownerDocument.activeElement;
       const from = target?.closest('[data-chat-tool-workspace]');
       if (embedded ? from !== workspace : from && from !== workspace) return;
@@ -59,7 +59,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const splitWidth = divided ? `${layout.paneSizes[0]}%` : undefined;
 
   const chatTitle = !full && (
-    <div className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+    <div data-chat-workspace-chat-header="" className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'title', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>

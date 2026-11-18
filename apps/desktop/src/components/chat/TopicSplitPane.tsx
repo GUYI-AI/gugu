@@ -462,7 +462,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   )
   if (mobile) return page
   if (embedded) {
-    return <TopicToolWorkspace chatId={topic.chatId} title={headerTitle} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
+    return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} title={headerTitle} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
   }
   return (
     <>

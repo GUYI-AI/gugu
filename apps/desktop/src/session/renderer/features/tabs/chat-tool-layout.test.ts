@@ -233,11 +233,11 @@ describe('mounted chat workspace', () => {
   it('bounds the size while previewing each collapsing edge only after the pointer passes the threshold', () => {
     const width = 1001;
     const at = (offset: number) => chatDividerAt(offset, width, 320, 360);
-    expect(at(500)).toEqual({ sizes: [50, 50], collapse: undefined });
-    expect(at(180)).toEqual({ sizes: [32, 68], collapse: undefined });
-    expect(at(115)).toEqual({ sizes: [32, 68], collapse: 'left' });
-    expect(at(800)).toEqual({ sizes: [64, 36], collapse: undefined });
-    expect(at(985)).toEqual({ sizes: [64, 36], collapse: 'right' });
+    expect(at(500)).toEqual({ sizes: [50, 50], preview: undefined, collapse: undefined });
+    expect(at(180)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
+    expect(at(115)).toEqual({ sizes: [32, 68], preview: 'left', collapse: 'left' });
+    expect(at(800)).toEqual({ sizes: [64, 36], preview: undefined, collapse: undefined });
+    expect(at(985)).toEqual({ sizes: [64, 36], preview: 'right', collapse: 'right' });
   });
 
   it('retains the existing two-tool pairing when both tool pages are explicitly paired', () => {
