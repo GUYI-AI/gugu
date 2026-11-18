@@ -4,6 +4,11 @@ import { fetchAppSettingValue, setAppSettingsValueInCache, updateAppSettingsRequ
 type OwnerImportSettings = AppSettings['dataImport']['owners'][string]
 export const EMPTY_IMPORT_SETTINGS: OwnerImportSettings = { automatic: false, sources: [] }
 
+export function importSettingsForOwner(stored: AppSettings['dataImport'], ownerId: string): OwnerImportSettings {
+  return stored.owners[ownerId] ?? EMPTY_IMPORT_SETTINGS
+}
+
+
 let writes: Promise<void> = Promise.resolve()
 
 export function updateImportSettings(ownerId: string, change: (before: OwnerImportSettings) => OwnerImportSettings): Promise<void> {
