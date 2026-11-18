@@ -389,7 +389,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
           openInfoTab(chatId, 'main');
         }}
       />}>
-      <InnerSidebarFoldButton />
+      <InnerSidebarFoldButton matchTabStrip={anchor.kind === 'group'} />
     </InnerHeadRowLayout>
   );
 });

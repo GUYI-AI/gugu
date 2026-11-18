@@ -1,10 +1,11 @@
 import './inner-sidebar-head.css';
 import { Button } from '@/components/ui/Button';
-import { PanelLeftClose, SquarePen } from '@/lib/icons';
+import { PanelLeft, PanelLeftClose, SquarePen } from '@/lib/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Chip } from '@/components/ui/Chip';
 import { IconButton } from '@/components/ui/IconButton';
 import { TITLEBAR_ACTION_SLOT_GAP_PX, TITLEBAR_ACTION_SLOT_WIDTH_PX } from '@/lib/window-chrome';
+import { Button as TabStripButton } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -101,18 +102,23 @@ export function InnerHeadRowLayout({
   );
 }
 
-/** 头一行最右那枚:收起这一列(#2548 ⑤)。收起是全局的(inner-sidebar-fold);钮是笔那一种。 */
-export function InnerSidebarFoldButton() {
+/** 头一行最右那枚，收起这一列（#2548 ⑤）。 */
+export function InnerSidebarFoldButton({ matchTabStrip = false }: { matchTabStrip?: boolean }) {
   const { translate } = useSessionMessages();
   const label = translate('sidebar.collapseInner');
+  const buttonProps = { 'aria-label': label, 'data-inner-head-fold': '', onClick: () => setInnerSidebarFolded(true) };
   return (
     <Tooltip>
       <TooltipTrigger
-        render={
-          <IconButton size="sm" tone="strong" aria-label={label} data-inner-head-fold="" onClick={() => setInnerSidebarFolded(true)}>
+        render={matchTabStrip ? (
+          <TabStripButton size="icon-sm" variant="ghost" className="window-no-drag-region" {...buttonProps}>
+            <PanelLeft className="size-3.5" />
+          </TabStripButton>
+        ) : (
+          <IconButton size="sm" tone="strong" {...buttonProps}>
             <PanelLeftClose />
           </IconButton>
-        }
+        )}
       />
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

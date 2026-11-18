@@ -84,7 +84,7 @@ it('the two-line group button covers the avatar and lower row, with independent 
             avatar={<span data-proof-avatar="" className="block size-8" />}
             createAction={{ label: '创建智能体', onClick: create }}
           >
-            <InnerSidebarFoldButton />
+            <InnerSidebarFoldButton matchTabStrip />
           </InnerHeadRowLayout>
         </div>
       </SessionLocalizationProvider>
@@ -96,6 +96,10 @@ it('the two-line group button covers the avatar and lower row, with independent 
   const avatar = harness.container.querySelector('[data-proof-avatar]')!.getBoundingClientRect();
   expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([215, 56, '8px']);
   expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([8, 12, 32, 32]);
+  const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
+  const icon = fold.querySelector('svg.lucide-panel-left')!;
+  expect([fold.offsetWidth, fold.offsetHeight, getComputedStyle(fold).borderRadius]).toEqual([28, 28, '8px']);
+  expect(icon.getBoundingClientRect().width).toBe(14);
 
   const rest = getComputedStyle(button()).backgroundColor;
   const openButton = page.getByRole('button', { name: '产品讨论群', exact: true });
