@@ -53,6 +53,18 @@ it('requires explicit consent, imports projections, excludes credentials and ret
   expect(await ensureAgentHome(home)).toBe('already-present');
 });
 
+it('combines first-import settings with unrelated defaults already initialized by the CLI', async () => {
+  const { home, source } = await fixture();
+  await source('settings.json', '{"theme":"terminal","hooks":{"Stop":[]}}');
+  await mkdir(home.configRoot, { recursive: true });
+  await writeFile(join(home.configRoot, 'settings.json'), '{"runtimeDefault":true}');
+
+  await importAgentHome(home, { groups: new Set(['settings']) });
+  expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({
+    theme: 'terminal', runtimeDefault: true,
+  });
+});
+
 it('imports the chosen groups after Skip even if the CLI initialized its own defaults', async () => {
   const { home, source } = await fixture();
   await source('settings.json', '{"theme":"terminal","hooks":{"Stop":[]}}');

@@ -264,26 +264,31 @@ async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker): Pr
   try { await disk.rename(temporary, destination); }
   finally { await disk.rm(temporary, { force: true }); }
 }
-async function writeItem(home: ResolvedAgentHome, items: SnapshotItem[], overwrite: boolean, guard?: (current: Buffer | null) => void): Promise<void> {
+async function writeItem(
+  home: ResolvedAgentHome, items: SnapshotItem[], mode: 'import' | 'repair' | 'reimport',
+  guard?: (current: Buffer | null) => void,
+): Promise<void> {
   const target = join(home.configRoot, items[0]!.target);
   await makeDirectory(home, dirname(target));
   const projected = items.some((item) => item.spec.keys || item.spec.omitKeys);
-  const existing = overwrite || projected ? await snapshot(home.configRoot, target) : null;
+  const existing = mode !== 'import' || projected ? await snapshot(home.configRoot, target) : null;
   guard?.(existing);
   let bytes = items[0]!.bytes;
   if (projected) {
-    let current: Record<string, unknown> = {};
-    if (existing && !overwrite) return;
-    if (existing) current = parseDocument(existing, target);
+    // A CLI may have written defaults while it was being discovered. Add selected values
+    // without removing unrelated runtime settings on the first import.
+    const current = existing ? parseDocument(existing, target) : {};
     for (const item of items) {
       const subset = parseDocument(item.bytes, item.spec.path);
-      if (item.spec.keys) for (const key of item.spec.keys) delete current[key];
-      else for (const key of Object.keys(current)) if (!item.spec.omitKeys?.includes(key)) delete current[key];
+      if (mode === 'reimport') {
+        if (item.spec.keys) for (const key of item.spec.keys) delete current[key];
+        else for (const key of Object.keys(current)) if (!item.spec.omitKeys?.includes(key)) delete current[key];
+      }
       if (object(subset)) Object.assign(current, subset);
     }
     bytes = Buffer.from(target.endsWith('.toml') ? toml.stringify(current) : `${JSON.stringify(current, null, 2)}\n`);
   }
-  if (!overwrite) {
+  if (mode === 'import' && !(projected && existing)) {
     await disk.writeFile(target, bytes, { mode: items[0]!.mode, flag: 'wx' }).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     });
@@ -336,7 +341,7 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
   let copied = 0;
   const { items, issues } = options.groups.size ? await collect(home, async (snapshots) => {
     for (const entries of byTarget(snapshots.filter((item) => options.groups.has(item.group)))) {
-      await writeItem(home, entries, existing?.skipped === true);
+      await writeItem(home, entries, existing?.skipped ? 'repair' : 'import');
       copied += (await disk.stat(join(home.configRoot, entries[0]!.target))).size;
     }
   }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
@@ -448,7 +453,7 @@ export async function reimportAgentHome(home: ResolvedAgentHome, decisions: Read
   const revisions = expected ?? new Map(diff.entries.map((entry) => [entry.id, entry.revision]));
   const { items, issues } = await collect(home, async (snapshots) => {
     for (const entries of byTarget(snapshots.filter((item) => allowed.has(item.id)))) {
-      await writeItem(home, entries, true, (current) => {
+      await writeItem(home, entries, 'reimport', (current) => {
         for (const item of entries) {
           const managed = current ? hash(project(current, item.spec, item.group)) : undefined;
           if (revisions.get(item.id) !== hash(stable({ base: marker.files[item.id], user: item.hash, managed }))) {
