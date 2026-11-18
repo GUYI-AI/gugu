@@ -28,6 +28,7 @@ export function VersionHistorySection({
   onInstallVersion,
   onOpenExternal,
   onReadAgain,
+  foldedCount = HISTORY_FOLDED,
 }: {
   state: Loadable<MarketVersionHistoryEntry[]>;
   extensionId: string;
@@ -40,6 +41,7 @@ export function VersionHistorySection({
   onInstallVersion?: (version: string) => void;
   onOpenExternal: (url: string) => void;
   onReadAgain?: () => void;
+  foldedCount?: number;
 }) {
   const [all, setAll] = useState(false);
   if (state.status === 'idle' || state.status === 'loading') {
@@ -52,7 +54,7 @@ export function VersionHistorySection({
     return <>{failure}<p className="text-foreground-muted">{translate('extensions.historyNone')}</p></>;
   }
   // 默认最近五版,装着的那一版总在;其余点开。
-  const shown = all ? state.data : state.data.filter((entry, index) => index < HISTORY_FOLDED || entry.version === installedVersion);
+  const shown = all ? state.data : state.data.filter((entry, index) => index < foldedCount || entry.version === installedVersion);
   return (
     <>
     {failure}
