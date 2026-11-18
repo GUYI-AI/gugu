@@ -1,6 +1,6 @@
 import { useMutation, useMutationState, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight } from '@/lib/icons';
+import { ChevronDown } from '@/lib/icons';
 import type { RemoteHostDevice } from '@shared/remote-hosts';
 import { remoteHostReachable } from '@shared/remote-hosts';
 import { Button } from '@renderer/lib/ui/button';
@@ -16,14 +16,16 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { log } from '@renderer/utils/logger';
 import { useMarketDetailConfirming } from './market-detail-dialog';
 
-type DeviceState<Plan> =
-  | { state: 'available'; detail: string; plan: Plan }
-  | { state: 'current' | 'blocked'; detail: string };
+type DeviceState<Plan> = { detail: string; hint?: string } & (
+  | { state: 'available'; plan: Plan }
+  | { state: 'current' | 'blocked' }
+);
 
 type PickerRow = {
   id: string;
   name: string;
   detail: string;
+  hint?: string;
   state: DeviceState<unknown>['state'] | 'reading' | 'working';
   start?: () => void;
 };
@@ -94,9 +96,12 @@ export function useMarketDevicePicker<Reading, Plan>({
     if (!remoteHostReachable(device)) {
       const waking = remoteHostsStore.cloudScope(device.id)?.state === 'waking';
       const ago = formatAgo(device.lastSeenAt, Date.now(), translate);
-      const detail = waking ? translate('marketDetail.waking')
-        : ago ? translate('marketDetail.lastSeen', { ago }) : translate('marketDetail.offline');
-      return { ...row, state: 'blocked', detail };
+      return {
+        ...row,
+        state: 'blocked',
+        detail: translate(waking ? 'marketDetail.waking' : 'marketDetail.offline'),
+        hint: !waking && ago ? translate('marketDetail.lastSeen', { ago }) : undefined,
+      };
     }
     if (query.isPending) return { ...row, state: 'reading', detail: translate('extensions.loading') };
     if (query.isError || query.data === undefined) {
@@ -106,7 +111,7 @@ export function useMarketDevicePicker<Reading, Plan>({
     const entry = describe(query.data);
     if (entry.state !== 'available') return { ...row, ...entry };
     return {
-      ...row, state: entry.state, detail: entry.detail,
+      ...row, state: entry.state, detail: entry.detail, hint: entry.hint,
       start: () => {
         const pending = client.isMutating({
           mutationKey, exact: true,
@@ -127,27 +132,27 @@ export function useMarketDevicePicker<Reading, Plan>({
   };
 }
 
-export function MarketDevicePicker({ open, onOpenChange, rows }: {
+export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, blockDismiss = false }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rows: readonly PickerRow[];
+  submitLabel?: string;
+  blockDismiss?: boolean;
 }) {
   const { translate } = useSessionMessages();
   const confirming = useMarketDetailConfirming();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [batch, setBatch] = useState<ReadonlySet<string>>(new Set());
-  const matched = rows.filter(({ name }) => name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
-  const available = matched.filter((row) => row.state === 'available');
-  const current = matched.filter((row) => row.state === 'current' && !batch.has(row.id));
-  const blocked = matched.filter((row) => row.state === 'blocked');
-  const working = matched.filter((row) => row.state === 'working' || row.state === 'current' && batch.has(row.id));
-  const reading = matched.filter((row) => row.state === 'reading');
+  const searchable = rows.length > 10;
+  const matched = searchable && search.trim()
+    ? rows.filter(({ name }) => name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+    : rows;
   const selectedRows = rows.filter((row) => row.state === 'available' && selected.has(row.id));
-  const allSelected = available.length > 0 && available.every((row) => selected.has(row.id));
-  const toggle = (ids: string[], checked: boolean) => setSelected((previous) => {
+  const toggle = (id: string, checked: boolean) => setSelected((previous) => {
     const next = new Set(previous);
-    for (const id of ids) checked ? next.add(id) : next.delete(id);
+    if (checked) next.add(id);
+    else next.delete(id);
     return next;
   });
   const start = () => {
@@ -160,7 +165,7 @@ export function MarketDevicePicker({ open, onOpenChange, rows }: {
 
   return (
     <Popover open={open} onOpenChange={(next, event) => {
-      if (!next && confirming) {
+      if (!next && (confirming || blockDismiss)) {
         event.cancel();
         return;
       }
@@ -172,48 +177,27 @@ export function MarketDevicePicker({ open, onOpenChange, rows }: {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(360px,calc(100vw-2rem))] gap-0 rounded-2xl bg-background p-0" data-testid="market-detail-device-picker">
         <PopoverTitle className="sr-only">{translate('marketDetail.otherDevices')}</PopoverTitle>
-        <div className="border-b border-border p-3">
-          <SearchInput type="search" aria-label={searchLabel} placeholder={searchLabel} value={search} onChange={(event) => setSearch(event.target.value)} />
-        </div>
+        {searchable && (
+          <div className="border-b border-border p-3">
+            <SearchInput type="search" aria-label={searchLabel} placeholder={searchLabel} value={search} onChange={(event) => setSearch(event.target.value)} />
+          </div>
+        )}
         <div className="max-h-[min(360px,45vh)] overflow-y-auto px-3 py-2">
-          {working.length > 0 && (
-            <section>
-              <h4 className="py-2 text-xs text-foreground-muted">{translate('marketDetail.deviceResults')}</h4>
-              <ul>
-                {working.map((row) => <DeviceLine key={row.id} row={row}>
-                  {row.state === 'working' ? <Spinner size="sm" /> : <Check className="size-4" aria-hidden />}
-                </DeviceLine>)}
-              </ul>
-            </section>
+          {matched.length > 0 ? <ul>{matched.map((row) => (
+            <DeviceLine
+              key={row.id}
+              row={row}
+              checked={row.state === 'current' || row.state === 'working' && batch.has(row.id) || selected.has(row.id)}
+              onCheck={(checked) => toggle(row.id, checked)}
+            />
+          ))}</ul> : (
+            <p className="px-2 py-3 text-foreground-muted">{translate(rows.length ? 'marketDetail.noMatchingDevices' : 'marketDetail.noOtherDevices')}</p>
           )}
-          {available.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs text-foreground-muted">{translate('marketDetail.canInstall')}</h4>
-                <Button variant="ghost" size="sm" onClick={() => toggle(available.map(({ id }) => id), !allSelected)}>
-                  {translate(allSelected ? 'marketDetail.deselectAll' : 'marketDetail.selectAll')}
-                </Button>
-              </div>
-              <ul>
-                {available.map((row) => (
-                  <DeviceLine key={row.id} row={row}>
-                    <Checkbox aria-label={row.name} checked={selected.has(row.id)} onCheckedChange={(checked) => toggle([row.id], checked)} />
-                  </DeviceLine>
-                ))}
-              </ul>
-            </section>
-          )}
-          {reading.length > 0 && <ul>{reading.map((row) => <DeviceLine key={row.id} row={row}><Spinner size="sm" /></DeviceLine>)}</ul>}
-          <DeviceGroup label={translate('marketDetail.currentDevices', { count: current.length })} rows={current} />
-          <DeviceGroup label={translate('marketDetail.blockedDevices', { count: blocked.length })} rows={blocked} />
-          {matched.length === 0 && <p className="px-2 py-3 text-foreground-muted">{translate(rows.length ? 'marketDetail.noMatchingDevices' : 'marketDetail.noOtherDevices')}</p>}
         </div>
         <div className="flex justify-end border-t border-border p-3">
           <Button disabled={selectedRows.length === 0} onClick={start} data-testid="market-detail-install-selected">
             {installing && selectedRows.length === 0 && <Spinner size="sm" />}
-            {selectedRows.length > 0
-              ? translate('marketDetail.installSelected', { count: selectedRows.length })
-              : translate(installing ? 'extensions.installing' : 'marketDetail.chooseDevices')}
+            {submitLabel ?? translate('extensions.installAction')}
           </Button>
         </div>
       </PopoverContent>
@@ -221,24 +205,12 @@ export function MarketDevicePicker({ open, onOpenChange, rows }: {
   );
 }
 
-function DeviceGroup({ label, rows }: { label: string; rows: readonly PickerRow[] }) {
-  if (rows.length === 0) return null;
+function DeviceLine({ row, checked, onCheck }: { row: PickerRow; checked: boolean; onCheck: (checked: boolean) => void }) {
   return (
-    <details className="group border-t border-border">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md px-2 py-2 text-xs text-foreground-muted hover:bg-row-hover">
-        {label}<ChevronRight className="size-4 group-open:rotate-90" aria-hidden />
-      </summary>
-      <ul>{rows.map((row) => <DeviceLine row={row} key={row.id} />)}</ul>
-    </details>
-  );
-}
-
-function DeviceLine({ row, children }: { row: PickerRow; children?: React.ReactNode }) {
-  return (
-    <li className="flex min-h-8 items-center gap-2 rounded-md px-2 py-1" data-device-id={row.id}>
-      {children}
+    <li className="flex min-h-8 items-center gap-2 rounded-md px-2 py-1 data-[state=blocked]:text-foreground-muted" data-device-id={row.id} data-state={row.state}>
+      <Checkbox aria-label={row.name} checked={checked} disabled={row.state !== 'available'} onCheckedChange={onCheck} />
       <span className="min-w-0 flex-1 truncate" title={row.name}>{row.name}</span>
-      <span className="text-right text-xs text-foreground-muted">{row.detail}</span>
+      <span className="text-right text-xs text-foreground-muted" title={row.hint}>{row.state === 'working' ? <Spinner size="sm" /> : row.detail}</span>
     </li>
   );
 }

@@ -4,7 +4,8 @@ import type { LibraryHost } from '@renderer/features/library/library-host';
 import { compareExtensionVersions } from '@shared/extensions/manifest';
 import { marketCompatText, type MarketListItem } from '@shared/extensions/market';
 import { MarketDevicePicker, useMarketDevicePicker } from './market-detail-devices';
-import { commitMarketInstall, prepareMarketInstall, useConfirmMarketInstall } from './market-detail-install';
+import { useConfirmMarketInstall } from './market-detail-install';
+import { commitMarketInstall, prepareMarketInstall } from './market-extension-install-rpc';
 
 async function readApplicationOnDevice(api: LibraryHost['extensions']['api'], extensionId: string) {
   const [inventory, catalog] = await Promise.all([api.list(), api.marketEntry({ extensionId })]);
@@ -31,18 +32,20 @@ export const MarketExtensionDevices = observer(function MarketExtensionDevices({
       const compat = blockedRelease?.compat ?? offered?.cloud.compat;
       if (!preinstalled && (compat || blockedRelease?.platformRefusal || missedVersion)) {
         return {
-          state: 'blocked', detail: compat ? marketCompatText(compat, translate)
+          state: 'blocked', detail: translate('marketDetail.deviceIncompatible'),
+          hint: compat ? marketCompatText(compat, translate)
             : blockedRelease?.platformRefusal ? translate('extensions.platformVersionUnavailable')
             : translate('extensions.newerNeedsApp', { version: missedVersion ?? '' }),
         };
       }
       if (installed && (preinstalled || !offered || compareExtensionVersions(offered.cloud.version, installed.version) <= 0)) {
-        return { state: 'current', detail: `v${installed.version} · ${translate('marketDetail.deviceInstalled')}` };
+        return { state: 'current', detail: translate('marketDetail.deviceInstalled'), hint: `v${installed.version}` };
       }
       if (!offered) return { state: 'blocked', detail: translate('marketDetail.deviceUnavailable') };
       return {
         state: 'available',
-        detail: installed ? translate('marketDetail.deviceUpdate', { version: installed.version }) : translate('marketDetail.deviceNotInstalled'),
+        detail: installed ? translate('marketDetail.deviceUpdate') : '',
+        hint: installed ? `v${installed.version}` : undefined,
         plan: offered,
       };
     },

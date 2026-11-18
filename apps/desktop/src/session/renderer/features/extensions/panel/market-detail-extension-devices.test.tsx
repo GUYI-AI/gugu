@@ -74,7 +74,7 @@ describe('actions for other devices in Marketplace details', () => {
       </QueryClientProvider>
     ));
     await click(document.querySelector<HTMLButtonElement>('[data-testid="market-detail-other-devices"]')!);
-    await until('installation action available', () => !!row('studio')?.querySelector('[data-slot="checkbox"]'));
+    await until('installation action available', () => row('studio')?.dataset.state === 'available');
   };
 
   beforeEach(() => {
@@ -111,9 +111,9 @@ describe('actions for other devices in Marketplace details', () => {
     });
 
     await show();
-    expect(row('studio')?.textContent).toContain(translateSessionMessage('marketDetail.deviceUpdate', { version: '1.0.0' }));
-    expect(row('laptop')?.closest('details')?.open).toBe(false);
-    expect(row('laptop')?.querySelector('[data-slot="checkbox"]')).toBeNull();
+    expect(row('studio')?.textContent).toContain(translateSessionMessage('marketDetail.deviceUpdate'));
+    expect(row('laptop')?.dataset.state).toBe('blocked');
+    expect(row('laptop')?.querySelector('[data-slot="checkbox"]')?.hasAttribute('data-disabled')).toBe(true);
     expect(row('local')).toBeNull();
     expect(mocks.offlineRead).not.toHaveBeenCalled();
     await installOnStudio();
@@ -121,7 +121,7 @@ describe('actions for other devices in Marketplace details', () => {
     await until('permission confirmation shown', () => document.querySelector('[data-testid="market-detail-confirmation"]')?.textContent?.includes('calendar.example') === true);
     await click(document.querySelector<HTMLButtonElement>('[data-testid="market-detail-confirm"]')!);
     expect(mocks.api.installFromMarket).toHaveBeenLastCalledWith({ ref: item.ref, consent: { kind: 'given', digest: 'calendar-1.1-digest' } });
-    await until('updated version shown', () => row('studio')?.textContent?.includes('v1.1.0') === true && !row('studio')?.querySelector('[data-slot="checkbox"]'));
+    await until('updated version shown', () => row('studio')?.dataset.state === 'current' && !!row('studio')?.querySelector('[title="v1.1.0"]'));
   });
 
   it('installs a selected batch independently and continues after the picker closes', async () => {
@@ -134,12 +134,11 @@ describe('actions for other devices in Marketplace details', () => {
     mocks.backupApi.installFromMarket.mockRejectedValue(new Error('device disconnected'));
 
     await show();
-    await until('second device selectable', () => !!row('backup')?.querySelector('[data-slot="checkbox"]'));
-    const selectAllText = translateSessionMessage('marketDetail.selectAll');
-    const selectAll = [...document.querySelectorAll('button')].find((button) => button.textContent === selectAllText)!;
-    await click(selectAll);
+    await until('second device selectable', () => row('backup')?.dataset.state === 'available');
+    await click(row('studio')!.querySelector<HTMLElement>('[data-slot="checkbox"]')!);
+    await click(row('backup')!.querySelector<HTMLElement>('[data-slot="checkbox"]')!);
     const start = document.querySelector<HTMLButtonElement>('[data-testid="market-detail-install-selected"]')!;
-    expect(start.textContent).toBe(translateSessionMessage('marketDetail.installSelected', { count: 2 }));
+    expect(start.textContent).toBe(translateSessionMessage('extensions.installAction'));
     await click(start);
     expect(mocks.api.installFromMarket).toHaveBeenCalledTimes(1);
     expect(mocks.backupApi.installFromMarket).toHaveBeenCalledTimes(1);

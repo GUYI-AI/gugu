@@ -3,31 +3,9 @@ import { ConsentBody } from '@/components/extensionBundle/ConsentDetails';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { compareExtensionVersions } from '@shared/extensions/manifest';
 import { pinsAutoUpdate } from '@shared/extensions/market-entries';
-import type { MarketSourceRef } from '@shared/extensions/market';
 import { type InstallConsentAsk, installConsentPrompt } from '../install-consent';
 import { consentPrompt } from '../extension-consent';
-import type { ExtensionsApi } from '../extensions-host';
 import { useMarketDetailConfirmation } from './market-detail-dialog';
-
-type InstallApi = Pick<ExtensionsApi, 'installFromMarket'>;
-
-export async function prepareMarketInstall(api: InstallApi, ref: MarketSourceRef) {
-  const result = await api.installFromMarket({ ref, consent: { kind: 'return' } });
-  if (!result.success || !result.data) throw new Error(result.error);
-  if (result.data.outcome !== 'ask') throw new Error('Market install preparation did not return a package');
-  return result.data;
-}
-
-export async function commitMarketInstall(api: InstallApi, ask: InstallConsentAsk) {
-  const result = await api.installFromMarket({
-    ref: { extensionId: ask.manifest.id, version: ask.manifest.version },
-    consent: { kind: 'given', digest: ask.manifestDigest },
-  });
-  return {
-    success: !!result.success && result.data?.outcome === 'confirmed',
-    error: result.error,
-  };
-}
 
 export type ConfirmMarketInstall = (
   ask: InstallConsentAsk, asks: boolean, target?: { machine: string; offeredVersion: string },

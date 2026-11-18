@@ -12,8 +12,6 @@ type Confirmation = {
   variant?: 'default' | 'destructive';
 };
 
-type Request = Confirmation & { settle: (answer: boolean) => void };
-
 const ConfirmContext = createContext({
   ask: (_request: Confirmation): Promise<boolean> => Promise.resolve(false),
   confirming: false,
@@ -27,10 +25,9 @@ export function useMarketDetailConfirming() {
   return useContext(ConfirmContext).confirming;
 }
 
-export function MarketDetailDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
-  const { translate } = useSessionMessages();
-  const opener = useRef(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  const [request, setRequest] = useState<Request | null>(null);
+export function useMarketDetailQueue<T>() {
+  type Request = { value: T; settle: (answer: boolean) => void };
+  const [active, setActive] = useState<Request | null>(null);
   const queue = useRef<Request[]>([]);
   const mounted = useRef(true);
   useEffect(() => {
@@ -41,20 +38,28 @@ export function MarketDetailDialog({ onClose, children }: { onClose: () => void;
     };
   }, []);
 
-  const ask = (confirmation: Confirmation) => new Promise<boolean>((settle) => {
+  const enqueue = (value: T) => new Promise<boolean>((settle) => {
     if (!mounted.current) {
       settle(false);
       return;
     }
-    const next = { ...confirmation, settle };
+    const next = { value, settle };
     queue.current.push(next);
-    if (queue.current.length === 1) setRequest(next);
+    if (queue.current.length === 1) setActive(next);
   });
   const finish = (answer: boolean) => {
-    if (queue.current[0] !== request) return;
+    if (queue.current[0] !== active) return;
     queue.current.shift()?.settle(answer);
-    setRequest(queue.current[0] ?? null);
+    setActive(queue.current[0] ?? null);
   };
+  return { active, enqueue, finish };
+}
+
+export function MarketDetailDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const { translate } = useSessionMessages();
+  const opener = useRef(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const { active, enqueue, finish } = useMarketDetailQueue<Confirmation>();
+  const request = active?.value;
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -63,7 +68,7 @@ export function MarketDetailDialog({ onClose, children }: { onClose: () => void;
         finalFocus={() => opener.current?.isConnected ? opener.current : false}
         data-testid="market-detail-dialog"
       >
-        <ConfirmContext.Provider value={{ ask, confirming: request !== null }}>
+        <ConfirmContext.Provider value={{ ask: enqueue, confirming: !!request }}>
           {children}
           {request && (
             <Dialog open onOpenChange={(open) => { if (!open) finish(false); }}>

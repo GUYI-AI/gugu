@@ -38,7 +38,8 @@ import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle'
 import { MarketDetailDialog } from '@renderer/features/extensions/panel/market-detail-dialog';
 import { MarketAgentDetail } from '@renderer/features/extensions/panel/market-detail-agent';
 import { MarketExtensionDetail } from '@renderer/features/extensions/panel/market-detail-extension';
-import { commitMarketInstall, type ConfirmMarketInstall } from '@renderer/features/extensions/panel/market-detail-install';
+import type { ConfirmMarketInstall } from '@renderer/features/extensions/panel/market-detail-install';
+import { commitMarketInstall } from '@renderer/features/extensions/panel/market-extension-install-rpc';
 import type { AppLifecycle } from '@renderer/features/extensions/panel/app-lifecycle-button';
 import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-page';
 import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/extensions/panel/app-product-page';
