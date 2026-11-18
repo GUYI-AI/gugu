@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { textFilePatch } from '@gugu/session-core/lib';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import '../../../../apps/desktop/src/session/renderer/index.css';
@@ -249,7 +250,7 @@ it.each([{ width: 1440, mode: 'light' }, { width: 1440, mode: 'dark' }, { width:
   console.log(`NORMAL_FOOTER_READING ${JSON.stringify(reading)}`);
   if (capturePhase) await page.screenshot({ element: host, path: `__screenshots__/normal-${capturePhase}-${mode}-${width}.png` });
   expect(reading.roots).toBe(1);
-  expect(reading.footerHeight).toBe(20);
+  expect(reading.footerHeight).toBe(24);
   expect(reading.copies).toBe(1);
   expect(reading.completionRows).toBe(0);
 });
@@ -288,9 +289,60 @@ it.each([{ width: 1440, mode: 'light' }, { width: 1440, mode: 'dark' }, { width:
   const { host } = mount(width, mode, { preset: 'double', userGutter: 0, agentConversation: true }, '');
   await until('ordinary tool completion mounts', () => !!host.querySelector('[data-slot="turn-completion"]'));
   const completion = host.querySelector<HTMLElement>('[data-slot="turn-completion"]')!;
-  expect(completion.getBoundingClientRect().height).toBe(20);
+  expect(completion.getBoundingClientRect().height).toBe(16);
   expect(completion.querySelectorAll('[data-slot="message-copy"]')).toHaveLength(1);
   expect(host.querySelector('[data-slot="turn-silence"]')).toBeNull();
   console.log(`ORDINARY_COMPLETION_READING ${JSON.stringify({ phase: capturePhase ?? 'test', width, mode, top: completion.getBoundingClientRect().top, height: completion.getBoundingClientRect().height })}`);
   if (capturePhase) await page.screenshot({ element: host, path: `__screenshots__/ordinary-${capturePhase}-${mode}-${width}.png` });
+});
+
+
+it.each([390, 1200])('aligns a reply, its artifact and the final actions at %ipx', async width => {
+  await page.viewport(width, 1000);
+  const writeClipboardText = vi.fn();
+  const { host, state } = mount(width, 'light', { preset: 'double', userGutter: 0, agentConversation: true },
+    '[NO_REPLY]', { writeClipboardText });
+  state.session.setBackgroundTasks({ commands: [], subagents: [] });
+  state.transcript.history.seed([{
+    id: 'edited', seq: 1, initiator: 'user', startedAt: 1000, endedAt: 9000, outcome: { kind: 'done' },
+    items: [
+      { kind: 'message', id: 'ask', seq: 0, role: 'user', text: 'Write a short note', at: 1000,
+        attachments: [{ id: 'image', name: 'example.png' }] },
+      { kind: 'diff', id: 'edit', seq: 1, patches: [textFilePatch('/project/notes.md', null, 'One sentence.')], status: 'done' },
+      { kind: 'message', id: 'answer', seq: 2, role: 'assistant', text: 'I saved the note.', at: 8000 },
+    ],
+  } as TranscriptTurn]);
+  const find = (selector: string) => host.querySelector<HTMLElement>(selector)!;
+  await until('the artifact and moved footer mount', () =>
+    !!find('[data-slot="file-change-summary"]') && !!find('[data-slot="turn-completion"] [data-user-message-actions="answer"]'));
+  await untilStable('utterance settles', () => find('[data-chat-canvas]').offsetHeight);
+  const inputActions = find('[data-user-message-actions="ask"]');
+  const inputBubble = find('[data-user-card="ask"]');
+  const inputImage = find('[data-conversation-body="user"] [data-attachment-chip]');
+  const header = find('[data-conversation-part="head"]');
+  const bubble = find('[data-user-card="answer"]');
+  const artifact = find('[data-slot="file-change-summary"]');
+  const actions = find('[data-slot="turn-completion"] [data-user-message-actions="answer"]');
+  const box = (element: HTMLElement) => element.getBoundingClientRect();
+  const gap = (above: HTMLElement, below: HTMLElement) => Math.round(box(below).top - box(above).bottom);
+  expect(gap(inputImage, inputBubble)).toBe(8);
+  expect(box(inputBubble).right).toBe(box(inputImage).right);
+  expect(box(inputActions).right).toBe(box(inputBubble).right);
+  expect(gap(inputActions, header)).toBe(24);
+  expect(gap(header, bubble)).toBe(8);
+  expect(gap(bubble, artifact)).toBe(8);
+  expect(gap(artifact, actions)).toBe(8);
+  expect(box(header).left).toBe(box(bubble).left);
+  expect(box(bubble).left).toBe(box(artifact).left);
+  expect(box(artifact).left).toBe(box(actions).left);
+  expect(box(artifact).width).toBe(Math.round(box(header).width * .86));
+  expect(host.querySelectorAll('[data-user-message-actions="answer"]')).toHaveLength(1);
+  const copy = actions.querySelector<HTMLElement>('[data-slot="message-copy"]')!;
+  if (matchMedia('(hover: hover)').matches) {
+    expect(getComputedStyle(copy).opacity).toBe('0');
+    await userEvent.hover(bubble);
+    await until('the reply hover reveals the moved controls', () => getComputedStyle(copy).opacity === '1');
+  }
+  copy.click();
+  expect(writeClipboardText).toHaveBeenCalledWith('I saved the note.');
 });

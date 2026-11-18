@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { For, Show } from 'solid-js'
+import { createMemo, For, Show } from 'solid-js'
 import { defineUnit } from '@session-chat/core/units'
 import type { MeasureCtx } from '@session-chat/core/define'
 import { useCommands } from '@session-chat/components/contexts/CommandsContext'
@@ -11,6 +11,7 @@ import { openedOutputLook } from '@session-chat/state/opened-outputs'
 import { OPENED_OUTPUT_ROW_H, outputControlWidth, OutputRowEnd } from '../opened-output/opened-output.def'
 import { chevron, detail, nameRow, text, tile } from '../opened-output/opened-output.css'
 import { readableLabel, rowTranslator } from '../readable-label'
+import { conversationColumnWidth } from '../message/metrics'
 import * as css from './file-change-summary.css'
 
 /**
@@ -22,6 +23,9 @@ import * as css from './file-change-summary.css'
  *
  * 一个文件:就是那一行,没有标题,也没有展开 / 收起。多个文件:顶上一行「已编辑 3 个文件 +54 −19」,点它展开 / 收起清单(默认收起)。
  */
+const cardContext = (ctx: MeasureCtx): MeasureCtx => ctx.theme.layout.agentConversation
+  ? { ...ctx, width: conversationColumnWidth(ctx.width) } : ctx
+
 const HEAD = 52
 const BORDER = 2
 const isSingle = (item: FileChangeSummaryItem) => item.files.length === 1
@@ -73,24 +77,26 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
   kind: 'file-change-summary',
   margin: { top: 8, bottom: 8 },
   vars: {},
-  measure: (item, ctx) => height(item, ctx),
+  measure: (item, ctx) => height(item, cardContext(ctx)),
   Render(props) {
     const t = useChatTranslator()
     const commands = useCommands()
+    const ctx = createMemo(() => cardContext(props.ctx.measureCtx!()))
     const single = () => isSingle(props.data)
     const open = () => single() || props.ctx.viewState.isCollapsed(props.data.id)
     return (
-      <div data-slot="file-change-summary" data-turn-id={props.data.turnId} class={css.card}>
+      <div data-slot="file-change-summary" data-turn-id={props.data.turnId} class={css.card}
+        style={{ width: ctx().theme.layout.agentConversation ? `${ctx().width}px` : undefined }}>
         <Show when={!single()}>
           <button
             type="button"
             class={css.head}
-            style={{ height: `${headLayout(props.data, props.ctx.measureCtx!()).rowHeight}px` }}
+            style={{ height: `${headLayout(props.data, ctx()).rowHeight}px` }}
             data-collapse-id={props.data.id}
             aria-expanded={open()}
             aria-label={t(open() ? 'transcript.collapseFiles' : 'transcript.expandFiles')}
           >
-            <span class={css.headLabel}>{headLayout(props.data, props.ctx.measureCtx!()).label.text}</span>
+            <span class={css.headLabel}>{headLayout(props.data, ctx()).label.text}</span>
             <span class={css.stats}><Detail text={statsText(props.data)} counts={props.data} /></span>
             <span class={`${chevron} ${css.turn}`} data-open={open() ? '' : undefined}><IconChevronDown /></span>
           </button>
@@ -103,7 +109,7 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
               return (
                 <div
                   class={css.file}
-                  style={{ height: `${fileLayout(file, props.ctx.measureCtx!()).rowHeight}px` }}
+                  style={{ height: `${fileLayout(file, ctx()).rowHeight}px` }}
                   title={file.path}
                   role={commands().onOpenFile ? 'button' : undefined}
                   tabIndex={commands().onOpenFile ? 0 : undefined}
@@ -118,8 +124,8 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
                 >
                   <span class={tile}><FileTile name={look().name} /></span>
                   <span class={text}>
-                    <span class={nameRow}>{fileLayout(file, props.ctx.measureCtx!()).name.text}</span>
-                    <span class={detail}><Detail text={fileLayout(file, props.ctx.measureCtx!()).description.text} counts={file} /></span>
+                    <span class={nameRow}>{fileLayout(file, ctx()).name.text}</span>
+                    <span class={detail}><Detail text={fileLayout(file, ctx()).description.text} counts={file} /></span>
                   </span>
                   <OutputRowEnd output={{ kind: 'file', path: file.path }} itemId={file.diffs[0].id} name={look().name} canOpen={!!commands().onOpenFile} />
                 </div>
