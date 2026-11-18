@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useGroupRef } from 'react-resizable-panels';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
@@ -10,6 +10,7 @@ import { fullscreenCover, OverFullscreenStrip, tabFullscreen } from './tab-fulls
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import { setDragShield } from '@renderer/lib/drag-shield';
 import { useRef } from 'react';
+import { ChatWorkspaceChrome, type ChatWorkspaceChromeProps } from './chat-workspace-chrome';
 
 /** `part`: 'all' = the pane's strip over its page; while paired the main pane's 'bar' is drawn above both 'body's. */
 type RenderPane = (paneId: string, first: boolean, last: boolean, part: 'all' | 'bar' | 'body') => ReactNode;
@@ -23,10 +24,18 @@ const childId = (node: PaneLayoutNode) => node.type === 'pane' ? `pane-${node.pa
  * would change parents and remount with everything in it. Drawn flat it keeps its identity, so a split costs the same
  * whatever the panes hold.
  */
-export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane }: { layout: PaneLayoutStore; renderPane: RenderPane }) {
+export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane, chatChrome }: {
+  layout: PaneLayoutStore;
+  renderPane: RenderPane;
+  chatChrome?: ChatWorkspaceChromeProps;
+}) {
   const treeId = useId().replace(/[^\w-]/g, '');
-  const narrow = layout.narrow;
-  const visiblePaneId = layout.activePaneId;
+  const withChatChrome = !!chatChrome;
+  useLayoutEffect(() => withChatChrome ? layout.attachChatWorkspace() : undefined, [layout, withChatChrome]);
+  const scopedChrome = chatChrome && layout.chatWorkspaceMode !== undefined ? chatChrome : undefined;
+  const single = layout.chatWorkspaceSinglePaneId;
+  const narrow = layout.narrow || !!single;
+  const visiblePaneId = single ?? layout.activePaneId;
   const first = cornerPane(layout.layout, 'top-left');
   const last = cornerPane(layout.layout, 'top-right');
   const anchorOf = (paneId: string) => `--pane-${treeId}-${paneId}`;
@@ -34,9 +43,10 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane 
   const paired = layout.sidePaneId !== null;
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
   return <PaneDimensionProvider sink={layout}>
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-chat-tool-workspace={scopedChrome ? '' : undefined}>
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
-      {paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
+      {scopedChrome && <ChatWorkspaceChrome layout={layout} {...scopedChrome} />}
+      {!scopedChrome && paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
         <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}><OverFullscreenStrip.Provider value={lifted}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</OverFullscreenStrip.Provider></div>
       </div>}
       <div className="relative min-h-0 min-w-0 flex-1" data-pane-tree-narrow={narrow || undefined}>
@@ -45,7 +55,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane 
           const shown = !narrow || paneId === visiblePaneId;
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
           return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" inert={!shown} aria-hidden={!shown || undefined}>
-            {renderPane(paneId, narrow || paneId === first, narrow || paneId === last, paired ? 'body' : 'all')}
+            {renderPane(paneId, narrow || paneId === first, narrow || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>;
         })}
       </div>

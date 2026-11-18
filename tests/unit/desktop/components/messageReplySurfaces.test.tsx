@@ -9,7 +9,7 @@ import { chat, clickElement, createNode, createReactHarness, displayIdentity, fi
 import { writeComposer } from '../../../support/composerEditor'
 
 const mobileShell = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobileShell.enabled }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobileShell.enabled, readMobileShell: () => mobileShell.enabled }))
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
 vi.mock('../../../../apps/desktop/src/lib/topics', () => ({ topicService: {
   listTopicsOfChat: async () => [], getAgentFloodAdjustment: async () => null, getSourceState: async () => ({ kind: 'gone' }),

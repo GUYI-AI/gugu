@@ -24,7 +24,6 @@ import { PhoneAttachPanel } from './PhoneAttachPanel'
 import { compressPhoto } from './compressPhoto'
 import { IconButton } from '../ui/IconButton'
 import { Camera, Image, Paperclip } from '@/lib/icons'
-import { ComposerVerbs } from './ComposerVerbs'
 import { useComposerVerbTakeover } from './useComposerVerbTakeover'
 import { ChatComposerContextBands } from './ChatComposerContextBands'
 import { useGroupMentionProvider } from './useGroupMentionProvider'
@@ -81,7 +80,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const inChatSlot = useInChatSlot()
   const projectName = useChatSlotProjectName()
   const takenOver = useComposerVerbTakeover(chatId)
-  const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
+  const { identitiesById, registerDraftEditor } = useChatStore('identitiesById', 'registerDraftEditor')
   const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId, isGroupChat: !!isGroupChat, groupMembers, currentUserId: currentUserId ?? null,
     agentStatuses, messages, participantIds, replyToMessageId: quoteContent?.messageId, enabled: !whisperTarget })
   const activeTargets = activeMentionPicks(text, mentionTargets, members)
@@ -172,11 +171,11 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
           attachments={composerAttachments} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
-          toolbarExtra={<>{mobile
+          toolbarExtra={mobile
             ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"
           data-phone-attachment=""
                 onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}><Paperclip /></IconButton>
-            : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
+            : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}
           className={inChatSlot ? sessionComposerDockedWidthClassName : undefined} />
         {mobile && attachOpen && <PhoneAttachPanel onClose={() => setAttachOpen(false)} entries={[
           { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },

@@ -7,7 +7,7 @@ import { clickElement, createNode, createReactHarness } from '../../support/test
 
 const m = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), toast: vi.fn() }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', capabilities: { readingZoomMemory: false }, saveFile: m.save } }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   readOpenedFileChunk: m.read,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },

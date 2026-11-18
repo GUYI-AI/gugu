@@ -428,7 +428,7 @@ export default {
   },
   "assistantRules": {
     "stuckTitle": "咕咕暂时无法启动",
-    "stuckBody": "它需要「咕咕助理」App，目前没能装上或已停用。联网或重新启用后会自动继续。"
+    "stuckBody": "它需要「咕咕助理」应用，目前没能装上或已停用。联网或重新启用后会自动继续。"
   },
   "brand": {
     "name": "咕咕"
@@ -515,8 +515,8 @@ export default {
     "newAgent": "创建智能体",
     "newTask": "新建任务",
     "apps": {
-      "intro": "装在这台手机上的 App:从聊天里的卡片装的，和从市场装的。咕咕自带的不在这里。",
-      "empty": "还没有装过 App。",
+      "intro": "装在这台手机上的应用：从聊天卡片或市场安装。咕咕自带的应用不在这里。",
+      "empty": "还没有装过应用。",
       "from": "版本 {{version}}，来自 {{name}}",
       "fromMarket": "版本 {{version}}，来自咕咕市场",
       "updateTo": "更新到 {{version}}",
@@ -533,7 +533,7 @@ export default {
       "about": "关于",
       "connectors": "连接应用",
       "account": "账户",
-      "apps": "App",
+      "apps": "市场",
       "browser": "浏览器",
       "devices": "设备",
       "files": "文件存储",
@@ -667,12 +667,12 @@ export default {
     "tasks": "项目",
     "sessionView": "会话",
     "library": "资源库",
-    "apps": "App",
+    "apps": "市场",
     "appDockFailed": "左栏没能改动",
-    "moreApps": "更多 App",
+    "moreApps": "更多应用",
     "appOpen": "打开",
     "appOpenInWindow": "在新窗口打开",
-    "appSettings": "App 设置",
+    "appSettings": "应用设置",
     "appUnpin": "从左栏移走",
     "appQuit": "退出",
     "appQuitFailed": "没能退出",

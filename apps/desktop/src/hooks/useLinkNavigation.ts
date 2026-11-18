@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
-import { askedSince, asksSoFar, beginWait, endWait } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askedSince, asksSoFar, beginWait, endWait, revealChatWorkspaceMessage } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import type { ExtensionAppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
@@ -70,14 +70,17 @@ export function useLinkNavigation(input: {
       }
       if (target.kind === 'file') {
         // The chat whose panel shows a chat's files (a topic's: its source's).
-        const panelChat = (id: string | undefined) => {
-          const row = id ? state.chats().find((chat) => chat.id === id) : undefined
+        const rowOf = (id: string | null | undefined) => id ? state.chats().find((chat) => chat.id === id) : undefined
+        const panelChat = (id: string | null | undefined) => {
+          const row = rowOf(id)
           return row ? (row.kind === 'topic' ? row.source_chat_id ?? null : row.id) : null
         }
+        const desktopTopic = (id: string | null | undefined) => !readMobileShell() && rowOf(id)?.kind === 'topic' ? id : undefined
         // Asked in a chat (a message's, or an App page's beside it): the file's waiting page there at once — not an image's,
         // which opens over the chat in the image viewer (useChatOpener), the page left as it is.
         const { from, intent } = request
-        const here = from?.chatId ?? panelChat(request.message?.chat_id)
+        const messageChat = request.message?.chat_id
+        const here = from?.chatId ?? desktopTopic(messageChat) ?? panelChat(messageChat)
         const wait = here && !(request.fileName && opensInImageViewer(request.fileName, null, intent)) ? beginWait(here, { itemId: target.itemId, ...(request.fileName ? { fileName: request.fileName } : {}), ...(request.message ? { message: request.message } : {}), ...(from ? { from: from.tabId } : {}), ...(intent ? { intent } : {}) }) : null
         const mark = asksSoFar()
         try {
@@ -87,14 +90,17 @@ export function useLinkNavigation(input: {
           const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(request.chatId ? { chatId: request.chatId } : {}), ...(target.at ? { at: target.at } : {}), ...(request.among ? { among: request.among } : {}) })
           if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
           if (!found.success || !found.data) throw Object.assign(new Error(found.error || 'File reference is unavailable'), 'code' in found && found.code ? { code: found.code } : {})
-          const chatId = panelChat(found.data.chatId)
-          if (!chatId) throw new Error('File reference is unavailable')
+          const resourceChat = panelChat(found.data.chatId)
+          if (!resourceChat) throw new Error('File reference is unavailable')
+          // Resolve access against the file's own chat. An open from its desktop topic can show it in that topic's tool group.
+          const topic = desktopTopic(here)
+          const chatId = topic && panelChat(topic) === resourceChat ? topic : resourceChat
           // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
           // the one the chat opens.
           if (askedSince(chatId, mark)) throw new OpenSuperseded()
           // Another chat's file (a forwarded one): nothing waits here; that chat comes up with it.
           if (wait && chatId !== here) endWait(here!, wait)
-          await state.openFile(chatId, target, request, { ...found.data, ...(wait && chatId === here ? { wait } : {}), ...(intent ? { intent } : {}), ...(from?.chatId === chatId ? { from: from.tabId } : {}), ...(request.origin ? { origin: request.origin } : {}) })
+          await state.openFile(chatId, target, request, { ...found.data, ...(chatId !== resourceChat ? { chatId } : {}), ...(wait && chatId === here ? { wait } : {}), ...(intent ? { intent } : {}), ...(from?.chatId === chatId ? { from: from.tabId } : {}), ...(request.origin ? { origin: request.origin } : {}) })
           window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
           return
         } finally {
@@ -178,7 +184,10 @@ export function useLinkNavigation(input: {
         viewportKey = state.openAssistant(true)
         window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: task }))
       } else viewportKey = state.openChat(chat.id)
-      if (target.messageId) askReveal(chat.id, target.messageId, viewportKey || undefined)
+      if (target.messageId) {
+        revealChatWorkspaceMessage(chat.id)
+        askReveal(chat.id, target.messageId, viewportKey || undefined)
+      }
       window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId: chat.id } }))
     }
     // The file being opened now: asked for again before it is up (a second click), the ask joins it — one open, one answer.
