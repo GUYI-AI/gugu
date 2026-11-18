@@ -33,8 +33,7 @@ describe('one Antigravity provider routes each conversation to its original stor
   it('resolves new ACP chats to the terminal CLI while preserving the primary legacy installation', () => {
     const provider = pluginRegistry.get('antigravity')!;
     expect(agentProgramFor(provider, 'primary').binaryName).toBe('agy_acp_server');
-    expect(agentProgramFor(provider, 'acp')).toEqual(process.platform === 'win32'
-      ? agentProgramFor(provider, 'primary') : agentProgramFor(provider, 'tui'));
+    expect(agentProgramFor(provider, 'acp')).toMatchObject({ dependencyId: 'antigravity-cli', binaryName: 'agy' });
   });
   it('starts new chat sessions on the same agy CLI as the terminal', async () => {
     const ctx = await context();
@@ -54,10 +53,16 @@ describe('one Antigravity provider routes each conversation to its original stor
     const ctx = await context(); ctx.providerSessionId = id;
     expect(() => pluginRegistry.get('antigravity')!.behavior.acp!.buildSpawn(ctx)).toThrow(/store|stored/i);
   });
-  it('retains one usable legacy ACP entry on Windows instead of an empty-surface second entry', async () => {
-    const ctx = await context(); ctx.cli = '/managed/agy_acp_server';
-    expect(pluginRegistry.get('antigravity')!.capabilities.sessionBundle.surfaces).toContain('acp');
-    expect(buildAntigravityAcpSpawn(ctx, 'win32')).toMatchObject({ command: '/managed/agy_acp_server', args: [] });
+  it('passes a Windows path with spaces as one argument to the native ACP process', () => {
+    const root = 'C:\\Dev Home\\.gemini';
+    const cli = 'C:\\Program Files\\agy.exe';
+    expect(buildAntigravityAcpSpawn({ cwd: root, cli, env: { GEMINI_HOME: root } }))
+      .toMatchObject({ command: cli, args: ['acp', '--stdio', '--gemini-dir', root] });
+  });
+  it('uses the chosen program even if the store file is no longer visible to the launcher', async () => {
+    const ctx = await context();
+    expect(buildAntigravityAcpSpawn({ ...ctx, providerSessionId: id, sessionProgram: 'antigravity' }))
+      .toMatchObject({ command: '/managed/agy_acp_server', args: [] });
   });
   it('does not infer full access from the CLI auto mode', () => {
     const approval = pluginRegistry.get('antigravity')!.capabilities.autoApprove;

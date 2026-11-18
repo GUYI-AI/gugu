@@ -15,8 +15,7 @@ import {
   usageUnavailable,
   usageWindows,
 } from '../../helpers/subscription';
-import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus } from './auth';
-import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
+import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus, execAntigravityCli } from './auth';
 import { readAgyAcpTier, readCachedAgyTier } from './acp-tier';
 
 /**
@@ -46,7 +45,6 @@ export function antigravitySubscriptionBehavior(): ISubscriptionBehavior {
 }
 
 export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<SubscriptionPlanReading> {
-  if (process.platform === 'win32') return { payer: 'unknown', message: 'Windows 上没有 agy 终端版，它的套餐读不到。' };
   const settings = await readJsonObject(ctx, ANTIGRAVITY_CLI_SETTINGS_PATH);
   if (settings?.modelProvider === 'gemini') return { payer: 'api-key' };
 
@@ -61,7 +59,7 @@ export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<Subscr
   if (tier?.kind === 'not-signed-in') return { payer: 'not-signed-in' };
   if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name, ...(tier.asOf !== undefined ? { planAsOf: tier.asOf } : {}) };
 
-  const cached = await readIdeTier(ctx);
+  const cached = process.platform === 'win32' ? null : await readIdeTier(ctx);
   if (!cached) return { payer: 'subscription', plan: 'Google AI', tierUnknown: true };
   return {
     payer: 'subscription',
@@ -131,21 +129,7 @@ export async function readAntigravityUsage(
   if (auth.kind === 'unknown') return usageUnavailable('error', { message: auth.message ?? 'Antigravity sign-in could not be confirmed.' });
   try {
     // 与登录读数同一个启动器(只换 agy 这一个进程的 HOME,mac 上接好钥匙串软链)。
-    const { stdout } = await ctx.exec(
-      '/usr/bin/env',
-      [
-        `${ANTIGRAVITY_HOME_ENV}=${geminiHome}`,
-        '/bin/sh',
-        '-c',
-        ANTIGRAVITY_PROBE_LAUNCH_SCRIPT,
-        ctx.cli,
-        '-p',
-        '/usage',
-        '--output-format',
-        'json',
-      ],
-      { timeout: AGY_USAGE_TIMEOUT_MS }
-    );
+    const { stdout } = await execAntigravityCli(ctx, ['-p', '/usage', '--output-format', 'json'], AGY_USAGE_TIMEOUT_MS);
     const windows = windowsFromAgyUsage(stdout);
     return windows.length > 0
       ? usageWindows(windows)

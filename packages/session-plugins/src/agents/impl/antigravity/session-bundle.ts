@@ -108,7 +108,7 @@ export function withLoopbackNoProxy(env: Readonly<Record<string, string>>): Reco
 export const ANTIGRAVITY_CLI_VERSION = '1.2.9';
 
 /**
- * 终端腿**只在 macOS / Linux 上开**。Windows 上如实关掉,聊天面板腿照常。
+ * 终端腿只在 macOS / Linux 上开。Windows 聊天用 agy acp 的 --gemini-dir，不依赖下述终端 HOME 启动器。
  *
  * ## 为什么 Windows 关
  *

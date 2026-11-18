@@ -209,10 +209,12 @@ describe('antigravityCliAuthStatus(终端腿的 agy,#6335)', () => {
     ).resolves.toMatchObject({ kind: 'unknown', message: expect.stringContaining('EACCES') });
   });
 
-  it('Windows:没有终端腿 ⇒ unknown,不去问', async () => {
-    const c = managedCtx({ keychain: 'present' });
-    await expect(antigravityCliAuthStatus(c, 'win32')).resolves.toMatchObject({ kind: 'unknown' });
-    expect(c.exec).not.toHaveBeenCalled();
+  it('uses the Windows CLI directly with an isolated home to check ACP login', async () => {
+    const c = managedCtx({ keychain: 'present', env: { GEMINI_HOME: 'C:\\Gugu Dev\\.gemini' } });
+    await expect(antigravityCliAuthStatus(c, 'win32')).resolves.toMatchObject({ kind: 'authenticated' });
+    expect(c.exec).toHaveBeenCalledWith(c.cli, ['models'], {
+      timeout: 15_000, env: { HOME: 'C:\\Gugu Dev', USERPROFILE: 'C:\\Gugu Dev' },
+    });
   });
 
   it('GEMINI_HOME 被用户挪走且 fs 锚在真 home ⇒ unknown,不去问', async () => {

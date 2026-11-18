@@ -12,12 +12,13 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 async function fixture(tier: unknown, authRequired = false) {
   const root = await mkdtemp(join(tmpdir(), 'agy-tier-test-'));
   roots.push(root);
-  const cli = join(root, 'agy');
+  const cli = join(root, process.platform === 'win32' ? 'agy.cmd' : 'agy');
+  const script = process.platform === 'win32' ? join(root, 'fake-agy.cjs') : cli;
   const transcript = join(root, 'requests.jsonl');
   const home = join(root, '.gemini');
   await mkdir(join(home, 'antigravity-cli', 'conversations'), { recursive: true });
   await writeFile(join(home, 'antigravity-cli', 'conversations', 'preserved.db'), 'existing history');
-  await writeFile(cli, `#!/usr/bin/env node
+  await writeFile(script, `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
 const rl = require('node:readline').createInterface({ input: process.stdin });
@@ -40,9 +41,10 @@ rl.on('line', line => {
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\\n');
 });
 `, { mode: 0o755 });
+  if (process.platform === 'win32') await writeFile(cli, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
   const ctx = {
     cli,
-    env: { HOME: root, GEMINI_HOME: home, PATH: process.env.PATH ?? '' },
+    env: { ...process.env, HOME: root, GEMINI_HOME: home },
     fsFollowsConfigRoot: true,
     fs: { read: vi.fn().mockResolvedValue(null) },
     exec: vi.fn().mockResolvedValue({ stdout: 'gemini-4-carbon-high\tGemini 4 Carbon (High)\n', stderr: '' }),

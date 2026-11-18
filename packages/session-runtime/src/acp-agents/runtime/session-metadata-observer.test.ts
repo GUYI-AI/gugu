@@ -68,3 +68,31 @@ it('can resume a native legacy store even when the default new CLI is missing', 
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ cli: '/managed/legacy-server' }));
   } finally { await rt.stopSession('conv-1'); }
 });
+
+it('selects the native program once and carries it through startup and provider hooks', async () => {
+  const select = vi.fn().mockReturnValueOnce('legacy').mockImplementation(() => { throw new Error('store is no longer visible'); });
+  const prepare = vi.fn().mockResolvedValue(undefined);
+  const observe = vi.fn().mockResolvedValue(undefined);
+  const ended = vi.fn().mockResolvedValue(null);
+  const spawn = vi.fn((ctx) => ({ command: ctx.cli, args: [], env: {} }));
+  const h = makeAcpHarness({ acpBehavior: {
+    sessionProgram: select, buildSpawn: spawn, prepareSession: prepare,
+    observeSessionMetadata: observe, onTurnEnded: ended,
+    connect: (io, client) => h.agent.behavior.connect(io, client),
+  } });
+  h.agent.initialize.mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
+  h.agent.prompt.mockResolvedValue({ stopReason: 'end_turn' });
+  const rt = new AcpRuntime(h.deps);
+  const input = makeStartInput({ providerSessionId: 'stored-native' });
+  input.runContext.programs = { legacy: '/managed/legacy-server' };
+  try {
+    expect((await rt.startSession(input)).success).toBe(true);
+    await rt.sendPrompt('conv-1', { text: 'check hook route' });
+    await vi.waitFor(() => expect(ended).toHaveBeenCalledOnce());
+    expect(select).toHaveBeenCalledOnce();
+    expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }), expect.anything());
+    expect(ended).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
+  } finally { await rt.stopSession('conv-1'); }
+});

@@ -17,12 +17,16 @@ export function antigravityStore(env: Readonly<Record<string, string>>, id: stri
   return legacy ? 'antigravity-acp' : 'antigravity-cli';
 }
 
-export function buildAntigravityAcpSpawn(ctx: AcpSpawnContext, platform: NodeJS.Platform = process.platform) {
-  const legacy = ctx.authProgram === null || (ctx.providerSessionId
-    ? antigravityStore(ctx.env, ctx.providerSessionId) === 'antigravity-acp'
-    : platform === 'win32');
+export function antigravitySessionProgram(ctx: Pick<AcpSpawnContext, 'env' | 'providerSessionId'>): string | undefined {
+  return ctx.providerSessionId && antigravityStore(ctx.env, ctx.providerSessionId) === 'antigravity-acp'
+    ? 'antigravity' : undefined;
+}
+
+export function buildAntigravityAcpSpawn(ctx: AcpSpawnContext) {
+  const program = ctx.sessionProgram !== undefined ? ctx.sessionProgram : antigravitySessionProgram(ctx);
+  const legacy = ctx.authProgram === null || program === 'antigravity';
   if (legacy) {
-    const command = ctx.programs?.antigravity ?? (platform === 'win32' || ctx.authProgram === null ? ctx.cli : undefined);
+    const command = ctx.programs?.antigravity ?? (ctx.authProgram === null ? ctx.cli : undefined);
     if (!command) throw new Error('Antigravity legacy store requires the host-resolved agy_acp_server installation');
     return { command, args: [], env: withLoopbackNoProxy(ctx.env) };
   }

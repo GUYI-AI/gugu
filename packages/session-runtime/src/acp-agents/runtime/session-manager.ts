@@ -131,6 +131,7 @@ interface SessionRecordBase {
   startupProcessExit?: AdapterExit;
   idleCompaction?: IdleCompaction;
   input: AcpStartInput;
+  sessionProgram?: string | null;
   cell: SessionCell;
   live: SessionLiveModels;
   /**
@@ -577,6 +578,19 @@ export class SessionManager implements InboundRouter {
       return acpErr.initializeFailed(toSerializedError(error));
     }
 
+    const binding = this.deps.agentHost.resolveAcp(input.providerId);
+    if (!binding) {
+      return acpErr.providerUnsupported(input.providerId);
+    }
+
+    const providerSessionId = input.forkFromProviderSessionId ?? input.providerSessionId;
+    let sessionProgram: string | null;
+    try {
+      sessionProgram = binding.behavior.sessionProgram?.({ env: this.providerEnv(input), providerSessionId }) ?? null;
+    } catch (error) {
+      return acpErr.initializeFailed(toSerializedError(error));
+    }
+
     this.upsertSessionSummary(input, null, {
       lifecycle: 'starting',
       isGenerating: false,
@@ -585,11 +599,6 @@ export class SessionManager implements InboundRouter {
       backgroundCommandCount: 0,
       queuedPromptCount: input.initialQueue?.length ?? 0,
     });
-
-    const binding = this.deps.agentHost.resolveAcp(input.providerId);
-    if (!binding) {
-      return acpErr.providerUnsupported(input.providerId);
-    }
 
     // Every conversation owns its adapter process. Runtime-only forks still use provider metadata
     // (Claude's `resume + forkSession`) to derive a child from the parent's durable transcript,
@@ -614,6 +623,7 @@ export class SessionManager implements InboundRouter {
       input.sessionId,
     );
     const record: SessionRecord = this.createRecord(input, input.providerSessionId ?? '');
+    record.sessionProgram = sessionProgram;
     let initialQueueAdmitted = false;
     if (input.initialQueue?.length) {
       const queueResult = this.queueInitialPrompts(record);
@@ -628,7 +638,7 @@ export class SessionManager implements InboundRouter {
     await this.attachProviderRules(record, binding.behavior);
     if (binding.behavior.prepareSession) {
       await binding.behavior
-        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir(), providerSessionId: input.providerSessionId ?? input.forkFromProviderSessionId })
+        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir(), providerSessionId, sessionProgram })
         .catch((error: unknown) => {
           this.deps.logger.warn('SessionManager: provider session preparation failed', {
             sessionId: input.sessionId,
@@ -647,7 +657,8 @@ export class SessionManager implements InboundRouter {
         cwd: input.cwd,
         behavior: binding.behavior,
         runContext: input.runContext,
-        providerSessionId: input.providerSessionId ?? input.forkFromProviderSessionId,
+        providerSessionId,
+        sessionProgram,
         platform: input.platform,
         capabilitySpawnEnv: input.capabilitySpawnEnv,
         capabilitySpawnArgs: input.capabilitySpawnArgs,
@@ -721,6 +732,7 @@ export class SessionManager implements InboundRouter {
       if (input.forkFromProviderSessionId && !resolvedFork && storageFork) {
         const forked = await storageFork({
           sourceProviderSessionId: input.forkFromProviderSessionId,
+          sessionProgram,
           cwd: input.cwd,
           env: this.providerEnv(input),
           homeDir: os.homedir(),
@@ -850,7 +862,7 @@ export class SessionManager implements InboundRouter {
         record.cell.setAcpSessionId(response.sessionId);
         // 路由必须在**拿到 sessionId 的那一刻**就登记 —— 见下面 newSession 分支的说明。
         this.registerRoute(connection.key, response.sessionId, input.sessionId);
-        await this.observeSessionMetadata(input, binding.behavior, response);
+        await this.observeSessionMetadata(record, binding.behavior, response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -909,7 +921,7 @@ export class SessionManager implements InboundRouter {
             });
             return {};
           });
-          await this.observeSessionMetadata(input, binding.behavior, response);
+          await this.observeSessionMetadata(record, binding.behavior, response);
           if (response.availableCommands) record.providerCommands = response.availableCommands;
           record.cell.applySessionLoaded({
             modes: response.modes,
@@ -1087,7 +1099,7 @@ export class SessionManager implements InboundRouter {
             availableCommands: response.availableCommands,
           },
         });
-        await this.observeSessionMetadata(input, binding.behavior, response);
+        await this.observeSessionMetadata(record, binding.behavior, response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -2043,6 +2055,7 @@ export class SessionManager implements InboundRouter {
     record.stopHookContinuations = 0;
     void hook({
       providerSessionId: record.cell.acpSessionId,
+      sessionProgram: record.sessionProgram,
       cwd: input.cwd,
       env: this.providerEnv(input),
       homeDir: os.homedir(),
@@ -2502,12 +2515,14 @@ export class SessionManager implements InboundRouter {
   }
 
 
-  private async observeSessionMetadata(input: AcpStartInput, behavior: IAcpBehavior, response: unknown): Promise<void> {
+  private async observeSessionMetadata(record: SessionRecord, behavior: IAcpBehavior, response: unknown): Promise<void> {
+    const { input } = record;
     if (!behavior.observeSessionMetadata || input.runContext.cli.kind !== 'resolved') return;
     try {
       await behavior.observeSessionMetadata({
         env: this.providerEnv(input), cli: input.runContext.cli.path,
-        providerSessionId: input.providerSessionId ?? input.forkFromProviderSessionId,
+        providerSessionId: input.forkFromProviderSessionId ?? input.providerSessionId,
+        sessionProgram: record.sessionProgram,
       }, response);
     } catch (error) {
       this.deps.logger.warn('SessionManager: provider metadata cache update failed', {

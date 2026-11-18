@@ -23,7 +23,7 @@ it('selects the actual Antigravity ACP program login while preserving the legacy
     programs: agentProgramsOf(provider) as AgentPayload['programs'],
   };
   const target = resolveSignInTarget(agent, 'acp');
-  expect(target?.program).toBe(process.platform === 'win32' ? undefined : 'antigravity-cli');
+  expect(target?.program).toBe('antigravity-cli');
   expect(target?.method.kind).toBe(process.platform === 'win32' ? 'acp-authenticate' : 'cli-login');
 });
 

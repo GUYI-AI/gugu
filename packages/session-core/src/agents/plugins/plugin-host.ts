@@ -475,7 +475,7 @@ export class AgentPluginHost {
     }
     return ok({
       cli: cli.data,
-      exec: (command, args, opts) => this.deps.exec.exec(command, args, { ...opts, env }),
+      exec: (command, args, opts) => this.deps.exec.exec(command, args, { ...opts, env: { ...env, ...opts?.env } }),
       fs: runContext.credentialHome
         ? this.deps.agentHome!.createFs(runContext.credentialHome)
         : await this.fsFor(providerId),
@@ -691,6 +691,7 @@ export class AgentPluginHost {
        */
       runContext: AgentRunContext;
       providerSessionId?: string | null;
+      sessionProgram?: string | null;
       authProgram?: string | null;
       platform?: AcpPlatformInjection;
       capabilitySpawnEnv?: Readonly<Record<string, string>>;
@@ -701,8 +702,9 @@ export class AgentPluginHost {
   ): Promise<Result<AgentHostAcpSpawn, AgentHostError>> {
     const provider = this.resolveAcp(providerId);
     if (!provider) return err({ type: 'capability-unsupported', providerId, capability: 'acp' });
-    const program = provider.behavior.sessionProgram?.({
-      env: composeAgentSpawnEnv(ctx.runContext), providerSessionId: ctx.providerSessionId, authProgram: ctx.authProgram,
+    const program = ctx.sessionProgram !== undefined ? ctx.sessionProgram : provider.behavior.sessionProgram?.({
+      env: composeAgentSpawnEnv(ctx.runContext, { hostInjections: [ctx.capabilitySpawnEnv] }),
+      providerSessionId: ctx.providerSessionId, authProgram: ctx.authProgram,
     });
     const selectedPath = program ? ctx.runContext.programs?.[program] : undefined;
     const launchContext: typeof ctx.runContext = program ? {
@@ -735,6 +737,7 @@ export class AgentPluginHost {
     const spawn = provider.behavior.buildSpawn({
       cwd: ctx.cwd,
       providerSessionId: ctx.providerSessionId,
+      sessionProgram: program ?? null,
       authProgram: ctx.authProgram,
       programs: ctx.runContext.programs,
       env: composeAgentSpawnEnv(ctx.runContext),

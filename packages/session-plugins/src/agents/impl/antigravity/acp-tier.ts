@@ -50,7 +50,7 @@ async function cached(ctx: TierContext, fingerprint: string): Promise<AgyAcpTier
 
 /** Local credential metadata and an account-scoped cache only; no CLI/network query on a warm plan read. */
 export async function readCachedAgyTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
-  if (!ctx.env.GEMINI_HOME?.trim() || process.platform === 'win32') return null;
+  if (!ctx.env.GEMINI_HOME?.trim()) return null;
   return cached(ctx, await accountFingerprint(ctx));
 }
 
@@ -73,7 +73,7 @@ export async function observeAgyTier(
   await save(context, await accountFingerprint(context), name);
 }
 
-/** A probe owns its conversation and cache directories; only the vendor's file credential stays shared. */
+/** A probe owns its conversation and cache directories. On POSIX, link the file credential to preserve refresh. */
 export async function createAgyProbeRoot(managed: string, scratch: string): Promise<string> {
   const root = join(scratch, '.gemini');
   await mkdir(join(root, 'config'), { recursive: true });
@@ -85,7 +85,7 @@ export async function createAgyProbeRoot(managed: string, scratch: string): Prom
   for (const entry of await readdir(cli, { withFileTypes: true }).catch(() => [])) {
     if (!entry.isFile() && !entry.isSymbolicLink()) continue;
     const source = join(cli, entry.name); const target = join(root, 'antigravity-cli', entry.name);
-    if (entry.name === 'antigravity-oauth-token') await symlink(source, target);
+    if (entry.name === 'antigravity-oauth-token' && process.platform !== 'win32') await symlink(source, target);
     else await copyFile(source, target);
   }
   await writeFile(join(root, 'config', 'mcp_config.json'), '{"mcpServers":{}}\n', { mode: 0o600 });
@@ -94,7 +94,7 @@ export async function createAgyProbeRoot(managed: string, scratch: string): Prom
 
 /** One single-flight read per account generation. A settings refresh never creates another ACP session. */
 export async function readAgyAcpTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
-  if (!ctx.env.GEMINI_HOME?.trim() || process.platform === 'win32') return null;
+  if (!ctx.env.GEMINI_HOME?.trim()) return null;
   const fingerprint = await accountFingerprint(ctx);
   const existing = await cached(ctx, fingerprint);
   if (existing) return existing;

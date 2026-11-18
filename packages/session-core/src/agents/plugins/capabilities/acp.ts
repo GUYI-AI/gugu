@@ -144,6 +144,8 @@ export type AcpSpawnContext = {
   cli: string;
   /** Original native conversation, when resuming or forking a stored conversation. */
   providerSessionId?: string | null;
+  /** Selected at session open. Null means use the default ACP program. */
+  sessionProgram?: string | null;
   /** Other programs resolved by the host, preserving the user's selected installations. */
   programs?: Readonly<Record<string, string>>;
   /** Login only: null selects the primary program; a string selects a declared companion. */
@@ -310,6 +312,7 @@ export interface AcpCommandDiscoveryContext {
 
 /** `IAcpBehavior.prepareSession` 的入参 —— env 与启动这一家时同一份。 */
 export interface AcpSessionPrepareContext {
+  sessionProgram?: string | null;
   providerSessionId?: string | null;
   cwd: string;
   env: Readonly<Record<string, string>>;
@@ -318,6 +321,7 @@ export interface AcpSessionPrepareContext {
 
 /** `IAcpBehavior.onTurnEnded` 的入参。 */
 export interface AcpTurnEndContext {
+  sessionProgram?: string | null;
   /** 这一家的会话 id。 */
   providerSessionId: string;
   cwd: string;
@@ -329,6 +333,7 @@ export interface AcpTurnEndContext {
 
 /** `IAcpBehavior.forkSessionInStorage` 的入参 —— env 与启动这一家时同一份,存档位置要跟着它挪。 */
 export interface AcpStorageForkContext {
+  sessionProgram?: string | null;
   sourceProviderSessionId: string;
   cwd: string;
   env: Readonly<Record<string, string>>;
@@ -339,7 +344,7 @@ export interface IAcpBehavior {
   /** Select a named, host-resolved program for a native store before executable validation. */
   sessionProgram?(ctx: Pick<AcpSpawnContext, 'env' | 'providerSessionId' | 'authProgram'>): string | undefined;
   /** Reuse vendor metadata from a real new/load/fork response; failure must not prevent the conversation opening. */
-  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'providerSessionId'>, response: unknown): Promise<void>;
+  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'providerSessionId' | 'sessionProgram'>, response: unknown): Promise<void>;
   explainError?(cause: SerializedError): string | undefined;
   /** Provider-owned record/replay contract; the runtime does not infer it from the provider id. */
   historyRecovery?: {
