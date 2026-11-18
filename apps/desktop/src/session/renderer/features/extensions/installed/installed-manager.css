@@ -1,3 +1,8 @@
+.gg-installed-modal-layer {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 1;
+}
 .gg-installed-frame {
   display: grid;
   height: 100%;

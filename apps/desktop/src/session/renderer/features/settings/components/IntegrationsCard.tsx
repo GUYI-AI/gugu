@@ -57,7 +57,7 @@ export type IntegrationItem = {
   onTryPlaybook?: (prompt: string) => void;
 };
 
-const IntegrationsCard: React.FC<{ inSettings?: boolean; initialConnectorId?: string }> = ({ inSettings = false, initialConnectorId }) => {
+const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean; initialConnectorId?: string }> = ({ inSettings = false, inlineDetail = false, initialConnectorId }) => {
   const {
     connectionStatus,
     configuredConnections,
@@ -261,6 +261,11 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; initialConnectorId?: st
   // 清单还在读:画加载态(读到了才知道哪些连着)。
   if (!hasList && !listError) return <PageLoading />;
 
+  const detail = selectedIntegration && <IntegrationDetailSidebar
+    integration={selectedIntegration} githubAccounts={sortedGithubAccounts} onClose={closeSheet}
+  />;
+  if (inlineDetail && detail) return <TooltipProvider delay={150}>{detail}</TooltipProvider>;
+
   return (
     <TooltipProvider delay={150}>
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />}
@@ -306,17 +311,9 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; initialConnectorId?: st
         )}
       </div>
 
-      <Sheet open={selectedIntegration !== null} onOpenChange={(open) => !open && closeSheet()}>
-        <SheetContent showCloseButton={false}>
-          {selectedIntegration && (
-            <IntegrationDetailSidebar
-              integration={selectedIntegration}
-              githubAccounts={sortedGithubAccounts}
-              onClose={closeSheet}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+      {!inlineDetail && <Sheet open={!!detail} onOpenChange={(open) => !open && closeSheet()}>
+        <SheetContent showCloseButton={false}>{detail}</SheetContent>
+      </Sheet>}
     </TooltipProvider>
   );
 };

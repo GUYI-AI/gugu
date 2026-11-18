@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUp, Check, LayoutGrid, ListFilter, X } from '@/lib/icons'
+import { AlignJustify, ArrowUp, Check, LayoutGrid, X } from '@/lib/icons'
 import { notify } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
@@ -119,7 +119,7 @@ export function InstalledItems({ items, loading, error, offline, section, layout
             onClick={() => { setQuery(''); setManaging(true) }}>{t('installedManager.manage')}</Button>}
           <div className="gg-installed-toggle">
             <IconButton aria-label={t('installedManager.grid')} aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}><LayoutGrid size={16} /></IconButton>
-            <IconButton aria-label={t('installedManager.list')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}><ListFilter size={16} /></IconButton>
+            <IconButton aria-label={t('installedManager.list')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}><AlignJustify size={16} /></IconButton>
           </div>
         </div>
       </div>
@@ -159,12 +159,12 @@ export function InstalledItems({ items, loading, error, offline, section, layout
         <div className="gg-installed-confirm">
           <div className="gg-installed-bar">
             <h3>{t('installedManager.removeTitle', { section: phrase })}</h3>
-            <IconButton aria-label={t('settings.close')} onClick={() => setConfirming(false)}><X size={16} /></IconButton>
+            <IconButton aria-label={t('dialog.close', { ns: 'common' })} onClick={() => setConfirming(false)}><X size={16} /></IconButton>
           </div>
           <p>{t('installedManager.removeDescription', { count: removable.length, section: phrase, device: remoteLabel ?? t('installedManager.thisComputer') })}</p>
           <div className="gg-installed-tools">
             <Button size="sm" variant="secondary" onClick={() => setConfirming(false)}>{t('installedManager.cancel')}</Button>
-            <Button size="sm" variant="danger" onClick={() => { void batch('remove', removable) }}>
+            <Button size="sm" variant="danger" disabled={busy || removable.length === 0} onClick={() => { void batch('remove', removable) }}>
               {t('installedManager.confirmRemove')}
             </Button>
           </div>

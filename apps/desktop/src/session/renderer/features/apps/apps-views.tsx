@@ -48,12 +48,17 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
   const [installedDeviceId, setInstalledDeviceId] = useState<string>();
   const requestedInstalled = 'installedSection' in params ? params.installedSection : undefined;
+  const requestedDevice = 'installedDeviceId' in params && typeof params.installedDeviceId === 'string'
+    ? params.installedDeviceId : undefined;
   useEffect(() => {
-    if (requestedInstalled !== 'connectors') return;
-    setInstalledDeviceId(host.remote?.deviceId);
+    if (currentViewId !== 'apps' || requestedInstalled !== 'connectors') return;
+    setInstalledDeviceId(requestedDevice);
     setInstalledSection('connectors');
-    setParams({ installedSection: undefined } as Partial<AppsViewParams> & { installedSection?: undefined });
-  }, [requestedInstalled, host.remote?.deviceId, setParams]);
+    setParams({ installedSection: undefined, installedDeviceId: undefined } as Partial<AppsViewParams> & {
+      installedSection?: undefined;
+      installedDeviceId?: undefined;
+    });
+  }, [currentViewId, requestedInstalled, requestedDevice, setParams]);
   useEffect(() => {
     if (currentViewId !== 'apps') setInstalledSection(null);
   }, [currentViewId]);

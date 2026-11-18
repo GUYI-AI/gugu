@@ -91,7 +91,7 @@ function ConnectorItems({ render, directManagement }: Props) {
     return (
       <div className="gg-installed-connector-detail">
         <Button variant="ghost" size="sm" onClick={() => setDetails(null)}><ChevronLeft size={16} />{t('installedManager.sectionsBack')}</Button>
-        <RoutedIntegrationsLibraryPage host={host} inSettings initialConnectorId={details || undefined} />
+        <RoutedIntegrationsLibraryPage host={host} inSettings inlineDetail initialConnectorId={details || undefined} />
       </div>
     )
   }
@@ -115,8 +115,9 @@ const AccountConnectorItems = observer(function AccountConnectorItems({ route, .
   const devices = useDevicesStore()
   const device = devices.devices.find((row) => originalHost.remote ? row.device_id === originalHost.remote.deviceId : row.is_current_device) ?? null
   const accountHost = useOwnerLibraryHost(device, route)
+  if (!device) return props.render([], { loading: devices.loading, error: !devices.loading })
   return (
-    <LibraryHostProvider value={device ? accountHost : originalHost} key={accountHost.key}>
+    <LibraryHostProvider value={accountHost} key={accountHost.key}>
       <IntegrationsProvider><ConnectorItems {...props} /></IntegrationsProvider>
     </LibraryHostProvider>
   )
@@ -125,6 +126,7 @@ const AccountConnectorItems = observer(function AccountConnectorItems({ route, .
 export function InstalledConnectors(props: Props) {
   return (
     <ConnectionRouteBoundary
+      pending={props.render([], { loading: true })}
       owner={(route) => <AccountConnectorItems {...props} route={route} />}
       legacy={<IntegrationsProvider><ConnectorItems {...props} /></IntegrationsProvider>}
     />
