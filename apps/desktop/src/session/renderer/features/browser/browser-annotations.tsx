@@ -1,4 +1,4 @@
-import { Check, MessageSquare, X } from '@/lib/icons';
+import { Eye, EyeOff, MessageSquare, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { BrowserAnnotationInspection, BrowserAnnotationQuery, BrowserAnnotationTarget } from '@shared/browser-annotation';
@@ -7,6 +7,7 @@ import { events, rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { rendererLogger } from '@/lib/log';
+import { AnnotationEditor } from '../sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 import { markedAnnotationScreenshot } from './annotation-screenshot';
 
@@ -21,10 +22,10 @@ export function useBrowserAnnotations({ sessionId, browserId, visible, available
   const exit = useCallback(() => setActive(false), []);
   const { translate } = useSessionMessages();
   return {
-    toolbar: sessionId && available ? <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0"
-      aria-label={translate(active ? 'annotations.exit' : 'annotations.annotate')} aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
-      onClick={() => setActive(!active)}><MessageSquare className="size-4" /></Button> : null,
-    overlay: active && visible && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
+    toolbar: sessionId && available ? <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
+      aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
+      onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button> : null,
+    overlay: active && visible && available && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
       inspect={inspect} onExit={exit} /> : null,
   };
 }
@@ -42,10 +43,22 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   const start = useRef<Point | null>(null);
   const request = useRef(0);
   const lastHover = useRef(0);
-  const [text, setText] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [markersHidden, setMarkersHidden] = useState(false);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [error, setError] = useState(false);
   const [page, setPage] = useState<BrowserAnnotationTarget | null>(null);
+  const inspectRef = useRef(inspect);
+  inspectRef.current = inspect;
+  const editing = editingId ? draft.items.find(item => item.id === editingId) : undefined;
+  const editorTarget = editing ?? selection?.target;
+  const editorOpen = Boolean(editorTarget);
+  const closeEditor = () => {
+    setSelection(null);
+    setEditingId(null);
+    root.current?.focus({ preventScroll: true });
+  };
   const enteredAtSubmission = useRef(draft.submissionVersion);
   useEffect(() => { if (draft.submissionVersion !== enteredAtSubmission.current) onExit(); }, [draft.submissionVersion, onExit]);
   useEffect(() => { if (!browsing) root.current?.focus({ preventScroll: true }); }, [browsing]);
@@ -55,8 +68,10 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     if (!win) return;
     const down = (event: KeyboardEvent) => {
       if (event.target instanceof Element && event.target.closest('textarea,input,[contenteditable="true"]')) return;
-      if (event.code === 'Space') { event.preventDefault(); setBrowsing(true); setHover(null); setPage(null); }
-      if (event.key === 'Escape') { if (selection) setSelection(null); else onExit(); }
+      if (event.code === 'Space' && !editorOpen && !busyRef.current && !(event.target instanceof Element && event.target.closest('button'))) {
+        event.preventDefault(); setBrowsing(true); setHover(null); setPage(null);
+      }
+      if (event.key === 'Escape') { if (editorOpen) { setSelection(null); setEditingId(null); } else onExit(); }
     };
     const up = (event: KeyboardEvent) => { if (event.code === 'Space') setBrowsing(false); };
     const blur = () => setBrowsing(false);
@@ -69,7 +84,18 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     });
     win.addEventListener('keydown', down); win.addEventListener('keyup', up); win.addEventListener('blur', blur);
     return () => { request.current++; stop(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
-  }, [browserId, selection, onExit]);
+  }, [browserId, editorOpen, onExit]);
+
+  // Resolve the visible page on entry and after browsing so saved markers are clickable
+  // even before the next pointer move.
+  useEffect(() => {
+    if (browsing) return;
+    const own = ++request.current;
+    void inspectRef.current({ x: 0.5, y: 0.5, width: 0, height: 0 }, false).then(result => {
+      if (request.current === own) setPage(result.target);
+    }, () => {});
+    return () => { request.current++; };
+  }, [browserId, browsing]);
 
   const point = (event: PointerEvent<HTMLDivElement>): Point => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -79,33 +105,44 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   const fail = (error: unknown) => { setError(true); log.error({ error, browserId }, 'Could not inspect the selected page'); };
   const select = async (query: BrowserAnnotationQuery) => {
     const own = ++request.current;
+    busyRef.current = true;
     setBusy(true); setError(false); setHover(null);
     try {
       const result = await inspect(query, true);
       if (own !== request.current) return;
       if (!result.screenshot) throw new Error('The selected page has no screenshot');
-      setSelection(result); setPage(result.target); setText('');
+      setSelection(result); setPage(result.target);
     } catch (error) { if (own === request.current) fail(error); }
-    finally { if (own === request.current) setBusy(false); }
+    finally {
+      busyRef.current = false;
+      if (own === request.current) setBusy(false);
+    }
   };
-  const save = async () => {
-    if (!selection?.screenshot || !text.trim() || busy) return;
+  const save = async (text: string) => {
+    if (busy) return;
+    if (editing) {
+      draft.update(editing.id, text);
+      closeEditor();
+      return;
+    }
+    if (!selection?.screenshot) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const number = draft.reserveNumber();
       const screenshot = await markedAnnotationScreenshot(selection.screenshot, selection.target, number);
       draft.add({ kind: 'browser', browserId, ...selection.target, annotation: text, screenshot }, number);
-      setSelection(null); setText('');
-    } catch (error) { fail(error); } finally { setBusy(false); }
+      closeEditor();
+    } catch (error) { fail(error); } finally { busyRef.current = false; setBusy(false); }
   };
-  const target = selection?.target ?? hover;
+  const target = editorTarget ?? hover;
   const box = (target: BrowserAnnotationTarget) => ({ left: `${target.rect.x / target.viewport.width * 100}%`, top: `${target.rect.y / target.viewport.height * 100}%`,
     width: `${target.rect.width / target.viewport.width * 100}%`, height: `${target.rect.height / target.viewport.height * 100}%` });
   return <>
     {!browsing && <div ref={root} tabIndex={-1} data-occludes-browser-page data-browser-annotation-layer className="absolute inset-0 z-10 touch-none cursor-crosshair overflow-hidden outline-none"
-      onPointerDown={event => { if (selection || busy || event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = point(event); setDrag(null); setHover(null); }}
+      onPointerDown={event => { if (editorOpen || busy || event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = point(event); setDrag(null); setHover(null); }}
       onPointerMove={event => {
-        if (selection || busy) return;
+        if (editorOpen || busy) return;
         const at = point(event);
         if (start.current) { setDrag(region(start.current, at)); return; }
         if (event.timeStamp - lastHover.current < 60) return;
@@ -117,34 +154,42 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
       }}
       onPointerUp={event => {
         const from = start.current; start.current = null;
-        if (!from || selection || busy) return;
+        if (!from || editorOpen || busy) return;
         const query = region(from, point(event));
         const size = event.currentTarget.getBoundingClientRect();
         setDrag(null);
         void select(query.width * size.width > 4 || query.height * size.height > 4 ? query : { ...from, width: 0, height: 0 });
       }} onPointerCancel={() => { start.current = null; setDrag(null); }}>
-      {draft.items.filter(item => item.kind === 'browser' && item.browserId === browserId && item.url === page?.url && item.viewport.scrollX === page.viewport.scrollX && item.viewport.scrollY === page.viewport.scrollY).map(item => item.kind === 'browser' &&
-        <span key={item.id} className="pointer-events-none absolute flex size-6 items-center justify-center rounded-full bg-[var(--live-light)] text-xs text-[var(--color-white)]" style={{ left: `${Math.max(0, item.rect.x / item.viewport.width * 100)}%`, top: `${Math.max(0, item.rect.y / item.viewport.height * 100)}%` }}>{item.number}</span>)}
+      {!markersHidden && draft.items.filter(item => item.browserId === browserId && item.url === page?.url && item.viewport.scrollX === page.viewport.scrollX && item.viewport.scrollY === page.viewport.scrollY).map(item =>
+        <button key={item.id} type="button" data-annotation-marker={item.number}
+          aria-label={translate('annotations.editMarker', { number: item.number })}
+          className="absolute z-[1] flex size-6 cursor-pointer items-center justify-center rounded-full bg-[var(--live-light)] text-xs text-[var(--color-white)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          style={{ left: `clamp(0px, ${item.rect.x / item.viewport.width * 100}%, calc(100% - 24px))`, top: `clamp(0px, ${item.rect.y / item.viewport.height * 100}%, calc(100% - 24px))` }}
+          onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
+          onClick={() => { if (!busy) { setHover(null); setSelection(null); setEditingId(item.id); } }}>
+          {item.number}
+        </button>)}
       {target && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={box(target)} />}
       {drag && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={{ left: `${drag.x * 100}%`, top: `${drag.y * 100}%`, width: `${drag.width * 100}%`, height: `${drag.height * 100}%` }} />}
-      {selection && <form data-browser-annotation-input className="absolute flex h-11 w-80 max-w-[calc(100%_-_32px)] cursor-auto items-center gap-2 rounded-full border border-border bg-background px-4 py-2 shadow-lift"
-        style={{ left: `clamp(16px, ${selection.target.rect.x / selection.target.viewport.width * 100}%, calc(100% - 336px))`, top: `clamp(16px, ${(selection.target.rect.y + selection.target.rect.height) / selection.target.viewport.height * 100}%, calc(100% - 64px))` }}
-        onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
-        onSubmit={event => { event.preventDefault(); void save(); }}>
-        <input autoFocus type="text" value={text} onChange={event => setText(event.target.value)} placeholder={translate('annotations.placeholder')} aria-label={translate('annotations.comment')}
-          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none" onKeyDown={event => {
-            if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault();
-            if (event.key === 'Escape') { event.stopPropagation(); setSelection(null); }
-          }} />
-        <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" aria-label={translate('annotations.comment')} disabled={busy || !text.trim()}><Check className="size-3.5" /></Button>
-      </form>}
-      {!selection && !draft.items.length && <div className="pointer-events-none absolute top-2 left-4 max-w-80 rounded-xl bg-foreground px-4 py-2 text-center text-xs text-background">
+      {editorTarget && <div data-browser-annotation-input className="absolute z-[2] w-80 max-w-[calc(100%_-_16px)]"
+        style={{ left: `clamp(8px, ${editorTarget.rect.x / editorTarget.viewport.width * 100}%, max(8px, calc(100% - 328px)))`,
+          top: `clamp(8px, ${editorTarget.rect.y / editorTarget.viewport.height * 100}% - 48px, calc(100% - 48px))` }}>
+        <AnnotationEditor key={editing?.id ?? 'new'} number={editing?.number ?? draft.nextAnnotationNumber} initialValue={editing?.annotation}
+          busy={busy} onSave={value => void save(value)} onCancel={closeEditor}
+          onRemove={editing ? () => { draft.remove(editing.id); closeEditor(); } : undefined} />
+      </div>}
+      {!editorTarget && !draft.items.length && <div className="pointer-events-none absolute top-2 left-4 max-w-80 rounded-xl bg-foreground px-4 py-2 text-center text-xs text-background">
         {translate('annotations.hint')}  {translate('annotations.browse')}
       </div>}
       {error && <p role="alert" className="absolute top-4 left-4 rounded-lg bg-background p-2 text-sm">{translate('annotations.failed')}</p>}
     </div>}
     {!browsing && draft.items.length > 0 && <div data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%_-_32px)] -translate-x-1/2 items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-xs text-background shadow-lift">
       <span className="min-w-0 truncate">{translate('annotations.active', { count: draft.items.length })}</span>
+      <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-background hover:text-background" aria-pressed={markersHidden}
+        aria-label={translate(markersHidden ? 'annotations.showMarkers' : 'annotations.hideMarkers')} title={translate(markersHidden ? 'annotations.showMarkers' : 'annotations.hideMarkers')}
+        onClick={() => setMarkersHidden(!markersHidden)}>{markersHidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</Button>
+      <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-background hover:text-background" disabled={busy}
+        aria-label={translate('annotations.deleteAll')} title={translate('annotations.deleteAll')} onClick={() => { draft.clear(); closeEditor(); }}><Trash2 className="size-4" /></Button>
       <Button type="button" size="sm" className="rounded-full bg-[var(--live-light)] text-[var(--color-white)] hover:bg-[var(--live-light)]" disabled={!draft.canSend || busy} onClick={draft.send}>{translate('annotations.send')}</Button>
       <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-background hover:text-background" aria-label={translate('annotations.exit')} onClick={onExit}><X className="size-4" /></Button>
     </div>}

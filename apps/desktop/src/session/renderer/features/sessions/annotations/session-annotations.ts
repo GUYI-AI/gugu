@@ -9,6 +9,7 @@ export type BrowserAnnotationSelection = {
   url: string;
   selector: string | null;
   targetPath: string | null;
+  elementTag?: string;
   rect: AnnotationRect;
   viewport: { width: number; height: number; scrollX: number; scrollY: number };
   text: string;
@@ -24,6 +25,7 @@ export class SessionAnnotations {
   private nextNumber = 1;
   submissionVersion = 0;
   private senders: readonly (() => void)[] = [];
+  private removers: readonly ((id: string) => void)[] = [];
 
   constructor() {
     makeAutoObservable(this, { items: observable.ref }, { autoBind: true });
@@ -43,7 +45,22 @@ export class SessionAnnotations {
     this.items = this.items.map(item => item.id === id ? { ...item, annotation } : item);
   }
 
-  remove(id: string): void { this.items = this.items.filter(item => item.id !== id); }
+  remove(id: string): void {
+    if (!this.items.some(item => item.id === id)) return;
+    this.items = this.items.filter(item => item.id !== id);
+    for (const remove of this.removers) remove(id);
+  }
+
+  clear(): void {
+    const removed = this.items;
+    this.items = [];
+    for (const item of removed) for (const remove of this.removers) remove(item.id);
+  }
+
+  bindRemove(remove: (id: string) => void): () => void {
+    this.removers = [...this.removers, remove];
+    return action(() => { this.removers = this.removers.filter(current => current !== remove); });
+  }
 
   /** Identity matters: an edit or addition made while Send waits is still a draft. */
   submitted(snapshot: readonly SessionAnnotation[]): void {
