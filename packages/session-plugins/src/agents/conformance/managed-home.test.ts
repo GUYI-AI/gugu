@@ -15,3 +15,11 @@ it('every managed root declares import groups, credential exclusions and a child
     }
   }
 });
+
+it.each([
+  ['claude', ['sessions', '.last-cleanup']],
+  ['codex', ['.tmp', 'thread-writer-locks', 'installation_id', '.sandbox_migration']],
+] as const)('keeps %s runtime state out of the import groups', (id, runtimeFiles) => {
+  const root = pluginRegistry.get(id)!.capabilities.sessionBundle!.configRoot!;
+  expect(root.carryExclusions.map((entry) => entry.path)).toEqual(expect.arrayContaining([...runtimeFiles]));
+});

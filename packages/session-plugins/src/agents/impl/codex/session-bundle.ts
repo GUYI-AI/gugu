@@ -175,7 +175,8 @@ export const codexSessionBundleDescriptor = {
     ],
     carryExclusions: [
       { path: 'sessions', evidence: 'Native session transcripts; imported separately when migrating Gugu tasks.' },
-      ...['log', 'logs', 'tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl'].map((path) => ({ path, evidence: 'Codex logs, temporary files, shell snapshots and terminal input history are runtime data.' })),
+      ...['log', 'logs', 'tmp', '.tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl',
+        'thread-writer-locks', 'installation_id', '.sandbox_migration'].map((path) => ({ path, evidence: 'Codex regenerates runtime files, caches, locks and installation state in its active root.' })),
     ],
   },
   platform: harnessPlatform,
