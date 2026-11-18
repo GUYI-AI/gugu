@@ -94,6 +94,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
     silent?: boolean
   } | null>(null)
   const [androidProblem, setAndroidProblem] = useState<AndroidNotificationProblem | null | undefined>()
+  const [bannerSeen, setBannerSeen] = useState<boolean | null>(null)
   const foreground = useAppActive()
   const testSilent = notificationTest?.silent
   useEffect(() => {
@@ -151,17 +152,15 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
       {(platform.kind !== 'capacitor' || platform.capabilities.notifications) && <SettingsGroup
         title={t('settings.general.notifications')}
         note={t('settings.general.notificationsScope')}
-        footer={notificationHint && <SettingsNote role="status">
-          {testSilent === undefined ? t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])
-            : t(androidProblem ? ANDROID_NOTIFICATION_PROBLEM_COPY[androidProblem]
-              : notificationHint === 'accepted' ? 'settings.general.notificationsAndroidSent'
-              : 'settings.general.notificationsAndroidUnconfirmed')}
-          {testSilent !== undefined && <div className="mt-2">
-            <Button variant="secondary" size="sm" onClick={() => { void openAndroidNotificationSettings(testSilent, androidProblem) }}>
-              {t(androidProblem ? 'settings.general.notificationsAndroidOpen' : 'settings.general.notificationsAndroidCheck')}
-            </Button>
-          </div>}
-        </SettingsNote>}
+        footer={notificationHint && (testSilent === undefined ? <SettingsNote role="status">
+          {t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])}
+        </SettingsNote> : <AndroidNotificationTestFeedback
+          problem={androidProblem}
+          kind={notificationHint}
+          silent={testSilent}
+          bannerSeen={bannerSeen}
+          onBannerSeen={setBannerSeen}
+        />)}
       >
         {/* 系统权限的**状态与开关入口只在「权限」页**(product spec)。owner 2026-09-15:
             「手机端通用这有通知,怎么权限这还有通知,这是我困糊的点」—— 同一个事实只显示一处。
@@ -207,6 +206,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
                 const silent = platform.androidNotificationSettings ? !notificationSettings.sound : undefined
                 void sendTestNotification(silent).then((result) => {
                   setAndroidProblem(undefined)
+                  setBannerSeen(null)
                   setNotificationTest({ kind: result.kind, silent })
                   void refreshSystemNotificationState()
                 })
@@ -245,6 +245,42 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
       <HelpImproveSettingGroup />
     </SettingsPage>
   )
+}
+
+function AndroidNotificationTestFeedback({ problem, kind, silent, bannerSeen, onBannerSeen }: {
+  problem: AndroidNotificationProblem | null | undefined
+  kind: keyof typeof NOTIFICATION_HINT_KEYS
+  silent: boolean
+  bannerSeen: boolean | null
+  onBannerSeen: (seen: boolean) => void
+}) {
+  const { t } = useTranslation('main')
+  const open = () => { void openAndroidNotificationSettings(silent, problem) }
+  if (!problem && kind === 'accepted' && bannerSeen === null) return <div>
+    <SettingsNote role="status">{t('settings.general.notificationsAndroidAsk')}</SettingsNote>
+    <div className="mt-2 flex gap-2">
+      <Button variant="secondary" size="sm" onClick={() => onBannerSeen(true)}>
+        {t('settings.general.notificationsAndroidYes')}
+      </Button>
+      <Button variant="secondary" size="sm" onClick={() => { onBannerSeen(false); open() }}>
+        {t('settings.general.notificationsAndroidNo')}
+      </Button>
+    </div>
+  </div>
+  if (!problem && kind === 'accepted' && bannerSeen) return <SettingsNote role="status">
+    {t('settings.general.notificationsAndroidSeen')}
+  </SettingsNote>
+  const copy = problem ? ANDROID_NOTIFICATION_PROBLEM_COPY[problem]
+    : kind === 'accepted' ? 'settings.general.notificationsAndroidBannerSettings'
+    : 'settings.general.notificationsAndroidUnconfirmed'
+  return <div>
+    <SettingsNote role="status">{t(copy)}</SettingsNote>
+    <div className="mt-2">
+      <Button variant="secondary" size="sm" onClick={open}>
+        {t('settings.general.notificationsAndroidOpen')}
+      </Button>
+    </div>
+  </div>
 }
 
 /** 本机 `terminal.enabled` 的那一行(设置服务本地那份,❌ 跟着机器设置页选的机器走)。 */

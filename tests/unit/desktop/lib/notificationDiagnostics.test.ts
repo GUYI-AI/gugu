@@ -9,7 +9,6 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
     androidNotificationSettings: { read: mocks.read },
   },
 }))
-vi.mock('@/i18n', () => ({ i18n: { t: (key: string) => key } }))
 
 describe('Android notification diagnostics', () => {
   it.each([
