@@ -169,18 +169,24 @@ describe('device file reads', () => {
       sink: await createFileSink(root, ciphertextSize(body.length)) })
     const ciphertext = await encrypted.file.read(0, encrypted.file.size)
     await encrypted.file.dispose()
-    const acks: string[] = [], signed: string[] = [], admitted: string[] = []
+    const acks: string[] = [], signed: string[] = [], admitted: string[] = [], resolutions: string[] = []
+    const preparations = new Set<string>()
     let revoked = false, wrongGeneration = false, newGeneration = false
     const bytes = gate(), object = vi.fn(async () => { await bytes.promise; return new Response(new Uint8Array(ciphertext)) })
     const cloud = cloudFileProviders({ fetch: object, cache: createFileChunkCache(root), sink: size => createFileSink(root, size),
       endpoint: async () => ({ supabaseUrl: 'https://backend.invalid', anonKey: 'test', token: 'test', fetch: async (url, init) => {
         const op = String(url).split('/').at(-1), request = JSON.parse(String(init?.body))
         const current = { ...item, status: 'ready', temporary_transfer: !(revoked && request.as === 'refused') }
-        if (op === 'file-resolve') return Response.json(current)
+        if (op === 'file-resolve') { resolutions.push(request.as); return Response.json(current) }
         if (op === 'file-request') {
           const generation = newGeneration ? 'next' : separate ? 'transfer-' + request.as : 'shared'
           const state = { ...current, transfer_status: 'ready', transfer_id: generation, retention }
-          if (!request.download_request_id) { admitted.push(request.as); return Response.json(state) }
+          if (!request.download_request_id) {
+            expect(preparations.has(request.request_id)).toBe(false)
+            preparations.add(request.request_id); admitted.push(request.as)
+            return Response.json(state)
+          }
+          expect(preparations.has(request.request_id)).toBe(true)
           signed.push(request.as)
           return Response.json({ ...state, download: {
             status: 'ready', url: 'https://store.invalid/file', download_id: 'grant-' + request.as, transfer_id: wrongGeneration ? 'other' : generation,
@@ -198,6 +204,10 @@ describe('device file reads', () => {
     const reads = createFileReads({ ...providers, saveTo: createFileSaver(providers) }, nodeFileReadStore(root))
     const good = reads.request(message, account, { purpose: 'save' })
     await vi.waitFor(() => expect(object).toHaveBeenCalledTimes(1))
+    const repeated = reads.request(message, account, { purpose: 'bytes' })
+    const repeatedJoined = gate()
+    repeated.state$(state => { if (state.status === 'transferring') repeatedJoined.release() })
+    await repeatedJoined.promise
     const refused = reads.request({ item_id: 'item', version: 3 }, { ...account, actorId: 'refused' }, { purpose: 'save' })
     const joined = gate()
     refused.state$(state => { if (state.status === 'transferring') joined.release() })
@@ -205,10 +215,12 @@ describe('device file reads', () => {
     const failed = expect(refused.result).rejects.toMatchObject({ code: 'access_revoked' })
     revoked = true
     bytes.release()
+    const held = (await repeated.result).file
     const saved = await saveToFileStore((await good.result).file, root)
     expect(await readFile(saved.file_path)).toEqual(Buffer.from(body))
     await failed
     expect(admitted).toEqual(['owner', 'refused'])
+    expect(resolutions.filter(actor => actor === 'owner')).toHaveLength(4)
     expect(object).toHaveBeenCalledTimes(expected)
     expect(signed).toHaveLength(expected)
     expect(acks.sort()).toEqual(signed.slice().sort())
@@ -218,6 +230,8 @@ describe('device file reads', () => {
     expect(object).toHaveBeenCalledTimes(expected + extra)
     expect(signed).toHaveLength(expected + extra)
     expect(acks).toHaveLength(expected + extra)
+    expect(admitted).toEqual(['owner', 'refused', 'owner'])
+    await held.dispose()
     newGeneration = true; wrongGeneration = true
     await expect(reads.request(message, account, { purpose: 'bytes' }).result).rejects.toMatchObject({ code: 'access_revoked' })
     expect(object).toHaveBeenCalledTimes(expected + extra)

@@ -76,12 +76,13 @@ export function createSenderWaits() {
 export { FileReadError } from './fileResolver'
 
 type Transfer = (context: FileContext) => Promise<FileBytes>
+type RelayScope = { reader: string } | { generation: string; verifiedHere: boolean }
 export interface FileReadHooks {
   waitDeclared: boolean
   waits: ReturnType<typeof createSenderWaits>
   state(state: FileReadState): void
   reuse(value: FileReadReuse): void
-  acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer, relay?: { generation: string; verifiedHere: boolean }): Promise<FileBytes>
+  acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer, relay?: RelayScope): Promise<FileBytes>
 }
 
 function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
@@ -99,7 +100,7 @@ function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
 
 type Subscriber = { progress?: FileContext['progress']; hooks?: FileReadHooks }
 type Flight = {
-  route?: FileReadRoute
+  state?: FileReadState
   controller: AbortController
   subscribers: Set<Subscriber>
   bytes: Promise<FileBytes>
@@ -125,7 +126,9 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
     }
     // Device-only reads must never acquire a transfer through the cloud.
     const deviceOnly = revision.source === 'local' && !revision.temporary_transfer
-    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly, relay?.generation])
+    const readerScope = relay && 'reader' in relay
+    const scope = readerScope ? ['reader', relay.reader] : relay && ['generation', relay.generation]
+    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly, scope])
     let flight = flights.get(key)
     if (!flight) {
       const subscribers = new Set<Subscriber>(), controller = new AbortController()
@@ -133,34 +136,40 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
         current.reuse = value
         for (const { hooks } of subscribers) hooks?.reuse(value)
       }
+      const state = (value: FileReadState) => {
+        current.state = value
+        for (const { hooks } of subscribers) hooks?.state(value)
+      }
       const transfer = { ...context, signal: controller.signal,
-        reads: context.reads && { ...context.reads, reuse },
+        reads: context.reads && { ...context.reads, reuse, state },
         progress: (done: number, total: number) => {
           current.progress = [done, total]
           for (const row of subscribers) row.progress?.(done, total)
         },
       }
-      const carrying = (actual: FileReadRoute) => {
-        current.route = actual
-        for (const { hooks } of subscribers) hooks?.state({ status: 'transferring', route: actual })
-      }
       const bytes = Promise.resolve().then(async () => {
+        if (readerScope) return open(transfer)
         const cached = (!relay || relay.verifiedHere) && await store.cachedCopy?.(backend, revision, transfer)
-        if (cached) { carrying('local'); reuse('verified-local'); report('local', 'verified-local'); return cached }
+        if (cached) { state({ status: 'transferring', route: 'local' }); reuse('verified-local'); report('local', 'verified-local'); return cached }
         controller.signal.throwIfAborted()
-        carrying(route)
+        state({ status: 'transferring', route })
         const file = await open(transfer)
         report(route, current.reuse)
         return file
       })
       const current: Flight = { bytes, controller, subscribers, reuse: null }
       flights.set(key, current)
+      if (readerScope) {
+        // A consumed one-time grant cannot be reused, even while a caller still holds its opened handle.
+        const retire = () => { if (flights.get(key) === current) flights.delete(key) }
+        void bytes.then(file => file.acknowledged).then(retire, retire)
+      }
       flight = current
     }
     const joined = flight
     const row = { hooks: context.reads, progress: context.progress }
     joined.subscribers.add(row)
-    if (joined.route) row.hooks?.state({ status: 'transferring', route: joined.route })
+    if (joined.state) row.hooks?.state(joined.state)
     if (joined.reuse) row.hooks?.reuse(joined.reuse)
     if (joined.progress) row.progress?.(...joined.progress)
     const release = async () => {
@@ -176,7 +185,8 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
       joined.bytes.then(file => {
         context.signal?.removeEventListener('abort', abort)
         if (context.signal?.aborted) { abort(); return }
-        resolve({ size: file.size, read: (offset, length) => file.read(offset, length), dispose: release, saved: file.saved && (() => file.saved!()) })
+        resolve({ size: file.size, read: (offset, length) => file.read(offset, length), dispose: release, saved: file.saved?.bind(file),
+          acknowledged: readerScope ? file.acknowledged : undefined })
       }, error => {
         context.signal?.removeEventListener('abort', abort)
         void release().then(() => reject(error), reject)

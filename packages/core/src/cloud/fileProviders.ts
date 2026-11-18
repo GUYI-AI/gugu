@@ -279,34 +279,39 @@ export function cloudFileProviders(deps: {
     async temporary(revision, context) {
       if (!context.reads) return read(revision, context, true)
       const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
-      const requestId = crypto.randomUUID()
-      // An unsigned request admits this actor to this generation without reserving any download bytes.
-      const ready = await relayReady(context, ref, requestId)
-      const generation = ready.transfer_id
-      const reusable = !!generation && ['1d', '7d', '30d'].includes(ready.retention ?? '')
-      const admission = { requestId, generation, reusable, retention: ready.retention }
-      if (!reusable || !generation) return read(revision, context, true, undefined, admission)
-
-      changed(ready, revision, true)
       const scope = context.backend ?? await backend(context)
-      const provenance = cacheKey('relay-original', scope, context.actor.accountId, generation, revision.item_id, revision.version, revision.sha256, revision.size_bytes)
-      const verifiedHere = !!await deps.cache.get(provenance, 0)
-      let carrierAck: Promise<void> | undefined
+      const reader = JSON.stringify([context.actor.actorId, fileRefKey(context.ref), revision.item_id, revision.version])
+      // A simultaneous repeat of this exact reader and source is one server read, including its request_id and ACK.
       const file = await context.reads.acquire(scope, 'oss', revision, context, async transfer => {
-        const snapshot = await read(revision, transfer, true, undefined, admission)
-        carrierAck = snapshot.acknowledged
-        // This records which generation supplied verified bytes. Every open repeats its own authorization.
-        try { await deps.cache.put(provenance, 0, new Uint8Array()) }
-        catch (error) { await snapshot.dispose(); throw error }
-        return snapshot
-      }, { generation, verifiedHere })
+        const requestId = crypto.randomUUID()
+        // An unsigned request admits this actor to this generation without reserving any download bytes.
+        const ready = await relayReady(transfer, ref, requestId)
+        const generation = ready.transfer_id
+        const reusable = !!generation && ['1d', '7d', '30d'].includes(ready.retention ?? '')
+        const admission = { requestId, generation, reusable, retention: ready.retention }
+        if (!reusable || !generation) return read(revision, transfer, true, undefined, admission)
+
+        changed(ready, revision, true)
+        const provenance = cacheKey('relay-original', scope, context.actor.accountId, generation, revision.item_id, revision.version, revision.sha256, revision.size_bytes)
+        const verifiedHere = !!await deps.cache.get(provenance, 0)
+        let carrierAck: Promise<void> | undefined
+        const shared = await transfer.reads!.acquire(scope, 'oss', revision, transfer, async carrying => {
+          const snapshot = await read(revision, carrying, true, undefined, admission)
+          carrierAck = snapshot.acknowledged
+          // This records which generation supplied verified bytes. Every open repeats its own authorization.
+          try { await deps.cache.put(provenance, 0, new Uint8Array()) }
+          catch (error) { await snapshot.dispose(); throw error }
+          return snapshot
+        }, { generation, verifiedHere })
+        return { ...shared, acknowledged: carrierAck }
+      }, { reader })
       const confirm = async () => {
         const current = await metadata({ ...context, ref }) as Download
         context.signal?.throwIfAborted()
         changed(current, revision, true)
       }
       context.reads.state({ status: 'verifying' })
-      const acknowledged = Promise.all([confirm(), carrierAck]).then(() => {})
+      const acknowledged = Promise.all([confirm(), file.acknowledged]).then(() => {})
       acknowledged.catch(() => undefined)
       return { ...file, acknowledged }
     },
