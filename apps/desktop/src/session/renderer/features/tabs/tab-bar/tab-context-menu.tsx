@@ -1,6 +1,6 @@
 import { detectPlatform, type Hotkey } from '@tanstack/react-hotkeys';
 import { observer } from 'mobx-react-lite';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useContext, type ReactNode } from 'react';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
 import { ExternalLink, MoreHorizontal } from '@/lib/icons';
@@ -10,6 +10,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { ChatWorkspaceTabContext } from '../chat-workspace-context';
 import type { TabCommand } from './tab-commands';
 
 const _PLATFORM = detectPlatform();
@@ -45,6 +46,8 @@ export const TabContextMenu = observer(function TabContextMenu({
 }) {
   const { translate } = useSessionMessages();
   const keyboard = useShortcutOverrides();
+  const workspace = useContext(ChatWorkspaceTabContext);
+  const toolLayout = workspace?.role === 'tool' ? workspace.layout : undefined;
   const index = host.resolvedTabs.findIndex((t) => t.tabId === tab.tabId);
   const count = host.resolvedTabs.length;
   const engineCommands: TabCommand[] = [
@@ -93,15 +96,25 @@ export const TabContextMenu = observer(function TabContextMenu({
     ...(tab.pairRole
       ? [{ id: 'engine:separate-pair', label: translate('tabs.separatePair'), group: 'split' as const, shortcut: 'session.splitPane' as const, run: () => host.separatePair() }]
       : []),
-    {
+    ...(!toolLayout || count > 1 ? [{
       id: 'engine:split-right',
       label: translate('tabs.splitRight'),
       group: 'split' as const,
       ...(tab.pairRole ? {} : { shortcut: 'session.splitPane' as const }),
       isEnabled: () => host.inSplitLayout,
       run: split,
-    },
+    }] : []),
   ];
+  if (toolLayout) {
+    const side = toolLayout.chatToolSide === 'left' ? 'right' : 'left';
+    splitCommands.push({
+      id: 'engine:move-tool-group',
+      label: translate(side === 'left' ? 'tabs.moveToolGroupLeft' : 'tabs.moveToolGroupRight'),
+      group: 'split',
+      isEnabled: () => toolLayout.canDropChatToolGroup(tab.tabId),
+      run: () => toolLayout.moveChatToolGroup(tab.tabId, side),
+    });
+  }
   // 分隔线下面:拆开 / 向右分 / 在新窗口打开(spec session-page「页签右键」)。
   const openInWindow = host.tabWindowOpener(tab.tabId);
   if (openInWindow) {

@@ -1,5 +1,6 @@
 import { type DragEndEvent, type DragMoveEvent, type DropAnimation } from '@dnd-kit/core';
 import { Component, type ReactNode, type RefObject } from 'react';
+import { CHAT_TOOL_DROP_PREFIX } from '../chat-tool-geometry';
 import { DUR_MED_MS, EASE } from '@/styles/motion';
 
 type Point = { x: number; y: number };
@@ -31,7 +32,9 @@ export const tabDropAnimation: DropAnimation = async ({ active, dragOverlay }) =
 
 /** A drag preview names its original-order destination, rather than the tab now occupying that screen position. */
 export function tabDropTarget(event: DragEndEvent): string | undefined {
-  return event.active.data.current?.tabReorderTarget ?? (event.over ? String(event.over.id) : undefined);
+  const target = event.over ? String(event.over.id) : undefined;
+  if (target?.startsWith(CHAT_TOOL_DROP_PREFIX)) return target;
+  return event.active.data.current?.tabReorderTarget ?? target;
 }
 
 /** dnd-kit's event delta includes scrolling; the overlay rect retains the actual viewport movement. */

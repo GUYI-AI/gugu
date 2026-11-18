@@ -97,7 +97,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
             const focused = !embedded && screenLayout.focusedBlockId === blockId && layout.activePaneId === paneId;
             const strip = { tabTrailingSlot: addTab, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
             if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
-            const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.splitBlocked(paneId, dragging, edge) === null);
+            const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.allowsTabEdgeDrop(paneId, dragging, edge));
             // This React tree owns the pane shell and its blank space; portaled content owns its input in ChatPaneContent.
             return <PaneProvider group={group} isFocusedPane={focused}>
               <SplitPaneHotkey chatLayout={layout} />
@@ -135,7 +135,7 @@ export const ChatTabChip = observer(function ChatTabChip({
   menu: ReactNode;
   [data: `data-${string}`]: string | undefined;
 }) {
-  const workspaceRole = useContext(ChatWorkspaceTabContext);
+  const workspaceRole = useContext(ChatWorkspaceTabContext)?.role;
   const { translate } = useSessionMessages();
   if (workspaceRole === 'title') {
     const more = translate('common.more');

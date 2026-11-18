@@ -1144,6 +1144,10 @@
     display: none;
   }
 
+  [data-chat-tool-dragging] [data-pane-content-drop-preview] {
+    display: none;
+  }
+
   /* ── 工作区页签:Chrome 式形态 ──────────────────────────────────────────────
      只有「要看兄弟节点」的两件事写在这儿,其余几何全在 tab-bar.tsx / generic-tab-item.tsx
      的 Tailwind class 里 —— 这两件 Tailwind 表达不了,不是偷懒:

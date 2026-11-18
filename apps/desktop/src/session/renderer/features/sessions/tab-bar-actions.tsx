@@ -262,9 +262,11 @@ export const SplitPaneHotkey = observer(function SplitPaneHotkey({ chatLayout }:
       if (!isFocusedPane) return [];
       const mode = chatLayout?.chatWorkspaceMode;
       if (mode) {
-        if (mode !== 'split' && mode !== 'full') return [];
-        const toggle = () => chatLayout?.setChatToolLayout(mode === 'full' ? 'split' : 'full');
-        return [{ id: 'session.fullscreenTab' as const, execute: toggle }, { id: 'session.splitPane' as const, execute: toggle }];
+        if (mode === 'empty') return [];
+        const split = { id: 'session.splitPane' as const, execute: () => { chatLayout?.toggleChatToolSplit(); } };
+        if (mode === 'hidden') return [split];
+        const full = { id: 'session.fullscreenTab' as const, execute: () => chatLayout?.setChatToolLayout(mode === 'full' ? 'split' : 'full') };
+        return [full, split];
       }
       // 页签全屏(tab-fullscreen.ts)和拆开是两件事:这个键只盖住 / 放开工作区,❌ 动布局。
       const fullscreen = { id: 'session.fullscreenTab' as const, execute: () => {

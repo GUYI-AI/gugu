@@ -12,6 +12,7 @@ import type {
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
 import { declaredShare } from './side-width';
+import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_WIDTH_PX, chatDividerAt, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
 import {
   equalizeSplit,
   evenSizes,
@@ -121,7 +122,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   paneMinWidth = (paneId: string): number => {
     const pane = this.groups.find((group) => group.paneId === paneId)?.pane;
     const entry = pane?.resolvedActiveTabId ? pane.entries.get(pane.resolvedActiveTabId) : undefined;
-    return (entry && this._registry.has(entry.kind) ? this._registry.get(entry.kind).minWidth : undefined) ?? MIN_PANE_WIDTH_PX;
+    const required = (entry && this._registry.has(entry.kind) ? this._registry.get(entry.kind).minWidth : undefined) ?? MIN_PANE_WIDTH_PX;
+    return this.chatWorkspaceMode ? Math.max(required, CHAT_TOOL_MIN_WIDTH_PX) : required;
   };
   /** How the panes are cut. Replaced whole on every change (pane-layout-tree.ts is pure). */
   layout: PaneLayoutNode;
@@ -200,6 +202,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       chatWorkspacePanes: computed,
       chatWorkspaceSinglePaneId: computed,
       attachChatWorkspace: action,
+      moveChatToolGroup: action,
+      collapseChatToolSide: action,
+      toggleChatToolSplit: action,
       splitRight: action,
       splitPane: action,
       pairWith: action,
@@ -291,6 +296,48 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return { chat, tools: this.groups.find((group) => group !== chat) };
   }
 
+  get chatToolSide(): ChatToolSide | undefined {
+    const tools = this.chatWorkspacePanes?.tools;
+    return tools && (this.groups[0] === tools ? 'left' : 'right');
+  }
+
+  canDropChatToolGroup(tabId: string): boolean {
+    const panes = this.chatWorkspacePanes;
+    return !!panes?.tools?.pane.entries.has(tabId) && !this.narrow && this.chatWorkspaceMode !== 'hidden';
+  }
+
+  moveChatToolGroup(tabId: string, side: ChatToolSide): void {
+    if (!this.canDropChatToolGroup(tabId)) return;
+    const node = this.layout;
+    const panes = this.chatWorkspacePanes!;
+    if (node.type !== 'split' || node.children.length !== 2 || !panes.tools) return;
+    if (this.chatToolSide !== side) {
+      this.layout = {
+        ...node,
+        orientation: 'horizontal',
+        children: [...node.children].reverse(),
+        sizes: [...node.sizes].reverse(),
+      };
+      this._syncGroupOrder();
+    }
+    this.setChatToolLayout('split');
+    panes.tools.pane.setActiveTab(tabId);
+  }
+
+  collapseChatToolSide(side: ChatToolSide): void {
+    if (this.chatWorkspaceMode === 'split') {
+      this.setChatToolLayout(side === this.chatToolSide ? 'hidden' : 'full');
+    }
+  }
+
+  toggleChatToolSplit(): boolean {
+    const mode = this.chatWorkspaceMode;
+    if (mode === 'full' || mode === 'hidden') this.setChatToolLayout('split');
+    else if (mode === 'split') this.unpair({ declined: true });
+    else return false;
+    return true;
+  }
+
   get chatWorkspaceSinglePaneId(): string | undefined {
     const panes = this.chatWorkspacePanes;
     if (this.chatWorkspaceMode === 'hidden') return panes?.chat.paneId;
@@ -342,7 +389,15 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
 
     const order = panes.chat.pane.tabOrder.length > 1 ? this.stripTabIds : [];
-    if (!panes.tools) this.pairWith(primary, tabId, { by: 'restore' });
+    if (!panes.tools) {
+      this.pairWith(primary, tabId, { by: 'restore' });
+      const width = this.dimensions?.width;
+      if (focus && width && !this.narrow && this.layout.type === 'split' && this.sidePaneId) {
+        const chatMin = this.paneMinWidth(panes.chat.paneId);
+        const toolMin = this.paneMinWidth(this.sidePaneId);
+        this.layout = { ...this.layout, sizes: chatDividerAt(chatMin, width, chatMin, toolMin).sizes };
+      }
+    }
     const chat = this._groupOf(primary)!;
     const tools = this.groups.find((group) => group !== chat);
     if (!tools) return false;
@@ -429,6 +484,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   /** ⌘\: paired = 拆开; else the tab in front goes side by side with the one looked at before it. */
   splitRight(): void {
+    if (this.toggleChatToolSplit()) return;
     if (this.pair || this.sidePaneId !== null) this.unpair({ declined: true });
     else this.splitPane(this.activePaneId, 'right');
   }
@@ -522,6 +578,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const moving = tabId ?? this.focusedPane.resolvedActiveTabId;
     if (!this.groups.some((group) => group.paneId === paneId) || !moving || !this.stripTabIds.some((id) => id !== moving)) return 'only-tab';
     return this.roomToSplit() ? null : 'too-small';
+  }
+
+  allowsTabEdgeDrop(paneId: string, tabId: string, edge: PaneEdge): boolean {
+    const tools = this.chatWorkspacePanes?.tools;
+    if (tools?.pane.entries.has(tabId) && (this.chatWorkspaceMode !== 'split' || paneId !== tools.paneId || tools.pane.tabOrder.length < 2)) return false;
+    return this.splitBlocked(paneId, tabId, edge) === null;
   }
 
   /** Room for two pages side by side, each at least MIN_PANE_WIDTH_PX (can't measure = room: tests, not drawn yet). */
@@ -661,6 +723,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
    * separated them (拆开) — both pages and the session remember it. `fill`: which of the two is in front afterwards.
    */
   unpair(opts: { declined?: boolean; fill?: 'pinned' | 'side' } = {}): void {
+    const workspace = opts.declined && this.chatWorkspacePanes;
+    if (workspace) {
+      if (this.chatWorkspaceMode === 'split') this.setChatToolLayout(this.activePaneId === workspace.chat.paneId ? 'hidden' : 'full');
+      return;
+    }
     const pair = this.pair;
     const displayed = this.isPairVisible;
     this._pair = null;
@@ -746,14 +813,25 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const fromGroup = this._groupOf(draggedTabId);
     if (!fromGroup) return;
 
+    const workspace = this.chatWorkspacePanes;
+    const isTool = workspace?.tools === fromGroup;
+    if (overId.startsWith(CHAT_TOOL_DROP_PREFIX)) {
+      if (!workspace || !isTool || this.chatWorkspaceMode !== 'full') return;
+      for (const side of ['left', 'right'] as const) {
+        if (overId === chatToolDropId(side, workspace.chat.paneId)) this.moveChatToolGroup(draggedTabId, side);
+      }
+      return;
+    }
+
     const edgeDrop = parseEdgeDrop(overId);
     if (edgeDrop) {
-      this.splitPane(edgeDrop.paneId, edgeDrop.edge, draggedTabId);
+      if (this.allowsTabEdgeDrop(edgeDrop.paneId, draggedTabId, edgeDrop.edge)) this.splitPane(edgeDrop.paneId, edgeDrop.edge, draggedTabId);
       return;
     }
 
     const dropPane = overId.startsWith('pane-content-') ? overId.slice('pane-content-'.length) : undefined;
     if (dropPane !== undefined) {
+      if (isTool) return;
       const target = this.groups.find((group) => group.paneId === dropPane);
       if (!target || target.pane.resolvedActiveTabId === draggedTabId) return;
       const replaced = target.pane.resolvedActiveTabId;
@@ -768,8 +846,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       this.activePaneId = target.paneId;
       return;
     }
-    const tools = this.chatWorkspacePanes?.tools;
-    if (tools === fromGroup) {
+    if (isTool) {
+      const tools = fromGroup;
       const to = overId === `pane-drop-${tools.paneId}` ? tools.pane.tabOrder.length - 1 : tools.pane.tabOrder.indexOf(overId);
       if (to >= 0) tools.pane.reorderTabs(tools.pane.tabOrder.indexOf(draggedTabId), to);
       return;

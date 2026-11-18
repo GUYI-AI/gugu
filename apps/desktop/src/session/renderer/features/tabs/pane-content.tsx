@@ -102,7 +102,7 @@ const PaneBody = observer(function PaneBody({
       {pane.resolvedTabs.length > 0 && !hideTabBar && <OverFullscreenStrip.Provider value={fullscreen}><TabBar leadingSlot={tabLeadingSlot} tabTrailingSlot={tabTrailingSlot} actionsSlot={actionsSlot} reserveShellRestoreLane={reserveShellRestoreLane} leadingReservePx={leadingReservePx} /></OverFullscreenStrip.Provider>}
       <div ref={setContentRef} data-pane-content="" tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 bg-tab-face">
         <PaneDimensionProvider sink={pane}>
-          {isOver && <div className="pointer-events-none absolute inset-0 z-20 bg-foreground/10" />}
+          {isOver && <div data-pane-content-drop-preview="" className="pointer-events-none absolute inset-0 z-20 bg-foreground/10" />}
           {pane.registry.all().filter((provider) => retained.has(provider.kind)).map((provider) => {
             const Content = provider.TabContent;
             return (
