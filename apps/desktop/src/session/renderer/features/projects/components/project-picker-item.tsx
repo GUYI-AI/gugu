@@ -156,7 +156,7 @@ const ChoiceList = observer(function ChoiceList({ project, folders, readFailed, 
   return (
     <>
       {(reading || readFailed) && (
-        <div role="status" className="px-2 py-1.5 text-xs font-medium text-foreground-muted">
+        <div role="status" className="px-2 py-2 text-xs font-medium text-foreground-muted">
           {translate(readFailed ? 'projects.picker.readFailed' : 'projects.folders.loading')}
         </div>
       )}
