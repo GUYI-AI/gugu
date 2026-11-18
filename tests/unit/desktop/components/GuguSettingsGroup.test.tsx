@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // owner 10-16「只有一个设置:咕咕的设置是全局设置里的一组,咕咕页里的齿轮直接开到这一组」:
 // 资料(AssistantSection)与连接应用(ConnectorsSection)两页。
-import { createElement, type ReactNode } from 'react'
+import { act, createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
@@ -264,6 +264,8 @@ describe('the person\'s own connected apps on the phone', () => {
     for (const section of ['connectors', 'channels'] as const) {
       harness.cleanup(); harness = createReactHarness(); sessionSection.props = null
       await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile: true, pane: 'detail' }), awake)
+      // Settings loads the Marketplace lazily; await that import before checking its route.
+      await act(async () => { await vi.dynamicImportSettled() })
       await vi.waitFor(() => expect(q('phone-market')?.querySelector('[role="tabpanel"][aria-label="连接器"]')).toBeTruthy())
       expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
     }
