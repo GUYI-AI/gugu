@@ -73,9 +73,19 @@ export function createGitStatusClient(spawn: () => GitStatusWorker) {
         if (!target) return
         const exited = new Promise<void>((resolve) => target.worker.on('exit', () => resolve()))
         fail(target, new Error('Git status client disposed'))
-        // 先取消 git 子进程并等读数任务结束,不能 terminate 线程把在途 git 留在外面。
+        // 正常退出先取消自有 git;线程失去响应时,最多给它 5 秒清理。
         target.worker.postMessage({ type: 'dispose' })
-        await exited
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const forced = new Promise<void>((resolve, reject) => {
+          timer = setTimeout(() => {
+            void target.worker.terminate().then(() => resolve(), reject)
+          }, 5_000)
+        })
+        try {
+          await Promise.race([exited, forced])
+        } finally {
+          clearTimeout(timer)
+        }
       })()
       return disposing
     }
