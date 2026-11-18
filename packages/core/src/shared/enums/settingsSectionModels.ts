@@ -7,6 +7,7 @@ export type ActiveSection =
   | 'connectors'
   | 'account'
   | 'general'
+  | 'data-import'
   | 'devices'
   // File storage and access is a primary destination beside Usage; existing deep links keep this key.
   | 'files'
@@ -54,7 +55,7 @@ export const SETTINGS_GROUPS: readonly { readonly id: SettingsGroupId; readonly 
   { id: 'account', sections: ['account', 'usage', 'files', 'subscriptions'] },
   // product spec:桌面与手机同一页;这台机器读不读得到真值由 SettingsPanel 那道过滤决定。
   // 连接应用:the user's own connected apps.
-  { id: 'preferences', sections: ['general', 'connectors', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },
+  { id: 'preferences', sections: ['general', 'data-import', 'connectors', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },
   // agent 跑起来的那几样(会话的默认行为、仓库、浏览器)挨着「设备」。App 只在手机壳上:那里的 App 由
   // 这一页自己的 App 仓管(L9)。
   { id: 'work', sections: ['sessions', 'browser', 'devices', 'apps', 'phone'] },

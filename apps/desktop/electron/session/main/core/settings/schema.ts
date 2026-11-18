@@ -252,6 +252,13 @@ export const openInSettingsSchema = z.object({
   hidden: z.array(openInAppIdSchema),
 });
 
+const dataImportSettingsSchema = z.object({
+  owners: z.record(z.string(), z.object({
+    automatic: z.boolean(),
+    sources: z.array(z.string()),
+  })),
+});
+
 export const APP_SETTINGS_SCHEMA_MAP = {
   autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
@@ -259,6 +266,7 @@ export const APP_SETTINGS_SCHEMA_MAP = {
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
   theme: themeSchema,
@@ -278,6 +286,7 @@ export const appSettingsSchema = z.object({
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
   theme: themeSchema,
