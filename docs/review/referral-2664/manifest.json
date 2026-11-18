@@ -1,0 +1,87 @@
+{
+  "source": "9e6cd502cb88a74c224750513d921f6d4ce9faec",
+  "capture": "Real Electron 44 native window; unmodified pixel crops",
+  "windowPixels": [
+    1280,
+    900
+  ],
+  "dialogCSS": {
+    "x": 420,
+    "y": 170,
+    "width": 440,
+    "height": 560,
+    "top": 170,
+    "right": 860,
+    "bottom": 730,
+    "left": 420
+  },
+  "rowsBefore": 30,
+  "rowsAfter": 35,
+  "scrollTopBefore": 0,
+  "scrollTopAfter": 1461,
+  "currentOffer": "3.25",
+  "historicalEach": "2.75",
+  "received": "5.5",
+  "files": [
+    {
+      "file": "empty.png",
+      "originalSHA256": "dd8d1dbfaafc6dd7865e7cc82ac31d8ff11131d1c53d91d203ab9ba8b0adb61a",
+      "cropBox": [
+        420,
+        170,
+        860,
+        730
+      ],
+      "cropSHA256": "e126831641038aa65a8e3485d913bba8e8923ce16def469fa779774bd237722e",
+      "size": [
+        440,
+        560
+      ]
+    },
+    {
+      "file": "activity-top.png",
+      "originalSHA256": "5ad4d8f65663ad4cb16b8e27962955d75d57dc8bc66fa47e7fb5c7b729300ace",
+      "cropBox": [
+        420,
+        170,
+        860,
+        730
+      ],
+      "cropSHA256": "e678e2c7728b5f4be02e545a65cd055eae18346a4218ea0a5d26fc5ca62cd276",
+      "size": [
+        440,
+        560
+      ]
+    },
+    {
+      "file": "activity-bottom.png",
+      "originalSHA256": "375f1df066df1355be4b36bbf89f4dc6794499ffabd11655a7dfd79b533bf5af",
+      "cropBox": [
+        420,
+        170,
+        860,
+        730
+      ],
+      "cropSHA256": "4f592bff20265c25914c1b5b456a36e608a1fde24b24e68b1840be496c0fbcec",
+      "size": [
+        440,
+        560
+      ]
+    },
+    {
+      "file": "account-entry.png",
+      "originalSHA256": "f5b40e4b0c0cb1b1c75e9967929c0fa31eb72ea1fe8f505be46e20108d24eed2",
+      "cropBox": [
+        426,
+        636,
+        1066,
+        701
+      ],
+      "cropSHA256": "66deece538a65ea84d6e7381c143972175167f6b70946ee97a314c8cfaa6a33e",
+      "size": [
+        640,
+        65
+      ]
+    }
+  ]
+}
