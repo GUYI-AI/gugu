@@ -5,7 +5,6 @@ import { messageForUser } from '@/lib/userFacingError';
 import { CircleAlert, Trash2Icon } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
-import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
@@ -31,9 +30,10 @@ import { askInShell, installConsentPrompt, type InstallConsentAsk } from '@rende
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallGrant, type InstallAlsoOnMachine } from '@shared/extensions/host-actions';
 import { findRemoteHostsBridge } from '@shared/remote-hosts';
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere';
-import { AppMarketContent, type AppMarketState, type MarketBrowsePage } from '@renderer/features/extensions/panel/app-market-content';
-import { featuredShotsReady } from '@renderer/features/extensions/panel/app-featured';
-import { keepShelf, keptShelf } from '@renderer/features/extensions/panel/kept-shelf';
+import { AgentMarketContent, type AgentMarketFilter } from '@renderer/features/extensions/panel/agent-market-content';
+import { DesktopExtensionMarket, type DesktopMarketShelf } from '@renderer/features/extensions/panel/desktop-extension-market';
+import { keepShelf, keptShelfItems } from '@renderer/features/extensions/panel/kept-shelf';
+import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
 import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle';
 import type { AppLifecycle } from '@renderer/features/extensions/panel/app-lifecycle-button';
 import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-page';
@@ -75,15 +75,13 @@ import type {
 } from '@shared/extensions/market';
 import { marketDownloadProgressChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import type { MarketRefreshed } from '@shared/extensions/market-snapshot';
-import { marketHome } from '@shared/extensions/market-home';
-import { chatDb } from '@/lib/supabase';
+import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry';
 import { declaredContexts, type ExtensionManifest } from '@shared/extensions/manifest';
 import { readCachedDevices } from '@/store/devicesCache';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 
 /**
- * 左栏「App」那一页 = App 市场(#7059,照改版原型):整页居中一栏,顶上「App」+ 一句话 + 搜索,下面「市场 / 已安装」。
- * 市场 = 官方精选 + 按类别两列平铺,每行就地一颗按钮;点一行 = 它的市场页(就在这一栏里铺开,❌ 弹框)。
+ * 左栏「App」页有「智能体 / 扩展 / 已安装」三页。市场按类别显示卡片，安装动作放在详情里。
  * 已安装按「需要处理 / 有更新 / 已启用 / 未启用」分组,每行按钮 + 开关 + ⋯;点一行 = 它的 App 设置页。
  * 从市场装走的是与手选文件夹**完全相同**的 `inspect → consent → install`。Refs #2374, #5265, #5410.
  */
@@ -96,7 +94,7 @@ type ShelfItem = MarketListItem;
  * The shelf, as this screen has read it so far. 一页一页取(#5410):`items` 是已经取到的
  * 那几页拼起来的,`total` 是服务端说的总数,`hasMore` 决定底部要不要再取;换搜索词从第 0 页重来。
  */
-type ShelfState = AppMarketState;
+type ShelfState = DesktopMarketShelf | { status: 'loading' | 'error' };
 
 /** The inventory (what is installed), as this screen has read it so far. */
 type InventoryState = 'loading' | 'ready' | 'error';
@@ -105,16 +103,17 @@ type InventoryState = 'loading' | 'ready' | 'error';
  * 每台机器的市场那一块,这一页上次画出来的样子(不带搜索词那一份,按 `host.key`):再打开、换机器再换回来,先画它,
  * 同时照常从那台机器手上的目录读一遍、原地换上(owner 10-16「本地有缓存啊」)。重启后的第一帧也是它(kept-shelf.ts)。
  */
-const lastShelf = new Map<string, Extract<ShelfState, { status: 'ready' }>>();
-type KeptExtra = Pick<Extract<ShelfState, { status: 'ready' }>, 'invalid' | 'total' | 'page'>;
+const lastShelf = new Map<string, DesktopMarketShelf>();
+type KeptExtra = Pick<DesktopMarketShelf, 'invalid' | 'total' | 'page'>;
 
-function shelfOf(hostKey: string): Extract<ShelfState, { status: 'ready' }> | undefined {
+function shelfOf(hostKey: string): DesktopMarketShelf | undefined {
   const inRun = lastShelf.get(hostKey);
   if (inRun) return inRun;
-  const kept = keptShelf<ShelfItem, KeptExtra>(hostKey);
-  if (!kept) return undefined;
-  const { featured, ...home } = kept.home;
-  const shelf = { status: 'ready' as const, query: '', errorKind: null, items: kept.items, hasMore: false, loadingMore: false, featured, home, ...kept.extra };
+  const kept = keptShelfItems<ShelfItem, KeptExtra>(hostKey);
+  if (!kept?.extra) return undefined;
+  const shelf: DesktopMarketShelf = {
+    status: 'ready', query: '', errorKind: null, items: kept.items, hasMore: false, loadingMore: false, ...kept.extra,
+  };
   lastShelf.set(hostKey, shelf);
   return shelf;
 }
@@ -158,7 +157,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const host = library.extensions;
   const store = host.store;
   const api = host.api;
-  const queryClient = useQueryClient();
   const remote = library.remote;
   // 看的是另一台机器、它此刻连不上:市场清单问不了(问了只会挂满超时)。
   const machineOffline = Boolean(remote && !remote.online);
@@ -173,10 +171,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const showConfirm = useShowModal('confirmActionModal');
   const [isBusy, setIsBusy] = useState(false);
   const { navigate } = useNavigate();
-  // 进来先是市场(原型 S.store.tab = 'market');有更新时「已安装」上一个红点。
-  const [tab, setTab] = useState<'market' | 'installed'>('market');
-  const [view, setView] = useState<MarketBrowsePage>('market');
+  const [tab, setTab] = useState<'agents' | 'market' | 'installed'>('agents');
+  const [agentCategory, setAgentCategory] = useState<AgentMarketFilter>('all');
   const [chip, setChip] = useState<'all' | MarketCategory>('all');
+  const [marketAgentDetailId, setMarketAgentDetailId] = useState<string | null>(null);
   // 刚在产品页里装好的那一个:那一页头下面说一句「装好了」和去哪找它。
   const [justInstalled, setJustInstalled] = useState<string | null>(null);
   // 进产品页从顶上看起;回清单回到刚才滚到的地方(照 Mac App Store 的返回)。滚的是外面那一层页面。
@@ -197,7 +195,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
   const [query, setQuery] = useState('');
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
-  const debouncedQuery = useDebounce(query.trim(), 250);
+  const debouncedQuery = useDebounce(tab === 'market' ? query.trim() : '', 250);
   const [shelf, setShelf] = useState<ShelfState>(() => shelfOf(host.key) ?? { status: 'loading' });
   const shelfRef = useRef(shelf);
   shelfRef.current = shelf;
@@ -329,19 +327,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const readShelf = useCallback(async (search = '', pages = 1) => {
     const ticket = (shelfRequest.current += 1);
     const keeps = (current: ShelfState) => current.status === 'ready' && current.query === search && !current.errorKind;
-    const painted = keeps(shelfRef.current);
     setShelf((current) => (keeps(current) ? current : { status: 'loading' }));
     try {
-      const ranking = search === ''
-        ? Promise.resolve(chatDb.rpc('market_install_ranking')).then(({ data, error }) => {
-            if (error) throw error;
-            return new Map(((data ?? []) as { app_id: string; score: number }[]).map((row) => [row.app_id, row.score]));
-          }).catch((error: unknown) => {
-            log.warn('market install ranking unreadable:', error);
-            return null;
-          })
-        : Promise.resolve(new Map<string, number>());
-      const [result, scores] = await Promise.all([api.market({ page: 0, query: search }), ranking]);
+      const result = await api.market({ page: 0, query: search });
       if (ticket !== shelfRequest.current) return;
       // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
       if (!result.success || !result.data) throw new Error('market unreadable');
@@ -359,7 +347,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       for (let page = 1; last.hasMore && (search === '' || page < pages); page += 1) {
         const next = await api.market({ page, query: search });
         if (ticket !== shelfRequest.current) return;
-        // 推荐与完整排序页必须读齐;搜索保留分页重试。
+        // 默认分类浏览使用完整目录，搜索结果仍按页加载。
         if (!next.success || !next.data || next.data.errorKind) {
           if (search === '') throw new Error('The complete market catalog could not be read');
           break;
@@ -368,12 +356,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         items = [...items, ...next.data.extensions.filter((item) => !seen.has(item.manifest.id))];
         last = next.data;
       }
-      const { featured, ...home } = marketHome(items.map((item) => ({ ...item, ...item.cloud })), scores);
-      // 画着一份时,新的那份等精选底图解码好再整份换上;取不到就留着画着的那份(下面 catch)。第一次读不等:没有可留的,卡片自己取。
-      if (painted) await featuredShotsReady(queryClient, api, host.key, featured);
-      if (ticket !== shelfRequest.current) return;
       shelfFetchedAt.current = result.data.fetchedAt;
-      const ready: Extract<ShelfState, { status: 'ready' }> = {
+      const ready: DesktopMarketShelf = {
         status: 'ready',
         query: search,
         errorKind: result.data.errorKind,
@@ -382,15 +366,13 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         total: last.total,
         page: last.page,
         hasMore: last.hasMore,
-        featured,
-        home,
         loadingMore: false,
       };
       setShelf(ready);
-      // 下次打开先画这份完整目录与编排。
+      // 下次打开先画这份完整目录。
       if (search === '' && !ready.errorKind) {
         lastShelf.set(host.key, ready);
-        keepShelf<ShelfItem, KeptExtra>(host.key, items, { featured, ...home }, { invalid: ready.invalid, total: ready.total, page: ready.page });
+        keepShelf<ShelfItem, KeptExtra>(host.key, items, null, { invalid: ready.invalid, total: ready.total, page: ready.page });
       }
     } catch (error) {
       if (ticket !== shelfRequest.current) return;
@@ -404,7 +386,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (shelf.status !== 'ready' || !shelf.hasMore || shelf.loadingMore) return;
+    if (shelf.status !== 'ready' || shelf.query !== debouncedQuery || shelf.errorKind || !shelf.hasMore || shelf.loadingMore) return;
     const ticket = shelfRequest.current;
     const nextPage = shelf.page + 1;
     setShelf({ ...shelf, loadingMore: true });
@@ -412,7 +394,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const result = await api.market({ page: nextPage, query: debouncedQuery });
       if (ticket !== shelfRequest.current) return;
       // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
-      if (!result.success || !result.data) throw new Error('market unreadable');
+      if (!result.success || !result.data || result.data.errorKind) throw new Error('market unreadable');
       const data = result.data;
       setShelf((current) => {
         if (current.status !== 'ready') return current;
@@ -441,7 +423,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef(loadMore);
   loadMoreRef.current = loadMore;
-  const canLoadMore = shelf.status === 'ready' && shelf.hasMore && !shelf.loadingMore;
+  const canLoadMore = shelf.status === 'ready' && shelf.query === debouncedQuery && !shelf.errorKind && shelf.hasMore && !shelf.loadingMore;
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !canLoadMore || typeof IntersectionObserver === 'undefined') return;
@@ -451,7 +433,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     observer.observe(sentinel);
     return () => observer.disconnect();
   // 产品页铺开时整个清单卸掉、页脚那一行跟着没了;回来以后是新的一行,要重新盯上(`detail` 进依赖)。
-  }, [canLoadMore, tab, view, detail]);
+  }, [canLoadMore, tab, detail]);
 
   const detailId = detail ? `${detail.page}:${appDetailId(detail)}` : null;
   useLayoutEffect(() => {
@@ -1080,6 +1062,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         );
 
   const marketRows = shelf.status === 'ready' ? shelf.items : [];
+  const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID)
+    ?? lastShelf.get(host.key)?.items.find((item) => item.manifest.id === ASSISTANT_APP_ID);
 
   const rememberListScroll = () => {
     listScroll.current = scroller()?.scrollTop ?? 0;
@@ -1104,7 +1088,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const similarOf = (manifest: ExtensionManifest) => {
     const category = marketCategoryOf(manifest);
     return marketRows
-      .filter((item) => item.manifest.id !== manifest.id && marketCategoryOf(item.manifest) === category && !item.cloud.deprecated)
+      .filter((item) => item.manifest.id !== manifest.id && item.manifest.id !== ASSISTANT_APP_ID
+        && marketCategoryOf(item.manifest) === category && !item.cloud.deprecated)
       .slice(0, 5)
       .map((item) => {
         const text = localizedManifestText(item.manifest, locale);
@@ -1167,7 +1152,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
 
   const installedCount = listedManifests.length;
-  const searchPlaceholder = translate('extensions.searchPlaceholder');
+  const searchPlaceholder = translate(tab === 'agents' ? 'extensions.searchAgents'
+    : tab === 'market' ? 'extensions.searchExtensions' : 'extensions.searchPlaceholder');
   const pendingPermissionsOf = (extensionId: string) =>
     Object.keys(pendingPermissions)
       .filter((key) => key.startsWith(`${extensionId}\u0000`))
@@ -1360,7 +1346,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />}
       {/* 离线 / server 太旧:照旧画上次读到的那份,所有按钮、开关一起灰(fieldset 的 disabled 传给里面每个控件)。 */}
       <fieldset disabled={!!notice?.readOnly} className="contents">
-        {/* 「市场 / 已安装」用咕咕的分段(同面板页签那一种:无框、选中一块实底),❌ 自己再画一套。 */}
         <div className="mk-bar">
           <ToggleGroup
             size="sm"
@@ -1369,11 +1354,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             aria-label={translate('extensions.title')}
             value={[tab]}
             onValueChange={([value]) => {
-              if (value === 'market' || value === 'installed') setTab(value);
+              if (value === 'agents' || value === 'market' || value === 'installed') setTab(value);
             }}
           >
+            <ToggleGroupItem value="agents" className="gap-1 px-2 text-sm" data-testid="extensions-section-agents">
+              {translate('extensions.tabAgents')}
+            </ToggleGroupItem>
             <ToggleGroupItem value="market" className="gap-1 px-2 text-sm" data-testid="extensions-section-market">
-              {translate('extensions.tabMarket')}
+              {translate('extensions.tabExtensions')}
             </ToggleGroupItem>
             <ToggleGroupItem value="installed" className="gap-1 px-2 text-sm" data-testid="extensions-tab-installed">
               {translate('extensions.tabInstalled')}
@@ -1386,24 +1374,31 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           </Button>
         </div>
 
+        {tab === 'agents' && (
+          <div className="pb-14" data-testid="agent-market-panel">
+            {machineOffline ? (
+              <div className="mk-status" role="status">{translate('extensions.marketOfflineUnreachable')}</div>
+            ) : (
+              <AgentMarketContent
+                query={query}
+                category={agentCategory}
+                onCategoryChange={setAgentCategory}
+                onOpenAgentDetail={setMarketAgentDetailId}
+                assistant={assistantMarketItem}
+                assistantInstalled={installedById.has(ASSISTANT_APP_ID)}
+                assistantLoading={shelf.status === 'loading'}
+                onOpenAssistant={() => assistantMarketItem && openShelfDetail(assistantMarketItem)}
+                assistantResource={resourceOf(ASSISTANT_APP_ID)}
+              />
+            )}
+            {marketAgentDetailId && (
+              <AgentDetailModal agentId={marketAgentDetailId} onClose={() => setMarketAgentDetailId(null)} />
+            )}
+          </div>
+        )}
+
         {tab === 'market' && (
           <div className="pb-14" data-testid="extensions-market-panel">
-            <ToggleGroup
-              size="sm"
-              spacing={1}
-              className="mk-views gap-1 overflow-visible border-none bg-transparent"
-              aria-label={translate('extensions.tabMarket')}
-              value={[view]}
-              onValueChange={([value]) => {
-                if (value) setView(value as MarketBrowsePage);
-              }}
-            >
-              {([['market', 'extensions.recommended'], ['newest', 'extensions.newest'], ['popular', 'extensions.popular'], ['all', 'extensions.allApps']] as const).map(([value, label]) => (
-                <ToggleGroupItem key={value} value={value} className="gap-1 px-2 text-sm" data-testid={`extensions-tab-${value}`}>
-                  {translate(label)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
             {/* 那台机器此刻连不上:清单问不了(问了只会挂满超时),照实说,❌ 一直转骨架。 */}
             {/* 那台机器连不上时只有这一句:下面读清单的几种结果(转圈、出错、连不上下载站)都不画,❌ 两条「连不上」叠在一起。 */}
             {machineOffline ? (
@@ -1439,23 +1434,17 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   </Button>
                 </div>
               ) : (
-                <AppMarketContent
-                  resourceOf={resourceOf}
-                    view={view} onRetry={() => void readShelf(debouncedQuery)}
+                <DesktopExtensionMarket
                   shelf={shelf}
-                  chip={chip}
-                  onChipChange={setChip}
                   query={debouncedQuery}
-                  hostKey={host.key}
-                  api={api}
-                  lifecycleOf={lifecycleOf}
+                  category={chip}
+                  onCategoryChange={setChip}
                   installedIds={new Set(installedById.keys())}
-                  pending={pending}
-                  downloadPercent={downloadPercent}
                   onOpen={openShelfDetail}
-                  onAction={(item) => runLifecycle(item.manifest.id, item)}
+                  resourceOf={resourceOf}
                   sentinelRef={sentinelRef}
-                  marketStale={marketStale ? translate('extensions.marketStale', { time: marketStaleTime(marketStale, locale) }) : null}
+                  stale={marketStale ? translate('extensions.marketStale', { time: marketStaleTime(marketStale, locale) }) : null}
+                  assistant={assistantMarketItem}
                 />
               ))}
           </div>

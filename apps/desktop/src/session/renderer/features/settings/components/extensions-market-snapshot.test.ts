@@ -53,8 +53,6 @@ const h = vi.hoisted(() => {
   return { item, listing, api, heard, host };
 });
 
-vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
-
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, app: {} },
   rpcOn: () => ({}),
@@ -69,6 +67,7 @@ vi.mock('@renderer/features/library/library-host', async () => {
   const { InstalledExtensionsStore } = await import('@renderer/features/extensions/installed-extensions-store');
   const stores = new Map<string, InstanceType<typeof InstalledExtensionsStore>>();
   return {
+    LOCAL_HOST_KEY: 'local',
     useLibraryHost: () => {
       const store = stores.get(h.host.key) ?? new InstalledExtensionsStore(h.api as never);
       stores.set(h.host.key, store);
@@ -83,7 +82,7 @@ vi.mock('@renderer/features/library/library-host', async () => {
         local: h.host.local,
         pickFolder: vi.fn(),
       };
-      return { extensions, remote: h.host.local ? undefined : { deviceLabel: 'Studio', online: true, lastSeenAt: null, hostKind: 'desktop' } };
+      return { key: h.host.key, extensions, agents: { listManagement: async () => [] }, remote: h.host.local ? undefined : { deviceLabel: 'Studio', online: true, lastSeenAt: null, hostKind: 'desktop' } };
     },
   };
 });
@@ -118,10 +117,18 @@ describe('the App page market: the index in hand at once, the download site behi
   const skeleton = () => doc().querySelector('[data-testid="extensions-market-panel"] [role="status"][aria-busy="true"]');
   const stale = () => doc().querySelector('[data-testid="extension-market-stale"]');
 
+  async function showExtensions() {
+    const tab = doc().querySelector<HTMLButtonElement>('[data-testid="extensions-section-market"]')!;
+    if (tab.getAttribute('aria-pressed') !== 'true') {
+      await act(async () => void tab.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    }
+  }
+
   async function open() {
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
     });
+    await showExtensions();
   }
   /** The page as the retained App place draws it (workspace.tsx RetainedPlace): mounted once, then only shown or hidden. */
   async function place(queryClient: QueryClient, shown: boolean) {
@@ -132,6 +139,7 @@ describe('the App page market: the index in hand at once, the download site behi
             React.createElement(SurfaceShownContext.Provider, { value: shown }, React.createElement(ExtensionsSettingsCard))))
       );
     });
+    if (shown) await showExtensions();
   }
   async function close() {
     await act(async () => root.render(null));
