@@ -1,3 +1,4 @@
+import type { CustomModelConnection, ModelProtocol } from '../models/custom-model';
 import type { TurnFileRef } from '../acp/models/turn-files';
 export type {
   CreationAttachmentManifest, CreationAttachmentTarget, CreationAttachmentDraftReceipt,
@@ -950,6 +951,9 @@ export type SessionpageSessionCreateModelChoice = {
  * 空列表要说得出为什么：两段 reason 各自解释自己那一组为什么缺席。
  */
 export type SessionpageSessionCreateModels = {
+  customModels?: CustomModelConnection[];
+  modelProtocols?: readonly ModelProtocol[];
+  customModel?: { modelOptional: true };
   harness: string;
   transport: 'acp' | 'pty';
   models: SessionpageSessionCreateModelChoice[];

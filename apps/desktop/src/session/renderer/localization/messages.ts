@@ -1,3 +1,4 @@
+import { enUSCustomModelMessages, zhCNCustomModelMessages } from './messages-custom-models';
 import { enUSAnnotationMessages, zhCNAnnotationMessages } from './messages-annotations';
 import { enUSCapabilityMessages, zhCNCapabilityMessages } from './messages-capabilities';
 import { enUSProjectMessages, zhCNProjectMessages } from './messages-projects';
@@ -1263,7 +1264,7 @@ const enUSCoreMessages = {
   'composer.platformModelUpgrade': 'Upgrade to unlock more models',
   'composer.platformModelUpgradeTitle': 'Available with a membership',
   'composer.platformModelUpgradeList': 'Available with a membership: {models}',
-  'composer.manageModels': 'Manage models',
+  'composer.manageModels': 'Configure custom models',
   'composer.modelDetailContext': 'Context',
   'composer.modelDetailSpeed': 'Speed',
   'composer.modelDetailIntelligence': 'Intelligence',
@@ -2443,7 +2444,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.platformModelUpgrade': '升级解锁更多模型',
   'composer.platformModelUpgradeTitle': '开通会员后可用',
   'composer.platformModelUpgradeList': '开通会员后可用：{models}',
-  'composer.manageModels': '管理模型',
+  'composer.manageModels': '配置自定义模型',
   'composer.modelDetailContext': '上下文',
   'composer.modelDetailSpeed': '速度',
   'composer.modelDetailIntelligence': '智能',
@@ -2478,6 +2479,7 @@ export const enUSMessages = {
   ...enUSRemoteHostMessages,
   ...enUSRemotePortMessages,
   ...enUSSubscriptionMessages,
+  ...enUSCustomModelMessages,
   ...enUSAgentStatusMessages,
   ...enUSResourceKindMessages,
   ...enUSAppSettingsMessages,
@@ -2504,6 +2506,7 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNRemoteHostMessages,
   ...zhCNRemotePortMessages,
   ...zhCNSubscriptionMessages,
+  ...zhCNCustomModelMessages,
   ...zhCNAgentStatusMessages,
   ...zhCNResourceKindMessages,
   ...zhCNAppSettingsMessages,

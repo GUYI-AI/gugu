@@ -1,3 +1,4 @@
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { diskWindowsShimReader } from '@gugu/session-core/exec';
@@ -566,7 +567,7 @@ export class LocalSessionProvider implements SessionProvider {
         providerSessionId: session.providerSessionId ?? undefined,
         forkFromProviderSessionId: storageForkedProviderSessionId ? undefined : forkFromProviderSessionId,
         isResuming: commandResuming,
-        model: session.model ?? '',
+        model: runtimeModelId(session.model) ?? '',
         effort: launchEffort ?? '',
         fastMode: session.fastMode === true,
       });
@@ -666,7 +667,7 @@ export class LocalSessionProvider implements SessionProvider {
         isResuming: commandResuming,
         // A diverting host replaces the argv wholesale, so the user's picks have to travel separately —
         // otherwise the composer's model / effort controls silently do nothing on that path.
-        model: session.model ?? undefined,
+        model: runtimeModelId(session.model),
         effort: launchEffort ?? undefined,
         fastMode: session.fastMode === true,
         userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),

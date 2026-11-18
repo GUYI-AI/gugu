@@ -1,4 +1,4 @@
-import type { AcpAgentApi, ApiKeyConnectionDescriptor, IAcpBehavior, IApiKeyConnectionBehavior } from '@gugu/session-core/agents/plugins';
+import type { AcpAgentApi, IAcpBehavior } from '@gugu/session-core/agents/plugins';
 
 /**
  * Antigravity(#2507):`agy_acp_server` 的「自定义 AI API 网关」认证方式 —— **按进程**选、**从不落盘**。
@@ -25,16 +25,6 @@ export const ANTIGRAVITY_GATEWAY_AUTH = {
   clientAuthMeta: { gateway: true },
 } as const satisfies NonNullable<IAcpBehavior['authenticateWhenAdvertised']>;
 
-export const antigravityApiKeyConnection = {
-  kind: 'supported',
-  endpoint: 'required',
-  model: 'required',
-  protocol: 'gemini-generate-content',
-  evidence:
-    '2026-11-12 MBP agy_acp_server 1.4.5(隔离 HOME / GEMINI_HOME,no-browser):launch 的四个 AGY_* 值 + ACP authenticate(gateway),'
-    + '三轮 POST /v1beta/models/<连接的模型>:streamGenerateContent、Bearer 是连接的 key;共享 settings.json 跑前跑后同一个 sha256',
-} as const satisfies ApiKeyConnectionDescriptor;
-
 /** 它读的网关那一族(含旧名):先删掉,shell 里漏进来的同族变量顶不掉所选的连接。 */
 export const ANTIGRAVITY_CONNECTION_UNSET_ENV = [
   'AGY_ACP_ENABLE_GATEWAY_AUTH',
@@ -49,20 +39,13 @@ export const ANTIGRAVITY_CONNECTION_UNSET_ENV = [
   'AGY_GATEWAY_HEADERS',
 ] as const;
 
-export const antigravityApiKeyConnectionBehavior: IApiKeyConnectionBehavior = {
-  launch: ({ apiKey, endpoint, model }) => {
-    if (!endpoint || !model) throw new Error('Antigravity needs an API address and a model with its API key');
-    return {
-      env: {
-        AGY_ACP_ENABLE_GATEWAY_AUTH: '1',
-        AGY_LLM_GATEWAY_URL: endpoint,
-        AGY_LLM_GATEWAY_API_KEY: apiKey,
-        AGY_LLM_GATEWAY_MODELS: model,
-      },
-      unsetEnv: ANTIGRAVITY_CONNECTION_UNSET_ENV,
-    };
-  },
-};
+export function antigravityCustomModelLaunch({ apiKey, endpoint, model }: { apiKey: string; endpoint: string; model?: string }) {
+  if (!model) throw new Error('Antigravity needs a model with its API key');
+  return {
+    env: { AGY_ACP_ENABLE_GATEWAY_AUTH: '1', AGY_LLM_GATEWAY_URL: endpoint, AGY_LLM_GATEWAY_API_KEY: apiKey, AGY_LLM_GATEWAY_MODELS: model },
+    unsetEnv: ANTIGRAVITY_CONNECTION_UNSET_ENV,
+  };
+}
 
 const OPENS_A_SESSION: ReadonlySet<PropertyKey> = new Set(['newSession', 'loadSession', 'resumeSession', 'unstable_forkSession']);
 

@@ -122,9 +122,9 @@ export function zcodePlatformEnv(model: SessionModelCapability | null | undefine
   const platform = model.platformProvider;
   if (!platform || !selected) return {};
   return zcodeProviderTableEnv({
-    providerId: ZCODE_PLATFORM_PROVIDER_ID,
+    providerId: model.providerName ?? ZCODE_PLATFORM_PROVIDER_ID,
     apiKey: platform.apiKey,
-    apiType: harnessPlatform.wireProtocol,
+    apiType: model.wireProtocol ?? harnessPlatform.wireProtocol,
     baseUrl: platform.baseUrl,
     selected,
     modelIds: [...new Set([selected, ...(model.platformModels ?? []).map((entry) => entry.id)])],

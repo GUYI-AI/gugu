@@ -184,6 +184,7 @@ export const codexSessionBundleDescriptor = {
     } }],
   },
   platform: harnessPlatform,
+  customModel: { modelOptional: true, evidence: 'Codex can use the configured model_provider without a -c model argument.' },
   // ❌ `CODEX_ACCESS_TOKEN`:凭据的出处是咕咕给这一家的独立配置根,同名 export 会让「面板上的账号」与「实际在用的账号」分家且不报错。
   // ❌ 这里也没有 `GUGU_CODEX_BIN`(#5702):咕咕起适配器时自己填(./index.ts),透传就是让 shell 顶掉面板上的选择。
   shellEnv: { passThrough: ['CODEX_HOME', 'GUGU_CODEX_ACP_TEST_AUDIT_PATH'], denied: ['CODEX_ACCESS_TOKEN'] },

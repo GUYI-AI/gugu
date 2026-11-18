@@ -42,7 +42,7 @@ export const platformModel: IPlatformModelBehavior = {
         // 实测 @github/copilot(隔离 HOME + 本地假端点,其余变量不变):
         //   不设这一个 → POST /v1/chat/completions;设成 responses → POST /v1/responses。
         // ⇒ 值由 ./platform.ts 的 wireProtocol 查出(`COPILOT_WIRE_API`),只有一处可改。
-        COPILOT_PROVIDER_WIRE_API: COPILOT_WIRE_API,
+        COPILOT_PROVIDER_WIRE_API: model.wireProtocol === 'openai-chat-completions' ? 'completions' : COPILOT_WIRE_API,
         COPILOT_PROVIDER_BASE_URL: platform.baseUrl,
         COPILOT_PROVIDER_API_KEY: platform.apiKey,
         COPILOT_PROVIDER_MODEL_ID: selectedModel,

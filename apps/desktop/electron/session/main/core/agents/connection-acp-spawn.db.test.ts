@@ -1,3 +1,5 @@
+import { releaseCustomModelForwarders } from './custom-model-forwarder';
+import { customModelOptionId } from '@gugu/session-core/models/custom-model';
 /**
  * #2507 mac1 实机:Codex 选着一把 API Key,聊天(ACP)腿每一轮都是「Missing bearer or basic authentication in header」。
  * 进程里有 OPENAI_API_KEY,可 codex 内置的 openai provider 不读它 —— 要靠连接给的 `-c model_provider=gugu_connection
@@ -6,19 +8,17 @@
  * 这里从头走到尾:真的连接表 → 主进程真的 run context 解析(`resolveLocalAgentRunContext`)→ worker 真的
  * `AgentPluginHost.buildAcpSpawn` 与真的 codex / claude 插件,看适配器拿到的 argv 与环境。
  */
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { AgentPluginHost, createPluginRegistry, type CLIAgentPluginProvider, type LiveSettingsCapability } from '@gugu/session-core/agents/plugins';
-import { AcpRuntime } from '@gugu/session-runtime/acp-agents';
+import { AgentPluginHost, createPluginRegistry, type CLIAgentPluginProvider } from '@gugu/session-core/agents/plugins';
 import { createLocalPluginFs } from '@gugu/session-core/agents/plugins/helpers';
 import { NodeExecutionContext } from '@gugu/session-core/exec';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { createScope } from '@gugu/session-wire/util';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
-import { makeAcpHarness, makeStartInput, testPluginHost } from '../../../../../../../packages/session-runtime/src/acp-agents/acp-test-support';
 
 const state = vi.hoisted(() => ({ fixture: null as RegistryFixture | null, home: '', userHome: '', clis: {} as Record<string, string> }));
 vi.mock('@main/db/client', () => ({
@@ -48,7 +48,11 @@ vi.mock('@main/core/agents/acp-bridge', () => ({ resolveHostAcpAdapterEntry: asy
 vi.mock('@main/core/settings/provider-settings-service', () => ({ providerOverrideSettings: { getItem: () => undefined } }));
 
 const { resolveLocalAgentRunContext } = await import('./agent-run-context');
-const { createHarnessConnection, selectHarnessConnection } = await import('./harness-connections');
+const { createHarnessConnection } = await import('./harness-connections');
+const { saveCustomModel, resolveCustomModelLaunch } = await import('./custom-models');
+const { connectionModelLaunch } = await import('../../../../sessionpage/connection-model-launch');
+const { claudeCustomModelSessionMeta } = await import('./custom-model-run-context');
+const { trustedPlatformInputPatch } = await import('../acp/runtime-process/session-meta');
 
 const PLATFORM = {
   providerId: 'gugu_platform',
@@ -67,7 +71,7 @@ beforeEach(async () => {
   state.userHome = join(state.home, 'user');
   vi.stubEnv('GUGU_HOME', join(state.home, 'gugu-home'));
   // 版本探针真跑:一个只会报版本的假 CLI,版本高于这一家聊天腿的下界。
-  for (const [id, version] of [['codex', 'codex-cli 0.999.0'], ['claude', '9.9.9 (Claude Code)']] as const) {
+  for (const [id, version] of [['codex', 'codex-cli 0.999.0'], ['claude', '9.9.9 (Claude Code)'], ['opencode', '1.999.0']] as const) {
     const path = join(state.home, id);
     await writeFile(path, `#!/bin/sh\necho "${version}"\n`);
     await chmod(path, 0o755);
@@ -76,7 +80,7 @@ beforeEach(async () => {
   state.fixture = await openRegistryFixture('empty');
   scope = createScope({ label: 'connection-acp-spawn', logger: noopLogger });
   const registry = createPluginRegistry<CLIAgentPluginProvider>();
-  for (const id of ['codex', 'claude']) registry.register(pluginRegistry.get(id)!);
+  for (const id of ['codex', 'claude', 'opencode']) registry.register(pluginRegistry.get(id)!);
   host = new AgentPluginHost({
     scope,
     registry,
@@ -87,6 +91,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   vi.unstubAllEnvs();
+  releaseCustomModelForwarders();
   await scope.dispose();
   state.fixture?.close();
   state.fixture = null;
@@ -95,8 +100,14 @@ afterEach(async () => {
 
 /** 聊天会话起适配器 —— 与 worker 同一条:宿主算 run context(role acp,按会话),worker 拿它起。 */
 async function acpSpawn(providerId: string, platform?: typeof PLATFORM) {
+  if (platform) state.fixture!.sqlite.prepare('UPDATE sessions SET config = ? WHERE id = ?').run(JSON.stringify({ version: '1', type: 'acp' }), 'session-1');
   const runContext = await resolveLocalAgentRunContext(providerId, { role: 'acp', sessionId: 'session-1' });
-  const spawn = await host.buildAcpSpawn(providerId, { cwd: state.home, runContext, ...(platform ? { platform } : {}) });
+  const custom = await resolveCustomModelLaunch(providerId, 'session-1');
+  const launch = custom && connectionModelLaunch({ providerId, surface: 'cui', ...custom });
+  const spawn = await host.buildAcpSpawn(providerId, {
+    cwd: state.home, runContext, ...(platform ? { platform } : {}),
+    ...(launch ? { capabilitySpawnEnv: launch.spawnEnv, capabilitySpawnArgs: launch.adapterArgs } : {}),
+  });
   if (!spawn.success) throw new Error(JSON.stringify(spawn.error));
   return spawn.data;
 }
@@ -104,21 +115,24 @@ async function acpSpawn(providerId: string, platform?: typeof PLATFORM) {
 const providerArgs = (args: readonly string[]) => args.filter((arg) => arg.startsWith('model_provider='));
 
 it('a selected Codex API key reaches the chat adapter as its own provider, with the key in OPENAI_API_KEY', async () => {
-  const key = await createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'codex-secret' });
-  await selectHarnessConnection('codex', key.id);
+  const key = await saveCustomModel({ name: 'Provider', apiKey: 'codex-secret', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], models: [{ id: 'model-two' }] });
+  state.fixture!.sqlite.exec("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'codex', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
   const spawn = await acpSpawn('codex');
   // 适配器把自己 argv 原样转给 `codex app-server`(codex-app-server-acp.mjs 的 inheritedArgs)。
   expect(providerArgs(spawn.args)).toEqual(['model_provider="gugu_connection"']);
   expect(spawn.args).toContain('model_providers.gugu_connection.env_key="OPENAI_API_KEY"');
-  expect(spawn.args).toContain('model_providers.gugu_connection.base_url="https://api.openai.com/v1"');
-  expect(spawn.env?.OPENAI_API_KEY).toBe('codex-secret');
+  expect(spawn.args.some((arg) => arg.startsWith('model_providers.gugu_connection.base_url="http://127.0.0.1:'))).toBe(true);
+  expect(spawn.env?.OPENAI_API_KEY).toMatch(/^sk-gugu-/);
   // key 只在环境里,❌ 上 argv(进程表人人可读)。
-  expect(JSON.stringify(spawn.args)).not.toContain('codex-secret');
+  expect(spawn.args).toContain('model="model-two"');
+  expect(JSON.stringify(spawn)).not.toMatch(/codex-secret|custom:/);
 });
 
 it('a Gugu platform model still wins over the selected key: its provider only, its token in OPENAI_API_KEY', async () => {
-  const key = await createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'codex-secret' });
-  await selectHarnessConnection('codex', key.id);
+  const key = await saveCustomModel({ name: 'Provider', apiKey: 'codex-secret', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], models: [{ id: 'model-two' }] });
+  state.fixture!.sqlite.exec("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'codex', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
   const spawn = await acpSpawn('codex', PLATFORM);
   expect(providerArgs(spawn.args)).toEqual(['model_provider=gugu_platform']);
   expect(JSON.stringify(spawn.args)).not.toContain('gugu_connection');
@@ -132,129 +146,57 @@ it('the native configuration and an account connection add no provider (codex us
   expect((await resolveLocalAgentRunContext('codex', { role: 'acp', connectionId: account.id })).connectionArgs).toBeUndefined();
 });
 
-it('a selected Claude API key reaches the chat adapter through its environment only', async () => {
-  const key = await createHarnessConnection({ providerId: 'claude', kind: 'api-key', apiKey: 'claude-secret' });
-  await selectHarnessConnection('claude', key.id);
+it('Claude keeps its ACP options and receives the selected upstream model through a protected settings file', async () => {
+  const key = await saveCustomModel({ name: 'Provider', apiKey: 'claude-secret', preset: null, endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com' }], models: [{ id: 'model-two' }] });
+  state.fixture!.sqlite.exec("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
   const spawn = await acpSpawn('claude');
-  expect(spawn.env?.ANTHROPIC_API_KEY).toBe('claude-secret');
-  expect(JSON.stringify(spawn.args)).not.toContain('claude-secret');
+  expect(spawn.env?.ANTHROPIC_AUTH_TOKEN).toMatch(/^sk-gugu-/);
+  expect(spawn.env?.ANTHROPIC_MODEL).toBe('model-two');
+  expect(JSON.stringify(spawn)).not.toMatch(/claude-secret|custom:/);
+  expect(spawn.args).not.toContain('--settings');
+  const sessionMeta = (await claudeCustomModelSessionMeta('session-1'))!;
+  const settings = sessionMeta.claudeCode.options.settings!;
+  const baseline = {
+    env: { CLAUDE_CONFIG_DIR: '/kept-config' },
+    allowedTools: ['mcp__gugu__read'],
+    disallowedTools: ['Write'],
+    persistSession: false,
+    plugins: [{ type: 'local', path: '/plugin' }],
+  };
+  expect(trustedPlatformInputPatch({ kind: 'session-meta', sessionMeta }, {
+    sessionMeta: { claudeCode: { options: baseline } },
+  })).toEqual({
+    sessionMeta: { claudeCode: { options: { ...baseline, settings, model: 'model-two' } } },
+  });
+  try {
+    if (process.platform !== 'win32') expect((await stat(settings)).mode & 0o777).toBe(0o600);
+    const document = await readFile(settings, 'utf8');
+    expect(document).not.toMatch(/claude-secret|custom:/);
+    expect(JSON.parse(document).env).toMatchObject({ ANTHROPIC_MODEL: 'model-two' });
+    const terminal = await resolveLocalAgentRunContext('claude', { role: 'tui', sessionId: 'session-1' });
+    expect(terminal.extraArgs).toEqual(['--settings', settings]);
+    expect(terminal.extraArgs.join(' ')).not.toContain('sk-gugu-');
+  } finally {
+    await rm(settings, { force: true });
+  }
 });
 
-// #2507 第 7 轮:key 走环境变量的家,新建任务菜单列出连接勾选的全部模型(`currentConnectionMenuModels`);会话选了哪个,
-// 主进程给这条会话算的 run context(聊天腿与终端腿同一个)里就是哪个 —— 它们的 launch 一次只吃一个模型。
-it.each(['qwen', 'copilot', 'zcode', 'hermes', 'antigravity'])(
-  '%s: the menu lists every model the key names, and the session runs the one it picked',
-  async (providerId) => {
-    const { currentConnectionMenuModels } = await import('./harness-connections');
-    state.fixture!.sqlite.exec(`INSERT OR IGNORE INTO projects (id, name, path) VALUES ('project', 'Project', '/repo');
-      INSERT INTO sessions (id, project_id, provider, runtime, config)
-      VALUES ('picked-second', 'project', '${providerId}', 'acp', '{"version":"1","type":"acp","model":"model-two"}');`);
-    expect(await currentConnectionMenuModels(providerId)).toBeNull();
-    const key = await createHarnessConnection({
-      providerId,
-      kind: 'api-key',
-      apiKey: `${providerId}-secret`,
-      endpoint: 'https://relay.example/v1',
-      models: ['model-one', 'model-two'],
-    });
-    await selectHarnessConnection(providerId, key.id);
-    expect(await currentConnectionMenuModels(providerId)).toEqual(['model-one', 'model-two']);
-
-    const launched = (context: Awaited<ReturnType<typeof resolveLocalAgentRunContext>>) =>
-      JSON.stringify({ env: context.credentialEnv, args: context.extraArgs });
-    for (const role of ['acp', 'tui'] as const) {
-      const picked = launched(await resolveLocalAgentRunContext(providerId, { role, sessionId: 'picked-second' }));
-      expect(picked, role).toContain('model-two');
-      expect(picked, role).not.toContain('model-one');
-      expect(picked, role).toContain(`${providerId}-secret`);
-    }
-    // 没有会话(模型目录探针、登录态):第一个。
-    const probe = launched(await resolveLocalAgentRunContext(providerId, { role: 'acp' }));
-    expect(probe).toContain('model-one');
-    expect(probe).not.toContain('model-two');
-  }
-);
-
-// #2507 第 8 轮(mac1 实机):Qwen 选着 API Key 连接,新建任务里挑了 gpt-4.1-mini —— 进程按环境跑的就是它,可每条会话都报
-// 「建这个任务时的模型这里用不了,改跑 $runtime|openai|gpt-4.1-mini(openai)」:运行时拿记录里的模型名去 set_config,
-// 而 qwen 自己的 id 是 `$runtime|openai|<名>(openai)`,名字被拒(`Model 'gpt-4.1-mini' not found for authType 'openai'`)。
-// 这里从头走:真的连接表 → 主进程真的 run context → 真的 AcpRuntime(这一家真的实时设置声明)→ 一个照 qwen 写法报 id、
-// 跑环境点名的那个模型、拒收裸名字的假 ACP agent。新开与续接两条路都不该去设模型,也不该有「模型不可用」。
-it.each(['qwen', 'copilot', 'zcode', 'hermes', 'antigravity'])(
-  '%s: a session on the model its key names through the environment starts on it with no model notice',
-  async (providerId) => {
-    state.fixture!.sqlite.exec(`INSERT OR IGNORE INTO projects (id, name, path) VALUES ('project', 'Project', '/repo');
-      INSERT INTO sessions (id, project_id, provider, runtime, config)
-      VALUES ('env-picked', 'project', '${providerId}', 'acp', '{"version":"1","type":"acp","model":"model-two"}');`);
-    const key = await createHarnessConnection({
-      providerId,
-      kind: 'api-key',
-      apiKey: `${providerId}-secret`,
-      endpoint: 'https://relay.example/v1',
-      models: ['model-one', 'model-two'],
-    });
-    await selectHarnessConnection(providerId, key.id);
-    const runContext = await resolveLocalAgentRunContext(providerId, { role: 'acp', sessionId: 'env-picked' });
-    expect(runContext.apiKeyConnection?.model).toBe('model-two');
-
-    for (const providerSessionId of [null, 'provider-session']) {
-      const h = makeAcpHarness({ providerId });
-      let spawnEnv: Record<string, string> = {};
-      // 这一家真的实时设置声明(qwen:reload-session;其余:acp-config-option),桥起进程时拿到的是宿主合成的那份环境。
-      h.deps.agentHost = testPluginHostFor(providerId, {
-        buildSpawn: (ctx) => {
-          spawnEnv = { ...ctx.env };
-          return { command: '/fake/node', args: ['agent.js'], env: {} };
-        },
-        connect: h.agent.behavior.connect,
-      });
-      // 假 agent:跑环境点名的那个模型,照 qwen 的写法报 id;拿别的值来设模型一律拒(qwen 0.22.3 的原话)。
-      const running = () => ['model-one', 'model-two'].filter((name) => JSON.stringify(spawnEnv).includes(name));
-      const configOptions = () => {
-        const [name] = running();
-        const id = `$runtime|openai|${name}(openai)`;
-        return [{
-          id: 'model', name: 'Model', category: 'model' as const, type: 'select' as const, currentValue: id,
-          options: [{ value: id, name: id }, { value: 'coder-model(qwen-oauth)', name: 'coder-model' }],
-        }];
-      };
-      h.agent.newSession.mockImplementation(async () => ({ sessionId: 'provider-session', configOptions: configOptions() }));
-      h.agent.loadSession.mockImplementation(async () => ({ configOptions: configOptions() }));
-      h.agent.setSessionConfigOption.mockImplementation(async ({ configId, value }: { configId: string; value: string }) => {
-        if (configId === 'model' && !configOptions()[0]!.options.some((option) => option.value === value)) {
-          throw new Error(`Model '${value}' not found for authType 'openai'`);
-        }
-        return { configOptions: configOptions() };
-      });
-      const runtime = new AcpRuntime(h.deps);
-      try {
-        const start = await runtime.startSession(makeStartInput({
-          sessionId: 'env-picked',
-          providerId,
-          providerSessionId,
-          // 宿主交给运行时的「自己的模型」= 会话记录里那个(host.ts `readSessionInjectionFacts`)。
-          model: 'model-two',
-          runContext: { ...runContext, cli: { kind: 'resolved', path: '/usr/local/bin/fake-agent' } },
-        }));
-        expect(start.success, `${providerSessionId}: ${JSON.stringify(start)}`).toBe(true);
-        expect(running(), 'the process runs the picked model').toEqual(['model-two']);
-        const modelSets = h.agent.setSessionConfigOption.mock.calls.filter(([params]) => params.configId === 'model');
-        expect(modelSets, `${providerSessionId}`).toEqual([]);
-        const history = JSON.stringify(runtime.getChatHistory('env-picked'));
-        expect(history).not.toContain('model-unavailable');
-        expect(history).not.toContain('$runtime|openai|');
-        await runtime.sendPrompt('env-picked', { text: 'hello', origin: 'typed' });
-        expect(h.agent.prompt).toHaveBeenCalledOnce();
-      } finally {
-        await runtime.dispose();
-      }
-    }
-  }
-);
-
-/** 只取这一家真的实时设置声明(启动时设不设模型看的就是它);其余照测试宿主,桥换成会记下环境的假进程。 */
-function testPluginHostFor(providerId: string, acpBehavior: { buildSpawn: (ctx: { env: Record<string, string> }) => { command: string; args: string[]; env: Record<string, string> }; connect: unknown }) {
-  const declared = pluginRegistry.get(providerId)!.capabilities.acp as { liveSettings?: LiveSettingsCapability };
-  expect(declared.liveSettings?.model, providerId).toBeDefined();
-  return testPluginHost({ providerId, liveSettings: declared.liveSettings, acpBehavior: acpBehavior as never });
-}
+it('the OpenCode writer and process receive the upstream model ID from the stored selection', async () => {
+  const modelId = 'family:model';
+  const connection = await saveCustomModel({
+    name: 'Provider', apiKey: 'opencode-secret', preset: null,
+    endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }],
+    models: [{ id: modelId }],
+  });
+  state.fixture!.sqlite.exec("INSERT INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)')
+    .run('session-1', 'project', 'opencode', 'acp', JSON.stringify({
+      version: '1', type: 'acp', model: customModelOptionId({ connectionId: connection.id, modelId }),
+    }));
+  const spawn = await acpSpawn('opencode');
+  const config = JSON.parse(spawn.env!.OPENCODE_CONFIG_CONTENT!);
+  expect(config.model).toBe(`api-key-connection/${modelId}`);
+  expect(config.provider['api-key-connection'].models).toHaveProperty([modelId]);
+  expect(JSON.stringify(spawn)).not.toMatch(/opencode-secret|custom:/);
+});
