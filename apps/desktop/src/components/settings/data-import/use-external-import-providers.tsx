@@ -154,7 +154,10 @@ export function useExternalImportProviders() {
       if (!page) throw new Error('Imported conversation is unavailable')
       setOpened({ ownerId, session, page })
     }
-    return [externalProvider('chatgpt', 'ChatGPT', 'codex', open)]
+    return [
+      externalProvider('chatgpt', 'ChatGPT', 'codex', open),
+      externalProvider('cursor', 'Cursor', 'cursor', open),
+    ]
   }, [ownerId])
 
   return {

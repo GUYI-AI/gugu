@@ -9,6 +9,7 @@ import {
   type ExternalImportSource,
 } from '../../src/session/shared/core/session-import/external-conversation-import'
 import { readChatGptConversation, readChatGptExport } from './chatgpt'
+import { readCursorHistory } from './cursor'
 import { ExternalHistoryStore } from './store'
 
 type Selection = {
@@ -27,13 +28,15 @@ type Scope = {
   owner: string
   selections: Partial<Record<ExternalImportSource, Selection>>
   pending: boolean
+  controller: AbortController
+  cursorScan?: Promise<Selection>
   runs: Map<string, ImportRun>
 }
 
 const BATCH_SIZE = 10
 
 function parseSource(source: unknown): ExternalImportSource {
-  if (source === 'chatgpt') return source
+  if (source === 'chatgpt' || source === 'cursor') return source
   throw new Error('Unsupported import source')
 }
 
@@ -47,7 +50,9 @@ export function registerExternalImportIpc(input: {
 
   const history = () => store ??= new ExternalHistoryStore(join(app.getPath('userData'), 'external-conversation-history'))
   const ownerChanged = () => {
-    if (activeScope?.owner !== input.getOwner()) activeScope = undefined
+    if (!activeScope || activeScope.owner === input.getOwner()) return
+    activeScope.controller.abort()
+    activeScope = undefined
   }
 
   function scope(event: IpcMainInvokeEvent): { window: BrowserWindow; scope: Scope } | null {
@@ -55,7 +60,7 @@ export function registerExternalImportIpc(input: {
     const owner = input.getOwner()
     if (!window || !owner || window.webContents !== event.sender || event.senderFrame !== event.sender.mainFrame) return null
     ownerChanged()
-    if (!activeScope) activeScope = { owner, selections: {}, pending: false, runs: new Map() }
+    if (!activeScope) activeScope = { owner, selections: {}, pending: false, controller: new AbortController(), runs: new Map() }
     return { window, scope: activeScope }
   }
 
@@ -65,13 +70,21 @@ export function registerExternalImportIpc(input: {
     return state
   }
 
-  input.ipc.handle(channels.scan, (event, source: unknown): ExternalImportScan | null => {
-    const state = scope(event)
-    if (!state) return null
+  input.ipc.handle(channels.scan, async (event, source: unknown): Promise<ExternalImportScan | null> => {
+    const entry = scope(event)
+    if (!entry) return null
+    const state = entry.scope
     const kind = parseSource(source)
-    const selected = state.scope.selections[kind]
-    const count = selected?.rows.filter(row => !history().has(state.scope.owner, kind, row.sourceId)).length ?? 0
-    return { count, pending: state.scope.pending, ...(count === 0 && { needsSource: true }) }
+    if (kind === 'cursor') {
+      const scan = state.cursorScan ??= readCursorHistory(state.controller.signal)
+        .finally(() => { state.cursorScan = undefined })
+      const selected = await scan
+      if (scope(event)?.scope !== state || !selected.rows.length) return null
+      state.selections.cursor = selected
+    }
+    const selected = state.selections[kind]
+    const count = selected?.rows.filter(row => !history().has(state.owner, kind, row.sourceId)).length ?? 0
+    return { count, pending: kind === 'chatgpt' && state.pending, ...(kind === 'chatgpt' && count === 0 && { needsSource: true }) }
   })
 
   input.ipc.handle(channels.pick, async event => {
