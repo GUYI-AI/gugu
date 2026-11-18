@@ -1,7 +1,7 @@
 import { motion, useTransform } from 'framer-motion'
 import { observer } from 'mobx-react-lite'
 import { useEffect, type ReactNode } from 'react'
-import { publishListHotkey, publishPanelToggle } from '@/lib/panelToggles'
+import { publishPanelToggle } from '@/lib/panelToggles'
 import { readRendererPlatform, shellRestoreLane, TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
@@ -25,8 +25,6 @@ export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
       publishPanelToggle('list:sessions', { open: isLeftOpen, label, toggle: toggleLeft, shortcut }),
     [isLeftOpen, label, shortcut, toggleLeft]
   )
-  // 对话页的列表栏用同一个键(useListColumnCollapse)。
-  useEffect(() => publishListHotkey(hotkey), [hotkey])
 
   return null
 })
