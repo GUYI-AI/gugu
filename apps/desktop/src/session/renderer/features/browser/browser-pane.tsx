@@ -1,6 +1,8 @@
 import { Folder, Globe, MessageSquare } from '@/lib/icons';
 import { openApp } from '@/components/appSlot/useOpenApp';
-import { openLinkTarget } from '@/lib/guguLinks';
+import { OpenSuperseded, openLinkTarget } from '@/lib/guguLinks';
+import { notify } from '@/lib/notices';
+import { messageForUser } from '@/lib/userFacingError';
 import { useBrowserAnnotations } from './browser-annotations';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +32,7 @@ import { ExtensionMark } from '../extensions/extension-mark';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem, WORKSPACE_APP_KIND } from '../chats/chat-tabs/chat-panel-item';
 import { openFileInSessionEditor } from '../sessions/stores/open-file-in-file-editor';
+import { BrowserStartTerminalOptions } from './browser-start-terminal-options';
 import { BrowserWorkspaceStartContent, type BrowserWorkspaceStart } from './browser-workspace-start-page';
 import { BrowserStartPage } from './browser-start-page';
 import { useSessionWorkspaceActions, type WorkspacePanelAction } from '../sessions/pane-empty-state';
@@ -41,6 +44,10 @@ import { BrowserPageSurface } from './browser-page-surface';
 import type { BrowserTabResource } from './browser-tab-resource';
 import { bindBrowserPageEvents } from './browser-webview-events';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
+
+function reportRecentToolError(error: unknown): void {
+  if (!(error instanceof OpenSuperseded)) notify({ tier: 'error', title: messageForUser(error) });
+}
 
 export const BrowserPane = observer(function BrowserPane({
   browserId,
@@ -70,14 +77,21 @@ export const BrowserPane = observer(function BrowserPane({
     if (item.id === 'review') return { ...item, shortcutSettingsKey: 'session.sidebarChanges', onClick: () => openInStart('review') };
     if (item.id === 'ports') return { ...item, onClick: () => openInStart('remote-ports') };
     if (item.id === 'browser') return { ...item, shortcutSettingsKey: 'session.openBrowser' };
-    if (item.id === 'terminal') return { ...item, shortcutSettingsKey: 'session.newTerminal', onClick: () => void session.openTerminalAsTab(undefined, paneId, startTabId) };
+    if (item.id === 'terminal') return {
+      ...item,
+      shortcutSettingsKey: 'session.newTerminal',
+      onClick: () => void session.openTerminalAsTab(undefined, paneId, startTabId),
+      trailing: !item.disabled && <BrowserStartTerminalOptions projectId={projectId} launch={(shell) => void session.openTerminalAsTab(shell, paneId, startTabId)} />,
+    };
     return item;
   }) : available;
   const workspaceStart: BrowserWorkspaceStart | undefined = startTabId ? {
     ctx: pane.ctx,
     openRecent: (item) => {
       if (item.kind === 'folder') openInStart(WORKSPACE_APP_KIND);
-      if (item.kind === 'file') void openFileInSessionEditor(projectId, sessionId, item.path, { from: startTabId, intent: 'navigate' });
+      if (item.kind === 'file') {
+        void openFileInSessionEditor(projectId, sessionId, item.path, { from: startTabId, intent: 'navigate' }).catch(reportRecentToolError);
+      }
     },
   } : undefined;
   return (
@@ -130,7 +144,9 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
       ctx: pane.ctx,
       openRecent: (item) => {
         if (item.kind === 'folder') openFolder();
-        if (item.kind === 'chat-file') void openLinkTarget({ kind: 'file', itemId: item.itemId }, { from: { chatId, tabId }, fileName: item.title });
+        if (item.kind === 'chat-file') {
+          void openLinkTarget({ kind: 'file', itemId: item.itemId }, { from: { chatId, tabId }, fileName: item.title, intent: 'navigate' }).catch(reportRecentToolError);
+        }
       },
     } : undefined}
   />;

@@ -38,7 +38,7 @@ export const VIEW_STATE_MODELS: readonly ViewStateModel[] = [
   { name: 'members panel', match: /^view:.*\/members$/, maxEntries: 32, maxBytes: 4 * 1024 },
   // A key with its account and chat ids is about 120 characters: some 30 fit.
   { name: 'last mention', match: /^view:.*\/mention-recall$/, maxEntries: 32, maxBytes: 4 * 1024 },
-  { name: 'recent tools', match: /^view:.*\/recent-tools$/, maxEntries: 24, maxBytes: 8 * 1024 },
+  { name: 'recent tools', match: /^view:.*\/recent-tools$/, maxEntries: 24, maxBytes: 4 * 1024 },
   { name: 'recent searches', match: /^view:.*\/search-recent$/, maxEntries: 32, maxBytes: 4 * 1024 },
   // Per account: which blocks are on screen (bounded by the screen's block count).
   { name: 'screen layout', match: /^view:[^/]*\/\/screen$/, maxEntries: 2, maxBytes: 16 * 1024 },

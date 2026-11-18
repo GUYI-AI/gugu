@@ -24,9 +24,9 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
   return (
     <div className="h-full overflow-auto bg-background-1 px-6 py-8 [container-type:inline-size]" data-workspace-new-tab-page="">
       <div className="mx-auto flex max-w-[960px] flex-col gap-9">
-        <section aria-label={translate('browser.tools')} className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-foreground">{translate('browser.tools')}</h2>
-          <div className="grid grid-cols-2 gap-2 max-[719px]:gap-1.5 @max-[260px]:grid-cols-1">
+        <section aria-label={translate('browser.workspaceTools')} className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-foreground">{translate('browser.workspaceTools')}</h2>
+          <div className="grid grid-cols-2 gap-2 @max-[260px]:grid-cols-1">
             {actions.map((item) => <div key={item.id} className="relative min-w-0">
               <PaneEmptyStateAction icon={item.icon} label={item.label} disabled={item.disabled}
                 shortcutSettingsKey={item.shortcutSettingsKey} title={item.title ?? item.label} onClick={item.onClick}

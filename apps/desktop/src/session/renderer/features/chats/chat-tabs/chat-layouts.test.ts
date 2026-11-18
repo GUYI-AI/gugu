@@ -4,6 +4,11 @@ import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { folderItem, type PanelItem } from './chat-panel-item';
 import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, revealChatWorkspaceMessage, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
 import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
+import { openChatWorkspaceNewTab } from '../../tabs/chat-workspace-new-tab';
+import { browserSessionStore } from '../../browser/browser-session-store';
+import type { BrowserState } from '../../browser/browser-tab-provider';
+import { recentToolPanel, trackRecentTools } from '../../browser/workspace-recent-tools';
+import { readViewState } from '@/lib/viewStateTable';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
 import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
 
@@ -309,4 +314,34 @@ describe('chat tool state is scoped to the conversation ID', () => {
     expect(viewStateCache.read(`chat:${sourceId}:tabs`)).toMatchObject({ chatToolLayout: 'full' });
     expect(JSON.stringify(source.snapshot)).not.toContain(topicTool);
   });
+});
+
+it('opens actual new browser tabs independently in a group and topic, retaining a hidden workspace', () => {
+  const scope = chatLayoutOf('start-page-test-group');
+  const topic = chatLayoutOf('start-page-test-topic');
+  const stopScope = scope.attachChatWorkspace();
+  const stopTopic = topic.attachChatWorkspace();
+  const stopRecent = trackRecentTools(scope);
+  try {
+    const first = openChatWorkspaceNewTab(scope)!;
+    expect(scope.chatWorkspaceMode).toBe('split');
+    const tools = scope.chatWorkspacePanes!.tools!.pane;
+    const state = tools.entries.get(first)!.state as BrowserState;
+    expect(state).toMatchObject({ workspaceStart: true, session: { workspaceId: 'start-page-test-group', sessionId: '', currentUrl: 'about:blank' } });
+    browserSessionStore.updateSession(state.browserId, { currentUrl: 'https://example.com/news', title: '测试网页', isLoading: false });
+    expect(readViewState(recentToolPanel(tools.ctx))).toMatchObject({ items: [{ kind: 'web', title: '测试网页' }] });
+
+    scope.setChatToolLayout('hidden');
+    const second = openChatWorkspaceNewTab(scope)!;
+    expect(scope.chatWorkspaceMode).toBe('hidden');
+    expect(tools.resolvedActiveTabId).toBe(second);
+    expect(tools.tabOrder).toEqual([first, second]);
+    expect(openChatWorkspaceNewTab(topic)).toBeTruthy();
+    expect(topic.chatWorkspacePanes!.tools!.pane.tabOrder).toHaveLength(1);
+    expect(readViewState(recentToolPanel(topic.focusedPane.ctx))).toEqual({});
+  } finally {
+    stopRecent();
+    stopTopic();
+    stopScope();
+  }
 });

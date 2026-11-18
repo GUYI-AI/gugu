@@ -225,7 +225,7 @@ export function BrowserToolbar({
             aria-label={translate('browser.urlLabel')}
             aria-invalid={urlError ? true : undefined}
             aria-describedby={urlError ? urlErrorId : undefined}
-            placeholder={translate('browser.urlPlaceholder')}
+            placeholder={translate(workspaceStart ? 'browser.workspaceUrlPlaceholder' : 'browser.urlPlaceholder')}
             spellCheck={false}
             autoCapitalize="none"
           />
