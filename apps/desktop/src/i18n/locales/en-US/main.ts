@@ -595,6 +595,7 @@ export default {
       "notificationsBlockedAction": "Open Device control",
       "notificationsSound": "Notification sound",
       "notificationsSoundAria": "Enable notification sound",
+      "notificationsAndroidReceiving": "Gugu is receiving new messages",
       "notificationsTest": "System banners",
       "notificationsTestAction": "Send a test notification",
       "notificationsTestAria": "Send a test notification",

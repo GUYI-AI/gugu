@@ -295,7 +295,9 @@ export const capacitorPlatform: AppPlatform = {
   async requestSystemPermission(permission) {
     if (permission === 'microphone') return toSystemPermissionState((await nativeAudioPermissions.requestPermissions({ permissions: ['microphone'] })).microphone)
     if (permission === 'notifications') {
-      return toSystemPermissionState((await LocalNotifications.requestPermissions()).display)
+      const { display } = await LocalNotifications.requestPermissions()
+      window.dispatchEvent(new Event('gugu:android-notification-permission'))
+      return toSystemPermissionState(display)
     }
     if (permission === 'batteryOptimization') {
       // 系统自己的确认框(「允许咕咕一直在后台运行?」),用户点完才 resolve。

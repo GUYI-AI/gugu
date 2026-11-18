@@ -586,6 +586,7 @@ export default {
       "notificationsBlockedAction": "去「本机控制」里开",
       "notificationsSound": "提示音",
       "notificationsSoundAria": "开启通知提示音",
+      "notificationsAndroidReceiving": "咕咕正在接收新消息",
       "notificationsTest": "系统横幅",
       "notificationsTestAction": "发送测试通知",
       "notificationsTestAria": "发送一条测试通知",

@@ -18,6 +18,7 @@ import { AgentPresencePrewarm } from './components/AgentPresencePrewarm'
 import { AgentStatusFeedBridge } from './components/AgentStatusFeedBridge'
 import { ImagePreviewProvider } from './components/ImagePreviewProvider'
 import { SessionExpiredNotice } from './components/SessionExpiredNotice'
+import { AndroidChatBackgroundWatch } from './mobile/AndroidChatBackgroundWatch'
 import { FullScreenLoader } from './components/FullScreenLoader'
 import { FirstRunGate } from './components/firstRun/FirstRunGate'
 import { ShellErrorBoundary } from './components/ShellErrorBoundary'
@@ -79,6 +80,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
         <ShareIntakeHost active={effectsActive} />
         <UnfinishedAgentCreateSweeper active={effectsActive} />
         <SessionExpiredNotice />
+        <AndroidChatBackgroundWatch active={effectsActive} />
         <ReleaseNotesOpener />
         <AppModalHost />
       </ImagePreviewProvider>
