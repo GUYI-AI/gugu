@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, MessageSquare, Users } from '@/lib/icons';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { AppFileMark } from '@renderer/features/extensions/app-file-mark';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { RailAppIcon } from '@/components/RailAppIcon';
@@ -97,10 +97,13 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
+/** A chat file the person opened (not an App's own chat file): its tab is named and marked by the file, whichever App shows it. */
+const showsFile = (item: PanelItem) => !!item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName);
+
 /** A panel tab's name as its strip says it: what its page called itself, else the file's name, else the App's tab title. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
-  const file = item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
+  const file = showsFile(item) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
     isFolderItem(item) ? folderName : item.kind && !file ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
@@ -110,9 +113,9 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
 
 const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
   if (isFolderItem(item)) return <Folder size={14} />;
-  const extensionId = item.kind ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
+  const extensionId = item.kind && !showsFile(item) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   const app = extensionId ? installedExtensionsStore.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
-  return app ? <RailAppIcon app={app} className="size-4" /> : <FileIcon filename={item.fileName ?? item.title} size={14} className="shrink-0 text-foreground-muted" />;
+  return app ? <RailAppIcon app={app} className="size-4" /> : <AppFileMark kind={item.kind} fileName={item.fileName ?? item.title} context="chat" size={14} />;
 });
 
 const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
@@ -122,7 +125,7 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   const surface = extensionSurfaceStore.said(null, groupPageSlot(chatId, tab.tabId));
   const ownBlock = useContext(ChatTabHostContext)?.ownBlock;
   const { t } = useTranslation('messaging');
-  // A project chat's file kept on its machine: the machine mark before the name, as a task row's, its setting one ⋯ away (owner 10-27).
+  // A project chat's file kept on its machine: the machine mark after the name, as its folder row and its page header put it; its setting one ⋯ away (owner 10-27).
   const fileHost = useFileHost(item.itemId && !isFolderItem(item) ? item.itemId : null);
   // 「单独一块」(spec session-page「一屏几块」,同任务里 App 那一枚):这张页自己占一块,贴在这一块右边;这个对话里就不留它了。
   // App 声明的菜单命令跟在后面,同任务里的 App 页签(工具栏那一行去掉了,owner 10-26 选 A)。
@@ -137,7 +140,7 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   if (fileHost) kindCommands.push({ id: `${tab.tabId}:file-storage`, label: t('fileStoredOn.settings'), group: 'file', run: openFileStorageSettings });
   return (
     <div className="contents" data-panel-tab={isFolderItem(item) ? 'folder' : (item.kind ?? 'preview')}>
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<><PanelIcon item={item} />{fileHost ? <FileHostMark host={fileHost} /> : null}</>} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<PanelIcon item={item} />} markSlot={fileHost ? <FileHostMark host={fileHost} /> : null} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
     </div>
   );
 });

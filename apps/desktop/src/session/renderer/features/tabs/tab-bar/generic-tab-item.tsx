@@ -26,6 +26,8 @@ export interface GenericTabItemProps {
   preSlot?: ReactNode;
   /** Muted text after the label (a same-named tab's distinguishing path, the diff group). */
   hint?: string;
+  /** A small mark that stays after the title (where a file is kept); unlike statusSlot it never gives way to the close X. */
+  markSlot?: ReactNode;
   /** Content shown under the absolutely-positioned close X (e.g. dirty dot, status icon). */
   statusSlot?: ReactNode;
   /** Renders the title in destructive color. */
@@ -57,6 +59,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   tooltip,
   preSlot,
   hint,
+  markSlot,
   statusSlot,
   hasError,
   kindCommands,
@@ -172,6 +175,7 @@ export const GenericTabItem = observer(function GenericTabItem({
               />
             ) : undefined
           }
+          markSlot={markSlot}
           statusSlot={statusSlot}
           actionSlot={fillButton}
           closeLabel={translate('task.closeTab', { label })}
