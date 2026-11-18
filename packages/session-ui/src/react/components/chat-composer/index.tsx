@@ -517,6 +517,7 @@ export function ChatComposer({
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
   const phoneSubmittingRef = useRef(false);
+  const stopPointer = useRef<number | null>(null);
   // 底排放不下时按档把标签收成图标(渐进披露),见 use-toolbar-disclosure.ts
   const toolbarDisclosure = useToolbarDisclosure();
   const [dragActive, setDragActive] = useState(false);
@@ -1071,7 +1072,15 @@ export function ChatComposer({
                     data-phone-send={phoneCapsule || undefined}
                     disabled={disabled || stopDisabled}
                     aria-busy={stopDisabled || undefined}
-                    onClick={onStop}
+                    onPointerDown={phoneActions ? (event) => { stopPointer.current = event.pointerId; } : undefined}
+                    onPointerCancel={phoneActions ? () => { stopPointer.current = null; } : undefined}
+                    onClick={phoneActions ? (event) => {
+                      // A touch begun on pending Send can be retargeted here when the commit ends.
+                      const pointerId = 'pointerId' in event.nativeEvent ? event.nativeEvent.pointerId : undefined;
+                      const startedHere = stopPointer.current !== null && (pointerId === undefined || stopPointer.current === pointerId);
+                      stopPointer.current = null;
+                      if (startedHere || event.detail === 0) onStop?.();
+                    } : onStop}
                     aria-label={translate('composer.stopGeneration')}
                   >
                     <span className={styles.stopIcon} aria-hidden="true" />
