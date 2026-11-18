@@ -299,6 +299,15 @@ export type DeclaredUploadState = { requestId: string; plan?: AttachmentUploadPl
 
 const nextUploadRequestId = (id: string) => contentRequestId('attachment-upload-permit', id)
 
+function isExpiredPermit(error: unknown): boolean {
+  return error instanceof AttachmentsError && error.status === 410 && error.code === 'expired'
+}
+
+async function advanceUploadPermit(upload: DeclaredUploadState): Promise<void> {
+  upload.requestId = await nextUploadRequestId(upload.requestId)
+  upload.plan = undefined
+}
+
 async function readManagedUploadPlan(endpoint: AttachmentsEndpoint, file: { size: number; contentType: string },
   scope: { chat_id: string | null; as: string }, upload: DeclaredUploadState, signal?: AbortSignal) {
   for (;;) {
@@ -307,9 +316,9 @@ async function readManagedUploadPlan(endpoint: AttachmentsEndpoint, file: { size
       const { plan } = await retryUploadRequest(async () => ({ status: 200, plan: await planAttachmentUpload(endpoint, file, request, signal) }), { used: 0 }, signal)
       return plan
     } catch (error) {
-      if (!upload.mayRollOver || !(error instanceof AttachmentsError) || error.status !== 410 || error.code !== 'expired') throw error
+      if (!upload.mayRollOver || !isExpiredPermit(error)) throw error
       // After a restart or a lost signing response, each confirmed expiry leads to the same successor.
-      upload.requestId = await nextUploadRequestId(upload.requestId)
+      await advanceUploadPermit(upload)
     }
   }
 }
@@ -333,28 +342,56 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
   file: { bytes: Uint8Array | Blob; name: string; contentType: string }, message: { id: string; chat_id: string | null; as: string }, hooks: DeclaredUploadHooks = {}): Promise<boolean> {
   const scope = { chat_id: message.chat_id, as: message.as }
   const upload = hooks.upload ?? declaredUploadState(declared.staging_key, message.id, declared.plan)
-  const plan = await storeManagedAttachment(endpoint, upload, { ...file, name: file.name || 'file' }, scope, {
-    ...hooks, declaredSize: declared.size_bytes,
-    allowExisting: attempt => attempt > 1 || !declared.plan || upload.plan !== declared.plan,
-  })
-  if (!plan) return false
-  const uploadKey = plan.staging_key ?? declared.staging_key
-  const until = Date.now() + (hooks.declarationWaitMs ?? 0)
-  let finishFailures = 0
-  for (let wait = 500; ; wait = Math.min(wait * 2, 8000)) {
-    if (hooks.stopped?.()) return false
-    try {
-      await finishAttachment(endpoint, { staging_key: declared.staging_key, ...(uploadKey !== declared.staging_key ? { upload_key: uploadKey } : {}),
-        file_name: file.name, content_type: file.contentType, message_id: message.id }, hooks.signal)
-      return true
-    } catch (error) {
-      // If the response was lost, repeat the idempotent finish with the same keys and no new storage writes.
-      if (error instanceof AttachmentsError && error.code === 'upload_not_found') {
-        if (Date.now() + wait > until) throw error
-      } else if (!isTransientStorageError(error) || ++finishFailures >= MAX_STORAGE_ATTEMPTS) throw error
-      await waitForAttachmentRetry(wait, hooks.signal)
+  const prefix = declared.staging_key.startsWith('staging/') ? declared.staging_key.slice(0, declared.staging_key.lastIndexOf('/') + 1) : undefined
+  const requestKey = () => prefix && prefix + upload.requestId
+
+  async function finish(uploadKey: string): Promise<boolean> {
+    const until = Date.now() + (hooks.declarationWaitMs ?? 0)
+    let finishFailures = 0
+    for (let wait = 500; ; wait = Math.min(wait * 2, 8000)) {
+      if (hooks.stopped?.()) return false
+      try {
+        await finishAttachment(endpoint, { staging_key: declared.staging_key, ...(uploadKey !== declared.staging_key ? { upload_key: uploadKey } : {}),
+          file_name: file.name, content_type: file.contentType, message_id: message.id }, hooks.signal)
+        return true
+      } catch (error) {
+        // If the response was lost, repeat the idempotent finish with the same keys and no new storage writes.
+        if (error instanceof AttachmentsError && error.code === 'upload_not_found') {
+          if (Date.now() + wait > until) throw error
+        } else if (!isTransientStorageError(error) || ++finishFailures >= MAX_STORAGE_ATTEMPTS) throw error
+        await waitForAttachmentRetry(wait, hooks.signal)
+      }
     }
   }
+
+  // A restarted sender may still hold the file after its bytes reached storage. Finish can verify those bytes
+  // before we ask for a signature, which an immutable store cannot issue after a successful write.
+  const knownKey = upload.plan?.staging_key ?? (requestKey() === declared.staging_key ? declared.staging_key : undefined)
+  if (!declared.plan && knownKey) {
+    try {
+      return await finish(knownKey)
+    } catch (error) {
+      if (upload.mayRollOver && isExpiredPermit(error)) {
+        await advanceUploadPermit(upload)
+      } else if (!(error instanceof AttachmentsError && error.status === 409 && error.code === 'upload_missing')) {
+        throw error
+      }
+    }
+  }
+
+  let plan: AttachmentUploadPlan | undefined
+  try {
+    plan = await storeManagedAttachment(endpoint, upload, { ...file, name: file.name || 'file' }, scope, {
+      ...hooks, declaredSize: declared.size_bytes,
+      allowExisting: attempt => attempt > 1 || !declared.plan || upload.plan !== declared.plan,
+    })
+  } catch (error) {
+    const key = requestKey()
+    // A successor or a concurrent attempt may already have written these bytes.
+    if (!key || !(error instanceof AttachmentsError) || error.route !== 'upload' || error.status !== 409 || error.code !== 'upload_used') throw error
+    return finish(key)
+  }
+  return plan ? finish(plan.staging_key ?? declared.staging_key) : false
 }
 
 async function storeManagedAttachment(endpoint: AttachmentsEndpoint, upload: DeclaredUploadState, file: { bytes: Uint8Array | Blob; name: string; contentType: string },
@@ -379,7 +416,7 @@ async function storeManagedAttachment(endpoint: AttachmentsEndpoint, upload: Dec
       return plan
     } catch (error) {
       if (!(error instanceof AttachmentsError) || hooks.stopped?.()) throw error
-      if (error.status === 410 && error.code === 'expired') {
+      if (isExpiredPermit(error)) {
         if (error.route === 'upload') {
           // The local cap may be stale after completed parts extended it. Check the same permit with the server.
           if (revalidated?.requestId === upload.requestId && revalidated.expiresAt === plan.expires_at) throw error
@@ -387,7 +424,7 @@ async function storeManagedAttachment(endpoint: AttachmentsEndpoint, upload: Dec
         } else {
           // The multipart control routes confirm that this permit ended or its bytes were already registered.
           if (rolled || !upload.mayRollOver) throw error
-          upload.requestId = await nextUploadRequestId(upload.requestId)
+          await advanceUploadPermit(upload)
           partAttempts.clear(); reopened = false; rolled = true
         }
       } else {

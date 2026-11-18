@@ -120,12 +120,68 @@ describe('attachment bytes go up behind their message', () => {
     // Another device sent the second one: this device holds no copy and leaves it to that device.
     server.pending.mockResolvedValue({ uploads: [{ ...pending('message-1', 'a'.repeat(64)), staging_key: key }, pending('message-2', 'b'.repeat(64))] })
     server.plan.mockResolvedValue(plan(key))
+    server.finish.mockRejectedValueOnce(refuse(409, 'upload_missing'))
     await resumeAttachmentUploads()
-    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledTimes(2))
     expect(server.plan).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ request_id: requestId, size_bytes: 5, content_type: 'text/plain', chat_id: 'chat', as: 'sender' }))
+    expect(server.finish.mock.invocationCallOrder[0]).toBeLessThan(server.plan.mock.invocationCallOrder[0]!)
     expect(await (server.store.mock.calls[0]![1] as Blob).text()).toBe('bytes')
     // The name is what finish classifies the bytes by: a text file resumed is still a document.
     expect(server.finish).toHaveBeenCalledWith({ staging_key: key, file_name: 'notes.txt', content_type: 'text/plain', message_id: 'message-1' })
+  })
+
+  it('settles already-staged bytes after a restart without planning or uploading again', async () => {
+    const key = 'staging/owner/11111111-1111-4111-8111-111111111111'
+    const message = { ...task(), pendingKey: key }
+    copies.set(message.sha256, new Blob(['bytes']))
+    server.pending.mockResolvedValue({ uploads: [{ ...pending(message.messageId, message.sha256), staging_key: key }] })
+    await resumeAttachmentUploads()
+    await vi.waitFor(() => expect(progress.set).toHaveBeenLastCalledWith(message.messageId))
+    expect(server.finish).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ staging_key: key, message_id: message.messageId }))
+    expect(server.plan).not.toHaveBeenCalled()
+    expect(server.store).not.toHaveBeenCalled()
+  })
+
+  it('walks two expired generations and plans only the unissued successor', async () => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    const next = await contentRequestId('attachment-upload-permit', id)
+    const last = await contentRequestId('attachment-upload-permit', next)
+    const key = `staging/owner/${id}`
+    const lastKey = `staging/owner/${last}`
+    server.finish.mockRejectedValueOnce(refuse(410, 'expired'))
+    server.plan.mockRejectedValueOnce(refuse(410, 'expired')).mockResolvedValue(plan(lastKey))
+    await beginAttachmentUpload({ ...task(), pendingKey: key }, new Blob(['bytes']), null)
+    expect(server.finish.mock.calls.map(([body]) => body.upload_key ?? body.staging_key)).toEqual([key, lastKey])
+    expect(server.finish.mock.calls.every(([body]) => body.staging_key === key)).toBe(true)
+    expect(server.plan.mock.calls.map(([body]) => body.request_id)).toEqual([next, last])
+    expect(server.store).toHaveBeenCalledOnce()
+  })
+
+  it.each(['upload_used', 'conflict'])('only a precise signing conflict can finish a successor (%s)', async code => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    const key = `staging/owner/${id}`
+    const next = await contentRequestId('attachment-upload-permit', id)
+    const nextKey = `staging/owner/${next}`
+    server.finish.mockRejectedValueOnce(refuse(410, 'expired'))
+    server.plan.mockRejectedValue(refuse(409, code))
+    const run = beginAttachmentUpload({ ...task(), pendingKey: key }, new Blob(['bytes']), null)
+    if (code === 'upload_used') {
+      await run
+      expect(server.finish).toHaveBeenCalledTimes(2)
+      expect(server.finish).toHaveBeenLastCalledWith(expect.objectContaining({ staging_key: key, upload_key: nextKey }))
+    } else {
+      await expect(run).rejects.toMatchObject({ code })
+      expect(server.finish).toHaveBeenCalledOnce()
+    }
+    expect(server.plan).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ request_id: next }))
+    expect(server.store).not.toHaveBeenCalled()
+  })
+
+  it('keeps a genuine denial from finish and does not obtain a plan', async () => {
+    const key = 'staging/owner/11111111-1111-4111-8111-111111111111'
+    server.finish.mockRejectedValue(refuse(403, 'denied'))
+    await expect(beginAttachmentUpload({ ...task(), pendingKey: key }, new Blob(['bytes']), null)).rejects.toMatchObject({ code: 'denied' })
+    expect(server.plan).not.toHaveBeenCalled()
   })
 
   it('a restart whose question to the server fails asks again by itself, then resumes', async () => {
@@ -180,9 +236,10 @@ describe('attachment bytes go up behind their message', () => {
     queue.dispose()
     queue = createDeclaredUploads({ endpoint, copyOf: async () => new Blob(['bytes']), progress: vi.fn() })
     server.pending.mockResolvedValue({ uploads: [{ ...pending('message-1', message.sha256), staging_key: key }] })
+    server.finish.mockRejectedValueOnce(refuse(410, 'expired'))
     await resumeAttachmentUploads()
-    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledOnce())
-    expect(server.plan.mock.calls.map(([body]) => body.request_id)).toEqual([id, next, id, next])
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledTimes(2))
+    expect(server.plan.mock.calls.map(([body]) => body.request_id)).toEqual([id, next, next])
     expect(issued.size).toBe(2)
     expect(server.finish).toHaveBeenCalledWith(expect.objectContaining({ staging_key: key, upload_key: nextKey, message_id: message.messageId }))
   })
