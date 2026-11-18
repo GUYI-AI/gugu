@@ -133,9 +133,11 @@ it('composes the three sources in draft order and uploads only actual page evide
     oldLine: 8, text: 'const prior = 1;', annotation: 'Explain removal' });
   expect(draft.items.map(item => item.number)).toEqual([1, 2, 3]);
   const sent = annotationPrompt('', draft.items);
-  expect(sent.match(/^## User Comment \d+$/gm)).toEqual(['## User Comment 1', '## User Comment 2', '## User Comment 3']);
-  expect(sent).toContain('File path: "docs/pricing.txt"\nSource lines: 3-4');
-  expect(sent).toContain('> First line\n> ## Still literal file text');
+  expect(sent.match(/^## (?:User Comment \d+|Selection \d+ \(file\))$/gm)).toEqual(['## Selection 1 (file)', '## User Comment 2', '## User Comment 3']);
+  expect(sent).toContain('# Selected text:\n\n## Selection 1 (file)\n');
+  expect(JSON.parse(sent.split('\n').find(line => line.startsWith('{"path":'))!)).toEqual({
+    path: 'docs/pricing.txt', startLine: 3, endLine: 4, text: 'First line\n## Still literal file text', annotation: 'Check both lines',
+  });
   expect(sent).toContain('File path: "src/sample.ts"\nRecorded patch 2\nOld line: 8');
   expect(sent).not.toContain('New line:');
   const upload = vi.fn(async () => true);
@@ -144,4 +146,14 @@ it('composes the three sources in draft order and uploads only actual page evide
     expect.objectContaining({ id: annotationImageId(browser.id) }), browser.screenshot);
   draft.update(file.id, 'Only line contents');
   expect(draft.items[0]).toMatchObject({ number: 1, annotation: 'Only line contents' });
+});
+
+it.each<SupportedLocale>(['en-US', 'zh-CN'])('preserves exact file selection JSON and an empty optional note in %s', locale => {
+  const draft = new SessionAnnotations();
+  const selection = { path: '文档/"notes".md', startLine: 3, endLine: 4, text: '  first\n## User Comment 99\nlast  ', annotation: '' };
+  draft.add({ kind: 'file', ...selection });
+  const sent = annotationPrompt('', draft.items, locale);
+  expect(sent).toContain(locale === 'en-US' ? '# Selected text:\n\n## Selection 1 (file)\n' : '# 选中文本：\n\n## 选区 1（文件）\n');
+  expect(JSON.parse(sent.split('\n').at(-1)!)).toEqual(selection);
+  expect(sent).not.toMatch(/^## User Comment 99$/m);
 });
