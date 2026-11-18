@@ -39,6 +39,7 @@ import { registerGuguAppSearchTool, type AppSearchHit } from './mcp/gugu-app-sea
 import { buildAgentIdentityBlock } from '@gugu/core/local/agent/deviceCommandRuntime'
 import type { McpServerOwner } from '@gugu/session-core/mcp'
 import { startupDiscovery } from './sessionpage/startup-discovery'
+import type { FileReads, FileReadRequest, FileReadOptions } from '@gugu/core/shared/fileReads'
 import type { FileActor, FileRef, ResolvedFile } from '@gugu/core/shared/fileResolver'
 import type { GuguMcpRequestTracker } from './gugu-mcp-host'
 import { anySignal } from '@gugu/core/shared/anySignal'
@@ -196,6 +197,7 @@ export type GuguMcpContext = GuguMcpContextBase & (
       threadRootId: string | null
       guguHome: string
       getAccessToken: (signal?: AbortSignal) => Promise<string>
+      requestFile?: (ref: FileRef, actorId: string, options: FileReadOptions) => FileReadRequest
       resolveFile?: (ref: FileRef, actorId: string) => Promise<ResolvedFile>
       publishFile?: ProjectFilePublish
       attachments?: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
@@ -411,6 +413,7 @@ export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, act
 
 export interface BuildSocialBridgeDeps {
   webSearch?: SessionWebSearch
+  requestFile?: FileReads['request']
   resolveFile?: (ref: FileRef, actor: FileActor) => Promise<ResolvedFile>
   /** The host's project file publisher (the composer's): a file of a chat that keeps files on this machine, with its message. */
   publishFile?: ProjectFilePublish
@@ -478,6 +481,7 @@ export async function buildSocialBridge(
       ...(deps.personalAssistant ? { personalAssistant: true as const } : {}),
       ...(deps.personalAssistant && deps.assistantWork ? { assistantWork: deps.assistantWork } : {}),
       getAccessToken: async (signal?: AbortSignal) => (await getBoundAuth(signal)).accessToken,
+      ...(deps.requestFile ? { requestFile: (ref: FileRef, actorId: string, options: FileReadOptions) => deps.requestFile!(ref, { accountId: expectedOwnerUserId, actorId }, options) } : {}),
       ...(deps.resolveFile ? { resolveFile: (ref: FileRef, actorId: string) => deps.resolveFile!(ref, { accountId: expectedOwnerUserId, actorId }) } : {}),
       ...(deps.publishFile ? { publishFile: async (...args: Parameters<ProjectFilePublish>) => {
         await getBoundAuth()

@@ -19,17 +19,27 @@ const access = () => createDesktopFileAccess({
 })
 
 describe('R3 program file cancellation at the account resolver', () => {
-  it.each([false, true])('k3 forwards the same signal with localOnly=%s', async localOnly => {
+  it.each([false, true])('forwards caller cancellation with localOnly=%s', async localOnly => {
     const controller = new AbortController()
     await access().resolveAccount({ id: 'file' }, 'agent', { signal: controller.signal, localOnly })
     expect(resolve).toHaveBeenCalledExactlyOnceWith({ item_id: 'file' }, { accountId: 'owner', actorId: 'agent' }, {
-      ...(localOnly ? { localOnly: true } : {}), signal: controller.signal,
+      ...(localOnly ? { localOnly: true } : {}), signal: expect.any(AbortSignal),
     })
+    const signal = (resolve.mock.lastCall as unknown as [unknown, unknown, { signal: AbortSignal }])[2].signal
+    controller.abort('closed')
+    expect(signal.reason).toBe('closed')
   })
-  it('k5 keeps an unscoped read free of a cancellation signal', async () => {
-    await access().resolveAccount({ id: 'file' }, null)
+  it('binds even an unscoped read to the signed-in account', async () => {
+    const files = access()
+    files.ownerChanged('owner')
+    await files.resolveAccount({ id: 'file' }, null)
     expect(resolve).toHaveBeenCalledTimes(1)
     const options = (resolve.mock.calls as unknown as unknown[][])[0]?.[2]
-    expect(options === undefined || !Object.hasOwn(options as object, 'signal')).toBe(true)
+    const signal = (options as { signal: AbortSignal }).signal
+    files.ownerChanged('owner')
+    expect(signal.aborted).toBe(false)
+    files.ownerChanged(null)
+    files.ownerChanged('owner')
+    expect(signal.aborted).toBe(true)
   })
 })

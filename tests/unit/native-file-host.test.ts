@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNativeFileHost } from '../../apps/desktop/electron/nativeFileHost'
-import { FILE_CHUNK_BYTES, type FileBytes, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { FILE_CHUNK_BYTES, type FileBytes, type FileProviders, type FileRevision } from '@gugu/core/shared/fileResolver'
+
+import { createFileReads } from '@gugu/core/shared/fileReads'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -13,7 +15,7 @@ const sha = (data: Uint8Array) => createHash('sha256').update(data).digest('hex'
 const commitment = { size_bytes: bytes.length, sha256: sha(bytes), content_type: 'application/octet-stream' }
 const revision: FileRevision = { ...commitment, source: 'local', item_id: 'item', version: 1, chat_id: 'group', file_name: 'file.bin', relative_path: 'file.bin', host_account_id: 'owner', host_device_id: 'device', host_project_id: 'project' }
 const context = { ref: { item_id: 'item' }, actor: { accountId: 'owner', actorId: 'owner' } }
-async function fixture() {
+async function fixture(preview?: FileProviders['preview']) {
   const root = await mkdtemp(join(tmpdir(), 'gugu-native-file-153-')); roots.push(root)
   let owner: string | null = 'owner'
   const file: FileBytes = { size: bytes.length, read: vi.fn(async (offset, length) => bytes.slice(offset, offset + length)), dispose: vi.fn(async () => {}) }
@@ -22,7 +24,10 @@ async function fixture() {
   const openPath = vi.fn(async (_path: string) => '')
   const publish = vi.fn(async (_chat: string, _file: unknown, _actor: string, _message?: unknown): Promise<unknown> => ({ id: 'item', version: 1 }))
   const publication = vi.fn(async () => true)
-  const host = createNativeFileHost({ publish, publication, root, owner: async () => owner, alive: () => true, local, ssh, openPath, published: () => {} })
+  const unavailable = async (): Promise<never> => { throw new Error('Unexpected cloud read') }
+  const providers: FileProviders = { local, ssh, metadata: unavailable, managed: unavailable, temporary: unavailable, preview }
+  const reads = createFileReads(providers)
+  const host = createNativeFileHost({ publish, publication, root, owner: async () => owner, alive: () => true, reads, metadata: providers.metadata, openPath, published: () => {} })
   const begin = () => host.stage(1, { op: 'begin', name: '../file.bin', revision: commitment }) as Promise<{ id: string }>
   return { root, host, publish, publication, local, ssh, file, openPath, begin, account: (value: string | null) => { owner = value } }
 }
@@ -94,26 +99,27 @@ describe('native file capabilities are scoped and never expose incomplete origin
 
   it('refuses another renderer, account or actor without consuming the rightful file capability', async () => {
     const f = await fixture()
-    const opened = await f.host.read(1, context, { op: 'open', revision }) as { id: string }
-    await expect(f.host.read(2, context, { op: 'read', id: opened.id, offset: 0, length: 1 })).rejects.toThrow('unavailable')
-    await expect(f.host.read(1, { ...context, actor: { accountId: 'owner', actorId: 'other-agent' } }, { op: 'read', id: opened.id, offset: 0, length: 1 })).rejects.toThrow('another reader')
+    const id = 'open'
+    await f.host.read(1, { ...context, op: 'request', id, purpose: 'bytes' })
+    await expect(f.host.read(2, { ...context, op: 'read', id, offset: 0, length: 1 })).rejects.toThrow('unavailable')
+    await expect(f.host.read(1, { ...context, actor: { accountId: 'owner', actorId: 'other-agent' }, op: 'read', id, offset: 0, length: 1 })).rejects.toThrow('another reader')
     f.account('other-owner')
-    await expect(f.host.read(1, { ...context, actor: { accountId: 'other-owner', actorId: 'other-owner' } }, { op: 'read', id: opened.id, offset: 0, length: 1 })).rejects.toThrow('account or window changed')
+    await expect(f.host.read(1, { ...context, op: 'read', id, offset: 0, length: 1 })).rejects.toThrow('account or window changed')
     f.account('owner')
-    expect(await f.host.read(1, context, { op: 'read', id: opened.id, offset: 0, length: 3 })).toEqual(bytes)
-    await expect(f.host.read(1, context, { op: 'read', id: opened.id, offset: -1, length: 1 })).rejects.toThrow('Invalid file range')
-    await f.host.read(1, context, { op: 'dispose', id: opened.id })
+    expect(await f.host.read(1, { ...context, op: 'read', id, offset: 0, length: 3 })).toEqual(bytes)
+    await expect(f.host.read(1, { ...context, op: 'read', id, offset: -1, length: 1 })).rejects.toThrow('Invalid file range')
+    await f.host.read(1, { ...context, op: 'dispose', id })
     expect(f.file.dispose).toHaveBeenCalledOnce()
   })
 
   it('a metadata probe never reads bytes, and closing a window during a probe cannot resurrect a handle', async () => {
     const f = await fixture()
-    expect(await f.host.read(1, context, { op: 'local' })).toEqual(revision)
+    expect(await f.host.read(1, { ...context, op: 'resolve', id: 'metadata', localOnly: true })).toEqual({ status: 'ready', revision })
     expect(f.file.read).not.toHaveBeenCalled()
     let resolve!: (value: { revision: FileRevision; open(): Promise<FileBytes> }) => void, entered!: () => void
     const probing = new Promise<void>(done => { entered = done })
     f.local.mockImplementationOnce(() => { entered(); return new Promise(done => { resolve = done }) })
-    const waiting = f.host.read(1, context, { op: 'open', revision })
+    const waiting = f.host.read(1, { ...context, op: 'resolve', id: 'pending' })
     // Synchronize on the actual dependency call, not a wall-clock delay.
     await probing
     expect(f.local).toHaveBeenCalledTimes(2)
@@ -123,10 +129,35 @@ describe('native file capabilities are scoped and never expose incomplete origin
     expect(f.file.read).not.toHaveBeenCalled()
   })
 
+  it('carries a large preview in bounded frames of the display content', async () => {
+    const pixels = new Uint8Array(FILE_CHUNK_BYTES + 1).fill(123)
+    const f = await fixture(async () => new Blob([pixels], { type: 'image/png' }))
+    const named = { ...context, id: 'picture' }
+    await f.host.read(1, { ...named, op: 'resolve', purpose: 'preview' })
+    await expect(f.host.read(1, { ...named, op: 'read', offset: 0, length: 1 })).rejects.toThrow()
+    await expect(f.host.read(1, { ...named, op: 'preview' })).resolves.toEqual({ size: pixels.length, type: 'image/png' })
+    await expect(f.host.read(1, { ...named, op: 'read', offset: 0, length: pixels.length })).rejects.toThrow('Invalid file range')
+    await expect(f.host.read(1, { ...named, op: 'read', offset: FILE_CHUNK_BYTES, length: 1 })).resolves.toEqual(pixels.slice(-1))
+    expect(f.file.read).not.toHaveBeenCalled()
+    await f.host.read(1, { ...named, op: 'dispose' })
+  })
+
+  it('cancels a pending waiter independently even when two windows use the same id', async () => {
+    const f = await fixture()
+    const cmd = { ...context, op: 'request' as const, purpose: 'bytes' as const, id: 'same-id' }
+    const first = f.host.read(1, cmd)
+    const second = f.host.read(2, cmd)
+    await f.host.read(1, { ...context, op: 'cancel', id: cmd.id })
+    await expect(first).rejects.toThrow()
+    await expect(second).resolves.toMatchObject({ route: 'local', revision })
+    await expect(f.host.read(2, { ...context, op: 'read', id: cmd.id, offset: 0, length: 3 })).resolves.toEqual(bytes)
+    await f.host.read(2, { ...context, op: 'dispose', id: cmd.id })
+  })
+
   it('dropping a scope aborts only its pending stages and disposes only its snapshots', async () => {
     const f = await fixture(), own = await f.begin()
     const other = await f.host.stage(2, { op: 'begin', name: 'other.bin', revision: commitment }) as { id: string }
-    await f.host.read(1, context, { op: 'open', revision })
+    await f.host.read(1, { ...context, op: 'request', id: 'open', purpose: 'bytes' })
     await f.host.drop(1)
     expect(f.file.dispose).toHaveBeenCalledOnce()
     await expect(f.host.stage(1, { op: 'commit', id: own.id })).rejects.toThrow('unavailable')

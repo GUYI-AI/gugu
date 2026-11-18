@@ -99,13 +99,16 @@ beforeEach(() => {
 })
 
 describe('host-scoped task runtime credentials (#1755 slice 1)', () => {
-  it('every ACP and PTY bridge receives the same device attachment host', () => {
+  it('every ACP and PTY bridge receives the device read and upload hosts', () => {
     const source = readFileSync(new URL('../../../../apps/desktop/electron/main.ts', import.meta.url), 'utf8')
     const acp = [...source.matchAll(/socialBridgeDeps:\s*\{([\s\S]*?)grantKey:/g)].map(match => match[1])
     const pty = source.match(/socialBridge\(info, host\)[\s\S]*?return\s*\{([\s\S]*?)grantKey:/)?.[1]
     const sites = [...acp, pty]
     expect(sites).toHaveLength(3)
-    for (const site of sites) expect(site).toMatch(/attachments:\s*attachmentUploads\b/)
+    for (const site of sites) {
+      expect(site).toContain('...mcpFileReads,')
+      expect(site).toMatch(/attachments:\s*attachmentUploads\b/)
+    }
   })
 
   it('rejects a bridge without its attachment host before granting tools', async () => {

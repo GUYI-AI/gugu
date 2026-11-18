@@ -7,33 +7,75 @@ import { createFileSink } from './fileSnapshot'
 import type { AttachmentDeclareRequest, createAttachmentUploadHost } from './attachmentUploadHost'
 import type { SelectedProjectFile, ProjectFileMessage } from './projectFilePublication'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
-import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileProviders, type FileRevision, type FileStageCommand } from '@gugu/core/shared/fileResolver'
+import { FILE_CHUNK_BYTES, fileRefKey, FileReadRevokedError, MissingFileObjectError, requireFileRange, type FileActor, type FileHandle, type FileMetadata, type FileProviders, type FileRef, type FileRevision, type FileStageCommand, type ResolvedPreview } from '@gugu/core/shared/fileResolver'
+import { FileReadError, type FileReadOptions, type FileReadResult, type FileReads, type FileReadState } from '@gugu/core/shared/fileReads'
+
+type ReadIdentity = { id: string; ref: FileRef; actor: FileActor }
+export type NativeFileReadCommand =
+  | { op: 'nudge' }
+  | ReadIdentity & (
+    | { op: 'request'; purpose: FileReadOptions['purpose'] }
+    | { op: 'resolve'; purpose?: 'file' | 'preview'; localOnly?: true; showFirst?: true }
+    | { op: 'metadata' }
+    | { op: 'cancel' | 'dispose' | 'ack' | 'preview' }
+    | { op: 'read'; offset: number; length: number }
+  )
+
+export type NativeFileReadResult = Omit<FileReadResult, 'file'> & { revision: FileRevision }
+type ReadReplies = {
+  request: NativeFileReadResult; resolve: FileMetadata | null; metadata: FileMetadata
+  read: Uint8Array; preview: { url: string; expiresAt: number } | { bytes: Uint8Array; type: string } | { size: number; type: string }
+  nudge: void; ack: void; dispose: void; cancel: void
+}
+export interface NativeFileReadIpc {
+  fileRead<C extends NativeFileReadCommand>(command: C): Promise<ReadReplies[C['op']]>
+  onFileReadState(listener: (event: { id: string; state: FileReadState }) => void): () => void
+}
+
+type ReadHandle = FileHandle | Extract<ResolvedPreview, { status: 'ready' }>
+type Reader = {
+  scope: number; epoch: number; owner: string; actor: string; ref: string
+  controller: AbortController; file?: ReadHandle; preview?: Blob; unsubscribe?: () => void
+}
 
 /** Opaque capabilities stay within the issuing renderer and account. Bytes use the existing invoke bus and FileSink. */
 export function createNativeFileHost(deps: {
   attachments?: ReturnType<typeof createAttachmentUploadHost>
   root: string; owner(): Promise<string | null>; alive(scope: number): boolean
-  local: FileProviders['local']; ssh: FileProviders['ssh']; openPath(path: string): Promise<string>
+  reads: FileReads; metadata: FileProviders['metadata']; openPath(path: string): Promise<string>
   published(directory: string): void; maxBytes?: number
   publish?(chatId: string, file: SelectedProjectFile, owner: string, message?: ProjectFileMessage, task?: { itemId?: string }): Promise<unknown>
   /** A task attachment's own copy for the agent (`writeTaskCopy`): its path. */
   taskCopy?(name: string, bytes: Uint8Array, mimeType?: string): Promise<{ path: string; name: string; size: number; mimeType?: string }>
   publication?(chatId: string, owner: string): Promise<boolean>
 }) {
-  type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; context?: string; name?: string; size?: number; sha?: string;
+  type Entry = { scope: number; epoch: number; owner: string; name?: string; size?: number; sha?: string;
     sink?: Awaited<ReturnType<typeof createFileSink>>; hash?: ReturnType<typeof createHash>; written?: number; path?: string; busy?: boolean }
   const entries = new Map<string, Entry>()
+  const readers = new Map<string, Reader>()
   let lastOwner: string | null = null
   const epochs = new Map<number, number>()
   const epochOf = (scope: number) => { const value = epochs.get(scope) ?? 0; epochs.set(scope, value); return value }
   const check = async (scope: number, owner: string, epoch: number) => {
-    if (!deps.alive(scope) || epoch !== epochOf(scope) || owner !== await deps.owner()) throw new Error('File reader account or window changed')
+    const current = await deps.owner()
+    if (!deps.alive(scope) || epoch !== epochOf(scope) || owner !== current) throw new Error('File reader account or window changed')
+  }
+  const release = async (key: string, row: Reader) => {
+    if (readers.get(key) === row) readers.delete(key)
+    row.controller.abort()
+    row.unsubscribe?.()
+    const file = row.file
+    row.file = undefined
+    await file?.dispose()
   }
   const drop = async (scope?: number) => {
     for (const id of scope === undefined ? epochs.keys() : [scope]) epochs.set(id, epochOf(id) + 1)
-    await Promise.all([...entries].filter(([, entry]) => scope === undefined || entry.scope === scope).map(async ([id, entry]) => {
-      entries.delete(id); await entry.file?.dispose(); await entry.sink?.abort()
-    }))
+    await Promise.all([
+      ...[...readers].filter(([, row]) => scope === undefined || row.scope === scope).map(([key, row]) => release(key, row)),
+      ...[...entries].filter(([, entry]) => scope === undefined || entry.scope === scope).map(async ([id, entry]) => {
+        entries.delete(id); await entry.sink?.abort()
+      }),
+    ])
   }
   const entryFor = async (scope: number, id: string) => {
     const entry = entries.get(id)
@@ -60,31 +102,79 @@ export function createNativeFileHost(deps: {
       await check(scope, owner, epoch); return deps.taskCopy(request.name, new Uint8Array(request.data), request.mimeType)
     },
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
-    /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
-    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string },
-      report?: (progress: { id: string; done: number; total: number }) => void) {
-      const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
-      const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
-      if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
-        const named = request.progress
-        if (typeof named === 'string' && report) context = { ...context, progress: (done, total) => report({ id: named, done, total }) }
-        const local = request.op === 'ssh' ? null : await deps.local(context)
-        await check(scope, owner, epoch)
-        if (request.op === 'local') return local?.revision ?? null
-        const revision = request.revision!; requireFileRevision(revision)
-        if (local && JSON.stringify([local.revision.item_id, local.revision.version, local.revision.sha256, local.revision.size_bytes]) !==
-          JSON.stringify([revision.item_id, revision.version, revision.sha256, revision.size_bytes])) throw new Error('Local file revision changed')
-        const file = request.op === 'ssh' ? await deps.ssh(revision, context) : await local?.open()
-        if (!file) return null
-        try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
-        const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file }); return { id, size: file.size }
+    async read(scope: number, command: NativeFileReadCommand, report?: (event: { id: string; state: FileReadState }) => void) {
+      if (command.op === 'nudge') return deps.reads.nudge()
+      const { actor, ref, id } = command
+      if (typeof id !== 'string' || !id || !actor.accountId || !actor.actorId) throw new Error('Invalid file reader')
+      const key = JSON.stringify([scope, id]), refKey = fileRefKey(ref)
+      const existing = readers.get(key)
+      if (existing && (existing.owner !== actor.accountId || existing.actor !== actor.actorId || existing.ref !== refKey)) throw new Error('File handle belongs to another reader')
+      if (command.op === 'cancel' || command.op === 'dispose') {
+        if (existing) await release(key, existing)
+        return
       }
-      const entry = await entryFor(scope, request.id!)
-      if (!entry.file || entry.context !== key) throw new Error('File handle belongs to another reader')
-      if (request.op === 'dispose') { entries.delete(request.id!); await entry.file.dispose(); return }
-      if (request.op !== 'read') throw new Error('Unknown file operation')
-      requireFileRange(entry.file.size, request.offset!, request.length!)
-      const bytes = await entry.file.read(request.offset!, request.length!); await check(scope, owner, entry.epoch); return bytes
+      if (command.op === 'resolve' || command.op === 'request' || command.op === 'metadata') {
+        if (existing) throw new Error('File read id is already in use')
+        // Register before the first await so a cancel or window close during account lookup also owns this waiter.
+        const row: Reader = { scope, epoch: epochOf(scope), owner: actor.accountId, actor: actor.actorId, ref: refKey, controller: new AbortController() }
+        const { signal } = row.controller
+        readers.set(key, row)
+        try {
+          await check(scope, row.owner, row.epoch)
+          signal.throwIfAborted()
+          if (command.op === 'metadata') {
+            const metadata = await deps.metadata({ ref, actor, signal })
+            await check(scope, row.owner, row.epoch)
+            signal.throwIfAborted()
+            return metadata
+          }
+          if (command.op === 'request') {
+            const request = deps.reads.request(ref, actor, { purpose: command.purpose, signal })
+            row.unsubscribe = request.state$(state => { if (!signal.aborted) report?.({ id, state }) })
+            const { file, ...outcome } = await request.result
+            row.file = file
+            await check(scope, row.owner, row.epoch)
+            signal.throwIfAborted()
+            return { ...outcome, revision: file.revision }
+          }
+          const file = command.purpose === 'preview'
+            ? await deps.reads.resolve(ref, actor, { purpose: 'preview', signal })
+            : command.localOnly ? await deps.reads.resolve(ref, actor, { localOnly: true, signal })
+              : await deps.reads.resolve(ref, actor, { showFirst: command.showFirst, signal })
+          if (file?.status === 'ready') row.file = file
+          await check(scope, row.owner, row.epoch)
+          signal.throwIfAborted()
+          return file?.status === 'ready' ? { status: 'ready' as const, revision: file.revision } : file
+        } catch (error) {
+          await release(key, row)
+          throw error
+        } finally {
+          if (!row.file && readers.get(key) === row) readers.delete(key)
+        }
+      }
+      if (!existing?.file) throw new Error('File handle is unavailable')
+      const { file, controller: { signal } } = existing
+      await check(scope, existing.owner, existing.epoch)
+      signal.throwIfAborted()
+      let result
+      if (command.op === 'read' && file.purpose === 'file') {
+        requireFileRange(file.revision.size_bytes, command.offset, command.length)
+        result = await file.read(command.offset, command.length)
+      } else if (command.op === 'read' && existing.preview) {
+        requireFileRange(existing.preview.size, command.offset, command.length)
+        result = new Uint8Array(await existing.preview.slice(command.offset, command.offset + command.length).arrayBuffer())
+      } else if (command.op === 'ack' && file.purpose === 'file') {
+        await file.acknowledgement?.()
+      } else if (command.op === 'preview' && file.purpose === 'preview') {
+        const content = await file.content()
+        if (content instanceof Blob && content.size > FILE_CHUNK_BYTES) {
+          existing.preview = content
+          result = { size: content.size, type: content.type }
+        } else result = content instanceof Blob ? { bytes: new Uint8Array(await content.arrayBuffer()), type: content.type } : content
+      } else throw new Error('Invalid operation for file handle')
+      await check(scope, existing.owner, existing.epoch)
+      signal.throwIfAborted()
+      return result
     },
     async stage(scope: number, command: FileStageCommand) {
       if (command.op === 'begin') {
@@ -154,8 +244,21 @@ export function registerNativeFileIpc(ipc: IpcMain, host: ReturnType<typeof crea
   ipc.handle('attachments:drop', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'drop' }))
   ipc.handle('attachments:retry', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'retry' }))
   ipc.handle('attachments:resume', event => host.attachment(scope(event), { op: 'resume' }))
-  ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row,
-    (progress) => { if (!event.sender.isDestroyed()) event.sender.send('files:read-progress', progress) }))
+  ipc.handle('files:read', async (event, command: NativeFileReadCommand) => {
+    try {
+      return await host.read(scope(event), command, progress => {
+        if (!event.sender.isDestroyed()) event.sender.send('files:read-state', progress)
+      })
+    } catch (error) {
+      // Electron only transports the error message. Preserve the resolver's typed display/withdrawal decision.
+      const cause = error instanceof FileReadError ? error.cause : error
+      const detail = cause instanceof FileReadRevokedError ? { kind: 'revoked', reason: cause.reason }
+        : cause instanceof MissingFileObjectError ? { kind: 'missing' }
+          : error instanceof FileReadError ? { kind: 'failed', code: error.code } : null
+      if (detail) throw new Error(`${error instanceof Error ? error.message : String(error)}\ngugu-file-error ${JSON.stringify(detail)}`)
+      throw error
+    }
+  })
   ipc.handle('files:stage', (event, row: FileStageCommand) => host.stage(scope(event), row))
   ipc.handle('files:stage-open', (event, row: { id: string }) => host.open(scope(event), row.id))
 }
