@@ -333,6 +333,7 @@ export function SubscriptionConnections({
     cli.openSignIn()
   }
   const signInAttempt = useRef<object | null>(null)
+  // @@@effect-flow - consumes an explicit login press once after replica reads; the async work is the existing login mutation, not a surface read copied into state.
   useEffect(() => {
     if (!signInRequested || signInAttempt.current === signInRequested) return
     if (connections.error || native.error) {

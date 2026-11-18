@@ -1,6 +1,7 @@
 /* WorkBuddy model settings. Keep the palette local to this page and its dialog. */
 div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-settings-page); }
 .gg-settings-detail div.gg-settings-page.gg-model-page { gap: 16px; }
+.gg-model-page [data-session-settings-section='auxiliary-models'] { background: transparent; }
 .gg-settings-detail .gg-model-page section.gg-settings-group {
   gap: 0;
   border: 0;

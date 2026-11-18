@@ -15,9 +15,9 @@ import '@/styles/tokens.css';
 import '@renderer/index.css';
 
 const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], selection: null as AutoReviewModel,
-  writes: [] as { key: string; value: unknown }[], failSave: false }));
+  writes: [] as { key: string; value: unknown }[], failSave: false, holdModels: null as Promise<void> | null }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: async () => ({
-  listCustomModels: async () => ({ success: true, data: state.rows }),
+  listCustomModels: async () => { if (state.holdModels) await state.holdModels; return { success: true, data: state.rows }; },
 }) }));
 vi.mock('@renderer/lib/ipc', async importOriginal => ({
   ...await importOriginal<typeof import('@renderer/lib/ipc')>(),
@@ -40,14 +40,17 @@ function record(id: string, label: string): CustomModelConnection {
     endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }], models: [{ id: 'same-model', label }] };
 }
 beforeEach(() => {
-  queryClient.clear(); setLocalePreference('en-US'); state.selection = null; state.writes = []; state.failSave = false;
+  queryClient.clear(); setLocalePreference('en-US'); state.selection = null; state.writes = []; state.failSave = false; state.holdModels = null;
   state.rows = [record(idA, 'Reviewer A'), record(idB, 'Reviewer B'),
     { ...record('no-key', 'Missing key'), keySaved: false },
     { ...record('codex', 'OpenAI only'), endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }] }];
   host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host);
-  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><AuxiliaryModelsGroup /></SessionLocalizationProvider></QueryClientProvider>);
+
 });
 afterEach(() => { root.unmount(); host.remove(); });
+function renderCard() {
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><AuxiliaryModelsGroup /></SessionLocalizationProvider></QueryClientProvider>);
+}
 async function choose(label: string) {
   const trigger = page.getByTestId('auto-review-model');
   await until('reviewer candidates have loaded', () => trigger.query() !== null && !trigger.query()!.hasAttribute('data-disabled'));
@@ -55,6 +58,7 @@ async function choose(label: string) {
   await userEvent.click(page.getByRole('option', { name: label, exact: true }));
 }
 it('saves a global connection/model identity and the recommended default, without touching naming', async () => {
+  renderCard();
   await userEvent.click(page.getByTestId('auto-review-model'));
   await expect.element(page.getByRole('option', { name: 'Reviewer A Reviewer A', exact: true })).toBeVisible();
   expect(page.getByRole('option', { name: 'Missing key Missing key', exact: true }).query()).toBeNull();
@@ -69,6 +73,7 @@ it('saves a global connection/model identity and the recommended default, withou
   expect(state.writes.map(write => write.key)).toEqual(['autoReviewModel', 'autoReviewModel', 'autoReviewModel']);
 });
 it('shows a failed write and restores the stored default', async () => {
+  renderCard();
   state.failSave = true;
   await choose('Reviewer A Reviewer A');
   await expect.element(page.getByRole('alert')).toHaveTextContent('Settings write refused');
@@ -76,6 +81,7 @@ it('shows a failed write and restores the stored default', async () => {
   await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('Default (recommended)');
 });
 it('falls back visibly when the selected connection disappears, without silently rewriting the preference', async () => {
+  renderCard();
   await choose('Reviewer A Reviewer A');
   await until('selection persisted', () => state.selection?.connectionId === idA);
   state.rows = [];
@@ -83,4 +89,15 @@ it('falls back visibly when the selected connection disappears, without silently
   await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('Default (recommended)');
   expect(host.textContent).toContain('If the selected model is unavailable, the default is used.');
   expect(state.selection?.connectionId).toBe(idA);
+});
+
+it('does not show a default reviewer until the connection candidates are read', async () => {
+  let release!: () => void;
+  state.holdModels = new Promise<void>(resolve => { release = resolve; });
+  renderCard();
+  try {
+    await until('the auxiliary card has mounted', () => page.getByTestId('settings-auxiliary-models').query() !== null);
+    expect(page.getByTestId('auto-review-model').query()).toBeNull();
+  } finally { release(); }
+  await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('Default (recommended)');
 });
