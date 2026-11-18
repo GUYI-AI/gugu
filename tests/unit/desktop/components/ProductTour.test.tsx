@@ -32,7 +32,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('zh-CN')
   rail = document.createElement('nav')
   rail.className = 'gg-sidebar-rail'
-  for (const [i, name] of ['assistant', 'chats', 'contacts', 'library', 'apps', 'settings'].entries()) {
+  for (const [i, name] of ['assistant', 'chats', 'contacts', 'apps', 'settings'].entries()) {
     const button = place(document.createElement('button'), box(0, 20 + i * 48, 40, 40))
     button.dataset.rail = name
     rail.append(button)
@@ -54,7 +54,7 @@ const ring = () => {
   return { x: Number(rect.getAttribute('x')) + 9, y: Number(rect.getAttribute('y')) + 9 }
 }
 
-const STEPS = ['assistant', 'tasks', 'chats', 'contacts', 'library', 'apps', 'settings'] as const
+const STEPS = ['assistant', 'tasks', 'chats', 'contacts', 'apps', 'settings'] as const
 async function settleTargets() {
   // A missing entry can advance once per measured frame; keep those DOM observer
   // updates inside React's interaction boundary, including an entirely absent tour.
@@ -90,12 +90,12 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       expect(h.card().getAttribute('role')).toBe('dialog')
       expect(h.card().querySelector('[data-testid="tour-arrow"]')).not.toBeNull()
       expect(document.querySelector('[data-testid="product-tour-spotlight"]')).not.toBeNull()
-      expect(h.card().textContent).toContain('1 / 7')
+      expect(h.card().textContent).toContain('1 / 6')
       expect(h.card().textContent).toContain('咕咕：你的个人助理')
       expect(h.button('previous')).toBeNull()
       expect(h.button('skip')).not.toBeNull()
       await clickElement(h.button('next')!)
-      expect(h.card().textContent).toContain('2 / 7')
+      expect(h.card().textContent).toContain('2 / 6')
       expect(h.button('previous')).not.toBeNull()
       expect(io.save).toHaveBeenLastCalledWith('owner-1', { step: 'tasks', status: 'active' })
     } finally { h.cleanup() }
@@ -103,7 +103,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
   it('ends with Done and no Skip, and records the tour as seen', async () => {
     const h = await mount('settings')
     try {
-      expect(h.card().textContent).toContain('7 / 7')
+      expect(h.card().textContent).toContain('6 / 6')
       expect(h.button('skip')).toBeNull()
       expect(h.button('next')!.textContent).toBe('完成')
       await clickElement(h.button('next')!)
@@ -129,9 +129,9 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     try {
       await key('Enter')
       await key('ArrowRight')
-      expect(h.card().textContent).toContain('3 / 7')
+      expect(h.card().textContent).toContain('3 / 6')
       await key('ArrowLeft')
-      expect(h.card().textContent).toContain('2 / 7')
+      expect(h.card().textContent).toContain('2 / 6')
       await key('Escape')
       expect(h.done).toHaveBeenCalledOnce()
       expect(io.save).toHaveBeenLastCalledWith('owner-1', { step: 'tasks', status: 'skipped' })
@@ -143,9 +143,9 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       const target = rail.querySelector<HTMLElement>('[data-rail="assistant"]')!
       await clickElement(target)
       target.focus()
-      expect(h.card().textContent).toContain('1 / 7')
+      expect(h.card().textContent).toContain('1 / 6')
       await key('ArrowRight')
-      expect(h.card().textContent).toContain('2 / 7')
+      expect(h.card().textContent).toContain('2 / 6')
       expect(document.activeElement).toBe(h.button('next'))
     } finally { h.cleanup() }
   })
@@ -154,7 +154,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     try {
       const shade = document.querySelector<HTMLElement>('.product-tour-shade')!
       await clickElement(shade)
-      expect(h.card().textContent).toContain('1 / 7')
+      expect(h.card().textContent).toContain('1 / 6')
       expect(h.done).not.toHaveBeenCalled()
     } finally { h.cleanup() }
   })
@@ -170,7 +170,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
         await act(async () => { theme.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })) })
       }
       expect(h.done).not.toHaveBeenCalled()
-      expect(h.card().textContent).toContain('7 / 7')
+      expect(h.card().textContent).toContain('6 / 6')
     } finally { h.cleanup(); settings.remove() }
   })
   it.each(['next', 'Enter', 'ArrowRight', 'sample'])('lets the sample step continue using %s', async (action) => {
@@ -188,7 +188,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       if (action === 'next') await clickElement(h.button('next')!)
       else if (action === 'sample') await clickElement(sample)
       else await key(action)
-      await waitForCondition(() => h.card().textContent!.includes('3 / 7'), 'advanced from the sample step')
+      await waitForCondition(() => h.card().textContent!.includes('3 / 6'), 'advanced from the sample step')
       expect(io.save.mock.calls.filter(([, state]) => (state as { step: string }).step === 'chats')).toHaveLength(1)
     } finally { h.cleanup() }
   })
@@ -294,7 +294,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       })
       await settleTargets()
       await waitForCondition(() => document.querySelector('[data-testid="product-tour-step-tasks"]') !== null, 'the tasks step after unfolding')
-      expect(document.querySelector('[data-testid="product-tour-step-tasks"]')!.textContent).toContain('2 / 7')
+      expect(document.querySelector('[data-testid="product-tour-step-tasks"]')!.textContent).toContain('2 / 6')
     } finally { harness.cleanup(); release() }
   })
   it('the sidebar off screen (another tab is up): 消息 brings the task page up', async () => {

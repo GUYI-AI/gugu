@@ -19,10 +19,7 @@ function buildStore() {
   const store = new NavigationStore();
   store.registerView('home');
   store.registerView('project');
-  // 与 view-registry 里 libraryView 的声明同形:`agentId` 是一次性意图,`tab` 是位置。
-  // ⚠️ 这里是手抄的一份,它**证明不了**真实声明没拼错 —— 那一层绑定在 library-view.tsx 的
-  // `satisfies ViewDefinition<LibraryViewParams>` 上(类型级),本文件只测 store 的行为。
-  store.registerView('library', { transientParams: ['agentId'] });
+  store.registerView('apps', { transientParams: ['installedSection'] });
   return store;
 }
 
@@ -39,7 +36,6 @@ describe('NavigationStore.restoreSnapshot', () => {
     });
     expect(store.currentViewId).toBe('project');
     expect(store.viewParamsStore.project).toEqual({ projectId: 'p1' });
-    expect(store.lastNonLibraryView).toBe('project');
   });
 
   it('falls back to home when the persisted view is not in the registry', () => {
@@ -82,16 +78,11 @@ describe('NavigationStore.restoreSnapshot', () => {
     expect(store.currentViewId).toBe('home');
   });
 
-  it('keeps the last non-library view while the library is open', () => {
+  it('discards the retired library view and its parameters on restore', () => {
     const store = buildStore();
-    store.navigate('project', { projectId: 'p1' });
-    store.navigate('library');
-    expect(store.currentViewId).toBe('library');
-    expect(store.lastNonLibraryView).toBe('project');
-    // 阴控:再走一个非资源库视图,这一格必须跟着变 —— 否则「停在 project」与
-    // 「这个字段根本不更新」同形。
-    store.navigate('home');
-    expect(store.lastNonLibraryView).toBe('home');
+    store.restoreSnapshot({ currentViewId: 'library', viewParams: { library: { tab: 'prompts' } } });
+    expect(store.currentViewId).toBe('home');
+    expect(store.snapshot.viewParams).not.toHaveProperty('library');
   });
 });
 
@@ -102,34 +93,32 @@ describe('NavigationStore transient view params', () => {
 
   it('drops a transient param when the view is left, and keeps the remembered one', () => {
     const store = buildStore();
-    store.navigate('library', { tab: 'agents', agentId: 'codex' });
-    expect(store.viewParamsStore.library).toEqual({ tab: 'agents', agentId: 'codex' });
+    store.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors' });
+    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors', installedSection: 'connectors' });
 
     store.navigate('home');
-    expect(store.viewParamsStore.library).toEqual({ tab: 'agents' });
+    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors' });
   });
 
-  it('does not re-open the detail on the next visit — the bug, stated as a test', () => {
+  it('does not reopen installed connectors on the next visit', () => {
     const store = buildStore();
-    // 聊天页的「配置 Codex」:带着意图进资源库。
-    store.navigate('library', { tab: 'agents', agentId: 'codex' });
+    store.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors' });
     store.navigate('home');
-    // 侧栏点「资源库」:不带参数 ⇒ 继承记住的那一份。
-    store.navigate('library');
-    expect(store.viewParamsStore.library).toEqual({ tab: 'agents' });
-    expect((store.viewParamsStore.library as { agentId?: string }).agentId).toBeUndefined();
+    store.navigate('apps');
+    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors' });
+    expect(store.viewParamsStore.apps?.installedSection).toBeUndefined();
   });
 
   it('never restores a transient param from a snapshot', () => {
     const store = buildStore();
     store.restoreSnapshot({
-      currentViewId: 'library',
+      currentViewId: 'apps',
       viewParams: {
-        library: { tab: 'agents', agentId: 'codex' },
+        apps: { marketPage: 'connectors', installedSection: 'connectors' },
         project: { projectId: 'p1' },
       },
     });
-    expect(store.viewParamsStore.library).toEqual({ tab: 'agents' });
+    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors' });
     // 阴控:没声明为转瞬的参数一个都不许被顺手丢掉。
     expect(store.viewParamsStore.project).toEqual({ projectId: 'p1' });
   });
@@ -149,25 +138,25 @@ describe('NavigationStore transient params vs. history', () => {
 
   it('never records a transient param into the back stack', () => {
     const store = buildStore();
-    store.navigate('library', { tab: 'agents', agentId: 'codex' });
+    store.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors' });
     const pushed = (appState.history.push as unknown as { mock: { calls: unknown[][] } }).mock.calls
       .map((call) => call[0] as { viewId: string; params: Record<string, unknown> })
-      .filter((entry) => entry.viewId === 'library');
+      .filter((entry) => entry.viewId === 'apps');
     expect(pushed).toHaveLength(1);
     // 后退回到的是位置,不是当时那次意图 —— 否则用户关掉的抽屉会被后退键请回来。
-    expect(pushed[0].params).toEqual({ tab: 'agents' });
+    expect(pushed[0].params).toEqual({ marketPage: 'connectors' });
   });
 
   it('replaying that history entry cannot resurrect the drawer', () => {
     const store = buildStore();
-    store.navigate('library', { tab: 'agents', agentId: 'codex' });
+    store.navigate('apps', { marketPage: 'connectors', installedSection: 'connectors' });
     store.navigate('home');
     const entry = (appState.history.push as unknown as { mock: { calls: unknown[][] } }).mock.calls
       .map((call) => call[0] as { viewId: string; params: Record<string, unknown> })
-      .find((e) => e.viewId === 'library');
+      .find((e) => e.viewId === 'apps');
     // 这就是 nav-buttons 的后退所做的事。
-    store._applyNavigation('library', entry!.params as never);
-    expect(store.viewParamsStore.library).toEqual({ tab: 'agents' });
+    store._applyNavigation('apps', entry!.params as never);
+    expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors' });
   });
 });
 

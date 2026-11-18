@@ -611,6 +611,7 @@ export default {
       "phone": "This phone",
       "passwords": "Passwords",
       "permissions": "Device control",
+      "prompts": "Saved prompts",
       "sessions": "Tasks",
       "subscriptions": "Subscriptions",
       "usage": "Usage"
@@ -785,8 +786,7 @@ export default {
     },
     "tasks": "Projects",
     "sessionView": "Session",
-    "library": "Library",
-    "apps": "Apps",
+    "apps": "Marketplace",
     "appDockFailed": "The left rail could not be changed",
     "moreApps": "More Apps",
     "appOpen": "Open",

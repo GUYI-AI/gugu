@@ -2,7 +2,7 @@ import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { useAppDetailRequest } from '@renderer/features/apps/use-app-detail-request';
 import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { messageForUser } from '@/lib/userFacingError';
-import { CircleAlert, Trash2Icon } from '@/lib/icons';
+import { Archive, CircleAlert, LayoutGrid, Plug, SquareTerminal, Trash2Icon } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -31,6 +31,7 @@ import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallGrant, typ
 import { findRemoteHostsBridge } from '@shared/remote-hosts';
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere';
 import { AgentMarketContent, type AgentMarketFilter } from '@renderer/features/extensions/panel/agent-market-content';
+import { AddConnectorButton, ConnectorMarketPage } from '@renderer/features/extensions/panel/connector-market-page';
 import { DesktopExtensionMarket, type DesktopMarketShelf } from '@renderer/features/extensions/panel/desktop-extension-market';
 import { keepShelf, keptShelfItems } from '@renderer/features/extensions/panel/kept-shelf';
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
@@ -85,11 +86,7 @@ import { declaredContexts, type ExtensionManifest } from '@shared/extensions/man
 import { readCachedDevices } from '@/store/devicesCache';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 
-/**
- * 左栏「App」页有「智能体 / 扩展 / 已安装」三页。市场按类别显示卡片，安装动作放在详情里。
- * 已安装分为智能体和扩展，咕咕助理在智能体段开头。
- * 从市场装走的是与手选文件夹**完全相同**的 `inspect → consent → install`。Refs #2374, #5265, #5410.
- */
+export type MarketplaceTab = 'agents' | 'market' | 'connectors';
 
 /** 清单上的一条:manifest 画卡片,ref 说装的时候装哪一版,cloud 是清单上那一版的其余
  *  (版本、兼容、弃用、图标、更新说明、代码在哪,#5410)。 */
@@ -147,8 +144,11 @@ export type AppDetail =
 
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
-export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail }: {
+export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail, marketPage, onMarketPageChange, onCloseDetailLink }: {
   detailLink?: ExtensionAppDetailLink;
+  onCloseDetailLink?: () => void;
+  marketPage?: MarketplaceTab;
+  onMarketPageChange?: (page: MarketplaceTab) => void;
   onOpenAgentDetail?: (agentId: string) => void;
 }) {
   const { translate, locale } = useSessionMessages();
@@ -170,9 +170,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     translate
   );
   const showConfirm = useShowModal('confirmActionModal');
-  const [isBusy, setIsBusy] = useState(false);
   const { navigate } = useNavigate();
-  const [tab, setTab] = useState<'agents' | 'market' | 'installed'>('agents');
+  const [tab, setTab] = useState<MarketplaceTab | 'installed'>(marketPage ?? 'agents');
+  useEffect(() => {
+    if (marketPage) setTab(marketPage);
+  }, [marketPage]);
   const [agentCategory, setAgentCategory] = useState<AgentMarketFilter>('all');
   const [chip, setChip] = useState<'all' | MarketCategory>('all');
   const [agentDetailId, setAgentDetailId] = useState<string | null>(null);
@@ -568,53 +570,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     [showConfirm]
   );
 
-  /**
-   * Read the manifest first and show what it asks for. Consent comes before the
-   * bundle is installed, not after. `extensionId` is known when the call is a retry
-   * from a card, and is what lets that card say "reading…" and refuse a second
-   * click; the folder picker has no id until the read returns, so the toolbar
-   * button carries its own busy flag instead.
-   */
-  const installFromDirectory = useCallback(
-    async (sourceDir: string, extensionId?: string) => {
-      if (extensionId) {
-        if (inFlight.current[extensionId]) return;
-        beginPending(extensionId, 'inspecting');
-      }
-      try {
-        // The one way every install goes (main's install-prepared.ts): what it would ask, handed back — or nothing to ask,
-        // and the click was the yes. The digest travels with the consent: the install refuses if the folder no longer
-        // matches what the sheet was read from.
-        const handed = await api.installFromFolder({ sourceDir, consent: { kind: 'return' } });
-        if (!handed.success || !handed.data) throw new Error(handed.error ?? translateRef.current('extensions.manifestUnreadable'));
-        if (handed.data.outcome !== 'ask') return;
-        const { ask, asks } = handed.data;
-        if (!asks) {
-          await completeInstall(sourceDir, ask);
-          return;
-        }
-        const machine = remoteRef.current?.deviceLabel;
-        const prompt = installConsentPrompt(machine ? { ...ask, machine } : ask, ask.manifest);
-        // owner 10-16 / 09-25「完整能力披露」: the other computers are listed and greyed — a folder is only this computer's to read.
-        const alsoOn = alsoOnMachines(findRemoteHostsBridge()?.listDevices() ?? [], remoteRef.current?.deviceId, translateRef.current('extensions.alsoOnFolderOnly'));
-        await askToInstall(prompt, ask.manifestDigest, ask.given, () => completeInstall(sourceDir, ask), machine, alsoOn);
-      } catch (error) {
-        toast({
-          title: translateRef.current('extensions.installFailed'),
-          description: messageForUser(error),
-          tier: 'error',
-          action: {
-            label: translateRef.current('extensions.retry'),
-            onClick: () => void installFromDirectory(sourceDir, extensionId),
-          },
-        });
-      } finally {
-        if (extensionId) endPending(extensionId);
-      }
-    },
-    [showConfirm]
-  );
-
   const switchVariant = async (manifest: ExtensionManifest, name: string) => {
     if (inFlight.current[manifest.id]) return;
     beginPending(manifest.id, 'inspecting');
@@ -668,42 +623,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       onSuccess: () => void agreed(),
     });
   };
-
-  const install = async () => {
-    setIsBusy(true);
-    try {
-      // 挑的是所选那台机器上的文件夹(另一台桌面时用新建框同一个「浏览」)。
-      const sourceDir = await host.pickFolder({
-        title: translate('extensions.chooseFolderTitle'),
-        message: translate('extensions.chooseFolderMessage'),
-      });
-      if (!sourceDir) return;
-      // The busy flag covers the picker and the read, and is released below.
-      // It deliberately does *not* stay set while the dialog is up: the dialog
-      // is modal and its overlay already blocks the button behind it, whereas
-      // holding the flag would need a dismissal signal — and a dismissal by
-      // Escape or by clicking outside never reaches the caller (the modal store
-      // closes itself without telling anyone), which would leave Install
-      // disabled until the screen remounted.
-      await installFromDirectory(sourceDir);
-    } catch (error) {
-      toast({
-        title: translate('extensions.installFailed'),
-        description: messageForUser(error),
-        tier: 'error',
-      });
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  /** A folder the person picked, installed with the digest they agreed to. */
-  const completeInstall = (sourceDir: string, ask: InstallConsentAsk): Promise<void> =>
-    installing(
-      ask.manifest,
-      () => api.installFromFolder({ sourceDir, consent: { kind: 'given', digest: ask.manifestDigest } }),
-      () => completeInstall(sourceDir, ask)
-    );
 
   /** owner 10-16 The same release on another of the person's computers, with the yes given in the sheet (`installAgreedOn`). */
   const installOnAlso = async (deviceId: string, label: string, ask: InstallConsentAsk): Promise<void> => {
@@ -1069,7 +988,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         );
 
   const extensionCount = extensionRows.length + invalidRows.length;
-  const installedCount = agentCount + extensionCount;
   const extensionShelf: ShelfState = shelf.status === 'ready' && shelf.query !== debouncedQuery
     ? { status: 'loading' }
     : shelf;
@@ -1172,7 +1090,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
 
   const searchPlaceholder = translate(tab === 'agents' ? 'extensions.searchAgents'
-    : tab === 'market' ? 'extensions.searchExtensions' : 'extensions.searchPlaceholder');
+    : tab === 'connectors' ? 'extensions.searchConnectors' : 'extensions.searchExtensions');
   const pendingPermissionsOf = (extensionId: string) =>
     Object.keys(pendingPermissions)
       .filter((key) => key.startsWith(`${extensionId}\u0000`))
@@ -1235,15 +1153,16 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   );
 
   const header = (aside?: ReactNode) => (
-    // 照 Google Play 的应用首页:顶上不写说明句,标题、换机器、搜索就够了(owner 10-10 嫌字多)。
-    <PageHeader sticky title={translate('settings.extensions')} aside={aside} />
+    <PageHeader sticky title={translate('extensions.tabMarket')} aside={aside} />
   );
 
   // 别的机器此刻给不出清单、手上也没有上次的:只说那一句。页头照画 —— 换机器的选择器在页头上,❌ 让人困在这一句里。
   if (notice && !store.isLoaded) {
     return (
       <div className="mk" data-testid="extensions-store" ref={rootRef}>
-        {header()}
+        {header(detailLink && (
+          <Button variant="ghost" size="sm" onClick={onCloseDetailLink}>{translate('common.back')}</Button>
+        ))}
         <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />
       </div>
     );
@@ -1277,6 +1196,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             justInstalled={justInstalled === manifest.id && Boolean(installed)}
             backLabel={detail.from ? translate('extensions.appSettings') : undefined}
             onBack={() => {
+              if (!detail.from) onCloseDetailLink?.();
               setDetail(detail.from ?? null);
               setJustInstalled(null);
             }}
@@ -1340,6 +1260,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           dataBytesKey={dataCleared}
           resource={menu.resource}
           onBack={() => {
+            if (!detail.from) onCloseDetailLink?.();
             if (detail.fromApp) {
               setDetail(null);
               openApp(managed.id);
@@ -1379,7 +1300,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     <SearchInput
       ref={searchRef}
       type="search"
-      containerClassName="w-56 min-w-0 [@container(max-width:600px)]:w-32"
+      containerClassName="w-[180px] min-w-0 [@container(max-width:600px)]:w-32"
       placeholder={searchPlaceholder}
       aria-label={searchPlaceholder}
       value={query}
@@ -1389,37 +1310,46 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
 
   return (
     <div className="mk" data-testid="extensions-store" ref={rootRef}>
-      {header(search)}
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />}
-      {/* 离线 / server 太旧:照旧画上次读到的那份,所有按钮、开关一起灰(fieldset 的 disabled 传给里面每个控件)。 */}
       <fieldset disabled={!!notice?.readOnly} className="contents">
-        <div className="mk-bar">
+        <div className="mk-bar mk-market-header">
           <ToggleGroup
-            size="sm"
-            spacing={1}
-            className="gap-1 overflow-visible border-none bg-transparent"
-            aria-label={translate('extensions.title')}
-            value={[tab]}
+            className="gap-6 overflow-visible border-none bg-transparent"
+            aria-label={translate('extensions.tabMarket')}
+            value={tab === 'installed' ? [] : [tab]}
             onValueChange={([value]) => {
-              if (value === 'agents' || value === 'market' || value === 'installed') setTab(value);
+              if (value === 'agents' || value === 'market' || value === 'connectors') {
+                if (detailLink) onCloseDetailLink?.();
+                setTab(value);
+                onMarketPageChange?.(value);
+              }
             }}
           >
-            <ToggleGroupItem value="agents" className="gap-1 px-2 text-sm" data-testid="extensions-section-agents">
+            <ToggleGroupItem value="agents" data-testid="extensions-section-agents">
+              <SquareTerminal className="size-4" aria-hidden />
               {translate('extensions.tabAgents')}
             </ToggleGroupItem>
-            <ToggleGroupItem value="market" className="gap-1 px-2 text-sm" data-testid="extensions-section-market">
+            <ToggleGroupItem value="market" data-testid="extensions-section-market">
+              <LayoutGrid className="size-4" aria-hidden />
               {translate('extensions.tabExtensions')}
             </ToggleGroupItem>
-            <ToggleGroupItem value="installed" className="gap-1 px-2 text-sm" data-testid="extensions-tab-installed">
-              {translate('extensions.tabInstalled')}
-              <span className="mk-seg-count">{installedCount}</span>
-              {store.updateCount > 0 ? <span className="mk-seg-dot" aria-hidden /> : null}
+            <ToggleGroupItem value="connectors" data-testid="extensions-section-connectors">
+              <Plug className="size-4" aria-hidden />
+              {translate('extensions.tabConnectors')}
             </ToggleGroupItem>
           </ToggleGroup>
-          <Button type="button" variant="ghost" size="sm" disabled={isBusy} onClick={() => void install()}>
-            {translate('extensions.installLocal')}
-          </Button>
+          <div className="mk-market-actions">
+            {search}
+            <Button type="button" variant="outline" size="sm" data-testid="extensions-tab-installed" onClick={() => setTab('installed')}>
+              <Archive className="size-4" aria-hidden />
+              {translate('extensions.tabInstalled')}
+              {store.updateCount > 0 && <span className="mk-seg-dot" aria-hidden />}
+            </Button>
+            {tab === 'connectors' && <AddConnectorButton />}
+          </div>
         </div>
+
+        {tab === 'connectors' && <ConnectorMarketPage query={query} />}
 
         {tab === 'agents' && (
           <div className="pb-14" data-testid="agent-market-panel">
@@ -1432,7 +1362,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 onCategoryChange={setAgentCategory}
                 onOpenAgentDetail={openMarketAgentDetail}
                 assistant={assistantMarketItem}
-                assistantInstalled={installedById.has(ASSISTANT_APP_ID)}
+                assistantInstalled={inventory === 'ready' ? installedById.has(ASSISTANT_APP_ID) : undefined}
                 assistantLoading={shelf.status === 'loading'}
                 onOpenAssistant={() => assistantMarketItem && openShelfDetail(assistantMarketItem)}
                 assistantResource={resourceOf(ASSISTANT_APP_ID)}
@@ -1483,12 +1413,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   query={extensionShelf.query}
                   category={chip}
                   onCategoryChange={setChip}
-                  installedIds={new Set(installedById.keys())}
+                  installedIds={inventory === 'ready' ? new Set(installedById.keys()) : undefined}
                   onOpen={openShelfDetail}
                   resourceOf={resourceOf}
                   sentinelRef={sentinelRef}
                   stale={marketStale ? translate('extensions.marketStale', { time: marketStaleTime(marketStale, locale) }) : null}
-                  assistant={assistantMarketItem}
                 />
               ))}
           </div>

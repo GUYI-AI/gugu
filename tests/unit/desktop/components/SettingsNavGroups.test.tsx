@@ -29,9 +29,9 @@ const groups = () =>
 const captions = () => [...harness.container.querySelectorAll('.gg-settings-nav-caption')].map((el) => el.textContent)
 
 // SettingsPanel excludes phone-only entries on desktop. This covers every section a desktop host may supply.
-const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone')
-// SettingsPanel excludes the desktop-only password and data import destinations from the mobile shell.
-const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords' && section !== 'data-import')
+const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone' && section !== 'connectors')
+// SettingsPanel excludes the desktop-only password, data import, and saved prompt destinations from the mobile shell.
+const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords' && section !== 'data-import' && section !== 'prompts')
 
 // Desktop order follows the approved sidebar; mobile retains its existing groups.
 describe('the one settings nav', () => {
@@ -39,8 +39,8 @@ describe('the one settings nav', () => {
     await render(desktopSections)
     expect(groups()).toEqual([
       ['account', 'subscriptions', 'usage'],
-      ['general', 'data-import', 'connectors', 'interface', 'model', 'permissions', 'passwords'],
-      ['sessions', 'devices', 'browser', 'files'],
+      ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'],
+      ['sessions', 'prompts', 'devices', 'browser', 'files'],
       ['resource-monitor', 'about'],
     ])
   })
@@ -66,7 +66,7 @@ describe('the one settings nav', () => {
 
   // 手机「我的」没有会话页那几格(订阅、云端连接应用也在其中:读数要会话页宿主):同一份分组,少掉的格不画,整组空了就连组带小标题一起不画。
   it('drops the sections a host does not show, and a group left empty', async () => {
-    await render(mobileSections.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone'), { mobile: true })
+    await render(mobileSections.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone' && section !== 'connectors'), { mobile: true })
     expect(groups()).toEqual([
       ['account', 'usage', 'files'],
       ['general', 'connectors', 'permissions', 'model'],
@@ -110,8 +110,8 @@ describe('the one settings nav', () => {
     expect(harness.container.querySelector('[aria-current="page"]')?.getAttribute('data-testid')).toBe('settings-nav-account')
   })
 
-  // The user's connections are in Preferences; the assistant's pages remain in its own App.
-  it('has nothing of the assistant: no 咕咕 group, no 资料; 连接应用 is a Preferences row', async () => {
+  // The phone retains its own Connected Apps entry under Preferences.
+  it('offers Connected Apps in phone settings, and saved prompts in desktop settings', async () => {
     for (const mobile of [false, true]) {
       await render(mobile ? mobileSections : desktopSections, { mobile })
       expect(SETTINGS_SECTIONS).not.toContain('assistant')
@@ -120,7 +120,8 @@ describe('the one settings nav', () => {
       expect(harness.container.querySelector('[data-group="assistant"]')).toBeNull()
       expect(harness.container.querySelector('[data-testid="settings-nav-assistant"]')).toBeNull()
       const connectors = harness.container.querySelector('[data-testid="settings-nav-connectors"]')
-      expect(connectors?.closest('[role="group"]')?.getAttribute('data-group') ?? null).toBe('preferences')
+      expect(connectors?.closest('[role="group"]')?.getAttribute('data-group') ?? null).toBe(mobile ? 'preferences' : null)
+      expect(Boolean(harness.container.querySelector('[data-testid="settings-nav-prompts"]'))).toBe(!mobile)
       const nav = harness.container.querySelector('.gg-settings-nav-scroll')!
       expect(nav.textContent).not.toMatch(/资料|咕咕/)
       harness.cleanup()

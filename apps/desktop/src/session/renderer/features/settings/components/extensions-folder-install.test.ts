@@ -9,9 +9,6 @@ import { until } from '../../../../../../../../tests/support/awaitCondition';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Settings → Extensions → Install from folder, with `notes` 1.0.0 installed from a folder (it reads the working
-// copy, and the person took that back). Main says what the next version would ask (`consent: return`, install-prepared.ts:
-// whether it asks at all is main's `installPlan`); the card asks when it does, and installs the bytes agreed to.
 const h = vi.hoisted(() => {
   const manifest = (version: string, network: string[] = [], capabilities = ['files:read']) => ({
     id: 'notes',
@@ -99,31 +96,10 @@ async function showInstalled(dom: JSDOM) {
   await act(async () => void tab.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
 }
 
-describe('Install from folder over a folder install (quiet upgrade)', () => {
+describe('Marketplace installed inventory', () => {
   let dom: JSDOM;
   let root: Root;
-
   const settle = () => act(async () => void (await new Promise((resolve) => setTimeout(resolve, 30))));
-
-  /** What main hands back for the folder (`return`): the sheet, read against the 1.0.0 installed here, and whether it asks. */
-  async function installFromFolder(next: unknown, asks: boolean) {
-    h.api.installFromFolder.mockImplementation(async ({ consent }: { consent: { kind: string } }) =>
-      consent.kind === 'return'
-        ? { success: true, data: { outcome: 'ask', ask: { manifest: next, manifestDigest: 'digest-next', installed: h.manifest('1.0.0'), revokedPermissions: ['files:read'] }, asks } }
-        : { success: true, data: { outcome: 'confirmed', manifest: next } })
-    await act(async () => {
-      root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
-    });
-    await settle();
-    const button = [...dom.window.document.querySelectorAll('button')].find((node) =>
-      /Install from folder|装本地文件夹/.test(node.textContent ?? '')
-    );
-    expect(button, 'the Install from folder button').toBeDefined();
-    await act(async () => void button!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-    await settle();
-    expect(h.api.installFromFolder).toHaveBeenCalledWith({ sourceDir: '/tmp/notes-next', consent: { kind: 'return' } });
-  }
-  const given = { sourceDir: '/tmp/notes-next', consent: { kind: 'given', digest: 'digest-next' } };
 
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
@@ -139,38 +115,6 @@ describe('Install from folder over a folder install (quiet upgrade)', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     dom.window.close();
-  });
-
-  it('replaces it without a dialog when the version asks for nothing new', async () => {
-    await installFromFolder(h.manifest('2.0.0'), false);
-    expect(h.showConfirm).not.toHaveBeenCalled();
-    expect(h.api.installFromFolder).toHaveBeenLastCalledWith(given);
-  });
-
-  it('asks when the version newly asks for a host, and lists only that host', async () => {
-    await installFromFolder(h.manifest('2.0.0', ['api.example.com']), true);
-    expect(h.api.installFromFolder).not.toHaveBeenCalledWith(given);
-    expect(h.showConfirm).toHaveBeenCalledOnce();
-    const { description } = h.showConfirm.mock.calls[0][0] as { description: string };
-    expect(description).toContain('api.example.com');
-    // The working copy was taken back: it stays taken back, and the dialog does not ask about it again.
-    expect(description).not.toMatch(/working copy|工作副本/);
-  });
-
-  it('a newly asked ability is said as its own sentence, not as a place to reach', async () => {
-    await installFromFolder(h.manifest('2.0.0', [], ['files:read', 'notifications']), true);
-    const { description } = h.showConfirm.mock.calls[0][0] as { description: string };
-    expect(description).toMatch(/Show system notifications|发系统通知/);
-    expect(description).not.toMatch(/reach|访问/);
-  });
-
-  it('asks when main says it asks (E-05: replacing one installed from the market), and installs the bytes agreed to', async () => {
-    await installFromFolder(h.manifest('2.0.0'), true);
-    expect(h.api.installFromFolder).not.toHaveBeenCalledWith(given);
-    expect(h.showConfirm).toHaveBeenCalledOnce();
-    await act(async () => void (h.showConfirm.mock.calls[0][0] as { onSuccess: () => void }).onSuccess());
-    await settle();
-    expect(h.api.installFromFolder).toHaveBeenLastCalledWith(given);
   });
 
   // The workspace App has prompts a person can edit, so it needs a settings page: listed, with no switch or uninstall.
@@ -431,7 +375,7 @@ describe('Desktop marketplace tabs and app details', () => {
     await settle();
   };
 
-  it('keeps the assistant in Agents and opens details from a single card control', async () => {
+  it('opens the same assistant detail from both market pages without an install button on the card', async () => {
     const assistant = app('gugu-assistant', ['other']);
     const extensions = [...listing, assistant];
     h.api.market.mockResolvedValue({
@@ -462,7 +406,9 @@ describe('Desktop marketplace tabs and app details', () => {
     expect(document.querySelector('[data-testid="market-detail-dialog"]')?.textContent).toContain('App gugu-assistant');
     await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
     await press('[data-testid="extensions-section-market"]');
-    expect(document.querySelector('[data-testid="extension-card-gugu-assistant"]')).toBeNull();
+    await press('[data-testid="extension-card-gugu-assistant"]');
+    expect(document.querySelector('[data-testid="app-product-page"][data-extension-id="gugu-assistant"]')).not.toBeNull();
+    await press('[data-testid="app-product-back"]');
     await press('[data-testid="extensions-tab-installed"]');
     expect(document.querySelector('[data-testid="extensions-installed-panel"]')).not.toBeNull();
   });
@@ -501,17 +447,19 @@ describe('Desktop marketplace tabs and app details', () => {
     expect(document.querySelector('[data-testid="extension-card-pomo"]')).toBeNull();
   });
 
-  it('draws every extension once and filters by category without a sorting bar', async () => {
+  it('shows eligible featured apps, and only supported sorting and category choices', async () => {
     await render();
     const document = dom.window.document;
     const chips = [...document.querySelectorAll('[data-testid^="extensions-market-chip-"]')].map((node) =>
       node.getAttribute('data-testid')!.replace('extensions-market-chip-', '')
     );
     const tiles = () => [...document.querySelectorAll('[data-testid^="extension-card-"]')].map((node) => node.getAttribute('data-testid'));
-    expect(chips).toEqual(['all', 'research', 'productivity', 'developer', 'other']);
-    expect(tiles()).toEqual(['extension-card-arxiv', 'extension-card-pomo', 'extension-card-trace']);
-    expect(document.querySelector('.mk-views')).toBeNull();
-    expect(document.querySelector('[data-testid="app-featured-pomo"]')).toBeNull();
+    expect(chips).toEqual(['all', 'research', 'productivity', 'developer']);
+    expect(tiles()).toEqual(['extension-card-pomo', 'extension-card-arxiv', 'extension-card-trace']);
+    expect(document.querySelector('[data-testid="extensions-market-sort-newest"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="extensions-market-sort-popular"]')).toBeNull();
+    expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).not.toBeNull();
+    expect(document.body.textContent).not.toMatch(/Install from folder|装本地文件夹/);
     await press('[data-testid="extensions-market-chip-developer"]');
     expect(tiles()).toEqual(['extension-card-trace']);
   });

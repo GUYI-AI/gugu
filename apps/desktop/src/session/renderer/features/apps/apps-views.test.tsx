@@ -76,7 +76,6 @@ vi.mock('@renderer/features/sessions/stores/workspace-registry', () => ({
 vi.mock('@renderer/features/sessions/view/session-pane-policy', () => ({ activeChatSessionId: () => 'conversation-1' }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 // The 「App」 page's own pieces: not what this file judges.
-vi.mock('@renderer/features/library/library-view', () => ({ useSelectedLibraryHost: () => ({ key: 'local', remote: null }) }));
 vi.mock('@renderer/features/library/extensions-library-page', () => ({
   ExtensionsLibraryPage: ({ onOpenAgentDetail }: { onOpenAgentDetail: (id: string) => void }) => {
     mocks.openAgent = onOpenAgentDetail;
@@ -92,12 +91,9 @@ vi.mock('./agent-app-detail-page', () => ({
 }));
 vi.mock('@renderer/features/library/library-host', () => ({
   LibraryHostProvider: ({ children }: { children: ReactNode }) => children,
+  LOCAL_LIBRARY_HOST: { key: 'local', remote: null },
   machineLibraryHost: vi.fn(),
 }));
-vi.mock('@renderer/features/remote-hosts/device-scope-picker', () => ({
-  DeviceScopeProvider: ({ children }: { children: ReactNode }) => children,
-}));
-vi.mock('@renderer/features/remote-hosts/device-scope-store', () => ({ libraryDeviceStore: {} }));
 vi.mock('@renderer/lib/components/page-layout', () => ({
   PageContent: ({ children }: { children: ReactNode }) => children,
   PageLayout: ({ children }: { children: ReactNode }) => children,

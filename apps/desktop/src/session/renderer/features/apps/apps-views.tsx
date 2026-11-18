@@ -15,10 +15,8 @@ import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
-import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
-import { useSelectedLibraryHost } from '@renderer/features/library/library-view';
-import { DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scope-picker';
-import { libraryDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
+import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
+import type { MarketplaceTab } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
@@ -31,17 +29,12 @@ import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-/**
- * The far-left rail's 「App」: the person's Apps and the market — the page that was the library's 扩展 tab, as it was, with
- * the machine picker in its title (it has no column of its own to carry one). A place of its own on the rail, so no task
- * list beside it, like 消息 and 通讯录.
- */
 const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
-  const host = useSelectedLibraryHost();
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
   const { translate } = useSessionMessages();
-  const { agentDetail, agentDetailFrom } = params;
+  const { agentDetail, agentDetailFrom, detail } = params;
+  const marketHost = detail?.deviceId ? deviceDetailHost(detail.deviceId) : LOCAL_LIBRARY_HOST;
   const closeAgentDetail = () => {
     if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
       navigateBack(true);
@@ -54,19 +47,20 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   return (
     <>
       <div hidden={!!agentDetail} className={agentDetail ? undefined : 'contents'}>
-        <PageLayout>
-          <PageContent className="max-w-none">
-            <DeviceScopeProvider store={libraryDeviceStore}>
-              <LibraryHostProvider value={host} key={host.key}>
-                <ExtensionsLibraryPage
-                  detail={params.detail}
-                  onOpenAgentDetail={(agentId) => setParams({
-                    agentDetail: { kind: 'agent-app-detail', agentId, deviceId: host.remote?.deviceId },
-                    agentDetailFrom: 'apps',
-                  })}
-                />
-              </LibraryHostProvider>
-            </DeviceScopeProvider>
+        <PageLayout wide>
+          <PageContent className="max-w-none px-0">
+            <LibraryHostProvider value={marketHost} key={marketHost.key}>
+              <ExtensionsLibraryPage
+                detail={detail}
+                onCloseDetailLink={() => setParams({ detail: undefined })}
+                marketPage={params.marketPage}
+                onMarketPageChange={(marketPage) => setParams({ marketPage })}
+                onOpenAgentDetail={(agentId) => setParams({
+                  agentDetail: { kind: 'agent-app-detail', agentId },
+                  agentDetailFrom: 'apps',
+                })}
+              />
+            </LibraryHostProvider>
           </PageContent>
         </PageLayout>
       </div>
@@ -76,7 +70,7 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
             <AgentDetailHost target={agentDetail}>
               <AgentAppDetailPage
                 agentId={agentDetail.agentId}
-                backLabel={translate(agentDetailFrom === 'apps' ? 'extensions.title' : 'common.back')}
+                backLabel={translate(agentDetailFrom === 'apps' ? 'extensions.tabMarket' : 'common.back')}
                 onBack={closeAgentDetail}
                 onCreate={() => navigate('new-session', { agentId: agentDetail.agentId, deviceId: agentDetail.deviceId })}
               />
@@ -88,23 +82,28 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   );
 });
 
+function deviceDetailHost(deviceId: string) {
+  const device = remoteHostsStore.device(deviceId);
+  return machineLibraryHost({
+    deviceId,
+    deviceLabel: device?.label ?? deviceId,
+    online: device?.isOnline ?? false,
+    lastSeenAt: device?.lastSeenAt ?? null,
+    hostKind: device?.hostKind,
+  });
+}
+
 const AgentDetailHost = observer(function AgentDetailHost({ target, children }: {
   target: AgentAppDetailLink;
   children: ReactNode;
 }) {
-  const device = target.deviceId ? remoteHostsStore.device(target.deviceId) : null;
-  // A missing device may still have cached data. Keep its identity and disable mutations.
-  const host = machineLibraryHost(target.deviceId ? {
-    deviceId: target.deviceId,
-    deviceLabel: device?.label ?? target.deviceId,
-    online: device?.isOnline ?? false,
-    lastSeenAt: device?.lastSeenAt ?? null,
-    hostKind: device?.hostKind,
-  } : null);
+  const host = target.deviceId ? deviceDetailHost(target.deviceId) : LOCAL_LIBRARY_HOST;
   return <LibraryHostProvider value={host}>{children}</LibraryHostProvider>;
 });
 
 type AppsViewParams = {
+  marketPage?: MarketplaceTab;
+  installedSection?: 'connectors';
   detail?: ExtensionAppDetailLink;
   agentDetail?: AgentAppDetailLink;
   agentDetailFrom?: 'apps' | 'embedded-composer';
@@ -113,7 +112,7 @@ function AppsViewWrapper({ children }: { children: ReactNode } & AppsViewParams)
 
 export const appsView = {
   WrapView: AppsViewWrapper,
-  transientParams: ['detail', 'agentDetail', 'agentDetailFrom'],
+  transientParams: ['detail', 'agentDetail', 'agentDetailFrom', 'installedSection'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   withoutSessionSidebar: true,
