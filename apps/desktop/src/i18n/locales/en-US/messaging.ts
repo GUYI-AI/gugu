@@ -418,7 +418,7 @@ export default {
       "action": "New task",
       "chip": "New task with {{agent}}",
       "pickAgent": "Choose agent",
-      "placeholder": "What should {{agent}} do?",
+      "placeholder": "Write anything…",
       "pickFolder": "Tap a folder to start",
       "where": "In {{folder}} on {{machine}}",
       "offline": "{{machine}} is offline. Pick another folder.",
@@ -462,7 +462,7 @@ export default {
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
     "placeholder": "Write a message…",
-    "mobilePlaceholder": "Message",
+    "mobilePlaceholder": "Write anything…",
     "projectGroupPlaceholder": "Message {{name}}… @ an agent to call it",
     "removeAttachment": "Remove {{fileName}}",
     "sendFailed": "Message was not sent: {{guidance}}",
@@ -721,7 +721,6 @@ export default {
       "rules": "Collaboration rules",
       "rulesPlaceholder": "Core principles, direction, and collaboration agreements…",
       "rulesUnset": "No collaboration rules",
-      "title": "Group settings",
       "unavailable": "Unavailable",
       "uploading": "Uploading"
     }
@@ -959,7 +958,7 @@ export default {
       "members": "Members",
       "collapseSplit": "Collapse split view",
       "collapseSplitHint": "Collapse the split view; the topic stays open",
-      "composerPlaceholder": "Say something in this topic…",
+      "composerPlaceholder": "Write anything…",
       "empty": "No one has spoken in this topic yet",
       "resize": "Drag to resize the topic pane"
     }

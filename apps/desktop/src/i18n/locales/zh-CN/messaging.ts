@@ -417,7 +417,7 @@ export default {
       "action": "新任务",
       "chip": "用 {{agent}} 新建任务",
       "pickAgent": "选 agent",
-      "placeholder": "想让 {{agent}} 做点什么？",
+      "placeholder": "随心输入",
       "pickFolder": "点一张文件夹开工",
       "where": "在 {{machine}} 的 {{folder}} 中",
       "offline": "{{machine}} 离线了，换一张文件夹",
@@ -461,7 +461,7 @@ export default {
     "mentionMembers": "@ 提及成员",
     "mentionNoMatch": "没有匹配的成员",
     "placeholder": "发送消息…",
-    "mobilePlaceholder": "消息",
+    "mobilePlaceholder": "随心输入",
     "projectGroupPlaceholder": "发消息给 {{name}}… @ 某个 agent 叫它",
     "removeAttachment": "移除 {{fileName}}",
     "sendFailed": "消息没发出去：{{guidance}}",
@@ -719,7 +719,6 @@ export default {
       "rules": "协作规则",
       "rulesPlaceholder": "群协作规则：核心原则、方向确认、协作约定…",
       "rulesUnset": "未设置协作规则",
-      "title": "群设置",
       "unavailable": "不可用",
       "uploading": "上传中"
     }
@@ -956,7 +955,7 @@ export default {
       "members": "成员",
       "collapseSplit": "收起分栏",
       "collapseSplitHint": "收起分栏，话题不会关闭",
-      "composerPlaceholder": "在这条话题里说…",
+      "composerPlaceholder": "随心输入",
       "empty": "还没有人在这条话题里说话",
       "resize": "拖动改变话题分栏的宽度"
     }

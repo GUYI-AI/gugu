@@ -765,7 +765,7 @@ const enUSCoreMessages = {
   'composer.agent': 'Agent',
   'composer.agentsLoading': 'Loading agents…',
   'composer.sessionClosed': 'Task closed',
-  'composer.messagePlaceholder': 'Message...',
+  'composer.messagePlaceholder': 'Write anything…',
   'composer.followUpPlaceholder': 'Add a follow-up',
   'composer.contextWindowUsed': 'Context window: {percent}% used',
   'composer.contextUsage': 'Context usage',

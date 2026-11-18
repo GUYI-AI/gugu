@@ -264,7 +264,7 @@ export function usePhoneNewTask({ chatId, enabled, clear, insertSkill }: {
       : null,
     active: stage.kind !== 'off',
     picking: folderPickerOpen,
-    placeholder: stage.kind === 'on' && agentName ? t('composer.phoneTask.placeholder', { agent: agentName }) : undefined,
+    placeholder: stage.kind === 'on' && agentName ? t('composer.phoneTask.placeholder') : undefined,
     overlay,
     band,
     inputHeader: null,
