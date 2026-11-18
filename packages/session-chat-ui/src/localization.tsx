@@ -39,6 +39,9 @@ const fallbackMessages = {
   'transcript.activityCollapse': "Hide activity: {summary}",
 
   'transcript.failed': 'Failed',
+  'transcript.interrupted': 'Interrupted',
+  'transcript.retryPhoneTask': 'Retry',
+  'transcript.retryPhoneTaskFailed': 'Could not retry the task',
   'transcript.error': 'error',
   'transcript.awaitingPermission': 'Awaiting permission',
   // 计划审批卡（#7139）：头的状态词与 Claude 那几种开始方式。

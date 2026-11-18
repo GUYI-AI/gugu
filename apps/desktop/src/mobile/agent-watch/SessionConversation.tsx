@@ -15,6 +15,7 @@ import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat
 import { toolImageUrl } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../local-agent/PhoneTaskDraftRecovery'
+import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
 import { machineRpc, fetchToolImage } from './sessionpage-rpc'
 import { assistantTimelineClient, readConversationFile } from '@/components/assistant/assistantTimelineClient'
 import { phoneTimelineClient } from '../local-agent/phoneTimelineClient'
@@ -334,6 +335,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     ...send, held: true, baselineMessageIds: [...send.baseline], delivery: { state: 'sending' as const },
   }))], [settledInputs, projectedInputs, receiptHistory.visible, pendingSends, senderInputs, nativeTurns])
   const rejectedInputCommands = useRejectedSessionInputCommands(sessionId)
+  const phoneRetryCommands = usePhoneInterruptedRetry(phoneHost, deviceId, sessionId)
   const userAttachments = useMemo(() => nativeUserAttachmentCommands({
     readImage: async attachmentId => {
       const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeAttachment({ attachmentId })
@@ -354,6 +356,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   // phone draft must not rebuild the history before its outbox commit can run.
   const commands = useMemo<ChatCommands>(() => ({
     ...rejectedInputCommands,
+    ...phoneRetryCommands,
     onRetrySend: id => {
       const input = received.current.inputs.find(input => input.id === id && (input.delivery?.state === 'unknown' || (input.delivery?.state === 'failed' && settledHostRow(lifeView.current, id))))
       if (!input) return rejectedInputCommands.onRetrySend?.(id)
@@ -377,7 +380,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       setBackgroundError(null)
       void (localClient?.stopBackgroundTask ?? stopBackgroundTask)(deviceId, sessionId, stopId).catch(error => setBackgroundError(messageForUser(error)))
     },
-  }), [rejectedInputCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop, onHeldShown])
+  }), [rejectedInputCommands, phoneRetryCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop, onHeldShown])
   const composer = <>
     <ConversationSettlements sessionId={sessionId} settlements={timeline.settlements} runtime={sessionRuntime} mobile machine={machineLabel} busyItemId={respondingItemId} respond={onRespond} />
     {footerNotice}
