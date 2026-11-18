@@ -6,6 +6,7 @@ import type {
   SessionpageSessionCreateRequest,
   SessionpageOpenedFileReadRequest,
   SessionpageSessionOlderRequest,
+  SessionpageSessionOptionsRequest,
   SessionpageSessionReloadModelRequest,
   SessionpageSessionRespondRequest,
   SessionpageSessionSendRequest,
@@ -210,7 +211,7 @@ export const sessionTimelineController = createRPCController({
   sessionRespond: (input: SessionpageSessionRespondRequest) => service.respond(input),
   sessionCancel: (input: SessionpageSessionCancelRequest) => service.cancel(input.conversationId),
   sessionUpdate: (input: SessionpageSessionUpdateRequest) => service.updateSession(input),
-  sessionOptions: (input: { conversationId: string }) => service.sessionOptions(input),
+  sessionOptions: (input: SessionpageSessionOptionsRequest) => service.sessionOptions(input),
   sessionSetOption: (input: SessionpageSessionSetOptionRequest) => service.setSessionOptionValue(input),
   sessionReloadModel: (input: SessionpageSessionReloadModelRequest) => service.reloadSessionModel(input),
   /** 新建前问:这台机器上有哪些项目、装了哪几家 harness。 */

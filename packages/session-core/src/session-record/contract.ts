@@ -697,6 +697,12 @@ export type SessionpageSessionOptions = {
   fast?: SessionOptionGroup | null;
 };
 
+export type SessionpageSessionOptionsRequest = {
+  conversationId: string;
+  /** The model menu opened; include the host catalog for a running BYOK session. */
+  includeOwnModelCatalog?: true;
+};
+
 export const SESSION_OPTION_DIMENSIONS = ['mode', 'model', 'effort', 'fast'] as const;
 export type SessionOptionDimension = (typeof SESSION_OPTION_DIMENSIONS)[number];
 

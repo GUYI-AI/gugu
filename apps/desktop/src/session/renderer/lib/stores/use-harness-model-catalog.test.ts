@@ -31,9 +31,9 @@ function lookup(haiku: string): HarnessCatalogLookup {
 }
 
 function ModelList() {
-  const { state } = useHarnessModelCatalog('claude', 'acp');
+  const { state, refresh } = useHarnessModelCatalog('claude', 'acp');
   const haiku = state.kind === 'ready' ? state.models.find((m) => m.id === 'haiku')?.name : state.kind;
-  return React.createElement('span', { 'data-testid': 'haiku' }, haiku ?? '');
+  return React.createElement('button', { 'data-testid': 'haiku', onClick: refresh }, haiku ?? '');
 }
 
 /**
@@ -97,5 +97,19 @@ describe('useHarnessModelCatalog —— 本机清单每次打开都问主进程'
     await render(React.createElement(ModelList));
 
     expect(mocks.modelCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('a mounted menu asks again on open without forcing a host probe', async () => {
+    mocks.modelCatalog.mockResolvedValue(lookup('Haiku 4.5'));
+    await render(React.createElement(ModelList));
+    mocks.modelCatalog.mockResolvedValue(lookup('Haiku 5.5'));
+    await act(async () => {
+      const trigger = container.querySelector('button')!;
+      trigger.click();
+      trigger.click();
+    });
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+    expect(mocks.modelCatalog.mock.calls).toEqual([['claude', 'acp'], ['claude', 'acp']]);
+    expect(shown()).toBe('Haiku 5.5');
   });
 });

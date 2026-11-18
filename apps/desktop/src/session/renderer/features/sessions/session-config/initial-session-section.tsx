@@ -1378,7 +1378,7 @@ export function InitialSessionField({
   const syncingEditorTextRef = useRef(false);
   const localMentionItemsRef = useRef<MentionItem[]>([]);
   const { value: promptLibrary, overrides } = usePromptLibrary();
-  const harnessModelOptions = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
+  const { options: harnessModelOptions, refresh: refreshHarnessModels } = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
   const { data: agents, isLoading: agentsLoading } = useAgents();
   // #6264 名单要跨云问另一台机器时,那一格画「正在读取」,❌ 空着让人以为那台机器上什么都开不了。
   // 只在真在读时画(isLoading):那台机器没连上就不问,❌ 一直转到它回来(原因由机器的提示说)。
@@ -1782,6 +1782,7 @@ export function InitialSessionField({
             navigate('library', { tab: 'agents', agentId: id })
           }}
           modelOptions={modelOptions}
+          onModelMenuOpen={refreshHarnessModels}
           // 编解码都在装配那份里(@@@composer-model-assembly)—— 这里只把分好的两路写回
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。

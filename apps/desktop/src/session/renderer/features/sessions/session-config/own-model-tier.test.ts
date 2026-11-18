@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HarnessCatalogState } from '@renderer/lib/stores/use-harness-model-catalog';
 import { ownModelTierOptions } from './own-model-tier';
+import { planModelSwitch } from './model-switch-plan';
 
 /**
  * #2507 一把 API Key 连接的会话:活会话报的清单里,连接的模型照探针目录那份名字叫 —— 只叫模型名。
@@ -48,4 +49,16 @@ describe('own tier in a live session on an API key connection', () => {
     const live = { 'Pi 1/user-model': { name: 'Pi 1/user-model' } };
     expect(ownModelTierOptions({ route: 'own', live, catalog: catalog({ connectionModels: ['api-key-connection/user-model'] }) })).toBe(live);
   });
+});
+
+it('adds a fresh native model to a running session menu but sends a not-yet-advertised selection through reload', () => {
+  const live = { 'current-model': { name: 'Current Model' } };
+  const fresh = catalog({ models: [{ id: 'current-model', name: 'Current Model' }, { id: 'new-model', name: 'New Model' }] });
+  expect(ownModelTierOptions({ route: 'own', live, catalog: fresh })).toEqual({
+    ...live, 'new-model': { name: 'New Model' },
+  });
+  expect(planModelSwitch({
+    selection: { source: 'own', modelId: 'new-model' },
+    advertised: Object.keys(live), runningOn: 'own', catalog: [],
+  })).toMatchObject({ kind: 'reload', modelId: 'new-model', source: 'harness' });
 });

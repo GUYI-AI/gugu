@@ -31,21 +31,28 @@ import '@/i18n/registerMainCatalog'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const host = vi.hoisted(() => ({ set: vi.fn(), normal: false, supported: true, fast: 'off', effort: 'medium', selected: 'native-model', canSwitch: true }))
+const host = vi.hoisted(() => ({ set: vi.fn(), read: vi.fn(), catalogReady: null as Promise<void> | null, normal: false, supported: true, fast: 'off', effort: 'medium', selected: 'native-model', canSwitch: true }))
 vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
   ...await original<typeof import('@/components/assistant/assistantTimelineClient')>(),
   conversationOptionClient: () => {
-    const read = () => ({
+    const read = (includeOwnModels?: true) => ({
       mode: null,
       model: { selected: host.selected, available: host.normal ? normalCodexModelRows.map(({ id, name, description }) => ({ id, name, description })) : [{ id: 'native-model', name: 'GPT-6.1-Sol', description: 'Latest workhorse model for coding and everyday work.' }, { id: 'sonnet', name: 'Alternative native model', description: 'A second advertised model with the original alias.' }] },
       effort: { selected: host.effort, available: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'high', name: 'High' }] },
       fast: host.supported ? { selected: host.fast, available: [{ id: 'off', name: 'Off' }, { id: 'on', name: 'On' }] } : null,
-      modelMenu: { agentName: 'Codex', conversationSelection: null, platformModels: [], ownCatalog: null, ownAuth: null,
+      modelMenu: { agentName: 'Codex', conversationSelection: null, platformModels: [], ownAuth: null,
+        ownCatalog: includeOwnModels && host.catalogReady ? {
+          kind: 'ready', models: [{ id: 'new-model', name: 'New Codex Model' }], selected: 'new-model', efforts: [], selectedEffort: null,
+        } : null,
         // Exact Codex metadata contract; omitting it correctly disables live changes.
         ...(host.canSwitch ? { liveSetting: { channel: 'provider-thread-settings', ack: 'ack-read-back', busy: 'queue-next-turn', reloadRequired: false, recovery: 'none' } } : {}),
       },
     })
-    return { read: async () => read(), set: async (dimension: string, value: string) => {
+    return { read: async (includeOwnModels?: true) => {
+      host.read(includeOwnModels)
+      if (includeOwnModels) await host.catalogReady
+      return read(includeOwnModels)
+    }, set: async (dimension: string, value: string) => {
       host.set(dimension, value)
       if (dimension === 'model') host.selected = value
       if (dimension === 'fast') host.fast = value
@@ -101,7 +108,26 @@ afterEach(() => {
   document.body.className = bodyClass
   if (bodyStyle === null) document.body.removeAttribute('style')
   else document.body.setAttribute('style', bodyStyle)
-  host.set.mockClear(); host.supported = true; host.fast = 'off'; host.effort = 'medium'; host.selected = 'native-model'; host.canSwitch = true; host.normal = false
+  host.set.mockClear(); host.read.mockClear(); host.catalogReady = null; host.supported = true; host.fast = 'off'; host.effort = 'medium'; host.selected = 'native-model'; host.canSwitch = true; host.normal = false
+})
+
+it('opening an existing phone model menu keeps the current selection and adds the refreshed host model to the search results', async () => {
+  let releaseCatalog!: () => void
+  host.catalogReady = new Promise<void>(resolve => { releaseCatalog = resolve })
+  await mount('dark')
+  expect(host.read.mock.calls).toEqual([[undefined]])
+  await page.elementLocator(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!).click()
+  const current = '[data-dimension="model"][data-option-id="native-model"]'
+  await until('the cached selection remains visible', () => document.querySelector(current)?.getAttribute('aria-checked') === 'true')
+  const search = document.querySelector<HTMLInputElement>('.gg-aw-model-search input')!
+  await page.elementLocator(search).fill('New Codex')
+  expect(document.querySelector('[data-option-id="new-model"]')).toBeNull()
+  releaseCatalog()
+  await until('the refreshed model matches the existing search', () => !!document.querySelector('[data-option-id="new-model"]'))
+  expect(search.value).toBe('New Codex')
+  expect(host.read.mock.calls).toEqual([[undefined], [true]])
+  expect(host.set).not.toHaveBeenCalled()
+  expect(host.selected).toBe('native-model')
 })
 
 // Only the external option-client response is a fixture; the conversation,

@@ -19,7 +19,7 @@ import { phoneMenuBar } from '../composer/phone-menu-bar'
 import { PhoneThinkingOptions } from '../composer/PhoneThinkingOptions'
 import { creationThinking } from './creation-thinking'
 
-export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void }
+export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void; onOpen?: () => void }
   & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'
     | 'permissionModeOptions' | 'selectedPermissionMode' | 'onPermissionModeChange'>
 type View = 'device' | 'harness' | 'model' | 'effort' | 'permission' | 'project' | 'skills'
@@ -27,6 +27,7 @@ export type CreationConfiguration = {
   options: SessionpageSessionCreateOptions | null; selection: CreateSelection
   onChange: (next: CreateSelection, modelPicked?: boolean) => void
   models: SessionpageSessionCreateModels | null; modelsState: 'idle' | 'loading' | 'ready' | 'failed'
+  onOpenModels?: () => void
   skills: readonly CreationSkill[]; onSkills: (skills: CreationSkill[]) => void
 }
 
@@ -100,7 +101,11 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         <Summary dimension="model" title={t('model')} value={existingSession
           ? existingSession.model?.options?.[existingSession.model.selected ?? '']?.shortName ?? existingSession.model?.options?.[existingSession.model.selected ?? '']?.name ?? tm('agentWatch.create.modelDefault')
           : modelName || tm('agentWatch.create.modelDefault')}
-          disabled={existingSession ? !Object.keys(existingSession.model?.options ?? {}).length : !configuration?.options} onClick={() => setView('model')} />
+          disabled={existingSession ? !Object.keys(existingSession.model?.options ?? {}).length : !configuration?.options} onClick={() => {
+            setView('model')
+            if (existingSession) existingSession.model?.onOpen?.()
+            else configuration?.onOpenModels?.()
+          }} />
         {existingSession?.model && <PhoneThinkingOptions
           effortOptions={existingSession.model.effortOptions} selectedEffort={existingSession.model.selectedEffort}
           defaultEffort={existingSession.model.defaultEffort} onEffortChange={existingSession.model.onEffortChange}
