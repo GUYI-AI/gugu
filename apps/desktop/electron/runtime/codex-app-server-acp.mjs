@@ -1449,7 +1449,14 @@ function onAppNotification(message) {
     const title = [params.error?.message, params.error?.additionalDetails]
       .filter((value) => typeof value === 'string' && value.trim())
       .join(': ')
-    if (title) sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(title) })
+    if (title) {
+      const message = redactAll(title)
+      if (activeCycle && (!params.turnId || String(params.turnId) === activeCycle.turnId)) {
+        activeCycle.retrying = { since: activeCycle.retrying?.since ?? Date.now(), message }
+        sessionUpdate({ sessionUpdate: 'state_update', state: 'running', _meta: { guguRetrying: activeCycle.retrying } })
+      }
+      sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: message })
+    }
     return
   }
   if (method === 'thread/tokenUsage/updated') {
@@ -1484,6 +1491,15 @@ function onAppNotification(message) {
       )
     })
     return
+  }
+  // Only this foreground cycle's output clears its provider-reported retry. Input echoes,
+  // settings, usage and a background/other turn are not evidence that its stream resumed.
+  if (activeCycle?.retrying && String(params.turnId ?? '') === activeCycle.turnId
+    && ((typeof params.delta === 'string' && params.delta.length > 0
+      && ['item/agentMessage/delta', 'item/reasoning/textDelta', 'item/reasoning/summaryTextDelta', 'item/commandExecution/outputDelta'].includes(method))
+      || (method === 'item/completed' && ['agentMessage', 'reasoning', 'mcpToolCall', 'commandExecution'].includes(params.item?.type)))) {
+    activeCycle.retrying = null
+    sessionUpdate({ sessionUpdate: 'state_update', state: 'running', _meta: { guguRetrying: null } })
   }
   if (method === 'item/agentMessage/delta') {
     streamedItems.set(String(params.itemId ?? ''), 0)

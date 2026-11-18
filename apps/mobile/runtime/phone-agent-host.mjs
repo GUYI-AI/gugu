@@ -241,7 +241,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const createFromCommand = async (command, signal) => {
     const result = await handleAgentCreateDeviceCommand(command.payload ?? {}, {
       ownerUserId: ownerId, deviceId, accessToken: await cloud.token(), signal, resolveGuguIds: resolveIdentities,
-      reportRuntimeState: reporter,
+      reportRuntimeState: async state => {
+        const agent = agents().find(row => row.agentUserId === state.agentUserId)
+        if (agent) await report(agent)
+      },
       runtimeBridge: {
         startAgentSession: async (input) => {
           if (input.agentType !== 'pi') throw new Error('这台手机只能创建手机 Agent')
@@ -284,8 +287,12 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const archive = async (agent, removeSocialIdentity = true) => {
     if (typeof removeSocialIdentity !== 'boolean') throw new Error('removeSocialIdentity must be a boolean')
     if (agent.status === 'archived' && (!removeSocialIdentity || agent.removedIdentity)) return false
-    const receipt = agent.removedIdentity ?? (removeSocialIdentity ? await archiveIdentity(cloud.identity, agent.agentUserId) : null)
-    if (receipt) { agent.removedIdentity = receipt; await store.save() }
+    const settle = removeSocialIdentity && !agent.removedIdentity ? await publishRuntimeState.beginRemoval(agent.agentUserId) : null
+    let removed = Boolean(agent.removedIdentity)
+    try {
+      const receipt = agent.removedIdentity ?? (removeSocialIdentity ? await archiveIdentity(cloud.identity, agent.agentUserId) : null)
+      if (receipt) { removed = true; agent.removedIdentity = receipt; await store.save() }
+    } finally { settle?.(removed) }
     await cancel(agent)
     await draining
     archiveAgentRecord(agent)
