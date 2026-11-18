@@ -89,6 +89,7 @@ export const plugin = definePlugin(
   {
     id: 'codex',
     name: 'Codex',
+    publisher: 'OpenAI',
     description:
       'CLI that connects to OpenAI models for project-aware code assistance and terminal workflows.',
     websiteUrl: 'https://github.com/openai/codex',

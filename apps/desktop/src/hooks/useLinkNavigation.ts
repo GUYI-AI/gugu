@@ -4,7 +4,7 @@ import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
 import { askedSince, asksSoFar, beginWait, endWait } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
-import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
+import type { ExtensionAppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
 import { opensInImageViewer } from '../lib/imageViewer'
@@ -35,7 +35,7 @@ export function useLinkNavigation(input: {
   openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>, opener: AppOpenWithDetail) => void | Promise<void>
   openApp: (chatId: string, extensionId: string, tab: string) => void
   openProject: (projectId: string) => void
-  openAppDetail?: (target: AppDetailLink) => void | Promise<void>
+  openAppDetail?: (target: ExtensionAppDetailLink) => void | Promise<void>
   openOwnApp: (extensionId: string, tab: string) => void
   openAssistant: (tasks: boolean) => string | void
 }) {
@@ -110,9 +110,9 @@ export function useLinkNavigation(input: {
         window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
         return { chat: chatId }
       }
-      if (target.kind === 'app-detail') {
+      if (target.kind === 'app-detail' || target.kind === 'agent-app-detail') {
         if (readMobileShell()) {
-          if (!state.openAppDetail) {
+          if (target.kind === 'agent-app-detail' || !state.openAppDetail) {
             const { translateSessionMessage } = await import('../session/renderer/localization/locale-store')
             throw new Error(translateSessionMessage('extensions.appLinkOnPhone'))
           }
@@ -207,5 +207,5 @@ export function useLinkNavigation(input: {
 }
 
 function targetError(target: LinkNavigation['target'], error: unknown, fallback: string) {
-  return new Error((target.kind === 'app-detail' || (target.kind === 'sender' && target.file)) && error instanceof Error ? error.message : fallback, { cause: error })
+  return new Error((target.kind === 'app-detail' || target.kind === 'agent-app-detail' || (target.kind === 'sender' && target.file)) && error instanceof Error ? error.message : fallback, { cause: error })
 }

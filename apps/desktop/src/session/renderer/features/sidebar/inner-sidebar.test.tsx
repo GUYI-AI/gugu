@@ -3,6 +3,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
+import { groupSettings } from '@/components/chat/useGroupChatSettings';
+import { followRendererSession, queryClient } from '@/lib/replica';
+import { UI_EVENTS } from '@/lib/uiEvents';
 import { observable, runInAction } from 'mobx';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -41,6 +44,10 @@ type Live = {
   shownMore: Set<string>;
   navigate: (view: string, params: Record<string, unknown>) => void;
 };
+vi.hoisted(() => {
+  vi.stubEnv('GUGU_SUPABASE_URL', 'http://127.0.0.1:9');
+  vi.stubEnv('GUGU_SUPABASE_ANON_KEY', 'test-anon-key');
+});
 const state = vi.hoisted(() => ({
   live: null as unknown as Live,
   items: [] as Item[],
@@ -156,13 +163,6 @@ const sections = () => [...host.querySelectorAll<HTMLElement>('[data-inner-sideb
 const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-row]')].map((row) => row.dataset.sessionRow);
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
 const render = () => act(async () => root.render(<InnerSidebar />));
-// The head row's 「+」 → 新建 Agent (GroupAddMenu); the menu is portalled, so its item is looked up in the document.
-const pickNewAgent = async (chatId: string) => {
-  await act(async () => host.querySelector<HTMLElement>(`[data-inner-head="${chatId}"] [data-group-add-menu]`)!.click());
-  const item = document.querySelector<HTMLElement>('[data-testid="group-add-new-agent"]');
-  expect(item, 'the 「+」 menu offers 新建 Agent').not.toBeNull();
-  await act(async () => item!.click());
-};
 const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
 const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
   act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
@@ -264,14 +264,14 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to the main chat (never its info), its hover 「+」 adds members or starts a new agent there; the second-line create action shares that route', async () => {
+  it('opens the group root, keeps group creation separate, and shows the shared conversation menu', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
     const head = () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!;
-    // The column's title (proposal v1 .ihead): it marks where you are without the list rows' selected fill.
+    // The two-line group head highlights its complete area when current.
     expect(head().getAttribute('aria-current')).toBe('page');
-    expect(head().dataset.active).toBeUndefined();
+    expect(head().dataset.active).toBe('true');
     // No unread number on the head row: the group's row in the list carries it (proposal v1 state0).
     expect(host.querySelector('[data-inner-head="group"] [aria-label^="sidebar.unreadCount"]')).toBeNull();
     openSession('mine-in-group', true);
@@ -289,19 +289,44 @@ describe('inner sidebar', () => {
     expect(state.openInfoTab).not.toHaveBeenCalled();
     expect(state.closeInfoTab).not.toHaveBeenCalled();
     state.infoShown = false;
-    // The hover 「+」 is the group's add menu, the first of the trailing buttons.
-    const add = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-group-add-menu]');
-    expect(add, 'the 「+」 sits in the hover slot').not.toBeNull();
+    const more = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-testid="inner-head-more"]')!;
+    expect(more).not.toBeNull();
 
-    // The direct second-line entry and the existing add menu share the same group/project route.
+    // The menu has the same items as the conversation header, with creation in its own button.
     const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
-    expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'plus' : 'fold')).toEqual(['plus', 'fold']);
+    expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'more' : 'fold')).toEqual(['more', 'fold']);
     const create = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-create]')!;
     expect(create, 'the group head has a direct creation entry').not.toBeNull();
+    expect(create.parentElement).toBe(head().parentElement);
+    const addMembers = vi.fn();
+    window.addEventListener(UI_EVENTS.addGroupMembers, addMembers);
+    await act(async () => {
+      followRendererSession('SIGNED_IN', 'group-header-test');
+      groupSettings.set(['group'], { my_role: 'member' } as Parameters<typeof groupSettings.set>[1]);
+      followRendererSession('INITIAL_SESSION', null);
+    });
+    try {
+      await act(async () => more.click());
+      const menu = document.querySelector('[data-testid="group-header-menu"]')!;
+      expect(menu.querySelector('[data-testid="group-add-new-agent"]')).toBeNull();
+      expect(menu.querySelector('[data-testid="chat-header-search-button"]')).not.toBeNull();
+      const invite = menu.querySelector<HTMLElement>('[data-testid="group-add-members"]')!;
+      expect(invite).not.toBeNull();
+      await act(async () => invite.click());
+      expect(addMembers).toHaveBeenCalledOnce();
+      expect(addMembers.mock.calls[0]?.[0].detail).toEqual({ chatId: 'group' });
+      expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener(UI_EVENTS.addGroupMembers, addMembers);
+      await act(async () => {
+        followRendererSession('SIGNED_OUT', null);
+        queryClient.clear();
+      });
+    }
     await act(async () => create.click());
     expect(readComposerVerb('group')).toBe('task');
-    await pickNewAgent('group');
-    expect(readComposerVerb('group')).toBe('task');
+    // The create flow brings up its composer itself. It must not also fire the heading.
+    expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(3);
 
     openProject('p-shop');
     await render();

@@ -1,3 +1,4 @@
+import type { AgentAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // the same place, so the same live page moved here, not a second one. What the dock claims is what this reads.
 const mocks = vi.hoisted(() => ({
   claims: [] as Record<string, unknown>[],
-  params: {} as { appId?: string; tab?: string },
+  params: {} as { appId?: string; tab?: string; agentDetail?: AgentAppDetailLink; agentDetailFrom?: 'apps' },
+  setParams: vi.fn(),
+  navigate: vi.fn(),
+  openAgent: undefined as ((id: string) => void) | undefined,
+  closeAgent: undefined as (() => void) | undefined,
+  createWithAgent: undefined as (() => void) | undefined,
   lastSession: undefined as { projectId: string; sessionId: string } | undefined,
   main: null as { kind: string; enabled: boolean; extensionName: string; extensionId?: string } | null,
   manifest: undefined as { contributes: Record<string, unknown> } | undefined,
@@ -52,7 +58,11 @@ vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
 vi.mock('./app-conversation-frame', () => ({
   AppConversationFrame: (props: Record<string, unknown>) => { mocks.frames.push(props); return null; },
 }));
-vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useParams: () => ({ params: mocks.params }) }));
+vi.mock('@renderer/lib/layout/navigation-provider', () => ({
+  useParams: () => ({ params: mocks.params, setParams: mocks.setParams }),
+  useNavigate: () => ({ navigate: mocks.navigate }),
+}));
+vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: vi.fn() }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { navigation: { viewParamsStore: { get session() { return mocks.lastSession; } } } },
 }));
@@ -66,12 +76,32 @@ vi.mock('@renderer/features/sessions/stores/workspace-registry', () => ({
 vi.mock('@renderer/features/sessions/view/session-pane-policy', () => ({ activeChatSessionId: () => 'conversation-1' }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 // The 「App」 page's own pieces: not what this file judges.
-vi.mock('@renderer/features/library/library-view', () => ({ useSelectedLibraryHost: vi.fn() }));
-vi.mock('@renderer/features/library/extensions-library-page', () => ({ ExtensionsLibraryPage: () => null }));
-vi.mock('@renderer/features/library/library-host', () => ({ LibraryHostProvider: () => null }));
-vi.mock('@renderer/features/remote-hosts/device-scope-picker', () => ({ DeviceScopeProvider: () => null }));
+vi.mock('@renderer/features/library/library-view', () => ({ useSelectedLibraryHost: () => ({ key: 'local', remote: null }) }));
+vi.mock('@renderer/features/library/extensions-library-page', () => ({
+  ExtensionsLibraryPage: ({ onOpenAgentDetail }: { onOpenAgentDetail: (id: string) => void }) => {
+    mocks.openAgent = onOpenAgentDetail;
+    return <div data-testid="app-list" />;
+  },
+}));
+vi.mock('./agent-app-detail-page', () => ({
+  AgentAppDetailPage: ({ agentId, onBack, onCreate }: { agentId: string; onBack(): void; onCreate(): void }) => {
+    mocks.closeAgent = onBack;
+    mocks.createWithAgent = onCreate;
+    return <div data-testid="agent-detail">{agentId}</div>;
+  },
+}));
+vi.mock('@renderer/features/library/library-host', () => ({
+  LibraryHostProvider: ({ children }: { children: ReactNode }) => children,
+  machineLibraryHost: vi.fn(),
+}));
+vi.mock('@renderer/features/remote-hosts/device-scope-picker', () => ({
+  DeviceScopeProvider: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock('@renderer/features/remote-hosts/device-scope-store', () => ({ libraryDeviceStore: {} }));
-vi.mock('@renderer/lib/components/page-layout', () => ({ PageContent: () => null, PageLayout: () => null }));
+vi.mock('@renderer/lib/components/page-layout', () => ({
+  PageContent: ({ children }: { children: ReactNode }) => children,
+  PageLayout: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellTitlebar: ({ leftSlot, children }: { leftSlot?: ReactNode; children?: ReactNode }) => <>{leftSlot}{children}</> }));
 // The chat panel's own mark (AppErrorMark): this file judges where it is put and that it opens, not how it looks.
 vi.mock('@/components/appSlot/AppErrorMark', () => ({
@@ -236,6 +266,23 @@ describe('an App opened from the far-left rail', () => {
     mocks.params = { appId: 'clock' };
     expect(renderToStaticMarkup(<appView.TitlebarSlot />)).toContain('>Clock</span>');
     expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
+  });
+
+  it('keeps the list mounted while an agent detail is open and creates with the same agent', () => {
+    mocks.params = {};
+    expect(renderToStaticMarkup(<appsView.MainPanel />)).toContain('data-testid="app-list"');
+    mocks.openAgent?.('claude');
+    const agentDetail = { kind: 'agent-app-detail', agentId: 'claude', deviceId: undefined } as const;
+    expect(mocks.setParams).toHaveBeenCalledWith({ agentDetail, agentDetailFrom: 'apps' });
+
+    mocks.params = { agentDetail, agentDetailFrom: 'apps' };
+    const detail = renderToStaticMarkup(<appsView.MainPanel />);
+    expect(detail).toContain('<div hidden=""><div data-testid="app-list"');
+    expect(detail).toContain('data-testid="agent-detail">claude');
+    mocks.createWithAgent?.();
+    expect(mocks.navigate).toHaveBeenCalledWith('new-session', { agentId: 'claude', deviceId: undefined });
+    mocks.closeAgent?.();
+    expect(mocks.setParams).toHaveBeenLastCalledWith({ agentDetail: undefined, agentDetailFrom: undefined });
   });
 
   it('both places of the rail are drawn without the task list beside them', () => {

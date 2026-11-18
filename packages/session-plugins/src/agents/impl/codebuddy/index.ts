@@ -39,6 +39,7 @@ export const plugin = definePlugin(
   {
     id: 'codebuddy',
     name: 'CodeBuddy',
+    publisher: '腾讯',
     description:
       "Tencent's terminal coding agent: understands the codebase, edits files, runs commands, and handles whole workflows.",
     websiteUrl: 'https://www.codebuddy.ai/docs/cli/overview',

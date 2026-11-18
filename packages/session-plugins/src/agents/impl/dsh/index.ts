@@ -27,6 +27,7 @@ export const plugin = definePlugin(
   {
     id: 'dsh',
     name: 'DeepSeek Harness',
+    publisher: 'DeepSeek',
     description: "DeepSeek's open-source coding agent: reads the codebase, edits files, runs commands, and keeps long sessions.",
     websiteUrl: 'https://www.deepseek.com/en/harness/',
   },

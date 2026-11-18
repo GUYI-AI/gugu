@@ -7,6 +7,7 @@ import { InSettingsPanelProvider, PageHeader } from '@renderer/lib/components/pa
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import { queryClient } from '@/lib/replica';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
+import { ThemePackSettings } from '@renderer/features/library/themes/themes-library-page';
 import { BrowserSettingsCard } from './BrowserSettingsCard';
 import HiddenToolsSettingsCard from './HiddenToolsSettingsCard';
 import InterfaceSettingsCard from './InterfaceSettingsCard';
@@ -109,7 +110,7 @@ function BrowserSettingsPage() {
 // ---------------------------------------------------------------------------
 
 /** 设置弹窗里由本页画的那几格(product spec);键与壳的 ActiveSection 同名。 */
-export type SessionSettingsSection = 'sessions' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor';
+export type SessionSettingsSection = 'theme-packs' | 'sessions' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor';
 
 /** 个别格要壳告诉它的事实(「连接应用」要知道咕咕住的那台云端宿主是谁);其余格不用。 */
 export type SessionSettingsContext = {
@@ -131,6 +132,7 @@ function RoutedConnectors(context: SessionSettingsContext) {
 }
 
 const SECTION_CONTENT: Record<SessionSettingsSection, (context: SessionSettingsContext) => ReactNode> = {
+  'theme-packs': () => <ThemePackSettings />,
   sessions: () => <GeneralSettingsPage />,
   interface: () => <InterfaceSettingsPage />,
   'resource-monitor': () => <ResourceMonitorSettingsPage />,

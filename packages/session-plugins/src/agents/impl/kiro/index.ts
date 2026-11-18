@@ -36,6 +36,7 @@ export const plugin = definePlugin(
   {
     id: 'kiro',
     name: 'Kiro',
+    publisher: '亚马逊',
     description:
       'Kiro CLI by AWS, focused on interactive terminal-first development assistance and workflow automation.',
     websiteUrl: 'https://kiro.dev/docs/cli/',

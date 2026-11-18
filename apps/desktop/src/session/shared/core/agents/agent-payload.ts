@@ -354,6 +354,7 @@ export type AgentMetadata = {
   id: string;
   name: string;
   description: string;
+  publisher?: string;
   websiteUrl: string;
   icon: AgentIconAsset;
   capabilities: AgentCapabilities;
