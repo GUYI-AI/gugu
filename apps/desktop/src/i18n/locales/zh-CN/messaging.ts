@@ -414,7 +414,7 @@ export default {
     "phoneTask": {
       "attachFolder": "挂文件夹",
       "attachFailed": "文件夹没挂上，请重试",
-      "action": "创建智能体",
+      "action": "新任务",
       "chip": "用 {{agent}} 新建任务",
       "pickAgent": "选 agent",
       "placeholder": "想让 {{agent}} 做点什么？",

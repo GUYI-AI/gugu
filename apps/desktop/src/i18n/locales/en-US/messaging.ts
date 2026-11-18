@@ -415,7 +415,7 @@ export default {
     "phoneTask": {
       "attachFolder": "Attach folder",
       "attachFailed": "Could not attach the folder. Try again.",
-      "action": "Create agent",
+      "action": "New task",
       "chip": "New task with {{agent}}",
       "pickAgent": "Choose agent",
       "placeholder": "What should {{agent}} do?",
