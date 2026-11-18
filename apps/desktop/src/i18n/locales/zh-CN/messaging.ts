@@ -815,6 +815,8 @@ export default {
     },
     "attachment": "[附件]",
     "copied": "已复制",
+    "selectTextFailed": "无法打开选择文本",
+    "selectionClose": "返回",
     "copyFailed": "复制失败，请手动选择文本复制",
     "forwarded": "↪ 转发",
     "forwardedFrom": "↪ 引自：{{line}}",

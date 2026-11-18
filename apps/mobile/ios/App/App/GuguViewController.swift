@@ -29,6 +29,7 @@ final class GuguViewController: CAPBridgeViewController {
             let code = (error as? GuguHostFailure)?.code ?? "native_setup_failed"
             NSLog("Gugu native identity unavailable (%@)", code)
         }
+        bridge?.registerPluginInstance(GuguTextSelectionPlugin())
         bridge?.registerPluginInstance(GuguSharePlugin())
         bridge?.registerPluginInstance(GuguImageViewerChromePlugin())
         installTextScale()
