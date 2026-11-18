@@ -44,15 +44,18 @@ it.each([
   await page.viewport(width, 844)
   await i18n.changeLanguage(locale)
   await harness.render(<LocalizationProvider><ThemeProvider><GeneralSection onOpenPermissions={() => {}} /></ThemeProvider></LocalizationProvider>)
-  const group = harness.container.querySelector(`[role="radiogroup"][aria-label="${label}"]`)!
-  const options = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+  const mobile = width === 390
+  const group = harness.container.querySelector(`[role="${mobile ? 'tablist' : 'radiogroup'}"][aria-label="${label}"]`)!
+  const options = [...group.querySelectorAll<HTMLButtonElement>(`[role="${mobile ? 'tab' : 'radio'}"]`)]
+  const selected = mobile ? 'aria-selected' : 'aria-checked'
+  expect(group.classList.contains('gg-segtabs-pill')).toBe(mobile)
   const preferences = ['light', 'dark', 'system'] as const
   const labels = locale === 'zh-CN' ? ['浅色', '深色', '跟随系统'] : ['Light', 'Dark', 'System']
   expect(options.map(button => button.textContent)).toEqual(labels)
   for (const [index, preference] of preferences.entries()) {
     await act(async () => { await userEvent.click(options[index]!) })
-    expect(options[index]!.getAttribute('aria-checked')).toBe('true')
-    expect(options.filter(button => button.getAttribute('aria-checked') === 'true')).toHaveLength(1)
+    expect(options[index]!.getAttribute(selected)).toBe('true')
+    expect(options.filter(button => button.getAttribute(selected) === 'true')).toHaveLength(1)
     expect(localStorage.getItem('app-theme')).toBe(preference)
   }
 })

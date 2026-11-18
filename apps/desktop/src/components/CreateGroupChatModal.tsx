@@ -43,6 +43,7 @@ export function CreateGroupChatForm({ onClose, onCreated, initialName, initialSe
       busy={creating}
       busyLabel={t('createGroup.creating')}
       initialSelectedIds={initialSelectedIds}
+      underlineMobileSources
       onConfirm={create}
       onClose={onClose}
     />
