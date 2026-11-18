@@ -2553,7 +2553,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
         ? { upload: 'failed', reason: mismatch ? 'upload_mismatch' : 'too_large', note: mismatch
           ? 'The message was sent, but the file changed after declaration. Do not resend the same message; send the new file version if needed.'
           : 'The message was sent, but the file exceeds the storage limit and cannot upload. Do not resend the same message.' }
-        : { upload: 'retrying', note: 'The file keeps uploading from this machine; do not send it again.' }
+        : { upload: 'retrying', note: 'The attachment is pending and can resume from this machine. Do not send it again.' }
     })
   }
   if (!message?.id) throw new Error('message_send: the server did not confirm the send')

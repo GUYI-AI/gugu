@@ -65,18 +65,18 @@ function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response, fi
 }
 
 describe('message_send with a file, by reference', () => {
-  test('a committed file with a lost finish response returns sent/retrying and the same queue resumes without resending', async () => {
-    let fail = true
-    const h = makeDeps(undefined, () => fail ? new Response(JSON.stringify({ error: 'failed' }), { status: 503 }) : new Response(JSON.stringify({ status: 'ready' })))
+  test('a committed file with a lost finish response retries finalization without sending the bytes or message again', async () => {
+    let finishCalls = 0
+    const h = makeDeps(undefined, () => ++finishCalls === 1 ? new Response(JSON.stringify({ error: 'failed' }), { status: 503 }) : new Response(JSON.stringify({ status: 'ready' })))
     const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file_path: localFile, temporary: true }, h.deps))
-    expect(receipt).toMatchObject({ status: 'sent', upload: 'retrying', note: expect.stringContaining('do not send it again') })
+    expect(receipt).toMatchObject({ status: 'sent' })
+    expect(receipt.upload).toBeUndefined()
     expect(h.commits).toHaveLength(1)
     expect(h.commits[0]).toMatchObject({ keep: 'temporary' })
-    fail = false
-    await vi.waitFor(() => expect(h.finishes).toHaveLength(2), { timeout: 8000 })
-    expect(h.commits).toHaveLength(1)
+    expect(h.uploads).toHaveLength(1)
+    expect(h.finishes).toHaveLength(2)
     expect(h.finishes[1]).toMatchObject({ message_id: h.commits[0]!.message_id })
-  }, 12_000)
+  })
 
   test.each(['upload_mismatch', 'too_large'])('terminal %s reports the committed message and asks against resending it', async reason => {
     const h = makeDeps(undefined, () => new Response(JSON.stringify({ error: reason, message: reason }), { status: reason === 'too_large' ? 413 : 409 }))
