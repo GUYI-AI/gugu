@@ -50,7 +50,7 @@ export function ListColumnToggle({ slot, disabledLabel = '' }: { slot: PanelSlot
         setJustClicked(false)
       }}
     >
-      <PanelLeft className="size-3.5" />
+      <PanelLeft />
     </Button>
   )
 }

@@ -109,7 +109,7 @@ export function InnerSidebarFoldButton() {
       <TooltipTrigger
         render={
           <TabStripButton size="icon-sm" variant="ghost" className="window-no-drag-region" aria-label={label} data-inner-head-fold="" onClick={() => setInnerSidebarFolded(true)}>
-            <PanelLeft className="size-3.5" />
+            <PanelLeft />
           </TabStripButton>
         }
       />

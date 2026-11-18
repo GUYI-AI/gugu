@@ -3,6 +3,7 @@ import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
 import { publishPanelToggle } from '@/lib/panelToggles';
+import { TITLEBAR_ACTION_ICON_SIZE_PX } from '@/lib/window-chrome';
 import { InnerHeadRowLayout, InnerSidebarFoldButton } from '@renderer/features/sidebar/inner-sidebar-parts';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
@@ -66,8 +67,8 @@ it('the head band and the tab strip line up, and the fold button is the expand b
   const foldIcon = box('[data-inner-head-fold] svg.lucide-panel-left');
   const expandIcon = box('[data-shell-restore-lane] svg.lucide-panel-left');
   expect([fold.width, fold.height]).toEqual([expand.width, expand.height]);
-  expect([foldIcon.width, foldIcon.height]).toEqual([14, 14]);
-  expect([expandIcon.width, expandIcon.height]).toEqual([14, 14]);
+  expect([foldIcon.width, foldIcon.height]).toEqual([TITLEBAR_ACTION_ICON_SIZE_PX, TITLEBAR_ACTION_ICON_SIZE_PX]);
+  expect([expandIcon.width, expandIcon.height]).toEqual([foldIcon.width, foldIcon.height]);
   // Both centred on the band's middle line.
   expect(fold.top + fold.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
   expect(expand.top + expand.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
@@ -100,7 +101,7 @@ it('the two-line group button covers the avatar and lower row, with independent 
   const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
   const icon = fold.querySelector('svg.lucide-panel-left')!;
   expect([fold.offsetWidth, fold.offsetHeight, getComputedStyle(fold).borderRadius]).toEqual([28, 28, '8px']);
-  expect(icon.getBoundingClientRect().width).toBe(14);
+  expect(icon.getBoundingClientRect().width).toBe(TITLEBAR_ACTION_ICON_SIZE_PX);
 
   const hoverLayer = () => getComputedStyle(button().parentElement!, '::before');
   const openButton = page.getByRole('button', { name: '产品讨论群', exact: true });
