@@ -1,4 +1,4 @@
-import { fileAnnotationMarkers, requestAt } from './annotation-markers.js'
+import { requestAt } from './annotation-selection.js'
 import { codeQuote } from './code-quote.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
@@ -161,7 +161,6 @@ const STRINGS = {
     cite: '引用',
     send: '发送',
     annotate: '批注',
-    editAnnotation: '修改第 {number} 条批注',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -411,7 +410,6 @@ const STRINGS = {
     cite: 'Cite',
     send: 'Send',
     annotate: 'Annotate',
-    editAnnotation: 'Edit annotation {number}',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -2814,7 +2812,6 @@ function closeCurrent() {
 }
 
 function clearShownFile() {
-  annotationMarkers.watch(null)
   syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
@@ -3225,7 +3222,6 @@ async function mountText(current, preview) {
     current.previewPending = current.previewDeferred = false
     syncBlockControls()
     previewMarks()
-    annotationMarkers.refresh()
     // A task is ticked where it is read (its line's [ ] / [x], below); not in a file this person may only read.
     for (const box of $('preview').querySelectorAll('li > input[type=checkbox], li > p:first-child > input[type=checkbox]')) box.disabled = !!file.readOnly
     const empty = !file.text.trim()
@@ -3278,22 +3274,6 @@ let picksInPreview = false
 let annotationStart = null
 const annotationEntry = () => !touchPane?.matches && gugu.apiVersion >= 58 && gugu.files.annotateSelection &&
   state.current?.entry.workspace === state.ctx?.workspace?.id && state.ctx?.workspace && state.current?.entry
-const annotationMarkers = fileAnnotationMarkers({
-  anchor: line => {
-    const view = state.current?.view
-    if (document.body.dataset.mode !== 'edit') {
-      const block = [...$('preview').querySelectorAll('[data-line]')].find(node => {
-        const [start, end] = node.dataset.line.split('-').map(Number)
-        return start <= line && line <= end
-      })
-      if (block?.getClientRects().length) return block.getBoundingClientRect()
-    }
-    if (view && line <= view.state.doc.lines && view.dom.getClientRects().length) return view.coordsAtPos(view.state.doc.line(line).from)
-    return null
-  },
-  viewport: () => $('preview')?.closest('.panes')?.getBoundingClientRect(),
-  label: number => fmt(state.t.editAnnotation, { number }),
-})
 
 function showSelection(picks, end, inPreview = false, start = end) {
   annotationStart = picks.length ? start : null
@@ -3351,7 +3331,7 @@ document.addEventListener('selectionchange', () => {
     showSelection([], null)
   }
 })
-document.addEventListener('scroll', () => { placeSelectionBar(); annotationMarkers.refresh() }, true)
+document.addEventListener('scroll', placeSelectionBar, true)
 
 // A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes),
 // named by them; the file's name before them is gugu's. A preview block without lines names none: it points at the file.
@@ -4111,7 +4091,6 @@ function showDoc(entry) {
   reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
-  annotationMarkers.watch(annotationEntry() || null)
   $('doc-title').textContent = entry.name
   $('doc-message').hidden = true
   showEntry(entry)
@@ -4264,7 +4243,6 @@ function applyMode() {
   $('mode-split').hidden = true
   document.body.classList.toggle('read-in-host', readInHost())
   if (mode !== 'edit' && state.current?.previewDeferred) state.current.drawPreview()
-  annotationMarkers.refresh()
   syncBlockControls(true)
 }
 

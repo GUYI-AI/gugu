@@ -12,19 +12,15 @@ const point = z.object({
   rect: bounds,
   viewport: z.object({ width: z.number().finite().positive(), height: z.number().finite().positive() }),
 });
-const fileAnnotationOpen = point.and(z.union([
-  z.object({ id: z.string().uuid() }),
-  z.object({ selection }),
-]));
+const fileAnnotationOpen = point.extend({ selection });
 
 export type FileAnnotationOpen = z.infer<typeof fileAnnotationOpen>;
-export type FileAnnotationMarkers = { path: string; markers: { id: string; number: number; startLine: number }[] };
 
 export type FileAnnotationAsk = {
   sessionId: string;
   webContentsId: number;
-  path: string | null;
-  open?: FileAnnotationOpen;
+  path: string;
+  open: FileAnnotationOpen;
 };
 
 export const EXTENSION_FILE_ANNOTATION_METHOD = 'extensions.fileAnnotation';

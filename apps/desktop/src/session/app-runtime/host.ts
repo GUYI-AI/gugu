@@ -136,8 +136,6 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
     /** API 54, the preinstalled Files App's page only (selection-send.ts): the host's Send box; only the outcome comes back. */
     annotateSelection?(args: Record<string, unknown>): Promise<boolean>;
-    watchAnnotationMarkers?(args: Record<string, unknown>): Promise<boolean>;
-    onAnnotationMarkers?(handler: (value: import('@shared/extensions/file-annotation-draft').FileAnnotationMarkers) => void): () => void;
     sendSelection?(args: Record<string, unknown>): Promise<import('@shared/extensions/selection-send').SelectionSendResult>;
     exists(args: { ref: AppFileRef }): Promise<boolean>;
     draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;

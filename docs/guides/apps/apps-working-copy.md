@@ -26,4 +26,4 @@ Free, for a page that edits files:
 
 ## Session annotation drafts
 
-The preinstalled desktop Files App uses `gugu.files.annotateSelection(file, open)` (API 58) inside a click to open the host's editor at the selection. The editor saves to the session composer draft. `gugu.files.watchAnnotationMarkers(file)` follows one file, with `null` stopping the watch. `gugu.files.onAnnotationMarkers(fn)` receives the numbered source-line anchors. The user's annotation text stays in the host.
+The preinstalled desktop Files App uses `gugu.files.annotateSelection(file, open)` (API 58) inside a click to open the host's comment input at the selection. The host saves the selection to the session composer draft. File comments can be deleted and selected again; saved comments do not reopen in place. The user's annotation text stays in the host.

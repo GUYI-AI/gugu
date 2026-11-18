@@ -144,8 +144,8 @@ it('composes the three sources in draft order and uploads only actual page evide
   prepareAnnotationImages(draft.items, { has: () => false, add: upload });
   expect(upload).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ id: annotationImageId(browser.id) }), browser.screenshot);
-  draft.update(file.id, 'Only line contents');
-  expect(draft.items[0]).toMatchObject({ number: 1, annotation: 'Only line contents' });
+  draft.remove(file.id);
+  expect(draft.items.map(item => item.number)).toEqual([2, 3]);
 });
 
 it.each<SupportedLocale>(['en-US', 'zh-CN'])('preserves exact file selection JSON and an empty optional note in %s', locale => {

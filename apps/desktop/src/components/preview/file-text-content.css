@@ -6,11 +6,6 @@
 @media (max-width: 719px) { .gg-file-line-number { display: none; } }
 .gg-file-cite-popup { padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-popover); }
 
-.gg-file-annotation-marker {
-  left: clamp(0px, var(--file-annotation-x), calc(100% - 24px));
-  top: max(0px, calc(var(--file-annotation-y) - 12px));
-}
-
 .gg-file-annotation-editor {
   left: clamp(8px, var(--file-annotation-x), max(8px, calc(100% - 328px)));
   top: max(0px, calc(var(--file-annotation-y) - 48px));

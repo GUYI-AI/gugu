@@ -159,7 +159,7 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
-// 59 (file-annotation-draft.ts): the preinstalled Files App can edit and follow the session's annotation draft.
+// 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
 export const EXTENSION_API_VERSION = 59;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
@@ -685,7 +685,6 @@ export type ExtensionHostEvent =
    * `resync` (a working copy only) means "re-read what you care about": the watcher lost its place. It carries no paths
    * on purpose — a guessed set would be worse.
    */
-  | { type: 'fileAnnotationMarkers'; value: import('./file-annotation-draft').FileAnnotationMarkers }
   | { type: 'filesChanged'; watchId: string; place: AppPlace; change: ExtensionFileChangeBatch }
   /** How far a `files.download` of a working copy's file or folder is. */
   | { type: 'downloadProgress'; transferId: string; done: number; total: number }
@@ -1110,7 +1109,6 @@ export const BRIDGE_VERBS = {
   filesReadText: { needs: null },
   filesSendSelection: { needs: null, only: 'page', gesture: true },
   filesAnnotateSelection: { needs: null, only: 'page', gesture: true },
-  filesWatchAnnotationMarkers: { needs: null, only: 'page' },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
   filesDraft: { needs: null, machine: 'place' },

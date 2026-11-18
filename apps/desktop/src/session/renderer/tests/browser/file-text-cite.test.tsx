@@ -5,6 +5,7 @@ import { page, userEvent } from 'vitest/browser'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
@@ -46,7 +47,7 @@ it.each([390, 1000])('keeps native source selection and its one Cite action usab
   await until('the action closes once cited', () => !document.querySelector('.gg-file-cite-popup'))
 })
 
-it('stores the selected source and opens the same file editor from the saved marker', async () => {
+it('stores exact source selections and changes a file comment by deleting and selecting again', async () => {
   await page.viewport(960, 700)
   const sessionId = crypto.randomUUID(), path = 'docs/pricing.txt'
   const draft = sessionAnnotations.forSession(sessionId)
@@ -56,8 +57,8 @@ it('stores the selected source and opens the same file editor from the saved mar
   document.body.append(host)
   root = createRoot(host)
   await act(async () => {
-    root.render(<FileTextContent kind="text" content={'same line\nselected words\nselected words'}
-      onCite={vi.fn()} annotation={{ sessionId, path }} />)
+    root.render(<><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
+      onCite={vi.fn()} annotation={{ sessionId, path }} /><AnnotationTray sessionId={sessionId} onSend={() => {}} enabled /></>)
   })
   const range = document.createRange()
   const selected = host.querySelector('[data-file-line="3"]')!.firstChild!
@@ -68,18 +69,25 @@ it('stores the selected source and opens the same file editor from the saved mar
   await until('the file offers annotation alongside cite', () => document.querySelectorAll('.gg-file-cite-popup button').length === 2)
   await act(async () => { await userEvent.click(document.querySelectorAll('.gg-file-cite-popup button')[1]!) })
   const editor = () => host.querySelector<HTMLFormElement>('[data-annotation-editor]')
-  const field = () => editor()!.querySelector('input')!
   await until('the shared annotation field is mounted', () => !!editor())
   await act(async () => { await userEvent.keyboard('Clarify the pricing{Enter}') })
   expect(draft.items).toMatchObject([{ kind: 'file', path, startLine: 3, endLine: 3, text: 'selected', annotation: 'Clarify the pricing', number: 1 }])
 
-  const marker = () => host.querySelector<HTMLButtonElement>('[data-annotation-marker="1"]')
-  await until('the marker is visible', () => !!marker())
-  await act(async () => { await userEvent.click(marker()!) })
-  expect(field().value).toBe('Clarify the pricing')
-  await act(async () => { field().select(); await userEvent.keyboard('Use monthly totals{Enter}') })
-  expect(draft.items).toMatchObject([{ number: 1, annotation: 'Use monthly totals' }])
-  await act(async () => { await userEvent.click(marker()!) })
-  await act(async () => { await userEvent.click(editor()!.querySelector('button')!) })
+  expect(editor()).toBeNull()
+  expect(host.querySelector('[data-annotation-marker]')).toBeNull()
+  await act(async () => { await userEvent.click(host.querySelector('[data-composer-annotations] button')!) })
+  const remove = () => document.querySelector('button[aria-label="Delete annotation"],button[aria-label="删除批注"]')
+  await until('the saved file comment can be deleted', () => !!remove())
+  expect(document.querySelector('button[aria-label="Edit annotation"],button[aria-label="修改批注"]')).toBeNull()
+  await act(async () => { await userEvent.click(remove()!) })
   expect(draft.items).toHaveLength(0)
+  await until('the empty attachment closes', () => !host.querySelector('[data-composer-annotations]'))
+  document.getSelection()?.removeAllRanges()
+  document.getSelection()?.addRange(range)
+  document.dispatchEvent(new Event('selectionchange'))
+  await until('the source can be selected again', () => document.querySelectorAll('.gg-file-cite-popup button').length === 2)
+  await act(async () => { await userEvent.click(document.querySelectorAll('.gg-file-cite-popup button')[1]!) })
+  await until('the new comment input is mounted', () => !!editor())
+  await act(async () => { await userEvent.keyboard('Use monthly totals{Enter}') })
+  expect(draft.items).toMatchObject([{ kind: 'file', path, startLine: 3, endLine: 3, text: 'selected', number: 2, annotation: 'Use monthly totals' }])
 })

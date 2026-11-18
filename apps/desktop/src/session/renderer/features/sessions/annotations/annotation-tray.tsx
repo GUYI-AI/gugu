@@ -73,13 +73,13 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
                     </div>
                     <span className="block truncate">{position}</span>
                   </div>
-                  <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
-                    onClick={() => setEditing(item.id)}><Pencil className="size-3.5" /></Button>
+                  {item.kind === 'browser' && <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
+                    onClick={() => setEditing(item.id)}><Pencil className="size-3.5" /></Button>}
                   <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.delete')}
                     onClick={() => draft.remove(item.id)}><Trash2 className="size-3.5" /></Button>
                 </div>
                 {item.text && <blockquote className="line-clamp-3 whitespace-pre-wrap text-xs text-foreground-muted">{item.text}</blockquote>}
-                {editing === item.id ? (
+                {item.kind === 'browser' && editing === item.id ? (
                   <AnnotationEditor number={item.number} initialValue={item.annotation}
                     onSave={value => { draft.update(item.id, value); setEditing(null); }} onCancel={() => setEditing(null)} />
                 ) : <p className="whitespace-pre-wrap break-words text-sm">{item.annotation}</p>}

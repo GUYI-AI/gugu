@@ -125,10 +125,8 @@ export function createGugu(
   // Every call names where its file is (真源原则 13): an entry or `ctx.file` carries it, a place says it.
   const files = Object.freeze({
     /** Preinstalled Files App only, inside a real click: the host's Send box beside the selection. Answers 'sent' or 'cancelled'. */
-    ...(host.appFiles.annotateSelection && host.appFiles.watchAnnotationMarkers && host.appFiles.onAnnotationMarkers ? {
+    ...(host.appFiles.annotateSelection ? {
       annotateSelection: (file: unknown, open: unknown) => host.appFiles.annotateSelection!({ file, open }),
-      watchAnnotationMarkers: (file: unknown) => host.appFiles.watchAnnotationMarkers!({ file }),
-      onAnnotationMarkers: host.appFiles.onAnnotationMarkers,
     } : {}),
     ...(host.appFiles.sendSelection ? { sendSelection: (args: unknown) => host.appFiles.sendSelection!({ ...(args as Record<string, unknown> | null) }) } : {}),
     open: (file: unknown, options?: { readOnly?: boolean }) => {

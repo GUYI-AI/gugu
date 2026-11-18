@@ -158,7 +158,6 @@ export const HOST_CALLS = {
   'appFiles.read': { verb: 'filesRead' },
   'appFiles.sendSelection': { verb: 'filesSendSelection' },
   'appFiles.annotateSelection': { verb: 'filesAnnotateSelection' },
-  'appFiles.watchAnnotationMarkers': { verb: 'filesWatchAnnotationMarkers' },
   'appFiles.readText': { verb: 'filesReadText' },
   'appFiles.exists': { verb: 'filesExists' },
   'appFiles.draft': { verb: 'filesDraft' },
@@ -219,7 +218,6 @@ export const HOST_EVENTS = {
   /** `gugu.bindings.onWorkChanged(name, fn)` rides on it (46, create-gugu.ts): what `bindings.work` answers, each time it changes. */
   'bindings.onWork': { event: 'bindingWork', only: 'page', pick: (event: Event<'bindingWork'>) => [event.work] },
   /** `gugu.files.onChanged(place, fn)` rides on it; it says files moved, never who moved them. */
-  'appFiles.onAnnotationMarkers': { event: 'fileAnnotationMarkers', only: 'page', pick: (event: Event<'fileAnnotationMarkers'>) => [event.value] },
   onFilesChanged: { event: 'filesChanged', pick: (event: Event<'filesChanged'>) => [event.watchId, event.change] },
   /** `gugu.files.download(file, { onProgress })` rides on it. */
   onDownloadProgress: { event: 'downloadProgress', only: 'page', pick: (event: Event<'downloadProgress'>) => [event.transferId, event.done, event.total] },

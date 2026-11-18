@@ -473,9 +473,8 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     const ask = params as FileAnnotationAsk;
     const guest = pageElement(ask.webContentsId);
     if (!guest) return false;
-    const { editGuestFileAnnotation, watchGuestFileAnnotations } = await import('../sessions/annotations/guest-file-annotation');
-    return ask.open ? editGuestFileAnnotation(guest, auxWindows.layerOf(guest.ownerDocument), ask, INSTALL_CONSENT_HUMAN_WINDOW_MS)
-      : watchGuestFileAnnotations(guest, ask);
+    const { openGuestFileAnnotation } = await import('../sessions/annotations/guest-file-annotation');
+    return openGuestFileAnnotation(guest, auxWindows.layerOf(guest.ownerDocument), ask, INSTALL_CONSENT_HUMAN_WINDOW_MS);
   },
   [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
     const { to, webContentsId, open } = params as SelectionSendAsk;

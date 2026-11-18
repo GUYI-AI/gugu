@@ -1949,16 +1949,14 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
-    case 'filesAnnotateSelection':
-    case 'filesWatchAnnotationMarkers': {
+    case 'filesAnnotateSelection': {
       requirePreinstalledFiles({ id: extensionId, origin: extensionsService().origins()[extensionId] });
       const page = thePage(caller), sessionId = sessionOfBinding(page);
       if (!sessionId || !page.workspace) throw Object.assign(new Error('File annotations require a task workspace'), { code: 'denied' });
-      const editing = method === 'filesAnnotateSelection';
       const ask: FileAnnotationAsk = {
         sessionId, webContentsId: caller.pageId,
-        path: !editing && args.file === null ? null : annotationFilePath(args.file, page.workspace),
-        ...(editing ? { open: parseFileAnnotation(args.open) } : {}),
+        path: annotationFilePath(args.file, page.workspace),
+        open: parseFileAnnotation(args.open),
       };
       const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
       return await invokeInEmbedder(page.embedderId, EXTENSION_FILE_ANNOTATION_METHOD, ask) === true;
