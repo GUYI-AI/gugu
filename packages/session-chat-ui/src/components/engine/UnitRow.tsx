@@ -153,6 +153,7 @@ export type UnitRowProps = {
   /** 跑完后的最后一条回复(从 ChatRoot 来),只有它量出页脚 —— 见 MeasureCtx.finalReplyId。 */
   finalReplyId?: string | null;
   latestConversationMessageId?: string | null;
+  utteranceHovered?: boolean;
   /** 后台任务挂在哪条回复的过程行上 —— 见 MeasureCtx.background。 */
   background?: MeasureCtx['background'];
 };
@@ -201,7 +202,8 @@ export function UnitRow(props: UnitRowProps) {
   // another input must not remeasure every historical row's names and labels.
   const latestConversationMessageId = createMemo(() => {
     const id = props.latestConversationMessageId;
-    return id && unitContainsItem(props.unit, id.replace(/:batch-\d+$/, '')) ? id : null;
+    const replyId = props.unit.kind === 'turn-completion' ? (props.unit.data as { reply?: { id: string } }).reply?.id : undefined;
+    return id && (id === replyId || unitContainsItem(props.unit, id.replace(/:batch-\d+$/, ''))) ? id : null;
   });
   const finalReplyId = createMemo(() => {
     const id = props.finalReplyId;
@@ -468,6 +470,8 @@ export function UnitRow(props: UnitRowProps) {
               data-item-id={props.unit.itemId}
               classList={{ 'msg-src-flash': commands().flashMessageId === props.unit.itemId }}
               data-row-inset={insetX()}
+              data-conversation-utterance={props.unit.conversationUtterance}
+              data-utterance-hovered={props.utteranceHovered || undefined}
               style={{
                 'padding-top': `${props.unit.activityFold ? Math.min(props.unit.gapBefore, animatedReserved()) : props.unit.gapBefore}px`,
                 'padding-bottom': '0px',
