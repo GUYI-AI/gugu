@@ -1,4 +1,13 @@
 export default {
+  "externalHistory": {
+    "readOnly": "只读历史",
+    "user": "你",
+    "assistant": "助手",
+    "loadMore": "加载更多",
+    "loading": "正在读取…",
+    "readFailed": "未能读取更多消息。",
+    "close": "关闭",
+  },
   "iosCalendar": {
     "groupTitle": "这台手机上的任务 Agent 能用",
     "calendar": "日历",
