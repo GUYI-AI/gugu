@@ -90,7 +90,8 @@ export function localizePermissionModeOptions(
   options: Options | null,
   translate: Translate,
   agentName: string,
-  modeMap?: ProviderPermissionModeMap
+  modeMap?: ProviderPermissionModeMap,
+  nameForTier?: (tier: GuguPermissionMode) => string
 ): Options | null {
   if (!options) return null;
   if (!modeMap) return options;
@@ -118,7 +119,7 @@ export function localizePermissionModeOptions(
   for (const rung of GUGU_PERMISSION_MODES) {
     const id = reportedIdFor(rung, options, modeMap);
     if (!id) continue;
-    collapsed[id] = { ...options[id], ...labels[rung] };
+    collapsed[id] = { ...options[id], ...labels[rung], name: nameForTier?.(rung) ?? labels[rung].name };
   }
 
   // 表声明的档一个都没上报 = 这张表对不上这个 agent。别摆一个空下拉,原样交出去。

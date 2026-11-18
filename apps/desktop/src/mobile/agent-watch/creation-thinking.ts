@@ -11,7 +11,7 @@ export function creationThinking(models: SessionpageSessionCreateModels | null, 
   return {
     effortOptions: localizeEffortOptions(current ? Object.fromEntries(current.efforts.map(option => [option.id, {
       name: option.name, ...(option.description ? { description: option.description } : {}),
-    }])) : null, translateSessionMessage),
+    }])) : null, translateSessionMessage, 'known'),
     selectedEffort: selection.effort ?? undefined,
     defaultEffort: current?.selectedEffort ?? undefined,
     fastMode: selection.model && fast?.model === selection.model && fastModeValue(fast) !== undefined

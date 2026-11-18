@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { SessionOptionDimension } from '@gugu/session-core/session-record/contract'
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
 import { conversationOptionClient } from '../assistant/assistantTimelineClient'
@@ -16,7 +17,8 @@ import { renderFastModeHint } from '@renderer/features/sessions/session-config/f
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
 
 /** Adapts the host facts through the project page's model, effort and permission assemblers. */
-export function useConversationOptions(target: ConversationTarget | null, agentName: string) {
+export function useConversationOptions(target: ConversationTarget | null, agentName: string, mobile = false) {
+  const { t } = useTranslation('main')
   const deviceId = target?.deviceId, sessionId = target?.sessionId, local = target?.local, phoneHost = target?.phoneHost, reachable = target?.reachable !== false
   const key = target ? `${deviceId}/${sessionId}/${local}/${phoneHost}` : ''
   const scopeRef = useRef({ key })
@@ -79,14 +81,15 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
       if (plan?.kind === 'hot') void pick('model', plan.wireValue)
       else if (plan?.kind === 'reload') setRestart({ modelId: plan.modelId, label: plan.displayName, source: plan.source === 'platform' ? 'platform' : 'own' })
     },
-    effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage),
+    effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage, mobile ? 'known' : 'all-or-none'),
     selectedEffort: options?.effort?.selected ?? undefined,
     onEffortChange: id => { void pick('effort', id) },
     // The host filters this group by the current model's acknowledged native capability.
     fastMode: fastModeValue(options?.fast),
     onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
     renderFastModeHint,
-    permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap),
+    permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap,
+      mobile ? tier => t(`agentWatch.create.permission.${tier}.name`) : undefined),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
     ...(error ? { notice: { variant: 'error', message: error, onDismiss: () => setError(null) } } : {}),
