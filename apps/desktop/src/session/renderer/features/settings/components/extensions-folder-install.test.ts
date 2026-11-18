@@ -76,10 +76,13 @@ vi.mock('@renderer/features/library/library-host', async () => {
   };
 });
 
-vi.mock('@renderer/features/extensions/panel/market-detail-agent', () => ({
-  MarketAgentDetail: ({ agentId }: { agentId: string }) =>
-    React.createElement('h2', { 'data-testid': 'chosen-agent-detail' }, agentId),
-}));
+vi.mock('@renderer/features/extensions/panel/market-detail-agent', async () => {
+  const { DialogHeader, DialogTitle } = await import('@renderer/lib/ui/dialog');
+  return {
+    MarketAgentDetail: ({ agentId }: { agentId: string }) =>
+      React.createElement(DialogHeader, null, React.createElement(DialogTitle, { 'data-testid': 'chosen-agent-detail' }, agentId)),
+  };
+});
 
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
 const { translateSessionMessage } = await import('@renderer/localization/locale-store');
