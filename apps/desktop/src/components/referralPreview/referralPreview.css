@@ -9,7 +9,7 @@
 
 .gg-referral-dialog{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
 .gg-referral-dialog-heading{display:flex;flex:none;align-items:center;justify-content:space-between;padding:20px 20px 0 24px}
-.gg-referral-dialog-heading h2{margin:0;font-size:17px;font-weight:600}
+.gg-referral-dialog-heading h2{margin:0;font-size:var(--font-title);font-weight:600}
 .gg-referral-panel{display:flex;flex-direction:column;gap:16px;min-height:0;height:100%;overflow:hidden;padding:20px 24px 24px}
 .gg-referral-code-card{flex:none;border-radius:var(--radius-surface);background:var(--bg);padding:18px 16px 16px;text-align:center}
 .gg-referral-code{display:block;font-size:30px;font-weight:600;letter-spacing:3px;overflow-wrap:anywhere}
@@ -17,7 +17,7 @@
 .gg-referral-copy{display:flex;justify-content:center;gap:8px;margin-top:14px}
 .gg-referral-stats{display:flex;flex:none}
 .gg-referral-stats>div{display:flex;flex:1;flex-direction:column;gap:2px}
-.gg-referral-stats strong{font-size:20px;font-weight:600}
+.gg-referral-stats strong{font-size:var(--font-heading);font-weight:600}
 .gg-referral-stats span,.gg-referral-activity-heading{font-size:var(--font-caption);color:var(--muted-fg)}
 .gg-referral-activity-heading{display:flex;align-items:center;justify-content:space-between;flex:none}
 .gg-referral-activity{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}

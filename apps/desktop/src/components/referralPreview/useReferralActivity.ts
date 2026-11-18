@@ -17,7 +17,8 @@ export function useReferralActivity(userId: string | undefined) {
       if (request === epoch.current) setState(previous => ({ ...previous, loading: false, failed: true }))
     }
   }, [userId])
-  useEffect(() => { void load(null); return () => { epoch.current++ } }, [load])
+  const cancel = useCallback(() => { epoch.current++ }, [])
+  useEffect(() => { void load(null); return cancel }, [load, cancel])
   return {
     items: state.userId === userId ? state.items : [],
     loading: state.userId !== userId || state.loading,
