@@ -31,6 +31,7 @@ import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
 import { installConnectionHost } from './components/connections/connection-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
+import { useAndroidNotificationReminder } from './lib/useAndroidNotificationReminder'
 import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
 import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
@@ -43,6 +44,7 @@ if (typeof window !== 'undefined') { installAssistantPanelHost(); installConnect
 
 function AuthenticatedProduct({ user }: { user: AuthUser }) {
   const [effectsActive, setEffectsActive] = useState(false)
+  useAndroidNotificationReminder(effectsActive)
   const onShellCommitted = useCallback(() => setEffectsActive(true), [])
   useEffect(() => {
     if (!effectsActive || platform.kind !== 'electron' || !platform.capabilities.sessionHost) return

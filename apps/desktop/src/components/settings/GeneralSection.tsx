@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, useLocale, type LocalePreference } from '@/i18n'
 import { useTheme } from '../../store/theme'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { Button } from '../ui/Button'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
-import { sendTestNotification } from '../../lib/notificationDiagnostics'
+import {
+  ANDROID_NOTIFICATION_PROBLEM_COPY, openAndroidNotificationSettings, readAndroidNotificationProblem,
+  sendTestNotification, type AndroidNotificationProblem,
+} from '../../lib/notificationDiagnostics'
+import { useAppActive } from '../../lib/onScreenChat'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
@@ -85,9 +89,22 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
     refresh: refreshSystemNotificationState,
   } = useSystemPermissionStates(NOTIFICATION_PERMISSION)
   const trayBadgeEnabled = useTrayBadgeEnabled()
-  const [notificationHint, setNotificationHint] = useState<keyof typeof NOTIFICATION_HINT_KEYS | null>(null)
+  const [notificationTest, setNotificationTest] = useState<{
+    kind: keyof typeof NOTIFICATION_HINT_KEYS
+    silent?: boolean
+  } | null>(null)
+  const [androidProblem, setAndroidProblem] = useState<AndroidNotificationProblem | null | undefined>()
+  const foreground = useAppActive()
+  const testSilent = notificationTest?.silent
+  useEffect(() => {
+    if (testSilent === undefined || !foreground) return
+    let current = true
+    void readAndroidNotificationProblem(testSilent).then(problem => { if (current) setAndroidProblem(problem) })
+    return () => { current = false }
+  }, [foreground, notificationTest, testSilent])
   const notificationBlocked = systemNotificationStates.notifications === 'prompt'
     || systemNotificationStates.notifications === 'blocked'
+  const notificationHint = notificationTest?.kind
 
   return (
     <SettingsPage>
@@ -134,16 +151,22 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
       {(platform.kind !== 'capacitor' || platform.capabilities.notifications) && <SettingsGroup
         title={t('settings.general.notifications')}
         note={t('settings.general.notificationsScope')}
-        footer={notificationHint !== null ? (
-          <SettingsNote role="status">
-            {t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])}
-          </SettingsNote>
-        ) : undefined}
+        footer={notificationHint && <SettingsNote role="status">
+          {testSilent === undefined ? t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])
+            : t(androidProblem ? ANDROID_NOTIFICATION_PROBLEM_COPY[androidProblem]
+              : notificationHint === 'accepted' ? 'settings.general.notificationsAndroidSent'
+              : 'settings.general.notificationsAndroidUnconfirmed')}
+          {testSilent !== undefined && <div className="mt-2">
+            <Button variant="secondary" size="sm" onClick={() => { void openAndroidNotificationSettings(testSilent, androidProblem) }}>
+              {t(androidProblem ? 'settings.general.notificationsAndroidOpen' : 'settings.general.notificationsAndroidCheck')}
+            </Button>
+          </div>}
+        </SettingsNote>}
       >
         {/* 系统权限的**状态与开关入口只在「权限」页**(product spec)。owner 2026-09-15:
             「手机端通用这有通知,怎么权限这还有通知,这是我困糊的点」—— 同一个事实只显示一处。
             只有系统确实拦着时才出这一行指路;读不到系统状态的宿主上不出现 —— 不知道就不说。 */}
-        {notificationBlocked && (
+        {notificationBlocked && androidProblem !== 'app-disabled' && (
           <SettingsRow
             data-testid="settings-notifications-blocked"
             stack
@@ -181,8 +204,10 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
               size="sm"
               aria-label={t('settings.general.notificationsTestAria')}
               onClick={() => {
-                void sendTestNotification().then((result) => {
-                  setNotificationHint(result.kind)
+                const silent = platform.androidNotificationSettings ? !notificationSettings.sound : undefined
+                void sendTestNotification(silent).then((result) => {
+                  setAndroidProblem(undefined)
+                  setNotificationTest({ kind: result.kind, silent })
                   void refreshSystemNotificationState()
                 })
               }}

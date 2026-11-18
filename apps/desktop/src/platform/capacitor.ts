@@ -167,6 +167,8 @@ function setBackgroundWatch(label: string | null, text?: string): Promise<void> 
 const ALERT_CHANNEL_ID = 'gugu-alerts'
 const notificationChannels = registerPlugin<{
   ensureQuietChannel(options: { name: string }): Promise<{ id: string }>
+  readStatus(options: { alertChannelId: string; silent: boolean }): Promise<{ enabled: boolean; importance?: number }>
+  openSettings(options: { alertChannelId: string; silent: boolean; appWide: boolean }): Promise<void>
 }>('GuguNotificationChannels')
 let channelsReady: Promise<string> | null = null
 
@@ -281,6 +283,10 @@ export const capacitorPlatform: AppPlatform = {
       // Never request exact-alarm permission for an immediate notification.
       isExactNotification: false,
     })
+  },
+  androidNotificationSettings: {
+    read: (silent) => notificationChannels.readStatus({ alertChannelId: ALERT_CHANNEL_ID, silent }),
+    open: (silent, appWide) => notificationChannels.openSettings({ alertChannelId: ALERT_CHANNEL_ID, silent, appWide }),
   },
   setBackgroundWatch,
   // @@@share-with-apps 系统分享两个方向,见 capacitorShare.ts。
