@@ -77,9 +77,10 @@ describe('device file reads', () => {
     expect(options.gets).toBe(1)
     expect(requests.filter(row => row.actor === 'agent')).toEqual([
       { actor: 'agent', op: 'file-resolve', ref: { item_id: 'item' } },
-      { actor: 'agent', op: 'file-download', ref: { item_id: 'item', version: 3 } },
       { actor: 'agent', op: 'file-resolve', ref: { item_id: 'item', version: 3 } },
     ])
+    expect(requests.filter(row => row.op === 'file-download')).toHaveLength(1)
+    const beforeRepeat = requests.length
     const repeatRequest = reads.request(message, account, { purpose: 'save' })
     const repeatStates: FileReadState[] = []
     repeatRequest.state$(state => repeatStates.push(state))
@@ -88,6 +89,10 @@ describe('device file reads', () => {
     expect(repeat).toMatchObject({ reused: 'verified-local', route: 'local' })
     expect((await saveToFileStore(repeat.file, root)).file_path).toBe(saved.file_path)
     expect(options.gets).toBe(1)
+    expect(requests.slice(beforeRepeat)).toEqual([
+      { actor: 'owner', op: 'file-resolve', ref: message },
+      { actor: 'owner', op: 'file-resolve', ref: message },
+    ])
     expect(states.at(-1)).toMatchObject({ status: 'done', route: 'oss' })
   })
 
@@ -97,7 +102,9 @@ describe('device file reads', () => {
     const good = reads.request(message, account, { purpose: 'bytes' })
     const refused = reads.request({ attachment_id: 'attachment' }, reader, { purpose: 'bytes' })
     await started.promise
-    await vi.waitFor(() => expect(requests.filter(row => row.op === 'file-download')).toHaveLength(2))
+    const joined = gate()
+    refused.state$(state => { if (state.status === 'transferring') joined.release() })
+    await joined.promise
     options.metadata = actor => ({ ...revision, status: actor === 'agent' ? 'gone' : 'ready' })
     bytes.release()
     const failure = expect(refused.result).rejects.toMatchObject({ code: 'gone' })
@@ -106,6 +113,7 @@ describe('device file reads', () => {
     const retry = await reads.request(message, account, { purpose: 'bytes' }).result
     expect(retry.reused).toBe('chunks')
     await retry.file.dispose()
+    expect(requests.filter(row => row.op === 'file-download')).toHaveLength(1)
     expect(options.gets).toBe(1)
   })
 

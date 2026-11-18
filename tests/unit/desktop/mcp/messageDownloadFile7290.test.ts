@@ -130,7 +130,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const home = await mkdtemp(join(tmpdir(), 'gugu-session-tool-receipt-')); homes.push(home)
     const bytes = new Uint8Array([0, 255, 65, 13, 10, 128, 9])
     const ref = { attachment_id: '44444444-4444-4444-8444-444444444444', file_name: '原始文件😀.bin', size_bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), content_type: 'application/octet-stream' }
-    const authorizations: string[] = []
+    const authorizations: string[] = [], leases: string[] = []
     const downloaded = vi.fn(() => new Response(bytes))
     const fetch = async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input)
@@ -140,6 +140,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
         return Response.json({ ...ref, status: 'ready', source: 'managed-object' })
       }
       if (url.endsWith('/file-download')) {
+        leases.push(AGENT)
         expect(JSON.parse(String(init?.body))).toMatchObject({ ref: { attachment_id: ref.attachment_id }, as: AGENT, request_id: expect.any(String) })
         return Response.json({ ...ref, status: 'ready', download_id: 'download', url: 'https://objects.test/original' })
       }
@@ -170,9 +171,11 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(new Uint8Array(await readFile(file_path))).toEqual(bytes)
     expect(downloaded).toHaveBeenCalledTimes(1)
     expect(authorizations).toHaveLength(4)
+    expect(leases).toEqual([AGENT])
     expect(await call()).toMatchObject({ ...ref, file_path, route: 'local', reused: 'verified-local' })
     expect(downloaded).toHaveBeenCalledTimes(1)
     expect(authorizations).toHaveLength(6)
+    expect(leases).toEqual([AGENT])
   })
 
   test('folder-backed message: resolves its immutable message reference as this agent', async () => {

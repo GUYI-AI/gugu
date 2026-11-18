@@ -171,8 +171,9 @@ export function cloudFileProviders(deps: {
       accept(signed.lease); advertised(signed); direct = signed.direct
       return { lease: signed.lease, direct }
     }
-    // A key still requires the current download ACL, even if every ciphertext chunk is cached.
-    if ((encrypted || context.reads) && !lease) await sign()
+    // Managed reads authorize with file-resolve. Only a cache miss needs a download reservation.
+    // An encrypted relay also requires this reader’s own grant and acknowledgement.
+    if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256
     const key = context.reads
       ? cacheKey(backendScope, context.actor.accountId, encrypted, digest, revision.size_bytes)
