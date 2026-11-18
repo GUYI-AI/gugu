@@ -24,8 +24,6 @@ import { Pane, PaneHeader } from './ui/Pane'
 import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
 import { platform } from '../platform'
-import { UI_EVENTS } from '../lib/uiEvents'
-import { appState } from '../session/renderer/lib/stores/app-state'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import {
   SETTINGS_SECTIONS,
@@ -124,7 +122,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
     switch (activeSection) {
       case 'connectors': return <ConnectorsSection />
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
-      case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} onOpenThemes={openThemes} />
+      case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
       // This is a primary page now; keep its content while opting out of nested-page navigation.
       case 'files':    return <SettingsDetailNavigation.Provider value={null}><FileStorageSection onBack={back} /></SettingsDetailNavigation.Provider>
@@ -143,15 +141,6 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       default:         return null
     }
   }
-
-  // 主题在资源库「主题」那一格里选(owner 11-07);资源库只在有本机会话页的桌面上,手机「我的」不给。
-  const openThemes = !mobile && onClose && platform.capabilities.agentRuntime
-    ? () => {
-        onClose()
-        window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-        appState.navigation.navigate('library', { tab: 'themes' })
-      }
-    : undefined
 
   const selectSection = (section: ActiveSection) => {
     if (mobile) setParentSection(mobilePane === 'detail' ? activeSection : null)
