@@ -44,5 +44,5 @@ function workspaceFileCite(path: string, selection: FileViewerSelection | null) 
 
 /** Send a task file's selection with a few words, from the box beside it (or the phone's bar): the cite's words and pill, then theirs. */
 export function sendWorkspaceSelection(sessionId: string, path: string, selection: FileViewerSelection, anchor: DOMRect | 'dock'): void {
-  void openSelectionSend({ cite: workspaceFileCite(path, selection), sessionId, anchor }).catch(() => undefined);
+  void openSelectionSend({ cite: workspaceFileCite(path, selection), to: { session: sessionId }, anchor }).catch(() => undefined);
 }

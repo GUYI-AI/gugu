@@ -133,7 +133,7 @@ function forAgentsNote(installed: { manifest: ExtensionManifest; rootDir: string
   if (!given) {
     return {
       for_agents:
-        "Its owner did not give it to you: they choose which agents get an App's tools and skills (its row in 「App」), " +
+        "Its owner did not give it to you: they choose which agents get an App's tools and skills (its row in Apps, 「市场」 in Chinese), " +
         'so you do not have them.',
     };
   }
@@ -807,7 +807,7 @@ async function actOn(action: z.infer<typeof agentActionSchema>, dependencies: Ex
       const { bytes, sha256, manifest } = await packExtensionArchive(extensionsService(), sourceDir);
       const fileName = `${manifest.id}-${manifest.version}${EXTENSION_ARCHIVE_SUFFIX}`;
       // F12 (L6 S6) output_path is optional: by default next to the bundle folder, a short path the agent copies into
-      // message_send_file (not macOS's /var/folders/…/T, full of look-alike zeros models miscopy). Given, a path
+      // message_send (not macOS's /var/folders/…/T, full of look-alike zeros models miscopy). Given, a path
       // ending in .guguext is the file, anything else a folder; missing folders are made rather than refused.
       const out =
         action.output_path === undefined ? null : await agentFolder('output_path', action.output_path, dependencies.callerWorkspaceRoot);
@@ -825,7 +825,7 @@ async function actOn(action: z.infer<typeof agentActionSchema>, dependencies: Ex
         sha256,
         id: manifest.id,
         version: manifest.version,
-        next: 'Send file_path with message_send_file; the chat shows it as an App card the people there can install.',
+        next: 'Send file_path with message_send; the chat shows it as an App card the people there can install.',
       };
     }
     case 'bump': {

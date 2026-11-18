@@ -7,8 +7,9 @@ import { useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
  * 资源库是 retained 视图:离开它(「试试看」开新任务、左栏点「消息」)页面还挂着,抽屉连同遮罩就盖在新页面上,
  * 输入框点不到(11-07 资源库盘点实测)。离开就清掉选择:回来时也不再冒出上一次的抽屉。
  */
-export function useLibrarySheetSelection(): [string | null, (id: string | null) => void] {
-  const showing = useWorkspaceSlots().currentView === 'library';
+export function useLibrarySheetSelection(inSettings = false): [string | null, (id: string | null) => void] {
+  const { currentView } = useWorkspaceSlots();
+  const showing = inSettings || currentView === 'library';
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => {
     if (!showing) setSelected(null);

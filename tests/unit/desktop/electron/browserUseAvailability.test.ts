@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDesktopGuguMcpHost, type DesktopGuguMcpHost } from '../../../../apps/desktop/electron/acp-engine-utils'
@@ -42,7 +43,7 @@ describe('#2401 Browser Use on a Gugu server follows the installed App, as on a 
       agentUserId: randomUUID(),
       threadRootId: null,
       autonomy: null,
-      socialBridgeDeps: { host, grantKey: `taskpage:${randomUUID()}`, getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon-key',
+      socialBridgeDeps: { attachments: testAttachmentUploads(), host, grantKey: `taskpage:${randomUUID()}`, getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon-key',
         ...(personalAssistant ? { personalAssistant, runSessionAction: async () => ({}) } : {}) },
     })
   }

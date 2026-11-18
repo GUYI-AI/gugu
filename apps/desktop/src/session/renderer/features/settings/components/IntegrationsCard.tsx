@@ -1,3 +1,4 @@
+import { UI_EVENTS } from '@/lib/uiEvents';
 import React, { useMemo } from 'react';
 import { integrationErrorText } from '@renderer/features/integrations/integration-display';
 import { keptByPlatform } from '@renderer/features/integrations/integration-setup-model';
@@ -56,7 +57,7 @@ export type IntegrationItem = {
   onTryPlaybook?: (prompt: string) => void;
 };
 
-const IntegrationsCard: React.FC = () => {
+const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = false }) => {
   const {
     connectionStatus,
     configuredConnections,
@@ -76,7 +77,7 @@ const IntegrationsCard: React.FC = () => {
     () => sortGitHubAccountsByDefault(githubAccounts),
     [githubAccounts]
   );
-  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection();
+  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings);
   const showIntegrationSetup = useShowModal('integrationSetupModal');
   const showConnectGitHub = useShowModal('githubConnectModal');
   const showConfirm = useShowModal('confirmActionModal');
@@ -144,6 +145,10 @@ const IntegrationsCard: React.FC = () => {
   const tryPlaybook = (prompt: string) => {
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, prompt);
     if (host.remote) remoteHostsStore.requestNewSession(host.remote.deviceId);
+    if (inSettings) {
+      window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+      window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal));
+    }
     navigate('new-session');
   };
 

@@ -18,6 +18,7 @@ import {
   sidebarRowRestActionsClass,
 } from './sidebar-primitives';
 import { sidebarRowInsetPx } from './sidebar-row-metrics';
+import { SidebarRowQuickAction } from './sidebar-row-quick-action';
 import { SidebarTwistyLane } from './sidebar-twisty';
 import type { SidebarJoin } from '@/lib/sidebarJoinedGroups';
 import { SidebarSessionTitle } from './sidebar-session-title';
@@ -45,7 +46,6 @@ export type SessionRowShellProps = {
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
-  needsAttention: boolean;
   treeSummary?: SessionBranchSummary;
   onToggle?: () => void;
   title: string;
@@ -94,16 +94,6 @@ export type SessionRowShellProps = {
   join?: SidebarJoin;
 };
 
-const quickActionButtonClass =
-  'flex size-6 items-center justify-center rounded-sm bg-transparent text-foreground-tertiary-passive transition-colors hover:text-foreground active:text-foreground focus-visible:text-foreground';
-
-// 行是 draggable(拖成 @),按钮在行里:按下后指针挪过浏览器的拖拽阈值(几个像素)就成了拖这一行,
-// click 被吞掉。取消 mousedown 的默认动作 = 从这枚按钮上不发起原生拖拽,click 照常到。
-const quickActionMouseDown = (e: React.MouseEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-};
-
 export function SessionRowShell({
   rowRef,
   sessionId,
@@ -111,7 +101,6 @@ export function SessionRowShell({
   depth,
   hasChildren,
   expanded,
-  needsAttention,
   treeSummary,
   onToggle,
   title,
@@ -150,7 +139,6 @@ export function SessionRowShell({
   const scheduleAtRest =
     schedule != null &&
     presentationAttention(presentation) === null &&
-    !needsAttention &&
     !statusUnavailable &&
     presentation?.tone !== 'running' && presentation?.tone !== 'parked';
   const leadingClass = cn('flex shrink-0 items-center', disabled && 'opacity-60');
@@ -183,7 +171,6 @@ export function SessionRowShell({
           data-depth={depth}
           data-join={join?.pos}
           data-join-on={join?.onScreen || undefined}
-          data-needs-attention={needsAttention || undefined}
           data-agent-tone={presentation?.tone}
           data-disabled={disabled || undefined}
           aria-disabled={disabled || undefined}
@@ -251,65 +238,22 @@ export function SessionRowShell({
                 {/* 静止时那枚钟在下面那一格(pointer-events-none、一 hover 就淡出),悬停读不到;所以 hover 层里把它接过来,
                     排在置顶 / 归档左边,是它自己的目标:指针停在它上面出 tooltip(下次时间、标题、条数),不和两枚钮抢。 */}
                 {scheduleAtRest && schedule ? <SidebarScheduleHoverMark digest={schedule} /> : null}
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={translate(quickActions.isPinned ? 'task.unpinTask' : 'task.pinTask')}
-                        className={quickActionButtonClass}
-                        onMouseDown={quickActionMouseDown}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          quickActions.onSetPinned(!quickActions.isPinned);
-                        }}
-                      >
-                        {quickActions.isPinned ? (
-                          <PinOff className="size-3.5" />
-                        ) : (
-                          <Pin className="size-3.5" />
-                        )}
-                      </button>
-                    }
-                  />
-                  <TooltipContent>
-                    {translate(quickActions.isPinned ? 'task.unpin' : 'task.pinTask')}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={quickActions.archiveLabel}
-                        className={quickActionButtonClass}
-                        onMouseDown={quickActionMouseDown}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          quickActions.onArchive();
-                        }}
-                      >
-                        <Archive className="size-3.5" />
-                      </button>
-                    }
-                  />
-                  <TooltipContent>{quickActions.archiveLabel}</TooltipContent>
-                </Tooltip>
+                <SidebarRowQuickAction
+                  label={translate(quickActions.isPinned ? 'task.unpinTask' : 'task.pinTask')}
+                  tooltip={translate(quickActions.isPinned ? 'task.unpin' : 'task.pinTask')}
+                  onClick={() => quickActions.onSetPinned(!quickActions.isPinned)}
+                >
+                  {quickActions.isPinned ? <PinOff /> : <Pin />}
+                </SidebarRowQuickAction>
+                <SidebarRowQuickAction label={quickActions.archiveLabel} onClick={quickActions.onArchive}>
+                  <Archive />
+                </SidebarRowQuickAction>
               </span>
             ) : null}
             <span className={sidebarRowRestActionsClass}>
-              {/* 自己的「需要你」先于子树汇总:否则一条出错的会话只显示「树里有事」那颗黄点,红点永远轮不到。 */}
               {presentation && presentationAttention(presentation) ? (
                 <span className="flex size-5 items-center justify-center">
                   <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" />
-                </span>
-              ) : needsAttention ? (
-                <span className="flex size-5 items-center justify-center">
-                  <span
-                    className="size-2 rounded-full bg-[var(--agent-tone-needs-user)]"
-                    aria-label={translate('sidebar.sessionTreeNeedsAttention')}
-                    title={translate('sidebar.sessionTreeNeedsAttention')}
-                  />
                 </span>
               ) : statusUnavailable ? (
                 <span className="flex size-5 items-center justify-center">

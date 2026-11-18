@@ -2,7 +2,7 @@
 export interface GroupAdminRpcClient {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{
     data: unknown
-    error: { message: string } | null
+    error: { message: string; code?: string } | null
   }>
 }
 
@@ -38,7 +38,8 @@ export function createGroupAdmin(client: GroupAdminRpcClient, actor: string) {
 
   async function call(response: ReturnType<GroupAdminRpcClient['rpc']>): Promise<unknown> {
     const { data, error } = await response
-    if (error) throw new Error(error.message)
+    // The SQLSTATE travels with the message: a caller can tell a transient rollback (40P01) from a refusal.
+    if (error) throw Object.assign(new Error(error.message), error.code ? { code: error.code } : {})
     return data
   }
   async function object(name: string, response: ReturnType<GroupAdminRpcClient['rpc']>, expected: Record<string, unknown> = {}) {

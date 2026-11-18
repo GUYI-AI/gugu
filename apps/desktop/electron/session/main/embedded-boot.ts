@@ -31,6 +31,8 @@ import { appSourcesRoot, extensionDataRoot, extensionsService } from './core/ext
 import { appKey } from '@shared/extensions/app-identity'
 import { ensurePreinstalledApps } from './core/extensions/preinstalled-apps'
 import { firstRunAtBoot } from './core/extensions/first-run-apps'
+import { captureAgentHomeUpgradeProfile } from './core/extensions/first-run-record'
+import { initializeAgentHomeUpgrade } from './core/agents/agent-homes'
 import { autoUpdateAtBoot } from './core/extensions/auto-update-apps'
 import { EXTENSION_DATA_DIR_NAME } from './core/extensions/extension-data'
 import { extensionPrograms, stopAllExtensionPrograms, type ExtensionPrograms } from './core/extensions/extension-programs'
@@ -110,7 +112,7 @@ import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
 import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
-import { knownHarnessConfigRoots, loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
+import { loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
 import { closeDatabase, db, sqlite } from '@main/db/client'
 import { flushViewState } from '@main/core/view-state/view-state-service'
 import { resolveDatabasePath } from '@main/db/path'
@@ -237,7 +239,7 @@ import {
   setConnectionConfigRootResolver,
   setSessionStatusFeed,
 } from '@main/core/session-timeline/service'
-import { connectionConfigRoot, nativeConfigRoot } from '@main/core/agents/harness-connections'
+import { connectionConfigRoot, managedConfigRoot } from '@main/core/agents/harness-connections'
 import { setSessionCancel, setSessionWake } from '@main/core/session-timeline/write-bridge'
 import { setOtherMachines } from '@main/core/sessions/session-family'
 import { loadAcpForkHandshakes } from '@main/core/agents/fork-legs'
@@ -500,6 +502,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   options.hostIpc.onConnectionClosed?.(releasePlacementsOf)
   const { ipcMain } = options.hostIpc
   const { browserFeatures } = options
+  const priorProfile = browserFeatures && captureAgentHomeUpgradeProfile(app.getPath('userData'))
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
@@ -577,7 +580,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     if (moved.length > 0 || conflicts.length > 0) {
       const outputs = await migrateSessionOutputPaths(moved)
       await loadHarnessConfigRoots()
-      const claude = await copyClaudeHistoryForMovedFolders([nativeConfigRoot('claude'), ...knownHarnessConfigRoots('claude')], moved)
+      const claude = await copyClaudeHistoryForMovedFolders([managedConfigRoot('claude')], moved)
       log.info('canonical paths: records now in their one spelling', { moved: moved.length, conflicts: conflicts.length, outputs, claude })
     }
   } catch (error) {
@@ -617,6 +620,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     logger: log,
     now: Date.now,
   })
+  if (browserFeatures) initializeAgentHomeUpgrade(priorProfile)
   // Task names: a bound task is named by its roster identity (task-name.ts). The roster keys were just
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()
@@ -732,14 +736,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 这里不做遥测初始化:原有的 PostHog 埋点(56 个事件)2026-09-10 整套拆除 ——
   // owner:「他是个美国人的服务吗?感觉我很多软件用户是国内的,这种数据外流可能不安全」。
   // 那条管子默认是开的,只差构建时传一个 key 就会往美国发;所以是拆,不是藏开关。
-
-  // #26 订阅连接的开机对齐:趁还没有任何会话、自动化也还没起,把默认账号的凭据放到会话要读的地方(见 harness-connections)。
-  try {
-    const { alignHarnessConnectionsAtStartup } = await import('@main/core/agents/harness-connections')
-    await alignHarnessConnectionsAtStartup()
-  } catch (e: unknown) {
-    log.warn('harness connections: startup alignment failed; sessions keep the credentials already in place', { error: e })
-  }
 
   // --- Eager service .initialize()/.start() block (index.ts:146-156). ---
   projectSettingsService.initialize()

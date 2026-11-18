@@ -1,13 +1,11 @@
-import { useState } from 'react'
+import type { MentionItem } from '@gugu/session-ui/react/components'
 import type { CreationSkill } from './create-skills'
 
-// Keep target-specific grants separate while the first sentence follows the account's creation draft.
-const skillDrafts = new Map<string, CreationSkill[]>()
-export function useCreationSkillDraft(owner: string | null, device: string, scope: string | null, harness: string | null) {
-  const key = JSON.stringify([owner, device, scope, harness])
-  const [record, setRecord] = useState(() => ({ key, skills: skillDrafts.get(key) ?? [] }))
-  const skills = record.key === key ? record.skills : skillDrafts.get(key) ?? []
-  const update = (next: CreationSkill[]) => { skillDrafts.set(key, next); setRecord({ key, skills: next }) }
-  return { skills, update }
+/** A skill stays an inline reference to its real SKILL.md, not an attachment or expanded instruction. */
+export function creationSkillMention(skill: CreationSkill): MentionItem {
+  return { id: skill.id, label: skill.id, name: skill.name, description: skill.description, kind: 'file' }
 }
 
+export function creationSkillInput(insert: (skill: MentionItem) => void) {
+  return { skills: [] as CreationSkill[], update: (next: CreationSkill[]) => { for (const skill of next) insert(creationSkillMention(skill)) } }
+}

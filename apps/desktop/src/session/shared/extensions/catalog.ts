@@ -3,6 +3,7 @@ import {
   type ExtensionCapability,
   type ExtensionManifest,
 } from './manifest';
+import { ASSISTANT_APP_ID } from './assistant-entry';
 import { queryScore, queryWords } from './query-score';
 
 /**
@@ -283,4 +284,11 @@ export function marketCategoryOf(manifest: Pick<ExtensionManifest, 'categories'>
 export function marketCategoryRank(category: MarketCategory): number {
   const index = (MARKET_CATEGORIES as readonly string[]).indexOf(category);
   return index === -1 ? MARKET_CATEGORIES.length : index;
+}
+
+export const AGENT_MARKET_CATEGORIES = ['coding', 'general'] as const;
+export type AgentMarketCategory = (typeof AGENT_MARKET_CATEGORIES)[number];
+
+export function agentMarketCategoryOf(agentId: string): AgentMarketCategory {
+  return agentId === ASSISTANT_APP_ID || agentId === 'hermes' ? 'general' : 'coding';
 }

@@ -2,6 +2,7 @@ import { request as httpRequest, type IncomingMessage, type IncomingHttpHeaders,
 import { request as httpsRequest } from 'node:https'
 import { finished, pipeline } from 'node:stream'
 import { PlatformStreamTimingRecorder, type PlatformStreamTiming } from './platform-stream-timing'
+import { PlatformHttpErrorRecorder, type PlatformHttpErrorDiagnostic } from './platform-http-error'
 
 const HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
 
@@ -12,6 +13,7 @@ export interface CredentialProxyOptions {
   refresh: (rejected: string) => Promise<string>
   warn: (event: { kind: 'connection' | 'stream'; status?: number; code?: string }) => void
   streamTiming?: (timing: PlatformStreamTiming) => void
+  httpError?: (diagnostic: PlatformHttpErrorDiagnostic) => void
 }
 
 /** The deadline bounds the caller, not the shared rotation: a late successful issue remains usable. */
@@ -84,6 +86,9 @@ export async function proxyPlatformCredentialRequest(
       response.writeHead(upstreamResponse.statusCode ?? 502, headers)
       const isSse = /^text\/event-stream\b/i.test(String(upstreamResponse.headers['content-type'] ?? ''))
       const compressed = !['', 'identity'].includes(String(upstreamResponse.headers['content-encoding'] ?? '').toLowerCase())
+      const httpError = upstreamResponse.statusCode === 400 && options.httpError
+        ? new PlatformHttpErrorRecorder(upstreamResponse.headers) : undefined
+      if (httpError) upstreamResponse.on('data', (chunk: Buffer) => httpError.data(chunk))
       // Encoded bytes remain observable; do not pretend compressed bytes are parsed SSE events.
       const observer = isSse && options.streamTiming
         ? new PlatformStreamTimingRecorder(!compressed, () => performance.now(), wallStart, startedAt)
@@ -93,6 +98,12 @@ export async function proxyPlatformCredentialRequest(
         if (!upstreamResponse.complete && !harnessGone) gatewayCut = true
       })
       pipeline(upstreamResponse, response, (error) => {
+        try {
+          if (httpError) options.httpError?.(httpError.finish(!error && upstreamResponse.complete))
+        } catch {
+          // Passive diagnostics must not interrupt stream completion or transport cleanup.
+          // Do not log the thrown value: diagnostic failures may themselves contain secrets.
+        }
         if (observer) options.streamTiming?.(observer.finish(!error && upstreamResponse.complete))
         if (!error) return
         upstreamRequest?.destroy()

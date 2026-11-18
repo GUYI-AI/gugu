@@ -19,6 +19,8 @@ export type ChatSummary = {
   readonly publicId?: number
   readonly unreadCount: number
   readonly isMarkedUnread: boolean
+  /** 置顶 in the chat list (chat.is_pinned). */
+  readonly pinned?: boolean
   readonly hasMessages: boolean
   readonly name: string | null
   readonly kind: string | null
@@ -39,7 +41,7 @@ const RESTORED_KEY = '__GUGU_CHAT_LIST_RESTORED__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
-  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
+  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; is_pinned?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
 }
 const summaryOf = memoizeByReference((chat: SummarySource, name: string | null | undefined): ChatSummary =>
   replaceEqualDeep(read()?.get(chat.id), {
@@ -49,6 +51,7 @@ const summaryOf = memoizeByReference((chat: SummarySource, name: string | null |
     firstUnreadMessageId: chat.unread_locator?.message_id ?? null,
     unreadCount: chat.unread_count,
     isMarkedUnread: chat.is_marked_unread === true,
+    pinned: chat.is_pinned === true,
     hasMessages: Boolean(chat.last_message_at),
     name: name || null,
     kind: chat.kind,
@@ -115,6 +118,27 @@ export function resolveChatId(address: string): string | null {
   const publicId = Number(address)
   if (!Number.isSafeInteger(publicId)) return null
   for (const [id, summary] of summaries ?? []) if (summary.publicId === publicId) return id
+  return null
+}
+
+const PIN_KEY = '__GUGU_CHAT_PIN__'
+type PinChat = (chatId: string, pinned: boolean) => Promise<void>
+
+/** 壳:登记聊天列表的「置顶」(同聊天列表那一行的那一个),会话页的页签按 agent 那一行置顶时调它。 */
+export function registerChatPin(pin: PinChat | null): void {
+  (window as unknown as Record<string, unknown>)[PIN_KEY] = pin
+}
+
+/** 会话页:置顶 / 取消置顶聊天列表里的这一行;壳还没登记 = 响亮失败。 */
+export function pinChatRow(chatId: string, pinned: boolean): Promise<void> {
+  const pin = (window as unknown as Record<string, PinChat | null | undefined>)[PIN_KEY]
+  if (!pin) return Promise.reject(new Error('The chat list is not ready to pin this conversation'))
+  return pin(chatId, pinned)
+}
+
+/** 会话页:我的这个 agent 在聊天列表里那一行(和它的私聊)。 */
+export function agentChatOf(agentUserId: string): { chatId: string; summary: ChatSummary } | null {
+  for (const [chatId, summary] of read() ?? []) if ((summary.kind === 'dm' || summary.kind === 'ai') && summary.peerUserId === agentUserId) return { chatId, summary }
   return null
 }
 

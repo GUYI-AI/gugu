@@ -75,7 +75,6 @@ export type GroupRole = 'solo' | 'first' | 'middle' | 'last';
  * `chrome`    — optional group chrome carried from the ItemSegmenter, stamped
  *               by flatten(); undefined for solo legacy units.
  */
-export type ConversationPart = 'input' | 'head' | 'step' | 'body';
 
 export type RenderUnit<D = unknown> = {
   id: string;
@@ -90,13 +89,10 @@ export type RenderUnit<D = unknown> = {
   groupRole: GroupRole;
   gapBefore: number;
   chrome?: GroupChrome;
+  /** Visible rows of one speaker utterance share this key across transcript tiers. */
+  conversationUtterance?: string;
   /** Agent conversation block ownership; process steps and reply keep one chronological owner. */
   conversationProcessOwner?: string;
-  /**
-   * 对话布局里这一行属于哪段对话部件(flatten 盖的章)。下一档接着 flatten 时从**最后一行**的部件续排间距 ——
-   * ❌ 从最后一条消息续:回合末尾的「已编辑」卡、产物卡不是消息,跳过它们会把下一条用户消息当成贴着气泡。
-   */
-  conversationPart?: ConversationPart;
   /** Nested measured rows owned by a bounded native viewport. */
   children?: readonly RenderUnit[];
   /** The fold toggles this unit is emitted behind, outermost first (set only under `revealAllFolds`). */

@@ -51,6 +51,15 @@ const noMintCanonicalPath = {
   message: 'A CanonicalPath is made only by canonicalPath() (@gugu/session-core/files), or taken as received from its machine by receivedCanonicalPath(). Never cast a string to it.'
 }
 
+// @@@electron-dynamic-import —— `electron` 只能静态 import。server 与无头宿主是真 Node,靠 CJS 的 Module._load 钩子
+// 把 `electron` 换成替身(server-entry.ts / session-host-entry.ts);静态 import 打出来是 require,走钩子。
+// `import('electron')` 在 cjs 产物里原样保留成原生 import(),走 ESM 解析、绕过钩子 ⇒
+// 「Cannot find package 'electron' imported from …」(远端会话打开只剩骨架屏)。
+const noDynamicElectronImport = {
+  selector: "ImportExpression[source.value='electron']",
+  message: "Import electron statically (import { app } from 'electron'): the server and headless host swap it through require; a dynamic import('electron') bypasses that and fails there with \"Cannot find package 'electron'\"."
+}
+
 const radixImportGate = {
   group: ['radix-ui', 'radix-ui/*', '@radix-ui/*'],
   message:
@@ -263,7 +272,8 @@ module.exports = {
           // 顶层那条在这里是被整条替换掉的,不重新列一遍就等于给这批文件开了后门。
           noSyncSpawnInput,
           noBareAuthRefresher,
-          noMintCanonicalPath
+          noMintCanonicalPath,
+          noDynamicElectronImport
         ]
       }
     },
@@ -311,7 +321,7 @@ module.exports = {
     }
   ],
   rules: {
-    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath],
+    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath, noDynamicElectronImport],
     // Android System WebView before 116 has no AbortSignal.any: calling it threw before the request was sent (images
     // could not load). One function owns the native call and its fallback; everything else combines signals through it.
     'no-restricted-properties': ['error', {

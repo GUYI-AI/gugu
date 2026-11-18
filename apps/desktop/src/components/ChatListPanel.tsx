@@ -101,7 +101,7 @@ interface ChatListPanelProps {
   leadChatId?: string | null
   /** 手机页头左上角(自己的头像 →「我的」)。 */
   headerLeading?: ReactNode
-  /** 手机右上「写」菜单里的「新项目」(#446)。 */
+  /** 手机右上加号菜单里的「新项目」。 */
   onNewProject?: () => void
 }
 
@@ -113,8 +113,6 @@ const COLOR_PLACEHOLDER = 'var(--muted-fg)'
 const NAV_PANE_STYLE: React.CSSProperties = { width: '100%', minWidth: 0, flex: '1 1 auto' }
 // 保留 macOS 交通灯让位逻辑(#1238):列头左内距在「基础内距」与「交通灯安全区」间取大值。
 const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset))' }
-// #6753 桌面上还要让开浮在左上角的列表栏开关(--list-toggle-lane;Windows 的开关在标题栏行,那里是 0)。
-const NAV_HEADER_STYLE_DESKTOP: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset), var(--list-toggle-lane))' }
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
 // 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
@@ -292,7 +290,6 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
         onClose={menu.closeMenu}
         onPin={() => actions.pin(topic)}
         onSetNotificationLevel={(level) => actions.setNotificationLevel(topic.id, level)}
-        onDelete={() => actions.remove(topic.id)}
       />
     )}
     </>
@@ -480,16 +477,16 @@ interface PlusMenuItemsProps {
   onGroupChat: () => void
   onAddFriend: () => void
   onScan?: () => void
-  /** 手机(v7.12 稿 NewMenu,#446):有它时菜单是 发起群聊 / 新项目 / 添加联系人,新任务在项目群里派。 */
+  /** Phone More contains social/project actions; the separate pen owns Agent creation. */
   onNewProject?: () => void
   mobile?: boolean
 }
 
 function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, onNewProject, mobile = false }: PlusMenuItemsProps) {
   const { t } = useTranslation('messaging')
-  const phoneItems = onNewProject ? [
+  const phoneItems = mobile ? [
     { testid: 'plus-menu-create-group', icon: <Users size={15} />, label: t('chatList.createGroupMobile'), onClick: onGroupChat },
-    { testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject },
+    ...(onNewProject ? [{ testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject }] : []),
     { testid: 'plus-menu-add-friend', icon: <UserRound size={15} />, label: t('chatList.addContact'), onClick: onAddFriend },
   ] : null
   // design line 592: 新建群聊 (contacts icon) + 添加联系人 (add-person icon)
@@ -1136,10 +1133,12 @@ export function ChatListPanel({
         leading={headerLeading}
         mobile={mobile}
         titleLevel={mobile ? 'page' : undefined}
-        style={mobile ? NAV_HEADER_STYLE : NAV_HEADER_STYLE_DESKTOP}
+        style={NAV_HEADER_STYLE}
         actions={
           <>
             <NotificationSlot part="toggle" />
+            {mobile && onOpenSessionCreate && <IconButton size="md" data-testid={AUTOMATION_TEST_IDS.mobileSessionCreateAction}
+              aria-label={t('chatList.createAgent')} title={t('chatList.createAgent')} onClick={onOpenSessionCreate}><SquarePen /></IconButton>}
 
             <DropdownMenu.Root
               open={showPlusMenu}
@@ -1155,8 +1154,7 @@ export function ChatListPanel({
                 aria-label={t('chatList.create')}
                 title={t('chatList.create')}
               >
-                {/* 手机上是「写」(方框里一支笔,owner 10-26 改版稿);❌ 加号。 */}
-                {mobile ? <SquarePen /> : <Plus />}
+                <Plus />
               </DropdownMenu.Trigger>
               {showPlusMenu ? (
                 <DropdownMenu.Content

@@ -50,6 +50,20 @@ extension GuguIOSNativeBackend {
                     switch response { case .success(let value): result(value); case .failure(let error): failed(error) }
                 }
             case "sessionTimeline.sessionSend": try send(call, result, failed)
+            case "sessionTimeline.sessionRetry":
+                let input = try input(call), row = try agent(input["conversationId"] as? String)
+                guard let jobId = input["jobId"] as? String, UUID(uuidString: jobId) != nil else { throw Self.failure("invalid_args", "Original interrupted task identity is required") }
+                verify(row, binding: call.binding) { verified in self.queue.async {
+                    do {
+                        _ = try verified.get()
+                        try self.schedulerOrThrow().retry(agent: row, jobId: jobId) { response in
+                            switch response {
+                            case .success(let id): result(["accepted": true, "messageId": id, "admission": "accepted"])
+                            case .failure(let error): failed(error)
+                            }
+                        }
+                    } catch { failed(error) }
+                } }
             case "sessionTimeline.sessionSnapshot", "sessionTimeline.sessionAfter", "sessionTimeline.sessionOlder":
                 let input = try input(call), row = try agent(input["conversationId"] as? String)
                 verify(row, binding: call.binding) { verified in self.queue.async {

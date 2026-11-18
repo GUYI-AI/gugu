@@ -20,13 +20,13 @@ const boundary = vi.hoisted(() => ({
 }))
 vi.mock('@/components/preview/html-preview-registration', () => ({ registerHtmlPreview: boundary.preview }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } } }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => boundary.mobile }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => boundary.mobile, readMobileShell: () => boundary.mobile }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('@/lib/attachmentBytes', () => ({
   attachmentBytes: boundary.read,
   attachmentPreview: boundary.signed,
   openAttachmentInSystemApp: boundary.open,
-  openAttachmentImage: boundary.image,
+  openAttachmentImages: boundary.image,
   sourceKeyOf: (source: { itemId: string; version: number }) => `${source.itemId}@${source.version}`,
 }))
 vi.mock('@/lib/chatFolder', () => ({ readChatFolderText: boundary.document, rendererFileServiceUrl: () => 'https://files.test' }))
@@ -95,30 +95,27 @@ async function closeFromTab(chatId: string) {
 }
 
 describe('unclaimed group files use the message preview from every entry', () => {
-  it.each([false, true])('an image opened from the folder is drawn in its preview, in the folder tab (mobile=%s)', async (mobile) => {
+  it.each([false, true])('an image opened from the folder opens in the image viewer over it, the folder left as it is (mobile=%s)', async (mobile) => {
     boundary.mobile = mobile
-    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report-png')
-    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    boundary.read.mockResolvedValue({ status: 'ready', blob: new Blob(['png'], { type: 'image/png' }) })
     const folder = openPanelItem('preview-group', folderItem())
     const file = detail('png')
-    await slot(file, true, { from: shownPanelTab('preview-group')!.tabId })
-    expect(boundary.image).not.toHaveBeenCalled()
+    const among = [{ itemId: 'file-a', version: 1, name: 'a.png', contentType: 'image/png' }, { itemId: file.itemId, version: 3, name: file.name, contentType: 'image/png' }]
+    const origin = { x: 40, y: 60, width: 120, height: 120 }
+    await slot({ ...file, among, origin } as never, true, { from: shownPanelTab('preview-group')!.tabId })
+    await until('the viewer asked', () => boundary.image.mock.calls.length === 1)
+    expect(boundary.image).toHaveBeenCalledWith(among, 1, { chatId: file.chatId }, origin)
     expect(shownPanelTab(file.chatId)?.tabId).toBe(folder)
     expect(panelTabsOf(file.chatId)).toHaveLength(1)
-    expect(shownItem(file.chatId)?.itemId).toBe(file.itemId)
-    expect(harness.container.querySelector('[data-testid="message-file-preview-panel"]')).not.toBeNull()
-    await until('the picture drawn', () => harness.container.querySelector('[data-testid="message-file-preview-panel"] img')?.getAttribute('src') === 'blob:report-png')
-    expect(created).toHaveBeenCalledTimes(1)
-    await harness.render(null)
-    expect(revoked).toHaveBeenCalledWith('blob:report-png')
+    expect(isFolderItem(shownItem(file.chatId)!)).toBe(true)
+    expect(harness.container.querySelector('[data-testid="message-file-preview-panel"]')).toBeNull()
   })
-  it('an image that cannot be drawn says so', async () => {
+  it('an image the folder opens in a new tab is drawn there, and one that cannot be drawn says so', async () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:broken-png')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     boundary.read.mockResolvedValue({ status: 'ready', blob: new Blob(['not a png'], { type: 'image/png' }) })
     openPanelItem('preview-group', folderItem())
-    await slot(detail('png'), true, { from: shownPanelTab('preview-group')!.tabId })
+    await slot({ ...detail('png'), intent: 'newTab' } as never, true, { from: shownPanelTab('preview-group')!.tabId })
+    expect(boundary.image).not.toHaveBeenCalled()
     await until('the picture tried', () => harness.container.querySelector('[data-testid="message-file-preview-panel"] img') !== null)
     await act(async () => harness.container.querySelector('[data-testid="message-file-preview-panel"] img')!.dispatchEvent(new Event('error')))
     expect(harness.container.querySelector('[data-testid="message-file-preview-panel"] img')).toBeNull()
@@ -128,7 +125,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     const file = detail('png')
     const message = { id: 'image-reference', chat_id: chatId } as MessageItem
     await slot(file, true, { message })
-    expect(boundary.image).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, file.name, { chatId, messageId: message.id })
+    expect(boundary.image).toHaveBeenCalledWith([{ itemId: file.itemId, version: 3, name: file.name, contentType: file.file.contentType }], 0, { chatId, messageId: message.id }, undefined)
   })
   it('renews an expired video preview after a late Range failure, preserving position without downloading the original', async () => {
     let now = 1_800_000_000_000

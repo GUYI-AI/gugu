@@ -46,6 +46,7 @@ import {
   type AnsweredAsk,
   type SessionpageSessionsListResult,
   type SessionpageSessionOptions,
+  type SessionpageSessionOptionsRequest,
   type SessionpageSessionsEvent,
   type SessionpageSessionSetOptionRequest,
   type SessionpageSessionReloadModelRequest,
@@ -81,6 +82,7 @@ import {
   type SessionSchedule,
 } from '@shared/core/automations/session-schedule';
 import { log } from '@main/lib/logger';
+import { app } from 'electron';
 import {
   legacyAgentStatusWord,
   parseAgentStatus,
@@ -815,11 +817,11 @@ export function after(input: {
 type SourceWindowReader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
 let sourceWindowOpening: Promise<SourceWindowReader> | null = null;
 
-/** Desktop reopening has its own bounded source path, including its subscription. */
+/** Desktop reopening has its own bounded source path, including its subscription. A failed opening is not kept: the next read opens again. */
 function sourceWindowReader(): Promise<SourceWindowReader> {
   return sourceWindowOpening ??= (async () => {
-    const [{ app }, { join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
-      import('electron'), import('node:path'), import('node:crypto'),
+    const [{ join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
+      import('node:path'), import('node:crypto'),
       import('@gugu/session-core/session-record/window-cache/read-budget'), import('./desktop-source-reader'),
       import('@gugu/session-core/session-record/window-cache/formats'),
     ]);
@@ -846,12 +848,18 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
       backgroundRead: process.env.GUGU_WINDOW_IO_TRACE === '1'
         ? (jobId, io) => log.info('sessionWindow: read', { jobId, phase: 'reverse', ...io }) : undefined,
     });
-  })();
+  })().catch((error: unknown) => {
+    sourceWindowOpening = null;
+    throw error;
+  });
 }
 async function withSourceWindow<T>(read: (reader: SourceWindowReader) => Promise<T>): Promise<SessionTimelineResult<T>> {
   try { return { ok: true, value: await read(await sourceWindowReader()) }; }
   catch (error) {
-    return fail((error as { code?: string }).code ?? 'record_unreadable', (error as Error).message ?? String(error));
+    const code = (error as { code?: string }).code ?? 'record_unreadable';
+    // The caller only shows this failure; the host keeps a line of it too.
+    log.warn('sessionWindow: read failed', { code, error: String(error) });
+    return fail(code, (error as Error).message ?? String(error));
   }
 }
 export const windowSnapshot = (input: { conversationId: string; limit?: number }) => withSourceWindow(reader => reader.snapshot(input));
@@ -987,9 +995,7 @@ async function recordedSessionOptions(row: SessionRow) {
 }
 
 /** 读这条会话此刻可改的选项。哪一步读不到都报 `options_failed`,❌ 给一份「没在跑」的选项充数。 */
-export async function sessionOptions(input: {
-  conversationId: string;
-}): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
+export async function sessionOptions(input: SessionpageSessionOptionsRequest): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
   const row = readSessionRow(input.conversationId);
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
   try {
@@ -999,9 +1005,9 @@ export async function sessionOptions(input: {
     // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
     // 只读,❌ 为了问一句把它拉起来。
     if (row.runtime === 'acp' && !(await acpSessionLive(row.id))) {
-      return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row)) };
+      return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row), input.includeOwnModelCatalog) };
     }
-    return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId)) };
+    return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId), input.includeOwnModelCatalog) };
   } catch (error) {
     return optionsFailure(error);
   }
@@ -1057,11 +1063,12 @@ export async function reloadSessionModel(
  */
 async function withModelMenu(
   row: SessionRow,
-  options: SessionpageSessionOptions
+  options: SessionpageSessionOptions,
+  includeOwnModelCatalog?: true
 ): Promise<SessionpageSessionOptionsWithMenu> {
   if (!row.provider) return options;
   const modeMap = options.mode ? declaredModeMap(row.provider) : undefined;
-  const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider) : undefined;
+  const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider, includeOwnModelCatalog) : undefined;
   const permissionAgentName = options.mode ? modelMenu?.agentName ?? await readSessionPermissionAgentName(row.provider) : undefined;
   return { ...options, ...(modelMenu ? { modelMenu } : {}), ...(modeMap ? { modeMap } : {}), ...(permissionAgentName ? { permissionAgentName } : {}) };
 }
@@ -1461,22 +1468,24 @@ export async function send(
   clientMessageId?: string,
   files?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['files'],
   attachments?: import('@gugu/session-core/acp/client').PromptAttachment[],
-  steerIfBusy?: true
+  steerIfBusy?: true,
+  admissionFence?: () => void
 ): Promise<InputAdmissionResult> {
+  admissionFence?.();
   const input = { conversationId, text, clientMessageId, files, attachments, steerIfBusy };
-  if (!clientMessageId) return sendOnce(input);
+  if (!clientMessageId) return sendOnce(input, admissionFence);
   const key = JSON.stringify([conversationId, clientMessageId]);
   const pending = admittingInputs.get(key);
   if (pending) return sameInput(input, pending.input) ? pending.result : {
     ok: false, error: { code: 'invalid_request', message: '原消息尚在确认，不能更换内容', admission: 'uncertain' },
   };
-  const result = sendOnce(input);
+  const result = sendOnce(input, admissionFence);
   admittingInputs.set(key, { input, result });
   try { return await result; }
   finally { admittingInputs.delete(key); }
 }
 
-async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload): Promise<InputAdmissionResult> {
+async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload, admissionFence?: () => void): Promise<InputAdmissionResult> {
   const rejected = (code: string, message: string): InputAdmissionResult => {
     try {
       const prior = priorInputAdmission({ conversationId, text, clientMessageId, files, attachments, steerIfBusy });
@@ -1503,6 +1512,7 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // A side chat has no session row: its custody send lands in its fork entry's queue.
   if (runtimeFork(conversationId)) {
     try {
+      admissionFence?.();
       sessionLife().enqueue({ sessionId: conversationId, messageId: clientMessageId ?? crypto.randomUUID(), text: text.trim(), kind: 'ordinary',
         delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) } });
       return { ok: true, value: { accepted: 'queued', admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
@@ -1521,7 +1531,9 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // 再发这一句。❌ 直接唤醒:唤醒不带第一句,agent 会只看到后来这一句。
   // A never-started session is ACP only (neverStarted), and its delivery itself starts it (session-life row 1).
   try {
-    const accepted = await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
+    const accepted = admissionFence
+      ? await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy, admissionFence)
+      : await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
     return { ok: true, value: { ...accepted, admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
   } catch (error) {
     if (sessionInputAdmission(error) === 'rejected') return rejected(error instanceof SessionWriteError || error instanceof SessionInputAdmissionError ? error.code ?? 'send_failed' : 'send_failed', (error as Error)?.message ?? String(error));

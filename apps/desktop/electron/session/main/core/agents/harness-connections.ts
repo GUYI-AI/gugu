@@ -24,15 +24,19 @@ import { sessions } from '@main/db/schema';
 import { log } from '@main/lib/logger';
 import {
   activateClaudeAccount,
+  copyClaudeUpgradeSignIn,
+  restoreClaudeTerminalForMigration,
   claudeCredentialRoot,
   claudeSignInSaved,
   ensureClaudeVault,
   type ClaudeAuthSlotPaths,
 } from './claude-auth-slot';
 import { createClaudeCredentialStore, type ClaudeCredentialStore } from './claude-credential-store';
-import { moveClaudeHistoryToUserRoot } from './claude-history-move';
+import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import {
   activateCodexAccount,
+  copyCodexUpgradeSignIn,
+  restoreCodexTerminalForMigration,
   assertCodexFileCredentialStore,
   codexCredentialRoot,
   codexSignInSaved,
@@ -48,10 +52,8 @@ import {
 import { detectEndpointProtocol, listEndpointModels } from './connection-endpoint-probe';
 
 /**
- * 订阅连接(#26,照 cockpit-tools):两家的会话都跑在用户自己的配置根上(`~/.claude` / `~/.codex`,
- * 或用户导出的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`),所有会话跟着默认连接走,❌ 钉在创建时的连接上。
- * 账号连接 = 一个保管目录,存这个账号的登录、能独立登录和读用量;选中它 = 把它的凭据换进用户根。
- * API 连接只在启动时给环境变量,用户根里的账号原样留着。
+ * Account vaults hold inactive sign-ins. Active credentials and every session use
+ * Gugu's managed root; the terminal's configuration is only an explicit import source.
  */
 
 type Provider = 'claude' | 'codex';
@@ -297,7 +299,7 @@ export async function assertHarnessConnectionSelectable(
   if ((target.meta?.harnessConnection?.kind ?? 'native') === 'api-key') return;
   // 其余家只有原生与 API Key 连接:原生就是这家 CLI 自己的那份,没有凭据要换。
   if (!isAccountProvider(providerId)) return;
-  if (providerId === 'codex') await assertCodexFileCredentialStore(nativeConfigRoot('codex', options.nativeEnv));
+  if (providerId === 'codex') await assertCodexFileCredentialStore(managedConfigRoot('codex'));
   if ((await credentialRoot(providerId, connectionId, options.nativeEnv)) === 'native') return;
   const saved =
     providerId === 'codex'
@@ -344,7 +346,7 @@ export function harnessLoginConnectionId(providerId: string, connectionId: strin
 }
 
 function connectionHome(providerId: Provider, id: string): string {
-  return join(app.getPath('userData'), 'harness-connections', providerId, id);
+  return join(app.getPath('userData'), 'harness-connections', providerId, id === 'native' ? 'managed-native' : id);
 }
 
 /** 连接的保管目录:布局与用户根相同(`<连接 home>/.claude` / `.codex`),登录与用量读取以它为配置根。 */
@@ -354,7 +356,7 @@ function vaultRoot(providerId: Provider, id: string): string {
 
 /**
  * 单一目录之前,Claude 账号 / API 连接上的会话跑在连接自己的配置根里,记录也在那里(就是今天的保管目录)。
- * 开机时已搬进用户根;这里留给读记录的一侧做兜底(搬失败的、或还没开过机的)。原生连接与 Codex ⇒ null。
+ * 旧记录仍可从保管目录读取；不再在启动时向终端配置根搬运。原生连接与 Codex ⇒ null。
  */
 export function connectionConfigRoot(providerId: string, connectionId: string): string | null {
   if (providerId !== 'claude' || connectionId === 'native') return null;
@@ -362,35 +364,36 @@ export function connectionConfigRoot(providerId: string, connectionId: string): 
 }
 
 /** 用户自己的配置根:用户导出了 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` 就是那里,否则 `~/.claude` / `~/.codex`。 */
-/** The folder a harness keeps its own records in on this machine (Claude's `projects/<cwd>/`, say), as it is started here. */
 export function nativeConfigRoot(providerId: Provider, env: Record<string, string | undefined> = process.env): string {
   const home = requireNativeHome(providerId);
   return env[home.envVar]?.trim() || join(homedir(), home.userPath);
 }
 
-function codexSlotPaths(env?: Record<string, string | undefined>): CodexAuthSlotPaths {
+export function managedConfigRoot(providerId: Provider): string {
+  const bundle = pluginRegistry.get(providerId)!.capabilities.sessionBundle!;
+  return resolveAgentHome({ providerId, injectionMode: bundle.injectionMode, configRoot: bundle.configRoot,
+    guguHome: process.env.GUGU_HOME ?? '', osHomeDir: homedir(), sourceEnv: process.env })!.configRoot;
+}
+
+function codexSlotPaths(_env?: Record<string, string | undefined>): CodexAuthSlotPaths {
   return {
-    nativeRoot: nativeConfigRoot('codex', env),
+    nativeRoot: managedConfigRoot('codex'),
     vaultRoot: (id) => vaultRoot('codex', id),
     backupDir: join(app.getPath('userData'), 'harness-connections', 'codex', 'unrecognized-sign-ins'),
-    liveStateFile: join(app.getPath('userData'), 'harness-connections', 'codex', 'live-account.json'),
+    liveStateFile: join(app.getPath('userData'), 'harness-connections', 'codex', 'managed-live-account.json'),
   };
 }
 
 let claudeStore: ClaudeCredentialStore | null = null;
 
-function claudeSlotPaths(env: Record<string, string | undefined> = process.env): ClaudeAuthSlotPaths {
-  // 用户导出了 `CLAUDE_CONFIG_DIR`:`.claude.json` 在那个根里,钥匙串条目名带这个根的哈希;否则在 home 下、不带。
-  const exported = Boolean(env.CLAUDE_CONFIG_DIR?.trim());
-  const nativeRoot = nativeConfigRoot('claude', env);
+function claudeSlotPaths(_env?: Record<string, string | undefined>): ClaudeAuthSlotPaths {
+  const nativeRoot = managedConfigRoot('claude');
   claudeStore ??= createClaudeCredentialStore();
   return {
-    nativeRoot,
-    nativeGlobalConfig: exported ? join(nativeRoot, '.claude.json') : join(homedir(), '.claude.json'),
-    nativeSuffixed: exported,
+    nativeRoot, nativeGlobalConfig: join(nativeRoot, '.claude.json'), nativeSuffixed: true,
     vaultRoot: (id) => vaultRoot('claude', id),
     backupDir: join(app.getPath('userData'), 'harness-connections', 'claude', 'unrecognized-sign-ins'),
-    liveStateFile: join(app.getPath('userData'), 'harness-connections', 'claude', 'live-account.json'),
+    liveStateFile: join(app.getPath('userData'), 'harness-connections', 'claude', 'managed-live-account.json'),
     store: claudeStore,
   };
 }
@@ -448,7 +451,7 @@ export async function resolveHarnessConnection(
       : { connectionId: id, credentialEnv: claudeApiKeyEnv(secret, endpoint), unsetEnv };
   }
   const unset = details.kind === 'account' ? { unsetEnv } : {};
-  // 会话、模型目录探针、主读数:恒在用户根上跑。按连接问的,这个账号此刻不在用户根里时,保管目录那份才是它最新的凭据。
+  // Sessions use the managed root. An inactive account is read from its own vault.
   if (forSession || (await credentialRoot(providerId, id, input.nativeEnv)) === 'native') {
     return { connectionId: id, ...unset };
   }
@@ -578,66 +581,12 @@ export async function resolveConnectionModel(providerId: string, sessionId?: str
   return { connectionId: id, name, endpoint, apiKey: secret, models, ...(details.protocol ? { protocol: details.protocol } : {}) };
 }
 
-/**
- * 升级对齐(#26):修复前账号连接的凭据只在它自己的目录里,默认订阅是它、用户根里却是另一个账号。
- * 只在还没有会话跑起来的时候调(开机)。默认是原生 / API 连接时不动:用户根里的就是用户在 CLI 里登录的那个。
- */
-async function alignDefaultAccount(providerId: Provider, nativeEnv?: Record<string, string | undefined>): Promise<void> {
-  await ensureNative(providerId);
-  const id = await defaultConnectionId(providerId);
-  if (id === 'native') return;
-  const account = await registry.getAccount(namespace(providerId), id);
-  if (account?.meta?.harnessConnection?.kind !== 'account') return;
-  if ((await credentialRoot(providerId, id, nativeEnv)) === 'native') return;
-  const ids = await accountConnectionIds(providerId);
-  if (providerId === 'codex') await activateCodexAccount(codexSlotPaths(nativeEnv), ids, id, id);
-  else await activateClaudeAccount(claudeSlotPaths(nativeEnv), ids, id, id);
-}
-
-export async function alignCodexDefaultAccount(nativeEnv?: Record<string, string | undefined>): Promise<void> {
-  await alignDefaultAccount('codex', nativeEnv);
-}
-
-/** Claude 还要先把连接根里的会话记录搬进用户根(见 `claude-history-move.ts`),一个连接搬不动不拦别的。 */
-export async function alignClaudeConnections(nativeEnv?: Record<string, string | undefined>): Promise<void> {
-  await ensureNative('claude');
-  const nativeRoot = nativeConfigRoot('claude', nativeEnv);
-  for (const row of await registry.listAccounts(namespace('claude'))) {
-    if (row.accountId === 'native') continue;
-    try {
-      if (await moveClaudeHistoryToUserRoot(vaultRoot('claude', row.accountId), nativeRoot)) {
-        log.info('harness connections: moved Claude session history into the user root', { connectionId: row.accountId });
-      }
-    } catch (error) {
-      log.warn('harness connections: could not move Claude session history; it stays readable from the connection root', {
-        connectionId: row.accountId,
-        error: String(error),
-      });
-    }
-  }
-  await alignDefaultAccount('claude', nativeEnv);
-}
-
-/** 开机时、任何会话起来之前调一次(embedded-boot)。一家对不齐不拦另一家。 */
-export async function alignHarnessConnectionsAtStartup(): Promise<void> {
-  const { resolveLocalAgentSpawnEnv } = await import('./agent-run-context');
-  const failures: unknown[] = [];
-  for (const [providerId, align] of [['codex', alignCodexDefaultAccount], ['claude', alignClaudeConnections]] as const) {
-    try {
-      await align(await resolveLocalAgentSpawnEnv(providerId));
-    } catch (error) {
-      failures.push(error);
-    }
-  }
-  if (failures.length > 0) throw new AggregateError(failures, 'harness connections: startup alignment failed');
-}
-
 /** An event must be attributed to the account the session actually ran on, never a guess. */
 export async function sessionHarnessConnectionId(sessionId: string | undefined): Promise<string | undefined> {
   if (!sessionId) return undefined;
   const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!row) return undefined;
-  // 两家的会话都跟默认订阅走:跑的就是此刻用户根里的账号 = 当前默认连接(#26)。
+  // The active account in the managed root follows the selected subscription.
   if (row.provider === 'codex' || row.provider === 'claude') return defaultConnectionId(row.provider);
   // 有 API Key 连接的家(#2507)同一条:跑的是起进程那一刻的默认连接。
   const provider = row.provider;
@@ -645,4 +594,85 @@ export async function sessionHarnessConnectionId(sessionId: string | undefined):
     return (await registry.getDefaultAccountId(namespace(provider))) ?? 'native';
   }
   return 'native';
+}
+
+type RestoredTerminal = {
+  relogin: string | null;
+  terminalNeedsSignIn: boolean;
+  legacyVaultUnverified?: boolean;
+  moved?: { connectionId: string; identity: string };
+};
+
+/** Split the old shared slot and use the compatibility copy only for an existing installation. */
+export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Record<string, string | undefined>, automatic = false) {
+  const ids = await accountConnectionIds(providerId);
+  const selected = await defaultConnectionId(providerId);
+  const account = await registry.getAccount(namespace(providerId), selected);
+  const owned = account?.meta?.harnessConnection?.kind === 'account';
+  const formerRoot = nativeConfigRoot(providerId, env);
+  const stateDir = join(app.getPath('userData'), 'harness-connections', providerId);
+  const oldNativeVault = join(stateDir, 'native', requireNativeHome(providerId).userPath);
+  const previousVaultRoot = (id: string) => id === 'native' ? oldNativeVault : vaultRoot(providerId, id);
+  const liveStateFile = join(stateDir, 'live-account.json');
+  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: (vaultIdentity?: string) => Promise<'oauth' | 'api-key' | false | undefined>) => {
+    let result: RestoredTerminal = { relogin: null, terminalNeedsSignIn: false };
+    try {
+      const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch');
+      await prepareSubscriptionMigration(providerId);
+      result = await restore();
+      if (owned && result.relogin !== selected) {
+        await activate();
+        return migrationNotice(providerId, result);
+      }
+    } catch (error) {
+      if (!automatic) throw error;
+      log.warn('Could not split the previous account slot during upgrade', { providerId });
+    }
+    let upgradeSignIn: 'copied' | 'relogin' | undefined;
+    if (automatic && (owned || selected === 'native')) {
+      try {
+        // If B is already back in the terminal, the old in-use sign-in is the verified A now in its vault.
+        const copied = await copy(result.moved?.connectionId === selected ? result.moved.identity : undefined);
+        upgradeSignIn = copied === 'oauth' ? 'copied' : copied === false ? 'relogin' : undefined;
+      }
+      catch {
+        log.warn('Could not transfer the previous sign-in during upgrade', { providerId });
+        upgradeSignIn = 'relogin';
+      }
+    }
+    const notice = await migrationNotice(providerId, result);
+    return upgradeSignIn ? { ...notice, upgradeSignIn } : notice;
+  };
+  if (providerId === 'codex') {
+    const managed = codexSlotPaths();
+    const previous = { ...managed, nativeRoot: formerRoot, vaultRoot: previousVaultRoot, liveStateFile };
+    return finish(() => restoreCodexTerminalForMigration(previous, ids),
+      () => activateCodexAccount(managed, ids, selected, 'native'),
+      (vaultIdentity) => copyCodexUpgradeSignIn(vaultIdentity ? { ...previous, nativeRoot: previous.vaultRoot(selected) } : previous,
+        managed, selected, vaultIdentity));
+  } else {
+    const managed = claudeSlotPaths();
+    const exported = Boolean(env.CLAUDE_CONFIG_DIR?.trim());
+    const previous = { ...managed, nativeRoot: formerRoot, nativeSuffixed: exported, vaultRoot: previousVaultRoot,
+      nativeGlobalConfig: exported ? join(formerRoot, '.claude.json') : join(homedir(), '.claude.json'),
+      liveStateFile };
+    return finish(() => restoreClaudeTerminalForMigration(previous, ids),
+      () => activateClaudeAccount(managed, ids, selected, 'native'),
+      async (vaultIdentity) => {
+        const root = previous.vaultRoot(selected);
+        const copied = await copyClaudeUpgradeSignIn(vaultIdentity ? {
+          ...previous, nativeRoot: root, nativeGlobalConfig: join(root, '.claude.json'), nativeSuffixed: true,
+        } : previous, managed, selected, vaultIdentity);
+        return copied ? 'oauth' : copied;
+      });
+  }
+}
+
+async function migrationNotice(providerId: Provider, result: RestoredTerminal) {
+  if (result.legacyVaultUnverified) log.warn('Skipped legacy native vault cleanup because the terminal identity could not be verified', { providerId });
+  const account = result.relogin ? await registry.getAccount(namespace(providerId), result.relogin) : null;
+  const auth = pluginRegistry.get(providerId)?.capabilities.auth;
+  const method = auth?.kind === 'supported' ? auth.methods.find((method) => method.kind === 'cli-login') : undefined;
+  return { terminalNeedsSignIn: result.terminalNeedsSignIn,
+    relogin: account && method ? [{ connectionId: account.accountId, name: account.meta?.displayName ?? account.accountId, methodId: method.id }] : [] };
 }

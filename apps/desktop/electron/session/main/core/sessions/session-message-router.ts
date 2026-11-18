@@ -9,6 +9,8 @@ export type SessionMessageRouter = (
   sessionId: string,
   message: SessionMessage & { delivery?: SessionMessageDelivery },
   signal?: AbortSignal,
+  /** Trusted host-only owner/epoch check; never serialized with the message. */
+  beforeAdmission?: () => void,
 ) => Promise<
   | { status: 'not-ready'; preserve?: boolean; reason?: string }
   | { status: 'accepted'; messageId: string; nativeReceiptId?: string }

@@ -154,7 +154,7 @@ export type ComposerModelPanel =
  * ⚠️ **2026-08-28 改了语义,别照旧版推理**:登录入口从前是「一个模型都没有时**顶掉**
  * 模型那一行」,于是它几乎永远不出现 —— 咕咕自家的模型一直在,清单从来不空。
  * 现在它是**清单里的一条**(渐进披露,owner 定):用户点开模型列表、正在挑模型的那一刻,
- * 才第一次看到「登录以使用 X 模型」。所以这里只判「这一行要不要在」,
+ * 才第一次看到「添加个人 X 连接」。所以这里只判「这一行要不要在」,
  * 「登录那条摆在哪」由 `ComposerModelUnlock` 在清单内部决定。
  */
 export function resolveComposerModelPanel(input: {
@@ -584,6 +584,7 @@ export function ComposerModelMenu({
                     data-testid="composer-model-unlock"
                   >
                     {modelUnlock.label}
+                    {modelUnlock.detail ? <span className={styles.modelEffortLabel}>{modelUnlock.detail}</span> : null}
                   </button>
                 </div>
               ) : null}

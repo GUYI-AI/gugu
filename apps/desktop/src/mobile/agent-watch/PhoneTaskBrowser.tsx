@@ -4,7 +4,7 @@ import { useConversationVisibility } from '@/components/chat/useConversationVisi
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { mountProjection, type ProjectionViewState } from '@/session/app-runtime/projection-view';
-import { BrowserToolbar } from '@renderer/features/browser/browser-toolbar';
+import { PhoneBrowserToolbar } from './PhoneBrowserToolbar';
 import { TaskPageResource } from '@renderer/features/browser/task-page-tab';
 import { useBrowserAnnotations } from '@renderer/features/browser/browser-annotations';
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations';
@@ -59,7 +59,7 @@ export const PhoneTaskBrowser = observer(function PhoneTaskBrowser({ deviceId, s
       return result;
     } });
   return <div ref={visibility.ref} data-phone-task-browser className="flex min-h-0 flex-1 flex-col bg-background">
-    {resource.session && <BrowserToolbar session={resource.session} adapter={null} remote annotationAction={annotations.toolbar}
+    {resource.session && <PhoneBrowserToolbar session={resource.session} adapter={null} remote annotationAction={annotations.toolbar}
       onNavigate={url => { control({ action: 'navigate', url }); return true; }} onGoBack={() => control({ action: 'back' })}
       onGoForward={() => control({ action: 'forward' })} onReload={() => control({ action: resource.page?.isLoading ? 'stop' : 'reload' })} />}
     <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">

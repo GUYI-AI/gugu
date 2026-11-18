@@ -32,6 +32,11 @@ export const sessionSettingsSchema = z.object({
   autoApproveByDefault: z.boolean(),
   autoTrustWorktrees: z.boolean(),
   preserveNameCapitalization: z.boolean(),
+  /**
+   * #3005 离开时压缩长对话(Claude Code 会话,赶在一小时提示缓存过期前)。关掉对已经在跑的会话立刻生效;
+   * 与 Claude Code 自己的 `idleCompaction` 是「任一关了就不压」。推到运行时见 acp/idle-compaction-setting.ts。
+   */
+  idleCompaction: z.boolean(),
   includeIssueContextByDefault: z.boolean(),
   /**
    * #7337 咕咕给会话起名用的平台模型(按积分计费,记在这条会话的 agent 名下);null = 不用模型起名,

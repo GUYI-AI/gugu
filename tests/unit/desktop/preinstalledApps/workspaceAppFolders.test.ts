@@ -401,10 +401,55 @@ describe('making, moving, uploading, deleting', () => {
     expect($('conflict-list').textContent).toContain('「甲方.pdf」已经有了，新传的这份叫「甲方 (2).pdf」。')
     const buttons = [...$('conflict-list').querySelectorAll('button')].map((b) => b.textContent)
     expect(buttons).toEqual(['两个都留', '替换原来的'])
+    expect($('conflicts-done').hidden).toBe(true)
+    $('conflicts-done').click()
+    expect($('conflicts').hidden).toBe(false)
     ;[...$('conflict-list').querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '替换原来的')!.click()
     await until('deal2 removed', () => gugu.files.remove.mock.calls.some(([e]) => (e as { id?: string } | undefined)?.id === 'deal2'))
     expect(gugu.files.replace).toHaveBeenCalledWith(expect.objectContaining({ id: 'deal' }), expect.any(Blob), { expectedVersion: 1 })
     expect($('conflicts').hidden).toBe(true)
+  })
+
+  test('each unresolved upload keeps its choice; the remaining-copy action is explicit and disappears for one clash', async () => {
+    await enter('contracts'); await enter('y2026')
+    ENTRIES.push(entry('other', '乙方.pdf', 'binary', 'y2026', '合同/2026/乙方.pdf'))
+    await refreshed()
+    const copies = [
+      { ...entry('deal2', '甲方 (2).pdf', 'binary', 'y2026', '合同/2026/甲方 (2).pdf'), clashWith: 'deal' },
+      { ...entry('other2', '乙方 (2).pdf', 'binary', 'y2026', '合同/2026/乙方 (2).pdf'), clashWith: 'other' },
+    ]
+    gugu.files.upload.mockImplementationOnce(async () => { ENTRIES.push(...copies); return copies })
+    await upload()
+    expect($('conflict-list').children).toHaveLength(2)
+    expect($('conflicts-done').hidden).toBe(false)
+    expect($('conflicts-done').textContent).toBe('其余保留两份')
+    const first = $('conflict-list').children[0]!
+    ;[...first.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '两个都留')!.click()
+    await until('one upload is still unanswered', () => $('conflict-list').children.length === 1)
+    expect($('conflicts').hidden).toBe(false)
+    expect($('conflicts-done').hidden).toBe(true)
+    $('conflicts-done').click()
+    expect($('conflicts').hidden).toBe(false)
+    await until('the remaining actions are enabled', () => !$('conflict-list').querySelector<HTMLButtonElement>('button')!.disabled)
+    ;[...$('conflict-list').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '两个都留')!.click()
+    await until('both explicit choices completed', () => $('conflicts').hidden === true)
+    expect(ENTRIES.some(entry => entry.id === 'deal2')).toBe(true)
+    expect(ENTRIES.some(entry => entry.id === 'other2')).toBe(true)
+  })
+
+  test('keeping all remaining copies requires the named bulk choice', async () => {
+    await enter('contracts'); await enter('y2026')
+    const copies = [
+      { ...entry('deal2', '甲方 (2).pdf', 'binary', 'y2026', '合同/2026/甲方 (2).pdf'), clashWith: 'deal' },
+      { ...entry('deal3', '甲方 (3).pdf', 'binary', 'y2026', '合同/2026/甲方 (3).pdf'), clashWith: 'deal' },
+    ]
+    gugu.files.upload.mockImplementationOnce(async () => { ENTRIES.push(...copies); return copies })
+    await upload()
+    expect($('conflicts').hidden).toBe(false)
+    expect($('conflicts-done').textContent).toBe('其余保留两份')
+    $('conflicts-done').click()
+    expect($('conflicts').hidden).toBe(true)
+    expect(copies.every(copy => ENTRIES.some(entry => entry.id === copy.id))).toBe(true)
   })
 
   test('a file picked as 「甲方 (2).pdf」 next to 甲方.pdf is just that: nothing is asked, nothing replaced', async () => {

@@ -116,7 +116,8 @@ import {
   type SessionsListModel,
 } from '../state/live-models';
 import type { AcpRuntimeDeps, AcpStartInput, SendPromptInput } from './types';
-import { IdleCompaction } from './idle-compaction';
+import { ASSISTANT_IDLE_COMPACTION, CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS, IdleCompaction, claudeCacheIdleCompaction, type IdleCompactionPolicy } from './idle-compaction';
+import { readPromptCache, resolveClaudeIdleCompaction } from './claude-idle-compaction';
 
 type StartupSettingDimension = 'model' | 'effort' | 'fast';
 
@@ -2392,22 +2393,79 @@ export class SessionManager implements InboundRouter {
     });
     this.cells.set(input.sessionId, record);
     if (isRecord(assistant) && assistant.idleCompaction === true) {
-      record.idleCompaction = new IdleCompaction(
-        () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
-        async () => {
-          const before = cell.usage?.contextUsed ?? null;
-          const result = await cell.compactIfIdle();
-          if (!result.success) throw new Error(JSON.stringify(result.error));
-          if (result.data.compacted) this.deps.logger.info('SessionManager: compacted idle assistant', {
-            sessionId: input.sessionId, contextTokensBefore: before,
-          });
-        },
-        error => this.deps.logger.warn('SessionManager: idle assistant compaction failed', {
-          sessionId: input.sessionId, error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      record.idleCompaction = this.idleCompactionFor(record, cell, 'assistant', ASSISTANT_IDLE_COMPACTION);
+    } else if (input.providerId === 'claude') {
+      this.armClaudeIdleCompaction(record, cell);
     }
     return record;
+  }
+
+  private idleCompactionFor(
+    record: SessionRecord,
+    cell: SessionCell,
+    kind: 'assistant' | 'claude',
+    policy: IdleCompactionPolicy,
+    beforeCompact: () => Promise<string | null> = async () => null,
+  ): IdleCompaction {
+    const sessionId = record.input.sessionId;
+    return new IdleCompaction(
+      () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
+      async () => {
+        const skipped = await beforeCompact();
+        if (skipped) {
+          this.deps.logger.info('SessionManager: idle compaction skipped', { sessionId, kind, reason: skipped });
+          return;
+        }
+        const before = cell.usage?.contextUsed ?? null;
+        const result = await cell.compactIfIdle();
+        if (!result.success) throw new Error(JSON.stringify(result.error));
+        if (result.data.compacted) this.deps.logger.info('SessionManager: compacted idle session', {
+          sessionId, kind, contextTokensBefore: before,
+        });
+      },
+      error => this.deps.logger.warn('SessionManager: idle compaction failed', {
+        sessionId, kind, error: error instanceof Error ? error.message : String(error),
+      }),
+      policy,
+    );
+  }
+
+  /**
+   * #3005 Claude Code's own idle compaction does not run under ACP: run it here, before the one-hour prompt
+   * cache expires. Settings are re-read when the timer fires, so turning it off applies to a live session.
+   */
+  /** #3005 Gugu's settings switch; the timer reads it when it fires, so turning it off applies to live sessions. */
+  private idleCompactionEnabled = true;
+
+  setIdleCompaction(enabled: boolean): void {
+    if (this.idleCompactionEnabled !== enabled) this.deps.logger.info('SessionManager: idle compaction setting', { enabled });
+    this.idleCompactionEnabled = enabled;
+  }
+
+  private armClaudeIdleCompaction(record: SessionRecord, cell: SessionCell): void {
+    const input = record.input;
+    const resolve = () => resolveClaudeIdleCompaction({ env: this.providerEnv(input), cwd: input.cwd, homeDir: os.homedir() });
+    void resolve().then((config) => {
+      if (!config.enabled || this.cells.get(input.sessionId) !== record || record.idleCompaction) return;
+      record.idleCompaction = this.idleCompactionFor(record, cell, 'claude', claudeCacheIdleCompaction(config.minTokens), async () => {
+        if (!this.idleCompactionEnabled) return 'gugu-setting-off';
+        const current = await resolve();
+        if (!current.enabled) return current.reason;
+        if ((cell.usage?.contextUsed ?? 0) < current.minTokens) return 'below-threshold';
+        const transcript = cell.transcriptPath;
+        if (!transcript) return 'no-transcript';
+        const cache = await readPromptCache(transcript);
+        if (cache?.ttl !== '1h') return `cache-ttl-${cache?.ttl ?? 'unknown'}`;
+        // Turns that never reached the model (a usage-limit note) end work without refreshing the cache.
+        if (cache.lastRequestAt !== null && Date.now() - cache.lastRequestAt > CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS) return 'cache-expired';
+        return null;
+      });
+      record.idleCompaction.update();
+    }, (error: unknown) => {
+      this.deps.logger.warn('SessionManager: idle compaction settings unreadable', {
+        sessionId: input.sessionId, error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private disposeLostRecord(record: Extract<SessionRecord, { phase: 'lost' }>): void {

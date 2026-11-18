@@ -141,7 +141,7 @@ export default {
       "broadUseAnyway": "仍然使用",
       "broadPickAnother": "换一个"
     },
-    "title": "新建 Agent",
+    "title": "创建智能体",
     "unfinishedSweep": {
       "cancelledWithWarning": "上次有一个 Agent 没建完，已取消，但{{steps}}没有做干净。请重新创建。",
       "pending": "上次有一个 Agent 没建完，取消还没做完（{{steps}}没有做干净），下次启动会再试。",
@@ -368,8 +368,8 @@ export default {
       "avatar": "头像",
       "bio": "简介",
       "bioPlaceholder": "描述这个 Agent 的能力（可选）",
-      "deleteAgent": "归档任务",
-      "deleteFailed": "归档任务失败，请重试。",
+      "deleteAgent": "归档会话",
+      "deleteFailed": "归档会话失败，请重试。",
       "deleting": "归档中…",
       "emptyFile": "头像文件不能为空",
       "idLabel": "Agent ID",

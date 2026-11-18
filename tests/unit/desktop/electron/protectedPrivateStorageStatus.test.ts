@@ -82,6 +82,14 @@ it('protects the default vault root before initialization creates any files', as
   await expect(requireAgentFileAccess(join(privatePasswordVaultDirectory(), 'future-control.json'))).rejects.toThrow()
 })
 
+it('protects the pending creation manifest and caption before any journal is initialized', async () => {
+  const { CREATION_ATTACHMENT_STORAGE, privateCreationAttachmentDirectory, registerProtectedPrivateStorage } = await import('@gugu/core/local/state/protectedPrivateStorage')
+  const { protectedPrivateStorageStatus, requireAgentFileAccess } = await import('@gugu/core/local/state/agentFileBoundary')
+  expect(await protectedPrivateStorageStatus(CREATION_ATTACHMENT_STORAGE)).toEqual({ status: 'ready' })
+  await expect(requireAgentFileAccess(join(privateCreationAttachmentDirectory(), 'future', 'intent.json'))).rejects.toThrow()
+  expect(() => registerProtectedPrivateStorage({ id: CREATION_ATTACHMENT_STORAGE, paths: [join(directory, 'other')] })).toThrow()
+})
+
 it('refuses delegation of the filesystem root containing protected descendants', async () => {
   const { requireAgentFileTreeAccess } = await import('@gugu/core/local/state/agentFileBoundary')
   await expect(requireAgentFileTreeAccess(parse(directory).root)).rejects.toThrow('protected private storage')

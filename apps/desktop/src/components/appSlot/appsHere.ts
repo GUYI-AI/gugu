@@ -61,7 +61,7 @@ export interface AppsHere {
   /** The market's Apps this device can install, each its version for here: what a group's 「用 X 打开」 offer looks among. */
   marketOffers(): Promise<Answer<{ manifest: ExtensionManifest; version: string }[]>>
   /** `at`: the place a pill points at — the App that opens the file gets it as a `link` event (desktop: main; phone: its host). */
-  groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string> }): Promise<Answer<AppOpenWithDetail>>
+  groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Answer<AppOpenWithDetail>>
   groupFilesOpenedBy(args: { chatId: string; extensionId: string }): Promise<Answer<{ itemId: string; name: string; displayName: string }[]>>
   /** API 14: the file an App names for this chat (`chatFile`), found or made, as that file opened with the App. */
   appChatFile(args: { chatId: string; extensionId: string }): Promise<Answer<AppOpenWithDetail>>

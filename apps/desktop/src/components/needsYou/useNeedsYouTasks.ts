@@ -36,9 +36,9 @@ export async function markNeedsYouTaskSeen(task: Pick<NeedsYouTask, 'deviceId' |
  * counted only while it needs you (isNeedsYou): reading a failure drops it from `count`, never from `tasks`.
  * An answered approval stays listed as handled for as long as a failure would (`lastAnswered`), below what still waits, never counted.
  */
-export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; attention: AgentAttention; error: string | null } {
+export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; attention: AgentAttention; error: string | null; loading: boolean } {
   const { user } = useAuth()
-  const { devices, phones = [] } = useDevicesStore()
+  const { devices, phones = [], loading: devicesLoading } = useDevicesStore()
   usePhoneAgentDirectory([...devices, ...phones])
   const directory = useLiveDeviceSessions()
   const current = devices.find(device => device.is_current_device)
@@ -58,10 +58,12 @@ export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; atte
 
   const tasks: NeedsYouTask[] = []
   const statuses: AgentAttention[] = []
-  if (!ownerId) return { tasks, count: 0, attention: null, error: null }
+  if (!ownerId) return { tasks, count: 0, attention: null, error: null, loading: true }
+  let loading = devicesLoading
   for (const device of devices) {
     const here = device.device_id === localId
     const live = directory[device.device_id]
+    if (device.is_online && live?.loading) loading = true
     const sessions = here
       ? local?.ownerId === ownerId && local.deviceId === localId ? local.list.sessions : []
       : device.is_online && live && !live.cached && !live.error ? live.sessions : []
@@ -76,5 +78,5 @@ export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; atte
   }
   const at = (task: NeedsYouTask) => task.handled ? task.handled.resolvedAt ?? 0 : Date.parse(task.session.lastInteractedAt ?? '') || 0
   tasks.sort((a, b) => Number(!!a.handled) - Number(!!b.handled) || at(b) - at(a))
-  return { tasks, count: statuses.length, attention: mostUrgentAttention(statuses), error: localId ? error : null }
+  return { tasks, count: statuses.length, attention: mostUrgentAttention(statuses), error: localId ? error : null, loading }
 }

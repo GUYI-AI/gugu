@@ -16,7 +16,8 @@ import { lineNumberSelection, previewSelectionLines, previewSelectionText } from
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
+import { mountOutline } from './outline.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -30,8 +31,8 @@ const STRINGS = {
     new: '新建',
     newDoc: '新建文档',
     newName: '新文档.md',
-    showAppData: '显示 App 数据',
-    hideAppData: '隐藏 App 数据',
+    showAppData: '显示应用数据',
+    hideAppData: '隐藏应用数据',
     newFolder: '新建文件夹',
     newFolderName: '新建文件夹',
     newFile: '新建文件',
@@ -69,6 +70,7 @@ const STRINGS = {
     nameTaken: '这个文件夹里已经有「{name}」了',
     alreadyThere: '「{name}」已经有了，新传的这份叫「{new}」。',
     keepBoth: '两个都留',
+    keepRemainingBoth: '其余保留两份',
     replaceOld: '替换原来的',
     dropNew: '不要新传的',
     done: '好',
@@ -86,8 +88,8 @@ const STRINGS = {
     taskHomeEmptyDetail: '没选项目的任务都在这个文件夹工作，agent 写的文件会出现在这里。',
     listing: '正在读取…',
     noMatch: '没有文件名含「{q}」的文件。',
-    denied: '这个 App 没有读取{folder}的权限。',
-    openWith: '用别的 App 打开',
+    denied: '这个应用没有读取{folder}的权限。',
+    openWith: '用其他应用打开',
     openNewTab: '在新页签打开',
     back: '文件',
     backToConversation: '返回对话',
@@ -120,6 +122,7 @@ const STRINGS = {
     edit: '编辑',
     split: '对照',
     preview: '阅读',
+    outline: '提纲',
     bold: '加粗',
     italic: '斜体',
     code: '代码',
@@ -315,6 +318,7 @@ const STRINGS = {
     nameTaken: '“{name}” is already in this folder',
     alreadyThere: '“{name}” was already here: the new one is “{new}”.',
     keepBoth: 'Keep both',
+    keepRemainingBoth: 'Keep both for the remaining files',
     replaceOld: 'Replace the old one',
     dropNew: 'Drop the new one',
     done: 'OK',
@@ -366,6 +370,7 @@ const STRINGS = {
     edit: 'Edit',
     split: 'Side by side',
     preview: 'Read',
+    outline: 'Outline',
     bold: 'Bold',
     italic: 'Italic',
     code: 'Code',
@@ -644,6 +649,8 @@ async function previewKit() {
 
 // A Workspace page starts when its folder or file is opened. Prepare its existing reader while it awaits context.
 const previewReady = previewKit().then((md) => ({ md }), (error) => ({ error }))
+// The headings of the document being read, beside it (outline.js).
+mountOutline($('outline'), $('preview'))
 
 // A leading `---` block is the file's front matter, as the preview reads it: one quiet block, not the setext heading
 // lezer's markdown makes of `key: value` above the closing `---`.
@@ -708,6 +715,8 @@ async function applyContext(ctx) {
   state.t = stringsFor(ctx.locale)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
   renderChrome()
+  // The list is drawn now; a handed file once it is shown or has failed (`showDoc`, `showDocMessage`).
+  if (!ctx.file) reveal()
   const roots = rootsOf(ctx)
   const inGroup = roots.length > 0
   // A page the host opened for one file (F3: its own page, bound to that file for life) shows that file only.
@@ -765,7 +774,8 @@ function renderChrome() {
   const title = state.ctx?.file?.id && state.ctx.file.id === state.shown?.id ? state.shown.name : t.title
   document.title = title
   // The slot's header says this App's name in the person's language (it would show the manifest's 文件夹 otherwise).
-  if (state.titled !== title) {
+  // Until a handed file is shown, no title: the host's tab keeps the file's name.
+  if (state.titled !== title && (!state.ctx?.file || state.ctx.file.id === state.shown?.id)) {
     state.titled = title
     Promise.resolve(gugu.setTabTitle(title)).catch(() => {})
   }
@@ -786,7 +796,7 @@ function renderChrome() {
   $('new-label').textContent = t.new
   $('new-doc').hidden = !canWriteHere()
   $('move-cancel').textContent = t.cancel
-  $('conflicts-done').textContent = t.done
+  $('conflicts-done').textContent = $('conflicts-done').dataset.choice === 'keep-remaining' ? t.keepRemainingBoth : $('conflicts-done').dataset.choice === 'skip' ? t.skipAll : t.done
   $('empty-upload').textContent = t.upload
   $('download').textContent = t.download
   $('open-with').textContent = t.openWith
@@ -802,6 +812,7 @@ function renderChrome() {
     $(`fmt-${fmt}`).title = t[fmt]
   }
   $('block-handle').setAttribute('aria-label', t.blockActions)
+  $('outline').setAttribute('aria-label', t.outline)
   $('doc-empty-title').textContent = t.emptyTitle
   $('preview-cut').textContent = fmt(t.previewCut, { size: sizeOf(LONG_TEXT) })
   $('doc-empty-hint').textContent = t.emptyHint
@@ -1822,8 +1833,8 @@ function shownName(entry) {
 }
 
 // A file's mark: the icon the App that opens it declared for its kind (entry.claimedBy.icon, worked out by the host) —
-// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else its suffix on a square coloured by its
-// family (list.js), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
+// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else the host's file tile (<gugu-file-mark>,
+// the same as on its output cards), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
 function fileMark(entry) {
   const icon = entry.claimedBy?.icon
   if (icon) {
@@ -1831,12 +1842,11 @@ function fileMark(entry) {
     mark.title = entry.claimedBy.name
     return mark
   }
-  const { label, family } = markOf(entry)
-  const mark = document.createElement('span')
-  mark.className = 'file-mark file-badge'
-  mark.dataset.family = family
-  mark.textContent = label
-  mark.setAttribute('aria-hidden', 'true')
+  // The full name (not displayName): its last suffix says the family.
+  const mark = Object.assign(document.createElement('gugu-file-mark'), { className: 'file-mark' })
+  mark.setAttribute('name', entry.name ?? '')
+  if (entry.contentType) mark.setAttribute('mime', entry.contentType)
+  mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
   if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
@@ -1868,7 +1878,6 @@ function thumbInto(el, entry) {
     if (!url) return
     el.style.backgroundImage = `url("${url}")`
     el.classList.add('has-thumb')
-    el.textContent = ''
   }
   el.thumbWanted = () => {
     if (!thumbs.has(key)) thumbs.set(key, new Promise((done) => {
@@ -2444,10 +2453,21 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
-    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
+    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// An image opens in the host's image viewer (API 57): the images on screen with it, in the order drawn, to page through,
+// and where its picture is, to open from and close back to.
+function viewedWith(entry) {
+  if (!/^image\//i.test(entry.contentType || '')) return {}
+  const byId = new Map(state.entries.map((e) => [e.id, e]))
+  const among = state.order.map((id) => byId.get(id)).filter((e) => e && !isFolder(e) && /^image\//i.test(e.contentType || '') && !fileUnavailable(e))
+  const mark = [...$('file-list').querySelectorAll('li[data-id]')].find((li) => li.dataset.id === entry.id)?.querySelector('.file-mark')
+  const box = mark?.getBoundingClientRect()
+  return { ...(among.length > 1 ? { among } : {}), ...(box && box.width > 0 ? { origin: { x: box.x, y: box.y, width: box.width, height: box.height } } : {}) }
 }
 
 function startRename(li, entry) {
@@ -2659,6 +2679,10 @@ function askReplace(name) {
     }
     li.append(actions)
     $('conflict-list').replaceChildren(li)
+    $('conflicts-done').hidden = false
+    $('conflicts-done').parentElement.hidden = false
+    $('conflicts-done').dataset.choice = 'skip'
+    $('conflicts-done').textContent = t.skipAll
     $('conflicts-done').onclick = answered('skip')
     $('conflicts').hidden = false
   })
@@ -2702,8 +2726,15 @@ function askAboutNames(arrived, before) {
   if (clashes.length === 0) return Promise.resolve(arrived)
   const kept = new Map(arrived.map((entry) => [entry.id, entry]))
   let finish
-  const settled = new Promise((resolve) => { finish = () => { $('conflicts').hidden = true; resolve([...kept.values()]) } })
-  $('conflicts-done').onclick = finish // Unanswered names keep both files, as before.
+  const settled = new Promise((resolve) => { finish = () => { $('conflicts').hidden = true; delete $('conflicts-done').dataset.choice; resolve([...kept.values()]) } })
+  // One clash has only its two explicit choices. With several, keeping the rest is a named choice, never "OK".
+  const remainingChoice = () => {
+    $('conflicts-done').hidden = $('conflict-list').children.length < 2
+    $('conflicts-done').parentElement.hidden = $('conflicts-done').hidden
+    $('conflicts-done').dataset.choice = 'keep-remaining'
+    $('conflicts-done').textContent = t.keepRemainingBoth
+  }
+  $('conflicts-done').onclick = () => { if ($('conflict-list').children.length > 1) finish() }
   $('conflict-list').replaceChildren(...clashes.map(({ entry, old }) => {
     const li = document.createElement('li')
     li.className = 'conflict'
@@ -2720,6 +2751,7 @@ function askAboutNames(arrived, before) {
           kept.set(entry.id, await run())
           li.remove()
           if (!$('conflict-list').children.length) finish()
+          else remainingChoice()
         } catch (error) {
           showBanner(failureText(error), 'error')
         }
@@ -2744,6 +2776,7 @@ function askAboutNames(arrived, before) {
     li.append(actions)
     return li
   }))
+  remainingChoice()
   $('conflicts').hidden = false
   return settled
 }
@@ -2849,6 +2882,11 @@ async function openHanded(maxBytes) {
   } finally {
     if (state.opening === token) state.opening = null
   }
+}
+
+/** Draw the page (index.html starts it `reading`): what it shows is ready. */
+function reveal() {
+  document.body.classList.remove('reading')
 }
 
 // A file that could not be opened (its machine out of reach, say): a way to try again, and again by itself when its machine is back.
@@ -3236,8 +3274,11 @@ function showSelection(picks, end, inPreview = false) {
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
-  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
-  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
+  // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
+  // whose folder the file is in, its members to @ (55).
+  const entry = state.current?.entry
+  $('send-sel').hidden = !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
+    : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3306,8 +3347,8 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   }
 }
 
-// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
-// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Send (a task's working copy, API 54; a chat's folder, 55): the same words and pills, in the host's box beside the selection,
+// with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
 // Called inside the click, as the host requires.
 async function send(current = state.current, picks = state.picks) {
   const cited = citeOf(current, picks)
@@ -4026,6 +4067,7 @@ function watchPresence(current) {
 // ─── panes and messages ─────────────────────────────────────────────────────
 
 function showDoc(entry) {
+  reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
   $('doc-title').textContent = entry.name
@@ -4076,6 +4118,7 @@ async function showDocPath(entry) {
 }
 
 function showDocMessage(message) {
+  reveal()
   document.body.dataset.state = 'message'
   $('doc-path').hidden = true
   document.body.classList.remove('json-dirty')

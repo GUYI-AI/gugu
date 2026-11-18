@@ -27,3 +27,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.gg-pane-header[data-centered] {
+  --session-header-side-width: var(--control-h-touch);
+  display: grid;
+  grid-template-columns: var(--session-header-side-width) minmax(0, 1fr) var(--session-header-side-width);
+}
+.gg-pane-header[data-centered]:has(> .gg-pane-actions > :nth-child(2)) {
+  --session-header-side-width: calc(var(--control-h-touch) * 2 + 2px);
+}
+.gg-pane-header[data-centered] > .gg-pane-heading {
+  grid-area: 1 / 2;
+  text-align: center;
+}
+.gg-pane-header[data-centered] > .gg-pane-actions {
+  grid-area: 1 / 3;
+  justify-self: end;
+  margin-inline-start: 0;
+}

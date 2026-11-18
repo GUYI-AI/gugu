@@ -1709,7 +1709,7 @@ describe('InitialSessionField', () => {
     ]);
   });
 
-  it('routes an uninstalled agent action to its agent detail in the library', async () => {
+  it('routes an uninstalled agent action to the agent product page', async () => {
     await renderField();
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
@@ -1719,9 +1719,8 @@ describe('InitialSessionField', () => {
       props.onAgentAction?.('claude');
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', {
-      tab: 'agents',
-      agentId: 'claude',
+    expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });
 
@@ -2249,6 +2248,8 @@ describe('InitialSessionField', () => {
     // 组头与「登录之后」那一档共用同一个键 —— 同一档换内容不换标题。
     expect(unlock?.groupLabel).toBe('harnessCatalog.ownModelsGroup|Kimi');
     expect(unlock?.label).toBe('harnessCatalog.unlockModels|Kimi');
+    // Second line: what the panel it opens offers. Kimi declares only its CLI's own sign-in.
+    expect(unlock?.detail).toBe('harnessCatalog.access.account');
 
     // 反例对照:那条 toast 必须**真的没了** —— 只删渲染、判据仍绿的话这里会红。
     expect(
@@ -2291,6 +2292,12 @@ describe('InitialSessionField', () => {
       const trigger = document.createElement('button');
       trigger.textContent = 'Go sign in'; container.append(trigger);
       expect(latestState?.harnessSignIn).toBeTypeOf('function');
+      // The row inside the model menu that a signed-out catalog (`auth-required`) turns into.
+      expect(latestState?.harnessModelUnlock).toMatchObject({
+        groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
+        label: `harnessCatalog.unlockModels|${provider}`,
+        detail: 'harnessCatalog.access.account / harnessCatalog.access.api-key / harnessCatalog.access.endpoint',
+      });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state
       // request; agent-connection-panel.test.tsx exercises its actual menu/form.

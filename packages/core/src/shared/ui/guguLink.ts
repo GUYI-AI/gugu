@@ -249,10 +249,21 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
 
 /** Stored chat/file links are independent of the build that writes or reads the message. */
 export const APP_VARIANT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
-export type AppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string; /** Asked from inside the App: back returns there. Never in the URL. */ fromApp?: boolean }
-function validAppDetail(target: AppDetailLink): boolean {
+export type ExtensionAppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string; /** Asked from inside the App: back returns there. Never in the URL. */ fromApp?: boolean }
+export type AgentAppDetailLink = { kind: 'agent-app-detail'; agentId: string; deviceId?: string }
+export type AppDetailLink = ExtensionAppDetailLink | AgentAppDetailLink
+
+function validAgentAppDetail(target: AgentAppDetailLink): boolean {
+  return /^[a-z0-9][a-z0-9-]{1,63}$/.test(target.agentId) && validDevice(target.deviceId)
+}
+
+function validDevice(deviceId: string | undefined): boolean {
+  return deviceId === undefined || (!!deviceId && !/\s/.test(deviceId))
+}
+
+function validAppDetail(target: ExtensionAppDetailLink): boolean {
   return /^[a-z0-9][a-z0-9-]{1,63}$/.test(target.extensionId)
-    && (target.deviceId === undefined || (!!target.deviceId && target.deviceId.trim() === target.deviceId && !/\s/.test(target.deviceId)))
+    && validDevice(target.deviceId)
     && (target.variant === undefined || (target.deviceId !== undefined && APP_VARIANT_NAME_PATTERN.test(target.variant)))
 }
 export type GuguLinkTarget =
@@ -322,10 +333,17 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
   if (host === 'app') {
     if (url.username || url.password || port || url.hash || !/^\/[^/]+$/.test(url.pathname)
       || [...url.searchParams.keys()].some((key) => !['device', 'variant'].includes(key) || url.searchParams.getAll(key).length !== 1)) return null
-    const target: AppDetailLink = { kind: 'app-detail', extensionId: url.pathname.slice(1),
+    const target: ExtensionAppDetailLink = { kind: 'app-detail', extensionId: url.pathname.slice(1),
       ...(url.searchParams.has('device') ? { deviceId: url.searchParams.get('device')! } : {}),
       ...(url.searchParams.has('variant') ? { variant: url.searchParams.get('variant')! } : {}) }
     return validAppDetail(target) ? target : null
+  }
+  if (host === 'agent-app') {
+    if (url.username || url.password || port || url.hash || !/^\/[^/]+$/.test(url.pathname)
+      || [...url.searchParams.keys()].some((key) => key !== 'device' || url.searchParams.getAll(key).length !== 1)) return null
+    const target: AgentAppDetailLink = { kind: 'agent-app-detail', agentId: url.pathname.slice(1),
+      ...(url.searchParams.has('device') ? { deviceId: url.searchParams.get('device')! } : {}) }
+    return validAgentAppDetail(target) ? target : null
   }
   if (host === 'ext') {
     if (raw.length > MAX_EXTENSION_LINK_LENGTH) return null
@@ -376,6 +394,11 @@ export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' 
       const query = new URLSearchParams({ ...(target.deviceId ? { device: target.deviceId } : {}), ...(target.variant ? { variant: target.variant } : {}) })
       return `${scheme}://app/${target.extensionId}${query.size ? `?${query}` : ''}`
     }
+    case 'agent-app-detail': {
+      if (!scheme || !validAgentAppDetail(target)) throw new Error('An agent detail link needs an agent id and the build scheme')
+      const query = new URLSearchParams(target.deviceId ? { device: target.deviceId } : {})
+      return `${scheme}://agent-app/${target.agentId}${query.size ? `?${query}` : ''}`
+    }
     case 'session':
     case 'project':
       if (!scheme) throw new Error('An external resource link needs the build scheme')
@@ -391,7 +414,7 @@ export function linkTargetOf(args: Record<string, unknown>, own: { id: string; c
   }
   switch (args.kind ?? 'app') {
     case 'app-detail': {
-      const target: AppDetailLink = { kind: 'app-detail', extensionId: args.app === undefined ? own.id : text(args.app, 'app'),
+      const target: ExtensionAppDetailLink = { kind: 'app-detail', extensionId: args.app === undefined ? own.id : text(args.app, 'app'),
         ...(args.device === undefined ? {} : { deviceId: text(args.device, 'device') }),
         ...(args.variant === undefined ? {} : { variant: text(args.variant, 'variant') }) }
       if (!validAppDetail(target)) throw new Error('Invalid App detail reference: a variant needs a device and an ASCII slug')

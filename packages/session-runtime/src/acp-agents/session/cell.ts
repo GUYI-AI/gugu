@@ -205,6 +205,8 @@ export class SessionCell {
   private readonly requests = new Map<string, PromptRequest>();
   /** 发出去的句数(含回放):转录行 id 与回合信封的序号用它,❌ 不是状态。 */
   private promptSequence = 0;
+  /** #3005 When the last live model cycle settled: the prompt cache is as warm as this, not as the last user input. */
+  private lastWorkEndedAt: number | null = null;
   private dequeueAfterFailure = true;
   private requeuedAfterTokenBoundary = false;
   private resolveActiveTurnCompletion: ((result: Result<SessionPromptResult, AcpSendPromptError>) => void) | null = null;
@@ -309,7 +311,7 @@ export class SessionCell {
 
   get isCompacting(): boolean { return this.compacting; }
 
-  get idleCompactionState(): { idle: boolean; contextTokens: number | null; revision: number } {
+  get idleCompactionState(): { idle: boolean; contextTokens: number | null; revision: number; lastWorkEndedAt: number | null } {
     return {
       idle: !this.compacting && !this.reverting && !this.closeRequested && !this.promptEchoes.admissionClosed
         && this.machine.phase.kind === 'ready' && !this.activeTurnCompletion
@@ -319,6 +321,7 @@ export class SessionCell {
         && this.config.availableCommands.some(command => command.name.replace(/^\//, '') === 'compact'),
       contextTokens: this.usage?.contextUsed ?? null,
       revision: this.promptSequence,
+      lastWorkEndedAt: this.lastWorkEndedAt,
     };
   }
 
@@ -593,6 +596,8 @@ export class SessionCell {
       }
       return;
     }
+    // #3005 A compaction inside our own idle `/compact` cycle is not the person's `/compact`: say it ran while they were away.
+    if (!this.replayingHistory && this.compacting && event.kind === 'compaction') event = { ...event, trigger: 'idle' };
     if (!this.replayingHistory && event.kind === 'message' && event.role === 'user') {
       const resolved = submitted ? event : this.promptEchoes.receive(event, this.transcript, !!this.transcript.activeTurn && !!this.activeTurnCompletion);
       if (!resolved) return;
@@ -1167,13 +1172,18 @@ export class SessionCell {
             );
         if (!validation.success) return validation as unknown as Result<LiveSettingApplyResult, E>;
       }
-      const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail);
+      let dispatched = false;
+      const onDispatch = () => { dispatched = true; };
+      const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail, onDispatch);
       if (!result.success) {
+        // Local rejection cannot change provider state. Preserve any earlier uncertainty,
+        // but only a dispatched mutation can introduce a new prompt-admission block.
+        if (!dispatched) return result;
         // A rejected enable has no toggle path back to an already displayed Off value.
         // Confirm Off once through the same native authority so a failed optional speed
         // choice cannot strand the next user turn or leave an unconfirmed premium tier.
         if (dimension === 'fast' && value === 'on') {
-          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail);
+          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail, onDispatch);
           if (off.success && off.data.status === 'applied') {
             this.settingsBlockedReasons.delete(dimension);
             return result;
@@ -1233,6 +1243,7 @@ export class SessionCell {
     capability: LiveSettingCapability,
     startupOnly: boolean,
     fail: (cause: ReturnType<typeof toSerializedError>) => Result<never, E>,
+    onDispatch: () => void,
   ): Promise<Result<LiveSettingApplyResult, E>> {
     const channel = startupOnly
       ? this.startupChannel(dimension, configId)
@@ -1252,6 +1263,7 @@ export class SessionCell {
     const agent = this.agent;
     try {
       if (agent.applyLiveSetting && !startupOnly) {
+        onDispatch();
         const response = await agent.applyLiveSetting({
           providerSessionId: this.acpSessionId,
           dimension,
@@ -1277,6 +1289,7 @@ export class SessionCell {
           // the stable mode RPC when the unstable config setter is absent. Explicit provider
           // contracts use `ack-read-back` and must fail instead of silently changing channels.
           if (dimension === 'permission' && (capability.ack === 'ack' || startupOnly) && agent.setSessionMode) {
+            onDispatch();
             await agent.setSessionMode({
               sessionId: this.acpSessionId,
               modeId: value,
@@ -1294,6 +1307,7 @@ export class SessionCell {
           value,
         } satisfies SetSessionConfigOptionRequest;
         this.rawLog.record({ kind: 'session_config_option_request', sessionId: this.acpSessionId, request });
+        onDispatch();
         const response = await agent.setSessionConfigOption(request);
         this.rawLog.record({
           kind: 'session_config_option_response',
@@ -1305,6 +1319,7 @@ export class SessionCell {
       if (channel !== 'acp-mode' || !agent.setSessionMode) {
         return fail({ name: 'LiveSettingExecutorMissing', message: `No executor for ${dimension}` });
       }
+      onDispatch();
       await agent.setSessionMode({ sessionId: this.acpSessionId, modeId: value } satisfies SetSessionModeRequest);
       // `ack`: the success response is the confirmation. A provider that sends no current_mode_update after it
       // (hermes) would otherwise leave the picker on the mode the session started in.
@@ -1504,6 +1519,7 @@ export class SessionCell {
     this.lastFailureProvisional = false;
     const previousRunningAgentCount = this.lastRunningAgentCount;
     this.transcript.settleTurn(outcome, Date.now(), opts?.foreground);
+    this.lastWorkEndedAt = Date.now();
     this.lastTurnError = outcome.kind === 'error' ? outcome.detail ?? outcome.said ?? outcome.reason ?? null : null;
     this.settleRequests();
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);

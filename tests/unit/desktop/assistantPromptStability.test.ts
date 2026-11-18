@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../support/attachmentUploadHost'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -35,7 +36,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
       },
       agentUserId: 'assistant', threadRootId: null, sessionKey: 'assistant-session', model: null, autonomy: null,
       promptBlocks: { identity: buildAgentIdentityBlock({ guguUserId: 'assistant' }) },
-      socialBridgeDeps: {
+      socialBridgeDeps: { attachments: testAttachmentUploads(),
         host, grantKey: 'assistant-prefix', personalAssistant: true,
         getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon',
         runSessionAction: async () => ({}), runExtensionAction: async () => ({}),
@@ -60,7 +61,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
     for (const row of catalog.items) {
       if (!row.call) continue
       const name = row.call.slice(0, row.call.indexOf('('))
-      const result = await client.callTool({ name: 'catalog_describe', arguments: { tool: name } })
+      const result = await client.callTool({ name: 'catalog_list', arguments: { name } })
       expect(result.isError).not.toBe(true)
       deferred.push(JSON.parse(text(result)))
     }

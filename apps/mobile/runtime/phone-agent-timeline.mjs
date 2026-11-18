@@ -6,6 +6,7 @@ import { findToolImage } from '../../../packages/session-core/src/session-record
 import { trimAfterResultForTransport, trimOlderForTransport, trimSnapshotForTransport } from '../../../packages/session-core/src/session-record/transport-trim.ts'
 import { createPhoneLiveProjection } from './phone-agent-live.mjs'
 import { phoneInputIdentity } from './phone-input-identity.mjs'
+import { phoneInterruptionRevision } from './phone-task-outcomes.mjs'
 
 const failure = (code, message) => Object.assign(new Error(message), { code })
 const terminal = new Set(['done', 'failed', 'cancelled', 'interrupted'])
@@ -72,7 +73,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, confirmatio
     // A queued/failed admission is a real user input, not an invented empty transcript.
     if (!recorded && job.status !== 'done') entries.push(message(`phone-input:${job.id}`, began, job.prompt))
     if (terminal.has(job.status) && job.status !== 'done') {
-      if (!recorded) entries.push(message(`phone-failure:${job.id}`, ended, job.error ?? '手机任务已取消', 'assistant'))
+      if (!recorded && job.status !== 'interrupted') entries.push(message(`phone-failure:${job.id}`, ended, job.error ?? '手机任务已取消', 'assistant'))
       entries.push({ key: `phone-boundary:${job.id}`, at: ended, boundary: { kind: job.status === 'cancelled' ? 'turn_aborted' : 'turn_failed' } })
     }
     entries.push(...(job.runtimeNotices ?? []).map((notice) => ({ key: notice.key, at: notice.at, ...(end && notice.at >= (end.at ?? 0) ? { before: end.key } : {}), event: { kind: 'session_notice', code: 'provider-notice', title: notice.title, detail: notice.description ?? notice.title } })))
@@ -134,7 +135,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, confirmatio
     hidden.get(agent.sessionId)?.timeline.dispose(); hidden.delete(agent.sessionId)
     const path = await recordOf(agent)
     if (!path && jobsOf(agent).some((job) => job.status === 'done')) throw failure('record_unreadable', '这条手机任务记录暂时无法读取，请重试；不会用摘要冒充完整转录')
-    const key = `${agent.contextEpoch ?? 'legacy'}:${path ?? 'admitted'}`
+    const key = `${agent.contextEpoch ?? 'legacy'}:${path ?? 'admitted'}:${phoneInterruptionRevision(jobsOf(agent))}`
     let cached = open.get(agent.sessionId)
     if (cached?.key !== key) {
       cached?.timeline.dispose()

@@ -24,7 +24,7 @@ final class GuguIOSHostAdapter {
         "appSettings.get", "appSettings.getWithMeta",
     ]
     private static let mutations: Set<String> = [
-        "sessionTimeline.sessionCreate", "sessionTimeline.sessionSend", "sessionTimeline.sessionRespond",
+        "sessionTimeline.sessionCreate", "sessionTimeline.sessionSend", "sessionTimeline.sessionRetry", "sessionTimeline.sessionRespond",
         "sessionTimeline.sessionQueue", "sessionTimeline.sessionCancel", "sessionTimeline.sessionSetOption",
         "sessionTimeline.sessionReloadModel", "sessionTimeline.prefetchFiles", "sessions.markSessionSeen",
         "appSettings.update",

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { mcpToggleDirective } from '@gugu/session-core/mcp';
 import { assertSessionMcpStdioEnv, sessionMcpAuthorization } from '../../helpers/session-mcp';
-import { codexNotifyConfigValue } from './hooks';
+import { codexNotifyConfigValue, isLegacyCodexTrustFile, stripLegacyCodexNotify } from './hooks';
 import { codexPlatformProviderConfigArgs } from './platform-provider-args';
 import { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './platform-models';
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES, type CodexPermissionMode } from './permission-modes';
@@ -90,7 +90,6 @@ export const CODEX_ACP_MINIMUM_VERSION = '0.136.0' as const;
  */
 export const CODEX_TUI_ADOPT_MINIMUM_VERSION = '0.153.0' as const;
 import {
-  agentHomeSegments,
   type CapabilityPackage,
   extensionSkillFolderName,
   type GeneratedSymlink,
@@ -103,7 +102,6 @@ import {
   type SessionMaterializationContext,
   type SessionMcpServer,
   type SessionPromptBlocks,
-  type TomlOverlay,
 } from '@gugu/session-core/agents/plugins';
 export const CODEX_GUGU_PACKAGE_ID = 'gugu-product-codex';
 export const CODEX_GUGU_PLUGIN_ID = 'gugu-product';
@@ -163,12 +161,28 @@ export const CODEX_NATIVE_HOME = {
 } as const satisfies NativeHome;
 
 export const codexSessionBundleDescriptor = {
-  // 运行时注入(#4834 §4 owner 拍板)。托管那份 `CODEX_HOME` 从来没被递给过子进程 ——
-  // 当年的 `configRoot.injectEnv` 就是 false(那一格已删),materialize 把用户真实 `CODEX_HOME` 原样透传;
-  // 信任真正生效的是 argv 上的按次信任 `-c projects={ "<cwd>" = { trust_level = "trusted" } }`(见 codexProjectTrustArgs,单测钉着)。
-  // ⇒ 那份副本**没有任何读者**,只是每个 tier 白烧 8.8 GB(2026-09-03 owner MBP 实测)。
-  injectionMode: 'runtime',
+  injectionMode: 'managed-config-root',
   nativeHome: CODEX_NATIVE_HOME,
+  configRoot: {
+    ...CODEX_NATIVE_HOME,
+    credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
+    importGroups: [
+      { id: 'settings', paths: [{ path: 'config.toml', isLegacyGeneratedTarget: isLegacyCodexTrustFile }], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
+      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
+      { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
+    ],
+    carryExclusions: [
+      { path: 'sessions', upgradeHistory: true, evidence: 'Native session transcripts imported when upgrading Gugu.' },
+      ...['log', 'logs', 'tmp', '.tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl',
+        'thread-writer-locks', 'installation_id', '.sandbox_migration', '.sqlite-maintenance.lock', 'skills/.system'].map((path) => ({ path, evidence: 'Codex regenerates runtime files, caches, locks and installation state in its active root.' })),
+    ],
+    legacyCleanup: [{ path: 'config.toml', update: async (fs, path) => {
+      const original = await fs.read(path);
+      if (original === null) return;
+      const stripped = stripLegacyCodexNotify(original);
+      if (stripped !== original) await fs.write(path, stripped);
+    } }],
+  },
   platform: harnessPlatform,
   // ❌ `CODEX_ACCESS_TOKEN`:凭据的出处是咕咕给这一家的独立配置根,同名 export 会让「面板上的账号」与「实际在用的账号」分家且不报错。
   // ❌ 这里也没有 `GUGU_CODEX_BIN`(#5702):咕咕起适配器时自己填(./index.ts),透传就是让 shell 顶掉面板上的选择。
@@ -662,29 +676,6 @@ function report(
 }
 
 /**
- * 会话自有 trust overlay 的**路径形状**,❌ 不是托管配置根 —— 本家 `injectionMode: 'runtime'`,
- * 不声明 `configRoot`,不复制用户那棵树。这里只是沿用同一套目录布局放一份 gugu 自己的 config.toml。
- */
-const CODEX_OVERLAY_USER_PATH = '.codex';
-
-function codexOwnedHome(bundle: SessionCapabilityBundle): string {
-  const guguHome = bundle.env.GUGU_HOME?.trim();
-  if (!guguHome) throw new Error('Codex session adapter requires bundle.env.GUGU_HOME');
-  return join(guguHome, ...agentHomeSegments('codex', CODEX_OVERLAY_USER_PATH));
-}
-
-function trustOverlay(bundle: SessionCapabilityBundle, cwd: string): TomlOverlay {
-  const configFile = join(codexOwnedHome(bundle), 'config.toml');
-  return {
-    sourcePath: configFile,
-    path: configFile,
-    conflict: 'gugu-owns',
-    mode: 0o600,
-    patch: { projects: { [cwd]: { trust_level: 'trusted' } } },
-  };
-}
-
-/**
  * 这条会话的工作目录按次标成「受信任」—— 只在这个进程里生效。
  *
  * 不给的话,codex app-server 的 `thread/start` 碰到「没标过信任、权限又可写」的 cwd 会**自己写进
@@ -702,10 +693,6 @@ export function codexProjectTrustArgs(cwd: string): string[] {
   // 落盘,内联表写法不落。CLI 层与用户配置按表**深合并**(同文件 `merge_toml_values`),用户自己的
   // 其它 `projects` 条目不受影响。
   return ['-c', `projects={ ${tomlString(cwd)} = { trust_level = "trusted" } }`];
-}
-
-function trustArgs(cwd: string): string[] {
-  return codexProjectTrustArgs(cwd);
 }
 
 /**
@@ -797,7 +784,6 @@ export function materializeCodexSessionBundle(
   ) {
     throw new Error(`Codex credential lifecycle for '${ctx.surface}' does not match its native consumers`);
   }
-  const trust = trustOverlay(bundle, ctx.cwd);
   //
   // 包仍然是权威:下面两行都是 fail-loud 闸 —— 会话里没带咕咕这一包、或想路由一个包里没声明的
   // MCP server,直接抛。❌ 但不再把包的文件铺到磁盘上:市场没人注册,铺出来就是一堆没人读的文件。
@@ -994,7 +980,7 @@ export function materializeCodexSessionBundle(
     // The app-server leg's host registers them itself (codex-app-server-delivery); the ACP bridge reads the env above.
     ...(skillRoot && ctx.surface === 'app-server' ? { skillRoots: [skillRoot.root] } : {}),
     argsAppend: [
-      ...(ctx.surface === 'app-server' ? trustArgs(ctx.cwd) : []),
+      ...(ctx.surface === 'app-server' ? codexProjectTrustArgs(ctx.cwd) : []),
       ...modelArgs(ctx.surface, bundle, env),
       ...ownBrowserPluginArgs(bundle),
     ],
@@ -1021,8 +1007,6 @@ export function materializeCodexSessionBundle(
     ...(prompt ? { prompt } : {}),
     configMerges: [],
     artifacts: [],
-    // 一条都不需要了:home 是用户的,他的 sessions / auth.json / skills / 插件缓存本来就在原地。
-    tomlOverlays: [trust],
     symlinks: skillRoot?.symlinks ?? [],
     directorySymlinkOverlays: [],
     report: report(ctx, bundle),

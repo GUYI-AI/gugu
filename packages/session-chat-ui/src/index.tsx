@@ -47,6 +47,7 @@ export type {
 } from './state/chat-state';
 
 export { createChatView } from './chat-view';
+export { mountRecordedFileDiff } from './components/rows/tools/diff/recorded-file-diff';
 export { resolveConversationMessageReference } from './state/conversation-messages';
 export type {
   ChatView,
@@ -131,6 +132,7 @@ export { CHAT_VIEW_COMMANDS } from './commands';
 export type { ViewportProtection } from './core/viewport-protection';
 export type {
   ChatCommands,
+  RecordedFileChange,
   ChatViewCommand,
   ChatViewCommandId,
   ScrollToItemOptions,

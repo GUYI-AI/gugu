@@ -13,6 +13,20 @@ import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
 
+// Cache instances in one process share directories. Keep each path check and its I/O together:
+// another reader, writer or cleanup must not remove the directory between lstat and realpath.
+const chunkCacheOperations = new Map<string, Promise<void>>()
+async function inChunkCacheDirectory<T>(directory: string, operation: () => Promise<T>): Promise<T> {
+  // Normalize the stable parent, not the removable child: aliases of one cache share the queue.
+  const key = join(await requireAgentFileAccess(dirname(directory)), basename(directory))
+  const result = (chunkCacheOperations.get(key) ?? Promise.resolve()).then(operation)
+  // Only the queue tail settles successfully; the caller receives the original result or failure.
+  const tail = result.then(() => {}, () => {})
+  chunkCacheOperations.set(key, tail)
+  void tail.then(() => { if (chunkCacheOperations.get(key) === tail) chunkCacheOperations.delete(key) })
+  return result
+}
+
 /** Raw resumable chunks share the existing private open-file cache and its stale-directory cleanup. */
 export function createFileChunkCache(tempRoot: string): FileChunkCache {
   const directory = (key: string, index = 0) => {
@@ -21,20 +35,29 @@ export function createFileChunkCache(tempRoot: string): FileChunkCache {
   }
   return {
     async get(key, index) {
-      const file = await requireAgentFileAccess(join(directory(key, index), String(index))), info = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
-      if (!info) return null
-      requireFileRange(FILE_CHUNK_BYTES, 0, info.size)
-      return new Uint8Array(await readFile(file))
+      const root = directory(key, index)
+      return inChunkCacheDirectory(root, async () => {
+        const file = await requireAgentFileAccess(join(root, String(index))), info = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
+        if (!info) return null
+        requireFileRange(FILE_CHUNK_BYTES, 0, info.size)
+        return new Uint8Array(await readFile(file))
+      })
     },
     async put(key, index, bytes) {
       requireFileRange(FILE_CHUNK_BYTES, 0, bytes.length)
-      const root = directory(key, index), file = await requireAgentFileAccess(join(root, String(index)))
-      await requireAgentFileAccess(root)
-      await mkdir(root, { recursive: true, mode: 0o700 })
-      const part = await requireAgentFileAccess(`${file}.${crypto.randomUUID()}.part`)
-      await writeFile(part, bytes, { flag: 'wx', mode: 0o600 }); await rename(part, file)
+      const root = directory(key, index)
+      return inChunkCacheDirectory(root, async () => {
+        const file = await requireAgentFileAccess(join(root, String(index)))
+        await requireAgentFileAccess(root)
+        await mkdir(root, { recursive: true, mode: 0o700 })
+        const part = await requireAgentFileAccess(`${file}.${crypto.randomUUID()}.part`)
+        await writeFile(part, bytes, { flag: 'wx', mode: 0o600 }); await rename(part, file)
+      })
     },
-    clear: key => cleanupRemoteFileDirectory(directory(key)),
+    clear(key) {
+      const root = directory(key)
+      return inChunkCacheDirectory(root, () => cleanupRemoteFileDirectory(root))
+    },
   }
 }
 
@@ -239,4 +262,29 @@ export async function writeFileHandle(file: FileHandle, path: string) {
     if (createdDirectory === target) await rmdir(target).catch(failure => { if (!['ENOENT', 'ENOTEMPTY'].includes(failure.code)) throw failure }); throw error
   }
   finally { await file.dispose() }
+}
+
+/** A verified original already held by this device; partial or changed files cannot resume an upload. */
+export async function storedCopy(guguHome: string, sha256: string): Promise<Blob | null> {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
+  const directory = await requireAgentFileAccess(join(fileStoreDirectory(guguHome), sha256))
+  for (const name of await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })) {
+    if (name.endsWith('.part')) continue
+    const path = await requireAgentFileAccess(join(directory, name))
+    if (!(await stat(path)).isFile()) continue
+    const blob = await openAsBlob(path), hash = createHash('sha256')
+    for await (const chunk of blob.stream()) hash.update(chunk)
+    if (hash.digest('hex') === sha256) return blob
+  }
+  return null
+}
+
+/** Keep outgoing bytes through the same verified, atomic, read-only store used for downloaded originals. */
+export async function storeBytes(guguHome: string, sha256: string, name: string, bytes: Blob): Promise<void> {
+  if (await storedCopy(guguHome, sha256)) return
+  const revision = { source: 'managed-object' as const, file_name: name, content_type: bytes.type || 'application/octet-stream', size_bytes: bytes.size, sha256 }
+  const source = async () => ({ size: bytes.size, read: async (offset: number, length: number) => new Uint8Array(await bytes.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+  const save = createFileSaver({ local: async () => null, metadata: async () => ({ status: 'ready', revision }), managed: source, ssh: async () => null, temporary: source })
+  // The saver consumes these local bytes; its ref is a placeholder, never a cloud read or authorization.
+  await save(revision, { ref: { message_id: sha256 }, actor: { accountId: 'local', actorId: 'local' } }, fileStoreDirectory(guguHome), name, true)
 }

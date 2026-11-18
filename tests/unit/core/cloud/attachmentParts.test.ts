@@ -35,7 +35,7 @@ function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) =
       if (next) return json(next)
       size = Number(body.size_bytes)
       if (!body.parts) return json({ status: 200, body: { staging_key: KEY, url: 'https://oss.example/form', fields: {}, max_bytes: size } })
-      return json({ status: 200, body: { staging_key: KEY, max_bytes: size, expires_at: '2030-01-01T00:00:00Z', parts: { part_bytes: PART, count: Math.ceil(size / PART) } } })
+      return json({ status: 200, body: { staging_key: KEY, max_bytes: size, expires_at: new Date(Date.now() + 300_000).toISOString(), parts: { part_bytes: PART, count: Math.ceil(size / PART) } } })
     }
     if (route === 'finish') return json({ status: 200, body: { message: { id: body.message_id } } })
     if (route === 'upload-parts') {
@@ -124,8 +124,11 @@ describe('multipart uploads from a host that sends signed parts', () => {
     expect(a).not.toBe(await contentRequestId('chat', 'agent', 'c2', 'ab'.repeat(32), '10'))
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
-  it('a message sent before its bytes: a failed attempt goes on with the same multipart upload, without sending stored parts again', async () => {
-    const s = server({ refuse: (n, attempt) => n === 3 && attempt === 1 ? 400 : null })
+  it.each([new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }), new Error('net::ERR_CONNECTION_RESET')])('retries the interrupted part after $message without sending stored parts again', async error => {
+    const s = server({ refuse: (n, attempt) => {
+      if (n === 3 && attempt === 1) throw error
+      return null
+    } })
     const bytes = file(10)
     const declared = await declareAttachment(s.endpoint, bytes, { chat_id: 'chat', as: 'agent' })
     expect(declared.plan?.parts).toEqual({ part_bytes: PART, count: 3 })
@@ -134,6 +137,12 @@ describe('multipart uploads from a host that sends signed parts', () => {
     expect(s.puts.map(p => p.n).sort()).toEqual([1, 2, 3, 3])
     expect(s.calls.at(-1)?.route).toBe('finish')
   })
+  it('stops after three attempts of one part even if storage keeps failing', async () => {
+    const s = server({ refuse: n => n === 3 ? 503 : null })
+    await expect(uploadAttachmentBytes(s.endpoint, file(), scope)).rejects.toMatchObject({ status: 503 })
+    expect(s.puts.map(p => p.n).sort()).toEqual([1, 2, 3, 3, 3])
+    expect(s.done).toEqual(new Set([1, 2]))
+  })
   it('a message sent before its bytes: a multipart upload whose permit lapsed is replaced by a new plan', async () => {
     const s = server({ parts: [{ status: 410, body: { error: 'expired', message: 'Upload permit expired' } }] })
     const bytes = file(10)
@@ -141,6 +150,15 @@ describe('multipart uploads from a host that sends signed parts', () => {
     await finishDeclaredAttachment(s.endpoint, declared, bytes, { id: 'm1', chat_id: 'chat', as: 'agent' })
     expect(s.calls.filter(c => c.route === 'upload')).toHaveLength(2)
     expect(s.calls.at(-1)?.route).toBe('finish')
+  })
+  it('rereads a server-extended permit under the original upload id and keeps recorded parts', async () => {
+    const s = server({ done: [1, 2] })
+    const bytes = file()
+    const declared = await declareAttachment(s.endpoint, bytes, scope)
+    declared.plan!.expires_at = new Date(Date.now() - 1).toISOString()
+    await finishDeclaredAttachment(s.endpoint, declared, bytes, { id: 'm1', chat_id: 'chat', as: 'agent' })
+    expect(s.calls.filter(c => c.route === 'upload').at(-1)?.body.request_id).toBe(KEY.split('/').at(-1))
+    expect(s.puts.map(p => p.n)).toEqual([3])
   })
   it('a batch that fails part-way reports the parts that did go up first, so the next attempt does not send them again', async () => {
     // Parts 1 and 2 are signed together; part 2 is refused for good once, part 1 goes up.

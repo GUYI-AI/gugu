@@ -14,6 +14,7 @@ export function liveWindowDescriptors(value: unknown, sessionId: string): LiveWi
     if (!source || typeof source !== 'object' || typeof source.id !== 'string' || !source.id
       || source.sessionId !== sessionId || typeof source.title !== 'string'
       || !['task-page', 'app-projection'].includes(source.type)
+      || source.activity !== undefined && (!Number.isSafeInteger(source.activity) || source.activity < 0)
       || source.size !== null && (!source.size || !Number.isFinite(source.size.width) || !Number.isFinite(source.size.height)
         || source.size.width <= 0 || source.size.height <= 0)
       || source.type === 'app-projection' && (typeof source.appId !== 'string' || !source.appId || typeof source.appVersion !== 'string' || !source.appVersion)) {

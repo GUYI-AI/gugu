@@ -12,6 +12,7 @@ export const enUSCapabilityMessages = {
   'reset.builtIn': 'built-in',
   'reset.always': 'always',
   'settings.readFailed': 'Could not read this setting',
+  'settings.readAgain': 'Read again',
   'settings.refreshFailed': 'Could not read the latest; showing what was read last',
 
   // ── settings · task defaults ───────────────────────────────────────────────
@@ -39,6 +40,9 @@ export const enUSCapabilityMessages = {
   'taskDefaults.preserveCapitalization': 'Preserve task name capitalization',
   'taskDefaults.preserveCapitalizationDescription':
     'Keep uppercase letters in generated and manually entered task names. Defaults to lowercase.',
+  'taskDefaults.idleCompaction': 'Compact long conversations while you are away',
+  'taskDefaults.idleCompactionDescription':
+    'Claude Code conversations are summarized before the prompt cache expires, so your next message costs less and replies sooner.',
   'taskDefaults.enableTmux': 'Enable tmux',
   'taskDefaults.enableTmuxDescription':
     'Use tmux for agent tasks and terminals unless the project has its own setting.',
@@ -305,13 +309,13 @@ export const enUSCapabilityMessages = {
   'browserSettings.defaultProfile': 'Default browser profile',
   'browserSettings.defaultProfileDescription':
     "New browser tabs open with this profile. You can switch an individual tab's profile from its toolbar menu.",
-  'browserSettings.isolatedPerTask': 'Isolated per task',
+  'browserSettings.isolatedPerTask': 'Isolated per agent',
   'browserSettings.relaxCors': 'Disable CORS for localhost',
   'browserSettings.relaxCorsDescription':
     'Allows pages opened from localhost in {appName} browser tabs to call APIs that do not send matching CORS headers.',
   'browserSettings.profiles': 'Browser profiles',
   'browserSettings.profilesDescription':
-    'Each profile keeps its own cookies and logins, shared across tasks.',
+    'Each profile keeps its own cookies and logins, shared across agents.',
   'browserSettings.renameProfileLabel': 'Rename {name} browser profile',
   'browserSettings.saveProfileNameLabel': 'Save {name} browser profile name',
   'browserSettings.cancelRenameLabel': 'Cancel renaming {name} browser profile',
@@ -346,7 +350,7 @@ export const enUSCapabilityMessages = {
   'browserSettings.importLoginsNoBrowser': 'No default browser was found on this computer.',
   'browserSettings.importLoginsUnsupported': 'Importing from {browser} is not supported on this computer yet.',
   'browserSettings.importLoginsNeedsProfile':
-    'The default profile is "Isolated per task", which has no fixed profile to import into. Choose a profile above first.',
+    'The default profile is "Isolated per agent", which has no fixed profile to import into. Choose a profile above first.',
   'browserSettings.importingToast': 'Importing logins from {browser}… If macOS asks for your password to let Gugu read {browser}\'s data, allow it.',
   'browserSettings.importedToast_one': 'Imported {count} login from {browser} into "{profile}"',
   'browserSettings.importedToast_other': 'Imported {count} logins from {browser} into "{profile}"',
@@ -440,6 +444,12 @@ export const enUSCapabilityMessages = {
   'agentsPage.configure': 'Configure',
   'agentsPage.checkAgain': 'Check again',
   'agentsPage.checking': 'Checking…',
+  'agentsPage.detailLoadFailed': 'Could not load this agent.',
+  'agentsPage.detailUnavailable': 'This agent is unavailable.',
+  'agentsPage.detailForwardFailed': 'Could not open the forward picker.',
+  'agentsPage.detailConnection': 'Connection',
+  'agentsPage.detailGeneral': 'General',
+  'agentsPage.detailCoding': 'Coding',
   'agentsPage.addConnectionAction': 'Add',
   'agentsPage.sourceLocalDescription': 'Existing program on this computer',
   'agentsPage.sourceManagedDescription': 'Gugu-managed copy',
@@ -966,8 +976,11 @@ export const enUSCapabilityMessages = {
   // ⚠️ ❌ 不写成「自定义模型」:Codex 里那些就是官方 GPT,一点也不自定义 —— 用户自定义的是
   //    账号不是模型,而且那个词要留给将来真跑在本机的模型(Ollama 一类)。
   'harnessCatalog.ownModelsGroup': 'Your {name} models',
-  'harnessCatalog.unlockModels': 'Sign in to use {name} models',
-  'harnessCatalog.unlockModelsHint': 'Sign in to {name} to see your models',
+  'harnessCatalog.unlockModels': 'Add a personal {name} connection',
+  'harnessCatalog.unlockModelsHint': 'Add a {name} connection to see your models here',
+  'harnessCatalog.access.account': 'Account sign-in',
+  'harnessCatalog.access.api-key': 'API Key',
+  'harnessCatalog.access.endpoint': 'Custom API address',
   'harnessCatalog.signInAgain': '{name} sign-in expired; sign in again',
   'harnessCatalog.signInAgainHint': 'Sign in again to see your {name} models.',
 } as const;
@@ -983,6 +996,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'reset.builtIn': '内置',
   'reset.always': '始终',
   'settings.readFailed': '读不到这项设置',
+  'settings.readAgain': '重新读取',
   'settings.refreshFailed': '没读到最新的，显示的是上次读到的',
 
   // ── 设置 · 任务默认值 ───────────────────────────────────────────────────────
@@ -1007,6 +1021,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'taskDefaults.preserveCapitalization': '保留会话名大小写',
   'taskDefaults.preserveCapitalizationDescription':
     '在生成和手动输入的会话名中保留大写字母，默认转小写。',
+  'taskDefaults.idleCompaction': '离开时压缩长对话',
+  'taskDefaults.idleCompactionDescription': 'Claude Code 的长对话在提示缓存过期前先压缩成摘要，回来再发消息更省也更快。',
   'taskDefaults.enableTmux': '启用 tmux',
   'taskDefaults.enableTmuxDescription': '除非项目有单独设置，否则在 tmux 会话中运行智能体会话和终端。',
 
@@ -1122,9 +1138,9 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
 
   // ── 设置 · 通知 ─────────────────────────────────────────────────────────────
   'notifications.title': '需要我时通知',
-  'notifications.description': '任务和 App 在需要你回应时通知。',
+  'notifications.description': '任务和应用在需要你回应时通知。',
   'notifications.sound': '提示音',
-  'notifications.apps': '可发送通知的 App',
+  'notifications.apps': '可发送通知的应用',
 
   // ── 设置 · 键盘快捷键 ───────────────────────────────────────────────────────
   'keyboard.conflictTitle': '快捷键冲突',
@@ -1268,13 +1284,13 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'browserSettings.defaultProfile': '默认浏览器配置',
   'browserSettings.defaultProfileDescription':
     '新浏览器标签页使用此配置。你也可以在单个标签页的工具栏菜单中切换其配置。',
-  'browserSettings.isolatedPerTask': '每个会话独立',
+  'browserSettings.isolatedPerTask': '每个智能体独立',
   'browserSettings.relaxCors': '对 localhost 关闭 CORS 限制',
   'browserSettings.relaxCorsDescription':
     '允许在 {appName} 浏览器标签页中从 localhost 打开的页面调用未返回匹配 CORS 头的接口。',
   'browserSettings.profiles': '浏览器配置',
   'browserSettings.profilesDescription':
-    '每个配置保留各自的 cookie 和登录状态，并在会话间共享。',
+    '每个配置保留各自的 cookie 和登录状态，并在智能体间共享。',
   'browserSettings.renameProfileLabel': '重命名浏览器配置 {name}',
   'browserSettings.saveProfileNameLabel': '保存浏览器配置 {name} 的名称',
   'browserSettings.cancelRenameLabel': '取消重命名浏览器配置 {name}',
@@ -1307,7 +1323,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'browserSettings.importLoginsUnknownBrowser': '默认浏览器',
   'browserSettings.importLoginsNoBrowser': '这台电脑上没有认出默认浏览器。',
   'browserSettings.importLoginsUnsupported': '这台电脑上暂不支持从 {browser} 导入。',
-  'browserSettings.importLoginsNeedsProfile': '默认配置是「每个会话独立」，没有固定的一份可以导入。请先在上面选一个配置。',
+  'browserSettings.importLoginsNeedsProfile': '默认配置是「每个智能体独立」，没有固定的一份可以导入。请先在上面选一个配置。',
   'browserSettings.importingToast': '正在从 {browser} 导入登录……如果 macOS 弹窗要你输入开机密码、允许咕咕读取 {browser} 的数据，请允许。',
   'browserSettings.importedToast_one': '已从 {browser} 导入 {count} 条登录信息到「{profile}」',
   'browserSettings.importedToast_other': '已从 {browser} 导入 {count} 条登录信息到「{profile}」',
@@ -1396,6 +1412,12 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'agentsPage.configure': '配置',
   'agentsPage.checkAgain': '重新检查',
   'agentsPage.checking': '正在检查…',
+  'agentsPage.detailLoadFailed': '智能体详情加载失败。',
+  'agentsPage.detailUnavailable': '找不到这个智能体。',
+  'agentsPage.detailForwardFailed': '无法打开转发。',
+  'agentsPage.detailConnection': '连接',
+  'agentsPage.detailGeneral': '通用',
+  'agentsPage.detailCoding': '编程',
   'agentsPage.addConnectionAction': '添加',
   'agentsPage.sourceLocalDescription': '本机现有程序',
   'agentsPage.sourceManagedDescription': '咕咕管理的副本',
@@ -1652,9 +1674,9 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   // 资源库 → MCP(owner 10-18):咕咕自己管的列表 + 各家自己配的(只读)。
   'mcpLibrary.title': 'MCP',
   'mcpLibrary.add': '添加',
-  'mcpLibrary.addTitle': '添加 MCP server',
+  'mcpLibrary.addTitle': '添加 MCP 服务器',
   'mcpLibrary.ownGroup': '咕咕提供',
-  'mcpLibrary.ownEmpty': '还没有 MCP server',
+  'mcpLibrary.ownEmpty': '还没有 MCP 服务器',
   'mcpLibrary.harnessesGroup': '各智能体自己配的',
   'mcpLibrary.reach.every-task': '每个任务都带',
   'mcpLibrary.reach.on-demand': '按需查找',
@@ -1667,16 +1689,16 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'mcpLibrary.toolGroup.projects': '项目',
   'mcpLibrary.toolGroup.library': '资源库',
   'mcpLibrary.toolGroup.schedules': '已安排',
-  'mcpLibrary.toolGroup.apps': 'App 管理',
+  'mcpLibrary.toolGroup.apps': '应用管理',
   'mcpLibrary.toolGroup.web': '网页搜索',
   'mcpLibrary.toolGroup.passwords': '密码',
   'mcpLibrary.required': '必填',
   'mcpLibrary.integrationsGroup': '集成',
   'mcpLibrary.manageIntegrations': '在集成里管理',
-  'mcpLibrary.appsGroup': 'App',
-  'mcpLibrary.manageApps': '在 App 里管理',
+  'mcpLibrary.appsGroup': '应用',
+  'mcpLibrary.manageApps': '在市场里管理',
   'mcpLibrary.harnessReading': '读取中…',
-  'mcpLibrary.harnessEmpty': '{agent} 的配置里没有 MCP server',
+  'mcpLibrary.harnessEmpty': '{agent} 的配置里没有 MCP 服务器',
   'mcpLibrary.harnessReadFailed': '读不了 {agent} 的配置',
   'mcpLibrary.enabledByDefault': '新任务默认带上',
   'mcpLibrary.check': '检测连接',
@@ -1702,12 +1724,12 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'mcpLibrary.save': '保存',
   'mcpLibrary.nameLocked': '名称不能修改',
   'mcpLibrary.clash': '已存在：{names}',
-  'mcpLibrary.conflict.reserved-name': '{name}：名称已被内置 server 占用',
+  'mcpLibrary.conflict.reserved-name': '{name}：名称已被内置服务器占用',
   'mcpLibrary.conflict.same-env-suffix': '{name}：与 {with} 重名（仅标点不同）',
   'mcpLibrary.conflict.same-url': '{name}:和 {with} 是同一个 URL。',
-  'mcpLibrary.sameAsAgent': '{agent} 配置中有同名 server，{agent} 任务优先使用它',
+  'mcpLibrary.sameAsAgent': '{agent} 配置中有同名服务器，{agent} 任务优先使用它',
   'mcpLibrary.problem.invalid-json': '不是合法的 JSON。',
-  'mcpLibrary.problem.empty': '没有找到任何 server。',
+  'mcpLibrary.problem.empty': '没有找到任何服务器。',
   'mcpLibrary.problem.no-name': '有一台没有名字。',
   'mcpLibrary.problem.not-object': '{name}:不是一个对象。',
   'mcpLibrary.problem.duplicate': '{name}:同一段里写了两次。',
@@ -1791,7 +1813,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'integrations.cliDeviceLinkHint': '打开{name}授权页并同意授权，页面上显示的授权码应为：',
   'integrations.cliDeviceCode': '授权码',
   'integrations.cliOpenAuthorizePage': '打开{name}授权页',
-  'integrations.cliQrHint': '用{name} App 扫码并确认。',
+  'integrations.cliQrHint': '用{name}应用扫码并确认。',
   'integrations.cliQrAlt': '{name}登录二维码',
   'integrations.cliWaiting': '等待授权中…',
   'integrations.cliCopyLink': '复制链接',
@@ -1876,8 +1898,11 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'guguCatalog.namedReason.membership-required-readonly': '当前账号无法使用 {model}，请选择其他可用模型。',
   'guguCatalog.namedReason.model-unavailable': '{model} 现在用不了。换个模型再发一次。',
   'harnessCatalog.ownModelsGroup': '你的 {name} 模型',
-  'harnessCatalog.unlockModels': '登录以使用 {name} 模型',
-  'harnessCatalog.unlockModelsHint': '登录 {name} 后显示你的模型',
+  'harnessCatalog.unlockModels': '添加个人 {name} 连接',
+  'harnessCatalog.unlockModelsHint': '添加 {name} 连接后这里显示你的模型',
+  'harnessCatalog.access.account': '账号登录',
+  'harnessCatalog.access.api-key': 'API Key',
+  'harnessCatalog.access.endpoint': '自定义 API 地址',
   'harnessCatalog.signInAgain': '{name} 登录已失效，重新登录',
   'harnessCatalog.signInAgainHint': '重新登录后显示你的 {name} 模型。',
 };

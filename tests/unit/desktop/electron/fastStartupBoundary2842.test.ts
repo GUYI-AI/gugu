@@ -4,9 +4,11 @@ import { buildInitialSessionDocument } from '../../../../apps/desktop/src/sessio
 it.each([
   [null, true, true],
   [null, false, false],
-  [{ modelId: 'credits-model' }, true, false],
-  [undefined, true, false],
-] as const)('only arms explicit own-account Fast in the shared creation document (%j, %s)', (platformModel, fastMode, expected) => {
+  [{ modelId: 'credits-model' }, false, false],
+  [undefined, undefined, undefined],
+  [{ modelId: 'credits-model' }, true, true],
+  [undefined, true, true],
+] as const)('preserves explicit capability-validated Fast across billing sources in the shared creation document (%j, %s)', (platformModel, fastMode, expected) => {
   const document = buildInitialSessionDocument({
     id: 'fast-task', provider: 'codex', sessionView: 'general', prompt: 'hello',
     permissionMode: 'edit', model: 'native-model', effort: 'high', platformModel, fastMode,

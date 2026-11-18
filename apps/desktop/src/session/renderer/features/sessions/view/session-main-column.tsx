@@ -16,6 +16,7 @@ import {
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneProvider } from '@renderer/features/tabs/pane-context';
+import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation';
 import { edgeFirst, PANE_EDGES, PaneEdgeDropZones } from '@renderer/features/tabs/pane-edge-drop';
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -29,6 +30,7 @@ import { isTaskOwnedTab } from '../../extensions/task-owned-tab';
 import { openSessionInSessionWhenReady } from '../open-session-in-session';
 import { PaneEmptyState } from '../pane-empty-state';
 import { keepBlockFilled } from './keep-block-filled';
+import { ChatWorkspaceNewTab } from '@renderer/features/tabs/chat-workspace-new-tab';
 import { SplitPaneHotkey, TabBarAddMenu } from '../tab-bar-actions';
 import { TabBarActionRow } from '../titlebar-actions';
 import { useSessionViewContext, useWorkspaceViewModel } from '../session-view-context';
@@ -36,6 +38,7 @@ import { SessionActionsProvider, SessionReadyGate } from './session-actions';
 import { activeChatSessionId, CHAT_TAB_KINDS } from './session-pane-policy';
 import { TerminalModelMenu } from './terminal-model-menu';
 import { useSessionStartupFailure } from '../use-session-startup-failure';
+import { DesktopLiveWindowHeader } from '../../live-window/DesktopLiveWindowHeader';
 
 /**
  * 会话页的主区(spec session-page「一屏几块」,#7052):一个会话一块,块里的格子按一棵树摆 —— 左右并排或上下叠着,
@@ -49,7 +52,8 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   const sessionView = useWorkspaceViewModel();
   const { paneLayout } = sessionView;
   const { projectId, sessionId: pageSessionId } = useSessionViewContext();
-  const { blockId, windowId } = useScreenBlock();
+  const place = useScreenBlock();
+  const { blockId, windowId } = place;
 
   // 屏上不止一块时,一块 ❌ 空着:空了关掉,摆上来就空的开它的对话;只剩它一块时留着「+」那一列(见 keepBlockFilled)。
   useEffect(() => {
@@ -144,7 +148,14 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
         onDragCancel={drag.onDragCancel}
       >
         <div className="h-full min-h-0 min-w-0" data-session-panes="">
-          <PaneTreeView layout={paneLayout} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atWindowEdge={last} draggingTabId={drag.dragging} />} />
+          <PaneTreeView layout={paneLayout} chatChrome={{
+            actions: <SessionBlockActions atScreenEdge={false} />,
+            addTab: <ChatWorkspaceNewTab layout={paneLayout} />,
+            leading: <SessionGrip />,
+            atWindowEdge: place.topRight,
+            reserveShellRestoreLane: place.topLeft && !windowId && shellRestoreLaneTaken(),
+            leadingReservePx: windowId ? auxLeadingReserve() : undefined,
+          }} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atWindowEdge={last} draggingTabId={drag.dragging} />} />
         </div>
         <TabDragOverlay />
       </DndContext>
@@ -175,7 +186,7 @@ const PaneCell = observer(function PaneCell({
   const group = paneLayout.groups.find((g) => g.paneId === paneId);
   if (!group) return null;
   // 拖到哪条边 = 在那一边并排(spec session-page「并排」);放不下两页的那一向不出落点。
-  const splitEdges = draggingTabId === null ? [] : PANE_EDGES.filter((edge) => paneLayout.splitBlocked(paneId, draggingTabId, edge) === null);
+  const splitEdges = draggingTabId === null ? [] : PANE_EDGES.filter((edge) => paneLayout.allowsTabEdgeDrop(paneId, draggingTabId, edge));
   const focused = sessionView.focusedRegion === 'main' && paneLayout.activePaneId === paneId;
   const strip = {
     tabLeadingSlot: atLeftEdge ? <SessionGrip /> : undefined,
@@ -187,8 +198,8 @@ const PaneCell = observer(function PaneCell({
   if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
   return (
     <PaneProvider group={group} isFocusedPane={focused}>
-      <SplitPaneHotkey />
-      <div className="h-full min-h-0 min-w-0" onPointerDown={() => paneLayout.setActiveGroup(paneId)} data-pane-cell={paneId}>
+      <SplitPaneHotkey chatLayout={paneLayout} />
+      <div className="h-full min-h-0 min-w-0" onPointerDown={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} onFocusCapture={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} data-pane-cell={paneId}>
         <PaneContent
           part={part}
           emptyState={<PaneEmptyState />}
@@ -206,7 +217,7 @@ const PaneCell = observer(function PaneCell({
  * 动作对着这一块正在看的那条会话(子会话的页签在前面就是子会话)。
  */
 const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge }: { atScreenEdge: boolean }) {
-  const { sessionId: pageSessionId } = useSessionViewContext();
+  const { sessionId: pageSessionId, projectId } = useSessionViewContext();
   const { paneLayout } = useWorkspaceViewModel();
   const { blockId, multi, windowId } = useScreenBlock();
   const sessionId = activeChatSessionId(paneLayout);
@@ -215,6 +226,7 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   return (
     <TabBarActionRow atWindowEdge={atScreenEdge}>
       <SessionMachineStatus />
+      <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} paneLayout={paneLayout} />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。
           从没起过的会话只在首启失败时摆(#7092:会员模型被拒,换一个再起);正在首启的那段不摆,换了也赶不上这一次。 */}
       {session && sessionId && sessionViewOfRuntime(session.data.runtime ?? 'pty') === 'code'

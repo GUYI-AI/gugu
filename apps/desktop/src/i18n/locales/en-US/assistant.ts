@@ -23,6 +23,10 @@ export default {
     "fileOpenFailed": "This file could not be opened. Please try again later."
   },
   "question": {
+    "count_one": "{{count}} question", "count_other": "{{count}} questions", "flowHint": "Submit all answers together", "progress": "Answer progress",
+    "singleSelect": "Choose one", "multiSelect": "Choose any", "review": "Review answers", "reviewTitle": "Review before submitting",
+    "reviewHint": "Confirm and send all answers together", "edit": "Edit", "back": "Back", "noSelection": "No selection", "answerSeparator": ", ",
+    "answerUnreadable": "Answer details could not be read",
     "title": "Your input", "other": "Write an answer", "later": "Answer later", "resume": "Continue answering",
     "previous": "Previous", "next": "Next", "submit": "Submit answers", "submitting": "Sending…",
     "answered": "Answered", "withdrawn": "This question has closed", "waiting": "Waiting for your answer",
@@ -48,10 +52,6 @@ export default {
     }
   },
   "hints": {
-    "phone": {
-      "assistant": "Gugu is your personal assistant. Ask it to track plans and get things done.",
-      "collaboration": "Find projects and friends here. Open one to start collaborating."
-    },
     "desktop": {
       "assistant": "Your personal assistant is here. Tell it your plans and tasks."
     },
@@ -278,9 +278,9 @@ export default {
     "doneReconnect": "These didn't come along; reconnect them in the new home (the old home keeps its copy):",
     "doneReconnectNoKeyring": "The new home has no system keyring, so account credentials can't be stored there safely. Install and unlock one (GNOME Keyring or KWallet on Linux), restart Gugu, then connect them.",
     "doneReconnectExists": "The new home already has an account with the same name but different credentials, so it wasn't overwritten. If it doesn't connect, reconnect it.",
-    "doneReconnectWhereCloud": "Open Library → Integrations, pick the cloud machine, and connect each one below.",
-    "doneReconnectWhereComputer": "Open Library → Integrations, pick this computer, and connect each one below.",
-    "doneReconnectAction": "Open Library to reconnect",
+    "doneReconnectWhereCloud": "Open Settings → Connected Apps, pick the cloud machine, and connect each one below.",
+    "doneReconnectWhereComputer": "Open Settings → Connected Apps, pick this computer, and connect each one below.",
+    "doneReconnectAction": "Open Connected Apps to reconnect",
     "doneAccountsUnsupported": "Couldn't read which integrations the other side has connected: they're all still where they were, nothing is lost. Reconnect what you need in the new home's library.",
     "doneSchedulesUnsupported": "The other side's Gugu can't set schedules again yet: {{names}}. After updating, ask it to set them again.",
     "doneSchedulesUnreadable": "Couldn't tell whether {{name}} had any scheduled tasks (its old session couldn't be read), so none were carried. If it had, ask it to schedule them again.",

@@ -22,6 +22,15 @@ describe('GUGU platform prompt budget', () => {
 // #6192(原在 capabilityBundle.test.ts,被 #6177 删掉):平台块是常量,❌ 不带按家的工具名清单 ——
 // 那张清单漏掉哪家,哪家的模型就按裸名去找;按家的形态只在会话自述块里(taskTuiCapabilityLaunchContract 守)。
 describe('platform block carries no per-harness tool naming (#6192)', () => {
+  it('treats messages as separate events, not turns, and has no silence marker or examples', () => {
+    const blocks = [GUGU_PLATFORM_BLOCK, personalAssistantPlatformPrompt(GUGU_PLATFORM_BLOCK), guguSessionSurfaceBlock('acp', 'claude', true)]
+    for (const block of blocks) {
+      expect(block).not.toMatch(/\bturns?\b|\btrigger/i)
+      expect(block).not.toContain('NO_REPLY')
+      expect(block).not.toContain('<gugu_examples>')
+    }
+  })
+
   it('keeps harness tool-name decoration out of the constant platform block', () => {
     expect(GUGU_PLATFORM_BLOCK).not.toMatch(/mcp__|gugu_<tool>|Pi `|Claude `|Codex `/)
     expect(GUGU_PLATFORM_BLOCK).not.toContain('canonical suffix')
@@ -56,8 +65,8 @@ describe('a routing or usage sentence has one owner (#6634 问题 15)', () => {
     ['not a session agent', 'surface routing'],
     // session_open_in_tab: when to call it is the surface's; its parameters are the tool's.
     ['instead of only reporting its path', 'surface routing'],
-    // A typed turn is answered in printed output: said once, in <gugu_transport>.
-    ['answered in your own printed output', '<gugu_transport>'],
+    // Text typed straight into the session is answered in printed output: said once, in <gugu_transport>.
+    ['is read here: answer in your printed output', '<gugu_transport>'],
     // How to call a 咕咕 tool: said once, in <gugu_tools>; the surface block only names where the tools are.
     ['as their definitions specify', '<gugu_tools>'],
     // Who a message addresses: said once, in <gugu_collaboration>; to_user_ids keeps only its own constraint.
@@ -90,7 +99,7 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
   })
 
   it('keeps the shared list contract once in the platform instead of repeating it in fields', () => {
-    expect(GUGU_PLATFORM_BLOCK).toContain('`rows` is 1-based ("20" / "41-60"), default 20, all for catalogs')
+    expect(GUGU_PLATFORM_BLOCK).toContain('`rows` is 1-based ("20" / "41-60" / "all"), default 20 (catalogs: all)')
     expect(GUGU_PLATFORM_BLOCK).toContain('pass `next` as `rows`')
     expect(GUGU_PLATFORM_BLOCK).toContain('`name` matches a substring, `pinned` a boolean, `status` a status/detail')
     expect(GUGU_PLATFORM_BLOCK).toContain('`total` is after filtering')
@@ -110,7 +119,7 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
 
   it('keeps all group guidance and general style when suppressing only the assistant acknowledgement duplicate', () => {
     const assistant = personalAssistantPlatformPrompt(GUGU_PLATFORM_BLOCK)
-    for (const tag of ['gugu_silence', 'gugu_collaboration', 'gugu_examples']) {
+    for (const tag of ['gugu_silence', 'gugu_collaboration']) {
       const section = GUGU_PLATFORM_BLOCK.match(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`))![0]
       expect(assistant).toContain(section)
     }

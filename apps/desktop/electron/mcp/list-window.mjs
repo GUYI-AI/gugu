@@ -13,16 +13,18 @@ export const LIST_DEFAULT_ROWS = 20
 const ROWS_RE = /^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/
 
 /**
- * `"20"` = 第 1–20 条,`"41-60"` = 第 41–60 条(从 1 数,含两端)。缺省 = 前 `defaultRows` 条(默认 LIST_DEFAULT_ROWS;
+ * `"20"` = 第 1–20 条,`"41-60"` = 第 41–60 条(从 1 数,含两端),`"all"` = 全部。缺省 = 前 `defaultRows` 条(默认 LIST_DEFAULT_ROWS;
  * 目录类传 Infinity = 全给)。写错响亮地拒。
  */
 export function parseRows(value, defaultRows = LIST_DEFAULT_ROWS) {
   if (value === undefined || value === null || value === '') return { from: 1, to: defaultRows }
+  // "all" = every row (MCP surface review 11-16: 20 of 322 rows arguments were "all", each refused).
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'all') return { from: 1, to: Infinity }
   const match = ROWS_RE.exec(String(value))
   const from = match ? Number(match[2] === undefined ? 1 : match[1]) : NaN
   const to = match ? Number(match[2] === undefined ? match[1] : match[2]) : NaN
   if (!match || from < 1 || to < from) {
-    throw new Error(`rows must be a count like "20" or a range like "41-60" (counted from 1), got ${JSON.stringify(value)}`)
+    throw new Error(`rows must be a count like "20", a range like "41-60" (counted from 1) or "all", got ${JSON.stringify(value)}`)
   }
   return { from, to }
 }

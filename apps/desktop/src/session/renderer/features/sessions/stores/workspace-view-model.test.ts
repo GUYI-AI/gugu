@@ -489,6 +489,36 @@ describe('WorkspaceViewModel default conversation tab', () => {
   });
 });
 
+describe('WorkspaceViewModel chat tool layout', () => {
+  it('anchors the layout to the owned Agent conversation even when another conversation has focus', () => {
+    const viewModel = makeViewModel();
+    const sessions = sessionRegistry.acquire('conversation-1', 'project-1', [
+      makeSession(),
+      makeSession({ id: 'conversation-2' }),
+    ]);
+    vi.spyOn(sessions, 'hydrateSession').mockResolvedValue();
+    vi.spyOn(sessions, 'dehydrateSession').mockResolvedValue();
+    try {
+      const layout = viewModel.paneLayout;
+      const opts = { intent: 'newTab', from: null } as const;
+      const owner = layout.open('session', { sessionId: 'conversation-1' }, opts)!;
+      expect(layout.primaryChatTabId).toBe(owner);
+      expect(layout.chatToolLayout).toBe('empty');
+      const other = layout.open('session', { sessionId: 'conversation-2' }, opts)!;
+      expect(layout.focusedPane.resolvedActiveTabId).toBe(other);
+      expect(layout.primaryChatTabId).toBe(owner);
+      expect(layout.chatToolLayout).toBe('split');
+
+      layout.setChatToolLayout('hidden');
+      layout.focusedPane.closeTab(owner);
+      expect(layout.chatToolLayout).toBeUndefined();
+      expect(layout.stripTabIds).toEqual([other]);
+    } finally {
+      viewModel.dispose();
+    }
+  });
+});
+
 describe('WorkspaceViewModel conversation hydration', () => {
   it('hydrates an opened conversation exactly once', async () => {
     const viewModel = makeViewModel();

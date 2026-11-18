@@ -1,5 +1,6 @@
 import { type DragEndEvent, type DragMoveEvent, type DropAnimation } from '@dnd-kit/core';
 import { Component, type ReactNode, type RefObject } from 'react';
+import { CHAT_TOOL_DROP_PREFIX } from '../chat-tool-geometry';
 import { DUR_MED_MS, EASE } from '@/styles/motion';
 
 type Point = { x: number; y: number };
@@ -31,7 +32,9 @@ export const tabDropAnimation: DropAnimation = async ({ active, dragOverlay }) =
 
 /** A drag preview names its original-order destination, rather than the tab now occupying that screen position. */
 export function tabDropTarget(event: DragEndEvent): string | undefined {
-  return event.active.data.current?.tabReorderTarget ?? (event.over ? String(event.over.id) : undefined);
+  const target = event.over ? String(event.over.id) : undefined;
+  if (target?.startsWith(CHAT_TOOL_DROP_PREFIX)) return target;
+  return event.active.data.current?.tabReorderTarget ?? target;
 }
 
 /** dnd-kit's event delta includes scrolling; the overlay rect retains the actual viewport movement. */
@@ -50,7 +53,7 @@ export function stripTabNodes(scroller: HTMLElement): [string, HTMLElement][] {
   });
 }
 
-type Props = { scroller: RefObject<HTMLDivElement | null>; order: string; activeTabId: string | undefined; children: ReactNode };
+type Props = { scroller: RefObject<HTMLDivElement | null>; order: string; activeTabId: string | undefined; keepActiveOnResize?: boolean; children: ReactNode };
 
 /** Snapshot before React moves keyed slots. No wrapper: slots must remain direct flex siblings. */
 export class TabStripMotion extends Component<Props> {
@@ -63,7 +66,15 @@ export class TabStripMotion extends Component<Props> {
       ?.scrollIntoView({ behavior: 'instant', inline: 'nearest', block: 'nearest' });
   }
 
-  componentDidMount() { this.revealActiveTab(); }
+  private resizeObserver?: ResizeObserver;
+
+  componentDidMount() {
+    this.revealActiveTab();
+    const scroller = this.props.scroller.current;
+    if (!this.props.keepActiveOnResize || !scroller || typeof ResizeObserver === 'undefined') return;
+    this.resizeObserver = new ResizeObserver(() => this.revealActiveTab());
+    this.resizeObserver.observe(scroller);
+  }
 
   private positions(): Map<string, Point> {
     const scroller = this.props.scroller.current;
@@ -106,6 +117,7 @@ export class TabStripMotion extends Component<Props> {
   }
 
   componentWillUnmount() {
+    this.resizeObserver?.disconnect();
     for (const animation of this.animations.values()) animation.cancel();
   }
 

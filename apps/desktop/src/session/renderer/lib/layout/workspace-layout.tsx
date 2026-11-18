@@ -93,7 +93,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     const content = contentRef.current;
     if (!content) return;
     const move = (shift: number) => {
-      const transform = shift ? `translateX(${shift}px)` : '';
+      // A place without this list has no list edge to follow, including while a fold is still running.
+      const transform = !sidebarHidden && shift ? `translateX(${shift}px)` : '';
       content.style.transform = transform;
       // The inner sidebar is the page's previous sibling (WorkspaceLayout renders it there; InnerSidebar owns the element).
       const inner = content.previousElementSibling;
@@ -101,7 +102,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     };
     move(pageShift.get());
     return pageShift.on('change', move);
-  }, [pageShift]);
+  }, [pageShift, sidebarHidden]);
   const showInnerHandle = innerSidebarShown && !sidebarHidden;
 
   // GUYI-AI/gugu#2548 the rail is the expanded list itself, only narrow: the avatars' left edges stay put and the text fades
@@ -137,8 +138,10 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}
     >
       {/* @@@overlay-collapse - the list's place in the layout. The list itself (the aside) is drawn over the page, clipped at
-          its drawn edge: a fold re-lays out the page once (at the start of a collapse, where an expand lands), not each frame. */}
-      <motion.div aria-hidden className="h-full shrink-0" style={{ width: sidebarHidden ? 0 : leftLayoutWidth }} />
+          its drawn edge: a fold re-lays out the page once (at the start of a collapse, where an expand lands), not each frame.
+          Hide only this empty placeholder on other places. Keep its motion binding stable: swapping it for a numeric zero
+          can restore the old width when unmounting the inner column rerenders the layout. The list itself stays mounted. */}
+      <motion.div aria-hidden className="h-full shrink-0" style={{ width: leftLayoutWidth, display: sidebarHidden ? 'none' : undefined }} />
       <motion.aside
         data-workspace-left-panel=""
         className="absolute inset-y-0 left-0 z-40 overflow-hidden"

@@ -65,9 +65,9 @@ afterEach(() => {
 })
 
 it.each([
-  ['message_send', `user:${owner}`], ['message_send', dm], ['message_send', '218799'],
-  ['message_send_file', `user:${owner}`], ['message_send_file', dm], ['message_send_file', '218799'],
-])('reads %s to %s on opening without reaching its message', async (tool, destination) => {
+  ['text', `user:${owner}`], ['text', dm], ['text', '218799'],
+  ['file', `user:${owner}`], ['file', dm], ['file', '218799'],
+])('reads message_send (%s) to %s on opening without reaching its message', async (tool, destination) => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: owner })).toString('base64url')}.x`
   const runHostAction = vi.fn(async (input: { request_id: string }) => {
     addNotice(`session:turn:s3:message:${input.request_id}`)
@@ -80,7 +80,8 @@ it.each([
       : name === 'list_member_ids' ? [{ user_id: owner }, { user_id: agent }] : null),
     restInsert: vi.fn(),
   }
-  await callTool(context, tool, { chat_id: destination, ...(tool === 'message_send' ? { text: 'Review' } : { file_path: '/work/report.html' }) }, deps)
+  // One send for both (MCP surface review 11-16): message_send with text, or with a file.
+  await callTool(context, 'message_send', { chat_id: destination, ...(tool === 'text' ? { text: 'Review' } : { file_path: '/work/report.html' }) }, deps)
   expect(runHostAction).toHaveBeenCalledOnce()
   expect(unreadOwnerNotifications(journal)).toHaveLength(1)
   publish()

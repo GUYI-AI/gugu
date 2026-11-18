@@ -4,6 +4,7 @@ import { isHumanDmDelivery } from '@gugu/core/local/agent/deliveryEnvelope';
 import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
 import { resolveSessionpageSessionIntegration } from '@gugu/session-plugins/agents';
 import type { StartSessionInput } from '@gugu/session-core/acp';
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 import type {
   AdmittedChannel, BoundIdentity, CapabilityGrant, ExitFact, Gen, Have, PlatformTicket, ProcessLease,
   ResolvedCli, StageName, StageOut, WorkspaceLease,
@@ -185,7 +186,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       return lease<Platform>({ command: platform.command, injected: platform.injected }) as PlatformTicket;
     },
     async cli(have): Promise<ResolvedCli> {
-      const resolved = await withHostResolvedCli(read<Platform>(have.platform).command);
+      const platform = read<Platform>(have.platform);
+      const resolved = await withHostResolvedCli(platform.command);
+      if (!platform.injected && !resolved.input.runContext.credentialEnv && !resolved.input.runContext.apiKeyConnection) {
+        const { assertAgentHomeSignIn } = await import('../agents/agent-homes');
+        await assertAgentHomeSignIn(resolved.input.providerId, resolved.input.runContext.connectionId);
+      }
       const history = await resumeHistoryFacts(resolved.input, {});
       return lease<Cli>({ command: { ...resolved, input: { ...resolved.input, ...history } } }) as ResolvedCli;
     },
@@ -288,9 +294,17 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   return {
     leg: 'acp',
     timing: 'next-tool-call',
-    run(at, have, ctx) {
+    async run(at, have, ctx) {
       ctx.signal.throwIfAborted();
-      return (stages[at] as (have: unknown, signal: AbortSignal, gen: Gen) => Promise<StageOut[typeof at]>)(have, ctx.signal, ctx.gen);
+      try {
+        return await (stages[at] as (have: unknown, signal: AbortSignal, gen: Gen) => Promise<StageOut[typeof at]>)(have, ctx.signal, ctx.gen);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code)) {
+          const cause = { name: error.name, message: error.code, code: error.code };
+          throw Object.assign(new Error(error.code), { name: ACP_START_FAILED, data: JSON.stringify({ type: 'spawn_failed', cause }) });
+        }
+        throw error;
+      }
     },
     async dispatch(have, pending, ctx) {
       const admission = admit(have, pending, ctx.signal);
