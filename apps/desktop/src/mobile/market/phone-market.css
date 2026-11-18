@@ -8,7 +8,7 @@
 .phone-market-tabs [role="tablist"] {
   justify-content: space-between;
   background: var(--muted);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   padding: 2px;
 }
 
@@ -162,7 +162,7 @@
   height: 18px;
   place-items: center;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-document);
 }
 
 .phone-market-check[data-checked] {
@@ -198,7 +198,7 @@
   margin: 0;
   padding: 12px 0;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   text-align: center;
 }
 

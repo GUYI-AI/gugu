@@ -6,7 +6,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink'
 import { rendererLogger } from '@/lib/log'
 import { PhoneMarketAction, PhoneMarketFilters, PhoneMarketRow } from '@/mobile/market/PhoneMarketList'
-import { PhoneMarketInstallSheet } from '@/mobile/market/PhoneMarketInstallSheet'
+import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from '@/mobile/market/PhoneMarketInstallSheet'
 import { usePhoneAppInstallTargets, usePhoneMarketInstalledAppIds } from '@/mobile/market/phoneMarketTargets'
 import { useTheme } from '@/store/theme'
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram'
@@ -157,12 +157,10 @@ function PhoneMarketAppDetail({ item, devices, onClose, fromSettings }: {
   onClose(): void
   fromSettings: boolean
 }) {
-  const { t, i18n } = useTranslation('main')
   const { translate, locale } = useSessionMessages()
   const { theme } = useTheme()
   const [choosing, setChoosing] = useState(false)
   const rows = usePhoneAppInstallTargets(item.manifest.id, devices)
-  const installedOn = rows.filter(row => row.present).map(row => row.name)
   const name = localizedManifestText(item.manifest, locale).name
   return <Sheet fullScreenMobile onClose={onClose} testId="phone-app-product" ariaLabel={name}>
     <div className={`${sessionSkinClassName(theme)} phone-app-product`}>
@@ -172,9 +170,7 @@ function PhoneMarketAppDetail({ item, devices, onClose, fromSettings }: {
           onOpenExternal={url => { window.open(url, '_blank', 'noopener,noreferrer') }}
           backLabel={fromSettings ? translate('extensions.appSettings') : undefined}
           onBack={onClose} onLifecycle={() => setChoosing(true)}
-          targetSummary={installedOn.length > 0 ? <p className="phone-market-target-summary" role="status">
-            {t('phoneMarket.installedOn', { devices: new Intl.ListFormat(i18n.language).format(installedOn) })}
-          </p> : undefined} />
+          targetSummary={<PhoneMarketInstallSummary rows={rows} />} />
       </SessionUiTheme>
     </div>
     {choosing && <PhoneMarketInstallSheet rows={rows} onClose={() => setChoosing(false)} />}

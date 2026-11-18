@@ -13,7 +13,7 @@ import { ChevronLeft } from '@/lib/icons'
 import { IconButton } from '@/components/ui/IconButton'
 import { SettingsNote } from '@/components/settings/SettingsPrimitives'
 import { usePhoneMarketPage, phoneMarketRows } from '@/components/settings/phoneMarketPage'
-import { PhoneMarketInstallSheet } from './PhoneMarketInstallSheet'
+import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from './PhoneMarketInstallSheet'
 import { usePhoneAgentInstallTargets, usePhoneMarketInstalledAppIds } from './phoneMarketTargets'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
@@ -143,11 +143,10 @@ function AgentPane({ name, onClose, children }: { name: string; onClose(): void;
 }
 
 function PhoneMarketAgentDetail({ agent, targets, onClose }: { agent: AgentPayload; targets: readonly Device[]; onClose(): void }) {
-  const { t, i18n } = useTranslation('main')
+  const { t } = useTranslation('main')
   const { translate, locale } = useSessionMessages()
   const [choosing, setChoosing] = useState(false)
   const rows = usePhoneAgentInstallTargets(agent.id, targets)
-  const installedOn = rows.filter(row => row.present).map(row => row.name)
   const category = translate(`extensions.agentCategory.${agentMarketCategoryOf(agent.id)}`)
   return <Sheet fullScreenMobile onClose={onClose} ariaLabel={agent.name} testId="phone-market-agent-detail">
     <AgentPane name={agent.name} onClose={onClose}>
@@ -156,9 +155,7 @@ function PhoneMarketAgentDetail({ agent, targets, onClose }: { agent: AgentPaylo
       <p className="phone-market-agent-description">{marketAgentDescription(agent, locale)}</p>
       <Button variant="primary" className="phone-market-install-submit" data-testid="phone-market-agent-install"
         onClick={() => setChoosing(true)}>{t('phoneMarket.install')}</Button>
-      {installedOn.length > 0 && <p className="phone-market-target-summary" role="status">
-        {t('phoneMarket.installedOn', { devices: new Intl.ListFormat(i18n.language).format(installedOn) })}
-      </p>}
+      <PhoneMarketInstallSummary rows={rows} />
       <dl className="phone-market-agent-facts">
         {agent.latestVersion && <div><dt>{t('phoneMarket.latestVersion')}</dt><dd>{agent.latestVersion}</dd></div>}
         {agent.publisher && <div><dt>{t('phoneMarket.publisher')}</dt><dd>{agent.publisher}</dd></div>}

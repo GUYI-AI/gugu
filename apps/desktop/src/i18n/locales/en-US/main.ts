@@ -529,6 +529,7 @@ export default {
     "tokenRequired": "Push token is required"
   },
   "phoneMarket": {
+    "updateOn": "Updates on {{devices}}",
     "installedOn": "Installed on {{devices}}",
     "latestVersion": "Latest version",
     "publisher": "Publisher",

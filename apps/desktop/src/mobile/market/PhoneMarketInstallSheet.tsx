@@ -12,6 +12,18 @@ export type PhoneMarketInstallRow = {
   install?: () => Promise<boolean>
 }
 
+export function PhoneMarketInstallSummary({ rows }: { rows: readonly (PhoneMarketInstallRow & { present: boolean })[] }) {
+  const { t, i18n } = useTranslation('main')
+  const installed = rows.filter(row => row.present).map(row => row.name)
+  const updates = rows.filter(row => row.status === 'update').map(row => row.name)
+  if (!installed.length) return null
+  const list = new Intl.ListFormat(i18n.language)
+  return <p className="phone-market-target-summary" role="status">
+    {t('phoneMarket.installedOn', { devices: list.format(installed) })}
+    {updates.length > 0 ? ` · ${t('phoneMarket.updateOn', { devices: list.format(updates) })}` : null}
+  </p>
+}
+
 export function PhoneMarketInstallSheet({ rows, onClose }: {
   rows: readonly PhoneMarketInstallRow[]
   onClose(): void

@@ -523,6 +523,7 @@ export default {
     "tokenRequired": "推送 token 为空"
   },
   "phoneMarket": {
+    "updateOn": "{{devices}} 可更新",
     "installedOn": "已装在 {{devices}} 上",
     "latestVersion": "最新版本",
     "publisher": "发布者",
