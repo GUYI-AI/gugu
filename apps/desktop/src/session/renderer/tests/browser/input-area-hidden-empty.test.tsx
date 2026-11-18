@@ -51,7 +51,8 @@ it.each(['en-US', 'zh-CN'] as const)('a hidden empty group composer shows its re
   const attach = host.querySelector<HTMLElement>('[data-slot="composer-actions-start"] button')!
   const send = host.querySelector<HTMLElement>('[data-slot="composer-actions-end"] button')!
   expect(card.getBoundingClientRect().height).toBeLessThanOrEqual(60)
-  expect(getComputedStyle(attach).display).toBe('none')
+  expect(attach.getBoundingClientRect().width).toBeGreaterThanOrEqual(44)
+  expect(attach.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
   expect(send.getBoundingClientRect().width).toBeGreaterThanOrEqual(44)
   expect(send.getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
   expect(editor.getBoundingClientRect().right).toBeLessThanOrEqual(send.getBoundingClientRect().left)

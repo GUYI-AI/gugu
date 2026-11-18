@@ -134,14 +134,11 @@ it.each(['chat', 'creation-host'] as const)('%s: picked files collapse menu item
 it('a photo-only draft collapses menu items through the existing photo picker path', async () => {
   await mount(<div data-chat-composer="">{menu}<ChatMessageComposer chatId="attachment-photo" isGroupChat onSend={vi.fn(async () => {})} /></div>)
   await checkMenu()
-  const input = editor() as HTMLElement & { editor: { commands: { setContent(html: string): void; clearContent(emit: boolean): void } } }
-  expect(getComputedStyle(harness!.container.querySelector<HTMLElement>('[data-testid="chat-composer-attach-menu"]')!).display).toBe('none')
-  await act(async () => input.editor.commands.setContent('<p>第一行</p><p>第二行</p>'))
+  expect(editor().textContent).toBe('')
   await expect.element(page.getByTestId('chat-composer-attach-menu')).toBeVisible()
   await page.getByTestId('chat-composer-attach-menu').click()
   await expect.element(page.getByTestId('chat-composer-attach-photos')).toBeVisible()
   await pick('photo', ['test.png'])
-  await act(async () => input.editor.commands.clearContent(true))
   await checkMenu({ collapsed: true })
   expect(editor().textContent?.trim()).toBe('')
 })

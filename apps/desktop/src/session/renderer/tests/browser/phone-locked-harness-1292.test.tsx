@@ -119,10 +119,11 @@ it.each([false, true])(
     const attachment = harness.container.querySelector<HTMLButtonElement>('[data-phone-attachment]')!
     const editor = harness.container.querySelector<HTMLElement>('[contenteditable]')!
     expect(attachment).not.toBeNull()
-    expect(getComputedStyle(attachment).display).toBe('none')
+    expect(attachment.getBoundingClientRect().width).toBe(44)
+    expect(attachment.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
     expect(harness.container.querySelector(working ? 'button[aria-label="停止生成"]' : 'button[aria-label="发送消息"]')).not.toBeNull()
     ;(editor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
-    await until('two-line attachment action is visible', () => getComputedStyle(attachment).display !== 'none')
+    await until('attachment moves to the right of the two-line editor', () => attachment.getBoundingClientRect().left >= editor.getBoundingClientRect().right)
     expect(attachment.getBoundingClientRect().left).toBeGreaterThanOrEqual(editor.getBoundingClientRect().right)
     const chooseFile = vi.spyOn(harness.container.querySelector<HTMLInputElement>('input[type="file"]')!, 'click').mockImplementation(() => {})
     await userEvent.click(attachment)
