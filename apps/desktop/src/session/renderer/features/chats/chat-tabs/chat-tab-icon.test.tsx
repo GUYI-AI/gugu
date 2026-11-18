@@ -20,6 +20,8 @@ vi.mock('@renderer/features/extensions/installed-extensions-store', async (origi
   installedExtensionsStore: {
     tabTitle: () => 'Office', isChatFile: () => false, manifestFor: () => undefined,
     openableApps: [{ extensionId: 'office', name: 'Office', kind: 'office.main', iconDataUrl: null }],
+    // Office declared an icon for .pptx (`fileIcons`); nothing else here declares one.
+    fileIcon: (kind: string, name: string) => (kind === 'office.main' && name.endsWith('.pptx') ? 'data:image/png;base64,cHB0eA==' : null),
   },
 }));
 vi.mock('@/components/RailAppIcon', () => ({ RailAppIcon: () => <i data-app-icon="" /> }));
@@ -43,26 +45,24 @@ function strip(item: PanelItem) {
   const Item = chatPanelTabProvider.TabBarItem!;
   act(() => root.render(<Item tab={{ tabId: 't', resource: { state: item } } as never} host={{} as never} ctx={{ place: { kind: 'chat', chatId: 'chat' } } as never} />));
   const pre = el.querySelector('[data-slot=pre]')!, mark = el.querySelector('[data-slot=mark]')!;
-  const read = { app: !!pre.querySelector('[data-app-icon]'), glyph: pre.querySelector('svg')?.innerHTML, devicon: pre.querySelector('i[class*=devicon]')?.className, hostBefore: !!pre.querySelector('[data-host-mark]'), hostAfter: !!mark.querySelector('[data-host-mark]') };
+  const read = { app: !!pre.querySelector('[data-app-icon]'), img: pre.querySelector('img')?.getAttribute('src') ?? null, glyph: pre.querySelector('svg')?.innerHTML, devicon: pre.querySelector('i[class*=devicon]')?.className, hostBefore: !!pre.querySelector('[data-host-mark]'), hostAfter: !!mark.querySelector('[data-host-mark]') };
   act(() => root.unmount());
   return read;
 }
 
-describe('a chat tab is marked by what it shows, as it is named', () => {
-  it('a file an App opened: the file\'s family mark from the one table, not the App\'s icon', () => {
+describe('a chat tab shows a file the way the folder list does', () => {
+  it('a file whose App declared an icon for it: that icon, not the App\'s own', () => {
     const deck = strip({ kind: 'office.main', itemId: 'deck', title: 'report.pptx', fileName: 'report.pptx' });
-    expect(deck.app).toBe(false);
-    expect(deck.glyph).toBe(glyph('slides'));
+    expect(deck).toMatchObject({ app: false, img: 'data:image/png;base64,cHB0eA==' });
   });
 
-  it('a markdown file: the text family mark, as in the folder and on its card', () => {
+  it('a file its App declared no icon for: the host\'s file mark of its family', () => {
+    const sheet = strip({ kind: 'office.main', itemId: 'sheet', title: 'budget.xlsx', fileName: 'budget.xlsx' });
+    expect(sheet).toMatchObject({ app: false, img: null, glyph: glyph('sheet') });
     const notes = strip({ kind: 'workspace.file', itemId: 'notes', title: 'notes.md', fileName: 'notes.md' });
-    expect(notes.devicon).toBeUndefined();
-    expect(notes.glyph).toBe(glyph('text'));
-  });
-
-  it('a code file keeps its devicon', () => {
-    expect(strip({ kind: 'workspace.file', itemId: 'code', title: 'main.ts', fileName: 'main.ts' }).devicon).toMatch(/devicon-typescript/);
+    expect(notes).toMatchObject({ img: null, devicon: undefined, glyph: glyph('text') });
+    const code = strip({ kind: 'workspace.file', itemId: 'code', title: 'main.ts', fileName: 'main.ts' });
+    expect(code).toMatchObject({ img: null, devicon: undefined, glyph: glyph('code') });
   });
 
   it('the App\'s own page keeps the App\'s icon', () => {

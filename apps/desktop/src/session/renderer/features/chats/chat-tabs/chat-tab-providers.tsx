@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, MessageSquare, Users } from '@/lib/icons';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { AppFileMark } from '@renderer/features/extensions/app-file-mark';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { RailAppIcon } from '@/components/RailAppIcon';
@@ -115,7 +115,7 @@ const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
   if (isFolderItem(item)) return <Folder size={14} />;
   const extensionId = item.kind && !showsFile(item) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   const app = extensionId ? installedExtensionsStore.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
-  return app ? <RailAppIcon app={app} className="size-4" /> : <FileIcon filename={item.fileName ?? item.title} size={14} className="shrink-0 text-foreground-muted" />;
+  return app ? <RailAppIcon app={app} className="size-4" /> : <AppFileMark kind={item.kind} fileName={item.fileName ?? item.title} context="chat" size={14} />;
 });
 
 const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {

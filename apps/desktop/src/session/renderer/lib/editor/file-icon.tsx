@@ -1,4 +1,3 @@
-import { fileFamily } from '@gugu/core/shared/fileFamily.mjs'
 import { FileMark } from '@gugu/session-ui/file-mark'
 import { resolveFileIconClass } from '@gugu/session-chat-ui/file-icons'
 
@@ -17,14 +16,9 @@ interface FileIconProps {
   size?: number;
 }
 
-/**
- * A code file's devicon when it has one; a file of any other family its family's mark (`FileMark`, the table every file
- * icon reads) — a `.md` or `.json` is the text family here as in the folder and on the cards, though devicon has a glyph
- * for it. A language the family table does not name (`.css`, `.vue`, …) is `other` there and keeps its devicon.
- */
+/** A code file's devicon when it has one; otherwise its family's mark (`FileMark`, the table every file icon reads). */
 export function FileIcon({ filename, className, size = 12 }: FileIconProps) {
-  const family = fileFamily(filename);
-  const deviconClass = family === 'code' || family === 'other' ? inkIconClass(filename) : null;
+  const deviconClass = inkIconClass(filename);
   if (deviconClass) {
     return (
       <i className={deviconClass} style={{ fontSize: size, lineHeight: 1 }} aria-hidden="true" />

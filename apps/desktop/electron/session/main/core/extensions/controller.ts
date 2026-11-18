@@ -64,7 +64,7 @@ import { cloudExtensionMarket } from '@main/core/extensions/market-catalog-root'
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { renderExtensionIcon } from '@main/core/extensions/extension-icon';
-import { APP_ICON_PIXELS } from '@shared/extensions/app-icon';
+import { APP_ICON_PIXELS, fileIconKey } from '@shared/extensions/app-icon';
 import { extensionPartition, extensionResourceUrl } from '@shared/extensions/partition';
 import {
   extensionTabKind,
@@ -171,6 +171,15 @@ export const extensionsController = createRPCController({
             icons[extensionTabKind(entry.manifest.id, tab.name)] = rendered.dataUrl;
           } else {
             log.warn(`Extension ${entry.manifest.id} tab ${tab.name}: ${rendered.reason}`);
+          }
+        }
+        // The icon each kind of file is drawn with (`fileIcons`, by claim), as the phone keeps it (phoneApps.ts): a tab
+        // showing such a file draws it, as the folder list does (app-files.ts `claimant`).
+        for (const tab of entry.manifest.contributes.tabs) {
+          for (const [claim, path] of Object.entries(tab.fileIcons ?? {})) {
+            const rendered = renderExtensionIcon(entry.rootDir, path);
+            if ('dataUrl' in rendered) icons[fileIconKey(extensionTabKind(entry.manifest.id, tab.name), claim)] = rendered.dataUrl;
+            else log.warn(`Extension ${entry.manifest.id} fileIcons ${claim}: ${rendered.reason}`);
           }
         }
       }
