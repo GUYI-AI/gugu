@@ -3,8 +3,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
+import { initializeDatabase } from '../../../../apps/desktop/electron/session/main/db/initialize'
+import * as schema from '../../../../apps/desktop/electron/session/main/db/schema'
+import { migrateCustomModels } from '../../../../apps/desktop/electron/session/main/core/agents/custom-model-migration'
 import { sessionBootTasks } from '../../../../apps/desktop/electron/session/main/core/boot-tasks'
 import { resolveDeviceHostInfo } from '../../../../packages/core/src/cloud/deviceHostInfo'
 import { hydrateLife, shouldStartOnHydrate } from '../../../../packages/core/src/local/session-life/step'
@@ -26,7 +31,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
-}, viaModule = false) {
+}, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
   for (const failure of tasks.snapshot()) tasks.clearTask(failure.taskId)
@@ -63,7 +68,11 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
       where: () => ({ all: () => rows[table.name] }),
     }) }) } },
     electron: { app: { getPath: () => home, getVersion: () => '0.3.1-fixture', isPackaged: true }, session: { defaultSession: { resolveProxy: () => 'DIRECT' } } },
-    '@main/db/initialize': { initializeDatabase: async () => { if (fatal) throw new Error('database init failed') } },
+    '@main/db/initialize': { initializeDatabase: async () => {
+      if (fatal) throw new Error('database init failed')
+      await database?.initialize()
+    } },
+    './core/agents/custom-models': { migrateCustomModelConnections: () => database?.migrate() },
     '../../migrations/task-to-session': { runTaskToSessionOnce: async () => null },
     '../../migrations/session-naming': { runSessionNamingOnce: async () => null },
     '@main/core/sessions/attachments/session-attachment-store': { sweepOrphanSessionAttachmentDirectories: async () => 0 },
@@ -189,6 +198,23 @@ describe('real session host boot entry', () => {
       uid: () => 1000,
     })
     expect(info.server_boot_failures).toEqual(result.failures)
+  })
+  it('boots a fresh desktop database before migrating custom model connections', async () => {
+    const sqlite = new Database(':memory:')
+    try {
+      const requiredTables = sqlite.prepare(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('provider_accounts', 'kv') ORDER BY name"
+      ).pluck()
+      expect(requiredTables.all()).toEqual([])
+      const db = drizzle(sqlite, { schema })
+      const migrate = vi.fn(() => migrateCustomModels(db, new Set()))
+      const result = await boot('', false, undefined, true, { initialize: () => initializeDatabase(sqlite), migrate })
+      expect(requiredTables.all()).toEqual(['kv', 'provider_accounts'])
+      expect(migrate).toHaveBeenCalledOnce()
+      expect(result.registered).toHaveBeenCalledOnce()
+    } finally {
+      sqlite.close()
+    }
   })
   it('retains the fatal boundary for real database initialisation failure', async () => {
     await expect(boot('', true)).rejects.toThrow('database init failed')

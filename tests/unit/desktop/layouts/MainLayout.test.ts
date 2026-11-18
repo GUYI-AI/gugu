@@ -1030,14 +1030,12 @@ describe('MainLayout', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices' } })) })
     expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="devices"]')).not.toBeNull()
   })
-  it('opens the user’s desktop Connected Apps from an explicit settings request', async () => {
+  it('opens a saved prompts link in desktop settings', async () => {
     platformMock.kind = 'electron'
     platformMock.capabilities.sessionHost = true
     await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
-    await act(async () => {
-      window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'connectors', ownerConnections: true } }))
-    })
-    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull()
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'prompts' } })) })
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="prompts"]')).not.toBeNull()
   })
 
   // 11-12 gap: the person's own connected apps are not the assistant's. A phone with no assistant has them as a plain row of

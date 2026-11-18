@@ -506,8 +506,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
   firstRun.noteProfile(app.getPath('userData'))
-  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
-  migrateCustomModelConnections()
   // --- Electron-28 API gap shim FIRST — before any code path can touch a Session (index.ts:0). ---
   if (browserFeatures) installSessionClearDataShim()
 
@@ -567,6 +565,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
   await initializeDatabase()
+  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  migrateCustomModelConnections()
   await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {

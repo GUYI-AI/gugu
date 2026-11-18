@@ -107,6 +107,7 @@
     "@supabase/supabase-js": "^2.39.0",
     "better-sqlite3": "13.2.0",
     "bindings": "^1.5.0",
+    "cursor-history": "0.19.0",
     "detect-libc": "^2.1.2",
     "drizzle-orm": "^0.32.1",
     "file-uri-to-path": "^1.0.0",

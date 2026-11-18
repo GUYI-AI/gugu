@@ -1,6 +1,7 @@
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import z from 'zod';
+import { autoReviewModelSchema } from '@gugu/session-core/models/auto-review-model';
 import { BROWSER_ISOLATED_PROFILE_ID } from '@shared/browser';
 import {
   TERMINAL_FONT_SIZE_MAX,
@@ -251,12 +252,21 @@ export const openInSettingsSchema = z.object({
   hidden: z.array(openInAppIdSchema),
 });
 
+const dataImportSettingsSchema = z.object({
+  owners: z.record(z.string(), z.object({
+    automatic: z.boolean(),
+    sources: z.array(z.string()),
+  })),
+});
+
 export const APP_SETTINGS_SCHEMA_MAP = {
+  autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
   theme: themeSchema,
@@ -270,11 +280,13 @@ export const APP_SETTINGS_SCHEMA_MAP = {
 } as const;
 
 export const appSettingsSchema = z.object({
+  autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
   theme: themeSchema,
