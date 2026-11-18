@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { Worker } from 'node:worker_threads'
 import { describe, expect, it, vi } from 'vitest'
 import { createGitStatusClient, type GitStatusWorkerRequest } from './status-worker'
 
@@ -63,6 +64,69 @@ describe('Git status worker client', () => {
     expect(worker.terminate).not.toHaveBeenCalled()
     await expect(client.read(request)).rejects.toThrow('disposed')
   })
+  it('clears the shutdown timer when the worker exits gracefully', async () => {
+    vi.useFakeTimers()
+    try {
+      const worker = new FakeWorker()
+      const client = createGitStatusClient(() => worker)
+      const pending = expect(client.read(request)).rejects.toThrow('disposed')
+      await client.dispose()
+      await pending
+      expect(vi.getTimerCount()).toBe(0)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(worker.terminate).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('forces a nonresponsive worker to terminate after the grace period and joins disposal', async () => {
+    vi.useFakeTimers()
+    try {
+      const worker = new FakeWorker()
+      worker.postMessage.mockImplementation(() => {})
+      const client = createGitStatusClient(() => worker)
+      const pending = expect(client.read(request)).rejects.toThrow('disposed')
+      const first = client.dispose()
+      expect(client.dispose()).toBe(first)
+      await vi.advanceTimersByTimeAsync(4_999)
+      expect(worker.terminate).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      await Promise.all([first, pending])
+      expect(worker.terminate).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('terminates a real worker whose event loop cannot receive disposal', async () => {
+    const worker = new Worker(
+      `
+      const { parentPort } = require('node:worker_threads')
+      parentPort.once('message', (message) => {
+        parentPort.postMessage({ id: message.id, result: { kind: 'too-many-files' } })
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+      })
+    `,
+      { eval: true }
+    )
+    const terminate = vi.spyOn(worker, 'terminate')
+    const client = createGitStatusClient(() => worker)
+    try {
+      await expect(client.read(request)).resolves.toEqual(status)
+      vi.useFakeTimers()
+      const disposing = client.dispose()
+      await vi.advanceTimersByTimeAsync(5_000)
+      await disposing
+      expect(terminate).toHaveBeenCalledTimes(1)
+      expect(worker.threadId).toBe(-1)
+    } finally {
+      vi.useRealTimers()
+      if (worker.threadId !== -1) await worker.terminate()
+    }
+  })
+
   it('joins concurrent disposal calls until the worker has exited', async () => {
     const worker = new FakeWorker()
     worker.postMessage.mockImplementation(() => {})

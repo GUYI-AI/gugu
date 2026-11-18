@@ -5,12 +5,10 @@ import { useAgentInstallationStatuses, useBusyInstallAgents, useUninstallingAgen
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { compareAgents, isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order';
-import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from '@renderer/features/settings/agents-page/agent-source-actions';
-import { resolveHarnessState } from '@renderer/features/settings/agents-page/harness-state';
-import { describedInstallation, liveRefFor } from '@renderer/features/settings/agents-page/installation-sources';
 import { uninstallAgentWithToast } from '@renderer/features/settings/agents-page/uninstall-agent-with-toast';
 import { AppLifecycleButton } from './app-lifecycle-button';
 import { AppMoreMenu } from './app-more-menu';
+import { installedAgentControl } from '../installed/installed-agent-control';
 import { InstalledAppRowLayout } from './app-rows';
 import { marketAgentDescription } from './market-agent-description';
 
@@ -49,39 +47,16 @@ export function InstalledAgentRows({
   const { translate, locale } = useSessionMessages();
   return rows.map(({ agent, reading }: InstalledAgent) => {
     const agentId = agent.id as AgentProviderId;
-    const registry = reading.used?.registry;
-    const active = describedInstallation({
-      installations: reading.installations,
-      selectedSource: liveRefFor(reading.used, reading.installations),
-      overrideEmpty: false,
-    });
-    const managedCopy = reading.installations.find((installation) => installation.provenance.ours === true);
-    const managedInstall = managedInstallOption(agent.installOptions, registry);
-    const companionUpdate = reading.programs?.slice(1).some((program) => program.managedUpdateAvailable) ?? false;
-    const activeUpdate = active?.updateAvailable ?? reading.updateAvailable;
-    const managedUpdate = resolveManagedSourceUpdate({ agent, managedCopy, managedInstall, registry, companionUpdate });
-    const update = active?.provenance.ours === true && managedUpdate
-      ? managedUpdate
-      : (activeUpdate || companionUpdate) && managedInstall
-        ? { kind: 'install' as const, method: managedInstall.method, registry }
-        : null;
-    // A companion update does not report a new version of the primary program.
-    const latestVersion = activeUpdate && (active?.latestVersion ?? reading.latestVersion);
     const installing = busy.has(agent.id);
     const removing = uninstalling.has(agent.id);
     const working = installing || removing;
-    const state = resolveHarnessState({
-      reading: reading.reading,
-      status: reading.status,
-      busy: installing,
-      updateAvailable: activeUpdate || companionUpdate,
-    });
+    const { update, canRemove, version, latestVersion, companionUpdate } = installedAgentControl(agent, reading, installing);
     const open = () => onOpenAgentDetail(agent.id);
     const runUpdate = update ? () => {
       const run = update.kind === 'update' ? operations.update : operations.install;
       run({ id: agentId, method: update.method, registry: update.registry });
     } : undefined;
-    const uninstall = canUninstallManagedSource(agent, managedCopy, state)
+    const uninstall = canRemove
       ? () => uninstallAgentWithToast(agent.name, () => operations.uninstallAsync({ id: agentId }), translate)
       : undefined;
     let line: string;
@@ -94,7 +69,7 @@ export function InstalledAgentRows({
       <InstalledAppRowLayout
         key={agent.id}
         name={agent.name}
-        version={active?.version ?? reading.version}
+        version={version}
         line={<span>{line}</span>}
         icon={<AppIcon id={agent.id} size={40} />}
         busy={working}
