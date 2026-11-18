@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parse as parseTOML } from 'smol-toml';
 
@@ -242,17 +242,20 @@ export async function activateCodexAccount(
   return owner;
 }
 
-async function cleanRestoredCodexVault(paths: CodexAuthSlotPaths, recorded: LiveState) {
-  if (!recorded.nativeVaultCleanup) return;
+async function cleanRestoredCodexVault(paths: CodexAuthSlotPaths, recorded: LiveState): Promise<boolean> {
+  if (!recorded.identity) return false;
   const legacyRoot = paths.vaultRoot('native');
   const saved = await readAuth(legacyRoot);
   if (saved) {
-    if (saved.identity !== recorded.identity || (await readAuth(paths.nativeRoot))?.identity !== recorded.identity) {
-      throw new Error('Could not verify the restored Codex terminal sign-in; retry migration');
+    if (saved.identity !== recorded.identity || (await readAuth(paths.nativeRoot))?.identity !== recorded.identity ||
+      await realpath(paths.nativeRoot) === await realpath(legacyRoot)) {
+      if (recorded.nativeVaultCleanup) throw new Error('Could not verify the restored Codex terminal sign-in; retry migration');
+      return true;
     }
     await rm(join(legacyRoot, AUTH_FILE));
   }
-  await recordLiveState(paths.liveStateFile, { connectionId: 'native', identity: recorded.identity });
+  if (recorded.nativeVaultCleanup) await recordLiveState(paths.liveStateFile, { connectionId: 'native', identity: recorded.identity });
+  return false;
 }
 
 /** Only a recorded, registered Gugu account can be moved out of the former shared slot. */
@@ -260,8 +263,8 @@ export async function restoreCodexTerminalForMigration(paths: CodexAuthSlotPaths
   const recorded = await readLiveState(paths.liveStateFile);
   if (!recorded) return { terminalNeedsSignIn: false, relogin: null };
   if (recorded.connectionId === 'native') {
-    await cleanRestoredCodexVault(paths, recorded);
-    return { terminalNeedsSignIn: recorded.identity === '', relogin: null };
+    const legacyVaultUnverified = await cleanRestoredCodexVault(paths, recorded);
+    return { terminalNeedsSignIn: recorded.identity === '', relogin: null, ...(legacyVaultUnverified ? { legacyVaultUnverified } : {}) };
   }
   if (!ids.includes(recorded.connectionId)) return { terminalNeedsSignIn: false, relogin: recorded.connectionId };
   const live = await readAuth(paths.nativeRoot);

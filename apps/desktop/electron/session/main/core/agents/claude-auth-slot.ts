@@ -402,11 +402,22 @@ export async function ensureClaudeVault(root: string): Promise<void> {
   await mkdir(root, { recursive: true, mode: 0o700 });
 }
 
-async function cleanRestoredClaudeVault(paths: ClaudeAuthSlotPaths, recorded: LiveState) {
-  if (!recorded.nativeVaultCleanup) return;
+async function cleanRestoredClaudeVault(paths: ClaudeAuthSlotPaths, recorded: LiveState): Promise<boolean> {
+  if (!recorded.identity) return false;
   const retries = paths.lockRetries ?? DEFAULT_LOCK_RETRIES;
   const legacy = vault(paths, NATIVE);
   const config = vaultConfig(paths, NATIVE);
+  const unverified = () => {
+    if (recorded.nativeVaultCleanup) throw new Error('Could not verify the restored Claude terminal sign-in; retry migration');
+    return true;
+  };
+  const stored = await paths.store.read(legacy);
+  if (!recorded.nativeVaultCleanup && !oauthOf(stored)) return false;
+  const sharedRoot = await realpath(legacy.root).catch(() => null);
+  const sharedConfig = await realpath(config).catch(() => null);
+  if (sharedRoot && sharedRoot === await realpath(paths.nativeRoot).catch(() => null) ||
+    sharedConfig && sharedConfig === await realpath(paths.nativeGlobalConfig).catch(() => null)) return unverified();
+  if ((await readAccount(paths.nativeGlobalConfig))?.identity !== recorded.identity) return unverified();
   const releaseNative = await lockCredentials(paths.nativeRoot, retries);
   try {
     const releaseVault = await lockCredentials(legacy.root, retries);
@@ -414,12 +425,11 @@ async function cleanRestoredClaudeVault(paths: ClaudeAuthSlotPaths, recorded: Li
       const live = await readAccount(paths.nativeGlobalConfig);
       const saved = await readAccount(config);
       if (live?.identity !== recorded.identity || !oauthOf(await paths.store.read(native(paths))) ||
-        (saved && saved.identity !== recorded.identity)) {
-        throw new Error('Could not verify the restored Claude terminal sign-in; retry migration');
-      }
+        (saved && saved.identity !== recorded.identity) || (!saved && !recorded.nativeVaultCleanup)) return unverified();
       await paths.store.updateExisting(legacy, withoutOauth);
       if (saved) await mergeAccount(config, null, retries);
-      await recordLiveState(paths, { connectionId: NATIVE, identity: recorded.identity });
+      if (recorded.nativeVaultCleanup) await recordLiveState(paths, { connectionId: NATIVE, identity: recorded.identity });
+      return false;
     } finally {
       await releaseVault();
     }
@@ -433,8 +443,8 @@ export async function restoreClaudeTerminalForMigration(paths: ClaudeAuthSlotPat
   const recorded = await readLiveState(paths.liveStateFile);
   if (!recorded) return { terminalNeedsSignIn: false, relogin: null };
   if (recorded.connectionId === NATIVE) {
-    await cleanRestoredClaudeVault(paths, recorded);
-    return { terminalNeedsSignIn: recorded.identity === '', relogin: null };
+    const legacyVaultUnverified = await cleanRestoredClaudeVault(paths, recorded);
+    return { terminalNeedsSignIn: recorded.identity === '', relogin: null, ...(legacyVaultUnverified ? { legacyVaultUnverified } : {}) };
   }
   if (!ids.includes(recorded.connectionId)) return { terminalNeedsSignIn: false, relogin: recorded.connectionId };
   if ((await readAccount(paths.nativeGlobalConfig))?.identity !== recorded.identity) {

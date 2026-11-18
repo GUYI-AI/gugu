@@ -21,6 +21,7 @@ import type {
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
+import { log } from '@main/lib/logger';
 import {
   activateClaudeAccount,
   restoreClaudeTerminalForMigration,
@@ -627,7 +628,8 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
   }
 }
 
-async function migrationNotice(providerId: Provider, result: { relogin: string | null; terminalNeedsSignIn: boolean }) {
+async function migrationNotice(providerId: Provider, result: { relogin: string | null; terminalNeedsSignIn: boolean; legacyVaultUnverified?: boolean }) {
+  if (result.legacyVaultUnverified) log.warn('Skipped legacy native vault cleanup because the terminal identity could not be verified', { providerId });
   const account = result.relogin ? await registry.getAccount(namespace(providerId), result.relogin) : null;
   const auth = pluginRegistry.get(providerId)?.capabilities.auth;
   const method = auth?.kind === 'supported' ? auth.methods.find((method) => method.kind === 'cli-login') : undefined;

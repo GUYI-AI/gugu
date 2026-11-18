@@ -88,6 +88,25 @@ it('retains the old Codex vault while terminal identity verification fails', asy
   await expect(readFile(join(old.vaultRoot('native'), 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
+it.each([['terminal-b', true], ['terminal-c', false]])('cleans an already-native Codex vault only when the live terminal is %s', async (terminal, matching) => {
+  const old = codexPaths(await root());
+  const saved = codexAuth('terminal-b', 'vault');
+  await put(old.nativeRoot, 'config.toml', '# user settings');
+  await put(old.nativeRoot, 'auth.json', codexAuth(terminal, 'live'));
+  await put(old.vaultRoot('native'), 'auth.json', saved);
+  await writeFile(old.liveStateFile, JSON.stringify({ connectionId: 'native', identity: 'chatgpt:terminal-b|fixture-workspace' }));
+  const before = await Promise.all(['auth.json', 'config.toml'].map((file) => fileHash(old.nativeRoot, file)));
+
+  const result = await restoreCodexTerminalForMigration(old, ['native']);
+
+  if (matching) expect(result).not.toHaveProperty('legacyVaultUnverified');
+  else expect(result).toHaveProperty('legacyVaultUnverified', true);
+  expect(await Promise.all(['auth.json', 'config.toml'].map((file) => fileHash(old.nativeRoot, file)))).toEqual(before);
+  const oldCredentials = readFile(join(old.vaultRoot('native'), 'auth.json'), 'utf8');
+  if (matching) await expect(oldCredentials).rejects.toMatchObject({ code: 'ENOENT' });
+  else await expect(oldCredentials).resolves.toBe(saved);
+});
+
 function claudePaths(root: string): ClaudeAuthSlotPaths {
   return { nativeRoot: join(root, 'terminal'), nativeGlobalConfig: join(root, 'terminal/.claude.json'),
     nativeSuffixed: true, vaultRoot: (id) => join(root, 'vaults', id), backupDir: join(root, 'backup'),
@@ -138,6 +157,27 @@ it('retains the old Claude vault while terminal identity verification fails', as
   await restoreClaudeTerminalForMigration(old, ['native', 'gugu-a']);
   expect(await fileHash(old.nativeRoot, '.credentials.json')).toBe(renewed);
   expect(JSON.parse(await readFile(join(legacy, '.credentials.json'), 'utf8'))).toEqual({ mcpLogin: 'fixture-mcp' });
+});
+
+it.each([['terminal-b', true], ['terminal-c', false]])('cleans an already-native Claude vault only when the live terminal is %s', async (terminal, matching) => {
+  const old = claudePaths(await root());
+  const legacy = old.vaultRoot('native');
+  await claudeSignIn(old.nativeRoot, terminal, 'live');
+  await claudeSignIn(legacy, 'terminal-b', 'vault');
+  await writeFile(old.liveStateFile, JSON.stringify({ connectionId: 'native', identity: 'terminal-b' }));
+  const configFiles = ['.credentials.json', '.claude.json'];
+  const before = await Promise.all(configFiles.map((file) => fileHash(old.nativeRoot, file)));
+  const legacyBefore = await Promise.all(configFiles.map((file) => fileHash(legacy, file)));
+
+  const result = await restoreClaudeTerminalForMigration(old, ['native']);
+
+  if (matching) expect(result).not.toHaveProperty('legacyVaultUnverified');
+  else expect(result).toHaveProperty('legacyVaultUnverified', true);
+  expect(await Promise.all(configFiles.map((file) => fileHash(old.nativeRoot, file)))).toEqual(before);
+  if (matching) {
+    expect(JSON.parse(await readFile(join(legacy, '.credentials.json'), 'utf8'))).toEqual({ mcpLogin: 'fixture-mcp' });
+    expect(JSON.parse(await readFile(join(legacy, '.claude.json'), 'utf8'))).not.toHaveProperty('oauthAccount');
+  } else expect(await Promise.all(configFiles.map((file) => fileHash(legacy, file)))).toEqual(legacyBefore);
 });
 
 it('handles an originally signed-out Codex terminal and does not restore the terminal twice on retry', async () => {
