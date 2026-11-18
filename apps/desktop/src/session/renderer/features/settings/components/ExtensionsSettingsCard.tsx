@@ -1,6 +1,6 @@
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useAppDetailRequest } from '@renderer/features/apps/use-app-detail-request';
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { messageForUser } from '@/lib/userFacingError';
 import { CircleAlert, Trash2Icon } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
@@ -150,7 +150,7 @@ export type AppDetail =
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
 export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail }: {
-  detailLink?: AppDetailLink;
+  detailLink?: ExtensionAppDetailLink;
   onOpenAgentDetail?: (agentId: string) => void;
 }) {
   const { translate, locale } = useSessionMessages();

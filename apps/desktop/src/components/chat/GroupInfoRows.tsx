@@ -21,7 +21,7 @@ const inviteSlotStyle: CSSProperties = { display: 'inline-flex', marginRight: 8 
 const MEMBER_PREVIEW_COUNT = 5
 
 /**
- * 群成员那一行:点这一行进成员页;头像后面的「+」是群的那一个添加菜单(GroupAddMenu,同成员页标题、内栏头一行),
+ * 群成员那一行:点这一行进成员页;头像后面的「+」是群的那一个添加菜单(GroupAddMenu,同成员页标题),
  * 选人页开在这一页上面,关了还在这一页。「+」在这一行里面,所以它(连同传送出去的菜单、选人页)的点击和按键不往上冒。
  */
 export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: {

@@ -22,7 +22,7 @@ export function MentionPill({ href, title, file, mention, unavailable, onClick, 
 }) {
   const { name, place } = file !== undefined && typeof children === 'string' ? fileLabelParts(children) : { name: children, place: '' }
   return (
-    <a {...rest} className={`gg-md-mention ${FILE_PILL_CLASS}`} data-mention-kind={mention ? 'file' : 'link'} data-unavailable={unavailable ? 'true' : undefined}
+    <a {...rest} data-pane-opener="" className={`gg-md-mention ${FILE_PILL_CLASS}`} data-mention-kind={mention ? 'file' : 'link'} data-unavailable={unavailable ? 'true' : undefined}
       href={href} title={title} onClick={onClick}>
       {file !== undefined ? <span className="gg-md-mention-icon" aria-hidden="true"><FileMark name={fileLabelParts(file).name} size={12} /></span> : null}
       <span className="gg-md-mention-label">{name}</span>

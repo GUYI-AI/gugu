@@ -7,6 +7,7 @@ import { FileTile, IconChevronDown } from '@session-chat/components/primitives/i
 import { useChatTranslator } from '@session-chat/localization'
 import { basename } from '@session-chat/lib/path'
 import type { FileChangeSummaryItem } from '@session-chat/model'
+import { fileChangePatches } from '@session-chat/state/file-change-summary'
 import { openedOutputLook } from '@session-chat/state/opened-outputs'
 import { OPENED_OUTPUT_ROW_H, outputControlWidth, OutputRowEnd } from '../opened-output/opened-output.def'
 import { chevron, detail, nameRow, text, tile } from '../opened-output/opened-output.css'
@@ -16,8 +17,8 @@ import * as css from './file-change-summary.css'
 
 /**
  * 一轮改完之后的「已编辑」卡(owner 11-06 选的方案 A):每个文件就是一行附件卡(opened-output)的样子 ——
- * 类型色图标格、文件名、「已编辑 · +3 −0 · …/所在两层」、行尾 ›;**整行**是一个按钮,点了在对话旁边打开那个文件
- * (宿主的 `onOpenFile`,和输出卡、文件链接走同一个打开动作)。完整路径在悬停提示里;卡上只给最后两层文件夹。
+ * 类型色图标格、文件名、「已编辑 · +3 −0 · …/所在两层」、行尾打开方式。桌面点整行在对话旁看该轮改动。
+ * 完整路径在悬停提示里;卡上只给最后两层文件夹。
  *
  * ❌ 卡里不铺逐行改动。对话里的这张卡只列文件和增删数,改动去右侧看(点文件在旁边打开)—— 把每个文件的 `+edited` `+two` 摊在对话里,一轮改十个文件就是一整屏 diff(owner 10-17)。
  *
@@ -46,7 +47,7 @@ function headLayout(item: FileChangeSummaryItem, ctx: MeasureCtx) {
   return { label, rowHeight: Math.max(HEAD, label.height + 32) }
 }
 /** Tile 40, the gaps around the text 12 + 12, the row's end, the row's padding 12 + 12. */
-const textWidth = (file: File, ctx: MeasureCtx) => ctx.width - BORDER - 24 - 40 - 24 - outputControlWidth({ kind: 'file', path: file.path }, ctx, !!ctx.commands?.onOpenFile)
+const textWidth = (file: File, ctx: MeasureCtx) => ctx.width - BORDER - 24 - 40 - 24 - outputControlWidth({ kind: 'file', path: file.path }, ctx, !!(ctx.commands?.onOpenFileChange || ctx.commands?.onOpenFile))
 /** Name, then 「已编辑 · +3 −0 · …/a/b」: both wrap where they must (never hidden), the row grows with them. */
 function fileLayout(file: File, ctx: MeasureCtx) {
   const name = readableLabel(basename(file.path), ctx, textWidth(file, ctx), 14, 20, 500)
@@ -105,20 +106,29 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
           <For each={props.data.files}>
             {(file) => {
               const look = () => openedOutputLook({ kind: 'file', path: file.path })
-              const openFile = () => commands().onOpenFile?.({ path: file.path, itemId: file.diffs[0].id, source: 'diff' })
+              const canOpen = () => !!(commands().onOpenFileChange || commands().onOpenFile)
+              const openChange = () => {
+                const { onOpenFileChange, onOpenFile } = commands()
+                if (onOpenFileChange) {
+                  onOpenFileChange({ turnId: props.data.turnId, path: file.path, patches: fileChangePatches(file.path, file.diffs) })
+                } else {
+                  onOpenFile?.({ path: file.path, itemId: file.diffs[0].id, source: 'diff' })
+                }
+              }
               return (
                 <div
                   class={css.file}
                   style={{ height: `${fileLayout(file, ctx()).rowHeight}px` }}
                   title={file.path}
-                  role={commands().onOpenFile ? 'button' : undefined}
-                  tabIndex={commands().onOpenFile ? 0 : undefined}
-                  aria-disabled={commands().onOpenFile ? undefined : true}
-                  onClick={openFile}
+                  data-pane-opener=""
+                  role={canOpen() ? 'button' : undefined}
+                  tabIndex={canOpen() ? 0 : undefined}
+                  aria-disabled={canOpen() ? undefined : true}
+                  onClick={openChange}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      openFile()
+                      openChange()
                     }
                   }}
                 >
@@ -127,7 +137,7 @@ export const fileChangeSummaryUnitDef = defineUnit<FileChangeSummaryItem, Record
                     <span class={nameRow}>{fileLayout(file, ctx()).name.text}</span>
                     <span class={detail}><Detail text={fileLayout(file, ctx()).description.text} counts={file} /></span>
                   </span>
-                  <OutputRowEnd output={{ kind: 'file', path: file.path }} itemId={file.diffs[0].id} name={look().name} canOpen={!!commands().onOpenFile} />
+                  <OutputRowEnd output={{ kind: 'file', path: file.path }} itemId={file.diffs[0].id} name={look().name} canOpen={canOpen()} fromFileChange={!!commands().onOpenFileChange} />
                 </div>
               )
             }}

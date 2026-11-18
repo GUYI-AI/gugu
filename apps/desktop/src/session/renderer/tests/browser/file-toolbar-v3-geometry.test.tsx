@@ -40,6 +40,7 @@ it.each([250, 390].flatMap(width => ['private-card', 'group-folder'].map(origin 
   document.body.classList.add('gugu-skin');
   const chatId = `geometry-${width}-${origin}`;
   layout = chatLayoutOf(chatId);
+  layout.setSinglePaneHost(true);
   layout.focusedPane.setDimensions(width, 620);
   const from = origin === 'group-folder' ? openPanelItem(chatId, folderItem(), { intent: 'newTab' }) : undefined;
   openPanelItem(chatId, { kind: null, itemId: 'notes', title: 'notes.txt' }, from ? { from } : undefined);

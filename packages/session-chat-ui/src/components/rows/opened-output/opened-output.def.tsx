@@ -51,7 +51,7 @@ export function outputControlWidth(output: OpenedOutput, ctx: MeasureCtx, canOpe
  * The row's end, wherever a file's row is drawn (an output card, the Edited card): its 「Open with ▾」, which opens the
  * host's menu and never counts as a click on the row; else the › of a row that opens.
  */
-export function OutputRowEnd(props: { output: OpenedOutput; itemId: string; name: string; canOpen: boolean }) {
+export function OutputRowEnd(props: { output: OpenedOutput; itemId: string; name: string; canOpen: boolean; fromFileChange?: boolean }) {
   const translate = useChatTranslator();
   const commands = useCommands();
   // 「侧边栏 ▾」:宿主说得出默认怎么打开、也接了菜单才摆;打不开的那行不摆。
@@ -77,7 +77,7 @@ export function OutputRowEnd(props: { output: OpenedOutput; itemId: string; name
           onClick={(event) => {
             // 只弹菜单,❌ 再冒泡成「点整行」按默认方式打开。
             event.stopPropagation();
-            commands().onOutputMenu?.({ output: props.output, itemId: props.itemId, anchor: event.currentTarget });
+            commands().onOutputMenu?.({ output: props.output, itemId: props.itemId, anchor: event.currentTarget, ...(props.fromFileChange ? { fromFileChange: true } : {}) });
           }}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -147,6 +147,7 @@ export const openedOutputUnitDef = defineUnit<OpenedOutputItem, { rowH: number; 
       >
       <div
         data-slot="opened-output"
+        data-pane-opener=""
         data-output-kind={look().kind}
         class={open() ? cardClickable : card}
         data-first={first() ? '' : undefined}
