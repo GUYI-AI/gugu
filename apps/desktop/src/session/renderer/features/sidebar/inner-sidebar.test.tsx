@@ -269,9 +269,8 @@ describe('inner sidebar', () => {
     openChat('group');
     await render();
     const head = () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!;
-    // The two-line group head highlights its complete area when current.
     expect(head().getAttribute('aria-current')).toBe('page');
-    expect(head().dataset.active).toBe('true');
+    expect(head().dataset.active).toBeUndefined();
     // No unread number on the head row: the group's row in the list carries it (proposal v1 state0).
     expect(host.querySelector('[data-inner-head="group"] [aria-label^="sidebar.unreadCount"]')).toBeNull();
     openSession('mine-in-group', true);
