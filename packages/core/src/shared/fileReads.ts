@@ -1,4 +1,5 @@
-import { createFileResolver, FileReadRevokedError, MissingFileObjectError, type FileActor, type FileBytes, type FileContext, type FileHandle, type FileRef, type FileRevision, type FileProviders } from './fileResolver'
+import { FileIntegrityError } from './fileCipher'
+import { createFileResolver, FileReadError, FileReadRevokedError, MissingFileObjectError, type FileActor, type FileBytes, type FileContext, type FileHandle, type FileRef, type FileRevision, type FileProviders } from './fileResolver'
 
 export type FileReadRoute = 'local' | 'ssh' | 'oss'
 export type FileReadReuse = 'verified-local' | 'chunks' | null
@@ -69,9 +70,7 @@ export function createSenderWaits() {
   }
 }
 
-export class FileReadError extends Error {
-  constructor(readonly code: FileReadFailure, message: string, cause?: unknown) { super(message, { cause }) }
-}
+export { FileReadError } from './fileResolver'
 
 type Transfer = (context: FileContext) => Promise<FileBytes>
 export interface FileReadHooks {
@@ -79,12 +78,13 @@ export interface FileReadHooks {
   waits: ReturnType<typeof createSenderWaits>
   state(state: FileReadState): void
   reuse(value: FileReadReuse): void
-  acquire(backend: string, revision: FileRevision, context: FileContext, open: Transfer): Promise<FileBytes>
+  acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer): Promise<FileBytes>
 }
 
 function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
   const message = error instanceof Error ? error.message : String(error)
   if (signal?.aborted) return new FileReadError('cancelled', message, error)
+  if (error instanceof FileIntegrityError) return new FileReadError('integrity_failed', message, error)
   if (error instanceof FileReadError) return error
   if (error instanceof FileReadRevokedError) return new FileReadError(error.reason === 'expired' || error.reason === 'gone' ? error.reason : 'access_revoked', message, error)
   if (error instanceof MissingFileObjectError) return new FileReadError('gone', message, error)
@@ -96,6 +96,7 @@ function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
 
 type Subscriber = { progress?: FileContext['progress']; hooks?: FileReadHooks }
 type Flight = {
+  route: FileReadRoute
   controller: AbortController
   subscribers: Set<Subscriber>
   bytes: Promise<FileBytes>
@@ -107,10 +108,13 @@ type Flight = {
 export function createFileReads(providers: FileProviders, store: FileReadStore = {}): FileReads {
   const waits = createSenderWaits()
   const flights = new Map<string, Flight>()
-  const acquire: FileReadHooks['acquire'] = async (backend, revision, context, open) => {
+  const acquire: FileReadHooks['acquire'] = async (backend, route, revision, context, open) => {
     context.signal?.throwIfAborted()
+    context.reads?.state({ status: 'transferring', route })
     if (revision.sha256 === null) return open(context)
-    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes])
+    // Device-only reads must never acquire a transfer through the cloud.
+    const deviceOnly = revision.source === 'local' && !revision.temporary_transfer
+    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly])
     let flight = flights.get(key)
     if (!flight) {
       const subscribers = new Set<Subscriber>(), controller = new AbortController()
@@ -131,13 +135,14 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
         controller.signal.throwIfAborted()
         return open(transfer)
       })
-      const current: Flight = { bytes, controller, subscribers, reuse: null }
+      const current: Flight = { route, bytes, controller, subscribers, reuse: null }
       flights.set(key, current)
       flight = current
     }
     const joined = flight
     const row = { hooks: context.reads, progress: context.progress }
     joined.subscribers.add(row)
+    if (joined.route !== route) row.hooks?.state({ status: 'transferring', route: joined.route })
     if (joined.reuse) row.hooks?.reuse(joined.reuse)
     if (joined.progress) row.progress?.(...joined.progress)
     const release = async () => {

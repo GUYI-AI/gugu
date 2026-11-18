@@ -1,4 +1,4 @@
-import { FileReadError, type FileReadHooks } from './fileReads'
+import type { FileReadFailure, FileReadHooks } from './fileReads'
 import { anySignal } from './anySignal'
 import { copyVerifiedFile, fileSha256, type FileSink } from './fileCipher'
 
@@ -54,6 +54,9 @@ export interface FileRevision {
  */
 export type FileMetadata = { status: 'ready'; revision: FileRevision } | { status: 'gone' | 'expired' | 'missing' | 'failed'; sha256: string | null }
   | { status: 'pending'; sha256: null; width?: number; height?: number; host_label?: string | null; host_online?: boolean }
+export class FileReadError extends Error {
+  constructor(readonly code: FileReadFailure, message: string, cause?: unknown) { super(message, { cause }) }
+}
 /** The authenticated server explicitly identified a physically missing object. */
 export class MissingFileObjectError extends Error {
   constructor() { super('missing') }
@@ -178,7 +181,7 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
     if (here && sameRevision(here.revision, revision)) return localBytes(here.open)
     context.signal?.throwIfAborted()
     const ssh = await providers.ssh(revision, own)
-    if (ssh) { context.reads?.state({ status: 'transferring', route: 'ssh' }); return consume(ssh) }
+    if (ssh) return consume(ssh)
   }
   if (revision.source === 'local' && !revision.temporary_transfer) throw Object.assign(new Error('Cloud transfer is disabled for this file'), { code: 'transfer_disabled' })
   if (destination && providers.download) return providers.download(revision, context, destination)
@@ -193,8 +196,9 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
-    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: options.signal, reads: readHooks?.(), ...(options.progress ? { progress: options.progress } : {}) }
+    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: readHooks ? anySignal([options.signal, cancellation.signal]) : options.signal, reads: readHooks?.(), ...(options.progress ? { progress: options.progress } : {}) }
     context.signal?.throwIfAborted()
+    if (context.reads && providers.backend) context.backend = await providers.backend(context)
     const local = await providers.local(context)
     if (options.localOnly && !local) return null
     if (local && (local.revision.source !== 'local' || local.revision.host_account_id !== context.actor.accountId)) throw new Error('Local file is not owned by this account')
@@ -203,7 +207,6 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
     if (projected && projected.status !== 'ready') return projected
     if (projected?.status === 'ready' && 'item_id' in ref && (projected.revision.item_id !== ref.item_id ||
       ref.version !== undefined && projected.revision.version !== ref.version)) throw new Error('File preview reference changed')
-    if (!local && !projected && providers.backend) context.backend = await providers.backend(context)
     const metadata = local ? { status: 'ready' as const, revision: local.revision } : projected ?? (context.reads?.waitDeclared
       ? await context.reads.waits.until(() => providers.metadata(context), row => {
         if (row.status !== 'pending') return
@@ -216,7 +219,7 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
     requireFileRevision(revision)
     if ('item_id' in ref && (ref.version !== undefined && revision.version !== ref.version || revision.item_id !== undefined && revision.item_id !== ref.item_id)) throw new FileReadRevokedError('revision')
     if (revision.legacy_object && (!('message_id' in context.ref) || context.ref.message_id !== revision.legacy_object.message_id)) throw new Error('Historical file reference changed')
-    context.signal = anySignal([options.signal, cancellation.signal])
+    if (!context.reads) context.signal = anySignal([options.signal, cancellation.signal])
     let disposed = false
     let opened: Promise<FileBytes> | undefined
     const check = () => {
@@ -227,10 +230,13 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
       const bytes = await openFileBytes(providers, revision, context, local)
       // A message or agent may resolve in the cloud and then read the owner's local or SSH copy.
       // That snapshot has no cloud acknowledgement of its own.
-      if (context.reads && !local && revision.source === 'local' && revision.host_account_id === context.actor.accountId && !bytes.acknowledged) {
+      if (context.reads && revision.source === 'local' && revision.host_account_id === context.actor.accountId && !bytes.acknowledged) {
         try {
           const pinned = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
-          const current = await providers.metadata({ ...context, ref: pinned })
+          const final = { ...context, ref: pinned }
+          if (providers.backend && context.backend !== await providers.backend(final)) throw new FileReadRevokedError('access')
+          const current = local ? await providers.local(final).then(copy => copy && { status: 'ready' as const, revision: copy.revision }) : await providers.metadata(final)
+          if (!current) throw new FileReadRevokedError('access')
           if (current.status !== 'ready') throw new FileReadRevokedError(current.status === 'gone' || current.status === 'expired' ? current.status : 'access')
           if (!sameRevision(current.revision, revision)) throw new FileReadRevokedError('revision')
         } catch (error) { await bytes.dispose(); throw error }

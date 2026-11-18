@@ -195,8 +195,7 @@ export function cloudFileProviders(deps: {
         throw error
       } finally { dataKey?.fill(0); await source.dispose() }
     }
-    context.reads?.state({ status: 'transferring', route: 'oss' })
-    const file = context.reads && !destination ? await context.reads.acquire(backendScope, revision, context, acquire) : await acquire(context)
+    const file = context.reads && !destination ? await context.reads.acquire(backendScope, 'oss', revision, context, acquire) : await acquire(context)
     const saved = async (sink: FileSink) => { const bytes = await sink.commit(); await deps.cache.clear(key); return bytes }
     try {
       context.reads?.state({ status: 'verifying' })

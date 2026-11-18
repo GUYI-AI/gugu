@@ -54,8 +54,11 @@ it('does not publish a download after cancellation during final metadata authori
 })
 
 it('does not dispatch object fetch after endpoint lookup completes past cancellation', async () => {
-  const f = fixture(); let endpoints = 0
-  const cloud = cloudFileProviders({ endpoint: async () => { if (++endpoints === 2) f.abort.abort(f.reason); return f.endpoint },
+  const f = fixture()
+  const cloud = cloudFileProviders({ endpoint: async () => {
+    if (f.transport.mock.calls.some(([url]) => String(url).endsWith('/file-download'))) f.abort.abort(f.reason)
+    return f.endpoint
+  },
     cache: f.cache, sink: async () => f.sink })
   await expect(cloud.download!(revision, f.context, f.sink)).rejects.toBe(f.reason)
   expect(f.transport.mock.calls.map(([url]) => String(url))).toEqual(['https://files.invalid/functions/v1/attachments/file-download'])

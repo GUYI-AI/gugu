@@ -137,14 +137,17 @@ export function createNodeFileResolver(root: string, endpoint: (context: FileCon
   return createFileResolver(providers)
 }
 
-const readStoreDirectory = (directory: string, backend: string, account: string) =>
-  join(directory, 'reads', createHash('sha256').update(JSON.stringify([backend, account])).digest('hex'))
+const readReceipt = (directory: string, backend: string, account: string, sha: string) =>
+  join(directory, '.read-scopes', createHash('sha256').update(JSON.stringify([backend, account])).digest('hex'), sha)
 
 /** Only files saved under this authenticated backend and account are original-byte cache candidates. */
 export function nodeFileReadStore(home: string | (() => Promise<string>)): FileReadStore {
   return { async cachedCopy(backend, revision, context) {
     if (!revision.sha256) return null
-    const root = readStoreDirectory(fileStoreDirectory(typeof home === 'string' ? home : await home()), backend, context.actor.accountId)
+    const root = fileStoreDirectory(typeof home === 'string' ? home : await home())
+    const receipt = await requireAgentFileAccess(readReceipt(root, backend, context.actor.accountId, revision.sha256))
+    const recorded = await stat(receipt).catch(error => { if (error.code === 'ENOENT') return null; throw error })
+    if (!recorded?.isFile()) return null
     const blob = await verifiedStoreBlob(root, revision.sha256, context.signal)
     if (!blob) return null
     return { size: blob.size, async read(offset, length) {
@@ -157,10 +160,18 @@ export function nodeFileReadStore(home: string | (() => Promise<string>)): FileR
 /** Downloads consume the authorized source into one final file. Random-read consumers keep snapshots. */
 export function createFileSaver(providers: FileProviders): NonNullable<FileProviders['saveTo']> {
   return async (revision, context, directory, name, store = false) => {
-    if (store && context.openedBytes && context.backend) directory = readStoreDirectory(directory, context.backend, context.actor.accountId)
     const path = join(directory, revision.sha256 ?? `legacy-${randomUUID()}`, attachmentDownloadName(name))
     await requireAgentFileAccess(path)
     const saved: SavedFile = { file_path: path, file_name: name, size_bytes: revision.size_bytes, sha256: revision.sha256!, content_type: revision.content_type, ...(store ? { read_only: true as const } : {}) }
+    // The returned filename stays stable. Only a save which acquired this snapshot in this scope records reuse.
+    const published = async () => {
+      if (store && context.openedBytes && context.backend && revision.sha256) {
+        const receipt = await requireAgentFileAccess(readReceipt(directory, context.backend, context.actor.accountId, revision.sha256))
+        await mkdir(dirname(receipt), { recursive: true, mode: 0o700 })
+        await writeFile(receipt, '', { mode: 0o600 })
+      }
+      return saved
+    }
     const target = dirname(path)
     const holds = async (file: string) => {
       if (!revision.sha256) return false
@@ -181,7 +192,7 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
     }
     if (await holds(path)) {
       if (store) await chmod(path, STORED_FILE_MODE)
-      return saved
+      return published()
     }
     if (store && revision.sha256) {
       // Under this sha, every name that no longer holds it (someone cleared the flag and edited it; hard-linked names change
@@ -200,7 +211,7 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
       // A filesystem without hard links (exFAT, some network drives) stores this name as its own copy, below.
       if (good && await link(await requireAgentFileAccess(good), path).then(() => true, error => error.code === 'EEXIST')) {
         await chmod(path, STORED_FILE_MODE)
-        return saved
+        return published()
       }
     }
     await mkdir(target, { recursive: true, mode: 0o700 })
@@ -233,7 +244,7 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
         for await (const bytes of createReadStream(path)) hash.update(bytes)
         saved.sha256 = hash.digest('hex')
       }
-      return saved
+      return published()
     } catch (error) {
       await sink.abort()
       if (store) await rm(written, { force: true })
