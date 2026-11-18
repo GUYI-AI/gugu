@@ -78,6 +78,7 @@ const CHAT_BATTERY_GUIDANCE_KEY = 'gugu.android.chat-notifications.battery-guida
 export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPermissions: () => void; showThemePacks?: boolean }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
+  const [batteryGuidance, setBatteryGuidance] = useState<{ onePlus: boolean; restricted: boolean } | null>(null)
   const mobile = useMobileShell()
   const { preference, setPreference } = useLocale()
   const notificationSettings = useNotificationSettings()
@@ -88,7 +89,6 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
   } = useSystemPermissionStates(NOTIFICATION_PERMISSION)
   const trayBadgeEnabled = useTrayBadgeEnabled()
   const [notificationHint, setNotificationHint] = useState<keyof typeof NOTIFICATION_HINT_KEYS | null>(null)
-  const [batteryGuidance, setBatteryGuidance] = useState<{ onePlus: boolean; restricted: boolean } | null>(null)
   const notificationBlocked = systemNotificationStates.notifications === 'prompt'
     || systemNotificationStates.notifications === 'blocked'
 
