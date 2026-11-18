@@ -99,7 +99,7 @@ function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
 
 type Subscriber = { progress?: FileContext['progress']; hooks?: FileReadHooks }
 type Flight = {
-  route: FileReadRoute
+  route?: FileReadRoute
   controller: AbortController
   subscribers: Set<Subscriber>
   bytes: Promise<FileBytes>
@@ -113,12 +113,12 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
   const flights = new Map<string, Flight>()
   const acquire: FileReadHooks['acquire'] = async (backend, route, revision, context, open) => {
     context.signal?.throwIfAborted()
-    context.reads?.state({ status: 'transferring', route })
     const report = (actualRoute: FileReadRoute, reused: FileReadReuse) => {
       log.info({ route: actualRoute, reused, size_bytes: revision.size_bytes, sha256: revision.sha256,
         ...(actualRoute === 'oss' ? { oss_source: revision.source === 'managed-object' ? 'object' : 'relay' } : {}) }, 'file snapshot acquired')
     }
     if (revision.sha256 === null) {
+      context.reads?.state({ status: 'transferring', route })
       const bytes = await open(context)
       report(route, null)
       return bytes
@@ -140,22 +140,27 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
           for (const row of subscribers) row.progress?.(done, total)
         },
       }
+      const carrying = (actual: FileReadRoute) => {
+        current.route = actual
+        for (const { hooks } of subscribers) hooks?.state({ status: 'transferring', route: actual })
+      }
       const bytes = Promise.resolve().then(async () => {
         const cached = await store.cachedCopy?.(backend, revision, transfer)
-        if (cached) { reuse('verified-local'); report('local', 'verified-local'); return cached }
+        if (cached) { carrying('local'); reuse('verified-local'); report('local', 'verified-local'); return cached }
         controller.signal.throwIfAborted()
+        carrying(route)
         const file = await open(transfer)
         report(route, current.reuse)
         return file
       })
-      const current: Flight = { route, bytes, controller, subscribers, reuse: null }
+      const current: Flight = { bytes, controller, subscribers, reuse: null }
       flights.set(key, current)
       flight = current
     }
     const joined = flight
     const row = { hooks: context.reads, progress: context.progress }
     joined.subscribers.add(row)
-    if (joined.route !== route) row.hooks?.state({ status: 'transferring', route: joined.route })
+    if (joined.route) row.hooks?.state({ status: 'transferring', route: joined.route })
     if (joined.reuse) row.hooks?.reuse(joined.reuse)
     if (joined.progress) row.progress?.(...joined.progress)
     const release = async () => {
@@ -195,10 +200,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
         for (const listener of listeners) listener(state)
       }
       const resolve = createFileResolver(providers, () => ({ ...hooks(), waitDeclared: true, state: emit,
-        reuse(value) {
-          reused = value
-          if (value === 'verified-local') emit({ status: 'transferring', route: 'local' })
-        },
+        reuse(value) { reused = value },
       }))
       const result = (async () => {
         let file: FileHandle | undefined

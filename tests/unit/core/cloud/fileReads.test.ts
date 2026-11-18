@@ -80,7 +80,11 @@ describe('device file reads', () => {
       { actor: 'agent', op: 'file-download', ref: { item_id: 'item', version: 3 } },
       { actor: 'agent', op: 'file-resolve', ref: { item_id: 'item', version: 3 } },
     ])
-    const repeat = await reads.request(message, account, { purpose: 'save' }).result
+    const repeatRequest = reads.request(message, account, { purpose: 'save' })
+    const repeatStates: FileReadState[] = []
+    repeatRequest.state$(state => repeatStates.push(state))
+    const repeat = await repeatRequest.result
+    expect(repeatStates.filter(state => state.status === 'transferring').map(state => state.route)).toEqual(['local'])
     expect(repeat).toMatchObject({ reused: 'verified-local', route: 'local' })
     expect((await saveToFileStore(repeat.file, root)).file_path).toBe(saved.file_path)
     expect(options.gets).toBe(1)
