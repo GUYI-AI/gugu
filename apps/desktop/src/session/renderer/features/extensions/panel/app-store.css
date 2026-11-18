@@ -1480,6 +1480,15 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   width: 44px;
   height: 44px;
 }
+.mk-market-extension-icon {
+  grid-template: 'icon' / 1fr;
+}
+.mk-market-extension-icon > * {
+  grid-area: icon;
+}
+.mk-market-extension-icon > img[data-loaded='false'] {
+  visibility: hidden;
+}
 .mk-market-card-identity {
   display: grid;
   flex: 1;

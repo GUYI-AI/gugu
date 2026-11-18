@@ -392,7 +392,7 @@ describe('Desktop marketplace tabs and app details', () => {
     ]);
     await render('agents');
     const document = dom.window.document;
-    const card = (id: string) => document.querySelector(`[data-testid="agent-market-card-${id}"]`);
+    const card = (id: string) => document.querySelector(`[data-testid="agent-market-card-${id}"], [data-testid="featured-agent-card-${id}"]`);
     expect(card('claude')?.textContent).toContain(translateSessionMessage('extensions.marketPublisher', { name: 'Anthropic' }));
     expect(card('claude')?.textContent).toContain(translateSessionMessage('extensions.installedMark'));
     expect(card('kilocode')?.textContent).not.toContain(translateSessionMessage('extensions.installedMark'));
@@ -405,7 +405,8 @@ describe('Desktop marketplace tabs and app details', () => {
     await act(async () => nextBatch!.click());
     expect(document.querySelector('[data-testid="featured-agent-card-kilocode"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="featured-agent-card-claude"]')).toBeNull();
-    await press('[data-testid="agent-market-card-kilocode"]');
+    expect(document.querySelector('[data-testid="agent-market-card-kilocode"]')).toBeNull();
+    await press('[data-testid="featured-agent-card-kilocode"]');
     expect(document.querySelector('[data-testid="chosen-agent-detail"]')?.textContent).toBe('kilocode');
     await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
     await press('[data-testid="agent-market-chip-general"]');
@@ -463,7 +464,7 @@ describe('Desktop marketplace tabs and app details', () => {
     );
     const tiles = () => [...document.querySelectorAll('[data-testid^="extension-card-"]')].map((node) => node.getAttribute('data-testid'));
     expect(chips).toEqual(['all', 'research', 'productivity', 'developer']);
-    expect(tiles()).toEqual(['extension-card-pomo', 'extension-card-arxiv', 'extension-card-trace']);
+    expect(tiles()).toEqual(['extension-card-arxiv', 'extension-card-trace']);
     expect(document.querySelector('[data-testid="extensions-market-sort-newest"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="extensions-market-sort-popular"]')).toBeNull();
     expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).not.toBeNull();
@@ -486,7 +487,7 @@ describe('Desktop marketplace tabs and app details', () => {
 
   it('第一次装、什么权限都不要的:产品页头上点「安装」就装,不弹框', async () => {
     await render();
-    await press('[data-testid="extension-card-pomo"]');
+    await press('[data-testid="featured-extension-card-pomo"]');
     await press('[data-testid="market-detail-primary"]');
     expect(dom.window.document.querySelector('[data-testid="market-detail-confirmation"]')).toBeNull();
     expect((h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket).toHaveBeenLastCalledWith({
@@ -549,7 +550,7 @@ describe('Desktop marketplace tabs and app details', () => {
       } as never);
       h.api.list.mockResolvedValueOnce({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins } } as never);
       await render();
-      await press('[data-testid="extension-card-pomo"]');
+      await press('[data-testid="featured-extension-card-pomo"]');
       const action = dom.window.document.querySelector('[data-testid="market-detail-primary"]')?.textContent ?? null;
       // The product page is drawn either way (a missing button would make the arm without an offer pass on nothing).
       expect(action).not.toBeNull();
@@ -563,7 +564,7 @@ describe('Desktop marketplace tabs and app details', () => {
     h.api.list.mockResolvedValue({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins: { pomo: 'market' } } } as never);
     try {
       await render();
-      await press('[data-testid="extension-card-pomo"]');
+      await press('[data-testid="featured-extension-card-pomo"]');
       const more = dom.window.document.querySelector<HTMLButtonElement>('[data-testid="market-detail-more"]')!;
       await act(async () => more.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
       await press('[data-testid="market-detail-uninstall"]');
@@ -594,7 +595,7 @@ describe('Desktop marketplace tabs and app details', () => {
     });
     try {
       await render();
-      await press('[data-testid="extension-card-pomo"]');
+      await press('[data-testid="featured-extension-card-pomo"]');
       await until('older release drawn', () => !!dom.window.document.querySelector('[data-testid="extension-history-pomo-0.9.0"] .xp-history-action button'));
       expect(dom.window.document.querySelector('[data-testid="extension-history-pomo-0.9.0"]')?.textContent).not.toContain('Legacy release notes');
       await press('[data-testid="extension-history-pomo-0.9.0"] .xp-history-action button');

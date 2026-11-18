@@ -3,7 +3,7 @@ import {
   appCategory, connectedAppsCatalog, type AppCategoryId, type CatalogApp,
 } from '@/components/assistant/connected-app-catalog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid } from './desktop-market-cards';
+import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured } from './desktop-market-cards';
 
 const featuredIds = ['feishu', 'dingtalk', 'qq-mail'];
 
@@ -26,11 +26,17 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
     ...directory.categories.map(({ id, title }) => ({ value: id, label: title })),
   ];
   const active = choices.some(({ value }) => value === category) ? category : 'all';
-  const visible = directory.results.filter((app) => active === 'all' || appCategory(app) === active);
-  const featured = featuredIds.flatMap((id) => {
-    const app = directory.results.find((item) => item.id === id);
-    return app ? [app] : [];
-  });
+  const featured = useMarketFeatured(
+    featuredIds.flatMap((id) => {
+      const app = directory.results.find((item) => item.id === id);
+      return app ? [app] : [];
+    }),
+    directory.results.filter((app) => !featuredIds.includes(app.id))
+  );
+  const featuredOnPage = !directory.searching && active === 'all' ? featured.items : [];
+  const visible = directory.results
+    .filter((app) => (active === 'all' || appCategory(app) === active) && !featuredOnPage.includes(app))
+    .sort((a, b) => Number(b.state === 'connected') - Number(a.state === 'connected'));
   const card = (app: T, isFeatured = false) => (
     <MarketCard
       key={app.id}
@@ -46,11 +52,10 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
   );
   return (
     <>
-      {!directory.searching && (
+      {!directory.searching && active === 'all' && (
         <MarketFeatured
           title={translate('extensions.featuredConnectors')}
-          items={featured}
-          more={directory.results.filter((app) => !featuredIds.includes(app.id))}
+          {...featured}
           renderCard={(app) => card(app, true)}
         />
       )}
@@ -61,9 +66,9 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
         <MarketGrid title={translate(directory.searching ? 'extensions.searchResults' : 'extensions.tabConnectors')} heading={directory.searching} testId="connector-market-grid">
           {visible.map((app) => card(app))}
         </MarketGrid>
-      ) : (
+      ) : featuredOnPage.length === 0 ? (
         <div className="mk-empty" role="status">{translate('extensions.noConnectors')}</div>
-      )}
+      ) : null}
     </>
   );
 }

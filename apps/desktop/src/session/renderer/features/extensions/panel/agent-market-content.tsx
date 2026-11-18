@@ -10,8 +10,8 @@ import {
 import type { MarketListItem } from '@shared/extensions/market';
 import { queryScore } from '@shared/extensions/query-score';
 import type { ResourceContext } from '@shared/resource-actions';
-import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, type MarketCategoryChoice } from './desktop-market-cards';
-import { ExtensionMonogram } from './extension-monogram';
+import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured, type MarketCategoryChoice } from './desktop-market-cards';
+import { MarketExtensionIcon } from './market-extension-icon';
 import { ShelfSkeleton } from './extension-skeletons';
 import { marketAgentDescription } from './market-agent-description';
 
@@ -47,7 +47,7 @@ export function AgentMarketContent({
       .map((key) => ({ value: key, label: categoryLabel(key) })),
   ];
   const activeCategory = choices.some((choice) => choice.value === category) ? category : 'all';
-  const visible = rows.filter(({ agent, group, description }) =>
+  const matching = rows.filter(({ agent, group, description }) =>
     (activeCategory === 'all' || group === activeCategory) &&
     (!search || queryScore(search, [agent.name, agent.id, agent.publisher, description].join('\n')))
   );
@@ -61,7 +61,7 @@ export function AgentMarketContent({
         key={item.manifest.id}
         testId={`${featured ? 'featured-extension' : 'extension'}-card-${item.manifest.id}`}
         name={name}
-        icon={<span className="mk-icon"><ExtensionMonogram name={name} iconDataUrl={item.cloud.iconUrl} /></span>}
+        icon={<MarketExtensionIcon name={name} iconUrl={item.cloud.iconUrl} />}
         publisher={translate('extensions.official')}
         category={categoryLabel('general')}
         description={subtitle}
@@ -85,21 +85,27 @@ export function AgentMarketContent({
       onOpen={() => onOpenAgentDetail(agent.id)}
     />
   );
-  const featured = [
-    ...(assistant ? [assistantCard(assistant, true)] : []),
-    ...featuredAgentIds.flatMap((id) => {
-      const item = rows.find(({ agent }) => agent.id === id);
-      return item ? [agentCard(item, true)] : [];
-    }),
-  ];
+  const asFeatured = (row: typeof rows[number]) => ({ id: row.agent.id, card: agentCard(row, true) });
+  const featured = useMarketFeatured(
+    [
+      ...(assistant ? [{ id: assistant.manifest.id, card: assistantCard(assistant, true) }] : []),
+      ...featuredAgentIds.flatMap((id) => {
+        const row = rows.find(({ agent }) => agent.id === id);
+        return row ? [asFeatured(row)] : [];
+      }),
+    ],
+    rows.filter(({ agent }) => !featuredAgentIds.includes(agent.id)).map(asFeatured)
+  );
+  const featuredOnPage = !search && activeCategory === 'all' ? featured.items : [];
+  const visible = matching.filter(({ agent }) => !featuredOnPage.some(({ id }) => id === agent.id));
+  const showAssistant = assistantInResults && !featuredOnPage.some(({ id }) => id === assistant.manifest.id);
 
   return (
     <>
-      {!search && <MarketFeatured
+      {!search && activeCategory === 'all' && <MarketFeatured
         title={translate('extensions.featuredAgents')}
-        items={featured}
-        more={rows.filter(({ agent }) => !featuredAgentIds.includes(agent.id)).map((item) => agentCard(item, true))}
-        renderCard={(card) => card}
+        {...featured}
+        renderCard={({ card }) => card}
       />}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={activeCategory} onChange={onCategoryChange} testIdPrefix="agent-market-chip" />
@@ -111,14 +117,14 @@ export function AgentMarketContent({
           <Button type="button" variant="ghost" size="sm" onClick={() => void refetch()}>{translate('extensions.retry')}</Button>
         </div>
       )}
-      {visible.length > 0 || assistantInResults ? (
+      {visible.length > 0 || showAssistant ? (
         <MarketGrid title={title} heading={!!search} testId="agent-market-grid">
-          {assistantInResults && assistantCard(assistant)}
+          {showAssistant && assistantCard(assistant)}
           {visible.map((item) => agentCard(item))}
         </MarketGrid>
       ) : isPending || assistantLoading ? (
         <div className="mk-sec"><ShelfSkeleton label={translate('extensions.loading')} /></div>
-      ) : !isError ? (
+      ) : !isError && featuredOnPage.length === 0 ? (
         <div className="mk-empty">{search ? translate('agentsPage.noMatch', { query: search }) : translate('agentsPage.emptyAll')}</div>
       ) : null}
     </>

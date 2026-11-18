@@ -60,32 +60,39 @@ export function MarketGrid({ title, heading, stale, testId, children }: {
   );
 }
 
-export function MarketFeatured<T>({ title, items, more, renderCard }: {
+export function useMarketFeatured<T>(featured: readonly T[], more: readonly T[]) {
+  const [batch, setBatch] = useState(0);
+  const batchCount = 1 + Math.ceil(more.length / FEATURED_COUNT);
+  const index = featured.length ? batch % batchCount : 0;
+  const offset = (index - 1) * FEATURED_COUNT;
+  const items = index === 0 ? featured : more.slice(offset, offset + FEATURED_COUNT);
+  return {
+    items,
+    next: featured.length > 0 && batchCount > 1 ? () => setBatch((value) => (value + 1) % batchCount) : undefined,
+  };
+}
+
+export function MarketFeatured<T>({ title, items, next, renderCard }: {
   title: string;
   items: readonly T[];
-  more?: readonly T[];
+  next?: () => void;
   renderCard: (item: T) => ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const [batch, setBatch] = useState(0);
   if (items.length === 0) return null;
-  const batchCount = 1 + Math.ceil((more?.length ?? 0) / FEATURED_COUNT);
-  const index = batch % batchCount;
-  const offset = (index - 1) * FEATURED_COUNT;
-  const visible = index === 0 ? items : more?.slice(offset, offset + FEATURED_COUNT);
   return (
     <section className="mk-market-featured">
       <div className="mk-market-section-title">
         <h3>{title}</h3>
-        {batchCount > 1 && (
-          <Button variant="ghost" size="sm" onClick={() => setBatch((value) => (value + 1) % batchCount)}>
+        {next && (
+          <Button variant="ghost" size="sm" onClick={next}>
             <RefreshCw className="size-4" aria-hidden />
             {translate('extensions.marketNextBatch')}
           </Button>
         )}
       </div>
       <ul className="mk-market-grid" aria-label={title}>
-        {visible?.map(renderCard)}
+        {items.map(renderCard)}
       </ul>
     </section>
   );
