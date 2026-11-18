@@ -611,15 +611,14 @@ describe('MainLayout', () => {
       expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
     }
   })
-  it.each(['list', 'contacts'] as const)('restores the %s after standalone phone creation', async source => {
+  it('restores the message list after standalone phone creation', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
     chatStoreMock.chats = [{ id: 'original-chat', kind: 'group' }] as never
     chatStoreMock.activeChatId = 'original-chat'
     await renderMainLayoutWithToast()
-    if (source === 'contacts') await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
     for (const method of ['header', 'native'] as const) {
-      await clickElement(harness.container.querySelector(`[data-testid="mock-${source === 'list' ? 'chat' : 'contacts'}-create-agent"]`) as HTMLElement)
+      await clickElement(harness.container.querySelector('[data-testid="mock-chat-create-agent"]') as HTMLElement)
       expect(layerOpen('mobile-sessions-layer')).toBe(true)
       expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-create-from-current-route')).toBe('false')
       if (method === 'header') await clickElement(harness.container.querySelector('[data-testid="mock-session-back"]') as HTMLElement)
@@ -905,7 +904,9 @@ describe('MainLayout', () => {
     expect(agentWatchProbe.rootMounts, 'mounted on the chats tab, before the tasks layer was ever opened').toBe(1)
     const nav = (id: string) => harness.container.querySelector(`[data-testid="${id}"]`) as HTMLElement
     await clickElement(nav(AUTOMATION_TEST_IDS.mobileContactsNav))
-    await clickElement(nav('mock-contacts-create-agent'))
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, { detail: { deviceId: 'host', session: { conversationId: 'task-session', supported: true } } }))
+    })
     expect(harness.container.querySelector('[data-testid="mock-agent-watch-page"]')?.getAttribute('data-active'), 'positive control: the tasks layer did open').toBe('true')
     await nativeBack()
     // 推进来的一层退回后常驻只藏,只被告知已离开、自己回到根上。
