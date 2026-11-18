@@ -3,7 +3,7 @@ export type ActiveSection =
   // live in its App, drawn over its panel (owner 11-06, 11-12「设置里面不应该有咕咕设置」). The keys stay for its own settings
   // page's inner sections and for old routes, which the shell sends to the App (`isAssistantSettingsSection`).
   | 'assistant'
-  // Also the user's own connected apps in Settings on desktop and phone.
+  // Also the user's own connected apps in phone Settings.
   | 'connectors'
   | 'account'
   | 'general'
@@ -27,6 +27,7 @@ export type ActiveSection =
   | 'phone'
   // Settings the session page holds (its own components draw them, product spec); only where a task host runs.
   | 'sessions'
+  | 'prompts'
   | 'interface'
   | 'resource-monitor'
   | 'browser'
@@ -36,7 +37,7 @@ export const isAssistantSettingsSection = (section: ActiveSection): section is '
   section === 'assistant' || section === 'connectors' || section === 'channels'
 
 /** The sections the session page draws (its own components and settings store); shown only where a task host runs. */
-export const SESSION_HOST_SETTINGS_SECTIONS: readonly ActiveSection[] = ['sessions', 'interface', 'browser', 'subscriptions', 'resource-monitor']
+export const SESSION_HOST_SETTINGS_SECTIONS: readonly ActiveSection[] = ['sessions', 'prompts', 'interface', 'browser', 'subscriptions', 'resource-monitor']
 
 /** 设置左栏的分组(owner 10-16 全局设置重做):组名只在桌面左栏画小标题;手机「我的」同一份分组。 */
 export type SettingsGroupId = 'account' | 'preferences' | 'work' | 'about'
@@ -58,7 +59,7 @@ export const SETTINGS_GROUPS: readonly { readonly id: SettingsGroupId; readonly 
   { id: 'preferences', sections: ['general', 'data-import', 'connectors', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },
   // agent 跑起来的那几样(会话的默认行为、仓库、浏览器)挨着「设备」。App 只在手机壳上:那里的 App 由
   // 这一页自己的 App 仓管(L9)。
-  { id: 'work', sections: ['sessions', 'browser', 'devices', 'apps', 'phone'] },
+  { id: 'work', sections: ['sessions', 'prompts', 'browser', 'devices', 'apps', 'phone'] },
   { id: 'about', sections: ['about'] },
 ]
 export const SETTINGS_SECTION_GROUPS: readonly (readonly ActiveSection[])[] = SETTINGS_GROUPS.map((group) => group.sections)

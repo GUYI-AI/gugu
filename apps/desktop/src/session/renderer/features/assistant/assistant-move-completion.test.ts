@@ -21,6 +21,7 @@ it('restores legacy completed handoffs online and finishes without touching any 
   expect(deps.journal.clear).toHaveBeenCalledOnce();
   expect(report?.accounts).toEqual({ moved: [], skipped: [], unsupported: false });
   expect(report?.warnings).toEqual([]);
+  expect(report?.targetDeviceId).toBe('cloud');
 });
 
 it('counts accounts an older journal verified as moved, and never revokes them', async () => {

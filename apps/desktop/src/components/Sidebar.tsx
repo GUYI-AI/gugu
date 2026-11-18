@@ -17,7 +17,7 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { HelpCircle, Library, MoreHorizontal, Settings } from '@/lib/icons'
+import { HelpCircle, MoreHorizontal, Settings } from '@/lib/icons'
 import { SidebarAppDock } from './sidebar/SidebarAppDock'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest } from '../lib/productTour'
@@ -187,11 +187,10 @@ function HelpOnRail() {
 // 「App」 and the dock are places on the one session page (its `apps` / `app` views, drawn without the task list): the rail
 // shows the session page there. Desktop only — Apps run in the desktop app.
 
-/** Where the session page is, as the rail lights it: its App page, one App from the dock, the library, or the tasks. */
-function sessionPagePlace(): 'tasks' | 'apps' | 'library' | { app: string } {
+/** Views with their own rail entry. */
+function sessionPagePlace(): 'tasks' | 'apps' | { app: string } {
   const view = appState.navigation.currentViewId
   if (view === 'apps') return 'apps'
-  if (view === 'library') return 'library'
   if (view === 'app') return { app: appState.navigation.viewParamsStore.app?.appId ?? '' }
   return 'tasks'
 }
@@ -380,19 +379,6 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
             rail="contacts"
             badge={pendingContactsCount}
           />
-          {platform.capabilities.agentRuntime && (
-            <RailItem
-              icon={<Library size={22} />}
-              active={activeTab === 'tasks' && sessionPagePlace() === 'library'}
-              onClick={() => {
-                onTabChange('tasks')
-                appState.navigation.navigate('library')
-              }}
-              title={t('shell.library')}
-              testId={AUTOMATION_TEST_IDS.sidebarLibraryNav}
-              rail="library"
-            />
-          )}
           {platform.capabilities.agentRuntime && (
             <AppsOnRail sessionsShown={activeTab === 'tasks'} showSessions={() => onTabChange('tasks')} />
           )}
