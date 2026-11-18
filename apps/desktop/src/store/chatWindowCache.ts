@@ -25,6 +25,8 @@ export class ChatWindowCache extends Map<string, MessageItem[]> {
     if (!at || before && historyTime(before) >= historyTime(at)) return
     this.cleared.set(chatId, at)
     this.update(chatId, rows => rows.filter(this.visible))
+    this.getHistory(chatId)?.applyHistoryClear()
+    for (const viewport of this.listeners.get(chatId)?.values() ?? []) viewport.window?.applyHistoryClear()
     const view = this.histories.get(chatId)?.view
     if (view) this.patchView(chatId, { threadMessages: view.threadMessages.filter(this.visible) })
   }

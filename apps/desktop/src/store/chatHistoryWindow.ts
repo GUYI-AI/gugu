@@ -98,6 +98,17 @@ export class ChatHistoryWindow {
     if (this.state.loading) this.publish({ ...this.state, loading: null })
   }
 
+  /** Personal clear retires an expired range and fences reads that began before its floor. */
+  applyHistoryClear = (): void => {
+    const rows = this.state.messages.filter(this.visible)
+    if (!rows.some(row => row.seq > 0)) {
+      this.reset(this.state.chatId, rows)
+      return
+    }
+    this.invalidate()
+    this.update(rows)
+  }
+
   setHasOlder = (hasOlder: boolean): void => {
     // Cache/page-fill hints cannot prove exhaustion: seq 1 and an empty older
     // response can. In particular a trimmed cache may carry an old false flag.
