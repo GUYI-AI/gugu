@@ -26,6 +26,7 @@ export const plugin = definePlugin(
   {
     id: 'copilot',
     name: 'GitHub Copilot',
+    publisher: 'GitHub',
     description:
       'GitHub Copilot CLI brings Copilot prompts to the terminal for code, shell, and search help.',
     websiteUrl: 'https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli',

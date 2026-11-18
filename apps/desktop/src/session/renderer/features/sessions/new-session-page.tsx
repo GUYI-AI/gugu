@@ -1,5 +1,8 @@
+import type { AgentProviderId } from '@gugu/session-plugins/agents';
+import type { ViewDefinition } from '@renderer/app/view-registry';
+import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
 import { useCreateSessionCallback } from '@renderer/features/sessions/create-session-modal/use-create-session-callback';
 import { useCreateSessionState } from '@renderer/features/sessions/create-session-modal/use-create-session-state';
@@ -9,7 +12,7 @@ import { SessionField } from '@renderer/features/sessions/session-config/session
 import type { ComposerVerbLook, InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { useInitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { SessionStateProvider } from '@renderer/features/sessions/session-config/session-state-context';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import { ComposerProjectPicker } from './composer-context-tray';
 import { describeImplicitProjectFailure, machineComposerProps } from './use-machine-create-target';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
@@ -55,6 +58,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   placeholder,
   verb,
   workspaceId,
+  preferredProvider,
   sendWithoutProject,
 }: {
   projectId: string | undefined;
@@ -94,6 +98,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
    * 缺省 = 项目根目录。只能是这个项目的文件夹 —— 不是的,主进程建会话时拒掉(fail loud)。
    */
   workspaceId?: string | null;
+  preferredProvider?: AgentProviderId;
   /**
    * #2569 这一框发的时候还没有项目(示例项目):按发送交给它 —— 它先把项目建出来,再把这一句交给那个项目的新任务框,
    * 任务在那边按同一条路建。能按 = 有内容、选中了智能体;`blocked` / `blockReason` 照旧挡。
@@ -128,6 +133,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     {
       // Selecting or clearing an optional project must not erase text the user has already written.
       resetPromptOnProjectChange: false,
+      ...(preferredProvider ? { preferredProvider } : {}),
       // 还没有项目的这一句也是要派进项目群的任务(示例变成的那个项目):照派进群的规矩判。
       dispatchesToChat: Boolean(taskChatId || sendWithoutProject),
       draft,
@@ -214,11 +220,15 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   );
 });
 
-export const NewSessionPage = observer(function NewSessionPage({
-  onSessionCreated
-}: {
+type NewSessionPageProps = {
+  agentSelection?: { agentId: string; deviceId?: string };
   onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
-} = {}) {
+};
+
+export const NewSessionPage = observer(function NewSessionPage({
+  onSessionCreated,
+  agentSelection,
+}: NewSessionPageProps) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
@@ -272,7 +282,7 @@ export const NewSessionPage = observer(function NewSessionPage({
   // 环境与分支,信息密度换的是"发任务前一眼确认跑在哪"。
   // gugu #2525: 控件本体抽到 composer-context-tray.tsx,与项目页、对话里派任务共用一份。
   // 项目选择器列账号下的全部项目,与机器无关;没选项目时机器选择器定在哪台的任务工作区里跑。
-  const { remote, machineContext, devicePicker } = useNewSessionMachine();
+  const { remote, machineContext, devicePicker } = useNewSessionMachine(agentSelection ? agentSelection.deviceId ?? null : undefined);
   const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={openProject} />;
 
   return (
@@ -295,6 +305,7 @@ export const NewSessionPage = observer(function NewSessionPage({
               // 换机器 = 换一个创建目标:整棵重挂,上一台机器的选择(agent、模型)不带到下一台;
               // 写好的话经 draftKey 那一格跟着走。
               key={remote?.deviceId ?? 'local'}
+              preferredProvider={agentSelection && remote?.deviceId === agentSelection.deviceId ? agentSelection.agentId : undefined}
               draftKey={NEW_SESSION_DRAFT_KEY}
               {...machineComposerProps(machineContext, { projectId: effectiveProjectId })}
               onSessionCreated={onSessionCreated}
@@ -310,3 +321,21 @@ export const NewSessionPage = observer(function NewSessionPage({
     </div>
   );
 });
+
+type NewSessionViewParams = { agentId?: string; deviceId?: string };
+
+function NewSessionViewWrapper({ children }: { children: ReactNode } & NewSessionViewParams) {
+  return <>{children}</>;
+}
+
+function NewSessionMainPanel(): ReactElement {
+  const { params: { agentId, deviceId } } = useParams('new-session');
+  return <NewSessionPage key={agentId} agentSelection={agentId ? { agentId, deviceId } : undefined} />;
+}
+
+export const newSessionView = {
+  WrapView: NewSessionViewWrapper,
+  TitlebarSlot: ShellTitlebar,
+  MainPanel: NewSessionMainPanel,
+  transientParams: ['agentId', 'deviceId'],
+} satisfies ViewDefinition<NewSessionViewParams>;

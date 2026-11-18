@@ -77,8 +77,8 @@ describe('the main-process commit host and actual canonical writer', () => {
     events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
       id: 'unwatched', seq: 0, referenceId: 'unwatched-ref', initiator: 'user', outcome: { kind: 'done' },
       items: [{ kind: 'message', id: 'unwatched-item', seq: 0, role: 'assistant', text: 'no window is open' }] } });
-    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
     await withStoredTurns('c', async () => {});
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 });
     // Until host GC reclaims them, sources exist only for a subscribed window.
     expect(await readdir(join(state.root, 'session-window-cache', 'committed'))).toEqual([]);
     expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_window_commit_receipts').get()).toEqual({ n: 0 });
@@ -98,7 +98,8 @@ describe('the main-process commit host and actual canonical writer', () => {
     events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
       id: 'kept', seq: 0, referenceId: 'kept-ref', initiator: 'user', outcome: { kind: 'done' },
       items: [{ kind: 'message', id: 'kept-item', seq: 0, role: 'assistant', text: 'canonical history still persists' }] } });
-    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
+    await withStoredTurns('c', async () => {});
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 });
     expect(project).not.toHaveBeenCalled();
   });
 
@@ -110,7 +111,9 @@ describe('the main-process commit host and actual canonical writer', () => {
     const emit = (referenceId: string) => events.emit({ sessionId: 'c', source: 'live', turn: {
       id: referenceId, seq: 0, referenceId, initiator: 'user', items: [], outcome: { kind: 'done' } } });
     emit('giant'); emit('next');
-    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 }));
+    // The source dispatches synchronously, so this barrier is behind both canonical writes.
+    await withStoredTurns('c', async () => {});
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 });
     let page = await owner.read(after); const entries = [...page.entries];
     if (entries.length < 2) { owner.ack(page.next); page = await owner.read(page.next); entries.push(...page.entries); }
     expect(entries.map(entry => [entry.referenceId, entry.kind])).toEqual([['giant', 'needs_location'], ['next', 'insert']]);
@@ -160,8 +163,10 @@ describe('the main-process commit host and actual canonical writer', () => {
     } });
     try {
       emit('one'); await entered.promise; emit('two');
-      await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 }));
-      expect(await withStoredTurns('c', async () => createWindowCommitReceipts(fixture.sqlite).byReference('c', 'two')?.storedSeq)).toBe(1);
+      await withStoredTurns('c', () => {
+        expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 });
+        expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'two')?.storedSeq).toBe(1);
+      });
       expect(project).toHaveBeenCalledTimes(2); expect(seen).not.toHaveBeenCalled();
     } finally { gate.resolve({ projectionId: 'projection-one' }); await withStoredTurns('c', async () => {}); }
     const first = await reading; expect(first.entries[0].referenceId).toBe('one'); owner.ack(first.next);

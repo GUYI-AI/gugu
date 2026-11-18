@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parseGuguLink, readGuguUrl } from './guguLink'
+import { guguLink, parseGuguLink, readGuguUrl } from './guguLink'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -47,6 +47,16 @@ describe.each([['a current browser', false], ['an old WebView', true]])('parseGu
     expect(parse('gugu://APP/kanban')).toBeNull()
     expect(parse('https://ext/kanban/board')).toBeNull()
     expect(parse('gugu://ext/kanban')).toBeNull()
+  })
+
+  it('round-trips an agent detail without treating it as an extension', () => {
+    const target = { kind: 'agent-app-detail', agentId: 'kiro-cli', deviceId: 'device-1' } as const
+    expect(parse(guguLink(target, 'gugu-beta'))).toEqual(target)
+    expect(parse('gugu://agent-app/codex')).toEqual({ kind: 'agent-app-detail', agentId: 'codex' })
+    expect(parse('gugu://agent-app/codex?variant=local')).toBeNull()
+    expect(parse('gugu://agent-app/codex?device=a&device=b')).toBeNull()
+    expect(parse('gugu://agent-app/codex?device=')).toBeNull()
+    expect(parse('gugu://agent-app/codex/extra')).toBeNull()
   })
 
   it('reads the authority of a login callback', () => {
