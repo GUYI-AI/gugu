@@ -180,7 +180,7 @@
   width: 16px;
   height: 16px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-sm);
 }
 .gg-import-checkbox [data-checked] { background: var(--primary); color: var(--primary-fg); }
 .gg-import-scope-actions { justify-content: end; margin-top: var(--spacing-sm); }

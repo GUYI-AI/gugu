@@ -58,7 +58,7 @@ export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
         </Button>} />
       {customizing && (
         <Sheet ariaLabel={t('settings.dataImport.chooseScope')} onClose={() => setCustomizing(false)}
-          zIndex="var(--z-overlay)">
+          dimNested zIndex="var(--z-settings-modal)">
           <div className="gg-import-scope">
             <div className="gg-import-scope-header">
               <h3>{t('settings.dataImport.chooseScope')}</h3>
