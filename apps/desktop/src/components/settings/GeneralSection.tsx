@@ -6,10 +6,11 @@ import { useMobileShell } from '../../hooks/useMobileShell'
 import { Button } from '../ui/Button'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
 import {
-  ANDROID_NOTIFICATION_PROBLEM_COPY, openAndroidNotificationSettings, readAndroidNotificationProblem,
+  ANDROID_NOTIFICATION_PROBLEM_COPY, androidNotificationProblem, openAndroidNotificationSettings,
   sendTestNotification, type AndroidNotificationProblem,
 } from '../../lib/notificationDiagnostics'
 import { useAppActive } from '../../lib/onScreenChat'
+import { useReplica } from '../../lib/replica'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
@@ -93,16 +94,14 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
     kind: keyof typeof NOTIFICATION_HINT_KEYS
     silent?: boolean
   } | null>(null)
-  const [androidProblem, setAndroidProblem] = useState<AndroidNotificationProblem | null | undefined>()
   const [bannerSeen, setBannerSeen] = useState<boolean | null>(null)
   const foreground = useAppActive()
   const testSilent = notificationTest?.silent
+  const reading = useReplica(androidNotificationProblem, testSilent === undefined ? null : [testSilent], { read: foreground })
+  const androidProblem = reading.state === 'value' ? reading.value.problem : undefined
   useEffect(() => {
-    if (testSilent === undefined || !foreground) return
-    let current = true
-    void readAndroidNotificationProblem(testSilent).then(problem => { if (current) setAndroidProblem(problem) })
-    return () => { current = false }
-  }, [foreground, notificationTest, testSilent])
+    if (testSilent !== undefined && foreground) void androidNotificationProblem.refresh(testSilent)
+  }, [foreground, testSilent])
   const notificationBlocked = systemNotificationStates.notifications === 'prompt'
     || systemNotificationStates.notifications === 'blocked'
   const notificationHint = notificationTest?.kind
@@ -204,8 +203,8 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
               aria-label={t('settings.general.notificationsTestAria')}
               onClick={() => {
                 const silent = platform.androidNotificationSettings ? !notificationSettings.sound : undefined
-                void sendTestNotification(silent).then((result) => {
-                  setAndroidProblem(undefined)
+                void sendTestNotification(silent).then(async result => {
+                  if (silent !== undefined) await androidNotificationProblem.fetch(silent)
                   setBannerSeen(null)
                   setNotificationTest({ kind: result.kind, silent })
                   void refreshSystemNotificationState()

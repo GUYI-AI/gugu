@@ -1,5 +1,6 @@
 import { platform } from '../platform'
 import { i18n } from '@/i18n'
+import { replica } from './replica'
 
 /**
  * @@@5301 通知这一格的两个出口:**替用户去开权限**,以及**自己验一遍链路**。
@@ -46,6 +47,12 @@ export async function readAndroidNotificationProblem(silent: boolean): Promise<A
     return undefined
   }
 }
+
+export const androidNotificationProblem = replica({
+  name: 'androidNotificationProblem',
+  scope: 'device',
+  read: async (_owner, silent: boolean) => ({ problem: await readAndroidNotificationProblem(silent) }),
+})
 
 export async function openAndroidNotificationSettings(silent: boolean, problem?: AndroidNotificationProblem | null): Promise<void> {
   try {

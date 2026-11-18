@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { platform } from '../platform'
 import { dismissNotice, notify } from './notices'
 import {
-  ANDROID_NOTIFICATION_PROBLEM_COPY, openAndroidNotificationSettings, readAndroidNotificationProblem,
+  ANDROID_NOTIFICATION_PROBLEM_COPY, androidNotificationProblem, openAndroidNotificationSettings,
 } from './notificationDiagnostics'
 import { useNotificationSettings } from './notificationSettings'
 import { useAppActive } from './onScreenChat'
@@ -26,7 +26,7 @@ export function useAndroidNotificationReminder(active: boolean): void {
     if (!foreground) return
     let current = true
     const silent = !settings.sound
-    void readAndroidNotificationProblem(silent).then(problem => {
+    void androidNotificationProblem.fetch(silent).then(({ problem }) => {
       if (!current || problem === undefined) return
       if (!problem) {
         previous.current = null
