@@ -109,7 +109,7 @@ export function MarketDetailCard({
   const { translate } = useSessionMessages();
   return (
     <>
-      <DialogHeader className="items-start gap-4 pb-0 [&>button]:mt-1">
+      <DialogHeader className="relative gap-4 pr-16 pb-0 [&_[data-slot=dialog-close]]:absolute [&_[data-slot=dialog-close]]:right-6 [&_[data-slot=dialog-close]]:top-6">
         <div className="flex min-w-0 gap-4">
           <div className="size-[68px] shrink-0 overflow-hidden rounded-2xl [&>*]:!size-full">{icon}</div>
           <div className="min-w-0">
@@ -137,7 +137,7 @@ export function MarketDetailCard({
       </DialogHeader>
       <div className="min-h-0 space-y-6 overflow-y-auto px-6 pt-5 pb-6">
         {notice}
-        {subtitle && <div className="leading-relaxed text-foreground-muted">{subtitle}</div>}
+        {subtitle && <div className="leading-relaxed text-foreground-muted [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">{subtitle}</div>}
         {!!facts?.length && (
           <dl className="flex flex-wrap divide-x divide-border rounded-2xl border border-border py-3 text-center">
             {facts.map(({ label, value }) => (
