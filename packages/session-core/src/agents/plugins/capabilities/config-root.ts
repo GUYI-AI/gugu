@@ -1,4 +1,4 @@
-import type { AgentFirstRunState } from './session-bundle';
+import type { AgentFirstRunState, AgentHomeImportGroup } from './session-bundle';
 
 /**
  * 咕咕替各家持有的**独立 home** 都放在 `<GUGU_HOME>/agent-homes/<providerId>/` 下,一家一格。
@@ -36,6 +36,8 @@ export function agentHomeSegments(providerId: string, userPath: string): readonl
 }
 
 export type ResolvedAgentHome = {
+  importGroups: readonly AgentHomeImportGroup[];
+  credentialPaths: readonly string[];
   providerId: string;
   /** 把配置根挪过去的环境变量名 —— 递进子进程的就是它。 */
   envVar: string;
@@ -44,7 +46,7 @@ export type ResolvedAgentHome = {
   shadowHome: string;
   /** 咕咕这一份配置根 —— `envVar` 的值。 */
   configRoot: string;
-  /** 用户那一份 —— **只**在首次复制时读一次,之后永不再看。 */
+  /** 用户那一份 —— 仅供显式导入、重新导入与以前会话读取。 */
   userConfigRoot: string;
   /**
    * 分家时**不**带过来的条目(相对配置根,`/` 分隔)—— 见 `AgentConfigRoot.carryExclusions`。

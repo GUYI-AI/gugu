@@ -109,11 +109,12 @@ export async function resolveLocalAgentRunContext(
  * 依赖管理器,于是体检 → 算环境 → 解析 → 体检,自己咬自己。
  */
 export async function resolveLocalAgentSpawnEnv(
-  providerId: string
+  providerId: string,
+  purpose?: 'version-probe',
 ): Promise<Record<string, string>> {
   const [settings, configRootEnv] = await Promise.all([
     readProviderSettings(providerId),
-    resolveAgentHomeEnv(providerId),
+    resolveAgentHomeEnv(providerId, purpose),
   ]);
   return composeAgentSpawnEnv(
     {

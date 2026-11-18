@@ -621,21 +621,34 @@ export interface SessionTuiQuestionAnswer {
  * 通用机制只认这里声明的两个事实(变量名 + 用户那份的位置),kimi 只是第一个声明的。
  * 加一家 = 加一条声明,❌ 不是在通用代码里加一个 `if (providerId === 'x')`。
  */
-/**
- * 咕咕把设置递给引擎，只有两条路。哪一家走哪条，见 product spec
- * 的「两条路：运行时注入，与托管配置根」。
- *
- * · `'runtime'` —— **默认**。启动参数 / 环境变量 / 每会话临时文件。性质是**不落地**：
- *   进程退出，用户那侧与咕咕这侧都不留新增产物。
- * · `'managed-config-root'` —— 咕咕在自己目录里为这一家**长期持有**一份配置根。
- *   只给**没有运行时通道**的那几家；这不是残留，是那一类引擎的正常形态。
- *
- * ⚠️ 放进 `'managed-config-root'` 的举证责任在提议方：拿实测证明这一家的运行时通道
- *    递不进这项设置。「没试过」「顺手」「隔壁那家也这么做」都不算。
- */
+/** managed-config-root is the default for every harness that declares configRoot. */
 export type AgentInjectionMode = 'runtime' | 'managed-config-root';
 
+export type AgentHomeGroupId = 'settings' | 'hooks' | 'mcp' | 'rules' | 'skills' | 'agents' | 'models';
+
+/**
+ * Top-level field selection separates hooks from other settings in the same file.
+ * A ../file source is beside the default root. When the person sets envVar, that CLI
+ * reads it inside the relocated root, so the source becomes file (target unchanged).
+ * A harness must verify that relocation behavior before declaring a sibling source.
+ */
+export type AgentHomeImportPath = string | {
+  path: string;
+  keys?: readonly string[];
+  omitKeys?: readonly string[];
+  target?: string;
+};
+
+export type AgentHomeImportGroup = {
+  id: AgentHomeGroupId;
+  paths: readonly AgentHomeImportPath[];
+  evidence: string;
+};
+
 export interface AgentConfigRoot {
+  importGroups: readonly AgentHomeImportGroup[];
+  /** Never read, copied, hashed or returned to the renderer. */
+  credentialPaths: readonly { path: string; evidence: string }[];
   /**
    * 把这家的配置根挪走的环境变量名(如 `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`)。
    *
@@ -650,22 +663,9 @@ export interface AgentConfigRoot {
   /**
    * 分家时**不带过来**的条目 —— 相对配置根,**必答**,❌ 无默认。
    *
-   * ## 为什么是「排除」不是「挑选」
-   *
-   * 先做的是挑选(白名单),被判否 —— **它的失败方向是错的那一边**:
-   *  · 漏排一个**缓存/程序**目录 ⇒ 多拷点垃圾。可测量、可回收、看得见。
-   *  · 漏挑一个**配置**条目 ⇒ 用户那项设置没跟过来,**不报错、没日志**,
-   *    用户只会觉得咕咕把他的东西弄丢了 —— 而 product spec
-   *    要的是「用户在咕咕外面配好的,在咕咕里就该是同一个」。
-   *
-   * 而引擎的配置面由上游定义、随版本增删 ⇒ 白名单**结构上**跟不上:换个版本多出一个
-   * 配置文件,清单不会自己长出来。实测教训:第一版按 mac1 那台 `~/.kimi-code` 的目录布局
-   * 挑清单,漏了 `skills/`、`AGENTS.md`、`SYSTEM.md`、`agents/` 四条 —— 它们只在用户
-   * **用过那个功能之后**才存在,那台一个都没有。
-   *
-   * ⇒ 默认全带,这里只列**不是用户配置**的那些(引擎自己会重新长出来的,或咕咕自己会写的)。
-   *   这个集合小得多、跨版本也稳定得多(`bin/` `cache/` `logs/` `tmp/` 这类名字不太变),
-   *   而且真漏排一条的代价是多占点盘,**不是丢用户数据**。
+   * Unknown configuration files remain in the settings group so upstream additions
+   * are not silently lost. Declared groups determine what the person chooses;
+   * credentials, links, databases and oversized files are always excluded.
    *
    * ## 语义
    *
@@ -1687,6 +1687,11 @@ const sessionTuiInterruptSchema = z.object({
  * ⚠️ `envVar` 与 `userPath` 都不许为空:两者缺一,独立 home 要么算不出路径、
  * 要么递不进子进程,而两种失败都是**静默**的(会话照常起,只是读了错的那份配置)。
  */
+const importPathSchema = (sibling: boolean) => z.string().min(1).refine((path) =>
+  !path.startsWith('/') && !/^[A-Za-z]:/.test(path) && !path.includes('\\')
+  && (!path.split('/').includes('..') || sibling && /^\.\.\/[^/]+$/.test(path)),
+{ message: 'Import paths must stay inside the declared root (or name one declared sibling file)' });
+
 const agentConfigRootSchema = z
   .object({
     envVar: z.string().min(1),
@@ -1704,6 +1709,17 @@ const agentConfigRootSchema = z
         { message: 'configRoot.userPath 必须是 home 相对路径,❌ 绝对路径、❌ `..`' }
       ),
     evidence: z.string().min(1),
+    importGroups: z.array(z.object({
+      id: z.enum(['settings', 'hooks', 'mcp', 'rules', 'skills', 'agents', 'models']),
+      paths: z.array(z.union([importPathSchema(true), z.object({
+        path: importPathSchema(true),
+        keys: z.array(z.string().min(1)).optional(),
+        omitKeys: z.array(z.string().min(1)).optional(),
+        target: importPathSchema(false).optional(),
+      }).strict()])),
+      evidence: z.string().min(1),
+    }).strict()),
+    credentialPaths: z.array(z.object({ path: z.string().min(1), evidence: z.string().min(1) }).strict()),
     // ⚠️ **必答,但允许为空**:空数组 = 「这一家的配置根里没有派生物,全都要带」,
     //    那是个合法答案;而字段缺省 = 没人看过这一家的配置根里有什么。
     //    ❌ 别再给它 `.min(1)`:那会逼着为了满足 schema 去编一条排除项。

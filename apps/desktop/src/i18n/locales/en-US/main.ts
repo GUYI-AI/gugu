@@ -1,4 +1,56 @@
 export default {
+  "agentHome": {
+  "mcpCount": "including {{count}} MCP servers",
+  "unmarkedMcp": "Existing MCP servers are kept because their origin was not recorded: {{names}}",
+  "terminalSignIn": "{{name}} in your terminal needs to sign in again.",
+  "oldSessionsSkipped": "{{count}} old session files were too large and were not brought over.",
+  "accountSignIn": "{{name}} needs to sign in again inside Gugu.",
+  "signInAction": "Sign in",
+
+  "title": "Bring your local configuration",
+  "intro": "Copy the configuration found on this computer into Gugu. Your terminal keeps its own configuration.",
+  "skip": "Skip",
+  "importContinue": "Import and continue",
+  "failed": "Configuration import failed",
+  "signIn": "Sign-ins are not copied. Sign in once inside Gugu; your terminal sign-in stays separate.",
+  "migration": "Your existing Gugu tasks and accounts will be kept.",
+  "copyNote": "This makes a copy. Later terminal edits can be brought in from Settings → Subscriptions → Re-import. Gugu changes never write back to your terminal.",
+  "mcpSecrets": "{{names}}: includes secrets, copied with the selected configuration.",
+  "projectMcp": "Another {{count}} project-level MCP servers are not imported.",
+  "groups": {
+    "settings": "Settings and permissions",
+    "hooks": "Hooks",
+    "mcp": "MCP servers",
+    "rules": "Rules",
+    "skills": "Skills",
+    "agents": "Agents and commands",
+    "models": "Models"
+  },
+  "issue": {
+    "symlink": "Symbolic link skipped",
+    "tooLarge": "Too large; not imported",
+    "sourceChanged": "Source changed; retry",
+    "unreadable": "Could not read this file"
+  },
+  "local": "Local configuration",
+  "updated": "Local configuration has updates",
+  "row": "A copy was imported from {{path}} on {{date}}. Terminal and Gugu changes do not sync automatically.",
+  "notImported": "Choose which configuration to bring into Gugu.",
+  "reimport": "Re-import",
+  "reimportTitle": "Re-import local configuration",
+  "loginNotSynced": "Sign-ins are not synced here.",
+  "apply": "Import selected changes",
+  "cancel": "Cancel",
+  "uncertain": "Cannot tell which side changed",
+  "states": {
+    "unchanged": "Unchanged",
+    "userChanged": "Changed in terminal",
+    "guguChanged": "Changed in Gugu",
+    "bothChanged": "Both changed · select to replace with the terminal copy",
+    "userAdded": "Added in terminal",
+    "userDeleted": "Deleted in terminal · kept in Gugu"
+  }
+},
   "controlWatch": {
     "picture": "Control picture",
     "enlarge": "Enlarge",

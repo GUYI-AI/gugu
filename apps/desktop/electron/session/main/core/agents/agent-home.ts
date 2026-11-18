@@ -28,8 +28,8 @@ const cache = new Map<string, Promise<Resolved>>();
 
 type Resolved = { env: Record<string, string>; root: string };
 
-export async function resolveAgentHomeEnv(providerId: string): Promise<Record<string, string>> {
-  return (await resolveOnce(providerId)).env;
+export async function resolveAgentHomeEnv(providerId: string, purpose?: 'version-probe'): Promise<Record<string, string>> {
+  return (await (purpose ? compute(providerId, purpose) : resolveOnce(providerId))).env;
 }
 
 /**
@@ -80,7 +80,7 @@ function resolveOnce(providerId: string): Promise<Resolved> {
   return task;
 }
 
-async function compute(providerId: string): Promise<Resolved> {
+async function compute(providerId: string, purpose?: 'version-probe'): Promise<Resolved> {
   const osHomeDir = homedir();
   let bundle;
   try {
@@ -100,8 +100,9 @@ async function compute(providerId: string): Promise<Resolved> {
     sourceEnv: process.env,
   });
   if (!home) return { env: {}, root: osHomeDir };
-  // ⚠️ 首次会**整份复制**用户那份过来。时机与幂等见 `helpers/agent-home.ts` 的抬头。
-  await ensureAgentHome(home);
+  // Version probes discover installed CLIs before the import screen opens. Keep their environment
+  // pointed at Gugu's root while deferring provisioning until import or skip.
+  if (!purpose) await ensureAgentHome(home);
   const spec = configRoot;
   return {
     env: spec?.injectEnv === false ? {} : { [home.envVar]: home.configRoot },

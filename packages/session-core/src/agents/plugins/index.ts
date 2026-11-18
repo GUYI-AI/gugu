@@ -222,6 +222,9 @@ export { PLATFORM_PROVIDER_NAME, positiveWindow, trimmedValue } from './capabili
 export type { IPlugins } from './capabilities/plugins';
 export type {
   AgentConfigRoot,
+  AgentHomeGroupId,
+  AgentHomeImportPath,
+  AgentHomeImportGroup,
   NativeHome,
   ShellEnv,
   AgentFirstRunState,

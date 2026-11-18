@@ -163,12 +163,21 @@ export const CODEX_NATIVE_HOME = {
 } as const satisfies NativeHome;
 
 export const codexSessionBundleDescriptor = {
-  // 运行时注入(#4834 §4 owner 拍板)。托管那份 `CODEX_HOME` 从来没被递给过子进程 ——
-  // 当年的 `configRoot.injectEnv` 就是 false(那一格已删),materialize 把用户真实 `CODEX_HOME` 原样透传;
-  // 信任真正生效的是 argv 上的按次信任 `-c projects={ "<cwd>" = { trust_level = "trusted" } }`(见 codexProjectTrustArgs,单测钉着)。
-  // ⇒ 那份副本**没有任何读者**,只是每个 tier 白烧 8.8 GB(2026-09-03 owner MBP 实测)。
-  injectionMode: 'runtime',
+  injectionMode: 'managed-config-root',
   nativeHome: CODEX_NATIVE_HOME,
+  configRoot: {
+    ...CODEX_NATIVE_HOME,
+    credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
+    importGroups: [
+      { id: 'settings', paths: ['config.toml'], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
+      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
+      { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
+    ],
+    carryExclusions: [
+      { path: 'sessions', evidence: 'Native session transcripts; imported separately when migrating Gugu tasks.' },
+      ...['log', 'logs', 'tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl'].map((path) => ({ path, evidence: 'Codex logs, temporary files, shell snapshots and terminal input history are runtime data.' })),
+    ],
+  },
   platform: harnessPlatform,
   // ❌ `CODEX_ACCESS_TOKEN`:凭据的出处是咕咕给这一家的独立配置根,同名 export 会让「面板上的账号」与「实际在用的账号」分家且不报错。
   // ❌ 这里也没有 `GUGU_CODEX_BIN`(#5702):咕咕起适配器时自己填(./index.ts),透传就是让 shell 顶掉面板上的选择。

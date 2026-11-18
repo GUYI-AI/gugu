@@ -54,6 +54,10 @@ function memoryStore() {
       store.writes.push(key(location));
       items.set(key(location), text);
     },
+    async updateExisting(location, update) {
+      const before = await store.read(location);
+      if (before !== null) await store.write(location, update(before));
+    },
   };
   return store;
 }

@@ -47,27 +47,9 @@ function kimiWorkspaceTrustPath(cwd: string): string {
  * Kimi Code 的数据根。**咕咕把它指向自己那一份** —— 见本文件 descriptor 上的 `configRoot`
  * (独立 home)。机制在 `session-core` 的 `capabilities/config-root.ts` + `helpers/agent-home.ts`。
  *
- * ## 三个方案,只有第三个成立
- *
- *  · **不设它、沿用用户那份** ——(2026-08-27~08-28 的状态)一个用户文件都不碰,代价是
- *    `support_efforts` / `[thinking] effort` / 咕咕的 `[[hooks]]` 全部落不了地:
- *    它们**只**认 config.toml,而咕咕写不进用户的全局配置。
- *  · **合成 home**(每会话一个空临时目录)—— ❌ 已否决。它把用户的登录态、skills、
- *    历史全挡在外面,`sessions/` 每次新 uuid ⇒ `sessions: {kind:'resumable'}` 与 `-S/-C`
- *    恒等于「没有可续的会话」。**登录写真 home、会话读临时目录,两者永不相遇。**
- *  · **独立 home** ✅ —— 首次触碰时把用户那份 `~/.kimi-code` **整份复制**成咕咕自己的一份,
- *    此后两份彻底分家(不同步、不合并、不回读)。第一次在咕咕里打开 kimi,与用户自己打开它,
- *    看到的是同一个东西;之后各自维护,所以**不存在漂移**。
- *
- * ⚠️ **登录写哪儿**这条以前是个洞,现在堵上了:`kimi login` 由咕咕经 `plugin-host.ts` 的
- *    `buildLoginCommand` 起,而它和起会话走的是**同一个** `resolveSpawnContext` ——
- *    两边拿到的 `KIMI_CODE_HOME` 必然是同一个值。
- *    (顺带纠正本注释的旧版本:它断言 `KIMI_CODE_HOME` 不在 `AGENT_ENV_VARS` 白名单里(今天是 kimi 的 `shellEnv.passThrough`)。
- *     **不成立** —— `agent-env.ts` 第 75 行就是它。那句话写下之后表被补过,而注释没跟。)
- *
- * ❌ **不许**「给 config.toml 软链回真 home」当补丁:那正是 codex 那条注释点名的绷带,
- *    而且 `hooks.ts` 会**经软链写穿到用户真文件**。独立 home 的复制因此一律解引用软链
- *    (见 `helpers/agent-home.ts` 的 `copyTree`)。
+ * The explicit import step copies selected local configuration into Gugu's root.
+ * OAuth credentials and session history stay out. Sign-in and session launch share
+ * the same KIMI_CODE_HOME through resolveSpawnContext; sources are never symlinked.
  */
 export const KIMI_HOME_ENV = 'KIMI_CODE_HOME';
 
@@ -590,32 +572,22 @@ export const kimiSessionBundleDescriptor = {
    *  · 这个根下装着**全部**身家:登录凭据 `credentials/kimi-code.json`
    *    (`packages/oauth/src/toolkit.ts:127-129`)、会话历史 `sessions/`
    *    (`bootstrapService.ts:45-49`)、`config.toml` / `mcp.json` / `plugins/` /
-   *    `skills/` / `agents/` / `logs/`。⇒ **整份复制**才是对的,复制一个 config.toml
-   *    等于给用户一个没登录、没历史、没 skill 的 kimi。
+   *    `skills/` / `agents/` / `logs/`。导入按组复制配置；凭据与历史分别排除。
    */
   configRoot: {
+    importGroups: [{ id: 'settings', paths: ['config.toml'], evidence: 'Kimi bootstrap reads configuration from config.toml.' }, { id: 'rules', paths: ['AGENTS.md', 'SYSTEM.md'], evidence: 'Kimi global instruction files.' }, { id: 'skills', paths: ['skills/'], evidence: 'Kimi skills directory.' }, { id: 'agents', paths: ['agents/', 'plugins/'], evidence: 'Kimi agents and plugins directories.' }],
+    credentialPaths: [{ path: 'credentials', evidence: 'Kimi OAuth credential directory; never imported.' }],
     envVar: KIMI_HOME_ENV,
     userPath: '.kimi-code',
-    // ⚠️ 全仓**唯一**还在托管侧的家,也因此是唯一整份复制用户配置根的家(托管 ⇒ 必复制,
-    //    owner 2026-09-03:「托管但不复制」= 合成目录,严格禁止)。理由是实测的:档位
-    //    (support_efforts)只认它自己 `config.toml` 里的值,env 注入的模型在 kimi 内部是
-    //    `__kimi_env_model__`,挂不上去(#4834 四格矩阵 dd0463a634)。实测副本 178 MB。
+    // Kimi reads thinking settings and Gugu hooks from this owned config root.
     evidence:
       'MoonshotAI/kimi-code@243f348329fc15e857dcaa0ae3cfe514729bd7a6 '
       + 'packages/agent-core-v2/src/app/bootstrap/bootstrap.ts:160-166 '
       + "`homeDir ?? env['KIMI_CODE_HOME'] ?? join(osHomeDir, '.kimi-code')`;"
       + '已在 npm @moonshot-ai/kimi-code@0.38.0 的 dist/main.mjs 复核一致;取证 2026-08-28',
-    // 分家时**不**带走的东西。默认全带 —— 只减去「引擎自己会重新长出来的」与
-    // 「咕咕自己会写的」。判据是**能不能重新长出来**,❌ 不是体积大小。
-    //
-    // ⚠️ 先做过反过来的版本(挑要带哪些),被判否:漏挑一条配置 = 静默丢用户设置,
-    //    而引擎的配置面随上游版本增删,白名单结构上跟不上。实证就是那一版本身 ——
-    //    按 mac1 那台的目录布局挑,漏了 `skills/`、`AGENTS.md`、`SYSTEM.md`、`agents/`
-    //    四条(它们只在用户用过那个功能后才存在,那台一个都没有)。理由钉在
-    //    `AgentConfigRoot.carryExclusions` 抬头。
-    //
-    // 布局实测:mac1 2026-09-04,`~/.kimi-code` 共 262 条 / 349 MB;排掉下面这些之后约 3 MB。
+    // Exclude regenerated artifacts and session history from explicit configuration import.
     carryExclusions: [
+      { path: 'sessions', evidence: 'Kimi bootstrap stores native conversation history here; it is not configuration.' },
       {
         path: 'bin',
         evidence:

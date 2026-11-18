@@ -29,6 +29,7 @@ import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
 import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, readConnectionModels, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId, updateHarnessConnectionModels } from '@main/core/agents/harness-connections';
+import { scanAgentHomes, importHarnessHome, diffHarnessHome, reimportHarnessHome } from '@main/core/agents/agent-homes';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
 const AGENT_CONFIG_WIRE_CHANNEL = 'agent-config-wire';
@@ -209,6 +210,10 @@ export function withHostResolvedCli(
     });
   return {
     ...client,
+    scanAgentHomes: ({ providerIds }) => connectionOperation(() => scanAgentHomes(providerIds)),
+    importAgentHome: ({ providerId, groups }) => connectionOperation(() => importHarnessHome(providerId, groups)),
+    diffAgentHome: ({ providerId }) => connectionOperation(() => diffHarnessHome(providerId)),
+    reimportAgentHome: ({ providerId, decisions }) => connectionOperation(() => reimportHarnessHome(providerId, decisions)),
     refreshAgents: async (input) => {
       try {
         if (input.providerId && !listPlugins().some((provider) => provider.metadata.id === input.providerId)) return err({ type: 'unknown-provider' as const, providerId: input.providerId });

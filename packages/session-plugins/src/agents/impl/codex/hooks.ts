@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+import { parse } from 'smol-toml';
 import type { CanonicalHookEvent } from '@gugu/session-core/agents/plugins';
 import { defaultHookEventParser } from '@gugu/session-core/agents/plugins/helpers';
 
@@ -36,6 +38,25 @@ export function codexNotifyConfigValue(): string[] {
 /** `-c notify=…` 形态,供没有 thread-open `config` map 的 prompt/TUI 腿使用。 */
 export function makeCodexNotifyConfigOverride(): string {
   return `notify=${JSON.stringify(codexNotifyConfigValue())}`;
+}
+
+/** Remove the top-level assignment emitted by the old writer and preserve the rest of the document. */
+export function stripLegacyCodexNotify(raw: string): string {
+  const { notify, ...expected } = parse(raw);
+  if (!isDeepStrictEqual(notify, LEGACY_CODEX_NOTIFY_COMMAND)) return raw;
+  for (const match of raw.matchAll(/^[ \t]*(?:notify|'notify'|"notify")[ \t]*=.*(?:\r?\n|$)/gm)) {
+    const tail = raw.slice(match.index, match.index + 4096);
+    // The old value is a four-element array. An exact match also handles line-wrapped arrays.
+    for (const end of tail.matchAll(/\][ \t]*(#[^\r\n]*)?(\r?\n|$)/g)) {
+      const length = end.index + end[0].length;
+      const replacement = end[1] ? `${end[1]}${end[2]}` : '';
+      const next = raw.slice(0, match.index) + replacement + raw.slice(match.index + length);
+      try {
+        if (isDeepStrictEqual(parse(tail.slice(0, length)).notify, notify) && isDeepStrictEqual(parse(next), expected)) return next;
+      } catch { /* Candidate is inside a string or does not end at the assignment. */ }
+    }
+  }
+  return raw;
 }
 
 /**

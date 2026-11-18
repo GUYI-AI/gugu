@@ -11,6 +11,7 @@ import { subscriptionSwitchProgressChannel } from '@shared/core/sessions/subscri
 import { useShowModal } from '@renderer/lib/modal/modal-provider'
 import { Button } from '@renderer/lib/ui/button'
 import { SelectItem } from '@renderer/lib/ui/select'
+import { AgentHomeRow } from './AgentHomeRow'
 import { ConnectionSettingsRows } from './ConnectionSettingsRows'
 import { Input } from '@renderer/lib/ui/input'
 import {
@@ -436,6 +437,7 @@ export function SubscriptionConnections({
           form={adding && canAdd ? connectionForm : null}
         >
           {open && options(true)}
+          <AgentHomeRow providerId={agent.id} machine={machine ?? null} />
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
