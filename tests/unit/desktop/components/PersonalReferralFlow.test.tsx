@@ -3,8 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders, typeInto, clickElement } from '../../../support/testHarness'
 import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import '../../../../apps/desktop/src/i18n/registerMainCatalog'
-const rpc = vi.hoisted(() => ({ read: vi.fn(), claim: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/referrals', () => ({ getMyReferral: rpc.read, claimMyReferral: rpc.claim }))
+const rpc = vi.hoisted(() => ({ read: vi.fn(), claim: vi.fn(), activity: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/referrals', () => ({ getMyReferral: rpc.read, claimMyReferral: rpc.claim, getMyReferralActivity: rpc.activity }))
 import { InvitationPanel } from '../../../../apps/desktop/src/components/referralPreview/InvitationPanel'
 import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 import { ReferralClaimField } from '../../../../apps/desktop/src/components/referralPreview/ReferralClaimField'
@@ -14,7 +14,7 @@ const summary = () => ({ status: 'ok', code: 'ABCDEF123456', code_enabled: true,
   rewarded_invitations: 1, earned_cny: '2.75', claim_available: true, claim_deadline: '2026-12-01', attribution: null,
   policy: { rewards_enabled: false, credits_each_cny: '2.75', recipients: 'invitee', success_condition: 'first_message', max_rewards_per_inviter: null } })
 beforeEach(async () => {
-  harness = createReactHarness(); localStorage.clear(); viewStateCache.forget('view:'); rpc.read.mockReset(); rpc.claim.mockReset()
+  harness = createReactHarness(); localStorage.clear(); viewStateCache.forget('view:'); rpc.read.mockReset(); rpc.claim.mockReset(); rpc.activity.mockResolvedValue({ status: 'ok', items: [], next_cursor: null })
   setLocalePreference('zh-CN'); await i18n.changeLanguage('zh-CN')
 })
 afterEach(() => { harness.cleanup() })
@@ -22,15 +22,15 @@ afterEach(() => { harness.cleanup() })
 it('shows real success and actually received credits even when rewards are disabled', async () => {
   rpc.read.mockResolvedValue(summary())
   await renderWithAppProviders(harness,createNode(InvitationPanel))
-  expect(harness.container.textContent).toContain('邀请成功人数：3')
-  expect(harness.container.textContent).toContain('已获得 2.75 积分')
+  expect(harness.container.querySelector('.gg-referral-stats')?.textContent).toContain('3 人')
+  expect(harness.container.querySelector('.gg-referral-stats')?.textContent).toContain('2.75 积分')
   expect(harness.container.textContent).not.toContain('各 5')
 })
 it('shows an unavailable state without a fabricated zero count or enabled share buttons', async () => {
   rpc.read.mockRejectedValue(new Error('offline'))
   await renderWithAppProviders(harness,createNode(InvitationPanel))
   expect(harness.container.textContent).toContain('暂时读不到')
-  expect(harness.container.textContent).not.toContain('邀请成功人数：0')
+  expect(harness.container.querySelector('.gg-referral-stats')?.textContent).toBe('—已邀请—已到账')
   const copy = [...harness.container.querySelectorAll('button')].find(button => button.textContent === '复制邀请码')!
   expect(copy.disabled).toBe(true)
 })
@@ -70,4 +70,32 @@ it('keeps an unconfirmed source draft through remounts and isolates it from anot
   await harness.render(createNode(ReferralClaimField, { userId: 'other-owner', key: 'other-owner' }))
   expect(harness.container.querySelector('input')!.value).toBe('')
   expect(rpc.claim).not.toHaveBeenCalled()
+})
+
+it('loads genuine paginated activity and preserves historical credited values', async () => {
+  rpc.read.mockResolvedValue(summary())
+  const row = { key: 'one', display_name: '受邀朋友甲', avatar: null, invited_at: '2026-11-18T12:00:00Z', state: 'credited', credited: true, credited_cny: '1.25000000' }
+  rpc.activity.mockResolvedValueOnce({ status: 'ok', items: [row], next_cursor: 'next' })
+    .mockResolvedValueOnce({ status: 'ok', items: [{ ...row, key: 'two', display_name: '受邀朋友乙', state: 'awaiting_message', credited: false, credited_cny: '0' }], next_cursor: null })
+  await renderWithAppProviders(harness, createNode(InvitationPanel))
+  const list = harness.container.querySelector('[data-testid="referral-activity"]')!
+  expect(list.textContent).toContain('受邀朋友甲')
+  expect(list.textContent).toContain('+1.25')
+  await clickElement([...list.querySelectorAll('button')].find(button => button.textContent === '加载更多')!)
+  expect(list.textContent).toContain('受邀朋友甲')
+  expect(list.textContent).toContain('受邀朋友乙')
+  expect(list.textContent).toContain('还没发消息')
+  expect(list.textContent).not.toContain('加载更多')
+  expect(rpc.activity.mock.calls.at(-1)?.[1]).toBe('next')
+})
+it('keeps an activity failure distinct from a genuinely empty history', async () => {
+  rpc.read.mockResolvedValue(summary())
+  rpc.activity.mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ status: 'ok', items: [], next_cursor: null })
+  await renderWithAppProviders(harness, createNode(InvitationPanel))
+  const list = harness.container.querySelector('[data-testid="referral-activity"]')!
+  expect(list.textContent).toContain('暂时读不到邀请记录')
+  expect(list.textContent).not.toContain('还没有邀请记录')
+  await clickElement(list.querySelector('button')!)
+  expect(list.textContent).toContain('还没有邀请记录')
 })

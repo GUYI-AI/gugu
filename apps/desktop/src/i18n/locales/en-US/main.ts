@@ -1,5 +1,36 @@
 export default {
   "referrals": {
+    "accountCount": "{{count}} invited",
+    "invite": "Invite",
+    "invited": "Invited",
+    "received": "Received",
+    "history": "Invitation history",
+    "people_one": "{{count}} person",
+    "people_other": "{{count}} people",
+    "credits": "{{amount}} credits",
+    "friend": "Invited friend",
+    "emptyHistory": "No invitations yet.",
+    "historyUnavailable": "Invitation history is unavailable. Please retry.",
+    "more": "Load more",
+    "offer": {
+        "both": "You and your friend each receive {{amount}} credits",
+        "inviter": "Receive {{amount}} credits for a successful invitation",
+        "invitee": "Your friend receives {{amount}} credits",
+        "off": "Rewards are currently off"
+    },
+    "activity": {
+        "awaiting_message": "No message yet",
+        "no_inviter_reward": "No reward for you",
+        "pending": "Awaiting payment",
+        "inactive": "Currently ineligible",
+        "cap_reached": "Awaiting backfill",
+        "budget_exhausted": "Awaiting backfill",
+        "legacy_rewarded": "Paid under previous rules",
+        "failed": "Awaiting retry",
+        "unpromised": "No reward promised",
+        "paused": "Payment paused",
+        "queued": "Awaiting payment"
+    },
     "accountNote": "Personal code, successful invitations and source confirmation",
     "loading": "Loading…",
     "unavailable": "Invitation information is unavailable. Please retry.",

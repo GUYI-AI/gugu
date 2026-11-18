@@ -1,5 +1,35 @@
 export default {
   "referrals": {
+    "accountCount": "已邀请 {{count}} 人",
+    "invite": "邀请",
+    "invited": "已邀请",
+    "received": "已到账",
+    "history": "邀请记录",
+    "people": "{{count}} 人",
+    "credits": "{{amount}} 积分",
+    "friend": "受邀朋友",
+    "emptyHistory": "还没有邀请记录。",
+    "historyUnavailable": "暂时读不到邀请记录，请重试。",
+    "more": "加载更多",
+    "offer": {
+        "both": "你和朋友各得 {{amount}} 积分",
+        "inviter": "邀请成功可得 {{amount}} 积分",
+        "invitee": "朋友可得 {{amount}} 积分",
+        "off": "奖励暂未开放"
+    },
+    "activity": {
+        "awaiting_message": "还没发消息",
+        "no_inviter_reward": "本次未向你发奖",
+        "pending": "等待发放",
+        "inactive": "暂不能发放",
+        "cap_reached": "待补发",
+        "budget_exhausted": "待补发",
+        "legacy_rewarded": "已按历史规则发放",
+        "failed": "等待重试",
+        "unpromised": "本次未发奖",
+        "paused": "发放已暂停",
+        "queued": "等待发放"
+    },
     "accountNote": "个人邀请码、邀请成功人数与来源确认",
     "loading": "正在读取…",
     "unavailable": "暂时读不到邀请信息，请重试。",

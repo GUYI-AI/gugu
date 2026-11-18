@@ -56,3 +56,30 @@ export async function claimMyReferral(expectedUserId: string, code: string): Pro
   }
   return status
 }
+
+export interface ReferralActivityItem {
+  key: string
+  display_name: string | null
+  avatar: string | null
+  invited_at: string
+  state: 'awaiting_message' | 'credited' | 'no_inviter_reward' | 'pending' | 'inactive' | 'cap_reached' | 'budget_exhausted' | 'legacy_rewarded' | 'failed' | 'unpromised' | 'paused' | 'queued'
+  credited: boolean
+  credited_cny: string
+}
+export interface ReferralActivityPage { status: 'ok'; items: ReferralActivityItem[]; next_cursor: string | null }
+export async function getMyReferralActivity(expectedUserId: string, cursor: string | null): Promise<ReferralActivityPage> {
+  if (await getCurrentAuthUserId() !== expectedUserId) throw new Error('Referral account changed')
+  const { data, error } = await dataClient.schema('billing').rpc('referral_activity', { p_cursor: cursor, p_limit: 30 })
+  if (error) throw error
+  if (await getCurrentAuthUserId() !== expectedUserId) throw new Error('Referral account changed')
+  const page = data as ReferralActivityPage | null
+  const states = ['awaiting_message','credited','no_inviter_reward','pending','inactive','cap_reached','budget_exhausted','legacy_rewarded','failed','unpromised','paused','queued']
+  if (!page || page.status !== 'ok' || !Array.isArray(page.items) || !(page.next_cursor === null || typeof page.next_cursor === 'string')
+    || page.items.some(row => !row || typeof row.key !== 'string' || !row.key
+      || !(row.display_name === null || typeof row.display_name === 'string') || !(row.avatar === null || typeof row.avatar === 'string')
+      || typeof row.invited_at !== 'string' || !Number.isFinite(Date.parse(row.invited_at)) || !states.includes(row.state)
+      || typeof row.credited !== 'boolean' || typeof row.credited_cny !== 'string' || !/^\d+(?:\.\d+)?$/.test(row.credited_cny))) {
+    throw new Error('Referral activity returned an invalid response')
+  }
+  return page
+}
