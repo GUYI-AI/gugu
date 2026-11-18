@@ -14,6 +14,7 @@ import type { SystemPermission } from '../../platform/types'
 import { setNotificationSettings, useNotificationSettings, type NotificationSettings } from '../../lib/notificationSettings'
 import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
+import { SettingsChoice } from './SettingsChoice'
 import { Unknown } from '../ui/Unknown'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
@@ -95,20 +96,9 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
       <SettingsGroup>
         <SettingsRow
           title={<label htmlFor="settings-language">{t('settings.general.language')}</label>}
-          control={(
-            <select
-              id="settings-language"
-              className="gg-settings-select"
-              value={preference}
-              onChange={(event) => setPreference(event.target.value as LocalePreference)}
-            >
-              {LANGUAGE_OPTIONS.map((locale) => (
-                <option key={locale} value={locale}>
-                  {t(`settings.general.languageOptions.${locale}`)}
-                </option>
-              ))}
-            </select>
-          )}
+          control={<SettingsChoice id="settings-language" label={t('settings.general.language')} mobile={mobile}
+            value={preference} onChange={setPreference}
+            options={LANGUAGE_OPTIONS.map(value => ({ value, label: t(`settings.general.languageOptions.${value}`) }))} />}
         />
         {/* 主题开关放在通用页。三种偏好(浅/深/跟随系统)——选中态画的是**偏好**不是真值,
             「跟随系统」在系统当下为浅色时解析出来也是 light,照真值画会把高亮落在「浅色」上。
