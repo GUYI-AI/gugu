@@ -25,7 +25,7 @@ import { readViewState } from '../../../apps/desktop/src/lib/viewStateTable'
 import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {

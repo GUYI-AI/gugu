@@ -16,7 +16,7 @@ vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: 
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: fixture.devices, phones: [] }) }))
 vi.mock('@/platform', () => ({ platform: { get kind() { return fixture.platform } } }))
 vi.mock('@/hooks/useLocalSessionDirectory', () => ({ useLocalSessionDirectory() {} }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => false }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => false, readMobileShell: () => false }))
 vi.mock('@/hooks/useRemoteHostsBridge', () => ({ useRemoteHostsBridge() {} }))
 vi.mock('@/components/SshLinkSignIn', () => ({ SshLinkSignIn: () => null }))
 vi.mock('@/components/RemoteFolderPicker', () => ({ RemoteFolderPicker: () => null }))

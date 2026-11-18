@@ -25,7 +25,7 @@ const state = vi.hoisted(() => ({ mobile: false }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron', capabilities: {} } }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ localFileRevision: async () => null }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: async () => ({ error: null }) } }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', async (original) => ({ ...await original<object>(), useMobileShell: () => state.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', async (original) => ({ ...await original<object>(), useMobileShell: () => state.mobile, readMobileShell: () => state.mobile }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({ appsHere: { groupFileOpener: vi.fn() } }))
 
 let serial = 0
