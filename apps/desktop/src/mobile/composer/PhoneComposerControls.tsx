@@ -74,8 +74,8 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
   </Button>
 }
 
-export function PhoneComposerSheet({ open, onClose, onBack, title, children, footer, testId, anchor, className }: {
-  open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; testId: string
+export function PhoneComposerSheet({ open, onClose, onBack, title, titleCount, children, footer, testId, anchor, className }: {
+  open: boolean; onClose: () => void; title: string; titleCount?: number; children: ReactNode; footer?: ReactNode; testId: string
   /** Child navigation returns one level; the persistent top-right Close dismisses the whole panel. */
   onBack?: () => void
   /** A short model/device menu grows above its row; long lists use the bottom sheet. */
@@ -135,7 +135,7 @@ export function PhoneComposerSheet({ open, onClose, onBack, title, children, foo
           {onBack && <IconButton size="lg" aria-label={t('back')} className="gg-phone-composer-sheet-back"
             data-testid={`${testId}-back`}
             onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onBack}><ChevronLeft /></IconButton>}
-          <Dialog.Title>{title}</Dialog.Title>
+          <Dialog.Title aria-label={titleCount === undefined ? undefined : `${title} ${titleCount}`}>{title}{titleCount !== undefined && <span className="gg-phone-composer-sheet-count">{titleCount}</span>}</Dialog.Title>
           <IconButton size="lg" aria-label={t('close')} className="gg-phone-composer-sheet-close"
             data-testid={`${testId}-close`}
             onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClose}><X /></IconButton>
