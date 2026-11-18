@@ -59,6 +59,7 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-model-page .gg-settings-row-control .gg-model-icon-button { width: 28px; height: 28px; }
 .gg-model-expired { display: inline-flex; align-items: center; height: 20px; border-radius: 4px; padding: 0 6px; background: var(--model-sign-in-expired-bg); color: var(--model-sign-in-expired-fg); font-size: 12px; white-space: nowrap; }
 .gg-auxiliary-models .gg-settings-row-control { max-width: 100%; }
+.gg-model-page .gg-auxiliary-models .gg-settings-row-title { font-weight: 400; }
 .gg-auxiliary-model-select { width: 355px; max-width: 100%; height: 32px; }
 .gg-model-dialog { border-radius: 12px; }
 .gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; font-weight: 500; }

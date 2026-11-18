@@ -5,7 +5,7 @@ import { useTheme } from '@/store/theme';
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Pencil, Plus, Trash2, Link } from '@/lib/icons';
+import { Pencil, Trash2, Link } from '@/lib/icons';
 import { useReplica } from '@/lib/replica';
 import { Button } from '@renderer/lib/ui/button';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
@@ -74,7 +74,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   return <>
     {MODEL_GROUPS.map(({ id: group, testId, addId, title, add, note }) => <SettingsGroup key={group} data-testid={testId} title={<span className="flex items-center justify-between gap-3">
       {translate(title)}
-      <Button size="sm" variant="outline" onClick={() => setEditing(group)} data-testid={addId}><Plus className="size-3.5" />{translate(add)}</Button>
+      <Button size="sm" variant="outline" onClick={() => setEditing(group)} data-testid={addId}>{translate(add)}</Button>
     </span>} note={translate(note)} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
       {group === 'coding-plan' && agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />)}
       {reading.state === 'error' ? <SettingsRow description={errorText(reading.error)} control={<Button onClick={refresh}>{translate('common.retry')}</Button>} />
