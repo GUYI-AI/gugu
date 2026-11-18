@@ -118,15 +118,12 @@ it('opening the new task model list refreshes the directory without re-probing t
   expect(fixture.models.mock.calls).toEqual([[fixture.device.device_id, 'codex', null, null]])
   expect(document.querySelector('[data-option-id="native-model"]')?.getAttribute('aria-checked')).toBe('true')
 })
-it.each(['light', 'dark'] as const)('%s: real two-line New task input opens its picker, retains a File and removes it without creating', async theme => {
+it.each(['light', 'dark'] as const)('%s: New task opens its picker without a draft, retains a File and removes it without creating', async theme => {
   await mount(theme)
   const attach = host!.querySelector<HTMLElement>('[data-phone-attachment]')!
   expect(attach.closest('[data-slot="composer"]')).not.toBeNull()
   expect(host!.querySelector('[data-testid="phone-attachment-menu"]')).toBeNull()
-  expect(getComputedStyle(attach).display).toBe('none')
-  const editor = host!.querySelector<HTMLElement>('[contenteditable]')!
-  ;(editor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
-  await until('approved two-line attachment action is visible', () => getComputedStyle(attach).display !== 'none')
+  expect(host!.querySelector('[contenteditable]')?.textContent).toBe('')
   const picker = host!.querySelector<HTMLInputElement>('input[type="file"]')!, click = vi.spyOn(picker, 'click').mockImplementation(() => {})
   await page.elementLocator(attach).click(); expect(click).toHaveBeenCalledTimes(1)
   await page.screenshot({ path: `__screenshots__/owner-phone-regression/A-${theme}-create-empty.png` })

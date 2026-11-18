@@ -178,7 +178,7 @@ it.each([320, 390])('keeps permission, model and attachment controls separate on
   const model = host.querySelector<HTMLElement>('[data-testid="composer-model-trigger"]')!
   const inputEditor = input.querySelector<HTMLElement>('[contenteditable]')!
   ;(inputEditor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
-  await until('two-line attachment is visible', () => getComputedStyle(attach).display !== 'none')
+  await until('two-line attachment moves beside the send button', () => attach.getBoundingClientRect().left >= inputEditor.getBoundingClientRect().right)
   const controls = [permission, attach, model]
   for (const [index, control] of controls.entries()) {
     const box = control.getBoundingClientRect()

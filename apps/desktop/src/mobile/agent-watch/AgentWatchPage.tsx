@@ -58,6 +58,7 @@ export function AgentWatchPage({
   onExit,
   onRouteChange,
   createRequest,
+  createFromCurrentRoute = false,
   taskInGroup = null,
   openRequest,
   onOpenGroupChat,
@@ -69,6 +70,8 @@ export function AgentWatchPage({
   onRouteChange?: (name: AgentWatchRoute['name']) => void
   /** 每变一次 = 外面要建 agent(联系人页的「新建 Agent」):直接进新建页,与根页的 + 同一步。 */
   createRequest?: number
+  /** The create action came from a route already visible in this layer. */
+  createFromCurrentRoute?: boolean
   /** 随 createRequest 一起来:群输入框「新任务」带的群(首句落成群里的任务卡、agent 进群、建完回到群)。null = 不进群。 */
   taskInGroup?: { chatId: string; name: string } | null
   /** 每来一个新的 = 一个 App 点名了这条会话(`gugu.showSession`,useAppShowSession):进它的时间线,与在列表里点那一行同一步。 */
@@ -149,10 +152,10 @@ export function AgentWatchPage({
     if (createRequest === seenCreateRequest.current) return
     seenCreateRequest.current = createRequest
     setTaskGroup(taskInGroup)
-    // A group shortcut pushes directly over the group. The projects list was never visited.
-    navigate(taskInGroup ? [{ name: 'create' }] : [{ name: 'projects' }, { name: 'create' }], 'push')
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 群只在请求变的那一刻读
-  }, [createRequest, navigate])
+    // Keep visited pages as the return path. Reopening creation replaces its draft page.
+    const parent = createFromCurrentRoute ? routes.filter((entry) => entry.name !== 'create') : []
+    navigate([...parent, { name: 'create' }], 'push')
+  }, [createRequest, navigate, createFromCurrentRoute, routes, taskInGroup])
   useEffect(() => {
     if (route.name === 'projects') setTaskGroup(null)
   }, [route.name])
@@ -184,7 +187,7 @@ export function AgentWatchPage({
           key={ownerId}
           taskGroup={taskGroup}
           onBack={goBack}
-          // 从群里新建的会话回到那个群;其余打开新会话,返回时回到项目页。
+          // Replace the submitted form so the new conversation returns to the same entry.
           onCreated={(device, session, firstPrompt, result) => {
             const phone = isPhoneDevice(device)
             if (phone && result?.birthGroup?.status === 'failed') {
@@ -201,7 +204,7 @@ export function AgentWatchPage({
               onOpenGroupChat(groupId)
               return
             }
-            navigate([{ name: 'projects' }, { name: 'timeline', deviceId: device.device_id, session, firstPrompt }], 'replace')
+            navigate([...routes.slice(0, -1), { name: 'timeline', deviceId: device.device_id, session, firstPrompt }], 'replace')
           }}
         />
       </Suspense>

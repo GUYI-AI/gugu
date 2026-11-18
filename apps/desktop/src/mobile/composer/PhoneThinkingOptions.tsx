@@ -3,13 +3,14 @@ import type { ChatComposerProps } from '@gugu/session-ui/react/components'
 import { Button } from '@/components/ui/Button'
 import { Switch } from '@/components/ui/Switch'
 import { Check, ChevronRight } from '@/lib/icons'
+import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import './PhoneThinkingOptions.css'
 
-type Props = Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'defaultEffort' | 'onEffortChange' | 'fastMode' | 'onFastModeChange'> & { disabled?: boolean; onOpenEffort?: () => void; onDefaultEffort?: () => void }
+type Props = Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'defaultEffort' | 'onEffortChange' | 'fastMode' | 'onFastModeChange'> & { disabled?: boolean; fastModePending?: boolean; onOpenEffort?: () => void; onDefaultEffort?: () => void }
 
 /** The root shows a summary; the child page keeps native reasoning IDs and capability-backed Fast. */
 export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEffort, onEffortChange,
-  fastMode, onFastModeChange, disabled, onOpenEffort, onDefaultEffort }: Props) {
+  fastMode, onFastModeChange, fastModePending, disabled, onOpenEffort, onDefaultEffort }: Props) {
   const { t } = useTranslation('mobileCreateControls')
   const { t: tm } = useTranslation('main')
   const items = Object.entries(effortOptions ?? {})
@@ -40,7 +41,11 @@ export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEff
     </div>}
     {fastMode !== undefined && <div className="gg-phone-composer-choice gg-phone-thinking-fast" data-testid="phone-fast-option">
       <span className="gg-phone-composer-choice-body">Fast</span>
-      <Switch aria-label="Fast" data-phone-fast="" checked={fastMode} disabled={disabled || !onFastModeChange}
+      {fastModePending && <span className="gg-phone-thinking-fast-status" role="status">
+        <LoadingIndicator size="inline" />{t('switchingFast')}
+      </span>}
+      <Switch aria-label="Fast" aria-busy={fastModePending || undefined} data-phone-fast="" checked={fastMode}
+        disabled={disabled || fastModePending || !onFastModeChange}
         onCheckedChange={value => onFastModeChange?.(value)} />
     </div>}
   </div>

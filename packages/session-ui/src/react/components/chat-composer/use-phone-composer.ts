@@ -47,7 +47,7 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
       editor.removeEventListener('compositionstart', start);
       editor.removeEventListener('compositionend', end);
     };
-  // Recheck after reclaiming the empty attachment gutter, before paint, so a width change cannot flash a wrong line state.
+  // The expanded editor changes its text insets when it first gets content.
   }, [mobile, root, hasText]);
 
   useLayoutEffect(() => {

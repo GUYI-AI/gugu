@@ -17,3 +17,4 @@
 .gg-phone-thinking-levels .gg-aw-choice-radio svg { width: 12px; height: 12px; }
 
 .gg-phone-thinking-fast { color: var(--text-secondary); font-weight: 500; }
+.gg-phone-thinking-fast-status { display: inline-flex; align-items: center; gap: var(--spacing-xs); font-size: var(--font-caption); white-space: nowrap; }
