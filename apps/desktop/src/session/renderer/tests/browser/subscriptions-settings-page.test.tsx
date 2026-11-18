@@ -774,3 +774,18 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
   expect(control.created).toBeNull();
   expect(thrown).toEqual([]);
 });
+
+
+it('shows a localized connection-read failure and retries the same real reading', async () => {
+  setLocalePreference('zh-CN');
+  control.connectionsError = true;
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
+  const card = () => host.querySelector('[data-testid="settings-coding-plans"]');
+  await until('the model list reports the failed read', () => card()?.textContent?.includes('暂时无法读取 Claude Code 的连接。') === true);
+  expect(card()?.textContent).not.toContain('Connections offline');
+  control.connectionsError = false;
+  const retry = [...card()!.querySelectorAll('button')].find(button => button.textContent === '重试')!;
+  await userEvent.click(retry);
+  await until('retry reads the existing connection', () => !!card()?.querySelector('[data-subscription-model="claude:native"]'));
+  expect(thrown).toEqual([]);
+});

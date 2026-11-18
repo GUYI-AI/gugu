@@ -1,6 +1,6 @@
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
-import { Activity, Trash2 } from '@/lib/icons';
+import { Link, Trash2 } from '@/lib/icons';
 import { SettingsNote, SettingsRow } from './SettingsPrimitives';
 import { Unknown } from '@/components/ui/Unknown';
 import { Button } from '@renderer/lib/ui/button';
@@ -10,18 +10,19 @@ import { useConnectionDetails } from '@renderer/features/settings/subscriptions/
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 
-export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onTest, onRemove, error }: {
+export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onTest, onRemove, onRetry, error }: {
   agent: AgentPayload; machine: string | null; connections: HarnessConnection[] | undefined; busy: boolean;
-  onSignIn: (id: string) => void; onTest: (id: string) => void; onRemove: (id: string) => void; error?: string | null;
+  onSignIn: (id: string) => void; onTest: (id: string) => void; onRemove: (id: string) => void; onRetry: () => void; error?: string | null;
 }) {
+  const { translate } = useSessionMessages();
   return <>
-    {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+    {error && <SettingsRow description={<SettingsNote tone="danger" role="alert">{error}</SettingsNote>} control={<Button size="sm" variant="outline" onClick={onRetry}>{translate('common.retry')}</Button>} />}
     {!error && !connections && <SettingsRow control={<Unknown className="h-4 w-32" />} />}
     {connections?.map(connection => <SubscriptionModelRow key={connection.id} {...{ agent, machine, connection, busy, onSignIn, onTest, onRemove }} />)}
   </>;
 }
 
-function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onTest, onRemove }: Omit<Parameters<typeof SubscriptionModelRows>[0], 'connections' | 'error'> & { connection: HarnessConnection }) {
+function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onTest, onRemove }: Omit<Parameters<typeof SubscriptionModelRows>[0], 'connections' | 'error' | 'onRetry'> & { connection: HarnessConnection }) {
   const { translate } = useSessionMessages();
   const details = useConnectionDetails(machine, agent.id, connection.id);
   const { auth } = useAgentAuthStatus(agent.id, undefined, { machine, probe: false });
@@ -33,12 +34,12 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onTe
   const brand = agent.id === 'claude' ? 'Claude' : 'ChatGPT';
   const name = connection.name || (plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
   return <SettingsRow data-subscription-model={`${agent.id}:${connection.id}`} leading={<AppIcon id={agent.id} size={20} />}
-    title={name} description={<>{source}{details.error ? <span role="alert" className="subscription-error block">{errorText(details.error)}</span> : null}</>}
+    title={name} description={<>{source}{details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : null}</>}
     control={<div className="flex items-center gap-2">
       {expired ? <>
         <span className="gg-model-expired">{translate('subscriptions.connections.expired')}</span>
         <Button size="sm" variant="outline" disabled={busy} data-testid={`model-sign-in-${connection.id}`} onClick={() => onSignIn(connection.id)}>{translate('subscriptions.connections.signInAgain')}</Button>
-      </> : <Button className="gg-model-icon-button" size="icon" variant="ghost" disabled={busy} aria-label={translate('customModels.test')} data-testid={`model-test-${connection.id}`} onClick={() => onTest(connection.id)}><Activity className="size-4" /></Button>}
+      </> : <Button className="gg-model-icon-button" size="icon" variant="ghost" disabled={busy} aria-label={translate('customModels.test')} data-testid={`model-test-${connection.id}`} onClick={() => onTest(connection.id)}><Link className="size-4" /></Button>}
       {connection.kind !== 'native' && <Button className="gg-model-icon-button" size="icon" variant="ghost" disabled={busy} aria-label={translate('customModels.remove')} data-testid={`model-remove-${connection.id}`} onClick={() => onRemove(connection.id)}><Trash2 className="size-4" /></Button>}
     </div>} />;
 }
@@ -63,7 +64,7 @@ export function SubscriptionAccountField({ agent, machine, connectionId, creatin
     {connectionId && details.isPending && <Unknown className="h-3 w-32" />}
     <div className="flex justify-end gap-2 pt-2">
       <Button type="button" variant="outline" disabled={creating} onClick={onCancel}>{translate('common.cancel')}</Button>
-      <Button type="button" data-testid="subscription-model-save" disabled={!signedIn || creating} onClick={onSave}>{translate('subscriptions.connections.save')}</Button>
+      <Button type="button" data-testid="subscription-model-save" disabled={!signedIn || creating} onClick={onSave}>{translate('common.save')}</Button>
     </div>
   </div>;
 }

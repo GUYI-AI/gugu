@@ -1,6 +1,6 @@
 /* WorkBuddy model settings. Keep the palette local to this page and its dialog. */
-.gg-settings-detail:has(.gg-model-page) { background: var(--model-settings-page); }
-.gg-settings-detail .gg-model-page { gap: 16px; }
+div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-settings-page); }
+.gg-settings-detail div.gg-settings-page.gg-model-page { gap: 16px; }
 .gg-settings-detail .gg-model-page section.gg-settings-group {
   gap: 0;
   border: 0;
@@ -77,6 +77,7 @@
 .gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 0; border-radius: 0; text-align: left; cursor: pointer; }
 .gg-model-card-title { display: block; color: var(--text-primary); font-size: 14px; font-weight: 500; line-height: 22px; }
 .gg-model-card-description { display: block; font-size: 14px; font-weight: 400; line-height: 22px; color: var(--model-settings-description); }
-.gg-model-page [data-platform-models][data-expanded='false'] > .gg-settings-card { display: none; }
+.gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card:empty,
+.gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
 
 .gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }

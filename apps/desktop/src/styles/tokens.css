@@ -2376,7 +2376,7 @@ body.barcode-scanner-active #root {
   --model-settings-description: var(--text-secondary);
   --model-settings-source: var(--muted-fg);
   --model-settings-separator: var(--border);
-  --model-sign-in-expired-bg: var(--danger-bg);
+  --model-sign-in-expired-bg: var(--danger-tint);
   --model-sign-in-expired-fg: var(--danger-fg);
 }
 [data-theme='light'] {

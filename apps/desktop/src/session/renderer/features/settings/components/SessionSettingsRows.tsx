@@ -83,12 +83,12 @@ export const SessionTitleModelRow: React.FC<{ auxiliary?: boolean }> = ({ auxili
               : current && !ordered.some((option) => option.id === current) ? [...own, ...ordered] : ordered;
             return (
               <>
-                <ResetToDefaultButton
-                  visible={!auxiliary && sessions.isFieldOverridden('titleModel')}
+                {!auxiliary && <ResetToDefaultButton
+                  visible={sessions.isFieldOverridden('titleModel')}
                   defaultLabel={ordered !== null ? ordered.find((option) => option.id === defaultLabel)?.displayName ?? defaultLabel : catalog.state === 'error' ? defaultLabel : undefined}
                   onReset={() => sessions.resetField('titleModel')}
                   disabled={sessions.isSaving}
-                />
+                />}
                 <Select
                   value={auxiliary && current === SESSION_TITLE_DEFAULT_MODEL ? '__recommended__' : current ?? TITLE_MODEL_OFF}
                   onValueChange={next => { if (next === '__recommended__') sessions.resetField('titleModel'); else sessions.update({ titleModel: next === TITLE_MODEL_OFF ? null : String(next) }) }}
