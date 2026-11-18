@@ -454,16 +454,17 @@ export async function restoreClaudeTerminalForMigration(paths: ClaudeAuthSlotPat
   const restored = await readLiveState(paths.liveStateFile);
   if (!restored || restored.connectionId !== NATIVE) throw new Error('Could not verify the restored Claude terminal sign-in; retry migration');
   await cleanRestoredClaudeVault(paths, restored);
-  return { terminalNeedsSignIn: restored.identity === '', relogin: null };
+  return { terminalNeedsSignIn: restored.identity === '', relogin: null, moved: recorded };
 }
 
 /** Copy only the CLI account in use, leaving MCP credentials in their original store. */
-export async function copyClaudeUpgradeSignIn(previous: ClaudeAuthSlotPaths, managed: ClaudeAuthSlotPaths, connectionId: string): Promise<boolean | undefined> {
+export async function copyClaudeUpgradeSignIn(previous: ClaudeAuthSlotPaths, managed: ClaudeAuthSlotPaths, connectionId: string, vaultIdentity?: string): Promise<boolean | undefined> {
   const account = await readAccount(previous.nativeGlobalConfig);
   const oauth = oauthOf(await previous.store.read(native(previous)));
   if (!account) return connectionId === NATIVE && !oauth ? undefined : false;
   const state = await readLiveState(previous.liveStateFile);
-  if (connectionId !== NATIVE && (state?.connectionId !== connectionId || state.identity !== account.identity)) return false;
+  if (vaultIdentity ? account.identity !== vaultIdentity
+    : connectionId !== NATIVE && (state?.connectionId !== connectionId || state.identity !== account.identity)) return false;
   if (!oauth || (await readAccount(previous.nativeGlobalConfig))?.identity !== account.identity) return false;
   const target = await managed.store.read(native(managed));
   const targetOauth = oauthOf(target);

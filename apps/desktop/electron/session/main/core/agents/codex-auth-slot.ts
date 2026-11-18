@@ -282,18 +282,19 @@ export async function restoreCodexTerminalForMigration(paths: CodexAuthSlotPaths
   const restored = await readLiveState(paths.liveStateFile);
   if (!restored || restored.connectionId !== 'native') throw new Error('Could not verify the restored Codex terminal sign-in; retry migration');
   await cleanRestoredCodexVault(paths, restored);
-  return { terminalNeedsSignIn: restored.identity === '', relogin: null };
+  return { terminalNeedsSignIn: restored.identity === '', relogin: null, moved: recorded };
 }
 
 /** A one-time snapshot of the sign-in used before an upgrade. It never changes the source slot. */
-export async function copyCodexUpgradeSignIn(previous: CodexAuthSlotPaths, managed: CodexAuthSlotPaths, connectionId: string): Promise<boolean | undefined> {
+export async function copyCodexUpgradeSignIn(previous: CodexAuthSlotPaths, managed: CodexAuthSlotPaths, connectionId: string, vaultIdentity?: string): Promise<boolean | undefined> {
   await assertCodexFileCredentialStore(previous.nativeRoot);
   await assertCodexFileCredentialStore(managed.nativeRoot);
   const state = await readLiveState(previous.liveStateFile);
   const live = await readAuth(previous.nativeRoot);
   if (!live && connectionId === 'native') return undefined;
   if (!live?.identity?.startsWith('chatgpt:')) return false;
-  if (connectionId !== 'native' && (state?.connectionId !== connectionId || state.identity !== live.identity)) return false;
+  if (vaultIdentity ? live.identity !== vaultIdentity
+    : connectionId !== 'native' && (state?.connectionId !== connectionId || state.identity !== live.identity)) return false;
   const target = await readAuth(managed.nativeRoot);
   if (target && target.identity !== live.identity) return false;
   if (!target) {

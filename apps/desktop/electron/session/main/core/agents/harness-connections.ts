@@ -600,7 +600,12 @@ export async function sessionHarnessConnectionId(sessionId: string | undefined):
   return 'native';
 }
 
-type RestoredTerminal = { relogin: string | null; terminalNeedsSignIn: boolean; legacyVaultUnverified?: boolean };
+type RestoredTerminal = {
+  relogin: string | null;
+  terminalNeedsSignIn: boolean;
+  legacyVaultUnverified?: boolean;
+  moved?: { connectionId: string; identity: string };
+};
 
 /** Split the old shared slot and use the compatibility copy only for an existing installation. */
 export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Record<string, string | undefined>, automatic = false) {
@@ -613,7 +618,7 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
   const oldNativeVault = join(stateDir, 'native', requireNativeHome(providerId).userPath);
   const previousVaultRoot = (id: string) => id === 'native' ? oldNativeVault : vaultRoot(providerId, id);
   const liveStateFile = join(stateDir, 'live-account.json');
-  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: () => Promise<boolean | undefined>) => {
+  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: (vaultIdentity?: string) => Promise<boolean | undefined>) => {
     let result: RestoredTerminal = { relogin: null, terminalNeedsSignIn: false };
     try {
       const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch');
@@ -630,7 +635,8 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
     let upgradeSignIn: 'copied' | 'relogin' | undefined;
     if (automatic && (owned || selected === 'native')) {
       try {
-        const copied = await copy();
+        // If B is already back in the terminal, the old in-use sign-in is the verified A now in its vault.
+        const copied = await copy(result.moved?.connectionId === selected ? result.moved.identity : undefined);
         upgradeSignIn = copied === undefined ? undefined : copied ? 'copied' : 'relogin';
       }
       catch {
@@ -646,7 +652,8 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
     const previous = { ...managed, nativeRoot: formerRoot, vaultRoot: previousVaultRoot, liveStateFile };
     return finish(() => restoreCodexTerminalForMigration(previous, ids),
       () => activateCodexAccount(managed, ids, selected, 'native'),
-      () => copyCodexUpgradeSignIn(previous, managed, selected));
+      (vaultIdentity) => copyCodexUpgradeSignIn(vaultIdentity ? { ...previous, nativeRoot: previous.vaultRoot(selected) } : previous,
+        managed, selected, vaultIdentity));
   } else {
     const managed = claudeSlotPaths();
     const exported = Boolean(env.CLAUDE_CONFIG_DIR?.trim());
@@ -655,7 +662,12 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
       liveStateFile };
     return finish(() => restoreClaudeTerminalForMigration(previous, ids),
       () => activateClaudeAccount(managed, ids, selected, 'native'),
-      () => copyClaudeUpgradeSignIn(previous, managed, selected));
+      (vaultIdentity) => {
+        const root = previous.vaultRoot(selected);
+        return copyClaudeUpgradeSignIn(vaultIdentity ? {
+          ...previous, nativeRoot: root, nativeGlobalConfig: join(root, '.claude.json'), nativeSuffixed: true,
+        } : previous, managed, selected, vaultIdentity);
+      });
   }
 }
 
