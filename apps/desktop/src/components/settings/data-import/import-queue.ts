@@ -1,12 +1,13 @@
 import type { TFunction } from 'i18next'
-import { importSourceCounts } from './import-replicas'
+import { importSourceCounts, importedSourceHistory } from './import-replicas'
+import { updateImportSettings } from './import-sync-preferences'
 import { notify } from '@/lib/notices'
 import { sessionCoordinator } from '@/lib/sessionCoordinator'
 import type { ImportedSession, ImportProvider } from './import-providers'
 
 export type ImportDevice = { deviceId: string | null; deviceName: string; count: number }
 export type ImportedEntry = ImportedSession & { deviceId: string | null; deviceName?: string }
-export type ImportTarget = { devices: readonly ImportDevice[]; provider: ImportProvider }
+export type ImportTarget = { devices: readonly ImportDevice[]; provider: ImportProvider; automatic?: boolean }
 type JobResult = { imported: ImportedEntry[]; existing: number; failed: number }
 export type ImportJob = ImportTarget & {
   id: string
@@ -44,7 +45,8 @@ function publish(entry: QueueEntry, change: Partial<ImportJob>): void {
 }
 
 export function enqueueImport(ownerId: string, target: ImportTarget, t: TFunction<'main'>): void {
-  if (jobs.some((job) => job.ownerId === ownerId && job.provider.id === target.provider.id && isActiveImport(job))) return
+  if (jobs.some((job) => job.ownerId === ownerId && job.provider.id === target.provider.id && isActiveImport(job) &&
+    job.devices.some(({ deviceId }) => target.devices.some((device) => device.deviceId === deviceId)))) return
   const entry: QueueEntry = {
     job: { ...target, id: String(++sequence), ownerId, state: 'queued', done: 0, total: 0 },
     controller: new AbortController(),
@@ -67,6 +69,10 @@ export function cancelImport(id: string): void {
   publish(entry!, { state: 'cancelled', finishedAt: Date.now() })
 }
 
+export function cancelAutomaticImports(ownerId: string): void {
+  for (const job of jobs) if (job.ownerId === ownerId && job.automatic && isActiveImport(job)) cancelImport(job.id)
+}
+
 async function runNext(): Promise<void> {
   if (current) return
   const entry = waiting.shift()
@@ -84,7 +90,7 @@ async function runNext(): Promise<void> {
       return
     }
     publish(entry, { state: 'running' })
-    notify({ key, tier: 'info', title: t('settings.dataImport.started', { source: job.provider.label }) })
+    if (!job.automatic) notify({ key, tier: 'info', title: t('settings.dataImport.started', { source: job.provider.label }) })
     const result: JobResult = { imported: [], existing: 0, failed: 0 }
     let processed = 0
     let total = job.devices.reduce((sum, device) => sum + device.count, 0)
@@ -115,13 +121,19 @@ async function runNext(): Promise<void> {
     const count = result.imported.length
     const failed = result.failed
     publish(entry, { state: cancelled ? 'cancelled' : 'finished', result, finishedAt: Date.now() })
-    if (ownsImport()) {
+    if (ownsImport() && result.imported.some(({ deviceId }) => deviceId === null)) {
+      void updateImportSettings(job.ownerId, (before) => ({
+        ...before,
+        sources: [...new Set([...before.sources, job.provider.id])],
+      })).catch(() => notify({ tier: 'error', title: t('settings.dataImport.syncSaveFailed') }))
+    }
+    if (ownsImport() && (!job.automatic || count > 0 || failed > 0)) {
       notify({
         key,
         tier: failed > 0 ? 'warning' : 'success',
         title: cancelled ? t('settings.dataImport.cancelledSummary', { count }) :
           failed > 0 ? t('settings.dataImport.partialSummary', { count, failed }) :
-            t('settings.dataImport.result', { count }),
+            t(job.automatic ? 'settings.dataImport.synced' : 'settings.dataImport.result', { count }),
       })
     }
   } catch {
@@ -129,7 +141,10 @@ async function runNext(): Promise<void> {
     if (ownsImport()) notify({ key, tier: 'error', title: t('settings.dataImport.failed') })
   } finally {
     unsubscribe()
-    if (ownsImport()) void importSourceCounts.refresh(job.provider.id)
+    if (ownsImport()) {
+      void importSourceCounts.refresh(job.provider.id)
+      void importedSourceHistory.refresh(job.provider.id)
+    }
     current = undefined
     void runNext()
   }
