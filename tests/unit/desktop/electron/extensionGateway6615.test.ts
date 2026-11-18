@@ -753,7 +753,7 @@ describe('the Apps as app_search reads them (10-19)', () => {
     ])
     // The tab_kind handed out is what session_open_in_tab / app_check parse back (it replaced app_list's): never parts to assemble.
     expect(parseExtensionTabKind(apps[0]!.tabs![0]!)).toEqual({ extensionId: 'agent-notes', tabName: 'board' })
-    expect(SWITCHED_OFF('雷达')).toMatch(/^Switched off on this computer\. You cannot switch it on: ask your owner to open 「App」 in 咕咕, open 雷达 there and press 「启用」 \(Turn on\); /)
+    expect(SWITCHED_OFF('雷达')).toMatch(/^Switched off on this computer\. You cannot switch it on: ask your owner to open Apps \(「市场」 in Chinese\) in 咕咕, open 雷达 there and press 「启用」 \(Turn on\); /)
   })
 
   // 5-minute game rounds 2-3 (10-29): a group App made in another chat read as 「on」 was taken for 「in this chat」.
