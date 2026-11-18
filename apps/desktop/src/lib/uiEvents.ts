@@ -63,3 +63,7 @@ export const UI_EVENTS = {
   // #6646 扩展详情里点了「转发」:聊天壳用同一个转发页把这个扩展发出去(detail = ExtensionForwardRequest)。
   forwardExtension: '__forward_extension',
 } as const
+
+export function requestGroupAgentCreation(chatId: string): void {
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
+}

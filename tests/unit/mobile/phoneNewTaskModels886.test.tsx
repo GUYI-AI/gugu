@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
+import { requestGroupAgentCreation } from '@/lib/uiEvents'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { DevicesContext, useDevicesStore } from '@/store/devicesContext'
-import { PhoneGroupAgentCreation, startPhoneNewTask } from '@/mobile/chat/PhoneNewTask'
+import { PhoneGroupAgentCreation } from '@/mobile/chat/PhoneNewTask'
 import * as rpc from '@/mobile/agent-watch/sessionpage-rpc'
 import { clickElement, createReactHarness, deferred, device, renderWithAppProviders } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
@@ -33,11 +34,16 @@ const catalogue = (harness = 'codex', signedIn = false): SessionpageSessionCreat
   models: [{ id: 'own-model', name: 'Own model', source: 'harness' }, { id: 'platform:available-model', name: 'Available model', source: 'gugu' }],
 })
 const sheet = () => document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')
-const input = () => sheet()?.querySelector<HTMLElement>('[contenteditable="true"]')!
+const requireSheet = () => {
+  const element = sheet()
+  if (!element) throw new Error('Expected the group creation sheet')
+  return element
+}
+const input = () => requireSheet().querySelector<HTMLElement>('[contenteditable="true"]')!
 const click = async (testId: string) => clickElement(document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!)
 const openFolder = () => click('agent-watch-create-folder')
 const closeFolder = () => click('phone-task-folder-card-close')
-const send = async () => { await clickElement(sheet()?.querySelector<HTMLButtonElement>('[data-slot="composer-bar"] button[aria-label="发送消息"]')!) }
+const send = async () => { await clickElement(requireSheet().querySelector<HTMLButtonElement>('[data-slot="composer-bar"] button[aria-label="发送消息"]')!) }
 beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
   harness = createReactHarness()
@@ -58,7 +64,7 @@ async function mount(chooseFolder = true, projectGroup = true) {
   await import('@/mobile/agent-watch/CreateSessionPage')
   composerDrafts.set(mobileCreationDraftKey('me', 'chat'), '')
   await renderWithAppProviders(harness, <Host />, { auth: { id: 'me' } })
-  await act(async () => { startPhoneNewTask('chat') })
+  await act(async () => { requestGroupAgentCreation('chat') })
   if (chooseFolder) {
     if (projectGroup) { await openFolder(); await click('project-folder-paper') }
     await act(async () => { writeComposer(input(), 'Keep this task draft') })
@@ -86,7 +92,7 @@ it('keeps the selected folder and its draft when its picker is dismissed', async
 })
 
 async function pickCodex() {
-  await clickElement(sheet()?.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
+  await clickElement(requireSheet().querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
   await clickElement(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="harness"]')!)
   await clickElement([...document.querySelectorAll<HTMLElement>('[role="radio"]')].find((item) => item.textContent === 'Codex')!)
   await clickElement(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-controls-sheet-close"]')!)
@@ -154,7 +160,7 @@ it('carries an explicitly chosen Work model through the project task send', asyn
   vi.mocked(rpc.fetchCreateModels).mockImplementation(async (_device, harness) => catalogue(harness, true))
   await mount()
   await pickCodex()
-  await clickElement(sheet()?.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
+  await clickElement(requireSheet().querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
   await clickElement(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!)
   const own = [...document.querySelectorAll<HTMLElement>('button')].find(item => item.textContent?.includes('Own model'))!
   await clickElement(own)

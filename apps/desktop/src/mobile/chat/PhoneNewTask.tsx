@@ -10,10 +10,6 @@ import './phone-new-task.css'
 
 const CreateSessionSheet = lazy(() => import('../agent-watch/CreateSessionPage').then(module => ({ default: module.CreateSessionSheet })))
 
-export function startPhoneNewTask(chatId: string) {
-  window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
-}
-
 export function PhoneGroupAgentCreation({ chatId, name }: { chatId: string; name: string }) {
   const [open, setOpen] = useState(false)
   const { t } = useTranslation('messaging')

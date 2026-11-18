@@ -1,5 +1,5 @@
 import { PhoneConversationHeading } from '../mobile/chat/PhoneConversationHeading'
-import { PhoneGroupAgentCreation, startPhoneNewTask } from '../mobile/chat/PhoneNewTask'
+import { PhoneGroupAgentCreation } from '../mobile/chat/PhoneNewTask'
 import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
@@ -20,7 +20,7 @@ import { useRoomCollab } from '../hooks/useRoomCollab'
 import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
 import { useForwardToChats, type ForwardNote } from './chat/forwardToChats'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import { UI_EVENTS } from '../lib/uiEvents'
+import { requestGroupAgentCreation, UI_EVENTS } from '../lib/uiEvents'
 import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
 import { buildGroupRosterCandidates } from '../lib/mention'
 import { topicMentionCandidates } from './chat/topicMentionModels'
@@ -530,7 +530,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         } : undefined}
         moreButtonRef={moreButtonRef}
         onSearch={() => { if (activeChatId) searchInChat(activeChatId) }}
-        onCreateAgent={mobile && !phoneTopic && isGroupChat ? () => startPhoneNewTask(activeChat.id) : undefined}
+        onCreateAgent={mobile && !phoneTopic && isGroupChat ? () => requestGroupAgentCreation(activeChat.id) : undefined}
         onOpenFolder={handleOpenFolder}
         onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? memberTopic : null) }}
         onCloseInfo={() => { if (activeChatId) closeInfoTab(activeChatId) }}

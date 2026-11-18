@@ -1,3 +1,4 @@
+import { requestGroupAgentCreation } from '@/lib/uiEvents'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
@@ -7,7 +8,7 @@ import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
 import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
-import { PhoneGroupAgentCreation, startPhoneNewTask } from '@/mobile/chat/PhoneNewTask'
+import { PhoneGroupAgentCreation } from '@/mobile/chat/PhoneNewTask'
 import { DevicesContext, useDevicesStore } from '@/store/devicesContext'
 import { publishRendererSession } from '@/lib/sessionPublication'
 import { chatService } from '@/lib/chat'
@@ -126,7 +127,7 @@ it.each(cases)('$surface/$theme/$count/$width: pending files align above the edi
   </>, { contacts: {}, auth: { id: 'owner' } })
   let composerHost: HTMLElement = harness.container
   if (surface === 'new-task') {
-    await act(async () => { startPhoneNewTask('position-task') })
+    await act(async () => { requestGroupAgentCreation('position-task') })
     await until('group creation sheet mounts', () => !!document.querySelector('[data-testid="phone-group-agent-sheet"]'))
     composerHost = document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')!
     await page.getByTestId('agent-watch-create-folder').click()

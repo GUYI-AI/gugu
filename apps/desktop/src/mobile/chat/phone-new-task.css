@@ -11,7 +11,7 @@
   font-size: var(--font-body);
 }
 .gg-phone-group-agent-destination > :first-child { flex: none; }
-.gg-phone-group-agent-destination > :last-child { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
+.gg-phone-group-agent-destination > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .gg-aw.gg-phone-group-agent-form { background: transparent; }
 .gg-phone-group-agent-form .gg-aw-thread-extras { gap: 0; }
 .gg-phone-group-agent-status { display: flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm); }

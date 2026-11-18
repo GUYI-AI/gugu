@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { requestGroupAgentCreation } from '@/lib/uiEvents'
 import { act, useLayoutEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
@@ -15,7 +16,7 @@ import { MobileAssistantApp } from '../../../../apps/desktop/src/mobile/assistan
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { InChatSlot } from '../../../../apps/desktop/src/lib/shellSlots'
 import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
-import { PhoneGroupAgentCreation, startPhoneNewTask } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
+import { PhoneGroupAgentCreation } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
 import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
 import { runInAction } from 'mobx'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
@@ -126,7 +127,7 @@ describe('chat editor draft writes', () => {
       await import('@/mobile/agent-watch/CreateSessionPage')
       await renderWithAppProviders(harness, <Host />)
       const chatInput = input()
-      await act(async () => { writeComposer(chatInput, 'group message draft'); startPhoneNewTask('chat') })
+      await act(async () => { writeComposer(chatInput, 'group message draft'); requestGroupAgentCreation('chat') })
       const sheet = document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')!
       await clickElement(sheet.querySelector<HTMLElement>('[data-testid="agent-watch-create-folder"]')!)
       await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!)

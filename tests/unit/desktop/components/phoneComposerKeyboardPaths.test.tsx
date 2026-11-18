@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
+import { requestGroupAgentCreation } from '@/lib/uiEvents'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantRuntimeProvider, useExternalStoreRuntime, type AttachmentAdapter, type PendingAttachment, type CompleteAttachment, type ThreadMessage } from '../../../../apps/desktop/node_modules/@assistant-ui/react'
 import { Thread } from '@/components/assistant-ui/thread.aui'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { DevicesContext, useDevicesStore } from '@/store/devicesContext'
-import { PhoneGroupAgentCreation, startPhoneNewTask } from '@/mobile/chat/PhoneNewTask'
+import { PhoneGroupAgentCreation } from '@/mobile/chat/PhoneNewTask'
 import * as rpc from '@/mobile/agent-watch/sessionpage-rpc'
 import { clickElement, createReactHarness, device, renderWithAppProviders } from '../../../support/testHarness'
 import { writeComposer } from '../../../support/composerEditor'
@@ -70,7 +71,7 @@ async function mount(kind: 'group' | 'dm' | 'agent' | 'task') {
   if (kind === 'task') await import('@/mobile/agent-watch/CreateSessionPage')
   await renderWithAppProviders(harness, kind === 'agent' ? <Agent /> : <Chat />)
   if (kind === 'task') {
-    await act(async () => { startPhoneNewTask('chat') })
+    await act(async () => { requestGroupAgentCreation('chat') })
     surface = document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')!
     await clickElement(surface.querySelector<HTMLElement>('[data-testid="agent-watch-create-folder"]')!)
     await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!)
