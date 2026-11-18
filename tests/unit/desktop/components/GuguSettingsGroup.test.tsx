@@ -10,13 +10,13 @@ const authority = vi.hoisted(() => ({ mode: 'legacy' as 'legacy' | 'owner' }))
 vi.mock('@/lib/connectionBridge',() => ({ useConnectionAuthority: () => ({ route: { mode: authority.mode,epoch: '0',phase: 'stable',acceptingNewOperations: true } }) }))
 const mine = vi.hoisted(() => ({ value: { contact: null, agentId: null, loading: false, error: null } as Mine }))
 // 这台宿主有没有本机运行时(桌面 = 有;手机 / 网页 = 没有):会议提醒读的是桌面主进程的日历,手机壳里没有那一层。
-const runtime = vi.hoisted(() => ({ agentRuntime: true, sessionHost: true, mobileApps: false }))
+const runtime = vi.hoisted(() => ({ agentRuntime: true, sessionHost: true }))
 vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../apps/desktop/src/platform')>()
   return {
     ...actual,
     platform: new Proxy(actual.platform, {
-      get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, ...runtime } : Reflect.get(target, key)),
+      get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, ...runtime, mobileApps: true } : Reflect.get(target, key)),
     }),
   }
 })
@@ -74,7 +74,6 @@ afterEach(() => {
   invoke.mockClear()
   runtime.agentRuntime = true
   runtime.sessionHost = true
-  runtime.mobileApps = false
   authority.mode = 'legacy'
 })
 
@@ -250,7 +249,6 @@ describe('Settings has nothing of the assistant', () => {
 describe('the person\'s own connected apps on the phone', () => {
   it('lists Marketplace after Devices and accepts existing connector routes', async () => {
     authority.mode = 'owner'
-    runtime.mobileApps = true
     await render(createNode(SettingsPanel, { inline: true, mobile: true, pane: 'nav' }), awake)
     const row = q('settings-nav-apps')!
     expect(row.textContent).toContain('市场')
