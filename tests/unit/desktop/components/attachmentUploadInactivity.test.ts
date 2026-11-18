@@ -23,7 +23,7 @@ describe('attachment upload inactivity (#1002)', () => {
     expect(outcome).toBe('uploaded')
   })
 
-  it('times out a 64 KiB upload without a response 20 seconds after its last bytes', async () => {
+  it('times out a 64 KiB upload without a response 21 seconds after its last bytes', async () => {
     vi.useFakeTimers()
     let outcome: unknown = 'pending'
     const done = attachmentSendTiming('message', 'chat').stage('upload', 1,
@@ -31,7 +31,9 @@ describe('attachment upload inactivity (#1002)', () => {
         progress(65_536, 65_536)
         return new Promise(() => {})
       }).catch(error => { outcome = error })
-    await vi.advanceTimersByTimeAsync(20_001)
+    await vi.advanceTimersByTimeAsync(20_999)
+    expect(outcome).toBe('pending')
+    await vi.advanceTimersByTimeAsync(1)
     expect(outcome).toBeInstanceOf(AttachmentStageTimeout)
     await done
   })

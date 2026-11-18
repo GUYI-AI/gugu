@@ -72,29 +72,25 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
   async function upload(task: AttachmentUploadTask, file: Blob, first: AttachmentUploadPlan | null) {
     let progress: DeclaredUploadProgress = { sha256: task.sha256, chatId: task.chatId, loaded: 0, total: task.size, attempt: 1 }
     host.progress(task.messageId, progress)
-    let stage: { capDeadline(expiresAt: string | undefined): void; progress(sent?: number, total?: number): void } | null = null
+    let capUploadDeadline: ((expiresAt: string | undefined) => void) | undefined
     try {
       const endpoint = await host.endpoint()
       const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, size_bytes: task.size, ...(first ? { plan: first } : {}) },
         { bytes: file.slice(0, file.size, task.contentType), name: task.name, contentType: task.contentType }, { id: task.messageId, chat_id: task.chatId, as: task.as }, {
           attempt: async (attempt, run) => {
             const controller = new AbortController(); controllers.add(controller)
-            const operation: AttachmentStageOperation<void> = async (signal, capDeadline, advance) => {
-              stage = { capDeadline, progress: advance }
-              const joined = linkedAttachmentSignal([signal, controller.signal])
-              const fetchImpl: typeof fetch = (input, init) => (endpoint.fetch ?? fetch)(input, { ...init,
-                signal: init?.signal ? linkedAttachmentSignal([joined, init.signal]) : joined })
-              await run({ ...endpoint, fetch: fetchImpl, ...(endpoint.upload ? { upload: (url, init, report) => endpoint.upload!(url,
-                { ...init, signal: init.signal ? linkedAttachmentSignal([joined, init.signal]) : joined }, report) } : {}) }, joined)
+            const operation: AttachmentStageOperation<void> = async (signal, capDeadline) => {
+              capUploadDeadline = capDeadline
+              await run(endpoint, linkedAttachmentSignal([signal, controller.signal]))
             }
             try {
               if (host.attempt) await host.attempt(task, attempt, operation)
-              else await runAttachmentStage('upload', operation, controller.signal, { timeoutMs: null })
+              // The storage requests each watch their own progress, including concurrently active parts.
+              else await runAttachmentStage('upload', operation, controller.signal, { timeoutMs: null, watchUpload: false })
             } finally { controllers.delete(controller); controller.abort(new Error('Upload attempt ended')) }
           },
-          onPlan: plan => { stage?.capDeadline(plan.expires_at); stage?.progress() },
+          onPlan: plan => capUploadDeadline?.(plan.expires_at),
           onProgress: (transfer, attempt) => {
-            stage?.progress(transfer.loaded, transfer.total)
             progress = { sha256: task.sha256, chatId: task.chatId, loaded: transfer.loaded, total: transfer.total ?? task.size, attempt }
             host.progress(task.messageId, progress)
           },

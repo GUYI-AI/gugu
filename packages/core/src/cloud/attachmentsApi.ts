@@ -8,6 +8,7 @@
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
 import { retryFileDownload } from './fileDownloadRetry'
+import { runAttachmentStage } from './attachmentDeadline'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 import { sha256 as sha256Hash } from '@noble/hashes/sha2.js'
@@ -52,12 +53,12 @@ export class AttachmentsError extends Error {
 async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
   signal?.throwIfAborted()
   const url = `${endpoint.supabaseUrl.replace(/\/+$/, '')}/functions/v1/attachments/${route}`
-  const request = async () => {
+  const request = async (requestSignal = signal) => {
     const response = await (endpoint.fetch ?? fetch)(url, {
       method: 'POST',
       headers: { apikey: endpoint.anonKey, Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal,
+      signal: requestSignal,
     })
     const text = await response.text()
     let json: unknown = null
@@ -70,8 +71,9 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
     }
     return json
   }
+  if (route === 'upload-parts' || route === 'upload-complete') return runAttachmentStage('upload', request, signal)
   return route === 'file-download' || route === 'file-resolve'
-    ? retryFileDownload(() => ({ stage: route === 'file-download' ? 'signature' : 'metadata', url }), request, signal)
+    ? retryFileDownload(() => ({ stage: route === 'file-download' ? 'signature' : 'metadata', url }), () => request(), signal)
     : request()
 }
 
@@ -155,10 +157,11 @@ async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string,
           try {
             const status = await retryFileDownload(() => ({ stage: 'oss', url: sent.url }),
               () => putPart(endpoint, sent, blob.slice(start, start + sent.bytes), loaded => { sending.set(sent.n, loaded); progress() }, signal), signal)
+              .finally(() => sending.delete(sent.n))
             if (status === 403) { expired = true; return }
             report.push(sent.n)
             progress()
-          } catch (error) { failures.push(error) } finally { sending.delete(sent.n) }
+          } catch (error) { failures.push(error) }
         }
       }))
       if (failures.length) {
@@ -185,10 +188,23 @@ async function putPart(endpoint: AttachmentsEndpoint, part: SignedPart, body: Bl
   // The runtime sets content-length from the body, which is exactly the signed length; a hand-set one is refused by fetch.
   const headers = Object.fromEntries(Object.entries(part.headers).filter(([name]) => name.toLowerCase() !== 'content-length'))
   const init = { method: 'PUT' as const, body, headers, signal }
-  const sent = endpoint.upload ? await endpoint.upload(part.url, init, progress => onLoaded(progress.loaded))
-    : await (endpoint.fetch ?? fetch)(part.url, init).then(async response => { await response.body?.cancel(); return response })
+  const sent = await sendAttachmentRequest(endpoint, part.url, init, part.bytes, progress => onLoaded(progress.loaded))
   if (sent.status === 200 || sent.status === 403) return sent.status
   throw new AttachmentsError('upload', sent.status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${sent.status}`)
+}
+
+async function sendAttachmentRequest(endpoint: AttachmentsEndpoint, url: string, init: Parameters<AttachmentUploadTransport>[1],
+  size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number }> {
+  const upload = endpoint.upload
+  if (!upload) {
+    const response = await (endpoint.fetch ?? fetch)(url, init)
+    await response.body?.cancel()
+    return response
+  }
+  return runAttachmentStage('upload', (signal, _capDeadline, advance) => upload(url, { ...init, signal }, progress => {
+    advance(progress.loaded, progress.total || size)
+    onProgress?.(progress)
+  }), init.signal)
 }
 
 export type AttachmentUploadPlan = { expires_at?: string; url: string; fields: Record<string, string>; max_bytes: number; method?: 'POST' | 'PUT'; headers?: Record<string, string>
@@ -218,8 +234,7 @@ export async function uploadAttachmentPlan(endpoint: AttachmentsEndpoint, form: 
     body.append('file', blob, file.name)
   }
   const init = { method, body, headers: method === 'PUT' ? { 'content-type': file.contentType, ...form.headers } : form.headers, signal }
-  const posted = endpoint.upload ? await endpoint.upload(form.url, init, onProgress)
-    : await (endpoint.fetch ?? fetch)(form.url, init)
+  const posted = await sendAttachmentRequest(endpoint, form.url, init, size, onProgress)
   if (posted.status !== 200 && posted.status !== 204 && !(allowExisting && posted.status === 409)) {
     throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}`)
   }
@@ -274,7 +289,11 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
   for (let attempt = 1; ; attempt++) {
     try {
       await (hooks.attempt ?? ((_, run) => run(endpoint)))(attempt, async (attemptEndpoint, signal) => {
-        if (!plan) { const fresh = await planAttachmentUpload(attemptEndpoint, { size: declared.size_bytes, contentType: file.contentType }, { chat_id: message.chat_id, as: message.as }, signal); plan = fresh; uploadKey = fresh.staging_key }
+        if (!plan) {
+          const fresh = await runAttachmentStage('upload', planSignal => planAttachmentUpload(attemptEndpoint,
+            { size: declared.size_bytes, contentType: file.contentType }, { chat_id: message.chat_id, as: message.as }, planSignal), signal)
+          plan = fresh; uploadKey = fresh.staging_key
+        }
         hooks.onPlan?.(plan)
         await uploadAttachmentPlan(attemptEndpoint, plan, { ...file, name: file.name || 'file' }, attempt > 1, progress => hooks.onProgress?.(progress, attempt), signal)
       })

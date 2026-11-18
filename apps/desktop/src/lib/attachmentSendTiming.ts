@@ -30,17 +30,18 @@ export function attachmentSendTiming(clientId: string, chatId: string) {
   const submitted = performance.now()
   return {
     clientId,
-    async stage<T>(stage: AttachmentSendStage, attempt: number, operation: (signal: AbortSignal, capDeadline: (expiresAt: string | undefined) => void, progress: (sent?: number, total?: number) => void) => Promise<T>, parent?: AbortSignal, options?: { timeoutMs?: number | null; logResult?: (result: T) => boolean }): Promise<T> {
+    async stage<T>(stage: AttachmentSendStage, attempt: number, operation: (signal: AbortSignal, capDeadline: (expiresAt: string | undefined) => void, progress: (sent?: number, total?: number) => void) => Promise<T>, parent?: AbortSignal, options?: { timeoutMs?: number | null; watchUpload?: boolean; logResult?: (result: T) => boolean }): Promise<T> {
       const started = performance.now()
       const fields = { clientId, chatId, stage, attempt }
       try {
-        const result = await runAttachmentStage(stage, operation, parent, { timeoutMs: options?.timeoutMs === undefined ? ATTACHMENT_SEND_DEADLINES[stage] : options.timeoutMs, timeoutError: () => new AttachmentStageTimeout(stage) })
+        const result = await runAttachmentStage(stage, operation, parent, { timeoutMs: options?.timeoutMs === undefined ? ATTACHMENT_SEND_DEADLINES[stage] : options.timeoutMs, watchUpload: options?.watchUpload, timeoutError: () => new AttachmentStageTimeout(stage) })
         const elapsedMs = Math.round(performance.now() - started)
         if (options?.logResult?.(result) !== false) log[elapsedMs > 2000 ? 'warn' : 'info']({ ...fields, elapsedMs, outcome: 'success' }, 'attachment send stage timing')
         return result
       } catch (error) {
-        log[parent?.aborted && !(error instanceof AttachmentStageTimeout) ? 'info' : 'warn']({ ...fields, elapsedMs: Math.round(performance.now() - started), outcome: error instanceof AttachmentStageTimeout ? 'timeout' : parent?.aborted ? 'cancelled' : 'failed' }, 'attachment send stage timing')
-        throw error
+        const failure = error instanceof AttachmentDeadlineError && !(error instanceof AttachmentStageTimeout) ? new AttachmentStageTimeout(stage) : error
+        log[parent?.aborted && !(failure instanceof AttachmentStageTimeout) ? 'info' : 'warn']({ ...fields, elapsedMs: Math.round(performance.now() - started), outcome: failure instanceof AttachmentStageTimeout ? 'timeout' : parent?.aborted ? 'cancelled' : 'failed' }, 'attachment send stage timing')
+        throw failure
       }
     },
     finish(outcome: 'success' | 'failed' | 'unknown', source?: string) {

@@ -1,5 +1,6 @@
 import { coreLogger } from '../log'
 import { isTransientNetworkError, transientNetworkErrorCode } from '../shared/networkError'
+import { AttachmentDeadlineError } from './attachmentDeadline'
 
 const log = coreLogger('attachment-download')
 const RETRY_WINDOW_MS = 90_000
@@ -54,7 +55,7 @@ export async function retryFileDownload<T>(hop: () => Hop, action: () => Promise
       return result
     } catch (error) {
       signal?.throwIfAborted()
-      if ((error as { name?: unknown } | null)?.name === 'AbortError' || error instanceof FileDownloadFailure) throw error
+      if ((error as { name?: unknown } | null)?.name === 'AbortError' || error instanceof FileDownloadFailure || error instanceof AttachmentDeadlineError) throw error
       // Keep typed authorization/validation refusals intact for existing callers.
       const retryable = isTransientFileReadError(error)
       if (!retryable && typeof (error as { status?: unknown } | null)?.status === 'number') throw error
