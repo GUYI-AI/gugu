@@ -32,13 +32,19 @@ async function run() {
     response.setHeader('Content-Type', 'text/html');
     if (request.url === '/cookie-set') response.setHeader('Set-Cookie', 'page_secret=private-page-value; HttpOnly; Path=/');
     if (request.url === '/cookie-check') receivedPrivateCookie = request.headers.cookie?.includes('page_secret=private-page-value') === true;
-    response.end(request.url?.startsWith('/frame')
-      ? '<!doctype html><button id="inside" onclick="document.body.dataset.clicked=\'yes\'">Inside frame</button>'
-      : `<!doctype html><title>Scoped browser protocol</title>
-        <iframe id="same" src="/frame" title="same origin"></iframe>
-        <iframe id="cross" src="http://localhost:${port}/frame" title="cross site"></iframe>
-        <div id="drag" draggable="true" style="padding:30px;width:120px" ondragstart="event.dataTransfer.setData('text/plain','fixture')">Drag me</div>
-        <div id="drop" style="padding:40px;width:160px" ondragover="event.preventDefault()" ondrop="event.preventDefault();document.body.dataset.dropped=event.dataTransfer.getData('text/plain')">Drop here</div>`);
+    // Cookie and navigation checks only need a document. Load the cross-site
+    // renderer once, in the page that exercises frame input and drag and drop.
+    if (request.url !== '/interactive') {
+      response.end(request.url === '/frame'
+        ? '<!doctype html><button id="inside" onclick="document.body.dataset.clicked=\'yes\'">Inside frame</button>'
+        : '<!doctype html><title>Scoped navigation fixture</title>');
+      return;
+    }
+    response.end(`<!doctype html><title>Scoped browser protocol</title>
+      <iframe id="same" src="/frame" title="same origin"></iframe>
+      <iframe id="cross" src="http://localhost:${port}/frame" title="cross site"></iframe>
+      <div id="drag" draggable="true" style="padding:30px;width:120px" ondragstart="event.dataTransfer.setData('text/plain','fixture')">Drag me</div>
+      <div id="drop" style="padding:40px;width:160px" ondragover="event.preventDefault()" ondrop="event.preventDefault();document.body.dataset.dropped=event.dataTransfer.getData('text/plain')">Drop here</div>`);
   });
   server.on('error', error => {
     process.stderr.write(`page protocol fixture server failed: ${String(error)}\n`);
@@ -58,7 +64,7 @@ async function run() {
   const view = new WebContentsView({ webPreferences: { sandbox: true, partition: 'persist:page-protocol-probe' } });
   const runtime = new BrowserPageRuntime(view);
   runtime.moveTo(window); runtime.layout({ x: 0, y: 0, width: 1080, height: 760 }, true);
-  await runtime.navigate(`http://127.0.0.1:${port}/`);
+  await runtime.navigate(`http://127.0.0.1:${port}/interactive`);
   const contents = view.webContents;
   const nativeSend = contents.debugger.sendCommand.bind(contents.debugger);
   contents.debugger.sendCommand = ((...args: Parameters<typeof nativeSend>) => {
