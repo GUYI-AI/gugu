@@ -47,7 +47,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
     (section) =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
-      (section !== 'apps' || platform.capabilities.mobileApps) &&
+      (section !== 'apps' || (mobile && platform.capabilities.mobileApps)) &&
       (section !== 'data-import' || (!mobile && platform.capabilities.sessionHost)) &&
       (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
       (section !== 'connectors' || (!mobile && platform.capabilities.sessionHost)) &&

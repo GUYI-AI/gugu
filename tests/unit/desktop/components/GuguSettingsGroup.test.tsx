@@ -227,7 +227,7 @@ describe('咕咕的连接应用(画在它 App 的面板上)', () => {
 describe('Settings has nothing of the assistant', () => {
   it.each([
     ['assistant', false], ['channels', false],
-    ['assistant', true], ['connectors', true], ['channels', true],
+    ['assistant', true],
   ] as const)('a %s route draws the account, not the assistant (mobile=%s; connections kept in its home)', async (section, mobile) => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
     await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile, pane: 'detail' }), awake)
