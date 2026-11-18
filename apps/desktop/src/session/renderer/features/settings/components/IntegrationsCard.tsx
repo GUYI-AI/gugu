@@ -145,7 +145,10 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean }> = ({ inSettings = fal
   const tryPlaybook = (prompt: string) => {
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, prompt);
     if (host.remote) remoteHostsStore.requestNewSession(host.remote.deviceId);
-    if (inSettings) window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+    if (inSettings) {
+      window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+      window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal));
+    }
     navigate('new-session');
   };
 

@@ -1,4 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
+import { UI_EVENTS } from '@/lib/uiEvents';
 import { messageForUser } from '@/lib/userFacingError';
 import { ArrowRight, ChevronRight, Plus } from '@/lib/icons';
 import { appsHere } from '@/components/appSlot/appsHere';
@@ -112,7 +113,10 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
                   ? {
                       action: {
                         label: translate('mcpLibrary.manageApps'),
-                        onClick: () => appsHere!.openAppsPage(),
+                        onClick: () => {
+                          if (inSettings) window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+                          appsHere!.openAppsPage();
+                        },
                       },
                     }
                   : {})}
