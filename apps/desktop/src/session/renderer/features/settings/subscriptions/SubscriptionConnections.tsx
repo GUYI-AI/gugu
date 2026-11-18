@@ -435,9 +435,9 @@ export function SubscriptionConnections({
             )
           }
           form={adding && canAdd ? connectionForm : null}
+          localConfiguration={<AgentHomeRow providerId={agent.id} machine={machine ?? null} />}
         >
           {open && options(true)}
-          <AgentHomeRow providerId={agent.id} machine={machine ?? null} />
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
