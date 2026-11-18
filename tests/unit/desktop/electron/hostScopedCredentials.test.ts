@@ -1,3 +1,5 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RuntimeAuthExpiredError, type RuntimeAuthProvider } from '@gugu/core'
 import type { GuguMcpContext } from '../../../../apps/desktop/electron/acp-engine-utils'
@@ -82,7 +84,7 @@ const deepConsumers = [
     name: 'new MCP bridge',
     run: async (context: AcpEngineRuntimeContext) => {
       await buildSocialBridge(context, 'agent-b', null, {
-        host: recordingMcpHost,
+        host: recordingMcpHost, attachments: testAttachmentUploads(),
         grantKey: 'native:b',
       })
       return lastMcpToken()
@@ -97,14 +99,32 @@ beforeEach(() => {
 })
 
 describe('host-scoped task runtime credentials (#1755 slice 1)', () => {
+  it('every ACP and PTY bridge receives the same device attachment host', () => {
+    const source = readFileSync(new URL('../../../../apps/desktop/electron/main.ts', import.meta.url), 'utf8')
+    const acp = [...source.matchAll(/socialBridgeDeps:\s*\{([\s\S]*?)grantKey:/g)].map(match => match[1])
+    const pty = source.match(/socialBridge\(info, host\)[\s\S]*?return\s*\{([\s\S]*?)grantKey:/)?.[1]
+    const sites = [...acp, pty]
+    expect(sites).toHaveLength(3)
+    for (const site of sites) expect(site).toMatch(/attachments:\s*attachmentUploads\b/)
+  })
+
+  it('rejects a bridge without its attachment host before granting tools', async () => {
+    await expect(buildSocialBridge(fixedContext('A'), 'agent-a', null, {
+      host: recordingMcpHost, grantKey: 'missing-uploads',
+      // @ts-expect-error Exercise a malformed runtime dependency as well as the required type.
+      attachments: undefined,
+    })).rejects.toThrow('Device attachment upload host is required')
+    expect(mocks.mcpContexts).toEqual([])
+  })
+
   it('A/B interleaving keeps engine, identity, and MCP on their own provider', async () => {
     const A = fixedContext('A')
     const B = fixedContext('B')
 
     await buildAgentIdentityBootstrap(A, 'agent-a')
     await buildAgentIdentityBootstrap(B, 'agent-b')
-    await buildSocialBridge(A, 'agent-a', null, { host: recordingMcpHost, grantKey: 'native:a' })
-    await buildSocialBridge(B, 'agent-b', null, { host: recordingMcpHost, grantKey: 'native:b' })
+    await buildSocialBridge(A, 'agent-a', null, { host: recordingMcpHost, attachments: testAttachmentUploads(), grantKey: 'native:a' })
+    await buildSocialBridge(B, 'agent-b', null, { host: recordingMcpHost, attachments: testAttachmentUploads(), grantKey: 'native:b' })
 
     expect(mocks.identityTokens).toEqual(['A_TOKEN', 'B_TOKEN'])
     await expect(Promise.all(mocks.mcpContexts.map((context) => {

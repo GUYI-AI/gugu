@@ -1034,8 +1034,7 @@ export function providerUsesSessionAcpSessionAdapter(providerId: string): boolea
 // distinction matters because several harnesses expose their own Task/Agent worker and the generic
 // platform routing rule otherwise classifies "start an agent" as ordinary work.
 const SESSION_SPAWN_ROUTING_RULE = `For a persistent Gugu agent/session/child (「起一个 agent」「创建一个小弟」), use \`session_spawn\`. Only use a harness-internal worker when explicitly requested; it is not a session agent and cannot receive Gugu messages. Never substitute one for a requested Gugu session; report inability to start it and why.
-On a turn a person typed straight into this panel, when you create or materially change a file for them to
-inspect, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
+When a person typing straight into this panel will inspect a file you create or materially change, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
 
 function guguSessionSurfaceBody(surface: HarnessSessionSurface): string {
   switch (surface) {

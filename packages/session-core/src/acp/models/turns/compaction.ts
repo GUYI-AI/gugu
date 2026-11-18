@@ -33,8 +33,8 @@ export const transcriptCompactionSchema = z.object({
   summary: z.string(),
   /** Epoch ms when the compaction row opened. */
   startedAt: z.number(),
-  /** 用户自己敲的 `/compact`，还是撞到窗口自动压的。 */
-  trigger: z.enum(['manual', 'automatic']).optional(),
+  /** 用户自己敲的 `/compact`、撞到窗口自动压的，还是 #3005 人离开时赶在提示缓存过期前压的（`idle`）。 */
+  trigger: z.enum(['manual', 'automatic', 'idle']).optional(),
   /**
    * 压之前 / 压之后的 token 数。这两个数是**用户唯一能据以判断"丢了多少原文"的依据**，
    * 所以拿到就画出来；拿不到（RFD 那条通道不给）就只画一条线。

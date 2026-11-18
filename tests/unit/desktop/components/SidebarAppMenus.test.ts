@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { clickElement, createNode, createReactHarness, fireContextMenu, renderWithAppProviders } from '../../../support/testHarness'
+import { layOutRailDock } from '../../../support/railDockLayout'
 
 // 「App」与钉着的 App 只在桌面端画(agent 跑在桌面里)。
 vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
@@ -46,8 +47,10 @@ const menuLabels = () => menuItems().map((item) => item.querySelector('.gg-menu-
 describe('#7050 左栏的右键菜单', () => {
   let harness: ReturnType<typeof createReactHarness>
   const onTabChange = vi.fn()
+  let undoLayout: () => void
 
   beforeEach(async () => {
+    undoLayout = layOutRailDock()
     harness = createReactHarness()
     // timer 有后台(启用即在跑);notes 没有、也没打开过;alpha 装着但没钉。
     installedExtensionsStore.applyList({
@@ -67,6 +70,7 @@ describe('#7050 左栏的右键菜单', () => {
 
   afterEach(() => {
     harness.cleanup()
+    undoLayout()
     vi.clearAllMocks()
   })
 
@@ -80,7 +84,7 @@ describe('#7050 左栏的右键菜单', () => {
 
   it('右键没开的 App:打开 / 在新窗口打开 / 从左栏移走;点「打开」= 点它的图标', async () => {
     await fireContextMenu(dockButton('notes'))
-    expect(menuLabels()).toEqual(['打开', '在新窗口打开', 'App 设置', '从左栏移走'])
+    expect(menuLabels()).toEqual(['打开', '在新窗口打开', '应用设置', '从左栏移走'])
     expect(dockButton('notes').hasAttribute('data-menu-open')).toBe(true)
     await clickElement(menuItems()[0]!)
     expect(onTabChange).toHaveBeenCalledWith('tasks')
@@ -90,7 +94,7 @@ describe('#7050 左栏的右键菜单', () => {
 
   it('右键开着的 App:没有「打开」;「从左栏移走」只把它从左栏拿走', async () => {
     await fireContextMenu(dockButton('timer'))
-    expect(menuLabels()).toEqual(['在新窗口打开', 'App 设置', '从左栏移走', '退出'])
+    expect(menuLabels()).toEqual(['在新窗口打开', '应用设置', '从左栏移走', '退出'])
     await clickElement(menuItems()[2]!)
     expect(unpinFromDock).toHaveBeenCalledWith('timer')
     expect(quitApp).not.toHaveBeenCalled()

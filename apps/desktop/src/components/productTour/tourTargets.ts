@@ -60,14 +60,15 @@ function openMessagesIfNeeded(step: TourStepId) {
 }
 
 /**
- * The sidebar is unfolding: open, but its open/close progress has not reached 1 (`--gg-sidebar-progress`, layout-provider's
- * SIDEBAR_PROGRESS_VAR on the sidebar's content layer). Its entries come in over the second half (创建智能体 starts 0 wide
- * and transparent), so one missing now is not absent yet: a tour started from the collapsed sidebar waits for it.
+ * The sidebar is unfolding: open, but its open/close progress has not reached 1. Its entries come in over the second half
+ * (创建智能体 starts 0 wide and transparent, its opacity written each frame by the sidebar: below 1 until the progress is),
+ * so one missing now is not absent yet: a tour started from the collapsed sidebar waits for it.
  */
 function sidebarUnfolding(): boolean {
   const sidebar = document.querySelector(SIDEBAR)
   if (!sidebar || readPanelToggle('list:sessions')?.open !== true) return false
-  return Number.parseFloat(getComputedStyle(sidebar).getPropertyValue('--gg-sidebar-progress')) < 1
+  const opacity = sidebar.querySelector<HTMLElement>('[data-testid="sidebar-create-agent"]')?.style.opacity
+  return opacity !== undefined && opacity !== '' && Number.parseFloat(opacity) < 1
 }
 
 type Measurement = { step: TourStepId; target: Target | null; rect: DOMRect | null }

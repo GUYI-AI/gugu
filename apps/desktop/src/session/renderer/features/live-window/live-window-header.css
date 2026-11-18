@@ -1,0 +1,12 @@
+.live-window-header { display: inline-flex; flex: none; align-items: center; gap: var(--spacing-xs); vertical-align: middle; }
+.live-window-header [data-live-window-toggle] { color: var(--muted-fg); }
+.live-window-header [data-running] { color: var(--accent); }
+.live-window-header [data-disconnected] { color: var(--muted-fg); opacity: .55; }
+.live-window-header-glyph { display: inline-flex; position: relative; width: 16px; height: 16px; overflow: hidden; }
+.live-window-header-glyph svg { width: 100%; height: 100%; }
+.live-window-header [data-kind='browser'] .live-window-header-glyph { border-radius: 50%; }
+.live-window-header [data-running] .live-window-header-glyph::after { content: ''; position: absolute; inset: 3px 3px auto; height: 2px; background: currentColor; opacity: .7; animation: live-window-scan 1.4s ease-in-out infinite alternate; }
+.live-window-header-label { color: var(--muted-fg); font-size: var(--font-caption); line-height: var(--lh-caption); white-space: nowrap; }
+[data-live-window-disconnected] { position: absolute; inset: auto 0 0; padding: var(--spacing-xs) var(--spacing-sm); color: var(--fg); background: color-mix(in srgb, var(--bg) 94%, transparent); text-align: center; font-size: var(--font-caption); pointer-events: none; }
+@keyframes live-window-scan { to { transform: translateY(7px); } }
+@media (prefers-reduced-motion: reduce) { .live-window-header [data-running] .live-window-header-glyph::after { animation: none; transform: translateY(3px); } }

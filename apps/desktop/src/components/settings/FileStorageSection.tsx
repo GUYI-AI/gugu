@@ -13,6 +13,8 @@ import { useSettingsDetail } from './SettingsDetailNavigation'
 import { FileStorageDashboard } from './FileStorageDashboard'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { RefreshFailed } from '../ui/RefreshFailed'
+import { useMobileShell } from '@/hooks/useMobileShell'
+import { SettingsChoice } from './SettingsChoice'
 
 /**
  * 「文件存储与读取」(owner 10-27):全局设置里唯一的一处,一个人一份。owner 10-28 批的设计稿:上面是仪表盘
@@ -36,6 +38,7 @@ const projectGroupMachines = replica({
 
 export function FileStorageSection({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation('settings')
+  const mobile = useMobileShell()
   useSettingsDetail('file-storage', t('fileStorage.title'), onBack)
   const { user } = useAuth()
   const userId = user?.id
@@ -83,28 +86,21 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
       </>}>
       {bound && <SettingsRow title={<label htmlFor="settings-file-mode">{t('fileStorage.files')}</label>}
         description={`${t(cloud ? 'fileStorage.filesCloudHint' : 'fileStorage.filesMachineHint')} ${t('fileStorage.machines')}`}
-        control={(
-          <select id="settings-file-mode" className="gg-settings-select" value={cloud ? 'cloud' : 'machine'}
-            onChange={(event) => update(event.target.value === 'cloud' ? { proactive_upload: true } : { proactive_upload: false, temporary_transfer: true })}>
-            <option value="machine">{t('fileStorage.filesMachine')}</option>
-            <option value="cloud">{t('fileStorage.filesCloud')}</option>
-          </select>
-        )} />}
+        control={<SettingsChoice id="settings-file-mode" label={t('fileStorage.files')} mobile={mobile} value={cloud ? 'cloud' : 'machine'}
+          options={[
+            { value: 'machine', label: t('fileStorage.filesMachine') },
+            { value: 'cloud', label: t('fileStorage.filesCloud') },
+          ]}
+          onChange={value => update(value === 'cloud' ? { proactive_upload: true } : { proactive_upload: false, temporary_transfer: true })} />} />}
       {bound && !cloud && <SettingsRow title={<label htmlFor="settings-file-retention">{t('fileStorage.temporaryRetention')}</label>}
         description={t('fileStorage.temporaryRetentionHint')}
-        control={(
-          <select id="settings-file-retention" className="gg-settings-select" value={storage.retention}
-            onChange={(event) => update({ retention: event.target.value as FileStorage['retention'] })}>
-            {FILE_RETENTIONS.map((value) => <option key={value} value={value}>{t(`fileStorage.retentions.${value}`)}</option>)}
-          </select>
-        )} />}
+        control={<SettingsChoice id="settings-file-retention" label={t('fileStorage.temporaryRetention')} mobile={mobile} value={storage.retention}
+          options={FILE_RETENTIONS.map(value => ({ value, label: t(`fileStorage.retentions.${value}`) }))}
+          onChange={retention => update({ retention })} />} />}
       <SettingsRow title={<label htmlFor="settings-kept-retention">{t('fileStorage.kept')}</label>} description={t('fileStorage.keptHint')}
-        control={(
-          <select id="settings-kept-retention" className="gg-settings-select" value={storage.image_retention}
-            onChange={(event) => { const value = event.target.value as FileStorage['image_retention']; update({ image_retention: value, temporary_retention: value }) }}>
-            {IMAGE_RETENTIONS.map((value) => <option key={value} value={value}>{t(`fileStorage.retentions.${value}`)}</option>)}
-          </select>
-        )} />
+        control={<SettingsChoice id="settings-kept-retention" label={t('fileStorage.kept')} mobile={mobile} value={storage.image_retention}
+          options={IMAGE_RETENTIONS.map(value => ({ value, label: t(`fileStorage.retentions.${value}`) }))}
+          onChange={value => update({ image_retention: value, temporary_retention: value })} />} />
     </SettingsGroup>
   )
   return (

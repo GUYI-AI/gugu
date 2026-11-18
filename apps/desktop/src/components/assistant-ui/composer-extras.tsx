@@ -1,4 +1,5 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, type ReactNode, type MutableRefObject } from 'react'
+import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 
 /**
  * 官方 `thread.aui.tsx` 里给宿主留的两个插槽。
@@ -22,9 +23,9 @@ import { createContext, useContext, type ReactNode } from 'react'
  */
 export type ComposerStop = { onStop: () => void; stopping: boolean }
 
-type Slots = { inline: ReactNode; above: ReactNode; inputHeader: ReactNode; tail: ReactNode; placeholder: string | null; stop: ComposerStop | null }
+type Slots = { editorApiRef?: MutableRefObject<PromptEditorRef | null>; inline: ReactNode; above: ReactNode; inputHeader: ReactNode; tail: ReactNode; placeholder: string | null; stop: ComposerStop | null; attachmentPlacement: 'menu' | 'input' }
 
-const ComposerSlotsContext = createContext<Slots>({ inline: null, above: null, inputHeader: null, tail: null, placeholder: null, stop: null })
+const ComposerSlotsContext = createContext<Slots>({ inline: null, above: null, inputHeader: null, tail: null, placeholder: null, stop: null, attachmentPlacement: 'menu' })
 
 export function ComposerExtrasProvider({
   children,
@@ -33,9 +34,12 @@ export function ComposerExtrasProvider({
   inputHeader = null,
   tail = null,
   placeholder = null,
-  stop = null
+  stop = null,
+  editorApiRef,
+  attachmentPlacement = 'menu'
 }: {
   children: ReactNode
+  editorApiRef?: MutableRefObject<PromptEditorRef | null>
   /** 操作行里的东西，和发送键同排。 */
   extras: ReactNode
   /** 输入框正上方的东西。它在贴底的那一带里,❌ 放高度没上限的东西:比视口高就把整个视口盖住。 */
@@ -58,12 +62,18 @@ export function ComposerExtrasProvider({
    * ❌ 不借官方的 isRunning/onCancel：那会锁输入框（发送在途与 agent 运行是两份不同的事实）。
    */
   stop?: ComposerStop | null
+  /** Creation stages local files in the same input action as an existing task. */
+  attachmentPlacement?: 'menu' | 'input'
 }) {
   return (
-    <ComposerSlotsContext.Provider value={{ inline: extras, above, inputHeader, tail, placeholder, stop }}>
+    <ComposerSlotsContext.Provider value={{ inline: extras, above, inputHeader, tail, placeholder, stop, attachmentPlacement, editorApiRef }}>
       {children}
     </ComposerSlotsContext.Provider>
   )
+}
+
+export function useComposerAttachmentPlacement() {
+  return useContext(ComposerSlotsContext).attachmentPlacement
 }
 
 /** 宿主指定的占位文字；没给就 null，官方那份退回 copy.ts 的默认。 */
@@ -94,3 +104,5 @@ export function ComposerInputHeader() {
 export function ThreadTailExtras() {
   return <>{useContext(ComposerSlotsContext).tail}</>
 }
+
+export function useComposerEditorRef() { return useContext(ComposerSlotsContext).editorApiRef }

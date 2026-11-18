@@ -64,11 +64,11 @@ export function conversationCanCollapse(item: ChatMessage, ctx: Pick<MeasureCtx,
 }
 
 /**
- * 气泡下面那条尾行:none 不画;blank 里只有悬停才显的时间、复制、编辑,平时是一道空白;ink 里有常驻的「收起全文」
- * 或引用脚注(conversation-message.css 豁免了它们的悬停隐藏)。量高、绘制、下一行的间距(flatten)都只读这里 ——
- * 只有 blank 能顶替行间那 20。
+ * The inline lane can contain hover actions, a collapse control or a quote.
+ * A reply with trailing artifacts draws its controls in the separate last row.
  */
 export function conversationTailLane(item: ChatMessage, canCollapse: boolean, referenceInFooter: boolean): 'none' | 'blank' | 'ink' {
+  if (item.conversationActionsMoved) return 'none';
   if (canCollapse || referenceInFooter) return 'ink';
   return hasConversationActions(item) ? 'blank' : 'none';
 }

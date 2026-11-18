@@ -37,7 +37,7 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
-  { id: 'preferences', sections: ['general', 'interface', 'model', 'permissions', 'passwords'] },
+  { id: 'preferences', sections: ['general', 'connectors', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
 ]
@@ -128,7 +128,7 @@ function IbPhone() {
 }
 
 // Nothing of the assistant here: its 资料 and 连接应用 live in its App (owner 11-12). 连接应用 here is the person's own
-// connected apps, a phone row under 通用 (a computer has them in the Library's 集成).
+// connected apps, under General in Preferences.
 const NAV_ITEMS: NavItem[] = [
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },

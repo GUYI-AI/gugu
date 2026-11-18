@@ -60,7 +60,7 @@ export const GroupAppsPicker = observer(function GroupAppsPicker({ chatId, mobil
       </div>
       {apps.map((app) => (
           <div key={app.extensionId} data-app-id={app.extensionId} className="flex items-center gap-1">
-            <Button variant="ghost" className="min-w-0 flex-1 justify-start" data-testid="group-apps-open" onClick={() => { openApp(app.extensionId, chatId); onClose() }}>
+            <Button variant="ghost" className="min-w-0 flex-1 justify-start" data-testid="group-apps-open" data-pane-opener="" onClick={() => { openApp(app.extensionId, chatId); onClose() }}>
               <RailAppIcon app={app} className="gg-sidebar-launch-icon" /><span className="truncate">{app.name}</span>
             </Button>
           </div>

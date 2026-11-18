@@ -47,7 +47,8 @@ type Translate = ReturnType<typeof useSessionMessages>['translate'];
 export function BrowserSettingsCard() {
   const api = useAppSettingsKey('browser');
   return (
-    <SettingValue reading={api.settings} placeholder="h-64 w-full">
+    <SettingValue reading={api.settings} placeholder="h-64 w-full" onReadAgain={() => void api.refresh()}
+      errorText={api.settings.state === 'error' ? messageForUser(api.settings.error) : undefined}>
       {({ value }) => <BrowserSettingsForm browserSettings={value} api={api} />}
     </SettingValue>
   );
@@ -177,7 +178,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
             disabled={disabled}
           >
             <SelectTrigger className="w-[190px] shrink-0 gap-2">
-              <SelectValue>{browserProfileLabel(selectedDefault, profiles)}</SelectValue>
+              <SelectValue>{browserProfileLabel(selectedDefault, profiles, translate('browserSettings.isolatedPerTask'))}</SelectValue>
             </SelectTrigger>
             <SelectContent align="end">
               {/* @@@raw profile name — 浏览器配置名是用户数据,原样显示。 */}
@@ -196,7 +197,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
 
       <ImportLoginsRow
         profileId={isNamedBrowserProfileId(selectedDefault) ? selectedDefault : null}
-        profileName={browserProfileLabel(selectedDefault, profiles)}
+        profileName={browserProfileLabel(selectedDefault, profiles, translate('browserSettings.isolatedPerTask'))}
         disabled={disabled}
       />
 

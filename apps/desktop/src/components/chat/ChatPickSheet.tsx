@@ -25,6 +25,8 @@ export interface ChatPickRow {
   hint?: ReactNode
   /** The topics grown out of this chat: drawn under it on the chat list's rail, picked as rows of their own. */
   topics?: readonly ChatPickRow[]
+  /** How many more topics it has than are drawn: a 「更多话题」 row under them, as on the chat list (`onMoreTopics`). */
+  moreTopics?: number
 }
 
 /** A run of rows under a heading (「我的任务」 below the chats): searched and picked as the rows above it are. */
@@ -61,10 +63,14 @@ interface ChatPickSheetProps {
   single?: boolean
   /** In the title bar, before the close button (forwarding: the 「多选」 switch). */
   headerAction?: ReactNode
+  /** A row's 「更多话题」 pressed: draw all of its topics. */
+  onMoreTopics?: (id: string) => void
 }
 
 // The topic sub-row of the chat list (TopicSubRow): indented onto the `.gg-topic-subrows` rail, the topic mark for an avatar.
 const TOPIC_ROW_STYLE: CSSProperties = { paddingLeft: 40 }
+// The chat list's 「更多话题」 row (TopicSubRows), on the same rail.
+const MORE_TOPICS_STYLE: CSSProperties = { width: '100%', justifyContent: 'flex-start', paddingLeft: 40, color: 'var(--text-tertiary)' }
 const TOPIC_MARK = <MessageSquare size={13} className="shrink-0 self-center" style={{ color: 'var(--text-tertiary)' }} />
 
 /**
@@ -96,7 +102,11 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
           meta={row.trailing}
           subtitle={row.hint}
         />
-        {row.topics?.length ? <div className="gg-topic-subrows">{row.topics.map((one) => renderRow(one, true))}</div> : null}
+        {row.topics?.length || row.moreTopics ? <div className="gg-topic-subrows">
+          {row.topics?.map((one) => renderRow(one, true))}
+          {row.moreTopics ? <Button variant="ghost" size="sm" data-pick-more-topics={row.id} aria-expanded={false} style={MORE_TOPICS_STYLE}
+            onClick={() => props.onMoreTopics?.(row.id)}>{t('chatList.moreTopics', { count: row.moreTopics })}</Button> : null}
+        </div> : null}
       </Fragment>
     )
   }

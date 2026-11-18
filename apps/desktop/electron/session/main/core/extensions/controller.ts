@@ -64,7 +64,7 @@ import { cloudExtensionMarket } from '@main/core/extensions/market-catalog-root'
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { renderExtensionIcon } from '@main/core/extensions/extension-icon';
-import { APP_ICON_PIXELS } from '@shared/extensions/app-icon';
+import { APP_ICON_PIXELS, fileIconKey } from '@shared/extensions/app-icon';
 import { extensionPartition, extensionResourceUrl } from '@shared/extensions/partition';
 import {
   extensionTabKind,
@@ -136,8 +136,8 @@ export const extensionsController = createRPCController({
     try { return { success: true as const, data: await switchExtensionVariant(id, name, consent) }; }
     catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
-  openLink: async (args: { target: import('@gugu/core/shared/ui/guguLink').OpenTarget; groupParticipantRequestId?: string }) =>
-    (await import('./gugu-links')).openLink(args.target, args.groupParticipantRequestId),
+  openLink: async (args: { target: import('@gugu/core/shared/ui/guguLink').OpenTarget; groupParticipantRequestId?: string; source?: { message?: import('@gugu/core/shared/types/chat').MessageItem } }) =>
+    (await import('./gugu-links')).openLink(args.target, args.groupParticipantRequestId, args.source),
   resourceLink: async (target: Exclude<import('@gugu/core/shared/ui/guguLink').GuguLinkTarget, { kind: 'server-login' }>) =>
     (await import('./gugu-links')).linkTo(target),
   list: async () => {
@@ -171,6 +171,15 @@ export const extensionsController = createRPCController({
             icons[extensionTabKind(entry.manifest.id, tab.name)] = rendered.dataUrl;
           } else {
             log.warn(`Extension ${entry.manifest.id} tab ${tab.name}: ${rendered.reason}`);
+          }
+        }
+        // The icon each kind of file is drawn with (`fileIcons`, by claim), as the phone keeps it (phoneApps.ts): a tab
+        // showing such a file draws it, as the folder list does (app-files.ts `claimant`).
+        for (const tab of entry.manifest.contributes.tabs) {
+          for (const [claim, path] of Object.entries(tab.fileIcons ?? {})) {
+            const rendered = renderExtensionIcon(entry.rootDir, path);
+            if ('dataUrl' in rendered) icons[fileIconKey(extensionTabKind(entry.manifest.id, tab.name), claim)] = rendered.dataUrl;
+            else log.warn(`Extension ${entry.manifest.id} fileIcons ${claim}: ${rendered.reason}`);
           }
         }
       }
@@ -333,17 +342,20 @@ export const extensionsController = createRPCController({
    * pill): when one App opens it, that App gets the place as the `link` event a gugu link brings — opened and placed here,
    * as `openExtensionLinkWith` opens and places (148 17:21). Several to choose from: the person picks, and no App is told.
    */
-  groupFileOpener: async (args: { chatId?: string; itemId: string; at?: Record<string, string> }) => {
+  groupFileOpener: async (args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }) => {
     try {
-      const files = await import('@main/core/extensions/app-files');
+      const [files, { viewedAmongOf }] = await Promise.all([import('@main/core/extensions/app-files'), import('@shared/extensions/app-files-core')]);
+      // API 57: the images an App page showed with it, read while the file is (`viewedAmong`, the phone's too).
+      const among = viewedAmongOf(files.viewedAmong, args);
       const target = await files.groupFile(args?.chatId === undefined ? undefined : String(args.chatId), String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
       if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), target.chatId, target.itemId);
-      return { success: true as const, data: { ...target, choice } };
+      const images = await among(target, choice);
+      return { success: true as const, data: { ...target, choice, ...(images.length ? { among: images } : {}) } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), ...(error instanceof (await import('@main/core/extensions/app-files')).AppFileError ? { code: error.code } : {}) };
     }
   },
 

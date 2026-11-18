@@ -1070,7 +1070,7 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 4 })
     const byId = new Map(injections.map((entry) => [entry.messageId, entry.text]))
     const fetchLine = (id: string) => `[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:${id}"}]`
-    expect(byId.get('10000000-0000-4000-8000-000000000005')).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send_file {file: "gugu-file://item-7?v=1"}')
+    expect(byId.get('10000000-0000-4000-8000-000000000005')).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send {file: "gugu-file://item-7?v=1"}')
     expect(byId.get('10000000-0000-4000-8000-000000000005')).toContain(fetchLine('10000000-0000-4000-8000-000000000005'))
     expect(byId.get('10000000-0000-4000-8000-000000000006')).toContain(fetchLine('10000000-0000-4000-8000-000000000006'))
     expect(byId.get('10000000-0000-4000-8000-00000000000c')).toContain(fetchLine('10000000-0000-4000-8000-00000000000c'))

@@ -65,6 +65,7 @@ let host: AgentPluginHost;
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-connection-acp-'));
   state.userHome = join(state.home, 'user');
+  vi.stubEnv('GUGU_HOME', join(state.home, 'gugu-home'));
   // 版本探针真跑:一个只会报版本的假 CLI,版本高于这一家聊天腿的下界。
   for (const [id, version] of [['codex', 'codex-cli 0.999.0'], ['claude', '9.9.9 (Claude Code)']] as const) {
     const path = join(state.home, id);
@@ -85,6 +86,7 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await scope.dispose();
   state.fixture?.close();
   state.fixture = null;
@@ -126,7 +128,7 @@ it('a Gugu platform model still wins over the selected key: its provider only, i
 it('the native configuration and an account connection add no provider (codex uses its own sign-in)', async () => {
   expect(providerArgs((await acpSpawn('codex')).args)).toEqual([]);
   const account = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
-  // 账号连接 = 把它的凭据换进用户根(这里只看 argv):不加 provider。
+  // An account connection moves its sign-in into the managed root without adding a provider.
   expect((await resolveLocalAgentRunContext('codex', { role: 'acp', connectionId: account.id })).connectionArgs).toBeUndefined();
 });
 

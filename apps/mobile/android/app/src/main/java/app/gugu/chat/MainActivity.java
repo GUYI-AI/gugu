@@ -43,6 +43,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MobileShellChrome.class);
         registerPlugin(GuguWatchOrientation.class);
         registerPlugin(GuguPageScale.class);
+        registerPlugin(GuguTextSelectionPlugin.class);
         super.onCreate(savedInstanceState);
         StartupTrace.mark("bridge_created");
         if (getBridge() == null || getBridge().getWebView() == null) {

@@ -1,4 +1,64 @@
 export default {
+  "agentHome": {
+  "mcpCount": "including {{count}} MCP servers",
+  "unmarkedMcp": "Existing MCP servers are kept because their origin was not recorded: {{names}}",
+  "terminalSignIn": "{{name}} in your terminal needs to sign in again.",
+  "oldSessionsSkipped": "{{count}} old session files were too large and were not brought over.",
+  "accountSignIn": "{{name}} needs to sign in again inside Gugu.",
+  "signInAction": "Sign in",
+
+  "title": "Bring your local configuration",
+  "intro": "Copy the configuration found on this computer into Gugu. Your terminal keeps its own configuration.",
+  "skip": "Skip",
+  "importContinue": "Import and continue",
+  "failed": "Configuration import failed",
+  "signIn": "Sign-ins are not copied. Sign in once inside Gugu; your terminal sign-in stays separate.",
+  "migration": "Your existing Gugu tasks and accounts will be kept.",
+  "copyNote": "This makes a copy. Later terminal edits can be brought in from Settings → Subscriptions → Re-import. Gugu changes never write back to your terminal.",
+  "mcpSecrets": "{{names}}: includes secrets, copied with the selected configuration.",
+  "projectMcp": "Another {{count}} project-level MCP servers are not imported.",
+  "groups": {
+    "settings": "Settings and permissions",
+    "hooks": "Hooks",
+    "mcp": "MCP servers",
+    "rules": "Rules",
+    "skills": "Skills",
+    "agents": "Agents and commands",
+    "models": "Models"
+  },
+  "issue": {
+    "symlink": "Symbolic link skipped",
+    "tooLarge": "Too large; not imported",
+    "sourceChanged": "Source changed; retry",
+    "unreadable": "Could not read this file"
+  },
+  "local": "Local configuration",
+  "updated": "Local configuration has updates",
+  "row": "A copy was imported from {{path}} on {{date}}. Terminal and Gugu changes do not sync automatically.",
+  "upgradeKept": "Gugu kept your existing {{name}} configuration.",
+  "upgradeCopied": "Gugu brought over your existing sign-in. If you use the same account in your terminal, one side may eventually need to sign in again.",
+  "upgradeRelogin": "Sign in to {{name}} again in Settings → Subscriptions.",
+  "importAction": "Import",
+  "notImported": "Choose which configuration to bring into Gugu.",
+  "repairRequired": "Import {{name}} configuration or sign in to {{name}} in Gugu, then try again.",
+  "repairRequiredGeneric": "Import configuration or sign in to the agent in Gugu, then try again.",
+  "repairAction": "Open configuration import",
+  "repairFailed": "Couldn't open configuration import.",
+  "reimport": "Re-import",
+  "reimportTitle": "Re-import local configuration",
+  "loginNotSynced": "Sign-ins are not synced here.",
+  "apply": "Import selected changes",
+  "cancel": "Cancel",
+  "uncertain": "Cannot tell which side changed",
+  "states": {
+    "unchanged": "Unchanged",
+    "userChanged": "Changed in terminal",
+    "guguChanged": "Changed in Gugu",
+    "bothChanged": "Both changed · select to replace with the terminal copy",
+    "userAdded": "Added in terminal",
+    "userDeleted": "Deleted in terminal · kept in Gugu"
+  }
+},
   "controlWatch": {
     "picture": "Control picture",
     "enlarge": "Enlarge",
@@ -7,10 +67,10 @@ export default {
     "portrait": "Portrait",
     "dock": "Dock to edge",
     "restore": "Show picture, drag to either edge",
-    "close": "Close last picture",
+    "close": "Hide picture",
     "sources": "Picture source",
-    "web": "Web",
-    "computer": "Desktop"
+    "web": "Browser",
+    "computer": "Computer"
   },
   "referralPreview": {
     "contactCaption": "Scan to add me as a contact",
@@ -197,8 +257,6 @@ export default {
       "menu": "More",
       "cancel": "Cancel",
       "stop": "Stop current task",
-      "pin": "Pin",
-      "unpin": "Unpin",
       "pinned": "Pinned",
       "expandChildren_one": "Show 1 child task",
       "expandChildren_other": "Show {{count}} child tasks",
@@ -215,8 +273,7 @@ export default {
       "showMore_one": "Show 1 more",
       "showMore_other": "Show {{count}} more",
       "showLess": "Collapse",
-      "renameSave": "Save",
-      "archive": "Archive"
+      "renameSave": "Save"
     },
     "output": {
       "machineOnly": "Opens only on that computer",
@@ -293,10 +350,10 @@ export default {
       "byMobile": "the phone"
     },
     "create": {
-      "title": "New task",
+      "title": "Create agent",
       "pickMachine": "On which machine",
       "welcome": "Start a new task on {{machine}}",
-      "placeholder": "First message…",
+      "placeholder": "Write anything…",
       "project": "Project",
       "harness": "Harness",
       "model": "Model",
@@ -489,6 +546,7 @@ export default {
       "notificationsChat": "Chat message notifications",
       "notificationsChatAria": "Enable chat message notifications",
       "notificationsChatDescription": "New direct messages, and group messages addressed to you",
+      "notificationsEmpty": { "title": "No notifications yet", "hint": "See alerts here when someone needs you or an agent finishes a task" },
       "notificationsScope": "These cover Gugu messages only. Notifications for agents on the task page are under Tasks.",
       "notificationsBlocked": "The system is blocking Gugu's notifications.",
       "notificationsBlockedAction": "Open Device control",
@@ -514,16 +572,13 @@ export default {
       "trayBadgeEnabled": "Show the unread count on the tray icon",
       "system": "System",
       "theme": "Appearance",
-      "themePack": "Theme",
-      "themePackDefault": "Gugu default",
-      "themePackValue": "Dark: {{dark}}, light: {{light}}",
       "title": "General"
     },
     "guguNumber": "Gugu ID",
     "guguNumberCopied": "Gugu ID copied",
     "guguNumberUnassigned": "Gugu ID not assigned",
     "my": "Me",
-    "newAgent": "New Agent",
+    "newAgent": "Create agent",
     "newTask": "New task",
     "apps": {
       "intro": "Apps installed on this phone — from cards in chats and from the market. The ones that come with Gugu are not listed.",
@@ -593,7 +648,7 @@ export default {
         "help": "Help"
       },
       "items": {
-        "newAgent": "New agent",
+        "newAgent": "Create agent",
         "settings": "Settings",
         "exit": "Exit",
         "undo": "Undo",
@@ -615,8 +670,6 @@ export default {
       }
     },
     "panelToggles": {
-      "collapseList": "Collapse sidebar",
-      "expandList": "Expand sidebar",
       "noList": "No sidebar on this page"
     },
     "loading": "Restoring your session",
@@ -654,7 +707,7 @@ export default {
     "mainNavigation": "Main navigation",
     "messages": "Messages (⌘1)",
     "my": "Me",
-    "newAgent": "New Agent",
+    "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
     "resizeChatList": "Resize chat list",
@@ -680,6 +733,7 @@ export default {
     "library": "Library",
     "apps": "Apps",
     "appDockFailed": "The left rail could not be changed",
+    "moreApps": "More Apps",
     "appOpen": "Open",
     "appOpenInWindow": "Open in New Window",
     "appSettings": "App settings",

@@ -1,6 +1,7 @@
 import type { CollisionDetection } from '@dnd-kit/core';
 import { pointerWithin, useDroppable } from '@dnd-kit/core';
 import { PANE_EDGE_DROP_PREFIX, paneEdgeDropId } from './pane-layout-store';
+import { CHAT_TOOL_DROP_PREFIX } from './chat-tool-geometry';
 import type { PaneEdge } from './pane-layout-tree';
 import { cn } from '@renderer/utils/utils';
 
@@ -10,6 +11,8 @@ import { cn } from '@renderer/utils/utils';
  */
 export const edgeFirst: CollisionDetection = (args) => {
   const hits = pointerWithin(args);
+  const workspace = hits.find((hit) => String(hit.id).startsWith(CHAT_TOOL_DROP_PREFIX));
+  if (workspace) return [workspace];
   const pointer = args.pointerCoordinates;
   const edges = hits.filter((hit) => String(hit.id).startsWith(PANE_EDGE_DROP_PREFIX));
   if (edges.length === 0 || !pointer) return hits;

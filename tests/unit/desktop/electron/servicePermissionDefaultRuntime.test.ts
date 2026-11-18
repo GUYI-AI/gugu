@@ -40,7 +40,7 @@ async function fixture() {
 async function loaded(runtime: Awaited<ReturnType<typeof fixture>>['runtime']) {
   await awaitPending('observation policy becomes available', (async () => {
     for (;;) {
-      const attempt = await runtime.begin(caller, 'guide_topics', {}, new AbortController().signal)
+      const attempt = await runtime.begin(caller, 'guide_read', {}, new AbortController().signal)
       if (attempt.decision.effect === 'allow') return
       await new Promise<void>(resolve => setImmediate(resolve))
     }
@@ -50,7 +50,7 @@ async function loaded(runtime: Awaited<ReturnType<typeof fixture>>['runtime']) {
 describe('production observation and enforcement policy reads', () => {
   it('does not await cloud I/O in observation, and marks an unknown snapshot explicitly', async () => {
     const f = await fixture()
-    const attempt = await f.runtime.begin(caller, 'guide_topics', {}, new AbortController().signal)
+    const attempt = await f.runtime.begin(caller, 'guide_read', {}, new AbortController().signal)
     expect(attempt.execute).toBe(true)
     expect(attempt.decision.reason).toBe('policy_unavailable')
     const value = { content: [{ type: 'text', text: 'unchanged raw output' }] }
@@ -62,13 +62,13 @@ describe('production observation and enforcement policy reads', () => {
   })
   it('does not reuse an observed allow when enforcement becomes enabled', async () => {
     const f = await fixture()
-    await f.runtime.begin(caller, 'guide_topics', {}, new AbortController().signal)
+    await f.runtime.begin(caller, 'guide_read', {}, new AbortController().signal)
     f.release()
     await loaded(f.runtime)
     const records = new PrivatePermissionRecords(join(f.directory, 'private-service-permissions'))
     await records.setEnforcement({ kind: 'person', userId: 'owner' }, 'owner', true)
     f.state.fail = true
-    const attempt = await f.runtime.begin(caller, 'guide_topics', {}, new AbortController().signal)
+    const attempt = await f.runtime.begin(caller, 'guide_read', {}, new AbortController().signal)
     expect(attempt.execute).toBe(false)
     expect(attempt.decision.reason).toBe('policy_unavailable')
     expect(f.maybeSingle.mock.calls.length).toBeGreaterThan(1)

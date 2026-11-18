@@ -17,7 +17,7 @@ const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], m
 const followLink = vi.hoisted(() => vi.fn())
 const markSeen = vi.hoisted(() => vi.fn(async (_id: string) => { if (state.readError) throw state.readError }))
 vi.mock('@/lib/guguLinks', () => ({ followLink }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile, readMobileShell: () => state.mobile }))
 vi.mock('@/platform', () => import('../../../support/capacitorPlatformTestDouble'))
 vi.mock('@/lib/chat', () => import('../../../support/contactsChatServiceTestDouble'))
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
@@ -31,7 +31,7 @@ vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShe
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, toggleLeft: vi.fn() }), useLeftRailLayout: () => false, useSidebarProgressFollow: () => ({ current: null }), sidebarRailTextOpacity: () => 1 }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },

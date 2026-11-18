@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { isAgentHomeImportMessage } from '@gugu/session-core/workspace-server/agent-config';
+import { AgentHomeRepair } from '@renderer/features/settings/subscriptions/AgentHomeRepair';
+import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -83,6 +86,14 @@ export function SessionStartFailedView({
   onSwitchModel?: () => void;
 }) {
   const { translate } = useSessionMessages();
+  const { data: agents } = useAgents();
+  if (providerId && isAgentHomeImportMessage(failure.message)) {
+    return <div className="flex h-full flex-1 items-center justify-center" role="status" data-testid="session-start-failed">
+      <AgentHomeRepair providerId={providerId} name={agents?.find((agent) => agent.id === providerId)?.name}
+        machine={machineRegistry.machineOf(failure.sessionId) ?? null} onImported={onRetry} />
+      <FailureButtons buttons={reasonActions('service-unavailable', { retry: onRetry }, translate)} retrying={failure.retrying} />
+    </div>;
+  }
   const reason = failureReason(failure.message);
   if (!failure.runtimeUpgrade && reason && guguReasonCopy(reason).named) {
     return (

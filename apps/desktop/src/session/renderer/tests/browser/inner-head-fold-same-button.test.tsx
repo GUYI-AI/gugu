@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
 import { publishPanelToggle } from '@/lib/panelToggles';
+import { TITLEBAR_ACTION_ICON_SIZE_PX } from '@/lib/window-chrome';
 import { InnerHeadRowLayout, InnerSidebarFoldButton } from '@renderer/features/sidebar/inner-sidebar-parts';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
@@ -15,7 +16,7 @@ import '@renderer/index.css';
 /**
  * The inner column's head and the content's tab strip share one line: same top, same height. Folding the column swaps
  * its fold button for the restore lane's expand button —
- * the same 28px button with the same 16px icon, so a click does not make it shrink (owner 11-14).
+ * both controls use the same arrow-free icon and 28px target.
  */
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -63,11 +64,65 @@ it('the head band and the tab strip line up, and the fold button is the expand b
 
   const fold = box('[data-inner-head-fold]');
   const expand = box('[data-shell-restore-lane] button');
-  const foldIcon = box('[data-inner-head-fold] svg');
-  const expandIcon = box('[data-shell-restore-lane] svg');
+  const foldIcon = box('[data-inner-head-fold] svg.lucide-panel-left');
+  const expandIcon = box('[data-shell-restore-lane] svg.lucide-panel-left');
   expect([fold.width, fold.height]).toEqual([expand.width, expand.height]);
-  expect([foldIcon.width, foldIcon.height]).toEqual([expandIcon.width, expandIcon.height]);
+  expect([foldIcon.width, foldIcon.height]).toEqual([TITLEBAR_ACTION_ICON_SIZE_PX, TITLEBAR_ACTION_ICON_SIZE_PX]);
+  expect([expandIcon.width, expandIcon.height]).toEqual([foldIcon.width, foldIcon.height]);
   // Both centred on the band's middle line.
   expect(fold.top + fold.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
   expect(expand.top + expand.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
+});
+
+it('the two-line group button covers the avatar and lower row, with independent actions above it', async () => {
+  harness = createReactHarness();
+  const open = vi.fn();
+  const create = vi.fn();
+  const row = (active: boolean) => (
+    <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
+      <SessionLocalizationProvider>
+        <div style={{ width: 239 }}>
+          <InnerHeadRowLayout headKey="group" name="产品讨论群" active={active} onOpen={open} trailingButtons={1}
+            avatar={<span data-proof-avatar="" className="block size-8" />}
+            createAction={{ label: '创建智能体', onClick: create }}
+          >
+            <InnerSidebarFoldButton />
+          </InnerHeadRowLayout>
+        </div>
+      </SessionLocalizationProvider>
+    </div>
+  );
+  await harness.render(row(false));
+  const button = () => harness.container.querySelector<HTMLElement>('[data-inner-head-open]')!;
+  const group = button().getBoundingClientRect();
+  const avatar = harness.container.querySelector('[data-proof-avatar]')!.getBoundingClientRect();
+  expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([215, 56, '8px']);
+  expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([8, 12, 32, 32]);
+  const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
+  const icon = fold.querySelector('svg.lucide-panel-left')!;
+  expect([fold.offsetWidth, fold.offsetHeight, getComputedStyle(fold).borderRadius]).toEqual([28, 28, '8px']);
+  expect(icon.getBoundingClientRect().width).toBe(TITLEBAR_ACTION_ICON_SIZE_PX);
+
+  const hoverLayer = () => getComputedStyle(button().parentElement!, '::before');
+  const openButton = page.getByRole('button', { name: '产品讨论群', exact: true });
+  const bottomOfAvatar = { x: 20, y: 42 };
+  await openButton.hover({ position: bottomOfAvatar });
+  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(hoverLayer().backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['8px', '8px', '9999px']);
+  await openButton.click({ position: bottomOfAvatar });
+  expect(open).toHaveBeenCalledOnce();
+
+  const createButton = page.getByRole('button', { name: '创建智能体', exact: true });
+  const createBox = harness.container.querySelector('[data-inner-head-create]')!.getBoundingClientRect();
+  expect([createBox.left - group.left, createBox.top - group.top, createBox.width, createBox.height]).toEqual([44, 28, 92, 24]);
+  await createButton.click();
+  expect(create).toHaveBeenCalledOnce();
+  expect(open).toHaveBeenCalledOnce();
+
+  await page.elementLocator(harness.container.firstElementChild!).hover({ position: { x: 450, y: 100 } });
+  await harness.render(row(true));
+  expect(button()).toHaveAttribute('aria-current', 'page');
+  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(hoverLayer().content).toBe('none');
 });

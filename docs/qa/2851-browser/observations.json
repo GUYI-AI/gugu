@@ -1,0 +1,45 @@
+{
+  "captureSource": "c574674d519adec10d3e6eb86a7e98c628f74064",
+  "phoneEntry": "PhoneTaskBrowser -> PhoneBrowserToolbar -> BrowserToolbar",
+  "invalidAddress": [
+    {
+      "width": 800,
+      "copy": "不支持该网址协议",
+      "rect": {
+        "width": 800,
+        "height": 37
+      },
+      "clip": "auto",
+      "backButton": {
+        "x": 8,
+        "y": 6,
+        "width": 28,
+        "height": 28,
+        "top": 6,
+        "right": 36,
+        "bottom": 34,
+        "left": 8
+      }
+    },
+    {
+      "width": 360,
+      "copy": "不支持该网址协议",
+      "rect": {
+        "width": 360,
+        "height": 37
+      },
+      "clip": "auto",
+      "backButton": {
+        "x": 8,
+        "y": 2,
+        "width": 44,
+        "height": 44,
+        "top": 2,
+        "right": 52,
+        "bottom": 46,
+        "left": 8
+      }
+    }
+  ],
+  "normalAndLoadingPhoneTouchTargets": "Assertions passed for all three navigation buttons at both 360 and 390 CSS px, in light and dark; width and height >= 44 CSS px."
+}

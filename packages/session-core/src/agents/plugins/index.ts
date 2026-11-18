@@ -58,6 +58,7 @@ const metadataSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  publisher: z.string().optional(),
   websiteUrl: z.string(),
   compatibleVersions: z.string().optional(),
 });
@@ -221,6 +222,9 @@ export { PLATFORM_PROVIDER_NAME, positiveWindow, trimmedValue } from './capabili
 export type { IPlugins } from './capabilities/plugins';
 export type {
   AgentConfigRoot,
+  AgentHomeGroupId,
+  AgentHomeImportPath,
+  AgentHomeImportGroup,
   NativeHome,
   ShellEnv,
   AgentFirstRunState,

@@ -269,7 +269,7 @@ export class PageSessionsStore implements IDisposable {
    * spec session-graph:归档**这一条**会话(勾了范围就连它 spawn 出的子树)。乐观地把行从列表里收起,
    * 失败就放回去 —— ❌ 让一次失败的归档看起来像成功(行没了、库里还在)。
    *
-   * 入口上写的是「归档任务」(用户心智里一个 tab 就是一项任务),动的是这条会话。
+   * 入口上写的是「归档会话」,动的是这条会话。
    */
   async archiveSession(
     sessionId: string,

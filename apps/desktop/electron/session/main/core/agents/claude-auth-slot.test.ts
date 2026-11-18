@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import lockfile from 'proper-lockfile';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activateClaudeAccount, claudeCredentialRoot, claudeLiveOwner, claudeSignInSaved, type ClaudeAuthSlotPaths } from './claude-auth-slot';
+import { activateClaudeAccount, claudeCredentialRoot, claudeLiveOwner, claudeSignInSaved, copyClaudeUpgradeSignIn, type ClaudeAuthSlotPaths } from './claude-auth-slot';
 import { createClaudeCredentialStore, type ClaudeCredentialLocation, type ClaudeCredentialStore } from './claude-credential-store';
 
 let dir = '';
@@ -53,6 +53,10 @@ function memoryStore() {
     async write(location, text) {
       store.writes.push(key(location));
       items.set(key(location), text);
+    },
+    async updateExisting(location, update) {
+      const before = await store.read(location);
+      if (before !== null) await store.write(location, update(before));
     },
   };
   return store;
@@ -441,4 +445,33 @@ describe('claudeLiveOwner / claudeCredentialRoot', () => {
     await recordOwner(ctx.paths, 'native', 'uuid-n');
     expect(await claudeLiveOwner(ctx.paths, ['native', 'A'], 'native')).toBeNull();
   });
+});
+
+
+it('carries only Claude OAuth into the managed root, keeping both roots and MCP entries independent', async () => {
+  const fixture = setup();
+  const terminal = fixture.paths;
+  const managed = { ...terminal, nativeRoot: join(dir, 'managed'), nativeGlobalConfig: join(dir, 'managed', '.claude.json'),
+    nativeSuffixed: true, liveStateFile: join(dir, 'state', 'managed-live.json') };
+  const terminalStore = { root: terminal.nativeRoot, suffixed: false };
+  const managedStore = { root: managed.nativeRoot, suffixed: true };
+  await seedLive(fixture, 'person', 'original', 1000, { mcpOAuth: { terminal: 'test' } });
+  const original = await fixture.store.read(terminalStore);
+  await fixture.store.write(managedStore, JSON.stringify({ mcpOAuth: { managed: 'test' } }));
+
+  await expect(copyClaudeUpgradeSignIn(terminal, managed, 'native')).resolves.toBe(true);
+  expect(await fixture.store.read(terminalStore)).toBe(original);
+  expect(JSON.parse((await fixture.store.read(managedStore))!)).toMatchObject({
+    claudeAiOauth: { accessToken: 'original' }, mcpOAuth: { managed: 'test' },
+  });
+  expect(accountUuid(await readConfig(managed.nativeGlobalConfig))).toBe('person');
+  await fixture.store.write(terminalStore, credential('terminal-refresh', 2000));
+  expect(accessOf((await fixture.store.read(managedStore))!)).toBe('original');
+  await fixture.store.write(managedStore, credential('managed-refresh', 3000));
+  await copyClaudeUpgradeSignIn(terminal, managed, 'native');
+  expect(accessOf((await fixture.store.read(managedStore))!)).toBe('managed-refresh');
+  expect(accessOf((await fixture.store.read(terminalStore))!)).toBe('terminal-refresh');
+  await writeConfig(terminal.nativeGlobalConfig, 'different');
+  await expect(copyClaudeUpgradeSignIn(terminal, managed, 'native')).resolves.toBe(false);
+  expect(accessOf((await fixture.store.read(managedStore))!)).toBe('managed-refresh');
 });

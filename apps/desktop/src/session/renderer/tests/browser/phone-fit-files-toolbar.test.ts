@@ -8,8 +8,8 @@ import { fitTools } from '../../../../../preinstalled-apps/workspace/list.js';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 // The folder's bar on a phone, as owner 11-14 met it: a project group (Chat / Computer switch), files (Select), the right to add
-// (「+」). Phone widths run from 300 (a 390 px phone at system font size 130%: the page is that much narrower, pageScale.ts)
-// to 412. Shipped DOM and stylesheets; the phone's touch rules are the coarse-pointer block, switched on here because the
+// (「+」). Phone widths run from 300 (narrower than any phone we
+// meet, with room to spare) to 412. Shipped DOM and stylesheets; the phone's touch rules are the coarse-pointer block, switched on here because the
 // test browser has a mouse. Token values are the ones the phone host hands the App (read on an Android emulator).
 let frame: HTMLIFrameElement;
 afterEach(() => frame?.remove());

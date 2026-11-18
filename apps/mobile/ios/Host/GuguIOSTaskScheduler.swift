@@ -112,6 +112,42 @@ final class GuguIOSTaskScheduler {
             } catch { completion(.failure(error)) }
         }
     }
+    /// One explicit child per interrupted attempt; duplicate taps and lost replies
+    /// acknowledge the same child without requeueing either record.
+    func retry(agent: [String: Any], jobId: String, completion: @escaping (Result<String, Error>) -> Void) {
+        queue.async {
+            do {
+                try self.check(); try self.validate(agent)
+                let session = agent["sessionId"] as! String, agentId = agent["agentUserId"] as! String
+                let host = try self.host(agent), context = try self.selector(agent, host: host)
+                let history = try self.lifecycle.journal(binding: self.binding).jobs(in: context)
+                if history.contains(where: { ($0["context"] as? [String: Any])?["jobId"] as? String == jobId }) {
+                    let previous = try host.readTask(jobId: jobId)
+                    guard previous["status"] as? String == "interrupted" else { throw Self.failure("invalid_args", "Native execution is not interrupted") }
+                }
+                let id = try GuguIOSStableID.strings("phone-task-retry", self.binding.ownerId, session, jobId)
+                try self.store.transaction { state in
+                    var rows = state["inputs"] as? [String: [String: Any]] ?? [:]
+                    guard let original = rows[jobId], original["agentId"] as? String == agentId,
+                          original["sessionId"] as? String == session,
+                          original["contextEpoch"] as? String == agent["contextEpoch"] as? String else { throw Self.failure("stale_context", "Interrupted task no longer belongs to this phone context") }
+                    guard original["status"] as? String == "interrupted", let prompt = original["prompt"] as? String else { throw Self.failure("invalid_args", "Only an interrupted phone task can be retried") }
+                    if let existing = rows[id] {
+                        guard existing["retryOf"] as? String == jobId, existing["agentId"] as? String == agentId,
+                              existing["contextEpoch"] as? String == agent["contextEpoch"] as? String else { throw Self.failure("duplicate_conflict", "Retry identity belongs to another task") }
+                        return
+                    }
+                    let sequence = (state["nextInputSequence"] as? Int ?? 0) + 1; state["nextInputSequence"] = sequence
+                    var child: [String: Any] = ["id": id, "agentId": agentId, "sessionId": session, "contextEpoch": agent["contextEpoch"]!,
+                        "prompt": prompt, "clientMessageId": id, "status": "queued", "sequence": sequence, "retryOf": jobId,
+                        "fingerprint": try GuguHostJournal.digest(["retryOf": jobId, "sessionId": session, "contextEpoch": agent["contextEpoch"]!])]
+                    for key in ["route", "usedChatIds"] { if let value = original[key] { child[key] = value } }
+                    rows[id] = child; state["inputs"] = rows
+                }
+                completion(.success(id)); self.changed(); self.queue.async { self.drain() }
+            } catch { completion(.failure(error)) }
+        }
+    }
     func timeline(agent: [String: Any], method: String, input: [String: Any], completion: @escaping ([String: Any]) -> Void) {
         queue.async {
             do {
@@ -136,7 +172,12 @@ final class GuguIOSTaskScheduler {
                 }
                 try host.readTimeline(context: context, method: method, cursor: input["cursor"] as? [String: Any], limit: input["limit"] as? Int,
                     beforeTurnId: input["beforeTurnId"] as? String, trim: input["trim"] as? Bool ?? true,
-                    pendingRequests: pending, queuedPrompts: queued, settlements: settlements) { reply in self.queue.async {
+                    pendingRequests: pending, queuedPrompts: queued, settlements: settlements,
+                    retriedJobIds: rows.values.compactMap { $0["retryOf"] as? String },
+                    interruptedInputs: rows.values.filter { $0["sessionId"] as? String == context.sessionId && $0["contextEpoch"] as? String == context.contextEpoch && $0["status"] as? String == "interrupted" }.map { row in
+                        ["id": row["id"]!, "prompt": row["prompt"]!, "status": "interrupted", "clientMessageId": row["clientMessageId"] ?? NSNull()]
+                    }, inputOrder: rows.values.filter { $0["sessionId"] as? String == context.sessionId && $0["contextEpoch"] as? String == context.contextEpoch }
+                        .sorted { ($0["sequence"] as? Int ?? 0) < ($1["sequence"] as? Int ?? 0) }.compactMap { $0["id"] as? String }) { reply in self.queue.async {
                         do { try self.check(); completion(reply) } catch { completion(Self.envelope(error)) }
                     } }
             } catch { completion(Self.envelope(error)) }

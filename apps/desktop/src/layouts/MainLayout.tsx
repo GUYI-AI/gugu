@@ -98,6 +98,7 @@ import { hydrateSidebarTint } from '../lib/sidebarTint'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
+import { PhoneSessionModalHost } from '../components/PhoneSessionModalHost'
 import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
@@ -196,8 +197,8 @@ function InnerLayout({
   // 手机上从别处直达设置的某一格(openSettingsSection):进来的是那一格,返回就退出「我的」,❌ 先落到没进过的设置首页。
   const settingsLinkedRef = useRef(false)
   const [watchCreateRequest, setWatchCreateRequest] = useState(0)
+  const [watchCreateFromCurrentRoute, setWatchCreateFromCurrentRoute] = useState(false)
   // 手机上非项目群输入框的「新任务」:与 watchCreateRequest 一起递进去,null = 不进群。
-  const [watchTaskGroup, setWatchTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
   const [openedPhoneApp, setOpenedPhoneApp] = useState<{ kind: string; name: string } | null>(null)
   const [watchParentTab, setWatchParentTab] = useState<SidebarTab | null>(null)
   const watchOpenRequest = useAppShowSession(() => {
@@ -240,7 +241,7 @@ function InnerLayout({
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
-  useSessionpageAgentInstallNavigation(sessionHostAvailable, setSessionCreateOpen, setActiveTab)
+  useSessionpageAgentInstallNavigation(sessionHostAvailable, sessionCreateOpen, setSessionCreateOpen, setActiveTab)
   useOpenNewSessionOnDeviceHost(sessionHostAvailable && !mobile, setSettingsModalOpen, setActiveTab)
   // @@@create-entry-is-not-a-task-host-capability (#4287) — sessionHost 只选**用哪套装配**(常驻会话页 composer /
   // ACP-only composer),❌ 不回答「这里能不能建 agent」:并成一个布尔就凭空多出「两套都不给」的第三档,而安卓
@@ -315,7 +316,7 @@ function InnerLayout({
     if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
     return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
   }, [enterChat, openChatBlock, setActiveChatId, readChats])
-  const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').AppDetailLink>()
+  const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
     openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
@@ -378,31 +379,20 @@ function InnerLayout({
   useEffect(() => {
     if (activeTab !== 'chats' && sessionCreateOpen) setSessionCreateOpen(false)
   }, [activeTab, sessionCreateOpen])
-  const openSessionCreate = useCallback(() => {
-    if (!sessionHostAvailable) return
-    if (mobile) {
-      setWatchTaskGroup(null)
-      setActiveTab('tasks')
-      setWatchCreateRequest(n => n + 1)
-      return
-    }
-    setActiveTab('chats')
-    setSessionCreateOpen(true)
-    shellTab.setChatFrom(null)
-  }, [setActiveTab, shellTab, sessionHostAvailable, mobile])
-
   // 联系人页的「新建 Agent」。手机:去会话页建 agent 的那条路(先选机器),与会话页右上 + 同一条。
   // 桌面:gugu-dev#181 只有一个「新建会话」—— 会话页的新建会话页(不进群)。
   const openAgentCreateDraftFromContacts = useCallback(() => {
     if (mobile) {
-      setWatchTaskGroup(null)
+      const from = shellTab.under()
+      if (from !== 'tasks') setWatchParentTab(from)
+      setWatchCreateFromCurrentRoute(from === 'tasks')
       setActiveTab('tasks')
       setWatchCreateRequest((n) => n + 1)
       return
     }
     setActiveTab('tasks')
     appState.navigation.navigate('new-session')
-  }, [setActiveTab, mobile])
+  }, [setActiveTab, mobile, shellTab])
   const sessionSlotRef = useRef<HTMLDivElement>(null)
   const composerSlotRef = useRef<HTMLDivElement>(null)
   const emdashFrameHomeRef = useRef<HTMLDivElement>(null)
@@ -543,11 +533,12 @@ function InnerLayout({
   }, [])
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
-  const openSettingsSection = useCallback((asked: ActiveSection) => {
+  const openSettingsSection = useCallback((asked: ActiveSection, ownerConnections = false) => {
     let section = asked
     // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App. A phone
     // with no assistant has the person's own connected apps as a row of Settings (SettingsPanel): a route to them goes there.
-    if (isAssistantSettingsSection(section)) {
+    const ownDesktopConnections = ownerConnections && section === 'connectors' && !mobile && sessionHostAvailable
+    if (isAssistantSettingsSection(section) && !ownDesktopConnections) {
       if (!mobile) {
         setSettingsModalOpen(false)
         openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
@@ -568,14 +559,14 @@ function InnerLayout({
       return
     }
     setSettingsModalOpen(true)
-  }, [setActiveTab, mobile, phoneAssistant.available])
+  }, [setActiveTab, mobile, phoneAssistant.available, sessionHostAvailable])
 
   // 会话页要打开设置(⌘, / 应用菜单 / 命令面板 / 浏览器工具栏「管理配置」):设置只有这一个弹窗(product spec)。
   // 指了格就落到那一格;没指就照原样打开(上次停在哪一格就是哪一格)。
   useEffect(() => {
     const open = (event: Event) => {
-      const section = (event as CustomEvent<{ section?: ActiveSection }>).detail?.section
-      if (section) openSettingsSection(section)
+      const detail = (event as CustomEvent<{ section?: ActiveSection; ownerConnections?: boolean }>).detail
+      if (detail?.section) openSettingsSection(detail.section, detail.ownerConnections)
       else setSettingsModalOpen(true)
     }
     // Feedback replaces the settings modal; sibling modal focus layers otherwise block its form.
@@ -673,30 +664,23 @@ function InnerLayout({
   useEffect(() => platform.subscribeNotificationClicks?.(({ chatId }) => openNotificationRef.current(chatId)), [])
 
 
-  // 群输入框的「新任务」(gugu-dev#181):桌面把那个群的输入框换成新任务框;手机(非项目群,项目群是浮起的文件夹卡
-  // PhoneNewTask)进会话页选机器 —— 两边都是首句落成这个群里的任务卡、agent 进群、人回到群。
+  // On phones the visible group handles the creation event in its own sheet.
   useEffect(() => {
+    if (mobile) return
     const onCreateInGroup = (event: Event) => {
       const { chatId } = (event as CustomEvent<{ chatId?: unknown }>).detail ?? {}
       if (typeof chatId !== 'string' || chatId.length === 0) return
       const name = readChats().chats.find((chat) => chat.id === chatId)?.name || t('group.settings.groupFallback', { ns: 'messaging' })
-      if (mobile) {
-        setWatchTaskGroup({ chatId, name })
-        setActiveTab('tasks')
-        setWatchCreateRequest((n) => n + 1)
-        return
-      }
-      // 桌面上:那个群的输入框换成「新任务」,把那个群摆出来 —— 建好的 agent 进这个群,结果回到这里。
       setComposerVerb(chatId, 'task', undefined, { name, joinable: true, inGroup: true })
       openChatBlock(chatId)
     }
     window.addEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
     return () => window.removeEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
-  }, [setActiveTab, mobile, openChatBlock, readChats, t])
+  }, [mobile, openChatBlock, readChats, t])
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
-      const chat = resource && addressed?.kind === 'topic' ? readChats().chats.find((candidate) => candidate.id === addressed.source_chat_id) : addressed
+      const chat = resource && mobile && addressed?.kind === 'topic' ? readChats().chats.find((candidate) => candidate.id === addressed.source_chat_id) : addressed
       if (!chat) {
         toast(t('groupFile.notInGroup'), 'error')
         return false
@@ -750,7 +734,11 @@ function InnerLayout({
       const token = getRendererAccessToken()
       if (!token) { toast(t('groupFile.notInGroup'), 'error'); return }
       void resourceChatIdOf(token, named, user.id)
-        .then((chatId) => bringUp(chatId, (id) => askChat(id, { app: detail.extensionId }), true))
+        .then((chatId) => {
+          const from = readChats().chats.find((row) => row.id === named)
+          const topic = !mobile && from?.kind === 'topic' && from.source_chat_id === chatId
+          return bringUp(topic ? named : chatId, (id) => askChat(id, { app: detail.extensionId, ...(detail.from && id === named ? { from: detail.from } : {}) }), true)
+        })
         .catch((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'))
     }
     window.addEventListener(APP_COMPOSE_EVENT, onCompose)
@@ -763,7 +751,7 @@ function InnerLayout({
       window.removeEventListener(APP_OPEN_IN_CHAT_EVENT, onOpenInChat)
       window.removeEventListener(UI_EVENTS.openApp, onOpenInChat)
     }
-  }, [focusComposerForUserEntry, openOwnedAgent, openChatTarget, readChats, writeDraft, setDraftAttachments, setDraftQuote, setDraftWhisper, t, toast, user.id])
+  }, [focusComposerForUserEntry, mobile, openOwnedAgent, openChatTarget, readChats, writeDraft, setDraftAttachments, setDraftQuote, setDraftWhisper, t, toast, user.id])
 
 
   // 选中变化 ⇒ shell 让位(收草稿面、移动壳下钻)。这条集中反应兜住只写得到 store 的入口(App 层的宿主),
@@ -1077,8 +1065,7 @@ function InnerLayout({
                   {/* #2525 移动端全屏创建页:列表/会话/底部 tab 岛全部让位(display 隐藏而非卸载 ——
                       返回时列表滚动位置与会话状态原样还在),真正的 composer 由下面那份 fixed overlay
                       盖到本页正文槽上。 */}
-                  <ResizableChatListPane
-                    active={activeTab === 'chats'} mobile={mobile}
+                  <ResizableChatListPane mobile={mobile}
                     hidden={chatListHidden}
                     width={chatListPaneWidth}
                     onWidthChange={previewChatListPaneWidth}
@@ -1096,7 +1083,7 @@ function InnerLayout({
                         if (focusTarget === 'composer') focusComposerForUserEntry('chat-entry')
                       }, 'push')}
                       onScan={handleScan}
-                      onOpenSessionCreate={mobile && sessionHostAvailable ? openSessionCreate : undefined}
+                      onOpenSessionCreate={mobile ? openAgentCreateDraftFromContacts : undefined}
                       onNewProject={mobile ? openNewProject : undefined}
                     />
                   </ResizableChatListPane>
@@ -1189,7 +1176,7 @@ function InnerLayout({
                   active={activeTab === 'tasks'}
                   onExit={exitPhoneSessions}
                   createRequest={watchCreateRequest}
-                  taskInGroup={watchTaskGroup}
+                  createFromCurrentRoute={watchCreateFromCurrentRoute}
                   openRequest={watchOpenRequest}
                   onOpenGroupChat={handleReturnToGroup}
                 />
@@ -1300,7 +1287,7 @@ function InnerLayout({
           WM_NCHITTEST 回 HTCAPTION,系统当标题栏吃掉点击,按钮**完全按不动**。
           实测(chole/Windows 11,真鼠标点击 + WM_NCHITTEST):挂最前 ht=2、点最小化窗口不动;
           挂最后 ht=1、点最小化窗口收起。❌ 别把它移回上面去。 */}
-      <WindowControls activeTab={activeTab} mobile={mobile} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
+      <WindowControls activeTab={activeTab} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
       {/* #7199 「助理」App 在壳这一侧的那一半:发布云电脑 / 个人助理,把壳的组件画进 App 留的格子(lib/assistantShellBridge.ts)。 */}
       <AssistantTaskChatOpener visible={mobile ? activeTab === 'assistant' : activeTab === 'tasks'} desktop={!mobile} />
       <FeedbackHost />
@@ -1328,6 +1315,7 @@ function InnerLayout({
       {!mobile && sessionHostAvailable && <AppHostLayerHost visible={activeTab === 'tasks'} />}
       {/* Entry switch: the trusted assistant App bound to the assistant's chat by the host; every entry asks lib/assistantEntry.ts. */}
       {!mobile && sessionHostAvailable && <AssistantAppEntryHost />}
+      {!sessionHostAvailable && <PhoneSessionModalHost />}
 
     </PhoneViewportShell>
   )

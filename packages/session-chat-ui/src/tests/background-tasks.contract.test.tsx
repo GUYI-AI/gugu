@@ -463,8 +463,11 @@ it('summarizes a single live command, discloses semantic details and keeps the o
   expect(process.textContent).not.toContain('background task')
   const bubble = host.querySelector<HTMLElement>('[data-user-card="before"]')!
   const input = host.querySelector<HTMLElement>('[data-agent-conversation-message="owner-steer"]')!
-  await untilStable('message seam settles', () => input.getBoundingClientRect().top - bubble.getBoundingClientRect().bottom)
-  expect(Math.abs(input.getBoundingClientRect().top - bubble.getBoundingClientRect().bottom - 20)).toBeLessThanOrEqual(1)
+  const footer = host.querySelector<HTMLElement>('[data-user-message-actions="before"]')
+  const previousEnd = footer ?? bubble
+  const seam = () => input.getBoundingClientRect().top - previousEnd.getBoundingClientRect().bottom
+  await untilStable('message seam settles', seam)
+  expect(Math.abs(seam() - 24)).toBeLessThanOrEqual(1)
 })
 
 it('keeps background tasks on the completed process with a trailing change card', async () => {

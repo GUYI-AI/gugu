@@ -3,7 +3,6 @@ import {
   useMotionValue,
   useMotionValueEvent,
   useReducedMotion,
-  useTransform,
   type MotionValue,
 } from 'framer-motion';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -69,19 +68,7 @@ export function usePanelProgress(isOpen: boolean, place?: string): MotionValue<n
 }
 
 /**
- * 面板实际占位宽 = 进度 × 目标宽。
- *
- * 主区宽度是**剩下的那部分**(flex-1),所以两者由同一个值推出、绝不会脱节。
- */
-export function usePanelAnimatedSize(
-  progress: MotionValue<number>,
-  size: MotionValue<number>
-): MotionValue<number> {
-  return useTransform([progress, size], (latest: number[]) => clamp01(latest[0]) * latest[1]);
-}
-
-/**
- * 内容层的布局 —— 与 {@link usePanelAnimatedSize} 是同一个进度的两面。
+ * 内容层的布局 —— 与面板占位宽(进度 × 目标宽)是同一个进度的两面。
  *
  * 外层占位宽 = 进度 × 目标宽,并且裁掉溢出。内容层怎么配合,决定了收起读作「板在收」
  * 还是「内容被啃掉一条」:

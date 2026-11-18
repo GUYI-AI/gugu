@@ -7,6 +7,7 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { FileMark, IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
 import { genericFileIcon } from '@session-chat/components/primitives/icons.css';
 import { applyTokensToElement } from '@session-chat/core/highlight/apply-tokens';
+import type { SharedCaches } from '@session-chat/core/caches';
 import { basename } from '@session-chat/lib/path';
 import { For, Show, createEffect, onCleanup } from 'solid-js';
 import { changedFilePath } from '@gugu/session-core/acp';
@@ -26,7 +27,7 @@ export function DiffHeader(props: DiffHeaderProps) {
     <For each={props.section?.patch.changes ?? []}>{change => {
       const path = () => changedFilePath(change);
       const label = () => ('oldPath' in change && typeof change.oldPath === 'string' ? `${basename(change.oldPath)} → ` : '') + (path() ? basename(path()!) : change.operation);
-      return <button type="button" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
+      return <button type="button" data-pane-opener="" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
         const target = path(); if (target) commands().onOpenFile?.({ path: target, itemId: props.item.id, source: 'diff' });
       }}><ShimmerText active={running()}>{label()}</ShimmerText></button>;
     }}</For>
@@ -38,12 +39,19 @@ export function DiffHeader(props: DiffHeaderProps) {
   </div>;
 }
 
-export type DiffLinesProps = { item: ChatDiff; layout: PatchLayout; codeLineHeight: () => number };
+export type DiffLinesProps = {
+  running?: boolean;
+  layout: Pick<PatchLayout, 'previewRows' | 'lang' | 'truncated'>;
+  codeLineHeight: () => number;
+  caches?: Pick<SharedCaches, 'highlightWhenReady'>;
+  showMarkers?: boolean;
+};
 export function DiffLines(props: DiffLinesProps) {
-  const caches = useCaches();
+  const contextCaches = useCaches();
   const elements = new Map<number, HTMLElement>();
   createEffect(() => {
-    if (props.item.status === 'running' || !props.layout.lang) return;
+    if (props.running || !props.layout.lang) return;
+    const caches = props.caches ?? contextCaches;
     let cancelled = false;
     for (const [index, row] of props.layout.previewRows.entries()) {
       if (row.type === 'meta' || row.type === 'hunk') continue;
@@ -56,6 +64,7 @@ export function DiffLines(props: DiffLinesProps) {
   });
   return <div class={css.diffBodyCard}><div class={css.pdiffBody}>
     <For each={props.layout.previewRows}>{(row, index) => <div class={css.diffRowClasses[row.type]} style={{ height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
+      <Show when={props.showMarkers}><span class={`${css.pdiffLine} ${css.diffMarker}`} style={{ 'line-height': `${props.codeLineHeight()}px` }}>{row.type === 'add' ? '+' : row.type === 'remove' ? '−' : ' '}</span></Show>
       <span class={`${css.pdiffLine} ${css.diffLineContent}`} style={{ 'line-height': `${props.codeLineHeight()}px` }} ref={el => { elements.set(index(), el); onCleanup(() => elements.delete(index())); }}>{row.text}</span>
     </div>}</For>
     <Show when={props.layout.truncated}><div style={{ height: `${props.codeLineHeight()}px`, 'line-height': `${props.codeLineHeight()}px` }}>…</div></Show>
@@ -68,7 +77,7 @@ export function Diff(props: DiffProps) {
   return <Show when={props.layout.sections.length} fallback={<DiffHeader item={props.item} headerH={props.headerH} hasBody={false} />}>
     <For each={props.layout.sections}>{section => <>
       <DiffHeader item={props.item} section={section} headerH={props.headerH} hasBody={diffBodyVisible(props.item) && section.previewRows.length > 0} />
-      <Show when={diffBodyVisible(props.item)}><DiffLines item={props.item} layout={section} codeLineHeight={props.codeLineHeight} /></Show>
+      <Show when={diffBodyVisible(props.item)}><DiffLines running={props.item.status === 'running'} layout={section} codeLineHeight={props.codeLineHeight} /></Show>
     </>}</For>
   </Show>;
 }

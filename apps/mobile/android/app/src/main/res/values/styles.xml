@@ -12,6 +12,21 @@
         <item name="android:windowLightStatusBar">true</item>
     </style>
 
+    <style name="GuguTextSelectionOverlay" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="GuguTextSelectionOverlayDark" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
     <!-- @@@mobile-light-shell - The WebView answers `prefers-color-scheme` from android:isLightTheme of this theme (Capacitor's
          BridgeActivity makes it the activity's and the application's; Chromium DarkModeHelper reads it there), and a Light
          parent says true even on a dark phone: 「跟随系统」 was always light. It says what the system is (values-night); the

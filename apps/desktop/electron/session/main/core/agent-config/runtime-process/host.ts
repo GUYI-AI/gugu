@@ -26,8 +26,10 @@ import { desktopWorkerPath } from '@main/worker-manifest';
 import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
+import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
 import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, readConnectionModels, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId, updateHarnessConnectionModels } from '@main/core/agents/harness-connections';
+import { scanAgentHomes, importHarnessHome, diffHarnessHome, reimportHarnessHome } from '@main/core/agents/agent-homes';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
 const AGENT_CONFIG_WIRE_CHANNEL = 'agent-config-wire';
@@ -143,6 +145,12 @@ export async function getAgentConfigRuntimeClient(): Promise<AgentConfigRuntimeC
   return withHostResolvedCli((await getAgentConfigRuntimeHandle()).client);
 }
 
+/** The account row's sign-in reading (the CLI and config root a session runs); `null` when the worker cannot read it. */
+export async function readAgentAuthStatus(providerId: string, connectionId?: string): Promise<AgentAuthStatus | null> {
+  const result = await (await getAgentConfigRuntimeClient()).refreshAuthStatus({ providerId, connectionId });
+  return result.success ? result.data : null;
+}
+
 /**
  * #6264 会话被鉴权拒了 / 之后又成功了 —— 改这台机器上这家的「登录已失效」标记。
  * 私有合同里的两条,renderer 够不到(它只该读,不该写)。每一轮成功都会来一次撤销,没标着时 worker 那边是空操作。
@@ -202,6 +210,10 @@ export function withHostResolvedCli(
     });
   return {
     ...client,
+    scanAgentHomes: ({ providerIds }) => connectionOperation(() => scanAgentHomes(providerIds)),
+    importAgentHome: ({ providerId, groups, skip }) => connectionOperation(() => importHarnessHome(providerId, groups, skip)),
+    diffAgentHome: ({ providerId }) => connectionOperation(() => diffHarnessHome(providerId)),
+    reimportAgentHome: ({ providerId, decisions }) => connectionOperation(() => reimportHarnessHome(providerId, decisions)),
     refreshAgents: async (input) => {
       try {
         if (input.providerId && !listPlugins().some((provider) => provider.metadata.id === input.providerId)) return err({ type: 'unknown-provider' as const, providerId: input.providerId });

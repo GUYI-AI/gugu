@@ -1,3 +1,4 @@
+import { agentHomeDiffSchema, agentHomeGroupIdSchema, agentHomeImportResultSchema, agentHomeIssueSchema, agentHomeScanSchema } from './homes';
 import { defineContract, fallible, liveJob, liveLog, liveModel, liveState } from '@gugu/session-wire';
 import { z } from 'zod';
 import {
@@ -41,7 +42,7 @@ import {
 
 const provider = z.object({ providerId: z.string() });
 
-export const agentConfigContract = defineContract({
+const commonAgentConfigContract = defineContract({
   listConnections: fallible({ input: provider, data: z.array(harnessConnectionSchema), error: agentConfigAuthErrorSchema }),
   createConnection: fallible({ input: createHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
   selectConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
@@ -170,8 +171,16 @@ export const subscriptionUsageRuntimeCommandSchema = subscriptionUsageCommandSch
   runContext: agentRunContextSchema,
 });
 
+export const agentConfigContract = defineContract({
+  ...commonAgentConfigContract,
+  scanAgentHomes: fallible({ input: z.object({ providerIds: z.array(z.string()).optional() }), data: z.array(agentHomeScanSchema), error: agentConfigAuthErrorSchema }),
+  importAgentHome: fallible({ input: provider.extend({ groups: z.array(agentHomeGroupIdSchema), skip: z.boolean().optional() }), data: agentHomeImportResultSchema, error: agentConfigAuthErrorSchema }),
+  diffAgentHome: fallible({ input: provider, data: agentHomeDiffSchema, error: agentConfigAuthErrorSchema }),
+  reimportAgentHome: fallible({ input: provider.extend({ decisions: z.array(z.object({ id: z.string(), revision: z.string() })) }), data: z.object({ imported: z.number(), issues: z.array(agentHomeIssueSchema) }), error: agentConfigAuthErrorSchema }),
+});
+
 export const agentConfigRuntimeContract = defineContract({
-  ...agentConfigContract,
+  ...commonAgentConfigContract,
   /**
    * 主进程把「装没装 / 谁装的 / 用户选了哪一份」那一本账递进来(#6101)。
    *
