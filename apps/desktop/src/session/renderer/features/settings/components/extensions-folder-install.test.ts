@@ -397,6 +397,14 @@ describe('Desktop marketplace tabs and app details', () => {
     expect(card('claude')?.textContent).toContain(translateSessionMessage('extensions.installedMark'));
     expect(card('kilocode')?.textContent).not.toContain(translateSessionMessage('extensions.installedMark'));
     expect(card('kilocode')?.querySelector('button')).toBeNull();
+    expect(document.querySelector('[data-testid="featured-agent-card-claude"]')).not.toBeNull();
+    const nextBatch = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.trim() === translateSessionMessage('extensions.marketNextBatch')
+    );
+    expect(nextBatch).toBeDefined();
+    await act(async () => nextBatch!.click());
+    expect(document.querySelector('[data-testid="featured-agent-card-kilocode"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="featured-agent-card-claude"]')).toBeNull();
     await press('[data-testid="agent-market-card-kilocode"]');
     expect(document.querySelector('[data-testid="chosen-agent-detail"]')?.textContent).toBe('kilocode');
     await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');

@@ -48,9 +48,13 @@ export function DesktopExtensionMarket({
     const byId = new Map(shelf.items.map((item) => [item.manifest.id, item]));
     const result = marketHome(shelf.items.map(({ manifest, cloud }) => ({ ...cloud, manifest })), scores ?? null);
     const rows = (entries: typeof result.featured) => entries.map(({ manifest }) => byId.get(manifest.id)!);
-    const extraFeatured = (result.popular ?? []).filter((entry) => !entry.firstRun && !result.featured.includes(entry));
+    const extraFeatured = [...new Set([
+      ...(result.popular ?? []),
+      ...result.remaining.filter((entry) => entry.featured),
+    ])].filter((entry) => !entry.firstRun && !result.featured.includes(entry));
     return {
-      featured: rows([...result.featured, ...extraFeatured]),
+      featured: rows(result.featured),
+      moreFeatured: rows(extraFeatured),
       recommended: rows([...result.featured, ...result.remaining]),
       newest: rows(result.newest),
       popular: result.popular && rows(result.popular),
@@ -97,7 +101,7 @@ export function DesktopExtensionMarket({
   return (
     <>
       {!query && home && (
-        <MarketFeatured title={translate('extensions.featuredApps')} items={home.featured} renderCard={(item) => card(item, true)} />
+        <MarketFeatured title={translate('extensions.featuredApps')} items={home.featured} more={home.moreFeatured} renderCard={(item) => card(item, true)} />
       )}
       {!query && (
         <MarketCategoryBar choices={sorts} selected={activeSort} onChange={setSort} testIdPrefix="extensions-market-sort" variant="subnav" />

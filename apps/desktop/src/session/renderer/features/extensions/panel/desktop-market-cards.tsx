@@ -60,16 +60,19 @@ export function MarketGrid({ title, heading, stale, testId, children }: {
   );
 }
 
-export function MarketFeatured<T>({ title, items, renderCard }: {
+export function MarketFeatured<T>({ title, items, more, renderCard }: {
   title: string;
   items: readonly T[];
+  more?: readonly T[];
   renderCard: (item: T) => ReactNode;
 }) {
   const { translate } = useSessionMessages();
   const [batch, setBatch] = useState(0);
-  const batchCount = Math.ceil(items.length / FEATURED_COUNT);
-  if (batchCount === 0) return null;
-  const offset = (batch % batchCount) * FEATURED_COUNT;
+  if (items.length === 0) return null;
+  const batchCount = 1 + Math.ceil((more?.length ?? 0) / FEATURED_COUNT);
+  const index = batch % batchCount;
+  const offset = (index - 1) * FEATURED_COUNT;
+  const visible = index === 0 ? items : more?.slice(offset, offset + FEATURED_COUNT);
   return (
     <section className="mk-market-featured">
       <div className="mk-market-section-title">
@@ -82,7 +85,7 @@ export function MarketFeatured<T>({ title, items, renderCard }: {
         )}
       </div>
       <ul className="mk-market-grid" aria-label={title}>
-        {items.slice(offset, offset + FEATURED_COUNT).map(renderCard)}
+        {visible?.map(renderCard)}
       </ul>
     </section>
   );

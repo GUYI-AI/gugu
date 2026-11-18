@@ -47,7 +47,12 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
   return (
     <>
       {!directory.searching && (
-        <MarketFeatured title={translate('extensions.featuredConnectors')} items={featured} renderCard={(app) => card(app, true)} />
+        <MarketFeatured
+          title={translate('extensions.featuredConnectors')}
+          items={featured}
+          more={directory.results.filter((app) => !featuredIds.includes(app.id))}
+          renderCard={(app) => card(app, true)}
+        />
       )}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={active} onChange={setCategory} testIdPrefix="connector-market-chip" />

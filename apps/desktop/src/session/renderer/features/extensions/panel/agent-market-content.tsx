@@ -95,7 +95,12 @@ export function AgentMarketContent({
 
   return (
     <>
-      {!search && <MarketFeatured title={translate('extensions.featuredAgents')} items={featured} renderCard={(card) => card} />}
+      {!search && <MarketFeatured
+        title={translate('extensions.featuredAgents')}
+        items={featured}
+        more={rows.filter(({ agent }) => !featuredAgentIds.includes(agent.id)).map((item) => agentCard(item, true))}
+        renderCard={(card) => card}
+      />}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={activeCategory} onChange={onCategoryChange} testIdPrefix="agent-market-chip" />
       )}
