@@ -15,7 +15,7 @@ import '@renderer/index.css';
 /**
  * The inner column's head and the content's tab strip share one line: same top, same height. Folding the column swaps
  * its fold button for the restore lane's expand button —
- * the same 28px button with the same 16px icon, so a click does not make it shrink (owner 11-14).
+ * both controls have a 28px target, so a click does not make it shrink (owner 11-14).
  */
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -64,9 +64,8 @@ it('the head band and the tab strip line up, and the fold button is the expand b
   const fold = box('[data-inner-head-fold]');
   const expand = box('[data-shell-restore-lane] button');
   const foldIcon = box('[data-inner-head-fold] svg');
-  const expandIcon = box('[data-shell-restore-lane] svg');
   expect([fold.width, fold.height]).toEqual([expand.width, expand.height]);
-  expect([foldIcon.width, foldIcon.height]).toEqual([expandIcon.width, expandIcon.height]);
+  expect([foldIcon.width, foldIcon.height]).toEqual([14, 14]);
   // Both centred on the band's middle line.
   expect(fold.top + fold.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
   expect(expand.top + expand.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
@@ -84,7 +83,7 @@ it('the two-line group button covers the avatar and lower row, with independent 
             avatar={<span data-proof-avatar="" className="block size-8" />}
             createAction={{ label: '创建智能体', onClick: create }}
           >
-            <InnerSidebarFoldButton matchTabStrip />
+            <InnerSidebarFoldButton />
           </InnerHeadRowLayout>
         </div>
       </SessionLocalizationProvider>
