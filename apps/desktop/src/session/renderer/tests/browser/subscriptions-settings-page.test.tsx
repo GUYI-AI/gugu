@@ -768,12 +768,14 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
   control.expired = true;
   control.connectionsByProvider[provider] = [{ id: 'expired-model-account', kind: 'account', name: capture ? 'Claude Max' : 'Saved plan', current: true }];
   if (capture) {
+    await page.viewport(1200, 900);
+    document.documentElement.dataset.theme = 'light';
     control.connectionsByProvider.codex = [];
     host.style.cssText = 'width: 940px; padding: 24px; background: var(--model-settings-page);';
   }
   root.render(<>
     {capture && <p style={{ marginBottom: 20, fontSize: 14 }}>组件测试夹具，非真实账号</p>}
-    <div className="gg-settings-detail"><div className="gg-settings-page gg-model-page">
+    <div className="gg-pane gg-settings-detail"><div className="gg-settings-page gg-model-page">
       <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>
     </div></div>
   </>);
