@@ -54,7 +54,7 @@ export function MarketExtensionDetail({
   });
   const shots = listing.data?.screenshots;
   const textLanguage = manifestLanguages(manifest, locale)[0]?.locale;
-  const about = textLanguage ? listing.data?.about[textLanguage] : undefined;
+  const about = textLanguage ? listing.data?.about[textLanguage]?.trim().split(/\r?\n[ \t]*\r?\n/, 1)[0] : undefined;
   const install = (version: string) => onInstall({ extensionId: manifest.id, version }, confirmInstall);
 
   const uninstall = async () => {
@@ -113,7 +113,7 @@ export function MarketExtensionDetail({
         </DetailSection>
       )}
       {!!shots?.length && (
-        <DetailSection title={translate('extensions.preview')} icon={<Image />}>
+        <DetailSection title={translate('marketDetail.screenshots')} icon={<Image />}>
           <div className="grid grid-cols-3 gap-3" data-image-gallery="">
             {shots.map((src, index) => (
               <ExpandableImage key={src} className="aspect-[16/10] w-full rounded-xl object-cover object-left-top" src={src} alt={translate('extensions.screenshotOf', { name: text.name, index: index + 1 })} loading="lazy" />
@@ -133,6 +133,7 @@ export function MarketExtensionDetail({
             translate={translate}
             onOpenExternal={confirmOpenExternalLink}
             foldedCount={3}
+            showReleaseNotes={false}
             onInstallVersion={canChangeVersion && !pending ? install : undefined}
           />
         </div>

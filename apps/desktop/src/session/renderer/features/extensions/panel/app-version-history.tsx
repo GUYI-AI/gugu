@@ -29,6 +29,7 @@ export function VersionHistorySection({
   onOpenExternal,
   onReadAgain,
   foldedCount = HISTORY_FOLDED,
+  showReleaseNotes = true,
 }: {
   state: Loadable<MarketVersionHistoryEntry[]>;
   extensionId: string;
@@ -42,6 +43,7 @@ export function VersionHistorySection({
   onOpenExternal: (url: string) => void;
   onReadAgain?: () => void;
   foldedCount?: number;
+  showReleaseNotes?: boolean;
 }) {
   const [all, setAll] = useState(false);
   if (state.status === 'idle' || state.status === 'loading') {
@@ -63,6 +65,7 @@ export function VersionHistorySection({
         <VersionHistoryRow
           key={entry.version}
           entry={entry}
+          showReleaseNotes={showReleaseNotes}
           extensionId={extensionId}
           installedVersion={installedVersion}
           pins={pinsAutoUpdate(entry.version, offeredVersion)}
@@ -88,6 +91,7 @@ export function VersionHistorySection({
  */
 function VersionHistoryRow({
   entry,
+  showReleaseNotes,
   extensionId,
   installedVersion,
   pins,
@@ -97,6 +101,7 @@ function VersionHistoryRow({
   onOpenExternal,
 }: {
   entry: MarketVersionHistoryEntry;
+  showReleaseNotes: boolean;
   extensionId: string;
   installedVersion: string | undefined;
   /** 装上它,这个 App 就不再自动更新(`pinsAutoUpdate`)。 */
@@ -126,10 +131,10 @@ function VersionHistoryRow({
 
   return (
     <li data-testid={`extension-history-${extensionId}-${entry.version}`}>
-      <div className="xp-history-row">
-        <span className={cn('xp-history-version', entry.yanked && 'is-yanked')}>{entry.version}</span>
+      <div className={cn("xp-history-row", !showReleaseNotes && "xp-history-row-compact")}>
+        <span className={cn('xp-history-version', entry.yanked && 'is-yanked')}>{showReleaseNotes ? entry.version : `v${entry.version}`}</span>
         <span className="xp-history-date">{shortDate(entry.publishedAt, locale)}</span>
-        {yankedReason ? (
+        {showReleaseNotes && (yankedReason ? (
           <span className="xp-history-note is-warn">{yankedReason}</span>
         ) : (
           <button
@@ -140,11 +145,11 @@ function VersionHistoryRow({
           >
             {expanded ? '' : firstLine}
           </button>
-        )}
+        ))}
         <span className="xp-history-action">
           {isInstalled ? (
             <span className="xp-state">{translate('extensions.stripThisInstalled')}</span>
-          ) : yankedReason ? null : compatReason ? (
+          ) : yankedReason ? (showReleaseNotes ? null : <span className="xp-state">{yankedReason}</span>) : compatReason ? (
             <span className="xp-state">{compatReason}</span>
           ) : onInstallVersion ? (
             <button

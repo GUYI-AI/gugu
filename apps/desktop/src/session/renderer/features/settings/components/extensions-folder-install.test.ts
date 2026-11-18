@@ -627,7 +627,7 @@ describe('Desktop marketplace tabs and app details', () => {
     const older = { ...here.manifest, version: '0.9.0' };
     h.api.list.mockResolvedValue({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [] } } as never);
     h.api.marketHistory.mockResolvedValue({ success: true, data: [{
-      version: older.version, publishedAt: here.cloud.publishedAt, releaseNotes: '', compat: null, yanked: null,
+      version: older.version, publishedAt: here.cloud.publishedAt, releaseNotes: 'Legacy release notes', compat: null, yanked: null,
     }] });
     const installFromMarket = (h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket;
     installFromMarket.mockResolvedValueOnce({
@@ -640,6 +640,7 @@ describe('Desktop marketplace tabs and app details', () => {
       await render();
       await press('[data-testid="extension-card-pomo"]');
       await until('older release drawn', () => !!dom.window.document.querySelector('[data-testid="extension-history-pomo-0.9.0"] .xp-history-action button'));
+      expect(dom.window.document.querySelector('[data-testid="extension-history-pomo-0.9.0"]')?.textContent).not.toContain('Legacy release notes');
       await press('[data-testid="extension-history-pomo-0.9.0"] .xp-history-action button');
       expect(installFromMarket).toHaveBeenCalledOnce();
       expect(dom.window.document.querySelector('[data-testid="market-detail-confirmation"]')?.textContent).toContain(translateSessionMessage('extensions.pinHint'));
