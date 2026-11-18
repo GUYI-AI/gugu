@@ -48,6 +48,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
       (section !== 'apps' || platform.capabilities.mobileApps) &&
+      (section !== 'data-import' || (!mobile && platform.capabilities.sessionHost)) &&
       (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
       (section !== 'connectors' || (!mobile && platform.capabilities.sessionHost)) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
@@ -55,6 +56,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
 const DESKTOP_SECTIONS_FOR_PLATFORM = sectionsFor(false)
 /** 内页自己没有一句话说明的几页:由这里补在最上面(其余各页自己有,❌ 重复)。 */
+const DataImportSection = lazy(() => import('./settings/data-import/DataImportSection').then((module) => ({ default: module.DataImportSection })))
 const PhoneMarketplace = lazy(() => import('../mobile/market/PhoneMarketplace').then((module) => ({ default: module.PhoneMarketplace })))
 
 /**
@@ -97,9 +99,10 @@ export function SettingsPanel({
   const requestedSection = section ?? internalSection
   const marketConnections = mobile && (requestedSection === 'connectors' || requestedSection === 'channels')
   const destination = marketConnections ? 'apps' : requestedSection
-  const unsupportedPhoneSection = (destination === 'apps' && !platform.capabilities.mobileApps)
+  const unsupportedSection = (destination === 'data-import' && !sections.includes('data-import'))
+    || (destination === 'apps' && !platform.capabilities.mobileApps)
     || (destination === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
-  const activeSection = unsupportedPhoneSection || (isAssistantSettingsSection(destination) && !sections.includes(destination))
+  const activeSection = unsupportedSection || (isAssistantSettingsSection(destination) && !sections.includes(destination))
     ? 'account' : destination
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
@@ -129,6 +132,7 @@ export function SettingsPanel({
       )
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
+      case 'data-import': return <Suspense fallback={null}><DataImportSection onClose={() => onClose?.()} /></Suspense>
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
       // This is a primary page now; keep its content while opting out of nested-page navigation.
       case 'files':    return <SettingsDetailNavigation.Provider value={null}><FileStorageSection onBack={back} /></SettingsDetailNavigation.Provider>
@@ -179,7 +183,7 @@ export function SettingsPanel({
         )}
         {(!mobile || mobilePane === 'detail') && (
           <Pane paneRole="detail" mobile={mobile} className="gg-settings-detail">
-            <PaneHeader
+            {activeSection !== 'data-import' && <PaneHeader
               mobile={mobile}
               title={detailPage?.title ?? sectionTitle}
               titleLevel={mobile ? 'panel' : undefined}
@@ -201,7 +205,7 @@ export function SettingsPanel({
                   {t('phoneMarket.installed')}
                 </Button>
               ) : undefined}
-            />
+            />}
             {/* @@@6436 内页排版(桌面与手机的内边距差别也在内)全在 settings/settings.css。 */}
             <div ref={attachBody} className="gg-settings-body window-no-drag-region">
               <SettingsDetailNavigation.Provider value={setDetailPage}>{renderSection()}</SettingsDetailNavigation.Provider>
