@@ -1,6 +1,7 @@
 .gg-data-import {
   --import-ease: cubic-bezier(.4, 0, .2, 1);
   --settings-col-w: 640px;
+  padding-block-start: var(--spacing-xl);
   display: grid;
   gap: var(--spacing-lg);
 }
@@ -194,3 +195,9 @@
 .gg-import-remote-content { padding: var(--spacing-md); }
 .gg-import-remote-content .gg-import-unavailable { text-align: center; }
 .gg-import-row-label { display: flex; align-items: center; gap: var(--spacing-sm); }
+
+.gg-import-sync .gg-settings-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding-inline: var(--spacing-md);
+}

@@ -8,6 +8,7 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
 import { MachineList } from '@/components/ui/MachineList'
 import { Collapse } from '@/components/ui/Collapse'
+import { AppIcon } from '@renderer/lib/components/app-icon'
 import { AgentIcon } from '@renderer/lib/components/agent-icon'
 import type { MachineChoice } from '@renderer/features/remote-hosts/machine-choice'
 import type { ImportProvider } from './import-providers'
@@ -29,7 +30,7 @@ function useSources(providers: readonly ImportProvider[], deviceId: string | nul
 export function ImportSourceIcon({ provider }: { provider: ImportProvider }) {
   return (
     <span aria-hidden="true" className="gg-import-icon">
-      <AgentIcon id={provider.iconId} size={24} />
+      <AppIcon id={provider.iconId} size={24} />
     </span>
   )
 }
@@ -86,7 +87,7 @@ function SourceAction({ provider, reading, ownerId, deviceId, deviceName, job }:
   const [picking, setPicking] = useState(false)
   const count = sourceCount(reading)
   const pick = provider.pickSource
-  const needsFile = !!pick && reading?.state === 'value' && reading.value?.needsSource
+  const needsFile = !!pick && ((reading?.state === 'value' && reading.value?.needsSource) || count === 0)
   async function selectFile() {
     if (!pick) return
     setPicking(true)
