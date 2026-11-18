@@ -417,7 +417,7 @@ export default {
       "action": "新任务",
       "chip": "用 {{agent}} 新建任务",
       "pickAgent": "选 agent",
-      "placeholder": "随心输入",
+      "placeholder": "想让 {{agent}} 做点什么？",
       "pickFolder": "点一张文件夹开工",
       "where": "在 {{machine}} 的 {{folder}} 中",
       "offline": "{{machine}} 离线了，换一张文件夹",

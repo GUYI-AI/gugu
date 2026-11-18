@@ -161,6 +161,7 @@ describe('a page in full screen is no measure of the pair', () => {
     layout.mainGroup.pane.setDimensions(EXTENT + 240, 900);
     layout.groups.find(({ pane }) => pane.entries.has(wide))!.pane.setActiveTab(wide);
     expect(sideWidth()).toBe(480);
+    layout.setActiveGroup(layout.mainGroup.paneId);
     layout.groups.find(({ pane }) => pane.entries.has(members))!.pane.setActiveTab(members);
     expect(sideWidth()).toBe(360);
   });

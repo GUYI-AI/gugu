@@ -131,7 +131,7 @@ for (const { normal, width, theme } of scenarios) it(normal
     expect(levels.map(level => level.querySelector('.gg-aw-choice-label')?.textContent)).toEqual(['低', '中', '高'])
     await page.getByTestId('agent-watch-create-controls-sheet-back').click()
   }
-  const toggle = panel.getByRole('switch', { name: 'Fast', exact: true })
+  const toggle = panel.getByRole('switch', { name: '快速模式', exact: true })
   await expect.element(toggle).toHaveAttribute('aria-checked', 'false')
   expect(document.querySelector('[data-testid="composer-model-trigger"]')).toBeNull()
   const button = document.querySelector<HTMLElement>('[data-testid="agent-watch-create-controls-sheet"] [data-phone-fast]')!
@@ -139,7 +139,7 @@ for (const { normal, width, theme } of scenarios) it(normal
   const a = button.getBoundingClientRect()
   expect(a.height).toBe(44)
   expect(button.getAttribute('role')).toBe('switch')
-  expect(button.getAttribute('aria-label')).toBe('Fast')
+  expect(button.getAttribute('aria-label')).toBe('快速模式')
   await capture('G-existing-fast-off')
   const accepted = Promise.withResolvers<void>()
   if (!normal) host.set.mockReturnValueOnce(accepted.promise)

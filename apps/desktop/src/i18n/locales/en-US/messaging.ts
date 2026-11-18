@@ -418,7 +418,7 @@ export default {
       "action": "New task",
       "chip": "New task with {{agent}}",
       "pickAgent": "Choose agent",
-      "placeholder": "Write anything…",
+      "placeholder": "What should {{agent}} do?",
       "pickFolder": "Tap a folder to start",
       "where": "In {{folder}} on {{machine}}",
       "offline": "{{machine}} is offline. Pick another folder.",

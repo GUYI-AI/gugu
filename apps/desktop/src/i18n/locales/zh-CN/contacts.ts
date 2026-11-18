@@ -107,6 +107,7 @@ export default {
     "title": "新建群聊"
   },
   "memberPicker": {
+    "sources": "成员来源",
     "selectionUnavailable": "所选成员不可用或无法邀请加入此群。",
     "allProjects": "全部",
     "allResults": "全部结果",
