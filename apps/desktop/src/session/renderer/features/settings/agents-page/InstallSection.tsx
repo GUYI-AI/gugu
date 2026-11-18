@@ -17,7 +17,6 @@ import { AgentSourceList, type SourceKind } from './AgentSourceList';
 import { resolveHarnessState } from './harness-state';
 import {
   describedInstallation,
-  isManagedInstallOption,
   isManualRef,
   liveRefFor,
   registryRows,
@@ -25,7 +24,7 @@ import {
 } from './installation-sources';
 import { AgentAdvancedSection } from './AgentAdvancedSection';
 import { InstallationOverrideCard } from './InstallationOverrideCard';
-import { resolveManagedUpdate, resolveUpdateAction } from './update-action';
+import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from './agent-source-actions';
 
 export type AgentInstallationHeader = {
   version: string | null;
@@ -123,12 +122,7 @@ export const InstallSection = observer(function InstallSection({
 
   /** 这一家**根本**有没有托管安装 —— 只认不装的那些家在 descriptor 上就没有装法(#6098)。 */
   const managedInstall = useMemo(
-    () =>
-      installOptions.find(
-        (o) =>
-          isManagedInstallOption(o) &&
-          (selectedSource.registry === undefined || o.registry === selectedSource.registry),
-      ) ?? installOptions.find(isManagedInstallOption),
+    () => managedInstallOption(installOptions, selectedSource.registry),
     [installOptions, selectedSource.registry],
   );
 
@@ -258,29 +252,16 @@ export const InstallSection = observer(function InstallSection({
     void vm.setUsed(toSelection(ref, values));
   };
 
-  /** 咕咕那份的更新:解析得出原地升级的命令就原地升级,否则重装一份最新的。 */
-  const managedUpdateAction = resolveManagedUpdate({
-    updateAction: resolveUpdateAction(agentPayload, managedCopy, selectedSource.registry, agentId),
+  const update = resolveManagedSourceUpdate({
+    agent: agentPayload,
+    managedCopy,
     managedInstall,
     registry: selectedSource.registry,
+    companionUpdate: (vm.data?.programs ?? []).slice(1).some((program) => program.managedUpdateAvailable),
   });
-  /**
-   * 另几条腿的程序(#6335)里,咕咕那一份有新版本的 —— 那是一次原地更新:主进程只动有新版本的那几个
-   * (`updatePartsFor`)。❌ 不走「装一份最新的」那一支:那会把主程序(400 MB)也重下一遍。
-   */
-  const companionUpdate = (vm.data?.programs ?? []).slice(1).some((program) => program.managedUpdateAvailable);
-  const onManagedUpdate =
-    managedCopy?.updateAvailable && managedUpdateAction
-      ? () => {
-          if (managedUpdateAction.kind === 'update') {
-            void vm.update(managedUpdateAction.method, managedUpdateAction.registry);
-          } else {
-            void vm.install(managedUpdateAction.method, managedUpdateAction.registry);
-          }
-        }
-      : managedCopy && companionUpdate && managedInstall
-        ? () => void vm.update(managedInstall.method, selectedSource.registry)
-        : undefined;
+  const onManagedUpdate = update
+    ? () => void (update.kind === 'update' ? vm.update : vm.install)(update.method, update.registry)
+    : undefined;
 
   const installed = (vm.data?.reading ?? agentPayload?.reading ?? 'not-detected') !== 'not-detected';
   const sources = (
@@ -293,7 +274,7 @@ export const InstallSection = observer(function InstallSection({
         custom={customCopy}
         canInstall={!!managedInstall}
         installInHeader={!!renderPage && !installed}
-        canUninstall={canUninstall(agentPayload, managedCopy, state)}
+        canUninstall={canUninstallManagedSource(agentPayload, managedCopy, state)}
         installDocs={installDocs}
         onSelect={onSelect}
         onInstall={onInstall}
@@ -323,24 +304,3 @@ export const InstallSection = observer(function InstallSection({
     install: managedInstall ? onInstall : undefined,
   }, settings);
 });
-
-/**
- * 卸载只卸咕咕装的那一份(spec)。
- *
- * 选中的是用户自己的副本时这个按钮**不出现** —— 与其给一个按钮、让他点下去再被运行时拒掉,
- * 不如一开始就不摆。#4271 那次正是这道闸只写在注释里、没写进代码,于是咕咕跑 `brew uninstall`
- * 把用户亲手装的东西删了。
- */
-function canUninstall(
-  agentPayload: AgentPayload | undefined,
-  installation: Installation | undefined,
-  state: ReturnType<typeof resolveHarnessState>,
-): boolean {
-  const descriptor = agentPayload?.capabilities.hostDependency.uninstall;
-  if (!descriptor || descriptor.kind === 'none') return false;
-  if (state === 'installing') return false;
-  // 几个程序的家(#6335):合并读数在终端腿那个程序没装时是「未安装」,可聊天面板那个是咕咕装的 ——
-  // 卸载照样要给,不然用户得先装一个他不要的程序才卸得掉另一个。
-  if (state === 'not-installed' && !agentPayload?.programs) return false;
-  return installation?.provenance.ours === true;
-}
