@@ -7,7 +7,7 @@ import { createAttachmentUploadHost } from '../../apps/desktop/electron/attachme
 
 const fixtures: { host: ReturnType<typeof createAttachmentUploadHost>; home: string }[] = []
 /** The production account queue and file store, with only the service transport replaced. */
-export function testAttachmentUploads(endpoint: () => Promise<AttachmentsEndpoint>) {
+export function testAttachmentUploads(endpoint: () => Promise<AttachmentsEndpoint> = async () => { throw new Error('Attachment service not used in this fixture') }) {
   const home = mkdtempSync(join(tmpdir(), 'mcp-attachment-host-'))
   const host = createAttachmentUploadHost({ account: async () => ({ id: 'owner', home, endpoint }), progress: vi.fn(), warn: vi.fn() })
   fixtures.push({ host, home })

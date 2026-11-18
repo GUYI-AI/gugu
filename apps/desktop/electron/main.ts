@@ -6032,6 +6032,7 @@ app.whenReady().then(async () => {
           runLocalSessionAction(auth, sessionContext, action, signal)
         return {
           host,
+          attachments: attachmentUploads,
           grantKey: sessionpageSurfaceKey(info.sessionId),
           nativeSessionId: info.sessionId,
           runHostAction: runAction,

@@ -414,7 +414,7 @@ export interface BuildSocialBridgeDeps {
   resolveFile?: (ref: FileRef, actor: FileActor) => Promise<ResolvedFile>
   /** The host's project file publisher (the composer's): a file of a chat that keeps files on this machine, with its message. */
   publishFile?: ProjectFilePublish
-  attachments?: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
+  attachments: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
   getSupabaseUrl?: () => string
   getSupabaseAnonKey?: () => string
   host: DesktopGuguMcpHost
@@ -444,6 +444,7 @@ export async function buildSocialBridge(
       context.authProvider,
       'gugu MCP bridge',
     )
+    if (!deps.attachments) throw new Error('Device attachment upload host is required')
     await deps.host.start()
     const getBoundAuth = async (signal?: AbortSignal): Promise<RuntimeAuth> => {
       signal?.throwIfAborted()
@@ -482,13 +483,13 @@ export async function buildSocialBridge(
         await getBoundAuth()
         return deps.publishFile!(...args)
       } } : {}),
-      ...(deps.attachments ? { attachments: {
-        declare: async (request: Parameters<NonNullable<BuildSocialBridgeDeps['attachments']>['declare']>[0]) => {
+      attachments: {
+        declare: async (request: Parameters<BuildSocialBridgeDeps['attachments']['declare']>[0]) => {
           await getBoundAuth()
-          return deps.attachments!.declare(request)
+          return deps.attachments.declare(request)
         },
-        drop: async (messageId: string) => { await getBoundAuth(); return deps.attachments!.drop(messageId) },
-      } } : {}),
+        drop: async (messageId: string) => { await getBoundAuth(); return deps.attachments.drop(messageId) },
+      },
       ...(deps.forkOf === undefined ? {} : { forkOf: deps.forkOf }),
       ...(deps.readAssistantResources ? { readAssistantResources: async () => {
         await getBoundAuth()
