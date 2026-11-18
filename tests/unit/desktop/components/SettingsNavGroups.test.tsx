@@ -30,8 +30,8 @@ const captions = () => [...harness.container.querySelectorAll('.gg-settings-nav-
 
 // SettingsPanel excludes phone-only entries on desktop. This covers every section a desktop host may supply.
 const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone')
-// SettingsPanel never supplies the native Beta password destination to the mobile shell.
-const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords')
+// SettingsPanel excludes the desktop-only password and data import destinations from the mobile shell.
+const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords' && section !== 'data-import')
 
 // Desktop order follows the approved sidebar; mobile retains its existing groups.
 describe('the one settings nav', () => {
@@ -39,7 +39,7 @@ describe('the one settings nav', () => {
     await render(desktopSections)
     expect(groups()).toEqual([
       ['account', 'subscriptions', 'usage'],
-      ['general', 'connectors', 'interface', 'model', 'permissions', 'passwords'],
+      ['general', 'data-import', 'connectors', 'interface', 'model', 'permissions', 'passwords'],
       ['sessions', 'devices', 'browser', 'files'],
       ['resource-monitor', 'about'],
     ])

@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe,
+  LogIn,
   GlobeFilled,
   Palette,
   PaletteFilled,
@@ -37,7 +38,7 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
-  { id: 'preferences', sections: ['general', 'connectors', 'interface', 'model', 'permissions', 'passwords'] },
+  { id: 'preferences', sections: ['general', 'data-import', 'connectors', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
 ]
@@ -133,6 +134,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
   { key: 'general', labelKey: 'settings.nav.general', il: <IlGeneral />, ib: <IbGeneral /> },
+  { key: 'data-import', labelKey: 'settings.nav.data-import', il: <LogIn size={15} />, ib: <LogIn size={15} /> },
   { key: 'passwords', labelKey: 'settings.nav.passwords', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'permissions', labelKey: 'settings.nav.permissions', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'devices', labelKey: 'settings.nav.devices', il: <IlDevices />, ib: <IbDevices /> },

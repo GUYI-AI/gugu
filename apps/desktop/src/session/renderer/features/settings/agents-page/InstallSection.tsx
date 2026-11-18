@@ -33,6 +33,10 @@ export type AgentInstallationHeader = {
   runnable: boolean;
   busy: boolean;
   installing: boolean;
+  updating: boolean;
+  uninstalling: boolean;
+  update: (() => void) | undefined;
+  uninstall: (() => Promise<void>) | undefined;
   install: (() => void) | undefined;
 };
 
@@ -264,6 +268,7 @@ export const InstallSection = observer(function InstallSection({
     : undefined;
 
   const installed = (vm.data?.reading ?? agentPayload?.reading ?? 'not-detected') !== 'not-detected';
+  const canUninstall = canUninstallManagedSource(agentPayload, managedCopy, state);
   const sources = (
     <AgentSourceList
         vm={vm}
@@ -274,7 +279,7 @@ export const InstallSection = observer(function InstallSection({
         custom={customCopy}
         canInstall={!!managedInstall}
         installInHeader={!!renderPage && !installed}
-        canUninstall={canUninstallManagedSource(agentPayload, managedCopy, state)}
+        canUninstall={canUninstall}
         installDocs={installDocs}
         onSelect={onSelect}
         onInstall={onInstall}
@@ -301,6 +306,10 @@ export const InstallSection = observer(function InstallSection({
     runnable,
     busy,
     installing: vm.isInstalling,
+    updating: vm.isUpdating,
+    uninstalling: vm.isUninstalling,
+    update: onManagedUpdate,
+    uninstall: canUninstall ? vm.uninstall : undefined,
     install: managedInstall ? onInstall : undefined,
   }, settings);
 });
