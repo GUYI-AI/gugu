@@ -1,11 +1,16 @@
 import { observer } from 'mobx-react-lite';
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { AnnotationEditor, AnnotationMarker } from '@renderer/features/sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations';
 import type { FileTextRange } from './file-text-range';
 
 export type FileAnnotationContext = { sessionId: string; path: string };
 export type AnnotatedRange = { range: Range; quote: FileTextRange };
+type AnchorPoint = { x: number; y: number };
+
+function anchorStyle({ x, y }: AnchorPoint): CSSProperties {
+  return { '--file-annotation-x': `${x}px`, '--file-annotation-y': `${y}px` } as CSSProperties;
+}
 
 function anchorRect(range: Range): DOMRect {
   return range.getClientRects()[0] ?? range.getBoundingClientRect();
@@ -29,7 +34,7 @@ export const FilePreviewAnnotations = observer(function FilePreviewAnnotations({
   const items = draft.items.filter(item => item.kind === 'file').filter(item => item.path === context.path);
   const retained = useRef(new Map<string, Range>());
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [positions, setPositions] = useState<Record<string, AnchorPoint>>({});
   const editing = selection ? undefined : items.find(item => item.id === editingId);
   const point = selection ? positions.selection : editing && positions[editing.id];
 
@@ -41,7 +46,7 @@ export const FilePreviewAnnotations = observer(function FilePreviewAnnotations({
       const scale = element.offsetWidth ? rootBox.width / element.offsetWidth : 1;
       if (!scale) return;
       const anchor = (rect: DOMRect) => ({ x: (rect.left - rootBox.left) / scale, y: (rect.top - rootBox.top) / scale });
-      const next: Record<string, { x: number; y: number }> = {};
+      const next: Record<string, AnchorPoint> = {};
       for (const item of items) {
         const range = retained.current.get(item.id);
         const rect = range && element.contains(range.startContainer) && element.contains(range.endContainer)
@@ -64,12 +69,10 @@ export const FilePreviewAnnotations = observer(function FilePreviewAnnotations({
     {items.map(item => {
       const position = positions[item.id];
       if (!position) return null;
-      return <AnnotationMarker key={item.id} number={item.number} className="absolute z-[1]"
-        style={{ left: `clamp(0px, ${position.x}px, calc(100% - 24px))`, top: Math.max(0, position.y - 12) }}
+      return <AnnotationMarker key={item.id} number={item.number} className="gg-file-annotation-marker absolute z-[1]" style={anchorStyle(position)}
         onClick={() => { onClose(); setEditingId(item.id); }} />;
     })}
-    {point && <div data-occludes-browser-page className="absolute z-[2] w-80 max-w-[calc(100%_-_16px)]"
-      style={{ left: `clamp(8px, ${point.x}px, max(8px, calc(100% - 328px)))`, top: Math.max(0, point.y - 48) }}>
+    {point && <div data-occludes-browser-page className="gg-file-annotation-editor absolute z-[2] w-80 max-w-[calc(100%_-_16px)]" style={anchorStyle(point)}>
       <AnnotationEditor key={editing?.id ?? 'new'} number={editing?.number ?? draft.nextAnnotationNumber}
         initialValue={editing?.annotation} onCancel={close}
         onRemove={editing ? () => { draft.remove(editing.id); close(); } : undefined}
