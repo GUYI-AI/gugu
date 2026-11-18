@@ -49,6 +49,7 @@ import { classifyCreateFailure } from './create-failure';
 import { launchCreatedSession } from './launch-created-session';
 import { sessionRecordHarnessForProvider } from './locate';
 import { clearStartFailure, recordStartFailure } from './start-failures';
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 
 /**
  * 手机在**这台机器上**开一条新会话。
@@ -453,6 +454,14 @@ async function createSessionSteps(
         : describeAgentInstallFailure(provider, error instanceof Error ? error : new Error(String(error)));
       return fail('harness_install_failed', message);
     }
+  }
+
+  const { assertAgentHomeImportedForSession } = await import('@main/core/agents/agent-homes');
+  try {
+    await assertAgentHomeImportedForSession(provider);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code)) return fail(error.code, error.message);
+    throw error;
   }
 
   // 模型按 spawn **同一套**规则解释(`platform:` 前缀 = 咕咕平台模型,须在这条腿的目录里;

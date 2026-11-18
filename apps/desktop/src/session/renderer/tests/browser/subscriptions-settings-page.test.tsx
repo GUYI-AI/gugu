@@ -18,7 +18,7 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
-import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
+import type { AgentHomeScan, HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
@@ -98,6 +98,7 @@ const control = vi.hoisted(() => ({
   selected: '',
   connections: [] as HarnessConnection[],
   codex: false,
+  agentHomes: [] as AgentHomeScan[],
   others: false,
   signedOut: false,
   expired: false,
@@ -137,6 +138,9 @@ vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
 
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
+    scanAgentHomes: async ({ providerIds }: { providerIds?: string[] }) => ({
+      success: true, data: control.agentHomes.filter((home) => !providerIds || providerIds.includes(home.providerId)),
+    }),
     listConnections: async ({ providerId }: { providerId?: string } = {}) => control.connectionsError
       ? { success: false, error: { message: 'Connections offline' } }
       : { success: true, data: [...connectionsOf(providerId)] },
@@ -225,6 +229,7 @@ beforeEach(() => {
   control.removed = [];
   control.selected = '';
   control.codex = false;
+  control.agentHomes = [];
   control.others = false;
   control.signedOut = false;
   control.expired = false;
@@ -509,6 +514,19 @@ it.each(['claude', 'codex'])('an empty %s connection list opens Add connection d
   await until('the existing connection form opens directly', () => !!host.querySelector('.subscription-connection-form'));
   expect(layer.querySelector('[role="menu"], [role="listbox"]')).toBeNull();
   expect(control.created).toBeNull();
+  expect(thrown).toEqual([]);
+});
+
+it('shows managed local configuration with no sign-in or connection menu', async () => {
+  control.connections = [];
+  control.signedOut = true;
+  control.agentHomes = [{ providerId: 'claude', name: 'Claude Code', userRoot: '/fixture/.claude', sourceReadable: true,
+    importedAt: '2026-11-01T00:00:00.000Z', needsImport: false, sourceUpdated: true, migration: false,
+    groups: [], issues: [], mcpSecrets: [], projectMcpCount: 0 }];
+  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  await until('local configuration is available in the subscription row', () => !!host.querySelector('[data-testid="subscription-row-claude"] [data-testid="agent-home-reimport-claude"]'));
+  expect(switchTrigger('claude')).toBeNull();
+  expect(layer.querySelector('[role="listbox"]')).toBeNull();
   expect(thrown).toEqual([]);
 });
 

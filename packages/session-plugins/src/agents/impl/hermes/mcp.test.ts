@@ -74,7 +74,7 @@ describe('hermesMcpAdapter', () => {
   });
 
   it('never writes the user config: a non-owned fs is refused before any byte changes', async () => {
-    const fs = memoryFs({ '.hermes/config.yaml': USER_CONFIG }, 'user-config');
+    const fs = memoryFs({ '.hermes/config.yaml': USER_CONFIG });
     await expect(
       hermesMcpAdapter().writeServers(fs, [{ name: 'gugu', url: 'http://127.0.0.1:1/mcp', transport: 'http' }])
     ).rejects.toThrow(/read-only/);

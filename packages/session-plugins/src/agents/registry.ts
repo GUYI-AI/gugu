@@ -578,7 +578,7 @@ export { effortOptionsFromReasoningVariants } from './helpers/opencode-family-mo
 export { opencodeFamilyUpdatedTitle } from './helpers/opencode-family-title';
 // @@@5380 agent 事件 hook 的 `notify` 回调值。宿主侧只需要**值**(它进 thread-open 的
 // `config` map),❌ 不再导出 `-c notify=…` 的 argv 拼法 —— 那条腿已经没有宿主消费者了。
-export { codexNotifyConfigValue } from './impl/codex/hooks';
+export { codexNotifyConfigValue, stripLegacyCodexNotify } from './impl/codex/hooks';
 export {
   CODEX_ACTOR_AUTHORIZATION_HEADER,
   CODEX_PLATFORM_DISABLE_APPS_ARGS,

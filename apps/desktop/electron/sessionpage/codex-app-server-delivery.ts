@@ -1689,7 +1689,8 @@ export class CodexAppServerSession {
    * opts.extraArgs 拼进 app-server 的 argv,承载 adapter 物化的模型配置；权限由
    * opts.threadStart 进入 thread/start，避免进程 argv 遮住线程设置。MCP 由
    * thread-open 原生 `config` map 与 child env 承载，prompt 块则经 developerInstructions 进入原生
-   * thread-open RPC。Codex 继续使用用户真实 `CODEX_HOME` 读取 auth/跨 run 状态；workspace trust 由 capability bundle 的 session-owned overlay 与 `-c` 覆盖提供，用户全局 config.toml 不被改写。这里不补 provider `buildCommand` 的 `notify`：本路径
+   * thread-open RPC。Codex 从托管 `CODEX_HOME` 读取配置和跨会话状态。工作目录信任由进程级 `-c` 提供。
+   * 这里不补 provider `buildCommand` 的 `notify`：本路径
    * 直接消费 WS `turn/started` / `turn/completed` 驱动会话页后端的 lifecycle,且 divert 时不会加载会话页的 CLI
    * hooks,所以 app-server 进程不带 `--dangerously-bypass-hook-trust`;用户自己的 hook 由新建 thread 的 TUI
    * 按权限档处理(见 codexTuiPermissionArgs)。

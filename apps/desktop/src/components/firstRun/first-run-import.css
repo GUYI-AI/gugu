@@ -1,0 +1,16 @@
+.ta-onb.first-run-import-panel { width: min(560px, 100%); padding: 40px 32px 32px; border: 1px solid var(--border); border-radius: var(--radius-dialog); background: var(--card); gap: 0; }
+.agent-home-cards { display: flex; flex-direction: column; gap: var(--spacing-sm); width: 100%; margin: 28px 0 16px; text-align: left; }
+.agent-home-card { border: 1px solid var(--border); border-radius: var(--radius-surface); padding: var(--spacing-md); }
+.agent-home-card header { display: flex; align-items: center; gap: var(--spacing-sm); }
+.agent-home-card header p { color: var(--text-secondary); font-size: var(--font-caption); overflow-wrap: anywhere; margin: 2px 0 0; }
+.agent-home-card strong { font-weight: 500; }
+.agent-home-groups { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 14px 0; }
+.agent-home-groups label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-body); cursor: pointer; }
+.agent-home-groups input { accent-color: var(--text-primary); }
+.agent-home-groups span, .agent-home-note { color: var(--text-secondary); }
+.agent-home-signin { border-top: 1px solid var(--border); padding-top: 12px; color: var(--text-secondary); font-size: var(--font-caption); line-height: var(--lh-caption); }
+.agent-home-note { width: 100%; font-size: var(--font-caption); line-height: var(--lh-caption); text-align: left; overflow-wrap: anywhere; }
+.agent-home-actions { margin-top: 16px !important; }
+.agent-home-modal { display: flex; flex-direction: column; gap: 12px; padding: 24px; overflow-y: auto; }
+.agent-home-modal .ta-onb-title { font-size: var(--font-heading); font-weight: 500; }
+.agent-home-modal .ta-onb-sub { color: var(--text-secondary); }

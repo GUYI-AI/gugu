@@ -1,3 +1,5 @@
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config'
+
 // Only locally declared codes may cross the renderer log boundary. Remote messages,
 // stacks and arbitrary code strings can contain host paths, filenames or credentials.
 const diagnosticCodes = new Set([
@@ -14,5 +16,5 @@ const diagnosticCodes = new Set([
 ])
 
 export function creationFailureDiagnostic(code: string | null): { code: string } {
-  return { code: code !== null && diagnosticCodes.has(code) ? code : 'unknown_creation_failure' }
+  return { code: (code !== null && diagnosticCodes.has(code)) || isAgentHomeImportCode(code) ? code : 'unknown_creation_failure' }
 }

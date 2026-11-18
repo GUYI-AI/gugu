@@ -17,18 +17,18 @@ vi.mock('@main/core/provider-accounts/provider-account-registry-instance', () =>
 }));
 vi.mock('electron', () => ({ app: { getPath: () => state.home } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn() } }));
+vi.mock('../sessions/subscription-switch', () => ({ prepareSubscriptionMigration: async () => undefined }));
 // Claude 凭据一律走文件:❌ 让测试读写跑测试那台机器的登录钥匙串。
 vi.mock('./claude-credential-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./claude-credential-store')>();
   return { ...actual, createClaudeCredentialStore: () => actual.createClaudeCredentialStore({ platform: 'linux' }) };
 });
 const {
-  alignClaudeConnections,
-  alignCodexDefaultAccount,
   assertHarnessConnectionSelectable,
   connectionConfigRoot,
   createHarnessConnection,
   listHarnessConnections,
+  migrateOwnedHarnessAccounts,
   resolveHarnessConnection,
   selectHarnessConnection,
   removeHarnessConnection,
@@ -38,10 +38,11 @@ const {
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-connections-'));
   // 「用户自己的配置根」一律指到临时目录:❌ 让测试读写跑测试那台机器上真实的 ~/.codex / ~/.claude。
-  state.codexRoot = join(state.home, 'user', '.codex');
-  state.claudeRoot = join(state.home, 'user', '.claude');
-  vi.stubEnv('CODEX_HOME', state.codexRoot);
-  vi.stubEnv('CLAUDE_CONFIG_DIR', state.claudeRoot);
+  vi.stubEnv('GUGU_HOME', join(state.home, 'gugu'));
+  state.codexRoot = join(state.home, 'gugu', 'agent-homes', 'codex', '.codex');
+  state.claudeRoot = join(state.home, 'gugu', 'agent-homes', 'claude', '.claude');
+  vi.stubEnv('CODEX_HOME', join(state.home, 'terminal', '.codex'));
+  vi.stubEnv('CLAUDE_CONFIG_DIR', join(state.home, 'terminal', '.claude'));
   state.fixture = await openRegistryFixture('empty');
   state.fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('project', 'Project', '/repo');
     INSERT INTO sessions (id, project_id, provider, runtime, config)
@@ -64,9 +65,74 @@ async function writeAuthAt(root: string, text: string): Promise<void> {
   await writeFile(join(root, 'auth.json'), text);
 }
 
-const vault = (id: string) => join(state.home, 'harness-connections', 'codex', id, '.codex');
+const vault = (id: string) => join(state.home, 'harness-connections', 'codex', id === 'native' ? 'managed-native' : id, '.codex');
 
-it('saves API metadata without secrets and runs Codex sessions on the user root with env and -c overrides', async () => {
+it('restores Codex terminal B once, then retries managed A from its existing vault', async () => {
+  const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
+  const stateDir = join(state.home, 'harness-connections', 'codex');
+  const terminalRoot = process.env.CODEX_HOME!;
+  const formerNative = join(stateDir, 'native', '.codex');
+  await state.fixture!.registry.setDefaultAccount('harness:codex', work.id);
+  await writeAuthAt(terminalRoot, chatgptAuth('work', 'latest'));
+  await writeAuthAt(formerNative, chatgptAuth('terminal'));
+  await writeAuthAt(vault(work.id), chatgptAuth('work'));
+  await writeFile(join(stateDir, 'live-account.json'), JSON.stringify({ connectionId: work.id, identity: 'chatgpt:work|ws' }));
+  await mkdir(state.codexRoot, { recursive: true });
+  const config = join(state.codexRoot, 'config.toml');
+  await writeFile(config, 'cli_auth_credentials_store = "keyring"\n');
+
+  await expect(migrateOwnedHarnessAccounts('codex', process.env)).rejects.toThrow('keyring');
+  expect(await readFile(join(terminalRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal'));
+  expect(await readFile(join(vault(work.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'latest'));
+  await expect(stat(join(formerNative, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(stat(join(vault('native'), 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+  await writeAuthAt(terminalRoot, chatgptAuth('terminal', 'renewed'));
+  await rm(config);
+  await migrateOwnedHarnessAccounts('codex', process.env);
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'latest'));
+  await expect(assertHarnessConnectionSelectable('codex', 'native')).rejects.toThrow('no saved sign-in');
+  await writeAuthAt(state.codexRoot, chatgptAuth('work', 'rotated-in-gugu'));
+  expect(await readFile(join(terminalRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal', 'renewed'));
+});
+
+it('carries the Codex sign-in into an existing installation exactly once and isolates later refreshes', async () => {
+  const terminal = process.env.CODEX_HOME!;
+  const terminalAuth = join(terminal, 'auth.json');
+  const managedAuth = join(state.codexRoot, 'auth.json');
+  const former = chatgptAuth('person', 'old');
+  await writeAuthAt(terminal, former);
+  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'copied' });
+  expect(await readFile(terminalAuth, 'utf8')).toBe(former);
+  expect(await readFile(managedAuth, 'utf8')).toBe(former);
+
+  await writeAuthAt(terminal, chatgptAuth('person', 'terminal-refresh'));
+  expect(await readFile(managedAuth, 'utf8')).toBe(former);
+  await writeAuthAt(state.codexRoot, chatgptAuth('person', 'managed-refresh'));
+  await migrateOwnedHarnessAccounts('codex', process.env, true);
+  expect(await readFile(managedAuth, 'utf8')).toBe(chatgptAuth('person', 'managed-refresh'));
+  expect(await readFile(terminalAuth, 'utf8')).toBe(chatgptAuth('person', 'terminal-refresh'));
+});
+
+it('asks for Codex sign-in when the existing account uses a keyring, without reading it', async () => {
+  const terminal = process.env.CODEX_HOME!;
+  await mkdir(terminal, { recursive: true });
+  await writeFile(join(terminal, 'config.toml'), 'cli_auth_credentials_store = "keyring"');
+  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'relogin' });
+  await expect(stat(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('carries the active file-backed Codex API key into the managed slot during upgrade', async () => {
+  const terminal = process.env.CODEX_HOME!;
+  const former = '{"auth_mode":"apikey","OPENAI_API_KEY":"fixture-local-key"}\n';
+  await writeAuthAt(terminal, former);
+  const result = await migrateOwnedHarnessAccounts('codex', process.env, true);
+  expect('upgradeSignIn' in result).toBe(false);
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(former);
+  expect(await readFile(join(terminal, 'auth.json'), 'utf8')).toBe(former);
+});
+
+it('saves API metadata without secrets and runs Codex sessions on the managed root with env and -c overrides', async () => {
   const connection = await createHarnessConnection({
     providerId: 'codex',
     kind: 'api-key',
@@ -121,7 +187,7 @@ it('removing the current Codex account falls back to the existing CLI sign-in an
   await expect(removeHarnessConnection('codex', 'native')).rejects.toThrow('cannot be removed');
 });
 
-it('switches Codex by moving credentials through the user root, keeping rotated tokens with their owner', async () => {
+it('switches Codex by moving credentials through the managed root, keeping rotated tokens with their owner', async () => {
   await writeAuthAt(state.codexRoot, chatgptAuth('original'));
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
   await writeAuthAt(vault(work.id), chatgptAuth('work'));
@@ -195,23 +261,6 @@ it('moves every Codex session, including ones pinned before the fix, onto the de
   expect((await resolveHarnessConnection('codex', { sessionId: 'runtime-view', sourceSessionId: 'ran' })).connectionId).toBe('native');
 });
 
-it('aligns the user root with a default account chosen before the fix, once and only for accounts', async () => {
-  await writeAuthAt(state.codexRoot, chatgptAuth('original'));
-  const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  await writeAuthAt(vault(work.id), chatgptAuth('work'));
-  // 修复前的选择:只改了默认,凭据没进用户根。
-  await state.fixture!.registry.setDefaultAccount('harness:codex', work.id);
-  await alignCodexDefaultAccount();
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work'));
-  expect(await readFile(join(vault('native'), 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));
-  await writeAuthAt(state.codexRoot, chatgptAuth('work', 'r2'));
-  await alignCodexDefaultAccount();
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'r2'));
-  await state.fixture!.registry.setDefaultAccount('harness:codex', 'native');
-  await alignCodexDefaultAccount();
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'r2'));
-});
-
 it('files a first Codex account under its own connection when native never had a sign-in', async () => {
   const first = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
   const second = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
@@ -265,7 +314,7 @@ it('checks a switch before anything is stopped: a missing sign-in or keychain st
   await assertHarnessConnectionSelectable('claude', 'native');
 });
 
-const claudeVault = (id: string) => join(state.home, 'harness-connections', 'claude', id, '.claude');
+const claudeVault = (id: string) => join(state.home, 'harness-connections', 'claude', id === 'native' ? 'managed-native' : id, '.claude');
 const claudeCredential = (access: string, expiresAt: number, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ claudeAiOauth: { accessToken: access, refreshToken: `r-${access}`, expiresAt }, ...extra });
 const accessAt = async (root: string) =>
@@ -279,7 +328,7 @@ async function writeClaudeSignIn(root: string, uuid: string, credential: string,
   await writeFile(join(root, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: uuid }, hasCompletedOnboarding: true, ...config }));
 }
 
-it('switches Claude by moving the sign-in through the user root and runs every session there on the default', async () => {
+it('switches Claude by moving the sign-in through the managed root and runs every session there on the default', async () => {
   await writeClaudeSignIn(state.claudeRoot, 'u-original', claudeCredential('original', 100, { mcpOAuth: { docs: 'kept' } }), {
     projects: { '/repo': { allowedTools: ['Bash'] } },
   });
@@ -319,7 +368,7 @@ it('switches Claude by moving the sign-in through the user root and runs every s
   expect(await sessionHarnessConnectionId('deleted')).toBeUndefined();
 });
 
-it('runs a Claude API connection on the user root through env only, leaving the signed-in account in place', async () => {
+it('runs a Claude API connection on the managed root through env only, leaving the signed-in account in place', async () => {
   await writeClaudeSignIn(state.claudeRoot, 'u-original', claudeCredential('original', 100));
   const api = await createHarnessConnection({ providerId: 'claude', kind: 'api-key', apiKey: 'fixture-key', endpoint: 'https://relay.example/v1' });
   await expect(stat(join(state.home, 'harness-connections', 'claude', api.id))).rejects.toThrow();
@@ -343,50 +392,6 @@ it('refuses a Claude account with no saved sign-in and never falls back when a c
   expect((await listHarnessConnections('claude')).find((row) => row.current)?.id).toBe('native');
   expect((await resolveHarnessConnection('codex')).connectionId).toBe('native');
   await expect(resolveHarnessConnection('claude', { connectionId: 'missing' })).rejects.toThrow('unavailable');
-});
-
-it('aligns Claude at startup: moves old connection history into the user root once, then puts the default account there', async () => {
-  await writeClaudeSignIn(state.claudeRoot, 'u-original', claudeCredential('original', 100));
-  const work = await createHarnessConnection({ providerId: 'claude', kind: 'account' });
-  await writeClaudeSignIn(claudeVault(work.id), 'u-work', claudeCredential('work', 200));
-  const project = (root: string) => join(root, 'projects', '-repo');
-  await mkdir(project(claudeVault(work.id)), { recursive: true });
-  await writeFile(join(project(claudeVault(work.id)), 'shared.jsonl'), 'connection copy');
-  await writeFile(join(project(claudeVault(work.id)), 'only-there.jsonl'), 'ran on work');
-  await mkdir(project(state.claudeRoot), { recursive: true });
-  await writeFile(join(project(state.claudeRoot), 'shared.jsonl'), 'user copy');
-  // 修复前的选择:只改了默认,凭据没进用户根。
-  await state.fixture!.registry.setDefaultAccount('harness:claude', work.id);
-
-  await alignClaudeConnections();
-  expect(await readFile(join(project(state.claudeRoot), 'only-there.jsonl'), 'utf8')).toBe('ran on work');
-  expect(await readFile(join(project(state.claudeRoot), 'shared.jsonl'), 'utf8')).toBe('user copy');
-  expect(await accessAt(state.claudeRoot)).toBe('work');
-  expect(await accessAt(claudeVault('native'))).toBe('original');
-
-  // 第二次开机:不再搬(搬走后用户根里删掉的不会回来),账号已经在位也不再动。
-  await rm(join(project(state.claudeRoot), 'only-there.jsonl'));
-  await writeFile(join(state.claudeRoot, '.credentials.json'), claudeCredential('work-rotated', 300));
-  await alignClaudeConnections();
-  await expect(stat(join(project(state.claudeRoot), 'only-there.jsonl'))).rejects.toThrow();
-  expect(await accessAt(state.claudeRoot)).toBe('work-rotated');
-});
-
-it('aligns Claude at startup when the native sign-in and the default account are the same account signed in twice', async () => {
-  await writeClaudeSignIn(state.claudeRoot, 'u-same', claudeCredential('original', 100));
-  const work = await createHarnessConnection({ providerId: 'claude', kind: 'account' });
-  await writeClaudeSignIn(claudeVault(work.id), 'u-same', claudeCredential('work', 200));
-  await state.fixture!.registry.setDefaultAccount('harness:claude', work.id);
-
-  await alignClaudeConnections();
-  expect(await accessAt(state.claudeRoot)).toBe('work');
-  expect(await accessAt(claudeVault('native'))).toBe('original');
-  // 原生那份存下来了:选得回去,换回来的是它自己的 token。
-  await assertHarnessConnectionSelectable('claude', 'native');
-  await writeFile(join(state.claudeRoot, '.credentials.json'), claudeCredential('work-rotated', 300));
-  await selectHarnessConnection('claude', 'native');
-  expect(await accessAt(state.claudeRoot)).toBe('original');
-  expect(await accessAt(claudeVault(work.id))).toBe('work-rotated');
 });
 
 it('a Claude connection config root is where its old sessions ran (now its vault); native and Codex have none', async () => {

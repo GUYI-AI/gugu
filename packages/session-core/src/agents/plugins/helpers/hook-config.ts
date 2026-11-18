@@ -78,7 +78,7 @@ function classifyJsonConfig(content: string): JsonConfigOutcome {
 }
 
 export async function readJsonConfig(
-  fs: PluginFs,
+  fs: Pick<PluginFs, 'read'>,
   path: string,
   ownership: JsonConfigOwnership
 ): Promise<Record<string, unknown>> {
@@ -102,7 +102,7 @@ export async function readJsonConfig(
 // ⇒ writeJsonConfig 仍是「让文件等于这个对象」,但不再整篇重排、不再抹掉用户注释(#4604 / #4593)。
 // ownership='gugu-managed' 且原文畸形 = **自愈**:丢弃坏字节、从 {} 种子整份重建(等价旧码无条件覆盖)。
 export async function writeJsonConfig(
-  fs: PluginFs,
+  fs: Pick<PluginFs, 'read' | 'write'>,
   path: string,
   config: Record<string, unknown>,
   ownership: JsonConfigOwnership
@@ -160,7 +160,7 @@ export async function writeJsonConfig(
  * (判据里带了这条的阳控)。
  */
 export async function stripManagedJsonHooks(
-  fs: PluginFs,
+  fs: Pick<PluginFs, 'read' | 'write'>,
   configPath: string,
   ownership: JsonConfigOwnership
 ): Promise<void> {

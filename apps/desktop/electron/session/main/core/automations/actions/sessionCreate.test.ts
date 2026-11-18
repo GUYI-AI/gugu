@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hydrateSession } from '@main/core/sessions/hydrateSession';
+import { assertAgentHomeImportedForSession } from '@main/core/agents/agent-homes';
 import { issueController } from '@main/core/issues/controller';
 import { openProject } from '@main/core/projects/operations/openProject';
 import { projectManager } from '@main/core/projects/project-manager';
@@ -45,6 +46,7 @@ vi.mock('@main/embedded-boot', () => ({
   }),
 }));
 vi.mock('@main/core/sessions/hydrateSession', () => ({ hydrateSession: vi.fn() }));
+vi.mock('@main/core/agents/agent-homes', () => ({ assertAgentHomeImportedForSession: vi.fn() }));
 vi.mock('@main/core/session-timeline/start-failures', () => ({ recordStartFailure: vi.fn() }));
 vi.mock('@main/core/agents/ensure-agent-installed', () => ({
   isHarnessRuntimeMissing: () => false,
@@ -196,6 +198,15 @@ describe('executeSessionCreate', () => {
       status: 'starting_agent',
     } as never);
     vi.mocked(markRunFailed).mockResolvedValue({ ...run, status: 'failed' } as never);
+  });
+
+  it('records an actionable missing import without preparing a session row', async () => {
+    const message = 'In Settings → Subscriptions, import configuration. On a server, run gugu-server agent-home import claude.';
+    vi.mocked(assertAgentHomeImportedForSession).mockRejectedValueOnce(
+      Object.assign(new Error(message), { code: 'AGENT_HOME_IMPORT_REQUIRED' }));
+    await executeSessionCreate(automation, run, noopStep);
+    expect(markRunFailed).toHaveBeenCalledWith(run.id, { step: 'create_session', code: 'AGENT_HOME_IMPORT_REQUIRED', message });
+    expect(prepareCreateSession).not.toHaveBeenCalled();
   });
 
   it('returns err when the prompt is empty', async () => {
