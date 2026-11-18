@@ -20,7 +20,7 @@ import '@renderer/index.css';
 const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[] }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...await importOriginal<typeof import('@renderer/lib/stores/use-agents')>(),
-  useAgents: () => ({ data: [{ id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses'] } }] }),
+  useAgents: () => ({ data: [] }),
 }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: async () => ({
   listCustomModels: async () => ({ success: true, data: state.rows }),
@@ -41,9 +41,33 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   expect(row()?.textContent).toContain('This device does not have the key yet');
   await userEvent.click(page.getByRole('button', { name: 'Select models', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
-  await userEvent.click(page.getByTestId('custom-model-provider'));
-  await expect.element(page.getByRole('option', { name: 'Custom', exact: true })).toBeVisible();
+  expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
+});
+it('separates coding plans, official API keys and custom endpoints, including migrated providers', async () => {
+  state.rows = [
+    { ...record(), id: 'plan', preset: 'kimi-coding', keySaved: true, models: [{ id: 'plan-model' }] },
+    { ...record(), id: 'api', preset: 'deepseek', keySaved: true, models: [{ id: 'api-model' }] },
+    { ...record(), id: 'custom', preset: 'old-relay', keySaved: true, models: [{ id: 'relay-model' }] },
+  ];
+  render(<CustomModelsGroup />);
+  await until('all three existing connections render', () => document.querySelectorAll('[data-custom-connection]').length === 3);
+  expect(document.querySelector('[data-custom-connection="plan"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-coding-plans');
+  expect(document.querySelector('[data-custom-connection="api"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-api-models');
+  const custom = document.querySelector('[data-custom-connection="custom"]')!;
+  expect(custom.closest('section')?.getAttribute('data-testid')).toBe('settings-custom-models');
+  expect(custom.textContent).toContain('provider.test');
+});
+it.each([
+  ['coding-plan', 'Add plan', 'Claude subscription', 'ChatGPT subscription', 'DeepSeek'],
+  ['api', 'Add API key', 'DeepSeek', 'OpenAI', 'Claude subscription'],
+] as const)('the %s dialog offers only providers from its own card', async (group, title, first, second, absent) => {
+  render(<CustomModelDialog machine={null} group={group} onClose={() => {}} />);
+  await expect.element(page.getByRole('dialog', { name: title, exact: true })).toBeVisible();
+  await userEvent.click(page.getByTestId('custom-model-provider'));
+  await expect.element(page.getByRole('option', { name: first, exact: true })).toBeVisible();
+  await expect.element(page.getByRole('option', { name: second, exact: true })).toBeVisible();
+  expect(page.getByRole('option', { name: absent, exact: true }).query()).toBeNull();
 });
 it('edits an address with the saved key and saves multiple manual models without returning the key', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'model:a' }] };
