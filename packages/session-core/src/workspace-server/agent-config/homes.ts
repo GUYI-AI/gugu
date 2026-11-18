@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+export const AGENT_HOME_NOT_IMPORTED = 'AGENT_HOME_NOT_IMPORTED';
+export const AGENT_HOME_IMPORT_REQUIRED = 'AGENT_HOME_IMPORT_REQUIRED';
+
+export function isAgentHomeImportCode(code: unknown): code is typeof AGENT_HOME_NOT_IMPORTED | typeof AGENT_HOME_IMPORT_REQUIRED {
+  return code === AGENT_HOME_NOT_IMPORTED || code === AGENT_HOME_IMPORT_REQUIRED;
+}
+
+/** Electron invoke can transport only an Error string. Its final segment carries the code. */
+export function isAgentHomeImportMessage(message: string): boolean {
+  return isAgentHomeImportCode(message.trim().split(': ').at(-1));
+}
+
 export const agentHomeGroupIdSchema = z.enum(['settings', 'hooks', 'mcp', 'rules', 'skills', 'agents', 'models']);
 export const agentHomeIssueSchema = z.object({
   path: z.string(),

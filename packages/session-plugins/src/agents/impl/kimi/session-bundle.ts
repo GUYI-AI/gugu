@@ -575,7 +575,13 @@ export const kimiSessionBundleDescriptor = {
    *    `skills/` / `agents/` / `logs/`。导入按组复制配置；凭据与历史分别排除。
    */
   configRoot: {
-    importGroups: [{ id: 'settings', paths: ['config.toml'], evidence: 'Kimi bootstrap reads configuration from config.toml.' }, { id: 'rules', paths: ['AGENTS.md', 'SYSTEM.md'], evidence: 'Kimi global instruction files.' }, { id: 'skills', paths: ['skills/'], evidence: 'Kimi skills directory.' }, { id: 'agents', paths: ['agents/', 'plugins/'], evidence: 'Kimi agents and plugins directories.' }],
+    importGroups: [
+      { id: 'settings', paths: [{ path: 'config.toml', omitKeys: ['hooks'] }], evidence: 'Kimi bootstrap reads configuration from config.toml.' },
+      { id: 'hooks', paths: [{ path: 'config.toml', keys: ['hooks'] }], evidence: 'Kimi runs the hook declarations under [[hooks]] in config.toml.' },
+      { id: 'rules', paths: ['AGENTS.md', 'SYSTEM.md'], evidence: 'Kimi global instruction files.' },
+      { id: 'skills', paths: ['skills/'], evidence: 'Kimi skills directory.' },
+      { id: 'agents', paths: ['agents/', 'plugins/'], evidence: 'Kimi agents and plugins directories.' },
+    ],
     credentialPaths: [{ path: 'credentials', evidence: 'Kimi OAuth credential directory; never imported.' }],
     envVar: KIMI_HOME_ENV,
     userPath: '.kimi-code',

@@ -1,4 +1,4 @@
-import type { AgentFirstRunState, AgentHomeImportGroup } from './session-bundle';
+import type { AgentConfigRoot, AgentFirstRunState, AgentHomeImportGroup } from './session-bundle';
 
 /**
  * 咕咕替各家持有的**独立 home** 都放在 `<GUGU_HOME>/agent-homes/<providerId>/` 下,一家一格。
@@ -54,6 +54,8 @@ export type ResolvedAgentHome = {
    * 而漏挑一条配置是静默丢用户数据,漏排一条派生物只是多占点盘。
    */
   carryExclusions: readonly string[];
+  upgradeHistory?: readonly string[];
+  legacyCleanup?: AgentConfigRoot['legacyCleanup'];
   /**
    * 首次铺好之后顺手写下的文件(相对配置根)—— 见 `AgentConfigRoot.seedFiles`。
    * 由这一家自己声明,❌ 落盘那一层不按 providerId 分支。

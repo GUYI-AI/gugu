@@ -581,16 +581,12 @@ export async function resolveConnectionModel(providerId: string, sessionId?: str
   return { connectionId: id, name, endpoint, apiKey: secret, models, ...(details.protocol ? { protocol: details.protocol } : {}) };
 }
 
-/**
- * 升级对齐(#26):修复前账号连接的凭据只在它自己的目录里,默认订阅是它、用户根里却是另一个账号。
- * 只在还没有会话跑起来的时候调(开机)。默认是原生 / API 连接时不动:用户根里的就是用户在 CLI 里登录的那个。
- */
 /** An event must be attributed to the account the session actually ran on, never a guess. */
 export async function sessionHarnessConnectionId(sessionId: string | undefined): Promise<string | undefined> {
   if (!sessionId) return undefined;
   const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!row) return undefined;
-  // 两家的会话都跟默认订阅走:跑的就是此刻用户根里的账号 = 当前默认连接(#26)。
+  // The active account in the managed root follows the selected subscription.
   if (row.provider === 'codex' || row.provider === 'claude') return defaultConnectionId(row.provider);
   // 有 API Key 连接的家(#2507)同一条:跑的是起进程那一刻的默认连接。
   const provider = row.provider;
@@ -618,7 +614,7 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
   const oldNativeVault = join(stateDir, 'native', requireNativeHome(providerId).userPath);
   const previousVaultRoot = (id: string) => id === 'native' ? oldNativeVault : vaultRoot(providerId, id);
   const liveStateFile = join(stateDir, 'live-account.json');
-  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: (vaultIdentity?: string) => Promise<boolean | undefined>) => {
+  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: (vaultIdentity?: string) => Promise<'oauth' | 'api-key' | false | undefined>) => {
     let result: RestoredTerminal = { relogin: null, terminalNeedsSignIn: false };
     try {
       const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch');
@@ -637,7 +633,7 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
       try {
         // If B is already back in the terminal, the old in-use sign-in is the verified A now in its vault.
         const copied = await copy(result.moved?.connectionId === selected ? result.moved.identity : undefined);
-        upgradeSignIn = copied === undefined ? undefined : copied ? 'copied' : 'relogin';
+        upgradeSignIn = copied === 'oauth' ? 'copied' : copied === false ? 'relogin' : undefined;
       }
       catch {
         log.warn('Could not transfer the previous sign-in during upgrade', { providerId });
@@ -662,11 +658,12 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
       liveStateFile };
     return finish(() => restoreClaudeTerminalForMigration(previous, ids),
       () => activateClaudeAccount(managed, ids, selected, 'native'),
-      (vaultIdentity) => {
+      async (vaultIdentity) => {
         const root = previous.vaultRoot(selected);
-        return copyClaudeUpgradeSignIn(vaultIdentity ? {
+        const copied = await copyClaudeUpgradeSignIn(vaultIdentity ? {
           ...previous, nativeRoot: root, nativeGlobalConfig: join(root, '.claude.json'), nativeSuffixed: true,
         } : previous, managed, selected, vaultIdentity);
+        return copied ? 'oauth' : copied;
       });
   }
 }

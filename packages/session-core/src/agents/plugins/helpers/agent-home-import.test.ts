@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, truncate, writeFile, chmod, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, symlink, truncate, writeFile, chmod, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -17,7 +17,7 @@ async function fixture() {
     carryExclusions: [{ path: 'sessions', evidence: 'Session history is separate.' }],
     credentialPaths: [{ path: 'secret-store', evidence: 'Fixture credential store.' }],
     importGroups: [
-      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }], evidence: 'Fixture settings.' },
+      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }, 'config.toml'], evidence: 'Fixture settings.' },
       { id: 'hooks', paths: [{ path: 'settings.json', keys: ['hooks'] }], evidence: 'Fixture hooks.' },
       { id: 'mcp', paths: [{ path: '../.global.json', keys: ['mcpServers'], target: '.global.json' }], evidence: 'Fixture sibling MCP source.' },
       { id: 'rules', paths: ['RULES.md'], evidence: 'Fixture rules.' },
@@ -65,22 +65,75 @@ it('combines first-import settings with unrelated defaults already initialized b
   });
 });
 
-it('imports the chosen groups after Skip even if the CLI initialized its own defaults', async () => {
+it('requires an explicit conflict decision after Skip', async () => {
   const { home, source } = await fixture();
   await source('settings.json', '{"theme":"terminal","hooks":{"Stop":[]}}');
   const skipped = await importAgentHome(home, { groups: new Set(), skip: true });
   expect(skipped.marker).toMatchObject({ groups: [], skipped: true });
   await writeFile(join(home.configRoot, 'settings.json'), '{"theme":"generated","hooks":{"Stop":[{"command":"managed"}]}}');
 
-  const imported = await importAgentHome(home, { groups: new Set(['settings']) });
-  expect(imported.marker).toMatchObject({ groups: ['settings'] });
-  expect(imported.marker.skipped).toBeUndefined();
+  await expect(importAgentHome(home, { groups: new Set(['settings']) })).rejects.toThrow('Managed configuration already differs');
+  expect(await readAgentHomeMarker(home)).toMatchObject({ groups: [], skipped: true });
+  const entry = (await diffAgentHome(home)).entries.find((item) => item.group === 'settings')!;
+  expect(entry.state).toBe('bothChanged');
+  expect(await readFile(join(home.configRoot, 'settings.json'), 'utf8')).toContain('generated');
+  await reimportAgentHome(home, new Set([entry.id]), new Map([[entry.id, entry.revision]]));
+  expect(await readAgentHomeMarker(home)).toMatchObject({ groups: ['settings'] });
+  expect((await readAgentHomeMarker(home))?.skipped).toBeUndefined();
   expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({
     theme: 'terminal', hooks: { Stop: [{ command: 'managed' }] },
   });
   expect(JSON.parse(await readFile(join(home.userConfigRoot, 'settings.json'), 'utf8'))).toEqual({
     theme: 'terminal', hooks: { Stop: [] },
   });
+});
+
+it('requires a decision for different managed content in a previously unticked group', async () => {
+  const { home, source } = await fixture();
+  await source('RULES.md', 'terminal rules');
+  await source('settings.json', '{"theme":"dark","hooks":{"Stop":[{"command":"terminal"}]}}');
+  await importAgentHome(home, { groups: new Set(['settings']) });
+  await writeFile(join(home.configRoot, 'RULES.md'), 'managed rules');
+  await writeFile(join(home.configRoot, 'settings.json'), '{"theme":"dark","hooks":{"Stop":[{"command":"managed"}]}}');
+  const { entries } = await diffAgentHome(home);
+  expect(entries).toEqual(expect.arrayContaining([
+    expect.objectContaining({ path: 'RULES.md', state: 'bothChanged' }),
+    expect.objectContaining({ group: 'hooks', state: 'bothChanged' }),
+  ]));
+  await reimportAgentHome(home, new Set());
+  expect(await readFile(join(home.configRoot, 'RULES.md'), 'utf8')).toBe('managed rules');
+  expect(await readFile(join(home.configRoot, 'settings.json'), 'utf8')).toContain('managed');
+});
+
+it('follows the selected source root and its HOME boundary while refusing links inside the root', async () => {
+  const { home, root, source } = await fixture();
+  await source('RULES.md', 'local rules');
+  await source('sessions/old.jsonl', 'existing task');
+  await source('../.global.json', '{"mcpServers":{"local":{"command":"echo"}}}');
+  const realHome = join(root, 'physical-home');
+  await rename(dirname(home.userConfigRoot), realHome);
+  await symlink(realHome, dirname(home.userConfigRoot), 'dir');
+  const dotfiles = join(root, 'dotfiles-root');
+  await rename(home.userConfigRoot, dotfiles);
+  await symlink(dotfiles, home.userConfigRoot, 'dir');
+  await symlink(join(dotfiles, 'RULES.md'), join(dotfiles, 'inner-link'));
+  const imported = await importAgentHome(home, { groups: new Set(['rules', 'mcp']), historyPaths: ['sessions'] });
+  expect(imported.issues).toContainEqual({ path: 'inner-link', reason: 'symlink' });
+  expect(await readFile(join(home.configRoot, 'RULES.md'), 'utf8')).toBe('local rules');
+  expect(await readFile(join(home.configRoot, 'sessions/old.jsonl'), 'utf8')).toBe('existing task');
+  expect(await readFile(join(home.configRoot, '.global.json'), 'utf8')).toContain('"local"');
+});
+
+it('copies declared TOML byte for byte and leaves no marker for a malformed declaration', async () => {
+  const { home, source } = await fixture();
+  await source('config.toml', '[projects\n');
+  await expect(importAgentHome(home, { groups: new Set(['settings']) })).rejects.toThrow('Cannot read declared configuration file config.toml');
+  expect(await readAgentHomeMarker(home)).toBeNull();
+  const config = '# Preserve this comment\nmodel  = "local"\n\n[projects."/first"]\ntrust_level = "trusted"\n[projects."/second"]\ntrust_level = "untrusted"\n';
+  await source('config.toml', config);
+  await importAgentHome(home, { groups: new Set(['settings']) });
+  expect(await readFile(join(home.configRoot, 'config.toml'), 'utf8')).toBe(config);
+  expect((await diffAgentHome(home)).entries).toContainEqual(expect.objectContaining({ path: 'config.toml', state: 'unchanged' }));
 });
 
 it('merges separately selected projections and keeps hook-only changes in the hooks group', async () => {

@@ -100,7 +100,7 @@ describe('Codex 会话不再动用户的 home', () => {
         materialization,
       })
 
-      expect(await tree(guguHome)).toContain('agent-homes/codex/.codex/config.toml')
+      expect(await tree(guguHome)).not.toContain('agent-homes/codex/.codex/config.toml')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -128,7 +128,8 @@ describe('Codex 会话不再动用户的 home', () => {
       expect(materialization.env.CODEX_HOME).toBe(userHome)
       expect(materialization.symlinks ?? []).toEqual([])
       expect(materialization.directorySymlinkOverlays ?? []).toEqual([])
-      expect(materialization.tomlOverlays).toHaveLength(1)
+      expect(materialization.tomlOverlays).toBeUndefined()
+      expect(materialization.argsAppend).toContain(`projects={ "${join(root, 'workspace').replace(/\\/g, '\\\\')}" = { trust_level = "trusted" } }`)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

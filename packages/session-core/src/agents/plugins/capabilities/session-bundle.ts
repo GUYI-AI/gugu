@@ -602,25 +602,6 @@ export interface SessionTuiQuestionAnswer {
   evidence: string;
 }
 
-/**
- * 这家智能体的**配置根** —— 它在用户机器上放登录态、偏好、skills、历史的那个目录。
- *
- * 声明了它,咕咕就为这家持有**自己的一份**(独立 home):首次为它起会话时从用户那份
- * **整份复制**过来,此后两份彻底分家 —— 不同步、不合并、不回读、不写回。
- * 见 behavior `agent-config-boundary`。
- *
- * ## ⚠️ 「独立 home」≠「合成 home」,❌ 别用同一个词指两件事
- *
- *  · **合成 home**(已否决):每条会话临时造一个**空**目录当配置根,会话结束就扔 ——
- *    用户的登录态、skills、历史全看不见,`sessions/` 每次新 uuid ⇒ 没有可续的会话。
- *  · **独立 home**(本字段):**持久**、**整份复制**来的、**每家一份**。第一次在咕咕里
- *    打开它,与用户自己打开它,看到的是同一个东西。
- *
- * ## ❌ 不硬编码任何一家
- *
- * 通用机制只认这里声明的两个事实(变量名 + 用户那份的位置),kimi 只是第一个声明的。
- * 加一家 = 加一条声明,❌ 不是在通用代码里加一个 `if (providerId === 'x')`。
- */
 /** managed-config-root is the default for every harness that declares configRoot. */
 export type AgentInjectionMode = 'runtime' | 'managed-config-root';
 
@@ -645,6 +626,7 @@ export type AgentHomeImportGroup = {
   evidence: string;
 };
 
+/** A persistent per-harness root. Declared groups drive fresh import, upgrade and explicit re-import. */
 export interface AgentConfigRoot {
   importGroups: readonly AgentHomeImportGroup[];
   /** Never read, copied, hashed or returned to the renderer. */
@@ -678,6 +660,11 @@ export interface AgentConfigRoot {
    *    与漏挑一条同罪;区别只在于这个方向的错要少得多、也更好发现。
    */
   carryExclusions: readonly AgentConfigRootCarryExclusion[];
+  /** Existing installs only. Each edit removes a known Gugu-generated entry before import snapshots it. */
+  legacyCleanup?: readonly {
+    path: string;
+    update: (fs: Pick<import('../../runtime/fs').PluginFs, 'read' | 'write'>, path: string) => Promise<void>;
+  }[];
   /**
    * 这两条事实的出处 —— 解析式在哪、或官方文档哪一页。
    * ⚠️ 写死一个目录名而不给出处,下个版本它改了名就没人知道。
@@ -725,6 +712,8 @@ export interface ShellEnv {
 }
 
 export interface AgentConfigRootCarryExclusion {
+  /** Stream existing session histories during upgrade. */
+  upgradeHistory?: boolean;
   /** 相对**配置根**的路径(如 `bin`、`cache`、`mcp.json`)。❌ 绝对路径、❌ `..`。 */
   path: string;
   /**
@@ -1738,9 +1727,14 @@ const agentConfigRootSchema = z
               { message: 'configRoot.carryExclusions[].path 必须相对配置根,❌ 绝对路径、❌ `..`' }
             ),
           evidence: z.string().min(1),
+          upgradeHistory: z.boolean().optional(),
         })
         .strict()
     ),
+    legacyCleanup: z.array(z.object({
+      path: importPathSchema(false),
+      update: z.custom<NonNullable<AgentConfigRoot['legacyCleanup']>[number]['update']>((value) => typeof value === 'function'),
+    }).strict()).optional(),
     seedFiles: z
       .array(
         z

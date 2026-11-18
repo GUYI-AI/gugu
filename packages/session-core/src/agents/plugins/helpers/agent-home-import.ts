@@ -8,6 +8,7 @@ import type { ResolvedAgentHome } from '../capabilities/config-root';
 import type { AgentHomeGroupId, AgentHomeImportPath } from '../capabilities/session-bundle';
 import type { PluginFs } from '../../runtime/fs';
 import { filterUserHooks } from './hooks';
+import { AGENT_HOME_NOT_IMPORTED, AGENT_HOME_IMPORT_REQUIRED } from '../../../workspace-server/agent-config/homes';
 
 const disk: typeof fs = process.versions.electron
   ? (createRequire(import.meta.url)('original-fs') as typeof import('node:fs')).promises : fs;
@@ -15,13 +16,14 @@ export const AGENT_HOME_MARKER = '.gugu-agent-home.json';
 const FILE_LIMIT = 50 * 1024 * 1024;
 const ROOT_LIMIT = 2 * 1024 * 1024 * 1024;
 const SENSITIVE_NAME = /^(?:auth\.json|\.?credentials(?:\..*)?|\.env(?:\..*)?|\.audit-key|.*(?:token|cookie|keychain).*)$/i;
-const DATABASE_NAME = /(?:\.sqlite(?:-\w+)?|\.db|-(?:wal|shm))$/i;
+const DATABASE_NAME = /(?:\.sqlite3?(?:-\w+)?|\.db|-(?:wal|shm|journal))$/i;
 
 export class AgentHomeNotImported extends Error {
-  readonly code = 'AGENT_HOME_NOT_IMPORTED';
-  constructor(readonly providerId: string, options?: ErrorOptions) {
+  readonly code: typeof AGENT_HOME_NOT_IMPORTED | typeof AGENT_HOME_IMPORT_REQUIRED;
+  constructor(readonly providerId: string, options?: ErrorOptions & { choiceRequired?: boolean }) {
     super(`In Settings → Subscriptions, import local configuration or sign in to ${providerId}. On a server, run gugu-server agent-home import ${providerId} to import, or use its sign-in flow if you chose Skip.`, options);
     this.name = 'AgentHomeNotImported';
+    this.code = options?.choiceRequired ? AGENT_HOME_IMPORT_REQUIRED : AGENT_HOME_NOT_IMPORTED;
   }
 }
 export type AgentHomeImportIssue = {
@@ -99,7 +101,12 @@ function itemId(path: string, spec: PathSpec): string {
   return spec.keys || spec.omitKeys ? `${path}#${stable({ keys: spec.keys, omitKeys: spec.omitKeys })}` : path;
 }
 
-/** Check each segment below the chosen boundary, including the source root itself. */
+async function realSource(path: string): Promise<string> {
+  try { return await disk.realpath(path); }
+  catch (error) { if (missing(error)) return path; throw error; }
+}
+
+/** Reject links below the canonical source or the private destination. */
 async function noLinks(root: string, path: string): Promise<void> {
   const rel = relative(root, path);
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('Import path escapes its root');
@@ -159,7 +166,12 @@ function issue(path: string, error: unknown): AgentHomeImportIssue {
   return { path, reason: code === 'ELOOP' ? 'symlink' : code === 'EFBIG' ? 'tooLarge' : code === 'ESTALE' ? 'sourceChanged' : 'unreadable' };
 }
 
-async function collect(home: ResolvedAgentHome, consume?: (items: SnapshotItem[]) => Promise<void>) {
+async function collect(home: ResolvedAgentHome, options: {
+  root?: string;
+  strict?: (item: { group: AgentHomeGroupId; id: string }) => boolean;
+  groups?: ReadonlySet<AgentHomeGroupId>;
+  consume?: (items: SnapshotItem[]) => Promise<void>;
+} = {}) {
   const items: Item[] = [], issues: AgentHomeImportIssue[] = [];
   const mcpSecrets = new Set<string>();
   const mcpNames = new Set<string>();
@@ -171,22 +183,44 @@ async function collect(home: ResolvedAgentHome, consume?: (items: SnapshotItem[]
     if (seen.has(path)) return;
     seen.add(path);
     if (depth > 32) { issues.push({ path, reason: 'unreadable' }); return; }
-    const full = resolve(home.userConfigRoot, path);
+    const full = resolve(boundary, path.startsWith('../') ? basename(path) : path);
     if (excluded(path, home.credentialPaths) || SENSITIVE_NAME.test(basename(path))) {
       issues.push({ path, reason: 'sensitive' }); return;
     }
     if (excluded(path, home.carryExclusions)) return;
     if (DATABASE_NAME.test(path)) { issues.push({ path, reason: 'database' }); return; }
-    const snapshots: SnapshotItem[] = [];
-    try {
+    const stat = await (async () => {
       await noLinks(boundary, full);
-      const stat = await disk.lstat(full);
-      newestMtime = Math.max(newestMtime, stat.mtimeMs);
-      if (stat.isDirectory()) {
-        for (const name of (await disk.readdir(full)).sort()) await visit(path ? `${path}/${name}` : name, boundary, depth + 1);
-        return;
+      return disk.lstat(full);
+    })().catch((error: unknown) => {
+      if (!missing(error)) {
+        if (!path && options.strict) throw new Error('Cannot read the configuration root; repair the directory and retry the import');
+        issues.push(issue(path, error));
       }
-      if (!stat.isFile()) return;
+      return null;
+    });
+    if (!stat) return;
+    newestMtime = Math.max(newestMtime, stat.mtimeMs);
+    if (stat.isDirectory()) {
+      const children = await disk.readdir(full).catch((error: unknown) => {
+        if (!missing(error)) {
+          if (!path && options.strict) throw new Error('Cannot read the configuration root; repair the directory and retry the import');
+          issues.push(issue(path, error));
+        }
+        return [];
+      });
+      for (const name of children.sort()) await visit(path ? `${path}/${name}` : name, boundary, depth + 1);
+      return;
+    }
+    if (!stat.isFile()) return;
+    const snapshots: SnapshotItem[] = [];
+    const matches = declarations.filter(({ spec }) => path === localPath(spec.path, true) || path.startsWith(`${localPath(spec.path, true)}/`));
+    const selected = (matches.length ? matches : [{ group: 'settings' as const, spec: { path } }])
+      .filter(({ group }) => !options.groups || options.groups.has(group));
+    if (!selected.length) return;
+    const declared = matches.some(({ spec }) => spec.path === path);
+    const strict = declared && selected.some(({ group, spec }) => spec.path === path && options.strict?.({ group, id: itemId(path, spec) }));
+    try {
       if (stat.size > FILE_LIMIT || bytesRead + stat.size > ROOT_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
       const content = await snapshot(boundary, full);
       if (!content) return;
@@ -203,10 +237,8 @@ async function collect(home: ResolvedAgentHome, consume?: (items: SnapshotItem[]
           if (object(doc.projects)) for (const project of Object.values(doc.projects)) {
             if (object(project) && object(project.mcpServers)) projectMcpCount += Object.keys(project.mcpServers).length;
           }
-        } catch { /* Only declared field projections require a parseable document. */ }
+        } catch (error) { if (declared) throw error; }
       }
-      const matches = declarations.filter(({ spec }) => path === localPath(spec.path, true) || path.startsWith(`${localPath(spec.path, true)}/`));
-      const selected = matches.length ? matches : [{ group: 'settings' as const, spec: { path } }];
       for (const { group, spec } of selected) {
         const target = localPath(spec.target ?? path);
         const projected = project(content, spec, group);
@@ -217,7 +249,7 @@ async function collect(home: ResolvedAgentHome, consume?: (items: SnapshotItem[]
             const doc = parseDocument(projected, path), servers = doc.mcpServers ?? doc.mcp_servers;
             mcpCount = object(servers) ? Object.keys(servers).length : 0;
             if (group === 'mcp') count = mcpCount;
-            if (group === 'hooks') count = object(doc.hooks) ? Object.values(doc.hooks).reduce<number>((total, hooks) => total + (Array.isArray(hooks)
+            if (group === 'hooks') count = Array.isArray(doc.hooks) ? doc.hooks.length : object(doc.hooks) ? Object.values(doc.hooks).reduce<number>((total, hooks) => total + (Array.isArray(hooks)
               ? hooks.reduce<number>((sum, entry: unknown) => sum + (object(entry) && Array.isArray(entry.hooks) ? entry.hooks.length : 1), 0) : 0), 0) : 0;
           } catch { /* Unprojected files may be arbitrary user content. */ }
         }
@@ -225,14 +257,21 @@ async function collect(home: ResolvedAgentHome, consume?: (items: SnapshotItem[]
         items.push(item);
         snapshots.push({ ...item, bytes: projected });
       }
-    } catch (error) { if (!missing(error)) issues.push(issue(path, error)); }
+    } catch (error) {
+      if (!missing(error)) {
+        const rejected = issue(path, error);
+        if (strict && rejected.reason === 'unreadable') throw new Error(`Cannot read declared configuration file ${path}; repair the file and retry the import`);
+        issues.push(rejected);
+      }
+    }
     // Source failures are listed; destination writes and stale choices must fail the operation.
     // Keep at most one source file in memory even when the root approaches its 2 GiB limit.
-    if (snapshots.length) await consume?.(snapshots);
+    if (snapshots.length) await options.consume?.(snapshots);
   };
-  await visit('', home.userConfigRoot, 0);
+  await visit('', options.root ?? await realSource(home.userConfigRoot), 0);
+  const parent = await realSource(dirname(home.userConfigRoot));
   for (const { spec } of declarations) {
-    if (spec.path.startsWith('../')) await visit(localPath(spec.path, true), dirname(home.userConfigRoot), 0);
+    if (spec.path.startsWith('../')) await visit(localPath(spec.path, true), parent, 0);
   }
   return { items, issues, newestMtime, mcpSecrets: [...mcpSecrets], mcpNames: [...mcpNames], projectMcpCount, bytesRead };
 }
@@ -271,8 +310,20 @@ async function writeItem(
   const target = join(home.configRoot, items[0]!.target);
   await makeDirectory(home, dirname(target));
   const projected = items.some((item) => item.spec.keys || item.spec.omitKeys);
-  const existing = mode !== 'import' || projected ? await snapshot(home.configRoot, target) : null;
+  const existing = await snapshot(home.configRoot, target);
   guard?.(existing);
+  if (existing && mode !== 'reimport') {
+    const conflict = items.find((item) => {
+      const managed = project(existing, item.spec, item.group);
+      if (hash(managed) === item.hash) return false;
+      if (mode === 'repair' || !projected) return true;
+      const incoming = parseDocument(item.bytes, item.spec.path);
+      const current = parseDocument(managed, item.spec.path);
+      return Object.keys(incoming).some((key) => Object.hasOwn(current, key) && stable(current[key]) !== stable(incoming[key]));
+    });
+    if (conflict) throw new Error(`Managed configuration already differs at ${conflict.target}; review the differences in Settings → Subscriptions before importing`);
+    if (items.every((item) => hash(project(existing, item.spec, item.group)) === item.hash)) return;
+  }
   let bytes = items[0]!.bytes;
   if (projected) {
     // A CLI may have written defaults while it was being discovered. Add selected values
@@ -288,16 +339,18 @@ async function writeItem(
     }
     bytes = Buffer.from(target.endsWith('.toml') ? toml.stringify(current) : `${JSON.stringify(current, null, 2)}\n`);
   }
-  if (mode === 'import' && !(projected && existing)) {
-    await disk.writeFile(target, bytes, { mode: items[0]!.mode, flag: 'wx' }).catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    });
+  if (!existing) {
+    await disk.writeFile(target, bytes, { mode: items[0]!.mode, flag: 'wx' });
     return;
   }
   await noLinks(home.configRoot, target).catch((error: unknown) => { if (!missing(error)) throw error; });
   const temporary = `${target}.${randomUUID()}`;
   await disk.writeFile(temporary, bytes, { mode: items[0]!.mode, flag: 'wx' });
-  try { await disk.rename(temporary, target); }
+  try {
+    const current = await snapshot(home.configRoot, target);
+    if (!current?.equals(existing)) throw new Error('Managed configuration changed; review the differences before importing');
+    await disk.rename(temporary, target);
+  }
   finally { await disk.rm(temporary, { force: true }); }
 }
 function byTarget(items: SnapshotItem[]): SnapshotItem[][] {
@@ -337,20 +390,28 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
 }): Promise<{ marker: AgentHomeMarker; issues: AgentHomeImportIssue[] }> {
   const existing = await readAgentHomeMarker(home);
   if (existing && (!existing.skipped || !options.groups.size)) return { marker: existing, issues: [] };
+  if (existing?.skipped) {
+    const { entries } = await diffAgentHome(home);
+    const conflict = entries.find((entry) => options.groups.has(entry.group) && entry.state === 'bothChanged');
+    if (conflict) throw new Error(`Managed configuration already differs at ${conflict.path}; review the differences in Settings → Subscriptions before importing`);
+  }
   await makeDirectory(home, home.configRoot);
   let copied = 0;
-  const { items, issues } = options.groups.size ? await collect(home, async (snapshots) => {
-    for (const entries of byTarget(snapshots.filter((item) => options.groups.has(item.group)))) {
-      await writeItem(home, entries, existing?.skipped ? 'repair' : 'import');
-      copied += (await disk.stat(join(home.configRoot, entries[0]!.target))).size;
-    }
+  const root = options.groups.size || options.historyPaths?.length ? await realSource(home.userConfigRoot) : home.userConfigRoot;
+  const { items, issues } = options.groups.size ? await collect(home, {
+    root, groups: options.groups, strict: () => true,
+    consume: async (snapshots) => {
+      for (const entries of byTarget(snapshots)) {
+        await writeItem(home, entries, existing?.skipped ? 'repair' : 'import');
+        copied += (await disk.stat(join(home.configRoot, entries[0]!.target))).size;
+      }
+    },
   }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
-  const selected = items.filter((item) => options.groups.has(item.group));
-  if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(home, options.historyPaths, copied));
+  if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(home, options.historyPaths, copied, root));
   const upgrade = await options.beforeCommit?.(issues);
   const marker: AgentHomeMarker = {
     importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
-    groups: [...options.groups], files: Object.fromEntries(selected.map((item) => [item.id, item.hash])),
+    groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
     ...(options.skip ? { skipped: true as const } : {}),
     ...(options.migratedFrom ? { migratedFrom: options.migratedFrom } : {}),
     ...(upgrade ?? {}),
@@ -360,15 +421,16 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
 }
 
 /** Existing Gugu transcripts may exceed 50 MiB; stream them under the same 2 GiB root budget. */
-export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: readonly string[], copied = 0): Promise<AgentHomeImportIssue[]> {
+export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: readonly string[], copied = 0, sourceRoot?: string): Promise<AgentHomeImportIssue[]> {
+  const root = sourceRoot ?? await realSource(home.userConfigRoot);
   const issues: AgentHomeImportIssue[] = [];
   const visit = async (path: string, depth: number): Promise<void> => {
     if (depth > 32) { issues.push({ path, reason: 'unreadable' }); return; }
     if (SENSITIVE_NAME.test(basename(path)) || excluded(path, home.credentialPaths) || DATABASE_NAME.test(path)) return;
-    const source = join(home.userConfigRoot, localPath(path)), target = join(home.configRoot, localPath(path));
+    const source = join(root, localPath(path)), target = join(home.configRoot, localPath(path));
     let created = false;
     try {
-      await noLinks(home.userConfigRoot, source);
+      await noLinks(root, source);
       const before = await disk.lstat(source);
       if (before.isDirectory()) {
         for (const name of (await disk.readdir(source)).sort()) await visit(`${path}/${name}`, depth + 1);
@@ -399,7 +461,7 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
           }
         } finally { await output.close(); }
         const after = await input.stat();
-        await noLinks(home.userConfigRoot, source);
+        await noLinks(root, source);
         const current = await disk.lstat(source);
         if (read !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs
           || current.ino !== before.ino || current.mtimeMs !== before.mtimeMs) throw Object.assign(new Error('Source changed'), { code: 'ESTALE' });
@@ -433,7 +495,8 @@ export async function diffAgentHome(home: ResolvedAgentHome): Promise<{ entries:
     // A rejected source is unreadable, never proof of a deletion.
     if (!item && issues.some((entry) => path === entry.path || path.startsWith(`${entry.path}/`))) continue;
     const uncertain = !base && marker.legacyBaseline === true;
-    const state: AgentHomeDiffState = !item ? 'userDeleted' : uncertain ? (managedHash === item.hash ? 'unchanged' : 'bothChanged') : !base ? 'userAdded'
+    const state: AgentHomeDiffState = !item ? 'userDeleted' : !base
+      ? managedHash === item.hash ? 'unchanged' : managedHash || uncertain ? 'bothChanged' : 'userAdded'
       : item.hash === base ? (managedHash === base ? 'unchanged' : 'guguChanged')
       : managedHash === base ? 'userChanged' : managedHash === item.hash ? 'unchanged' : 'bothChanged';
     entries.push({ id, path, group, state, ...(uncertain ? { uncertain: true } : {}),
@@ -451,20 +514,25 @@ export async function reimportAgentHome(home: ResolvedAgentHome, decisions: Read
   const allowed = new Set(diff.entries.filter((entry) => decisions.has(entry.id)
     && ['userChanged', 'userAdded', 'bothChanged'].includes(entry.state)).map((entry) => entry.id));
   const revisions = expected ?? new Map(diff.entries.map((entry) => [entry.id, entry.revision]));
-  const { items, issues } = await collect(home, async (snapshots) => {
-    for (const entries of byTarget(snapshots.filter((item) => allowed.has(item.id)))) {
-      await writeItem(home, entries, 'reimport', (current) => {
-        for (const item of entries) {
-          const managed = current ? hash(project(current, item.spec, item.group)) : undefined;
-          if (revisions.get(item.id) !== hash(stable({ base: marker.files[item.id], user: item.hash, managed }))) {
-            throw new Error('Configuration changed; review the differences again before importing');
+  const { items, issues } = await collect(home, {
+    strict: ({ id }) => allowed.has(id),
+    consume: async (snapshots) => {
+      for (const entries of byTarget(snapshots.filter((item) => allowed.has(item.id)))) {
+        await writeItem(home, entries, 'reimport', (current) => {
+          for (const item of entries) {
+            const managed = current ? hash(project(current, item.spec, item.group)) : undefined;
+            if (revisions.get(item.id) !== hash(stable({ base: marker.files[item.id], user: item.hash, managed }))) {
+              throw new Error('Configuration changed; review the differences again before importing');
+            }
           }
-        }
-      });
-    }
+        });
+      }
+    },
   }), selected = items.filter((item) => allowed.has(item.id));
+  if (selected.length !== allowed.size) throw new Error('Configuration changed; review the differences again before importing');
   for (const item of selected) marker.files[item.id] = item.hash;
   marker.groups = [...new Set([...marker.groups, ...selected.map((item) => item.group)])];
+  if (selected.length) delete marker.skipped;
   await writeMarker(home, marker);
   return { issues: [...diff.issues, ...issues], imported: selected.length };
 }
@@ -474,9 +542,10 @@ export async function updateAgentHomeSource(
   home: ResolvedAgentHome, path: string,
   update: (fs: Pick<PluginFs, 'read' | 'write'>, path: string) => Promise<void>
 ): Promise<AgentHomeImportIssue | undefined> {
-  const target = join(home.userConfigRoot, localPath(path));
+  const root = await realSource(home.userConfigRoot);
+  const target = join(root, localPath(path));
   let before: Buffer | null;
-  try { before = await snapshot(home.userConfigRoot, target); }
+  try { before = await snapshot(root, target); }
   catch (error) { return issue(path, error); }
   if (!before) return;
   const original = before.toString('utf8');
@@ -488,7 +557,7 @@ export async function updateAgentHomeSource(
   const temporary = `${target}.gugu-${randomUUID()}`;
   await disk.writeFile(temporary, next, { mode: (await disk.lstat(target)).mode & 0o777, flag: 'wx' });
   try {
-    const current = await snapshot(home.userConfigRoot, target);
+    const current = await snapshot(root, target);
     if (!current || hash(current) !== hash(before)) throw new Error('Source changed; retry migration');
     await disk.rename(temporary, target);
   } finally { await disk.rm(temporary, { force: true }); }

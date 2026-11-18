@@ -122,6 +122,16 @@ it('asks for Codex sign-in when the existing account uses a keyring, without rea
   await expect(stat(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
+it('carries the active file-backed Codex API key into the managed slot during upgrade', async () => {
+  const terminal = process.env.CODEX_HOME!;
+  const former = '{"auth_mode":"apikey","OPENAI_API_KEY":"fixture-local-key"}\n';
+  await writeAuthAt(terminal, former);
+  const result = await migrateOwnedHarnessAccounts('codex', process.env, true);
+  expect('upgradeSignIn' in result).toBe(false);
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(former);
+  expect(await readFile(join(terminal, 'auth.json'), 'utf8')).toBe(former);
+});
+
 it('saves API metadata without secrets and runs Codex sessions on the managed root with env and -c overrides', async () => {
   const connection = await createHarnessConnection({
     providerId: 'codex',
