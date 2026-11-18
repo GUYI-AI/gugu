@@ -2,7 +2,8 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { normalizeReferralCode, parseReferralLink } from '@gugu/core/shared/referralLink'
 import { claimMyReferral } from '@/lib/referrals'
-import { clearPersonalReferral, pendingPersonalReferral, refreshPersonalReferrals } from '@/lib/referralPending'
+import { refreshReferralReadings } from '@/lib/referralReplicas'
+import { clearPersonalReferral, pendingPersonalReferral } from '@/lib/referralPending'
 import { Button } from '../ui/Button'
 import { useReferral } from './useReferral'
 import { clearViewState, takeLegacyLocalStorage, useViewState, writeViewState, type ViewPanel } from '@/lib/viewStateTable'
@@ -40,7 +41,7 @@ export function ReferralClaimField({ userId }: { userId: string }) {
       if (result === 'attributed' || result === 'already_attributed') {
         try { clearPersonalReferral(userId); clearViewState(referralDraftOf(userId)) }
         catch { /* The confirmed server source remains authoritative. */ }
-        refreshPersonalReferrals(userId)
+        refreshReferralReadings(userId)
       }
     } catch { setStatus('unavailable') }
     finally { setBusy(false) }

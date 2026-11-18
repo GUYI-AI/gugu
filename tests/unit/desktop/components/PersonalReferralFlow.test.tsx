@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { act } from 'react'
 import { createNode, createReactHarness, renderWithAppProviders, typeInto, clickElement } from '../../../support/testHarness'
 import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import '../../../../apps/desktop/src/i18n/registerMainCatalog'
@@ -36,7 +37,7 @@ it('shows an unavailable state without a fabricated zero count or enabled share 
 })
 it('requires explicit source confirmation and preserves the draft on a failed request', async () => {
   rpc.read.mockResolvedValue(summary()); rpc.claim.mockRejectedValue(new Error('offline'))
-  await harness.render(createNode(ReferralClaimField,{ userId: 'new-user' }))
+  await renderWithAppProviders(harness, createNode(ReferralClaimField,{ userId: 'new-user' }), { auth: { id: 'new-user' } })
   const input = harness.container.querySelector('input')!
   await typeInto(input,'ABCDEF123456')
   expect(rpc.claim).not.toHaveBeenCalled()
@@ -53,7 +54,7 @@ it('refreshes every visible source field for the account after confirmation', as
     rpc.read.mockResolvedValue({ ...summary(), attribution: { code: 'ABCDEF123456', qualified: false, reward_state: 'pending' } })
     return 'attributed'
   })
-  await harness.render(createNode('div',{},createNode(ReferralClaimField,{userId:'new-user'}),createNode(ReferralClaimField,{userId:'new-user'})))
+  await renderWithAppProviders(harness, createNode('div',{},createNode(ReferralClaimField,{userId:'new-user'}),createNode(ReferralClaimField,{userId:'new-user'})), { auth: { id: 'new-user' } })
   await typeInto(harness.container.querySelector('input')!,'ABCDEF123456')
   await clickElement([...harness.container.querySelectorAll('button')].find(button=>button.textContent==='确认邀请来源')!)
   expect(harness.container.querySelectorAll('input')).toHaveLength(0)
@@ -62,12 +63,12 @@ it('refreshes every visible source field for the account after confirmation', as
 
 it('keeps an unconfirmed source draft through remounts and isolates it from another account', async () => {
   rpc.read.mockResolvedValue(summary())
-  await harness.render(createNode(ReferralClaimField, { userId: 'draft-owner', key: 'draft-owner' }))
+  await renderWithAppProviders(harness, createNode(ReferralClaimField, { userId: 'draft-owner', key: 'draft-owner' }), { auth: { id: 'draft-owner' } })
   await typeInto(harness.container.querySelector('input')!, 'ABCDEF123456')
   await harness.render(null)
-  await harness.render(createNode(ReferralClaimField, { userId: 'draft-owner', key: 'draft-owner' }))
+  await renderWithAppProviders(harness, createNode(ReferralClaimField, { userId: 'draft-owner', key: 'draft-owner' }), { auth: { id: 'draft-owner' } })
   expect(harness.container.querySelector('input')!.value).toBe('ABCDEF123456')
-  await harness.render(createNode(ReferralClaimField, { userId: 'other-owner', key: 'other-owner' }))
+  await renderWithAppProviders(harness, createNode(ReferralClaimField, { userId: 'other-owner', key: 'other-owner' }), { auth: { id: 'other-owner' } })
   expect(harness.container.querySelector('input')!.value).toBe('')
   expect(rpc.claim).not.toHaveBeenCalled()
 })
@@ -98,4 +99,19 @@ it('keeps an activity failure distinct from a genuinely empty history', async ()
   expect(list.textContent).not.toContain('还没有邀请记录')
   await clickElement(list.querySelector('button')!)
   expect(list.textContent).toContain('还没有邀请记录')
+})
+
+it('shares one account reading across source fields and keeps another account isolated from late activity', async () => {
+  rpc.read.mockResolvedValue(summary())
+  let finishOld!: (value: unknown) => void
+  rpc.activity.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    .mockResolvedValue({ status: 'ok', items: [], next_cursor: null })
+  await renderWithAppProviders(harness, createNode('div', {}, createNode(ReferralClaimField, { userId: 'first' }), createNode(ReferralClaimField, { userId: 'first' })), { auth: { id: 'first' } })
+  expect(rpc.read).toHaveBeenCalledTimes(1)
+  await renderWithAppProviders(harness, createNode(InvitationPanel), { auth: { id: 'first' } })
+  await renderWithAppProviders(harness, createNode(InvitationPanel), { auth: { id: 'second' } })
+  await act(async () => { finishOld({ status: 'ok', items: [{ key: 'old', display_name: '前一个账号的朋友', avatar: null, invited_at: '2026-11-18T12:00:00Z', state: 'credited', credited: true, credited_cny: '1' }], next_cursor: null }) })
+  expect(harness.container.textContent).not.toContain('前一个账号的朋友')
+  expect(harness.container.textContent).toContain('还没有邀请记录')
+  expect(rpc.activity.mock.calls.at(-1)?.[0]).toBe('second')
 })
