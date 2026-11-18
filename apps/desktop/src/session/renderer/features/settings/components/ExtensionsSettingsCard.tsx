@@ -145,7 +145,10 @@ export type AppDetail =
 
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
-export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink }: { detailLink?: AppDetailLink }) {
+export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail }: {
+  detailLink?: AppDetailLink;
+  onOpenAgentDetail?: (agentId: string) => void;
+}) {
   const { translate, locale } = useSessionMessages();
   // #6264 资源库看的是哪台咕咕:本机是全局那份清单与 `rpc.extensions`;另一台咕咕桌面是它自己的那份,
   // 动作经设备 RPC 转到它的主进程,它自己的窗口跟着补上 / 撤下 tab。页面长相不变。
@@ -1516,7 +1519,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   {assistant && renderInstalledApp(assistant)}
                   <InstalledAgentRows
                     inventory={installedAgents}
-                    onOpenAgentDetail={setInstalledAgentDetailId}
+                    onOpenAgentDetail={onOpenAgentDetail ?? setInstalledAgentDetailId}
                     readOnly={!!notice?.readOnly}
                   />
                 </ul>
@@ -1568,7 +1571,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </ul>
               </section>
             )}
-            {installedAgentDetailId !== null && (
+            {!onOpenAgentDetail && installedAgentDetailId !== null && (
               <AgentDetailModal agentId={installedAgentDetailId} onClose={() => setInstalledAgentDetailId(null)} />
             )}
 

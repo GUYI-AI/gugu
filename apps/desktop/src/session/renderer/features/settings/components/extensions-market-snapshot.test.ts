@@ -127,11 +127,11 @@ describe('the App page market: the index in hand at once, the download site behi
   const skeleton = () => doc().querySelector('[data-testid="extensions-market-panel"] [role="status"][aria-busy="true"]');
   const stale = () => doc().querySelector('[data-testid="extension-market-stale"]');
 
-  async function open() {
+  async function open(onOpenAgentDetail?: (agentId: string) => void) {
     const client = new QueryClient();
     queryClients.add(client);
     await act(async () => {
-      root.render(React.createElement(QueryClientProvider, { client }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+      root.render(React.createElement(QueryClientProvider, { client }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard, { onOpenAgentDetail }))));
     });
   }
   /** The page as the retained App place draws it (workspace.tsx RetainedPlace): mounted once, then only shown or hidden. */
@@ -394,7 +394,8 @@ describe('the App page market: the index in hand at once, the download site behi
       capabilities: { hostDependency: { updates: { kind: 'none' } } },
     } as unknown as AgentPayload;
     h.listManagement.mockResolvedValue([codex, { ...codex, id: 'pi', name: 'Pi', reading: 'not-detected' }]);
-    await open();
+    const onOpenAgentDetail = vi.fn();
+    await open(onOpenAgentDetail);
     const tab = doc().querySelector<HTMLButtonElement>('[data-testid="extensions-tab-installed"]')!;
     await act(async () => tab.click());
 
@@ -409,6 +410,9 @@ describe('the App page market: the index in hand at once, the download site behi
     const agent = testId('installed-agent-row-codex')!;
     expect(agent.querySelector('.mk-tx > span')?.textContent).toMatch(/v2\.0\.0/);
     expect(agent.querySelector('[role="switch"]')).toBeNull();
-    expect(testId('installed-agent-open-codex')?.textContent).toMatch(/Open|打开/);
+    const openAgent = testId('installed-agent-open-codex') as HTMLButtonElement;
+    expect(openAgent.textContent).toMatch(/Open|打开/);
+    await act(async () => openAgent.click());
+    expect(onOpenAgentDetail).toHaveBeenCalledWith('codex');
   });
 });
