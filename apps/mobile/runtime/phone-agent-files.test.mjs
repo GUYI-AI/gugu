@@ -34,13 +34,11 @@ function readFixture(store) {
         const body = options?.body ? JSON.parse(options.body) : null
         history.push({ route, body })
         if (route === 'file-resolve') {
+          cloud.onResolve?.()
           const current = cloud.resolve?.(body) ?? revision
           return current instanceof Response ? current : json(current)
         }
-        if (route === 'file-download') {
-          cloud.onSign?.()
-          return json({ ...revision, url: objectUrl, download_id: 'file' })
-        }
+        if (route === 'file-download') return json({ ...revision, url: objectUrl, download_id: 'file' })
         if (route === 'bytes') return cloud.object ? cloud.object(options.signal) : new Response(bytes)
         throw new Error(`Unexpected file request: ${route}`)
       } }),
@@ -65,7 +63,7 @@ test('turn prefetch hands out the canonical private artifact only after fresh au
     assert.equal(artifact.file_path.includes('/alias/'), false)
     const beforeTurn = fx.history.length
     assert.equal((await turn(agent, [turnRef])).text.includes(artifact.file_path), true)
-    assert.deepEqual(fx.history.slice(beforeTurn).map(({ route }) => route), ['file-resolve', 'file-download', 'file-resolve'])
+    assert.deepEqual(fx.history.slice(beforeTurn).map(({ route }) => route), ['file-resolve', 'file-resolve'])
     assert.equal(fx.byteRequests(), 1)
     assert.deepEqual(await readFile(artifact.file_path), bytes)
     fx.cloud.resolve = () => ({ status: 'gone', sha256: null })
@@ -110,19 +108,20 @@ test('one phone host shares object bytes across references, rechecks readers, an
     const cancelled = fx.tool(download, agent).execute('cancelled', attachment, controller.signal)
     const didCancel = assert.rejects(cancelled, { code: 'cancelled' })
     await started.promise
-    const allSigned = Promise.withResolvers()
-    fx.cloud.onSign = () => {
-      if (fx.history.filter(({ route }) => route === 'file-download').length === 3) allSigned.resolve()
+    const allResolved = Promise.withResolvers()
+    fx.cloud.onResolve = () => {
+      if (fx.history.filter(({ route }) => route === 'file-resolve').length === 3) allResolved.resolve()
     }
     const first = fx.tool(download, agent).execute('one', link)
     const second = fx.tool(download, other).execute('two', link)
-    await allSigned.promise
+    await allResolved.promise
     await setImmediate()
     controller.abort()
     await didCancel
     release.resolve()
     const copies = (await Promise.all([first, second])).map(({ details }) => details)
     assert.equal(fx.byteRequests(), 1)
+    assert.equal(fx.history.filter(({ route }) => route === 'file-download').length, 1)
     assert.notEqual(copies[0].file_path, copies[1].file_path)
     for (const [index, reader] of [agent, other].entries()) {
       assert.equal(copies[index].route, 'oss')
@@ -144,7 +143,7 @@ test('one phone host shares object bytes across references, rechecks readers, an
     assert.equal(again.artifact_id, copies[0].artifact_id)
     assert.equal(again.route, 'local')
     assert.equal(again.reused, 'verified-local')
-    assert.deepEqual(fx.history.slice(beforeRetry).map(({ route }) => route), ['file-resolve', 'file-download', 'file-resolve'])
+    assert.deepEqual(fx.history.slice(beforeRetry).map(({ route }) => route), ['file-resolve', 'file-resolve'])
     assert.ok(fx.history.slice(beforeRetry).every(({ body }) => body.as === agent.agentUserId && body.ref.attachment_id === attachment.source_attachment_id))
     assert.equal(fx.byteRequests(), 1)
 
@@ -191,17 +190,17 @@ test('a turn prefetch and the Pi tool share the host transfer, and the last canc
     const download = createPhoneFileDownloads({ store, cloud: fx.cloud })
     const turn = phoneTurnFiles({ download })
     const controller = new AbortController()
-    const started = Promise.withResolvers(), stopped = Promise.withResolvers(), bothSigned = Promise.withResolvers()
+    const started = Promise.withResolvers(), stopped = Promise.withResolvers(), bothResolved = Promise.withResolvers()
     fx.cloud.object = (signal) => new Promise((_, reject) => {
       signal.addEventListener('abort', () => { stopped.resolve(); reject(signal.reason) }, { once: true })
       started.resolve()
     })
     const prefetch = turn.prefetch(agent, [turnRef], controller.signal)
     await started.promise
-    fx.cloud.onSign = () => bothSigned.resolve()
+    fx.cloud.onResolve = () => bothResolved.resolve()
     const die = fx.tool(download, agent).execute('cancelled', link, controller.signal)
     const cancelled = assert.rejects(die, { code: 'cancelled' })
-    await bothSigned.promise
+    await bothResolved.promise
     await setImmediate()
     assert.equal(fx.byteRequests(), 1)
     controller.abort()
