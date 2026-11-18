@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
-import { ASSISTANT_IDLE_COMPACT_MS, CLAUDE_CACHE_IDLE_COMPACT_MS } from './idle-compaction';
+import { ASSISTANT_IDLE_COMPACT_MS, CLAUDE_CACHE_IDLE_COMPACT_MS, CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS } from './idle-compaction';
 import { sessionOpenMeta } from './session-manager';
 
 afterEach(() => vi.useRealTimers());
@@ -50,7 +50,7 @@ describe('#3005 ordinary Claude Code sessions', () => {
   let dir: string;
   afterEach(async () => { if (dir) await rm(dir, { recursive: true, force: true }); });
 
-  async function run(opts: { settings?: object; ttl: '1h' | '5m'; requestAgeMs?: number }) {
+  async function run(opts: { settings?: object; ttl: '1h' | '5m'; requestAgeMs?: number; guguSwitchOff?: true }) {
     dir = await mkdtemp(join(tmpdir(), 'gugu-3005-host-'));
     const config = join(dir, 'config');
     await mkdir(config, { recursive: true });
@@ -76,6 +76,8 @@ describe('#3005 ordinary Claude Code sessions', () => {
     await client.sessionEvent({ sessionId, event: decodeSessionUpdate({
       sessionUpdate: 'usage_update', used: 250_000, size: 1_000_000,
     } as SessionUpdate) });
+    // Gugu's own switch, turned off on a session that is already running.
+    if (opts.guguSwitchOff) rt.setIdleCompaction(false);
     const before = h.agent.prompt.mock.calls.length;
     vi.useFakeTimers();
     h.agent.prompt.mockImplementation(async () => {
@@ -85,8 +87,17 @@ describe('#3005 ordinary Claude Code sessions', () => {
     return { h, rt, before };
   }
 
-  it('compacts 54 minutes after the last model cycle on the one-hour cache, and marks the row as idle', async () => {
-    const { h, rt, before } = await run({ ttl: '1h' });
+  it('owner 11-18 numbers: 50 minutes idle, and no compaction once the last real request is over 55 minutes old', () => {
+    expect(CLAUDE_CACHE_IDLE_COMPACT_MS).toBe(50 * 60_000);
+    expect(CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS).toBe(55 * 60_000);
+  });
+
+  it.each([
+    { name: 'a fresh request', requestAgeMs: 0 },
+    // At the 50-minute fire the last request is 54.5 minutes old: still inside the 55-minute margin.
+    { name: 'a request 54.5 minutes old at the fire', requestAgeMs: 4.5 * 60_000 },
+  ])('compacts 50 minutes after the last model cycle on the one-hour cache after $name, and marks the row as idle', async ({ requestAgeMs }) => {
+    const { h, rt, before } = await run({ ttl: '1h', requestAgeMs });
     try {
       await vi.advanceTimersByTimeAsync(CLAUDE_CACHE_IDLE_COMPACT_MS - 60_000);
       expect(h.agent.prompt.mock.calls.length).toBe(before);
@@ -108,8 +119,12 @@ describe('#3005 ordinary Claude Code sessions', () => {
     { name: 'the five-minute cache', settings: undefined, ttl: '5m' as const },
     // Turns since then only hit a usage limit: work ended, but no request refreshed the cache.
     { name: 'a cache whose last real request is past the hour', settings: undefined, ttl: '1h' as const, requestAgeMs: 2 * 60 * 60_000 },
-  ])('leaves the session alone with $name', async ({ settings, ttl, requestAgeMs }) => {
-    const { h, rt, before } = await run({ ...(settings ? { settings } : {}), ttl, ...(requestAgeMs ? { requestAgeMs } : {}) });
+    // At the 50-minute fire the last request is 55.5 minutes old: past the margin the compaction request needs.
+    { name: 'a last request 55.5 minutes old at the fire', settings: undefined, ttl: '1h' as const, requestAgeMs: 5.5 * 60_000 },
+    { name: "Gugu's own switch turned off mid-session", settings: undefined, ttl: '1h' as const, guguSwitchOff: true as const },
+  ])('leaves the session alone with $name', async ({ settings, ttl, requestAgeMs, guguSwitchOff }) => {
+    const { h, rt, before } = await run({ ...(settings ? { settings } : {}), ttl, ...(requestAgeMs ? { requestAgeMs } : {}),
+      ...(guguSwitchOff ? { guguSwitchOff } : {}) });
     try {
       await vi.advanceTimersByTimeAsync(CLAUDE_CACHE_IDLE_COMPACT_MS + 1_000);
       vi.useRealTimers();

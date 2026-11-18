@@ -216,6 +216,19 @@ export const PreserveSessionNameCapitalizationRow: React.FC = () => {
   );
 };
 
+/** #3005 Claude Code 会话离开时赶在提示缓存过期前压缩;关掉对在跑的会话立即生效。 */
+export const IdleCompactionRow: React.FC = () => {
+  const sessions = useAppSettingsKey('sessions');
+  const { translate } = useSessionMessages();
+  return (
+    <SettingsRow
+      title={translate('taskDefaults.idleCompaction')}
+      description={translate('taskDefaults.idleCompactionDescription')}
+      control={<SettingSwitch api={sessions} field="idleCompaction" resetLabel={translate('reset.on')} />}
+    />
+  );
+};
+
 export const EnableTmuxRow: React.FC = () => {
   const project = useAppSettingsKey('project');
   const { translate } = useSessionMessages();

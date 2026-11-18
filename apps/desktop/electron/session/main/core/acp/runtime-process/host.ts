@@ -58,6 +58,7 @@ import {
 import { events } from '@main/lib/events';
 import { recordAcpForkHandshake } from '@main/core/agents/fork-legs';
 import { log } from '@main/lib/logger';
+import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
@@ -204,6 +205,8 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
    * 这条会话正在起 ⇒ 等它起完再送(宿主这一侧的事实往往就是在它起的那一秒里得出的)。
    */
   announceSession(input: AcpAnnounceSessionInput): Promise<{ delivered: boolean }>;
+  /** #3005 Gugu's idle-compaction switch (see idle-compaction-setting.ts). */
+  setIdleCompaction(input: { enabled: boolean }): Promise<Record<string, never>>;
 };
 type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
   adapterProvenance(input: {
@@ -220,6 +223,8 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
    * 这条会话正在起 ⇒ 等它起完再送(宿主这一侧的事实往往就是在它起的那一秒里得出的)。
    */
   announceSession(input: AcpAnnounceSessionInput): Promise<{ delivered: boolean }>;
+  /** #3005 Gugu's idle-compaction switch (see idle-compaction-setting.ts). */
+  setIdleCompaction(input: { enabled: boolean }): Promise<Record<string, never>>;
 };
 type AcpRuntimeProcessHandle = WorkerHandle<AcpRuntimeApiContract>;
 type AcpRuntimeHandle = Omit<AcpRuntimeProcessHandle, 'client'> & {
@@ -288,8 +293,11 @@ const acpWorker = lazyWorker(
       }));
       // #881 The assistant panel's per-turn notice is prepared here, in the host, for the runtime's provider requests.
       handle.scope.add(await connectNativePromptPreparation(handle.client, log));
+      // #3005 The worker starts with idle compaction on; tell it the person's setting before any timer can fire.
+      void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
       handle.scope.add(
         handle.onRestarted(() => {
+          void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
           committed.invalidate();
           conversationPreviews.reset();
           // A restarted worker has no surviving adapter processes or session records.
@@ -703,6 +711,7 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
     promptDetached: (input) => detachedClient.promptDetached(input),
     waitPromptDetached: (input) => detachedClient.waitPromptDetached(input),
     announceSession: (input) => detachedClient.announceSession(input),
+    setIdleCompaction: (input) => detachedClient.setIdleCompaction(input),
   };
 }
 

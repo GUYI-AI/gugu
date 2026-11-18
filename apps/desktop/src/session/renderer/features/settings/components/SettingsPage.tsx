@@ -19,6 +19,7 @@ import {
   AutoApproveByDefaultRow,
   AutoGenerateSessionNamesRow,
   AutoTrustWorktreesRow,
+  IdleCompactionRow,
   PreserveSessionNameCapitalizationRow,
   SessionTitleInstructionsRow,
   SessionTitleModelRow,
@@ -55,6 +56,7 @@ function GeneralSettingsPage() {
         <AutoApproveByDefaultRow />
         <AutoTrustWorktreesRow />
         <PreserveSessionNameCapitalizationRow />
+        <IdleCompactionRow />
       </SettingsGroup>
       <DeviceSettingsScope>
         <MachineSettingsCard />

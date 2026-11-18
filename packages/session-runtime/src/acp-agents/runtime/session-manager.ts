@@ -116,7 +116,7 @@ import {
   type SessionsListModel,
 } from '../state/live-models';
 import type { AcpRuntimeDeps, AcpStartInput, SendPromptInput } from './types';
-import { ASSISTANT_IDLE_COMPACTION, CLAUDE_PROMPT_CACHE_TTL_MS, IdleCompaction, claudeCacheIdleCompaction, type IdleCompactionPolicy } from './idle-compaction';
+import { ASSISTANT_IDLE_COMPACTION, CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS, IdleCompaction, claudeCacheIdleCompaction, type IdleCompactionPolicy } from './idle-compaction';
 import { readPromptCache, resolveClaudeIdleCompaction } from './claude-idle-compaction';
 
 type StartupSettingDimension = 'model' | 'effort' | 'fast';
@@ -2434,12 +2434,21 @@ export class SessionManager implements InboundRouter {
    * #3005 Claude Code's own idle compaction does not run under ACP: run it here, before the one-hour prompt
    * cache expires. Settings are re-read when the timer fires, so turning it off applies to a live session.
    */
+  /** #3005 Gugu's settings switch; the timer reads it when it fires, so turning it off applies to live sessions. */
+  private idleCompactionEnabled = true;
+
+  setIdleCompaction(enabled: boolean): void {
+    if (this.idleCompactionEnabled !== enabled) this.deps.logger.info('SessionManager: idle compaction setting', { enabled });
+    this.idleCompactionEnabled = enabled;
+  }
+
   private armClaudeIdleCompaction(record: SessionRecord, cell: SessionCell): void {
     const input = record.input;
     const resolve = () => resolveClaudeIdleCompaction({ env: this.providerEnv(input), cwd: input.cwd, homeDir: os.homedir() });
     void resolve().then((config) => {
       if (!config.enabled || this.cells.get(input.sessionId) !== record || record.idleCompaction) return;
       record.idleCompaction = this.idleCompactionFor(record, cell, 'claude', claudeCacheIdleCompaction(config.minTokens), async () => {
+        if (!this.idleCompactionEnabled) return 'gugu-setting-off';
         const current = await resolve();
         if (!current.enabled) return current.reason;
         if ((cell.usage?.contextUsed ?? 0) < current.minTokens) return 'below-threshold';
@@ -2448,7 +2457,7 @@ export class SessionManager implements InboundRouter {
         const cache = await readPromptCache(transcript);
         if (cache?.ttl !== '1h') return `cache-ttl-${cache?.ttl ?? 'unknown'}`;
         // Turns that never reached the model (a usage-limit note) end work without refreshing the cache.
-        if (cache.lastRequestAt !== null && Date.now() - cache.lastRequestAt > CLAUDE_PROMPT_CACHE_TTL_MS - 60_000) return 'cache-expired';
+        if (cache.lastRequestAt !== null && Date.now() - cache.lastRequestAt > CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS) return 'cache-expired';
         return null;
       });
       record.idleCompaction.update();
