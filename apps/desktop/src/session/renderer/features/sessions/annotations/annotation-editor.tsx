@@ -33,7 +33,7 @@ export function AnnotationEditor({ number, initialValue = '', busy = false, onSa
         aria-label={translate('annotations.delete')} title={translate('annotations.delete')} onClick={onRemove}><Trash2 className="size-3.5" /></Button>}
       <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}
         aria-label={translate('annotations.cancel')} title={translate('annotations.cancel')} onClick={onCancel}><X className="size-3.5" /></Button>
-      <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" disabled={busy}
+      <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full !border-transparent !bg-foreground !text-background" disabled={busy}
         aria-label={translate('annotations.save')} title={translate('annotations.save')}><Check className="size-3.5" /></Button>
     </form>
   );
