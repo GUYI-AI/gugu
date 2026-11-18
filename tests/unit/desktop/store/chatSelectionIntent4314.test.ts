@@ -421,7 +421,7 @@ it('does not apply a late personal-hide receipt to a different account', async (
   await renderStore()
   const receipt = deferred<{chat_id:string;operation_id:string;hidden_at:string;account_revision:string}>()
   chatServiceMock.hideConversation.mockReturnValue(receipt.promise)
-  let pending!: Promise<void>
+  let pending!: ReturnType<NonNullable<typeof latestStore>['hideConversation']>
   await act(async () => { pending = latestStore!.hideConversation('chat-1') })
   authUser.id = 'user-2'
   const { resetAuthSessionBoundary } = await import('../../../../apps/desktop/src/lib/authSessionLoss')

@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runConversationHidingAction } from '../../../../apps/desktop/src/lib/conversationHidingAction'
-import { conversationCanHide, conversationRowMenu } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
+import { conversationCanHide, personalConversationMenu } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
 
 describe('shared personal hiding action', () => {
   it('allows every conversation kind without group authority and labels the personal action', () => {
     for (const kind of ['dm', 'ai', 'group', 'topic']) expect(conversationCanHide(kind)).toBe(true)
     expect(conversationCanHide(null)).toBe(false)
-    const menu = conversationRowMenu({ kind: 'chat', personalHiding: true, canDelete: true, hasUnread: false })
+    const menu = personalConversationMenu({ canDelete: true, hasUnread: false })
     expect(menu.find(item => item.id === 'hide-chat')?.icon).toBe('hide')
-    expect(menu.slice(0, 2).map(item => item.id)).toEqual(['mark-read', 'mark-all-read'])
+    expect(menu.map(item => item.id)).toEqual(['pin', 'mark-read', 'notifications', 'hide-chat', 'delete-chat'])
     expect(menu.at(-1)?.id).toBe('delete-chat')
     expect(menu.find(action => action.id === 'hide-chat')?.label).toBe('hide')
-    expect(menu.find(action => action.id === 'delete-chat')?.label).toBe('delete')
+    expect(menu.find(action => action.id === 'delete-chat')?.label).toBe('clearHistory')
   })
   it('only hides when Agent removal is unchecked', async () => {
     const hide = vi.fn().mockResolvedValue(undefined)
