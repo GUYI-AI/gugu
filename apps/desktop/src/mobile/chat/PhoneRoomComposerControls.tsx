@@ -16,6 +16,7 @@ import { useAgentSessionRow } from '../agent-watch/useAgentSessionRow'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { roomAgentEntry, roomTopicChoices } from './room-composer-models'
+import { PhoneNavigationPicker } from './PhoneNavigationPicker'
 import '../agent-watch/create-controls-catalog'
 import './room-composer-catalog'
 import './phone-room-composer.css'
@@ -55,17 +56,22 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
       {menu.includes('agents') && <PhoneComposerControl label={t('agents')} menuExpanded={view === 'agents'} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
-      {view === 'topics' ? <div role="radiogroup" aria-label={t('topics')}>
-        <TopicChoice name={t('main')} {...choices.main} selected={!current} main onClick={() => choose(null)} />
-        {choices.topics.map(topic => <TopicChoice key={topic.chat_id} name={topic.name} calls={topic.calls} news={topic.news}
-          selected={topic.chat_id === current?.chatId} id={topic.chat_id} onClick={() => choose(topic)} />)}
-      </div> : view === 'agents' ? <>
-        {agents.map(profile => <RoomAgentChoice key={profile.id} profile={profile} userId={userId} opener={profileOpener}
-          onOpen={onOpenAgent ? target => { setView(null); if (!target.session || !openPhoneSidebarSession(target.session.sessionId, `chat:${chatId}`)) onOpenAgent(target) } : undefined} />)}
-        {roster.failed ? <div role="alert" className="gg-phone-room-empty">{t('failed')} <Button variant="ghost" size="sm" onClick={roster.retry}>{t('retry')}</Button></div>
-          : !roster.ready ? <p role="status" className="gg-phone-room-empty">{t('loading')}</p>
-            : agents.length === 0 && <p className="gg-phone-room-empty">{t('noAgents')}</p>}
-      </> : null}
+      {view === 'topics' ? <PhoneNavigationPicker key="topics" kind="topics" items={[null, ...choices.topics]} nameOf={topic => topic?.name ?? t('main')}>
+        {shown => <div role="radiogroup" aria-label={t('topics')}>
+          {shown.map(topic => topic ? <TopicChoice key={topic.chat_id} name={topic.name} calls={topic.calls} news={topic.news}
+            selected={topic.chat_id === current?.chatId} id={topic.chat_id} onClick={() => choose(topic)} />
+            : <TopicChoice key="main" name={t('main')} {...choices.main} selected={!current} main onClick={() => choose(null)} />)}
+        </div>}
+      </PhoneNavigationPicker> : view === 'agents' ? <PhoneNavigationPicker key="agents" kind="agents" items={agents} nameOf={profile => profile.displayName}
+        ready={roster.ready && !roster.failed && agents.length > 0}>
+        {shown => <>
+          {shown.map(profile => <RoomAgentChoice key={profile.id} profile={profile} userId={userId} opener={profileOpener}
+            onOpen={onOpenAgent ? target => { setView(null); if (!target.session || !openPhoneSidebarSession(target.session.sessionId, `chat:${chatId}`)) onOpenAgent(target) } : undefined} />)}
+          {roster.failed ? <div role="alert" className="gg-phone-room-empty">{t('failed')} <Button variant="ghost" size="sm" onClick={roster.retry}>{t('retry')}</Button></div>
+            : !roster.ready ? <p role="status" className="gg-phone-room-empty">{t('loading')}</p>
+              : agents.length === 0 && <p className="gg-phone-room-empty">{t('noAgents')}</p>}
+        </>}
+      </PhoneNavigationPicker> : null}
     </PhoneComposerSheet>
   </div>
 }

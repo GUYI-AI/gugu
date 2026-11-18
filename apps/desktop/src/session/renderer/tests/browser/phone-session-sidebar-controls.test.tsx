@@ -117,10 +117,15 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  }
  window.addEventListener(OPEN_LINK_TARGET,capture)
  try {
+  const search = page.getByTestId('phone-topics-search')
+  await search.fill('没有这个话题')
+  await expect.element(page.getByText('没有匹配结果', { exact:true })).toBeVisible()
+  await search.fill('菜单里')
   await page.getByRole('button',{name:topic.name,exact:true}).click()
   await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id}]),{timeout:10000})
   await until('topic navigation closes the panel',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
   await page.getByTestId('phone-room-topics').click()
+  await expect.element(search).toHaveValue('')
   await page.getByRole('button',{name:'群聊',exact:true}).click()
   await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id},{kind:'chat',chatId:'room'}]),{timeout:10000})
  } finally { window.removeEventListener(OPEN_LINK_TARGET,capture) }
