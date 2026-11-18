@@ -3,10 +3,10 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store'
 import { askInShell, installConsentPrompt } from '@renderer/features/extensions/install-consent'
 import { isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order'
-import { managedInstallOption, resolveManagedSourceUpdate } from '@renderer/features/settings/agents-page/agent-source-actions'
+import { marketAgentInstallPlan } from '@renderer/features/extensions/panel/market-agent-install-plan'
+import { commitMarketInstall, prepareMarketInstall } from '@renderer/features/extensions/panel/market-extension-install-rpc'
 import type { LibraryHost } from '@renderer/features/library/library-host'
 import { INSTALL_CONSENT_HUMAN_WINDOW_MS } from '@shared/extensions/host-actions'
-import { installAgreedOn } from '@shared/extensions/install-agreed-on'
 import { compareExtensionVersions } from '@shared/extensions/manifest'
 import type { MarketListItem } from '@shared/extensions/market'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
@@ -84,19 +84,14 @@ export function usePhoneAppInstallTargets(id: string, devices: readonly Device[]
         status: present ? 'update' : undefined,
         install: async () => {
           const machine = device.label || device.hostname
-          const result = await installAgreedOn(
-            consent => host.extensions.api.installFromMarket({ ref: offered.ref, consent }),
-            async (reply) => {
-              const { ask } = reply
-              if (!ask) return { declined: 'missing-manifest' }
-              if (!reply.asks) return { digest: ask.manifestDigest }
-              const prompt = installConsentPrompt({ ...ask, machine }, ask.manifest)
-              const answer = await askInShell(prompt, crypto.randomUUID(), INSTALL_CONSENT_HUMAN_WINDOW_MS, ask.given, undefined, machine)
-              return answer?.outcome === 'confirmed' ? { digest: ask.manifestDigest } : { declined: answer?.outcome ?? 'no-dialog' }
-            },
-          )
-          if (!result || 'declined' in result) return false
-          await host.extensions.store.load()
+          const { ask, asks } = await prepareMarketInstall(host.extensions.api, offered.ref)
+          if (asks) {
+            const prompt = installConsentPrompt({ ...ask, machine }, ask.manifest)
+            const answer = await askInShell(prompt, crypto.randomUUID(), INSTALL_CONSENT_HUMAN_WINDOW_MS, ask.given, undefined, machine)
+            if (answer?.outcome !== 'confirmed') return false
+          }
+          const result = await commitMarketInstall(host.extensions.api, ask)
+          if (!result.success) throw new Error(result.error)
           return true
         },
       }
@@ -111,14 +106,8 @@ export function usePhoneAgentInstallTargets(id: string, devices: readonly Device
     describe: (agent: AgentPayload | null, { host }) => {
       if (!agent?.reading) return { status: 'unavailable' }
       const present = isInstalledAgent(agent)
-      const registry = agent.used?.registry
-      const method = managedInstallOption(agent.installOptions, registry)
-      const managedCopy = agent.installations.find(item => item.provenance.ours)
-      const update = resolveManagedSourceUpdate({ agent, managedCopy, managedInstall: method, registry,
-        companionUpdate: agent.programs?.slice(1).some(item => item.managedUpdateAvailable) ?? false })
-      if (present && !update) return { present, status: 'installed' }
-      if (!method && !update) return { present, status: 'unavailable' }
-      const plan = update ?? { kind: 'install' as const, method: method!.method, registry: method!.registry }
+      const plan = marketAgentInstallPlan(agent)
+      if (!plan) return { present, status: present ? 'installed' : 'unavailable' }
       return {
         present,
         status: present ? 'update' : undefined,
