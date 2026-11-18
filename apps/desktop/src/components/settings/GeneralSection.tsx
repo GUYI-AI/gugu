@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, useLocale, type LocalePreference } from '@/i18n'
 import { useTheme } from '../../store/theme'
+import { useMobileShell } from '../../hooks/useMobileShell'
 import { ChevronRight } from '@/lib/icons'
 import { useThemePackNames } from '@renderer/lib/theme/use-theme-packs'
 import { Button } from '../ui/Button'
+import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { sendTestNotification } from '../../lib/notificationDiagnostics'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
@@ -18,6 +20,7 @@ import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-ena
 import { HelpImproveSettingGroup } from '../HelpImprove'
 
 const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LOCALES]
+const THEME_OPTIONS = ['light', 'dark', 'system'] as const
 
 /**
  * @@@5301 通知开关按**来源**排行:一行 = 一类发给你的东西,而不是一行 = 一个抽象层级。
@@ -73,6 +76,7 @@ const NOTIFICATION_PERMISSION: readonly SystemPermission[] = ['notifications']
 export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPermissions: () => void; onOpenThemes?: () => void }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
+  const mobile = useMobileShell()
   const themePacks = useThemePackNames()
   const { preference, setPreference } = useLocale()
   const notificationSettings = useNotificationSettings()
@@ -108,12 +112,17 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
         />
         {/* 主题开关放在通用页。三种偏好(浅/深/跟随系统)——选中态画的是**偏好**不是真值,
             「跟随系统」在系统当下为浅色时解析出来也是 light,照真值画会把高亮落在「浅色」上。
-            单选、每次只有一个选中 → Button variant="option"(#2987:IconButton 强制正方形,装不下两个汉字)。 */}
+            单选、每次只有一个选中。手机复用用量页的分段胶囊，桌面保留独立选项按钮。 */}
         <SettingsRow
           title={t('settings.general.theme')}
-          control={(
+          control={mobile ? (
+            <div className="[&_.gg-segtab]:min-h-[var(--control-h-touch)]">
+              <SegmentedTabs ariaLabel={t('settings.general.theme')} value={themePreference} onChange={setTheme}
+                items={THEME_OPTIONS.map(value => ({ value, label: t(`settings.general.${value}`) }))} />
+            </div>
+          ) : (
             <div role="radiogroup" aria-label={t('settings.general.theme')} className="flex gap-[var(--spacing-xs)]">
-              {(['light', 'dark', 'system'] as const).map((themeOption) => (
+              {THEME_OPTIONS.map((themeOption) => (
                 <Button
                   key={themeOption}
                   variant="option"
