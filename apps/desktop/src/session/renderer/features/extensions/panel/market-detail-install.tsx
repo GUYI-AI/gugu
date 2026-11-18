@@ -5,6 +5,7 @@ import { compareExtensionVersions } from '@shared/extensions/manifest';
 import { pinsAutoUpdate } from '@shared/extensions/market-entries';
 import type { MarketSourceRef } from '@shared/extensions/market';
 import { type InstallConsentAsk, installConsentPrompt } from '../install-consent';
+import { consentPrompt } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
 import { useMarketDetailConfirmation } from './market-detail-dialog';
 
@@ -28,17 +29,21 @@ export async function commitMarketInstall(api: InstallApi, ask: InstallConsentAs
   };
 }
 
-export type ConfirmMarketInstall = (ask: InstallConsentAsk, asks: boolean) => Promise<boolean>;
+export type ConfirmMarketInstall = (
+  ask: InstallConsentAsk, asks: boolean, target?: { machine: string; offeredVersion: string },
+) => Promise<boolean>;
 
-export function useConfirmMarketInstall(offeredVersion: string, machine?: string): ConfirmMarketInstall {
+export function useConfirmMarketInstall(offeredVersion: string): ConfirmMarketInstall {
   const confirm = useMarketDetailConfirmation();
-  const { translate } = useSessionMessages();
+  const { translate, locale } = useSessionMessages();
   const { t } = useTranslation('messaging');
-  return (ask, asks) => {
-    const pins = pinsAutoUpdate(ask.manifest.version, offeredVersion);
+  return (ask, asks, target) => {
+    const pins = pinsAutoUpdate(ask.manifest.version, target?.offeredVersion ?? offeredVersion);
     const downgrade = ask.installed && compareExtensionVersions(ask.manifest.version, ask.installed.version) < 0;
     if (!asks && !pins && !downgrade) return Promise.resolve(true);
-    const prompt = installConsentPrompt(machine ? { ...ask, machine } : ask, ask.manifest);
+    const prompt = ask.installed
+      ? consentPrompt(ask.installed, ask.revokedPermissions, ask.manifest, translate, locale, ask.market?.releaseNotes, target?.machine)
+      : installConsentPrompt(target ? { ...ask, machine: target.machine } : ask, ask.manifest);
     return confirm({
       ...prompt,
       description: (

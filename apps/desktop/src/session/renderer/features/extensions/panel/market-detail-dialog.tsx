@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, Ellipsis, Trash2 } from '@/lib/icons';
+import { Ellipsis, Trash2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@renderer/lib/ui/dropdown-menu';
@@ -14,10 +14,17 @@ type Confirmation = {
 
 type Request = Confirmation & { settle: (answer: boolean) => void };
 
-const ConfirmContext = createContext<(request: Confirmation) => Promise<boolean>>(async () => false);
+const ConfirmContext = createContext({
+  ask: (_request: Confirmation): Promise<boolean> => Promise.resolve(false),
+  confirming: false,
+});
 
 export function useMarketDetailConfirmation() {
-  return useContext(ConfirmContext);
+  return useContext(ConfirmContext).ask;
+}
+
+export function useMarketDetailConfirming() {
+  return useContext(ConfirmContext).confirming;
 }
 
 export function MarketDetailDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
@@ -56,7 +63,7 @@ export function MarketDetailDialog({ onClose, children }: { onClose: () => void;
         finalFocus={() => opener.current?.isConnected ? opener.current : false}
         data-testid="market-detail-dialog"
       >
-        <ConfirmContext.Provider value={ask}>
+        <ConfirmContext.Provider value={{ ask, confirming: request !== null }}>
           {children}
           {request && (
             <Dialog open onOpenChange={(open) => { if (!open) finish(false); }}>
@@ -95,7 +102,6 @@ export function MarketDetailCard({
   children?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const [expanded, setExpanded] = useState(false);
   return (
     <>
       <DialogHeader className="items-start gap-4 pb-0 [&>button]:mt-1">
@@ -106,12 +112,7 @@ export function MarketDetailCard({
             {publisher && <p className="mt-1 text-sm text-foreground-muted">{publisher}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {actions}
-              {devices && (
-                <Button variant="outline" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-                  {translate('marketDetail.otherDevices')}
-                  <ChevronDown className={expanded ? 'rotate-180' : undefined} aria-hidden />
-                </Button>
-              )}
+              {devices}
               {onUninstall && (
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label={translate('common.more')} data-testid="market-detail-more" />}>
@@ -131,7 +132,6 @@ export function MarketDetailCard({
       </DialogHeader>
       <div className="min-h-0 space-y-6 overflow-y-auto px-6 pt-5 pb-6">
         {notice}
-        {expanded && devices}
         {subtitle && <div className="leading-relaxed text-foreground-muted">{subtitle}</div>}
         {!!facts?.length && (
           <dl className="flex flex-wrap divide-x divide-border rounded-2xl border border-border py-3 text-center">

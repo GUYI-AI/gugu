@@ -7,11 +7,10 @@ import { useManagementAgent } from '@renderer/lib/stores/use-agents';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { agentMarketCategoryOf } from '@shared/extensions/catalog';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
-import { remoteHostReachable, type RemoteHostDevice } from '@shared/remote-hosts';
 import { InstallSection, type AgentInstallationHeader } from '@renderer/features/settings/agents-page/InstallSection';
 import { uninstallAgentWithToast } from '@renderer/features/settings/agents-page/uninstall-agent-with-toast';
 import { MarketDetailCard, useMarketDetailConfirmation } from './market-detail-dialog';
-import { MarketDetailDeviceRow, MarketDetailDevices } from './market-detail-devices';
+import { MarketAgentDevices } from './market-detail-agent-devices';
 import { marketAgentDescription } from './market-agent-description';
 
 const SOURCE_LABELS = {
@@ -88,7 +87,7 @@ function AgentCard({ agent, installation, onCreate }: {
       publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: agent.publisher }) : undefined}
       icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
       actions={actions}
-      devices={<MarketDetailDevices>{(device, waking) => <OtherAgent agentId={agent.id} device={device} waking={waking} />}</MarketDetailDevices>}
+      devices={<MarketAgentDevices agentId={agent.id} />}
       facts={[
         { label: translate('extensions.stripVersion'), value: agentVersion(version) ?? '—' },
         { label: translate('agentsPage.sourceHeading'), value: source ? translate(SOURCE_LABELS[source]) : '—' },
@@ -96,48 +95,6 @@ function AgentCard({ agent, installation, onCreate }: {
       ]}
       subtitle={marketAgentDescription(agent, locale)}
       onUninstall={uninstall && !busy ? () => void uninstallHere() : undefined}
-    />
-  );
-}
-
-function OtherAgent({ agentId, device, waking }: { agentId: string; device: RemoteHostDevice; waking: boolean }) {
-  const { translate } = useSessionMessages();
-  const query = useManagementAgent(agentId, { retry: false });
-  const agent = query.error ? null : query.data;
-  if (!agent || !remoteHostReachable(device)) {
-    return <MarketDetailDeviceRow
-      device={device}
-      waking={waking}
-      status={query.isError || query.isSuccess ? translate('marketDetail.deviceUnavailable') : remoteHostReachable(device) ? translate('extensions.loading') : undefined}
-      action={waking ? <Button size="sm" variant="outline" disabled>{translate('extensions.installAction')}</Button> : undefined}
-    />;
-  }
-  return (
-    <InstallSection
-      agentId={agentId}
-      agentPayload={agent}
-      marketDevice={device.label}
-      installOptions={agent.installOptions}
-      renderPage={(installation) => <OtherAgentStatus device={device} installation={installation} />}
-    />
-  );
-}
-
-function OtherAgentStatus({ device, installation }: { device: RemoteHostDevice; installation: AgentInstallationHeader }) {
-  const { translate } = useSessionMessages();
-  const { version, installed, install, update, busy, installing, updating } = installation;
-  const run = installed ? update : install;
-  return (
-    <MarketDetailDeviceRow
-      device={device}
-      waking={false}
-      status={agentVersion(version) ?? translate(installed ? 'marketDetail.deviceInstalled' : 'marketDetail.deviceNotInstalled')}
-      action={run || busy ? (
-        <Button size="sm" variant="outline" disabled={busy} aria-busy={busy || undefined} onClick={run}>
-          {busy && <Spinner size="sm" />}
-          {translate(installing ? 'agentsPage.installingToGuguHome' : updating ? 'marketDetail.updating' : installed ? 'extensions.updateAction' : 'extensions.installAction')}
-        </Button>
-      ) : undefined}
     />
   );
 }

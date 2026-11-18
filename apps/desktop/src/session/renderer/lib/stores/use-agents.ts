@@ -67,7 +67,7 @@ export function useAgent(id: string) {
   });
 }
 
-export function useManagementAgent(id: string, options?: { retry?: boolean }) {
+export function useManagementAgent(id: string) {
   const host = useLibraryHost();
   const client = useQueryClient();
   const listKey = [...MANAGEMENT_AGENTS_QUERY_KEY, ...hostKey(host.key)];
@@ -77,7 +77,7 @@ export function useManagementAgent(id: string, options?: { retry?: boolean }) {
     initialData: () => client.getQueryData<AgentPayload[]>(listKey)?.find(agent => agent.id === id),
     initialDataUpdatedAt: () => client.getQueryState(listKey)?.dataUpdatedAt,
     refetchOnMount: 'always',
-    retry: options?.retry ?? true,
+    retry: true,
     retryDelay: attempt => Math.min(1000 * 2 ** attempt, 30_000),
     enabled: host.remote?.online !== false,
     staleTime: host.remote ? 30_000 : 5 * 60 * 1000,
