@@ -2,8 +2,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
-import { usePhoneNewTask } from '@/mobile/chat/PhoneNewTask'
-import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import {
   createReactHarness,
@@ -13,7 +11,6 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 import { composerModelOptions } from '@renderer/features/sessions/session-config/platform-model-options'
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon'
 import { i18n } from '@/i18n'
-import { Zap } from '@/lib/icons'
 import '@/i18n/registerMessagingCatalog'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
@@ -60,13 +57,6 @@ vi.mock('@/components/chat/useConversationOptions', () => ({
     }
   }
 }))
-vi.mock('@/mobile/chat/phoneTaskFolders', () => ({
-  taskFoldersOfChat: () => ({ memberIds: [], folders: [], homeOf: () => undefined })
-}))
-vi.mock('@/mobile/chat/usePhoneFolderAttach', () => ({
-  usePhoneFolderAttach: () => ({ added: [], fresh: new Set(), picker: null })
-}))
-
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => {
   fixture.modelName = '咕咕 GPT-6 Luna'
@@ -273,40 +263,20 @@ it.each([false, true])(
   }
 )
 
-it('1292 phone project attachment menu uses the real new-task action lightning', async () => {
+it('keeps the phone group attachment tray for photos, camera and files', async () => {
   await i18n.changeLanguage('zh-CN')
   await page.viewport(390, 844)
   document.documentElement.dataset.theme = 'light'
   harness = createReactHarness()
-  function Fixture() {
-    const task = usePhoneNewTask({ chatId: 'project-group', enabled: true, clear: () => {}, insertSkill: () => {} })
-    return (
-      <div data-phone-shell="" style={{ padding: 16, marginTop: 600 }}>
-        <span hidden data-zap-control>
-          <Zap size={16} />
-        </span>
-        <ComposerAttachButton
-          actions={task.action ? [task.action] : []}
-          disabled={false}
-          mobile
-          onPickFile={() => {}}
-        />
-      </div>
-    )
-  }
-  await renderWithAppProviders(harness, <Fixture />, { contacts: {} })
+  await renderWithAppProviders(harness, <div data-phone-shell="" style={{ padding: 16, marginTop: 600 }}>
+    <ChatMessageComposer chatId="project-group" isGroupChat onSend={vi.fn()} />
+  </div>, { contacts: {} })
   await userEvent.click(page.getByTestId('chat-composer-attach-menu'))
-  await until(
-    'real phone new-task action',
-    () => !!document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')
-  )
-  const task = document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')!
-  expect(task.textContent).toContain('新任务')
-  expect(task.querySelector('svg')).not.toBeNull()
-  expect(task.querySelector('svg')!.innerHTML).toBe(
-    document.querySelector('[data-zap-control] svg')!.innerHTML
-  )
-  await page.screenshot({ path: `${out}/phone-task-menu-component.png` })
+  await until('attachment entries appear', () => !!document.querySelector('[data-testid="chat-composer-attach-file"]'))
+  expect(document.querySelector('[data-testid="chat-composer-attach-photos"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="chat-composer-attach-camera"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')).toBeNull()
+  await page.screenshot({ path: `${out}/phone-attachment-tray.png` })
 })
 
 it('keeps the existing model menu in the phone sidebar row and omits the old harness row', async () => {

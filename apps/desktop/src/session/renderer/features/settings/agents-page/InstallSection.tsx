@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   useAgentInstallationStatus,
   useInstallSourceVersions,
@@ -26,6 +26,16 @@ import { AgentAdvancedSection } from './AgentAdvancedSection';
 import { InstallationOverrideCard } from './InstallationOverrideCard';
 import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from './agent-source-actions';
 
+export type AgentInstallationHeader = {
+  version: string | null;
+  source: SourceKind | null;
+  installed: boolean;
+  runnable: boolean;
+  busy: boolean;
+  installing: boolean;
+  install: (() => void) | undefined;
+};
+
 export type InstallSectionProps = {
   agentId: string;
   /** Full agent payload used to hydrate the hook before the first probe. */
@@ -34,7 +44,7 @@ export type InstallSectionProps = {
   installOptions: InstallOption[];
   /** Link to installation documentation, null if not set. */
   installDocs?: string | null;
-
+  renderPage?: (installation: AgentInstallationHeader, settings: ReactNode) => ReactNode;
 };
 
 /** Owns the existing install/source mutations; presentation follows the approved settings rows. */
@@ -43,6 +53,7 @@ export const InstallSection = observer(function InstallSection({
   agentPayload,
   installOptions,
   installDocs,
+  renderPage,
 }: InstallSectionProps) {
   const vm = useAgentInstallationStatus(agentId, agentPayload);
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
@@ -252,6 +263,7 @@ export const InstallSection = observer(function InstallSection({
     ? () => void (update.kind === 'update' ? vm.update : vm.install)(update.method, update.registry)
     : undefined;
 
+  const installed = (vm.data?.reading ?? agentPayload?.reading ?? 'not-detected') !== 'not-detected';
   const sources = (
     <AgentSourceList
         vm={vm}
@@ -261,6 +273,7 @@ export const InstallSection = observer(function InstallSection({
         managed={managedCopy}
         custom={customCopy}
         canInstall={!!managedInstall}
+        installInHeader={!!renderPage && !installed}
         canUninstall={canUninstallManagedSource(agentPayload, managedCopy, state)}
         installDocs={installDocs}
         onSelect={onSelect}
@@ -270,10 +283,24 @@ export const InstallSection = observer(function InstallSection({
         customEditor={manualSlot}
       />
   );
-  const ready = vm.status === 'available' && state !== 'broken' && state !== 'installing' && !vm.isUninstalling && !vm.lastInstallError && !vm.lastUpdateError;
-  return <>
-    {sources}
-    {ready && agentPayload && <AgentAccountSection agent={agentPayload} />}
-    <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange} />
-  </>;
+  const runnable = vm.status === 'available' && state !== 'broken';
+  const busy = vm.isInstalling || vm.isUpdating || vm.isUninstalling;
+  const ready = runnable && state !== 'installing' && !vm.isUninstalling && !vm.lastInstallError && !vm.lastUpdateError;
+  const settings = (
+    <>
+      {sources}
+      {ready && agentPayload && <AgentAccountSection agent={agentPayload} />}
+      <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange} />
+    </>
+  );
+  if (!renderPage) return settings;
+  return renderPage({
+    version: describedInstall?.version ?? null,
+    source: inUse,
+    installed,
+    runnable,
+    busy,
+    installing: vm.isInstalling,
+    install: managedInstall ? onInstall : undefined,
+  }, settings);
 });

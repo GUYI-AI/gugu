@@ -31,6 +31,7 @@ export type AgentSourceListProps = {
   managed: Installation | undefined;
   custom: Installation | undefined;
   canInstall: boolean;
+  installInHeader?: boolean;
   canUninstall: boolean;
   installDocs?: string | null;
   onSelect: (kind: SourceKind) => void;
@@ -49,6 +50,7 @@ export const AgentSourceList = observer(function AgentSourceList({
   managed,
   custom,
   canInstall,
+  installInHeader,
   canUninstall,
   installDocs,
   onSelect,
@@ -116,16 +118,18 @@ export const AgentSourceList = observer(function AgentSourceList({
         {translate(!vm.lastInstallError && vm.lastUpdateError && onUpdate ? 'agentsPage.updateAction' : 'agentsPage.reinstall')}
       </Button>
     ) : (!available && canInstall) || (companionMissing && canInstall) ? (
-      <Button size="sm" variant="outline" onClick={onInstall} disabled={busy}>
-        {installLabel}
-      </Button>
+      installInHeader ? null : (
+        <Button size="sm" variant="outline" onClick={onInstall} disabled={busy}>
+          {installLabel}
+        </Button>
+      )
     ) : needsUpdate && (managedUpdate || canInstall) ? (
       <Button size="sm" variant="outline" onClick={managedUpdate || onInstall} disabled={busy}>
         {managedUpdate
           ? translate('agentsPage.updateAction')
           : translate('agentsPage.installAndSwitch')}
       </Button>
-    ) : !canInstall && !available && installDocs ? (
+    ) : !canInstall && !available && installDocs && !installInHeader ? (
       <a
         href={installDocs}
         target="_blank"

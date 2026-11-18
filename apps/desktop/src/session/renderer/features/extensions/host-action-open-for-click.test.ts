@@ -41,6 +41,7 @@ describe('an App browser open keeps the host-stamped source', () => {
       const source = layout.focusedPane;
       const tabId = source.resolvedActiveTabId!;
       layout.open('app', { initialUrl: 'app-b' }, { from: tabId, intent: 'beside' });
+      layout.setActiveGroup(layout.sideGroup!.paneId);
       const other = layout.focusedPane;
       const otherBefore = JSON.parse(JSON.stringify(other.snapshot));
       expect(other).not.toBe(source);

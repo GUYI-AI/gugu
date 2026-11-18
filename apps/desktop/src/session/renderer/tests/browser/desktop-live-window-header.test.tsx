@@ -88,7 +88,7 @@ describe.each(['session', 'acp-chat'] as const)('%s private-chat header across p
     layout.mainGroup.pane.setActiveTab(file);
     const host = await mount(layout);
     expect(host.querySelector('[data-live-window-toggle]')).toBeNull();
-    await act(async () => { layout.pairWith(file, chat); layout.setActiveGroup(layout.mainGroup.paneId); layout.setNarrow(true); });
+    await act(async () => { layout.pairWith(file, chat); layout.setActiveGroup(layout.mainGroup.paneId); layout.setSinglePaneHost(true); });
     expect(host.querySelector('[data-live-window-toggle]')).toBeNull();
     await act(async () => layout.setActiveGroup(layout.sideGroup!.paneId));
     expect(host.querySelector('[data-live-window-toggle]')).not.toBeNull();

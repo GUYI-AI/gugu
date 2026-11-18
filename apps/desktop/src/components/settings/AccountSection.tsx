@@ -4,6 +4,7 @@ import { authService } from '../../lib/auth'
 import type { AuthUser } from '../../store/auth'
 import { Avatar } from '../Avatar'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
+import { SettingsChoice } from './SettingsChoice'
 import { Button } from '../ui/Button'
 import { LogOut } from '@/lib/icons'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
@@ -225,24 +226,23 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             )
           ) : (
             <span className="flex w-full flex-col gap-2">
-              <select
+              <SettingsChoice
                 id="settings-account-occupation"
-                className="gg-settings-select"
-                data-testid="settings-account-occupation"
+                testId="settings-account-occupation"
+                label={t('account.occupation')}
+                mobile={mobile}
                 value={occupation.draft?.key ?? ''}
-                onChange={(e) => {
-                  const key = e.target.value
+                options={[
+                  ...(occupation.saved ? [] : [{ value: '' as const, label: t('account.occupationUnset') }]),
+                  ...[...OCCUPATION_KEYS, 'other' as const].map(value => ({ value, label: tMain(`firstRun.occupation.${value}`) })),
+                ]}
+                onChange={key => {
                   const draft: Occupation | null = !key ? null : key === 'other'
                     ? { key: 'other', text: occupation.draft?.key === 'other' ? occupation.draft.text : '' }
-                    : { key: key as (typeof OCCUPATION_KEYS)[number] }
+                    : { key }
                   setOccupationEdit({ draft }); setSaved(false)
                 }}
-              >
-                {occupation.saved ? null : <option value="">{t('account.occupationUnset')}</option>}
-                {[...OCCUPATION_KEYS, 'other' as const].map((key) => (
-                  <option key={key} value={key}>{tMain(`firstRun.occupation.${key}`)}</option>
-                ))}
-              </select>
+              />
               {occupation.draft?.key === 'other' ? (
                 <input
                   className="gg-settings-input window-no-drag-region"

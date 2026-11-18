@@ -1,6 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { followLink } from '../../lib/guguLinks'
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink'
+import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -39,11 +39,11 @@ const MARKET_KEY = ['phone-app-market']
 const log = rendererLogger('settings/mobile-apps')
 
 /** The phone supplies storage and actions; browsing and product pages are the desktop's components. */
-export function MobileAppsSection({ appDetail }: { appDetail?: AppDetailLink }) {
+export function MobileAppsSection({ appDetail }: { appDetail?: ExtensionAppDetailLink }) {
   return <QueryClientProvider client={queryClient}><MobileAppsContent appDetail={appDetail} /></QueryClientProvider>
 }
 
-const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
+const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { appDetail?: ExtensionAppDetailLink }) {
   const { translate, locale } = useSessionMessages()
   const { theme } = useTheme()
   const skin = sessionSkinClassName(theme)
@@ -79,7 +79,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
   const [pending, setPending] = useState<Record<string, ExtensionPendingAction>>({})
   const inFlight = useRef(false)
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
-  const openedLink = useRef<AppDetailLink | undefined>(undefined)
+  const openedLink = useRef<ExtensionAppDetailLink | undefined>(undefined)
   useEffect(() => {
     if (!appDetail || !catalog.data || openedLink.current === appDetail) return
     openedLink.current = appDetail

@@ -11,7 +11,7 @@ import IntegrationsCard from '@renderer/features/settings/components/Integration
 import { PageHeader } from '@renderer/lib/components/page-header';
 import { PageContent, PageLayout, PageSidebarMenu } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
-import { useParams } from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { createRemoteLibraryHost, LOCAL_LIBRARY_HOST, LibraryHostProvider, type LibraryHost } from './library-host';
@@ -127,7 +127,7 @@ const RoutedIntegrationsLibraryPage = observer(function RoutedIntegrationsLibrar
 
 export const LibraryMainPanel = observer(function LibraryMainPanel() {
   const { tab, onTabChange } = useLibraryTab();
-  const { params, setParams } = useParams('library');
+  const { navigate } = useNavigate();
   const { translate } = useSessionMessages();
   /**
    * #6264 **整个资源库**是分机器的(owner:「整个资源库或者其他的都是分设备的,而不是说智能体中分设备」):
@@ -140,8 +140,8 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
     prompts: <PromptLibraryView />,
     agents: (
       <AgentsSettingsPage
-        selectedAgentId={params.agentId ?? null}
-        onSelectAgent={(agentId) => setParams({ agentId: agentId ?? undefined })}
+        selectedAgentId={null}
+        onSelectAgent={(agentId) => agentId && navigate('apps', { agentDetail: { kind: 'agent-app-detail', agentId, deviceId: host.remote?.deviceId } })}
       />
     ),
     // 集成的数据放在一个 Provider 里(应用根上那份是本机的,聊天里的 @issue 用它);这里按所选机器另挂一份。

@@ -35,12 +35,16 @@ export function fileChangeSummary(turns: readonly { items: readonly ChatItem[] }
     }
   }
   const files = [...byPath].map(([path, diffs]) => {
-    const relevant = diffs.flatMap(diff => diff.patches.filter(patch => changedFilePaths([patch]).includes(path)))
+    const relevant = fileChangePatches(path, diffs)
     // A multi-file patch does not locate its textual totals per structured path.
     const stats = relevant.some(patch => patch.changes.length !== 1) ? { adds: null, dels: null } : total(relevant)
     return { path, diffs, ...stats }
   })
   return files.length ? { kind: 'file-change-summary', id: `${turnId}:file-changes`, turnId, files, ...total(patches) } : null
+}
+
+export function fileChangePatches(path: string, diffs: readonly ChatDiff[]): SessionPatch[] {
+  return diffs.flatMap(diff => diff.patches.filter(patch => changedFilePaths([patch]).includes(path)))
 }
 
 /**

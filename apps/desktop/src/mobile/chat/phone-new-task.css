@@ -1,29 +1,19 @@
-/* 手机项目群派「新任务」(PhoneNewTask)。 */
-[data-chat-composer-host][data-phone-task] { position: relative; }
-
-/* 浮在群上的文件夹卡:电脑那一张按手机屏宽缩小;卡本身可点,周围不挡群。 */
-.gg-phone-task-card {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  z-index: 2;
+.gg-phone-group-agent-destination {
   display: flex;
-  justify-content: center;
-  padding-bottom: var(--spacing-sm);
-  pointer-events: none;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 36px;
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  color: var(--text-secondary);
+  font-size: var(--font-body);
 }
-.gg-phone-task-card > * { pointer-events: auto; zoom: 0.72; }
-/* 卡底下那行说明正好落在运行条那一行:卡浮着时运行条让位(行还占着,布局不动),收起或点中文件夹就回来。 */
-[data-chat-surface][data-phone-task-picking] [data-running-bar-content] { visibility: hidden; }
-.gg-phone-folder-picker { position: absolute; inset: 0; z-index: 20; display: flex; background: var(--ta-panel-bg); }
-
-/* Project tasks use the same compact control row and focus-preserving menus as new sessions. */
-.gg-phone-task-controls { display: flex; align-items: center; min-width: 0; gap: 4px; }
-.gg-phone-task-controls > .gg-phone-create-controls { flex: 1; min-width: 0; }
-.gg-phone-task-controls > .gg-icon-btn { flex: 0 0 auto; }
-[data-chat-surface][data-phone-task-open] .gg-phone-room-controls { display: none; }
+.gg-phone-group-agent-destination > :first-child { flex: none; }
+.gg-phone-group-agent-destination > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.gg-aw.gg-phone-group-agent-form { background: transparent; }
+.gg-phone-group-agent-form .gg-aw-thread-extras { gap: 0; }
+.gg-phone-group-agent-status { display: flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm); }
+.gg-phone-folder-picker { position: fixed; inset: 0; z-index: calc(var(--z-modal) + 1); display: flex; background: var(--ta-panel-bg); }
 .gg-phone-project-empty { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-lg); padding-top: var(--spacing-2xl); color: var(--text-primary); font-size: var(--font-title); }
-[data-chat-surface][data-phone-task-open] .gg-phone-project-empty-start { visibility: hidden; }
-
-.gg-phone-task-blocker { margin: 0 0 8px; color: var(--text-secondary); font-size: var(--font-caption); }
