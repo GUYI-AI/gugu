@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, it, vi } from 'vitest'
 import { readCursorHistory } from '../../../../external-import/cursor'
 
-it('hydrates a Cursor Composer conversation from SQLite without changing the source', async () => {
+it.each(['node:sqlite', 'better-sqlite3'] as const)('hydrates a Cursor Composer conversation without changing the source (%s)', async (sqliteDriver) => {
   const root = await mkdtemp(join(tmpdir(), 'cursor-history-'))
   vi.stubEnv('CURSOR_STORE_ROOT', join(root, 'store'))
   try {
@@ -38,7 +38,7 @@ it('hydrates a Cursor Composer conversation from SQLite without changing the sou
       source.close()
     }
     const before = await readFile(path)
-    const { rows } = await readCursorHistory(new AbortController().signal, { dataPath: workspaceStorage, sqliteDriver: 'node:sqlite' })
+    const { rows } = await readCursorHistory(new AbortController().signal, { dataPath: workspaceStorage, sqliteDriver })
     expect(rows).toEqual([{
       sourceId,
       title: 'A Cursor conversation',

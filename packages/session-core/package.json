@@ -74,7 +74,7 @@
     "@gugu/session-shared": "workspace:*",
     "@gugu/session-wire": "workspace:*",
     "@parcel/watcher": "^2.5.6",
-    "better-sqlite3": "^12.6.0",
+    "better-sqlite3": "13.2.0",
     "glob": "^13.0.6",
     "immer": "^10.1.1",
     "picomatch": "^4.0.4",

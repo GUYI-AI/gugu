@@ -12,11 +12,8 @@ packages:
 # download and `pnpm install` exits non-zero on the ignored builds, failing every `pnpm build:*`.
 # Kept in sync with package.json's pnpm.onlyBuiltDependencies, which older pnpm 9 (CI / mac) reads.
 allowBuilds:
-  # @@@sessionpage-spike - the session page's native addons; built for node here, then rebuilt for electron 28
-  # ABI 119 by `pnpm rebuild:native` (@electron/rebuild).
-  # @@@task-fusion (#2802) — better-sqlite3 曾被 pin 在 ^11,理由写的是「^12 drops node 18」。那条理由
-  # 已作废:engines.node 是 >=24、.node-version 是 24.14.0,node 18 不再是目标。而会话页一侧用的是
-  # ^12.6.0 —— 原则是**低版本升到高版本的稳定版求一致**,不是让两个大版本并存,故统一到 ^12.6.0。
+  # better-sqlite3 13.2.0 ships N-API 10 binaries in its locked npm package; Electron packaging still
+  # forces a per-architecture source build. Keep the root, session-core and isolated Node copy aligned.
   # ⚠️ 改动它必须同步改 apps/desktop/session-tooling/node-deps/package.json:那份是 DB 测试用的
   # system-node 副本,版本一旦漂开,测试跑的就不是出厂跑的那个大版本。
   better-sqlite3: true

@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import type { ResourceSnapshot } from '@shared/resource-monitor';
-import { recordTrace } from './capture';
+import { recordTrace } from './record-trace';
 
 /**
  * Deep sample — one Chromium memory-infra dump of every process, for a local JSON file the user saves.
@@ -8,7 +8,7 @@ import { recordTrace } from './capture';
  *
  * The trace records `disabled-by-default-memory-infra` with one periodic background-dump trigger (periodic dumps never force a GC,
  * so the garbage that dominates the heap stays in the reading), long enough for at least one dump
- * per process, then stops; the raw trace goes to a temp file that is read once and deleted.
+ * per process, then stops; raw events stay in memory and only the summary is saved.
  */
 const DUMP_INTERVAL_MS = 250;
 const RECORD_MS = 900;
