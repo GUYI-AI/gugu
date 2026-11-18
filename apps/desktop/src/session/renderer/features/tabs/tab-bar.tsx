@@ -21,7 +21,9 @@ export const TabBar = observer(function TabBar({
   reserveShellRestoreLane,
   leadingReservePx,
   leadingSlot,
+  toolsOnly = false,
 }: {
+  toolsOnly?: boolean;
   /** Rendered immediately after the last tab, before the flexible drop zone. */
   tabTrailingSlot?: ReactNode;
   /** 左端还要让出多宽(单独成窗时让开 mac 的红绿灯)。见 <TabStripShell>。 */
@@ -35,7 +37,7 @@ export const TabBar = observer(function TabBar({
 }) {
   const { paneId, pane, isFocusedPane } = usePaneContext();
   // 并排时另一页在它自己那一格里,页签画在这条页签条上、紧跟钉住那枚(一条会话只有一条页签条,spec session-page「并排」)。
-  const side = pane.pairSide;
+  const side = toolsOnly ? undefined : pane.pairSide;
 
   const { translate } = useSessionMessages();
   const active = pane.activeEntry;
@@ -43,11 +45,11 @@ export const TabBar = observer(function TabBar({
   const ownsFileToolbar = active?.kind === 'file-view' || active?.kind === 'chat-panel' && !!(active.state as { file?: unknown }).file;
   // File pages own this action in their content toolbar. Other pages keep it in the
   // pane's ordinary action group, never in the absolute, fixed-width grip slot.
-  const returnConversation = !ownsFileToolbar && active && opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation && (pane.navigationOf(active.tabId)?.index ?? 0) === 0
+  const returnConversation = !toolsOnly && !ownsFileToolbar && active && opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation && (pane.navigationOf(active.tabId)?.index ?? 0) === 0
     ? <Button size="icon-sm" variant="ghost" data-testid="tab-return-conversation" aria-label={translate('tabs.backToConversation')} title={translate('tabs.backToConversation')} onClick={() => void pane.go(active.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
   // A page in full screen covers the whole workspace: its strip offers a worded way out, whichever page it is (file, App,
   // browser). The tab's own ⤡ and Esc do the same; this is the one a person reads. A narrow strip keeps only its icon (index.css).
-  const fullscreen = tabFullscreen.isOn(pane) || (!!side && tabFullscreen.isOn(side.pane));
+  const fullscreen = !toolsOnly && (tabFullscreen.isOn(pane) || (!!side && tabFullscreen.isOn(side.pane)));
   const exitFullscreen = fullscreen
     ? <Button size="sm" variant="ghost" className="gap-1 text-xs" data-testid="tab-exit-fullscreen" aria-label={translate('tabs.restorePane')} title={translate('tabs.restorePane')} onClick={() => tabFullscreen.exit()}><Minimize2 className="size-3.5" /><span data-slot="tab-exit-fullscreen-label">{translate('tabs.restorePane')}</span></Button> : null;
   const resolvedTabs = pane.resolvedTabs;
@@ -55,7 +57,7 @@ export const TabBar = observer(function TabBar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const order = useTabOrderPreview(pane, scrollContainerRef);
   const entries = [
-    ...resolvedTabs.map((tab) => ({ tab, host: pane, paneId, focused: isFocusedPane })),
+    ...resolvedTabs.map((tab) => ({ tab: toolsOnly ? { ...tab, pairRole: undefined } : tab, host: pane, paneId, focused: isFocusedPane })),
     ...(side?.pane.resolvedTabs.map((tab) => ({ tab, host: side.pane, paneId: side.paneId, focused: !isFocusedPane })) ?? []),
   ];
   const tabsById = new Map(entries.map((entry) => [entry.tab.tabId, entry]));
@@ -256,7 +258,7 @@ export function TabStripShell({
       data-testid={testId}
       data-strip-narrow={narrow ? '' : undefined}
       style={{
-        height: `${WINDOW_CONTROL_BAR_HEIGHT_PX}px`,
+        height: `var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px)`,
         paddingInlineStart: `${leading}px`,
       }}
       onClick={onClick}
@@ -275,7 +277,10 @@ export function TabStripShell({
         // 页签只占剩下的(基准 0):放不下时右端那一排(TabBarActionRow)才是让位的那个,❌ 两边按比例一起缩。
         className="flex h-full min-w-0 flex-1 basis-0 items-end overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         data-tabstrip-scroller=""
-        style={{ paddingBlockStart: `${WINDOW_CONTROL_BAR_HEIGHT_PX - SESSION_TAB_HEIGHT_PX}px` }}
+        style={{
+          paddingBlockStart: `var(--tab-strip-inset-start, ${WINDOW_CONTROL_BAR_HEIGHT_PX - SESSION_TAB_HEIGHT_PX}px)`,
+          paddingBlockEnd: 'var(--tab-strip-inset-end, 0px)',
+        }}
       >
         {children}
         {trailingSlot ? (

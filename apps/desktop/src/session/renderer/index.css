@@ -1125,6 +1125,25 @@
     font-family: var(--font-display);
   }
 
+  /* 聊天页头的高度独立于普通工作区和两工具并排。 */
+  [data-chat-workspace-header] {
+    --tab-strip-height: 44px;
+    --chat-tool-tab-height: 32px;
+    --tab-strip-inset-start: calc((var(--tab-strip-height) - var(--chat-tool-tab-height)) / 2);
+    --tab-strip-inset-end: var(--tab-strip-inset-start);
+    height: var(--tab-strip-height);
+  }
+
+  [data-chat-workspace-header] [data-tab-label] {
+    height: var(--chat-tool-tab-height);
+    border-radius: var(--radius-md);
+  }
+
+  [data-chat-workspace-header] .session-tab-ears::before,
+  [data-chat-workspace-header] .session-tab-ears::after {
+    display: none;
+  }
+
   /* ── 工作区页签:Chrome 式形态 ──────────────────────────────────────────────
      只有「要看兄弟节点」的两件事写在这儿,其余几何全在 tab-bar.tsx / generic-tab-item.tsx
      的 Tailwind class 里 —— 这两件 Tailwind 表达不了,不是偷懒:

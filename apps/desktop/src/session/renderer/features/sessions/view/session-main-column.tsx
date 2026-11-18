@@ -51,7 +51,8 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   const sessionView = useWorkspaceViewModel();
   const { paneLayout } = sessionView;
   const { projectId, sessionId: pageSessionId } = useSessionViewContext();
-  const { blockId, windowId } = useScreenBlock();
+  const place = useScreenBlock();
+  const { blockId, windowId } = place;
 
   // 屏上不止一块时,一块 ❌ 空着:空了关掉,摆上来就空的开它的对话;只剩它一块时留着「+」那一列(见 keepBlockFilled)。
   useEffect(() => {
@@ -146,7 +147,14 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
         onDragCancel={drag.onDragCancel}
       >
         <div className="h-full min-h-0 min-w-0" data-session-panes="">
-          <PaneTreeView layout={paneLayout} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atWindowEdge={last} draggingTabId={drag.dragging} />} />
+          <PaneTreeView layout={paneLayout} chatChrome={{
+            actions: <SessionBlockActions atScreenEdge={false} />,
+            addTab: <TabBarAddMenu />,
+            leading: <SessionGrip />,
+            atWindowEdge: place.topRight,
+            reserveShellRestoreLane: place.topLeft && !windowId && shellRestoreLaneTaken(),
+            leadingReservePx: windowId ? auxLeadingReserve() : undefined,
+          }} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atWindowEdge={last} draggingTabId={drag.dragging} />} />
         </div>
         <TabDragOverlay />
       </DndContext>
@@ -189,7 +197,7 @@ const PaneCell = observer(function PaneCell({
   if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
   return (
     <PaneProvider group={group} isFocusedPane={focused}>
-      <SplitPaneHotkey />
+      <SplitPaneHotkey chatLayout={paneLayout} />
       <div className="h-full min-h-0 min-w-0" onPointerDown={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} onFocusCapture={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} data-pane-cell={paneId}>
         <PaneContent
           part={part}

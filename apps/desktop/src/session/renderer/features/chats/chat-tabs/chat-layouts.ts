@@ -94,11 +94,11 @@ export interface ChatPanelTab {
  * `shown`: on screen — in front of its pane, and that pane drawn (too narrow for all of them, only the focused one is).
  */
 function tabsOf(layout: ChatLayout) {
-  const windows = [...layout.windowPanes.values()].map((windowPane) => windowPane.pane);
-  return [...layout.groups.map((group) => group.pane), ...windows].flatMap((pane) => pane.resolvedTabs.map((tab) => {
-    const inWindow = windows.includes(pane);
-    return { tab, pane, inWindow, shown: tab.isActive && (inWindow || !layout.narrow || pane === layout.focusedPane) };
-  }));
+  return [...layout.groups, ...layout.windowPanes.values()].flatMap(({ pane, paneId }) => {
+    const inWindow = layout.windowPanes.has(paneId);
+    const visible = inWindow || layout.isPaneShown(paneId);
+    return pane.resolvedTabs.map((tab) => ({ tab, pane, inWindow, shown: tab.isActive && visible }));
+  });
 }
 
 /** The chat's panel tabs, in strip order (one in a window of its own is shown there, and listed last). */
@@ -214,16 +214,33 @@ export const showChatOnly = action(function showChatOnly(chatId: string): void {
   if (chatTab) showChatTab(chatId, chatTab);
 });
 
+/** A message jump makes its conversation visible without discarding the tool group. */
+export const revealChatWorkspaceMessage = action(function revealChatWorkspaceMessage(chatId: string): void {
+  const layout = layouts.get(chatId);
+  if (layout?.chatWorkspaceMode === 'full') showChatOnly(chatId);
+});
+
 /** Fullscreen changes only visibility. It never dismantles the pair or its history. */
 export const setPanelFull = action(function setPanelFull(chatId: string, tabId: string, full: boolean): void {
-  const pane = paneHolding(chatLayoutOf(chatId), tabId);
-  if (!pane || tabFullscreen.isOn(pane, tabId) === full) return;
+  const layout = chatLayoutOf(chatId);
+  const pane = paneHolding(layout, tabId);
+  if (!pane || panelFull(chatId, tabId) === full) return;
+  if (layout.chatWorkspacePanes?.tools?.pane === pane) {
+    if (layout.chatWorkspaceMode === 'hidden') return;
+    if (full) pane.setActiveTab(tabId);
+    layout.setChatToolLayout(full ? 'full' : 'split');
+    return;
+  }
   pane.setActiveTab(tabId);
   tabFullscreen.toggle(pane, tabId);
 });
 
 export function panelFull(chatId: string, tabId: string): boolean {
-  const pane = paneHolding(chatLayoutOf(chatId), tabId);
+  const layout = chatLayoutOf(chatId);
+  const pane = paneHolding(layout, tabId);
+  if (pane && layout.chatWorkspacePanes?.tools?.pane === pane) {
+    return layout.chatWorkspaceMode === 'full' && pane.resolvedActiveTabId === tabId;
+  }
   return !!pane && tabFullscreen.isOn(pane, tabId);
 }
 
@@ -237,6 +254,8 @@ export function topicTabOf(chatId: string): { tabId: string; topic: ChatTopicSta
 export const openTopicTab = action(function openTopicTab(chatId: string, topic: ChatTopicState): void {
   const layout = chatLayoutOf(chatId);
   const open = topicTabOf(chatId);
+  // Choosing a conversation is an explicit reveal, even if the source group's tools were hidden.
+  if (layout.chatWorkspaceMode === 'hidden') layout.setChatToolLayout('split');
   // @@@topic-slot - choosing another topic navigates the group's one topic slot, even when it is current.
   if (open && open.topic.topicChatId !== topic.topicChatId) paneHolding(layout, open.tabId)?.navigate(open.tabId, CHAT_TOPIC_TAB_KIND, topic);
   if (open?.shown) return;
