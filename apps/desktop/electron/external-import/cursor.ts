@@ -4,7 +4,7 @@ import type {
   ExternalMessage,
 } from '../../src/session/shared/core/session-import/external-conversation-import'
 
-function cursorConversation(session: Session): ExternalConversation | null {
+function cursorConversation(session: Session, title: string | null): ExternalConversation | null {
   const activeBranch = session.activeBranchMessageIds?.length ? new Set(session.activeBranchMessageIds) : null
   const messages: ExternalMessage[] = []
   for (const message of session.messages) {
@@ -18,7 +18,7 @@ function cursorConversation(session: Session): ExternalConversation | null {
   if (!messages.length) return null
   return {
     sourceId: session.id,
-    title: session.title?.trim() || messages[0].text.trim().slice(0, 120),
+    title: title?.trim() || messages[0].text.trim().slice(0, 120),
     messages,
   }
 }
@@ -43,7 +43,7 @@ export async function readCursorHistory(
       }
       try {
         const session = await cursor.getSession(summary.id, { ...config, messageFilter: ['user', 'assistant'] })
-        const conversation = cursorConversation(session)
+        const conversation = cursorConversation(session, summary.title)
         if (conversation) rows.push(conversation)
       } catch {
         signal.throwIfAborted()

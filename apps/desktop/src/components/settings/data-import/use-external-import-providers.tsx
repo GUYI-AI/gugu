@@ -133,7 +133,7 @@ function ExternalHistoryDialog({
               )}
             </ol>
             <footer className="flex shrink-0 justify-end">
-              <Dialog.Close render={<Button variant="secondary" size="sm" />}>{t('externalHistory.close')}</Dialog.Close>
+              <Dialog.Close render={<Button variant="secondary" size="sm">{t('externalHistory.close')}</Button>} />
             </footer>
           </Dialog.Popup>
         </Dialog.Viewport>
