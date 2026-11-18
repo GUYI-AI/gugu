@@ -77,6 +77,7 @@ vi.mock('@renderer/features/sessions/view/session-pane-policy', () => ({ activeC
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 // The 「App」 page's own pieces: not what this file judges.
 vi.mock('@renderer/features/library/library-view', () => ({ useSelectedLibraryHost: () => ({ key: 'local', remote: null }) }));
+vi.mock('@renderer/features/extensions/installed/InstalledManager', () => ({ InstalledManager: () => null }));
 vi.mock('@renderer/features/library/extensions-library-page', () => ({
   ExtensionsLibraryPage: ({ onOpenAgentDetail }: { onOpenAgentDetail: (id: string) => void }) => {
     mocks.openAgent = onOpenAgentDetail;
