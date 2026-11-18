@@ -1,4 +1,4 @@
-import { decorateConversationDensity, lastConversationMessage } from './conversation-density';
+import { decorateConversationDensity } from './conversation-density';
 import { toolActivationNames } from '../lib/tool-activation';
 import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
