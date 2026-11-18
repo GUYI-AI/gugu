@@ -2,6 +2,7 @@ import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
 import { followLink, openLinkTarget, OpenSuperseded } from '@/lib/guguLinks';
+import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -330,10 +331,15 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
         const detail = action.detail;
         updateFileNames([{ id: detail.itemId, filename: detail.name, content_type: detail.file.contentType }], installedExtensionsStore.manifests);
       });
-      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, chatPaneOf }) => {
-        const from = panelTabsOf(action.detail.chatId).find((tab) => groupPageSlot(action.detail.chatId, tab.tabId) === tabId)?.tabId;
-        if (from && action.detail.viewState) chatPaneOf(action.detail.chatId, from)?.setPageViewState(from, action.detail.viewState);
-        window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { ...action.detail, from } }));
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin }) => {
+        const origin = chatPageOrigin(tabId);
+        const detail = action.detail;
+        const source = origin && readChatSummary(origin.chatId);
+        // The authorized result can stay in the topic of the asking page when it belongs to that topic's source.
+        const chatId = origin && source?.kind === 'topic' && source.sourceChatId === detail.chatId ? origin.chatId : detail.chatId;
+        const from = origin?.chatId === chatId ? origin.tabId : undefined;
+        if (from && detail.viewState) origin?.pane.setPageViewState(from, detail.viewState);
+        window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { ...detail, chatId, from } }));
       });
     // An App's 「用 X 打开」 on a session's working-copy file: in that session's pane, by the resolver a click there goes
     // through (`openFileInSessionEditor`) — the same for a session on this computer and one on another.

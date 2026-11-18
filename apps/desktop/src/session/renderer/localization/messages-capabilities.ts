@@ -1138,9 +1138,9 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
 
   // ── 设置 · 通知 ─────────────────────────────────────────────────────────────
   'notifications.title': '需要我时通知',
-  'notifications.description': '任务和 App 在需要你回应时通知。',
+  'notifications.description': '任务和应用在需要你回应时通知。',
   'notifications.sound': '提示音',
-  'notifications.apps': '可发送通知的 App',
+  'notifications.apps': '可发送通知的应用',
 
   // ── 设置 · 键盘快捷键 ───────────────────────────────────────────────────────
   'keyboard.conflictTitle': '快捷键冲突',
@@ -1689,14 +1689,14 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'mcpLibrary.toolGroup.projects': '项目',
   'mcpLibrary.toolGroup.library': '资源库',
   'mcpLibrary.toolGroup.schedules': '已安排',
-  'mcpLibrary.toolGroup.apps': 'App 管理',
+  'mcpLibrary.toolGroup.apps': '应用管理',
   'mcpLibrary.toolGroup.web': '网页搜索',
   'mcpLibrary.toolGroup.passwords': '密码',
   'mcpLibrary.required': '必填',
   'mcpLibrary.integrationsGroup': '集成',
   'mcpLibrary.manageIntegrations': '在集成里管理',
-  'mcpLibrary.appsGroup': 'App',
-  'mcpLibrary.manageApps': '在 App 里管理',
+  'mcpLibrary.appsGroup': '应用',
+  'mcpLibrary.manageApps': '在市场里管理',
   'mcpLibrary.harnessReading': '读取中…',
   'mcpLibrary.harnessEmpty': '{agent} 的配置里没有 MCP 服务器',
   'mcpLibrary.harnessReadFailed': '读不了 {agent} 的配置',
@@ -1813,7 +1813,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'integrations.cliDeviceLinkHint': '打开{name}授权页并同意授权，页面上显示的授权码应为：',
   'integrations.cliDeviceCode': '授权码',
   'integrations.cliOpenAuthorizePage': '打开{name}授权页',
-  'integrations.cliQrHint': '用{name} App 扫码并确认。',
+  'integrations.cliQrHint': '用{name}应用扫码并确认。',
   'integrations.cliQrAlt': '{name}登录二维码',
   'integrations.cliWaiting': '等待授权中…',
   'integrations.cliCopyLink': '复制链接',

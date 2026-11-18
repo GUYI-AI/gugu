@@ -17,7 +17,7 @@ import { publishChatSummaries } from '../../../../apps/desktop/src/lib/chatSumma
 
 const { getImRepositoryMock } = vi.hoisted(() => ({ getImRepositoryMock: vi.fn() }))
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 // Solid's DOM renderer runs in the Chromium project; keep the React host/providers real here.
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/chat-transcript', async importOriginal => ({

@@ -69,6 +69,7 @@ export function BrowserToolbar({
   onFocusUrl,
   remote = false,
   annotationAction,
+  workspaceStart,
 }: {
   className?: string;
   session: BrowserSessionSnapshot;
@@ -89,6 +90,7 @@ export function BrowserToolbar({
    */
   remote?: boolean;
   annotationAction?: ReactNode;
+  workspaceStart?: boolean;
 }) {
   const [urlText, setUrlText] = useState(browserUrlInputText(session.currentUrl));
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -207,7 +209,7 @@ export function BrowserToolbar({
               draggable={false}
               onError={() => setFailedFaviconUrl(faviconUrl)}
             />
-          ) : (
+          ) : workspaceStart ? null : (
             <Globe className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-foreground-muted" />
           )}
           <Input
@@ -218,11 +220,12 @@ export function BrowserToolbar({
               if (urlError) setUrlError(null);
             }}
             onFocus={(event) => event.currentTarget.select()}
-            className="h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0"
+            className={cn('h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0',
+              workspaceStart && 'rounded-full bg-background-3 text-center')}
             aria-label={translate('browser.urlLabel')}
             aria-invalid={urlError ? true : undefined}
             aria-describedby={urlError ? urlErrorId : undefined}
-            placeholder={translate('browser.urlPlaceholder')}
+            placeholder={translate(workspaceStart ? 'browser.workspaceUrlPlaceholder' : 'browser.urlPlaceholder')}
             spellCheck={false}
             autoCapitalize="none"
           />

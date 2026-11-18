@@ -99,13 +99,18 @@ describe('immutable projection pack and atomic point index',() => {
     expect(()=>proof()).toThrow(expect.objectContaining({code:'needs_location'}));
     expect(()=>store!.proof(windowFrameName(key('publication')))()).toThrow(expect.objectContaining({code:'needs_location'}));
   });
-  it('fails the build with needs_location when it would need a 129th pack',async()=>{
-    store=createWindowPackStore(directory,fixture.sqlite);
-    await expect(store.build([receipt],async()=>{for(let i=0;i<128*128+1;i++)await write(`page:${i}`,'x');}))
-      .rejects.toMatchObject({code:'needs_location'});
-    expect(fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='complete'").get()).toEqual({n:128});
-    expect(fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='building'").get()).toEqual({n:0});
-  },120_000);
+  it('fails the build with needs_location when it would exceed its pack capacity', async () => {
+    const packLimit = 2;
+    const framesPerPack = 128;
+    store = createWindowPackStore(directory, fixture.sqlite, undefined, { packs: packLimit });
+    await expect(store.build([receipt], async () => {
+      for (let i = 0; i < packLimit * framesPerPack; i++) await write(`page:${i}`, 'x');
+      await write('overflow', 'x');
+    })).rejects.toMatchObject({ code: 'needs_location', reason: 'pack_capacity' });
+
+    expect(fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='complete'").get()).toEqual({ n: packLimit });
+    expect(fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='building'").get()).toEqual({ n: 0 });
+  });
   it('rolls back every position if SQLite aborts after a new head but before the last page',async()=>{
     store=createWindowPackStore(directory,fixture.sqlite);await store.build([receipt],()=>write('head','A',true));
     const target=windowFrameName(key('new-page'));

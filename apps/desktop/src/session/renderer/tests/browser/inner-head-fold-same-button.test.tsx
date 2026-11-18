@@ -3,6 +3,7 @@ import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
 import { publishPanelToggle } from '@/lib/panelToggles';
+import { TITLEBAR_ACTION_ICON_SIZE_PX } from '@/lib/window-chrome';
 import { InnerHeadRowLayout, InnerSidebarFoldButton } from '@renderer/features/sidebar/inner-sidebar-parts';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
@@ -15,7 +16,7 @@ import '@renderer/index.css';
 /**
  * The inner column's head and the content's tab strip share one line: same top, same height. Folding the column swaps
  * its fold button for the restore lane's expand button —
- * the same 28px button with the same 16px icon, so a click does not make it shrink (owner 11-14).
+ * both controls use the same arrow-free icon and 28px target.
  */
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -63,10 +64,11 @@ it('the head band and the tab strip line up, and the fold button is the expand b
 
   const fold = box('[data-inner-head-fold]');
   const expand = box('[data-shell-restore-lane] button');
-  const foldIcon = box('[data-inner-head-fold] svg');
-  const expandIcon = box('[data-shell-restore-lane] svg');
+  const foldIcon = box('[data-inner-head-fold] svg.lucide-panel-left');
+  const expandIcon = box('[data-shell-restore-lane] svg.lucide-panel-left');
   expect([fold.width, fold.height]).toEqual([expand.width, expand.height]);
-  expect([foldIcon.width, foldIcon.height]).toEqual([expandIcon.width, expandIcon.height]);
+  expect([foldIcon.width, foldIcon.height]).toEqual([TITLEBAR_ACTION_ICON_SIZE_PX, TITLEBAR_ACTION_ICON_SIZE_PX]);
+  expect([expandIcon.width, expandIcon.height]).toEqual([foldIcon.width, foldIcon.height]);
   // Both centred on the band's middle line.
   expect(fold.top + fold.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
   expect(expand.top + expand.height / 2).toBeCloseTo(head.top + head.height / 2, 1);
@@ -96,6 +98,10 @@ it('the two-line group button covers the avatar and lower row, with independent 
   const avatar = harness.container.querySelector('[data-proof-avatar]')!.getBoundingClientRect();
   expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([215, 56, '8px']);
   expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([8, 12, 32, 32]);
+  const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
+  const icon = fold.querySelector('svg.lucide-panel-left')!;
+  expect([fold.offsetWidth, fold.offsetHeight, getComputedStyle(fold).borderRadius]).toEqual([28, 28, '8px']);
+  expect(icon.getBoundingClientRect().width).toBe(TITLEBAR_ACTION_ICON_SIZE_PX);
 
   const hoverLayer = () => getComputedStyle(button().parentElement!, '::before');
   const openButton = page.getByRole('button', { name: '产品讨论群', exact: true });

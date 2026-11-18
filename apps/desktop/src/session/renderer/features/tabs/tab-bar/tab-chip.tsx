@@ -22,8 +22,8 @@ const TAB_SLOT_STYLE: CSSProperties = {
   position: 'relative',
   flex: '1 1 200px',
   // 下限 44px:窄到这里就只剩图标(tab-density.ts),再多就横向滚动 + 「全部页签」菜单(tab-bar.tsx)。
-  minWidth: '44px',
-  maxWidth: '240px',
+  minWidth: 'var(--tab-slot-min-width, 44px)',
+  maxWidth: 'var(--tab-slot-max-width, 240px)',
 };
 
 /**
@@ -180,6 +180,7 @@ export function TabChip({
             maxWidth="max-w-none"
             // 关闭钮浮在标题尾巴上时,标题自己淡出(遮罩),钮下透出页签此刻的真实底色 —— 照 Chrome / VS Code。
             className={cn('min-w-0 flex-1 p-0', closeFloats && TITLE_FADE_UNDER_CLOSE)}
+            toolTabTitle
           >
             {label}
             {hint ? <span className="ml-1 text-xs text-foreground-muted">{hint}</span> : null}

@@ -161,28 +161,6 @@
   --titlebar-list-header-inset: max(0px, calc(var(--titlebar-traffic-lights-width) - var(--sidebar-rail-width)));
 }
 
-/* @@@panel-toggles (#6753) — 列表栏开关浮在内容左上角的平台(mac / Linux / 网页)上,最左列表头要让出它那条车道
-   (= window-chrome 的 SHELL_RESTORE_LANE_PX);Windows 的开关在标题栏行,不让。 */
-:root {
-  --list-toggle-lane: 40px;
-}
-:root[data-window-titlebar='row'] {
-  --list-toggle-lane: 0px;
-}
-/* 对话页那颗由壳挂(WindowControls),坐标与会话页根部那颗相同:rail 宽 + 8,28px 在 40px 带里居中。 */
-.gg-list-toggle-float {
-  position: fixed;
-  top: 6px;
-  left: calc(var(--sidebar-rail-width) + 8px);
-  z-index: var(--z-chrome);
-  display: flex;
-  -webkit-app-region: no-drag;
-}
-/* 会话列表收起时,对话头左端同样让出这条车道(与会话页会话头同一条,session-chat-column.tsx)。 */
-[data-list-collapsed] ~ * [data-chat-area-header] {
-  padding-inline-start: max(var(--pane-pad-x), var(--list-toggle-lane));
-}
-
 /* 顶栏右上是「动作车道」:会话内的动作在 40px 顶栏里居中(titlebar-actions.tsx)。
    任何飘在右上的转瞬层(分享浮层等)都从这个 token 起算自己的 top —— 一个数说了算,❌ 各处拍坐标,
    那正是实机看到的「组件堆叠」:浮层正好盖住会话页顶栏那排按钮。(提示条 #137 起在右下角,不走这里。)

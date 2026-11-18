@@ -30,7 +30,7 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   GroupCollabEmptyError: class GroupCollabEmptyError extends Error {},
 }))
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({
   topicService: { listTopicsOfChat: vi.fn(async () => []) },
 }))

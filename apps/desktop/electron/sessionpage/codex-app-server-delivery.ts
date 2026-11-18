@@ -1142,7 +1142,7 @@ export function describeCodexStartFailure(
   const spoken = spokenByCodex(source, codexBin)
   const summary =
     spoken && code === 'ENOENT'
-      ? `Codex app-server 启动失败：找不到可执行文件 "${codexBin}"。请安装 Codex CLI，确保桌面 App 的 PATH 能解析该路径，然后重试。\n${describePathHydration()}`
+      ? `Codex app-server 启动失败：找不到可执行文件 "${codexBin}"。请安装 Codex CLI，确保桌面端的 PATH 能解析该路径，然后重试。\n${describePathHydration()}`
       : `Codex app-server 启动失败（${codexBin}）：${source.message}`
   const stderrTail = stderr.trim()
   const stderrDetails = stderrTail ? `Codex stderr:\n${stderrTail}` : ''

@@ -680,7 +680,7 @@ function InnerLayout({
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
-      const chat = resource && addressed?.kind === 'topic' ? readChats().chats.find((candidate) => candidate.id === addressed.source_chat_id) : addressed
+      const chat = resource && mobile && addressed?.kind === 'topic' ? readChats().chats.find((candidate) => candidate.id === addressed.source_chat_id) : addressed
       if (!chat) {
         toast(t('groupFile.notInGroup'), 'error')
         return false
@@ -734,7 +734,11 @@ function InnerLayout({
       const token = getRendererAccessToken()
       if (!token) { toast(t('groupFile.notInGroup'), 'error'); return }
       void resourceChatIdOf(token, named, user.id)
-        .then((chatId) => bringUp(chatId, (id) => askChat(id, { app: detail.extensionId }), true))
+        .then((chatId) => {
+          const from = readChats().chats.find((row) => row.id === named)
+          const topic = !mobile && from?.kind === 'topic' && from.source_chat_id === chatId
+          return bringUp(topic ? named : chatId, (id) => askChat(id, { app: detail.extensionId, ...(detail.from && id === named ? { from: detail.from } : {}) }), true)
+        })
         .catch((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'))
     }
     window.addEventListener(APP_COMPOSE_EVENT, onCompose)
@@ -747,7 +751,7 @@ function InnerLayout({
       window.removeEventListener(APP_OPEN_IN_CHAT_EVENT, onOpenInChat)
       window.removeEventListener(UI_EVENTS.openApp, onOpenInChat)
     }
-  }, [focusComposerForUserEntry, openOwnedAgent, openChatTarget, readChats, writeDraft, setDraftAttachments, setDraftQuote, setDraftWhisper, t, toast, user.id])
+  }, [focusComposerForUserEntry, mobile, openOwnedAgent, openChatTarget, readChats, writeDraft, setDraftAttachments, setDraftQuote, setDraftWhisper, t, toast, user.id])
 
 
   // 选中变化 ⇒ shell 让位(收草稿面、移动壳下钻)。这条集中反应兜住只写得到 store 的入口(App 层的宿主),
@@ -1061,8 +1065,7 @@ function InnerLayout({
                   {/* #2525 移动端全屏创建页:列表/会话/底部 tab 岛全部让位(display 隐藏而非卸载 ——
                       返回时列表滚动位置与会话状态原样还在),真正的 composer 由下面那份 fixed overlay
                       盖到本页正文槽上。 */}
-                  <ResizableChatListPane
-                    active={activeTab === 'chats'} mobile={mobile}
+                  <ResizableChatListPane mobile={mobile}
                     hidden={chatListHidden}
                     width={chatListPaneWidth}
                     onWidthChange={previewChatListPaneWidth}
@@ -1284,7 +1287,7 @@ function InnerLayout({
           WM_NCHITTEST 回 HTCAPTION,系统当标题栏吃掉点击,按钮**完全按不动**。
           实测(chole/Windows 11,真鼠标点击 + WM_NCHITTEST):挂最前 ht=2、点最小化窗口不动;
           挂最后 ht=1、点最小化窗口收起。❌ 别把它移回上面去。 */}
-      <WindowControls activeTab={activeTab} mobile={mobile} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
+      <WindowControls activeTab={activeTab} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
       {/* #7199 「助理」App 在壳这一侧的那一半:发布云电脑 / 个人助理,把壳的组件画进 App 留的格子(lib/assistantShellBridge.ts)。 */}
       <AssistantTaskChatOpener visible={mobile ? activeTab === 'assistant' : activeTab === 'tasks'} desktop={!mobile} />
       <FeedbackHost />

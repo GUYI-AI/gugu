@@ -1576,7 +1576,7 @@ describe('MainLayout: opening a topic on the desktop', () => {
       for (let i = 0; i < 5; i += 1) await Promise.resolve()
     })
     expect(sessionPageViewRequests.openChat.mock.calls[0]).toEqual(_way === 'an App naming it' ? [target, false, 'resource'] : [target, false])
-    if (_way === 'a conversation link') expect(drainTopicSplitRequest(SRC)).toMatchObject({ chatId: TOPIC, sourceChatId: SRC })
+    if (_way === 'a conversation link' || _way === 'an App naming it') expect(drainTopicSplitRequest(SRC)).toMatchObject({ chatId: TOPIC, sourceChatId: SRC })
     else expect(drainTopicSplitRequest(SRC)).toBeNull()
   })
   it('unsubscribes notification clicks when MainLayout unmounts', async () => {

@@ -23,7 +23,6 @@ describe('panelToggles 控制器', () => {
 
   it('每个页签只认自己的列表栏;通讯录没有同构的列表栏', () => {
     expect(listSlotOf('tasks')).toBe('list:sessions')
-    expect(listSlotOf('chats')).toBe('list:chats')
     expect(listSlotOf('contacts')).toBeNull()
   })
 

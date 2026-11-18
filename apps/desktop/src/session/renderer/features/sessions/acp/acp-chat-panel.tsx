@@ -24,12 +24,9 @@ import { sessionLifeView } from '../stores/session-life-views';
 import { lifeIsStarting } from '@shared/core/sessions/session-life';
 import { AgentFailureSlot } from '@/components/AgentFailureSlot';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
-import { takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
 import { continueSessionTurn } from './continue-session-turn';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { SessionComposerVerbs, SessionVerbDock, sessionVerbKey } from '../session-verb-dock';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { followConversationLink } from '@/lib/followConversationLink';
 import { openMessageSender } from '@/lib/openMessageSender';
@@ -285,14 +282,6 @@ const ComposerForStore = observer(function ComposerForStore({
   // 这个任务给自己排的定时:有就在输入框上沿挂一条托盘放那颗芯片,输入框往上压住它的下沿(与芯片读同一份缓存)。
   const scheduleMachine = machineRegistry.machineOf(store.projectId);
   const schedules = useSessionSchedules(scheduleMachine, store.sessionId);
-  // gugu-dev#181 ⑫ 在会话里也能派:项目里的会话,卡落项目群;没有项目的会话(就是和这个 agent 的私聊),卡落那个私聊。
-  const groupChatId = accountProjectsStore.projectOfLocal(store.projectId)?.chatId;
-  const verb = useComposerVerb(sessionVerbKey(store.sessionId));
-  // 点了新任务框标签上的 ×:那一框写的话交回这里(composerVerbBridge 的 carry)。
-  useEffect(() => {
-    const back = verb ? '' : takeComposerCarry(sessionVerbKey(store.sessionId));
-    if (back) store.setDraftText(back);
-  }, [verb, store]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const annotationDraft = sessionAnnotations.forSession(store.sessionId);
@@ -1359,11 +1348,6 @@ const ComposerForStore = observer(function ComposerForStore({
   const a = store.affordances;
   const agentUserId = sessionAgentBindings.bindingFor(store.sessionId)?.agentUserId ?? null;
 
-  // gugu-dev#181 ⑫ 会话里也能派:选了「新任务」,这一框换成新任务的框(卡落项目群;没有项目的落它的私聊)。
-  if (verb) {
-    return createPortal(<SessionVerbDock sessionId={store.sessionId} projectId={store.projectId} chatId={groupChatId} />, composerSlot);
-  }
-
   return createPortal(
     <>
       <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileInputChange} />
@@ -1538,7 +1522,6 @@ const ComposerForStore = observer(function ComposerForStore({
         dataDropTypes={dataDropTypes}
         onDataDropped={onDataDropped}
         onViewAttachment={onViewAttachment}
-        toolbarExtra={<SessionComposerVerbs sessionId={store.sessionId} draft={store.draftText} onCarried={() => store.setDraftText('')} />}
       />
     </>,
     composerSlot
