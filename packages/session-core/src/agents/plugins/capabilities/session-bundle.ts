@@ -811,7 +811,7 @@ export interface SessionBundleDescriptor {
       // 咕咕写进**自己那份配置根**里的配置文件(独立 home)。见下面 `'config-file'` 的说明。
       | 'config-file'
       // 咕咕把会话级 MCP 配置写成 run-scoped 文件,再用**厂商自己的会话参数**把引擎指过去
-      // (终端腿专用)。与 `'user-config'` 的本质区别:❌ 不碰用户的配置文件,payload 随 run
+      // (终端腿专用)。不碰用户的配置文件,payload 随 run
       // 目录消亡,不需要固定名/幂等/占位符那套 writer 纪律。与 `'process-config'` 的区别
       // 镜像 promptBlocks 的 `'prompt-file-argv'`:argv 里只有一个路径指针,正文在 artifact
       // 里 —— 只声明 argv 会让读的人以为配置正文在命令行里(顺带把 Authorization 值暴露进
