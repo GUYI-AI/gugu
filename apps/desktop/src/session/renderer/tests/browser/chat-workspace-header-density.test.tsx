@@ -63,7 +63,7 @@ it('keeps group actions in reach as the chat column crosses both header widths',
   const resize = (width: number) => act(() => { groupHeader.style.width = `${width}px`; });
   const { groupMenuTopics, chatHeaderAppsButton, chatHeaderMembersButton, chatHeaderMoreButton } = AUTOMATION_TEST_IDS;
 
-  await until('both group labels are shown above 400 px', () => hasText(groupMenuTopics, '话题') && hasText(chatHeaderAppsButton, '应用'));
+  await until('both group labels are shown above 400 px', () => hasText(groupMenuTopics, '话题') === true && hasText(chatHeaderAppsButton, '应用') === true);
   await resize(324);
   await until('fold the labels and keep the two icon buttons at the default width', () =>
     hasText(groupMenuTopics, '话题') === false && hasText(chatHeaderAppsButton, '应用') === false);
@@ -82,5 +82,5 @@ it('keeps group actions in reach as the chat column crosses both header widths',
   expect(openInfo).toHaveBeenCalledWith('members');
 
   await resize(456);
-  await until('wide actions return when the divider moves back', () => hasText(groupMenuTopics, '话题') && hasText(chatHeaderAppsButton, '应用'));
+  await until('wide actions return when the divider moves back', () => hasText(groupMenuTopics, '话题') === true && hasText(chatHeaderAppsButton, '应用') === true);
 });
